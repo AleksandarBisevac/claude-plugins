@@ -34,6 +34,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   beyond what loading it already imported.
 
 ### Added
+- **A phase's CI run is recorded on the phase, and the sign-off commit carries it.** The
+  optional phase key `ci` holds the run id, the head the run graded (`sha`), its `conclusion`
+  and when it was read. `full-gate.py --ci-run RUNID --phase P` reads the run from GitHub and
+  writes it under the plan lock, revalidating the plan with the record in place; a run whose
+  id, head, status or conclusion cannot be read is refused with exit 6, nothing written. The
+  drive hands each run its CI cadence finds to that verb, and reads it once more just before
+  the sign-off commit, where every outcome is recorded: a run still going with a `basis` and
+  no `conclusion`, and a run not listed, a run list `gh` cannot read, or a run listed and not
+  readable through `--ci-unreported` (with `--run` when the run is known) and a basis quoting
+  `gh` - so the commit says what CI had said rather than saying nothing, and a missing or
+  logged-out `gh` never stops a sign-off. The drive stops only on a refused record, a usage
+  error or the plan lock, and the stop says the run is read again at the next `next` and that
+  taking `ci.cadence` out goes on without CI. A plan without the key validates and behaves
+  exactly as before.
 - **A task can record where its wall time went.** The optional task key `timing` holds
   `firstStartedAt` and a list of `stages` - each a `kind` (writer, gate, selection, base,
   reviewer, commit or wait), a start, a length in milliseconds and the record the length was
@@ -103,6 +117,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   reads as before.
 
 ### Changed
+- **The bug a red CI run owes is filed in one place, and names the failed jobs.**
+  `full-gate.py --ci-run` files it, titled with the branch, commit and run as before; the drive
+  no longer files one itself. Reading the same run again files nothing: a bug with that title,
+  in any status, is the one it owes. The jobs are read apart from the run, so a `gh` that cannot
+  list them still has the bug filed, saying the failed jobs could not be read, in `gh`'s words.
 - **A red's base is measured only when the red could predate the task, once per commit and step
   set, and a red waits for it.** No base run starts for a red whose every failing suite is a file
   the task's `tests.add` created (absent at the base commit), nor for one whose red steps a

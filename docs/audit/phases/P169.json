@@ -544,40 +544,50 @@
         "severity": "high",
         "file": "plugins/audit/scripts/governance/drive-phase.py (apply_answer, base_refusal, the key recorded only by gate_red_decision)",
         "issue": "Third sighting of one class, found reviewing the uncommitted invariant: the refusal of a spending answer over an unmeasured base fires only for a decision that carries a key, and only the red-gate decision writes that key, so a spending decision produced anywhere else goes past it. Reached through the recommended path (probe on the suite's own fixtures): a writer decision is taken beside a base handed out but not started; the person answers the recommended resume; the resumed round produces no result (a crash, the budget running out); the next call asks the no-return decision, which carries no key; `retry` is applied, attempts go 1 to 2, the base is never measured and its launch is orphaned. The derived case proves the refusal given the key, never that every producer records it.",
-        "resolution": "The state that makes the class possible is removed rather than guarded a fourth time: no decision about a red exists while its base is unmeasured, because the drive holds for the base it launched, as it did before the base could be decided beside. What remains of the refusal reads the start's own base mark, not a key on the decision. Cases stage the probe's sequence and show there is nothing to answer.",
-        "fixTask": "P169.23-6l3"
+        "resolution": "fixed in P169.23-6l3 (f1b8fe1142a2): The state that makes the class possible is removed rather than guarded a fourth time: no decision about a red exists while its base is unmeasured, because the drive holds for the base it launched, as it did before the base could be decided beside. What remains of the refusal reads the start's own base mark, not a key on the decision. Cases stage the probe's sequence and show there is nothing to answer.",
+        "fixTask": "P169.23-6l3",
+        "commit": "f1b8fe1142a2",
+        "status": "fixed"
       },
       {
         "id": "P169-R60",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py (beside_ended, base_refusal)",
         "issue": "A base run whose processes die beside a writer decision leaves the decision stuck: the mark is folded but never marked done, the decision is never taken again, every re-render says the base is still running beside it, and the refusal says the spending answer opens once the base ends with a reading, which will never happen. `rerun` gets out, and nothing says so. Nothing is charged. Established by probe.",
-        "resolution": "Gone with the beside decision: a held red whose base run stopped without a reading is read as cut short on the next call, as a held base already was, and asks the base-unknown decision.",
-        "fixTask": "P169.23-6l3"
+        "resolution": "fixed in P169.23-6l3 (f1b8fe1142a2): Gone with the beside decision: a held red whose base run stopped without a reading is read as cut short on the next call, as a held base already was, and asks the base-unknown decision.",
+        "fixTask": "P169.23-6l3",
+        "commit": "f1b8fe1142a2",
+        "status": "fixed"
       },
       {
         "id": "P169-R61",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py (gate_step, settle_green)",
         "issue": "A gate that goes green while the base beside it is still running is never settled: the settle returns early because the mark is not done, the reviewer is dispatched, and when the base later ends as red-at-base no note is written, no verdict kept and the mark never decided. Ending before a slow background base is the likely order, and it is the case the note and the reviewer's section exist for. Established by probe; the changelog sentence about a gate gone green beside a base is false for it.",
-        "resolution": "Gone with the beside decision: no writer round runs while a base is unmeasured, so no gate can turn green over one; the settle path, its kept reading and the note's reader go if nothing reaches them, or stay with a case if something does.",
-        "fixTask": "P169.23-6l3"
+        "resolution": "fixed in P169.23-6l3 (f1b8fe1142a2): Gone with the beside decision: no writer round runs while a base is unmeasured, so no gate can turn green over one; the settle path, its kept reading and the note's reader go if nothing reaches them, or stay with a case if something does.",
+        "fixTask": "P169.23-6l3",
+        "commit": "f1b8fe1142a2",
+        "status": "fixed"
       },
       {
         "id": "P169-R62",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py (ANSWER_SPENDS; the open-now list); the rule line of gate-red-base-unknown",
         "issue": "The table of what an answer costs prices `resume` as free while it spends one of the start's bounded resume rounds and a paid session, and one rule line says a round spent in words the case holding the lines to the table does not recognise. The refusal and the printed decision list `resume` as open on the base-unknown decision when no session is recorded, and it is then refused for that reason.",
-        "resolution": "The table prices rounds as well as attempts and every rule line is held to it; the open-now list applies the session test.",
-        "fixTask": "P169.23-6l3"
+        "resolution": "fixed in P169.23-6l3 (f1b8fe1142a2): The table prices rounds as well as attempts and every rule line is held to it; the open-now list applies the session test.",
+        "fixTask": "P169.23-6l3",
+        "commit": "f1b8fe1142a2",
+        "status": "fixed"
       },
       {
         "id": "P169-R63",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py (own_red)",
         "issue": "The own-files skip trusts the runner's suite name: a file the task created that re-exports cases from a file the base has is read as the task's own red, with no base run. A suite name says where cases were collected, not where they come from. From reading; a question more than a defect.",
-        "resolution": "The skip's sentence says what it knows (the failing suite is a file the task created; where its cases come from is not read), so the person can ask for a base measurement; or the skip measures when the created file imports a test file the base has.",
-        "fixTask": "P169.23-6l3"
+        "resolution": "fixed in P169.23-6l3 (f1b8fe1142a2): The skip's sentence says what it knows (the failing suite is a file the task created; where its cases come from is not read), so the person can ask for a base measurement; or the skip measures when the created file imports a test file the base has.",
+        "fixTask": "P169.23-6l3",
+        "commit": "f1b8fe1142a2",
+        "status": "fixed"
       },
       {
         "id": "P169-R64",
@@ -610,9 +620,16 @@
         "issue": "The cost table is keyed by the answer's word alone, and one word has two costs: `resume` on the no-return ask resumes the agent and counts no round, while the table prices every `resume` as a session round, and the documents say so generally. Not reachable as a wrong refusal today; an inaccuracy in a table claimed to be the one statement of costs.",
         "resolution": "The table is keyed by decision and answer, or that pair is an entry of its own, and the documents say which resume spends a round.",
         "fixTask": "P169.24-6l3"
+      },
+      {
+        "id": "P169-R68",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/full-gate.py (the phase's `ci` record); plugins/audit/scripts/status/",
+        "issue": "The phase's CI record has no reader outside the verb that writes it: status, the report, the panel, the doctor, the lookup and the release guard do not read it (greps after the last edit; the one hit is the config's settings group). A value written for nobody to read is a basis with no claim. And after the sign-off commit nothing reads CI again, so a run that ends red after sign-off, or whose core could not be read at the commit, stays in the plan as a record with a basis and no bug, as it was before the record existed.",
+        "resolution": "The task that makes a landing wait for CI is the record's first reader and answers the residue: a landing either reads a green run for that head or says what it landed over. The phase head line in status says the recorded conclusion or its basis."
       }
     ],
-    "outcome": "[findings: 67 - 4 high, 24 med, 39 low; 31 with a recorded fix commit]"
+    "outcome": "[findings: 68 - 4 high, 24 med, 40 low; 36 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1675,7 +1692,7 @@
     {
       "id": "P169.6",
       "title": "A phase's CI run is in its shard at the sign-off commit, through one path from CI to the plan",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A phase's own gate verdict is on the phase already (its record and pointer). What graded the phase's commit on CI is not: the drive keeps the run it dispatched in its own state, and a red CI run reaches the plan as a bug through two call sites. Record on the phase `ci`: {runId, sha, conclusion, at}, written by one verb in the sign-off path, where sha is the head the run graded. A recorded red run files one bug naming the run and its failed jobs, through one module; reading the same run again files nothing. A run that cannot be read is refused and nothing is written. When CI has not reported by sign-off, the record says so (conclusion absent, with the basis) rather than being omitted.\n\nACCEPTANCE.\n1. A signed-off fixture phase's shard carries ci with runId, sha and conclusion in the sign-off commit.\n2. A recorded red run files one bug naming run and jobs; the same run read again files nothing.\n3. An unreadable run is refused, exit non-zero, shard unchanged.\n4. The bug-from-a-CI-run path is reached from one module only; name the call site removed.\n5. The schema accepts the object and a plan without it validates unchanged.\n6. Stated in the outcome as an orchestrator check, not a case: the recorded sha equals the head_sha GitHub reports for the recorded run.\n\nDEPENDANTS to answer for by name: full-gate.py's learn path, the drive's CI cadence section, close-phase.py's sign-off commit, the status and report renders of a phase head line, the release guard under .claude/hooks (it reads provisional phases), validate-manifest.py, and COMPATIBILITY.md (an additive key).",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1689,7 +1706,13 @@
         "tests/test_drive_phase.py",
         "COMPATIBILITY.md",
         "CHANGELOG.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "tools/demo/gen-demo-manifest.py",
+        "plugins/audit/reference/config.md",
+        "plugins/audit/README.md",
+        "tests/test__manifest_vocab.py",
+        "tests/test_gen_demo_manifest.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1720,14 +1743,14 @@
         "P169.22-6l3",
         "P169.23-6l3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-19T11:03:18Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1766,7 +1789,133 @@
           "text": "its comments name COMPATIBILITY.md as where two config-key decisions are recorded, and share four ordinary words with a sentence the trailers section added; this task adds a section of its own to that document and leaves the config-key entries those comments point at as they are",
           "waives": "plugins/audit/hooks/_config.py"
         }
-      ]
+      ],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-19T12:41:56Z",
+            "ms": 24316,
+            "basis": "selectionMs in run 2026-11-19T12:52:28Z.b50275's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-19T12:52:28Z.b50275"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-19T12:42:21Z",
+            "ms": 606386,
+            "basis": "durationMs in run 2026-11-19T12:52:28Z.b50275's record (run-test-gate --record)",
+            "runId": "2026-11-19T12:52:28Z.b50275"
+          }
+        ],
+        "firstStartedAt": "2026-11-19T11:03:18Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-19T12:52:49Z.4fb965",
+        "status": "passed",
+        "durationMs": 255,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:3a9960fd0396272f6b9fd38304d20be9316992e22f01942e992def46fe3f36a9",
+        "reuseKey": "1:sha256:0aa71aee3e4502e0bfb897a0f87a121f3359aadd0f58e72d3e9c60afa1cd38f9",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-19T12:52:28Z.b50275",
+          "ts": "2026-11-19T12:52:28Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+        "selectionMs": 18510,
+        "at": "2026-11-19T12:52:49Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "attempt": 1,
+          "banners": [],
+          "durationMs": 606386,
+          "failed": [],
+          "gateDigest": "sha256:3a9960fd0396272f6b9fd38304d20be9316992e22f01942e992def46fe3f36a9",
+          "gateReach": {
+            "gaps": []
+          },
+          "gateSource": "task",
+          "launch": "2026-11-19T12:41:56Z-dc53da7b",
+          "observations": {
+            "countsBasis": "no step printed a summary this reader can count (python3 tools/sweep-selftests.py tests/test_close_phase.py tests/test_full_gate.py tests/test_audit_task.py tests/test_drive_phase.py + affected/related: .claud... (5515 more characters)), so the size of this gate is not knowable from its output",
+            "coverage": [
+              "tests/test__manifest_vocab.py",
+              "tests/test_audit_task.py",
+              "tests/test_close_phase.py",
+              "tests/test_drive_phase.py",
+              "tests/test_full_gate.py",
+              "tests/test_gen_demo_manifest.py"
+            ],
+            "coverageBasis": "the runner named 207 path(s); the work under test declares 18 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 197/197 and 202 more; declared but not named by the run: CHANGELOG.md, COMPATIBILITY.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md, plugins/audit/reference/config.md, plugins/audit/schema/audit-plan.schema.json and 6 more; breadth: the run named 175 suite path(s) and this task declares 18 file(s), and 166 of them are suites the task neither declares nor is named after (test__deps.py, test__output.py, test_commit_task_work.py, test_stamp_verification.py, tests/_harness.py, tests/test__ado_connect.py and 160 more) - this gate asks more than the task changed; that is reported, not refused",
+            "ranTotal": null,
+            "treeBasis": "git described the tree before and after",
+            "treeMutated": []
+          },
+          "reuseKey": "1:sha256:0aa71aee3e4502e0bfb897a0f87a121f3359aadd0f58e72d3e9c60afa1cd38f9",
+          "runId": "2026-11-19T12:52:28Z.b50275",
+          "selectionMs": 24316,
+          "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+          "startedAt": "2026-11-19T12:42:21Z",
+          "status": "passed",
+          "via": "cli",
+          "at": "2026-11-19T12:52:28Z",
+          "testedState": {
+            "dirtyBasis": "git described the tree before the run; 19 dirty path(s)",
+            "dirtyDigest": "sha256:15b71f79006f9beb6329668bb9dea2b9e663d34de230e28086f830ac2c9394d3",
+            "head": "f1b8fe11",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeBasis": "18 declared file(s); 18 read, 0 missing",
+            "scopeDigest": "sha256:57bb44cf03e8ebad417f6f38199018bf788e092a7a3bf571b83bb8e68815b74f",
+            "scopeListDigest": "sha256:599559c81f36698246f56634d71ab3552779d16599e19e9b5140067669d18c8b"
+          },
+          "steps": [
+            {
+              "commandBytes": 5463,
+              "commandSha256": "9404cee086a66e98a2b6697d8d981ff684dd3e6e79d5a281d22f8e468a271fe0",
+              "durationMs": 606319,
+              "exit": 0,
+              "measured": "not-knowable",
+              "name": "python3 tools/sweep-selftests.py tests/test_close_phase.py tests/test_full_gate.py tests/test_audit_task.py tests/test_drive_phase.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_io.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_run_test_gate.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "program": "python3",
+              "ran": null,
+              "suiteReader": "none"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-19T12:52:28Z.b50275",
+            "launch": "2026-11-19T12:41:56Z-dc53da7b",
+            "status": "passed",
+            "at": "2026-11-19T12:52:28Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-19T12:52:49Z.4fb965",
+        "status": "passed",
+        "at": "2026-11-19T12:52:49Z"
+      }
     },
     {
       "id": "P169.7",
@@ -5075,7 +5224,7 @@
     {
       "id": "P169.23-6l3",
       "title": "A red waits for its base: the drive no longer decides a red beside a base run still measuring, so nothing is charged or decided while a base is unmeasured, by construction",
-      "status": "in_progress",
+      "status": "done",
       "description": "Three independent reviews in a row found the same class in the same feature, each time in the place the previous repair did not look: first a plain red decision answered with `retry` beside a running base (P169-R41), then `retry` on the writer decision beside it (P169-R51), then a decision produced elsewhere (the no-return ask after a resumed round) that goes past the refusal because only the red-gate decision records the key the refusal reads (P169-R59), with two more consequences of the same state (a killed base leaves the decision stuck, R60; a gate gone green before the base ends is never settled, R61). Each repair was sound for what it covered. The feature's state space (decisions x answers x who produced the decision x what the base is doing x green or red x waves) is what keeps producing the next one.\n\nTHE DECISION THIS TASK CARRIES OUT: the drive no longer decides a red beside a base run that is still measuring. A red whose base is being measured WAITS for it (`wait-base`), as it did before this phase. Then the invariant \"nothing is charged to a task, and nothing about its red is decided, while the base of that red is unmeasured\" holds by construction: there is no pending decision to answer, no writer round to run, no gate to turn green, while a base runs. The measured basis for giving the feature up is in the phase's records: on this repository's recorded runs the beside decision applied to no red at all (every recorded red took the agent path), and its derived saving on the session-writer path was the base run's own duration, which the same phase already cut by measuring only the red steps. The feature is not lost: it is recorded for the session-per-task design, where a task has its own tree and the writer is a session, with what these three reviews established as its entry conditions.\n\nWHAT STAYS (all of it is on the branch head, and none of it depends on deciding beside a base): a base run is not started for a red in files the task created and the base lacks (with the rename, letter-case and symlink readings); a red whose steps a recorded or kept base run already measured reads that run; a measured base is kept on the red's record; a base step that reached no verdict is not \"measured\"; a start joins a base run already measuring its commit rather than launching a second; `keep_base` refuses another commit.\n\nWHAT GOES: every path by which a decision about a red is taken, printed, answered, re-taken or settled while its base runs: the beside turn in the decision table, the rule telling the orchestrator to call next at once after `dispatch-base`, the beside mark and its end detection, the re-take of a beside decision, the count of rounds resumed beside a base and its sentence, the refusal of a late answer to a beside decision, and the green-over-running-base settle. For each of the following, decide by REACHABILITY and say which way it went and why: the settle on a green gate with its kept reading (`settledOf`), the dated note and its reader in the reviewer's brief and the sign-off (with every red held until its base is read, can a gate still go green over a base mark that is ended and undecided? if nothing reaches it, it goes, with its record key, its schema sentence and its composed record shape; if something does, it stays with a case that reaches it by that path); the refusal of a spending answer over an unmeasured base (it still has one real subject: the base-unknown decision, where the base can still be measured and `retry` is offered; keep the refusal for that, reading the START'S OWN BASE MARK in the drive's state rather than a key on the decision, so that any decision for that task, whoever produced it, is covered; a decision with no record of what its base stands on fails closed).\n Dead code is removed, not left behind a switch: no option, no flag, no table row that nothing takes.\n\nALSO OWED.\n - R62: the table of what an answer costs prices resume rounds as well as attempts; every rule line and every sentence that names a cost is held to it by the case that already holds the attempt wording (extend its reading rather than adding a second one); the list of answers open now applies the same session test the refusal applies.\n - R63: the own-files skip's sentence says what it knows: the failing suite is a file the task created and the base lacks; where the cases in it come from is not read. State whether measuring when the created file imports a test file the base has is worth its cost, with a count from this repository's recorded reds (read only, the command in the outcome, the number in no document); do it only if that count says so.\n - The three probes of the third review become cases: the resumed round with no result, the killed base, the gate green before the base ends. With the beside decision gone each must show there was nothing to answer or settle at that point, and each must be red at the branch head.\n\nACCEPTANCE.\n1. A derived case: for every decision the drive can print for a task (all of `DECISIONS`, not only the red ones), staged while that task's start holds a base mark that is launched and not ended, no answer is accepted that spends (from the cost table) and none dispatches a writer or an executor; in practice the drive prints `wait-base` and no decision at all, and the case asserts that first. A decision it cannot stage in that state fails by name.\n2. Mutations on scratch copies outside every checkout, restored in the same command, each confirmed landed: the hold removed for the writer decision; the hold removed for the plain red; the refusal reading a key on the decision instead of the base mark; the cost table pricing resume as free; plus the earlier repairs' mutations that still have a subject, re-run against the final code (say which no longer have one, and why).\n3. plugins/audit/reference/orchestrator.md sits exactly at its context ceiling and its paragraph on the base decision changes (it says \"only resume beside it\"): the reworded paragraph is no longer than the one it replaces, and `python3 tools/measure-context.py --gate` stays green. The executor reference, the build guide and the changelog describe one behaviour: a red waits for its base. The changelog's Unreleased entries about the beside decision are rewritten to what ships, not appended to: a reader of the release notes must not meet a feature and its removal.\n4. Bytes: a record key that goes makes the widest record no wider; measured twice with a gap, in the outcome.\n5. Wall time, said honestly in the outcome: what a red now waits on this repository's recorded base durations (the commands from the earlier accounts are in the phase's returns), and that this is the same wait as before the phase minus the base runs the skip rules avoid.\n6. Full sweep green with no exception, after the last edit.\n\nDEPENDANTS to answer for by name: every decision and step the drive prints for a red and for a base and the documents that name them or their answers; `run-test-gate.py --base-of` and `--kept-only`; the time record's base stage (queued once per measurement: with no beside path, by which call); the join of an earlier start's base; the cancelled-gate bound and the replaced-launch path where they meet a base mark; the reviewer's brief and the sign-off if the note's reader goes; the schema's `lastRun.baseRed` description, the composed record shapes that hold every record to the schema (a key that goes leaves the tables and its shape), and the vocabulary suites.\n\nIf a file you need is outside your list, STOP BEFORE FILING and hand back the exact change with the reason: a return is filed once per start.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -5118,14 +5267,24 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f1b8fe1142a2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "REMOVAL of deciding a red beside a running base. drive-phase.py (git diff HEAD --stat: 196 insertions, 374 deletions): gone BASE_BESIDE_RULE (dispatch-base back to WRITER_RULE), RED_DECISIONS, BESIDE_DECISIONS, BASE_TURNS, base_turn, BESIDE_KEY, BESIDE_WHY, RESUMED_BESIDE_WHY, stamp_end, resumed_beside, running_beside, beside_ended, rejoin_base, the drive_locked re-take/late-answer block, the measured_reading beside branch, base_open (pending key), settle_green and BASE_GREEN_NOTE; base_gate prints wait-base itself again while the start's mark is launched and not ended (pre-phase hold), keeping the JOINED read-back. Added: SPENDS_ATTEMPT/SPENDS_ROUND with ANSWER_SPENDS pricing resume a session round; decision_mark (the start's mark by the decision's start), base_open_of (running / unknown via BASE_OPEN_KEY on the MARK / unrecorded = fail closed for gate-red-base-unknown with no mark), base_refused(held, pending, answer), answers_open (one predicate incl. the no-session resume test) used by render_decision, base_refusal(state, pending, answer), answer_refusal(state=) and without_writer_way; base_still_open + open_mark stamp/clear the key on the mark in gate_red_decision, cleared on a green gate. OWN_RED_WHY now says the suites are files the task created, absent at base, and where their cases come from is not read. Rule lines: gate-red-writer says resume is a round spent and no attempt, retry spends an attempt; gate-red-base-unknown says both are refused while the base can still be measured. _evidence_io.py: SETTLED_OF_KEY, _SETTLED_KEYS, BASE_GREEN_MARK, keep_settled_base removed. audit-lookup.py: BASE_GREEN_TITLE/ASK and base_green_lines and both readers removed (file byte-identical to 199bfe76^). schema: the settledOf sentence of lastRun.baseRed removed (-168 bytes). Docs: orchestrator.md 62000 -> 61997 bytes, execute-task.md, PLUGIN-BUILD-GUIDE.md (both sections and the case-id list), CHANGELOG Unreleased entry rewritten. Tests: drive suite nh-block and bj-block gone, wb-block added (wb1-wb4), bh-block rewritten (bh1 join, bh2 kept unread, bh3/bh4 plain red held, bh5 unread kept base unknown), bx-block reworked (bx1 derived in-process walk over every task decision x answer through apply_answer in 3 base states, bx2 extended to attempts and rounds, bx4 open-now predicate, bx6 fail closed, bx3/bx5 kept), bw1/bw2 gone and bw6 added, bq1 restored to the hold, bn docstring/bn2 clause, sn3 expects the fail-closed unknown red; test_audit_lookup bg-block gone (file byte-identical to 199bfe76^); test__evidence_io settled shape, _RK_SETTLED, _rk_green and the owed key gone. Gate: 4/4 files ok, 2393 cases, exit 0. Extra: lint sweep 8/8 files ok 1144 cases; measure-context --gate OK; check-rendered-artifacts --before-commit OK; check-example-ledgers OK; check-git-pipeline OK; g1 PASS (no --write-map needed); ruff and vermin clean. Final full sweep after the last edit: 198/198 files ok, 19442 cases, exit 0.",
+        "descriptive": "A red now waits for its base run; no decision about it exists while the base measures, and the answer refusal reads the start's own base mark."
       },
       "startedAt": "2026-11-19T09:28:30Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-19T11:03:16Z",
+      "verifiedBy": [
+        "bx1 derived walk: every task decision and answer applied through apply_answer over a base handed out, measuring and stopped, after first asserting the drive prints wait-base and no decision",
+        "bx6 an unknown red with no mark fails closed, with its twins",
+        "wb3 resume and retry asked while the base is handed out answer nothing, attempts and rounds unchanged, launch unchanged",
+        "wb2 a killed base run is read as cut short on the next call, tree and claim removed, gate-red-base-unknown with retry and resume refused",
+        "wb4 a green gate takes the open key off the start's mark",
+        "wb1 no writer round runs while the base is unmeasured, and the red is decided gate-red-base over it once it ends",
+        "bx2 every rule line's attempt and round claims held to ANSWER_SPENDS",
+        "bx4 the printed decision, the base refusal and the session refusal share one open-now predicate",
+        "bw6 the own-files skip sentence says what it knows and nothing about predating"
+      ],
       "notes": [
         {
           "at": "2026-11-19T09:27:44Z",
@@ -5178,6 +5337,24 @@
             "ms": 746280,
             "basis": "durationMs in run 2026-11-19T11:00:22Z.dd8597's record (run-test-gate --record)",
             "runId": "2026-11-19T11:00:22Z.dd8597"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-19T10:45:37Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 4621000,
+            "startedAt": "2026-11-19T09:28:36Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-19T11:00:22Z.dd8597",
+            "kind": "wait",
+            "ms": 1000,
+            "startedAt": "2026-11-19T10:47:17Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit f1b8fe1142a2",
+            "kind": "commit",
+            "ms": 2061,
+            "startedAt": "2026-11-19T11:03:12Z"
           }
         ],
         "firstStartedAt": "2026-11-19T09:28:30Z"
@@ -5287,6 +5464,18 @@
         "runId": "2026-11-19T11:00:41Z.adc327",
         "status": "passed",
         "at": "2026-11-19T11:00:41Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "f1b8fe1142a2",
+        "at": "2026-11-19T11:03:16Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-19T10:45:27Z",
+        "basis": "`python3 tests/test_drive_phase.py --selftest --stage bx-block --stage bw-block --stage bh-block` in a throwaway tree at HEAD exited 1 with 7 of 15 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bh1 (house FAIL), bh2 (house FAIL), bx2 (house FAIL), bx1 (house FAIL), bx4 (house FAIL), bx6 (house FAIL), bw6 (house FAIL): SELFTEST FAILED: 8/15 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {

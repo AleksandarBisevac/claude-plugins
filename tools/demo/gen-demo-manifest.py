@@ -1055,6 +1055,17 @@ SCHEMA_EXEMPTIONS = {
         "fixture stamps IS its merge's own commit (`demo_history` builds each "
         "one at its phase's `mergedAt`), so carrying the key would publish a "
         "second reading of a head that has only the first.",
+    "phase.ci":
+        "the phase's newest CI run, written by `full-gate.py --ci-run` from a "
+        "GitHub run; the demo dispatches no CI, and no rendered surface - "
+        "status, the report, the panel, the doctor, the lookup - reads the "
+        "key, so a value would be a run nothing ran and nothing shows.",
+    "ci.runId": "a field of phase.ci, exempt for its reason.",
+    "ci.sha": "a field of phase.ci, exempt for its reason.",
+    "ci.conclusion": "a field of phase.ci, exempt for its reason.",
+    "ci.at": "a field of phase.ci, exempt for its reason.",
+    "ci.basis": "a field of phase.ci, exempt for its reason.",
+    "ci.supersedes": "a field of phase.ci, exempt for its reason.",
     # `meta.fullGate` and `phase.mergedHead` WERE EXEMPT HERE, both on the same
     # reason: no rendered surface read either field yet. The report now does
     # (`_report_html._verified_line`), so both rows are gone and `generate()`

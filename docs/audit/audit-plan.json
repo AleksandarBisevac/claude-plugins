@@ -2698,7 +2698,8 @@
       "P163.3",
       "P168.4",
       "P169.9",
-      "P169.15-6l3"
+      "P169.15-6l3",
+      "P169.6"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -5483,7 +5484,8 @@
       "P156.18-3st",
       "P156.20-3st",
       "P167.2",
-      "P169.3"
+      "P169.3",
+      "P169.6"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -12282,7 +12284,8 @@
     "plugins/audit/reference/config.md": [
       "P128.2-0h5",
       "P155.11",
-      "P169.9"
+      "P169.9",
+      "P169.6"
     ],
     "plugins/audit/tests/test__usage_routing.py": [
       "P125.2",
@@ -13131,7 +13134,8 @@
       "P156.20-3st",
       "P159.2",
       "P167.2",
-      "P169.3"
+      "P169.3",
+      "P169.6"
     ],
     "tests/test__merge_install.py": [
       "P131.1"
@@ -13802,7 +13806,8 @@
       "P169.3",
       "P169.4",
       "P169.16-6l3",
-      "P169.15-6l3"
+      "P169.15-6l3",
+      "P169.6"
     ],
     "tests/test_gen_demo_usage.py": [
       "P131.1",
@@ -14126,7 +14131,8 @@
       "P169.3",
       "P169.4",
       "P169.16-6l3",
-      "P169.15-6l3"
+      "P169.15-6l3",
+      "P169.6"
     ],
     "tools/demo/gen-demo-usage.py": [
       "P131.2"

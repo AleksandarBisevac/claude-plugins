@@ -446,7 +446,7 @@ L9:
   drive-phase -> _affected_tests, _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _locks, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _skill_places, _status_facts, _task_outputs, _task_timing, _tree_stamp, _usage_core, _verdict_binding, _wave, _worktrees
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
-  full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
+  full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _status_facts, _utc_stamp
   import-evidence -> _claude_home, _evidence_io, _journal_io, _loader, _manifest_io, _output, _panel_write
   integrate-task -> _claude_home, _evidence_io, _invariants, _journal_io, _loader, _manifest_io, _output, _task_outputs, _wave, _worktrees
   manage-worktrees -> _branch, _claude_home, _manifest_io, _output, _utc_stamp, _worktrees
@@ -5136,7 +5136,8 @@ authorship trail.
 
 ### `plugins/audit/scripts/governance/full-gate.py`
 `full-gate.py <manifest> [--writer NAME] [--project-dir DIR]`, or
-`full-gate.py <manifest> --learn-from RUNID [--project-dir DIR]` — **the one command of the third
+`full-gate.py <manifest> --learn-from RUNID [--project-dir DIR]`, or
+`full-gate.py <manifest> --ci-run RUNID --phase P [--project-dir DIR]` — **the one command of the third
 place**, meant for a pre-push hook or a CI step that should not have to spell out
 `run-test-gate.py --full --record` and its own refusals itself.
 
@@ -5216,6 +5217,28 @@ is refused naming each ledger file `read_rows` could not read in full, the way `
 1 too; exit 0 means the learning ran, and when it filed nothing the lines above the summary say
 why. Learning twice files nothing new, by the own-miss rule above. Beside `--writer` it is a usage error, exit 2: a learning pass records no row for a
 writer to name.
+
+**`--ci-run <runId> --phase P` is the one path from a CI run to the plan.**
+`full-gate.py <manifest> --ci-run RUNID --phase P [--project-dir DIR]` asks `gh run view` for the
+run's core - id, head, status, conclusion (`CI_CORE_FIELDS`, through `ci_view`, the one seam a
+case stubs) - reads it with `read_ci_run`, and writes the phase's `ci` record through
+`_evidence_io.write_plan_file` under the `index` lock. Before the save the assembled plan is
+revalidated with the record in place by `_manifest_rules.bound_validator`, and a finding or a
+schema line the record adds - including a keyword the reader could not check - refuses the write,
+exit 1, with the refusal naming the repair and the way on without CI. A red run (`CI_RED`) files one
+high bug through `audit-task.py bug-add`, its description on stdin, naming the run, the branch, the
+head and the failed jobs; the jobs are a second call (`read_ci_jobs`), so jobs `gh` cannot list
+put `gh`'s words in the bug and never refuse the run. A bug with that title in any status is the
+one it owes, so reading the same run again files nothing. A run whose core cannot be read - `gh`
+absent or failing, output that is not the run asked for, a completed run with no conclusion - is
+refused with its own exit, `E_UNREAD` (6, above the lock codes), nothing written. A run not yet
+concluded is recorded with a `basis` and no `conclusion`, and `--ci-unreported SHA --phase P
+--basis TEXT|- [--run RUNID]` records the same way a run not listed, or listed and not readable;
+the basis says which. The module docstring holds the table of what each case writes and what the
+drive does after it. The drive's CI cadence (`drive-phase.ci_settle`) only finds the run and hands
+it here: at a close anything unread is a did-line, and just before the sign-off commit every outcome
+is recorded, so the drive stops only on a refused record, a usage error or the lock - each stop
+followed by `CI_WAY_ON` - and nothing in the drive files a bug.
 
 ### `plugins/audit/scripts/governance/drive-phase.py`
 `drive-phase.py next <phaseId|taskId> [manifest] [--project-dir DIR] [--task] [--answer OPTION]

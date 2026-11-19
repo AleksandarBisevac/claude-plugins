@@ -18050,37 +18050,142 @@ def _e2e_ci_cycle(check, M):
     check(_ci_clause("a green verdict files no bug: %r"
                      % (_mio.load_manifest(mpath).get("bugs"),)),
           not _mio.load_manifest(mpath).get("bugs"))
+    signed = _signoff_ci(root)
+    check("wv10 the green run the fourth close read is recorded on the phase, "
+          "and the sign-off commit's plan carries it: ci with the run's id, the "
+          "head the run graded - the tip pushed at the third close - and its "
+          "conclusion: %r" % ((signed, heads),),
+          bool(heads) and signed is not None
+          and signed.get("runId") == "501" and signed.get("sha") == heads[0]
+          and signed.get("conclusion") == "success" and signed.get("at"))
     _e2e_ci_red_filed(check, M, root, mpath, heads)
+
+
+def _signoff_ci(root):
+    """The phase's `ci` as the newest commit whose subject names the sign-off
+    holds it, or None when no such commit is in HEAD's history."""
+    log = _harness.git(root, "log", "--format=%H%x09%s")
+    shas = [ln.split("\t", 1)[0] for ln in log.splitlines()
+            if "\t" in ln and "sign-off" in ln.split("\t", 1)[1]]
+    if not shas:
+        return None
+    plan = _mio.load_manifest_at(root, shas[0], "docs/audit/audit-plan.json")
+    phases = [p for p in (plan or {}).get("phases") or []
+              if isinstance(p, dict) and p.get("id") == PHASE]
+    return phases[0].get("ci") if phases else None
+
+
+_GH_STUB = r'''
+import json, os, sys
+args = sys.argv[1:]
+try:
+    with open(os.environ["GH_STUB_RUNS"], encoding="utf-8") as fh:
+        runs = json.load(fh)
+except (KeyError, OSError, ValueError):
+    runs = {}
+if args[:2] == ["run", "view"] and len(args) > 2 and args[2] in runs:
+    sys.stdout.write(json.dumps(runs[args[2]]))
+    sys.exit(0)
+sys.stderr.write("gh stub: no answer for %r\n" % (args,))
+sys.exit(1)
+'''
+
+
+@contextlib.contextmanager
+def _gh_on_path(runs):
+    """A `gh` ahead of everything on PATH that answers `gh run view <id>` from
+    the JSON file it yields - `{id: run}`, `runs` to begin with - and refuses
+    anything else: a shell wrapper on POSIX and a batch file on Windows, each
+    quoting both paths, as `_writer_stub` builds them. The verb the drive runs
+    finds it through PATH as it would find the real one."""
+    where = _harness.fixture_root("drive-gh-stub-")
+    bindir = os.path.join(where, "bin")
+    os.makedirs(bindir)
+    stub_py = os.path.join(where, "gh_stub.py")
+    with open(stub_py, "w", encoding="utf-8") as fh:
+        fh.write(_GH_STUB)
+    runs_path = os.path.join(where, "runs.json")
+    with open(runs_path, "w", encoding="utf-8") as fh:
+        json.dump(runs, fh)
+    if os.name == "nt":
+        with open(os.path.join(bindir, "gh.cmd"), "w", encoding="utf-8") as fh:
+            fh.write('@"%s" "%s" %%*\r\n' % (sys.executable, stub_py))
+    else:
+        path = os.path.join(bindir, "gh")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write('#!/bin/sh\nexec "%s" "%s" "$@"\n' % (sys.executable, stub_py))
+        os.chmod(path, 0o755)
+    held = dict((k, os.environ.get(k)) for k in ("PATH", "GH_STUB_RUNS"))
+    os.environ["PATH"] = bindir + os.pathsep + (held["PATH"] or "")
+    os.environ["GH_STUB_RUNS"] = runs_path
+    try:
+        yield runs_path
+    finally:
+        for name, value in held.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+        _harness.remove_tree(where)
 
 
 def _e2e_ci_red_filed(check, M, root, mpath, heads):
     """The red half of the cycle, over the same fixture and with no second
-    drive: the bug a red run owes is filed through the real `audit-task.py
-    bug-add`, so a verb that renamed a flag, refused `--description -` or grew
-    a required one stops the filing here rather than in production, where every
-    rigged case (the `_ci_units` red one asserts only the argv) stays green."""
-    red_row = {"databaseId": 777, "headSha": heads[0] if heads else None,
-               "status": "completed", "conclusion": "failure",
-               "url": "https://example.invalid/r/777"}
+    drive: the run the list names is handed to the real `full-gate.py
+    --ci-run`, whose `gh run view` is the stub on PATH, and the bug it owes is
+    filed through the real `audit-task.py bug-add` - so a verb that renamed a
+    flag, refused `--description -` or grew a required one stops the filing
+    here rather than in production, where every rigged case (the `_ci_units`
+    ones assert only the argv) stays green."""
+    sha = heads[0] if heads else "0" * 40
+    red = {"databaseId": 777, "headSha": sha, "headBranch": "ci/p1",
+           "status": "completed", "conclusion": "failure",
+           "url": "https://example.invalid/r/777",
+           "jobs": [{"name": "lint", "conclusion": "success"},
+                    {"name": "windows", "conclusion": "failure"}]}
     ctx = _verb_ctx(root, mpath)
-    stop = (M.ci_file_red(ctx, {"sha": heads[0], "branch": "ci/p1"}, red_row)
-            if heads else "no push was made, so there is no run to file")
-    bugs = _mio.load_manifest(mpath).get("bugs") or []
+
+    def listed(ctx_, argv):
+        if list(argv[:3]) == ["gh", "run", "list"]:
+            return 0, json.dumps([red]), ""
+        return 1, "", "unexpected %r" % (argv,)
+    real_ci, real_ws = M.ci_run, M.write_state
+    M.ci_run, M.write_state = listed, (lambda ctx_, state_: None)
+    try:
+        with _gh_on_path({"777": red}):
+            first = M.ci_settle(ctx, {"ci": {"run": {"sha": sha,
+                                                     "branch": "ci/p1"}}},
+                                {"workflow": "ci.yml"}, PHASE)
+            bugs = _mio.load_manifest(mpath).get("bugs") or []
+            recorded = (_mio.load_manifest(mpath)["phases"][0]).get("ci")
+            again = M.ci_settle(ctx, {"ci": {"run": {"sha": sha,
+                                                     "branch": "ci/p1"}}},
+                                {"workflow": "ci.yml"}, PHASE)
+            bugs_again = _mio.load_manifest(mpath).get("bugs") or []
+            recorded_again = (_mio.load_manifest(mpath)["phases"][0]).get("ci")
+    finally:
+        M.ci_run, M.write_state = real_ci, real_ws
     bug = bugs[0] if len(bugs) == 1 else {}
     description = bug.get("description") or ""
-    title = "CI red on ci/p1 at %s (run 777)" % (heads[0][:7] if heads else "",)
-    check("wv9 a red run filed by `ci_file_red` through the real `audit-task.py "
-          "bug-add` returns no stop and lands exactly one open high-severity bug "
-          "in the manifest, its title the one the drive built and its "
-          "description, read off stdin, naming run 777, ci/p1, the pushed sha, "
-          "the conclusion and the run's URL: %r" % ((stop, bugs, ctx["log"]),),
-          stop is None and len(bugs) == 1
+    title = "CI red on ci/p1 at %s (run 777)" % (sha[:7],)
+    check("wv9 a red run the drive's list names is read and filed by the real "
+          "full-gate.py --ci-run through the real audit-task.py bug-add: no "
+          "stop, one open high bug titled with the branch, commit and run, its "
+          "description naming run 777, the failed job and not the green one, "
+          "and the run recorded on the phase: %r"
+          % ((first, bugs, recorded, ctx["did"], ctx["log"][-1:]),),
+          first == (True, None) and bool(heads) and len(bugs) == 1
           and bug.get("status") == "open" and bug.get("severity") == "high"
           and bug.get("title") == title
-          and "run 777" in description and "ci/p1" in description
-          and bool(heads) and heads[0] in description
-          and "ended failure" in description
-          and "https://example.invalid/r/777" in description)
+          and "run 777" in description and "windows" in description
+          and "lint" not in description
+          and (recorded or {}).get("runId") == "777"
+          and (recorded or {}).get("sha") == sha
+          and (recorded or {}).get("conclusion") == "failure")
+    check("wv9b the same run read again files nothing and leaves the record as "
+          "it was: %r" % ((again, len(bugs_again), recorded_again),),
+          again == (True, None) and len(bugs_again) == 1
+          and recorded_again == recorded)
 
 
 # --- waves, the CI cadence and the writer path, decided on facts -----------------
@@ -18230,15 +18335,23 @@ def _ci_row(conclusion, status="completed"):
              "conclusion": conclusion, "url": "https://example.invalid/r/777"}]
 
 
-def _ci_close(name, config, state, rows, closes=1):
+_CI_RECORDED = "[full-gate] recorded run 777 (%s) on P1.ci%s\n"
+_CI_RED_SAID = _CI_RECORDED % ("failure", "; filed a high bug")
+# The arguments every `full-gate.py --ci-run` the drive makes over `_unit_ctx`
+# carries: the plan, the run the list named, the phase, the project.
+_CI_VERB_RUN = ["audit-plan.json", "--ci-run", "777", "--phase", PHASE,
+                "--project-dir", "/nowhere"]
+
+
+def _ci_close(name, config, state, rows, closes=1, recorded=_CI_RED_SAID):
     """`closes` closes through `ci_after_close` on a fresh driver, the CI seam
-    answered by `_ci_fake` with `rows` and the verbs by a rig. -> (said, seam
-    calls, verb calls, did-lines, state)."""
+    answered by `_ci_fake` with `rows`, `full-gate.py` by `recorded` and the
+    other verbs by a rig. -> (said, seam calls, verb calls, did-lines, state)."""
     M, _w = _unit_driver(name)
     fake, calls, _pushed = _ci_fake(None, lambda _sha: rows)
     M.ci_run = fake
     M.git_head = lambda ctx: _HEAD_B
-    M.run_verb, verbs = _verb_rig()
+    M.run_verb, verbs = _verb_rig({"full-gate.py": (0, recorded, "")})
     ctx = _unit_ctx(config=config)
     said = None
     for _ in range(closes):
@@ -18247,23 +18360,137 @@ def _ci_close(name, config, state, rows, closes=1):
     return said, calls, verbs, ctx["did"], state
 
 
+def _ci_signoff(name, state, rows, at_commit, answer=(0, _CI_RED_SAID, ""),
+                listed=True):
+    """`ci_before_signoff` once on a fresh driver - `at_commit` the read made
+    just before the sign-off commit - the list answered with `rows` (a failed
+    `gh` when not `listed`) and `full-gate.py` with `answer`. -> (said, seam
+    calls, verb calls, did-lines, state)."""
+    M, _w = _unit_driver(name)
+    fake, calls, _p = _ci_fake(None, lambda _sha: rows)
+    if not listed:
+        def fake(ctx, argv, _seen=calls):
+            _seen.append(tuple(argv))
+            return 1, "", "HTTP 502: bad gateway"
+    M.ci_run = fake
+    M.run_verb, verbs = _verb_rig({"full-gate.py": answer})
+    ctx = _unit_ctx(config={"ci": {"cadence": {"closes": 3}}})
+    said = _caught(M.ci_before_signoff, ctx, state, at_commit=at_commit)
+    return said, calls, verbs, ctx["did"], state
+
+
+_CI_UNREAD_SAID = ("[full-gate] cannot read CI run 777: gh exited 1: HTTP 404: "
+                   "run not found; nothing was written. Run this again once "
+                   "`gh run view 777` answers\n")
+_CI_UNREPORTED_SAID = "[full-gate] recorded P1.ci as not reported: b\n"
+
+
+def _ci_by_flag(answers):
+    """A `full-gate.py` answer chosen by which CI flag the call carries -
+    `answers` keyed `--ci-run` / `--ci-unreported`."""
+    def answer(args):
+        for flag, said in answers.items():
+            if flag in args:
+                return said
+        return (2, "", "no answer for %r" % (args,))
+    return answer
+
+
+def _ci_no_dead_end_units(check, M):
+    """A CI read never leaves a phase with no way on: whatever could not be
+    read at the sign-off commit is recorded with a basis quoting the tool, and
+    only a refusal of the record itself, a usage error or a lock stops - with
+    the way on that needs no CI said after the verb's own words."""
+    unread_list = _ci_signoff("drive_phase_ci_commit_unread", _ci_held(3), [],
+                              True, listed=False,
+                              answer=(0, _CI_UNREPORTED_SAID, ""))
+    ul = (unread_list[2] or [(None, [], None)])[0]
+    early_list = _ci_signoff("drive_phase_ci_begin_unread", _ci_held(3), [],
+                             False, listed=False)
+    check("cic1 RED-FIRST: a run list gh cannot read at the sign-off commit - "
+          "no gh, no credentials, a bad gateway - is recorded through "
+          "--ci-unreported with a basis quoting gh's own words and naming the "
+          "workflow and branch, and the sign-off goes on; at a close or as "
+          "sign-off begins the same list is a did-line and nothing is asked: %r"
+          % ((unread_list, early_list),),
+          unread_list[0] is None and len(unread_list[2]) == 1
+          and ul[0] == "full-gate.py"
+          and ul[1][:5] == ["audit-plan.json", "--ci-unreported", _HEAD_A,
+                            "--phase", PHASE]
+          and "--run" not in ul[1]
+          and "HTTP 502: bad gateway" in (ul[2] or "")
+          and "could not be read" in (ul[2] or "")
+          and "ci.yml" in (ul[2] or "") and "ci/p1" in (ul[2] or "")
+          and early_list[0] is None and early_list[2] == []
+          and any("unread" in d and "HTTP 502" in d for d in early_list[3]))
+
+    unread_run = _ci_signoff(
+        "drive_phase_ci_commit_unread_run", _ci_held(3), _ci_row("failure"),
+        True, answer=_ci_by_flag({"--ci-run": (6, _CI_UNREAD_SAID, ""),
+                                  "--ci-unreported": (0, _CI_UNREPORTED_SAID,
+                                                      "")}))
+    ur = [(s, a, i) for s, a, i in unread_run[2]]
+    early_run = _ci_signoff(
+        "drive_phase_ci_begin_unread_run", _ci_held(3), _ci_row("failure"),
+        False, answer=(6, _CI_UNREAD_SAID, ""))
+    check("cic2 RED-FIRST: a run the list names whose core full-gate.py cannot "
+          "read (its exit 6) does not stop the sign-off: at the commit it is "
+          "recorded through --ci-unreported --run with that run's id and a "
+          "basis saying which read failed in gh's words, never a conclusion; "
+          "as sign-off begins it is a did-line and the run stays held: %r"
+          % ((unread_run, early_run),),
+          M.CI_UNREAD_EXIT == 6
+          and unread_run[0] is None and len(ur) == 2
+          and ur[0][1] == _CI_VERB_RUN
+          and ur[1][1] == ["audit-plan.json", "--ci-unreported", _HEAD_A,
+                           "--phase", PHASE, "--run", "777", "--project-dir",
+                           "/nowhere", "--basis", "-"]
+          and "run 777" in (ur[1][2] or "")
+          and "HTTP 404: run not found" in (ur[1][2] or "")
+          and "nothing was written" not in (ur[1][2] or "")
+          and unread_run[4]["ci"]["run"] == {"sha": _HEAD_A, "branch": "ci/p1"}
+          and early_run[0] is None and len(early_run[2]) == 1
+          and any("unread" in d and "run 777" in d for d in early_run[3])
+          and early_run[4]["ci"]["run"] == {"sha": _HEAD_A, "branch": "ci/p1"})
+
+    stops = {}
+    for label, code in (("refused", 1), ("usage", 2)):
+        stops[label] = _ci_signoff(
+            "drive_phase_ci_commit_%s" % (label,), _ci_held(3),
+            _ci_row("failure"), True,
+            answer=(code, "[full-gate] cannot record CI run 777 on P1.ci: the "
+                          "plan with this record would not validate\n", ""))
+    check("cic3 a refusal of the record itself or a usage error stops the "
+          "sign-off on full-gate.py's own words, the run still held, and the "
+          "stop names the way on: the run is read again at the next `next`, "
+          "and taking ci.cadence out goes on without CI: %r" % ((stops,),),
+          all(isinstance(v[0], tuple) and v[0][0] == M.E_STOPPED
+              and "full-gate.py" in v[0][1] and "would not validate" in v[0][1]
+              and "ci.cadence" in v[0][1] and "next `next`" in v[0][1]
+              and v[4]["ci"]["run"] == {"sha": _HEAD_A, "branch": "ci/p1"}
+              for v in stops.values()))
+
+
 def _ci_units(check):
-    """What a close owes `ci.cadence`: the run left out is read and a red one
-    files its bug, a run still going is left alone, and no key asks nothing."""
+    """What a close owes `ci.cadence`: the run left out is read and handed to
+    the one verb that records it and files a red one's bug, a run still going
+    is left alone at a close and recorded as not reported just before the
+    sign-off commit, and no key asks nothing."""
     cadence = {"ci": {"cadence": {"closes": 3}}}
     said, calls, verbs, did, state = _ci_close(
         "drive_phase_ci_red", cadence, _ci_held(0), _ci_row("failure"))
     bugs = [(a, i) for s, a, i in verbs if s == "audit-task.py" and a[:1] == ["bug-add"]]
-    check(_ci_clause("a red run read at the next close asks the bug verb for one "
-                     "high-severity bug whose title names the run and the branch, "
-                     "and the run is no longer held, so it is never read twice: %r"
-                     % ((said, calls, bugs, did, state),)),
+    fg = [(a, i) for s, a, i in verbs if s == "full-gate.py"]
+    check(_ci_clause("a red run read at the next close is handed, by its id, to "
+                     "full-gate.py --ci-run - which records it on the phase and "
+                     "files its bug - and the drive files no bug of its own; the "
+                     "did-line is the verb's own summary, and the run is no "
+                     "longer held, so it is never read twice: %r"
+                     % ((said, calls, fg, bugs, did, state),)),
           said is None and len(calls) == 1 and calls[0][:3] == ("gh", "run", "list")
-          and len(bugs) == 1
-          and bugs[0][0][:2] == ["bug-add", "CI red on ci/p1 at aaaaaaa (run 777)"]
-          and bugs[0][0][-4:] == ["--severity", "high", "--description", "-"]
-          and "ended failure" in bugs[0][1] and "ci/p1" in bugs[0][1]
-          and did == ["CI aaaaaaa red: bug filed"]
+          and bugs == [] and fg == [(_CI_VERB_RUN, None)]
+          and did == ["CI aaaaaaa: recorded run 777 (failure) on P1.ci; filed a "
+                      "high bug"]
           and state["ci"] == {"closes": 1, "at": 0.0})
 
     said, calls, verbs, did, state = _ci_close(
@@ -18271,30 +18498,90 @@ def _ci_units(check):
     M, _w = _unit_driver("drive_phase_ci_signoff")
     fake, signoff_calls, _p = _ci_fake(None, lambda _sha: _ci_row("", "in_progress"))
     M.ci_run = fake
+    M.run_verb, signoff_verbs = _verb_rig()
     ctx = _unit_ctx(config=cadence)
     at_signoff = _caught(M.ci_before_signoff, ctx, state)
     did = did + ctx["did"]
-    _s, calls_g, _v, did_g, state_g = _ci_close(
-        "drive_phase_ci_settled", cadence, _ci_held(2), _ci_row("success"))
+    _s, calls_g, verbs_g, did_g, state_g = _ci_close(
+        "drive_phase_ci_settled", cadence, _ci_held(2), _ci_row("success"),
+        recorded=_CI_RECORDED % ("success", ""))
     check(_ci_clause("a run still going at the next close is left alone - no "
                      "second dispatch is piled on it though the cadence is due, "
-                     "nothing is filed, and the close goes on without waiting; "
-                     "sign-off reads it once more, again without waiting; the twin "
-                     "whose run had ended green dispatches the next one: %r"
-                     % ((said, calls, signoff_calls, at_signoff, verbs, did, state,
-                         calls_g, did_g),)),
+                     "nothing is filed or recorded, and the close goes on without "
+                     "waiting; sign-off reads it once more, again without waiting; "
+                     "the twin whose run had ended green has it recorded and "
+                     "dispatches the next one: %r"
+                     % ((said, calls, signoff_calls, at_signoff, verbs,
+                         signoff_verbs, did, state, calls_g, did_g),)),
           said is None and [c[:3] for c in calls] == [("gh", "run", "list")]
           and at_signoff is None
           and [c[:3] for c in signoff_calls] == [("gh", "run", "list")]
-          and verbs == [] and did == ["CI aaaaaaa still running"] * 2
+          and verbs == [] and signoff_verbs == []
+          and did == ["CI aaaaaaa still running"] * 2
           and state["ci"]["run"] == {"sha": _HEAD_A, "branch": "ci/p1"}
           and state["ci"]["closes"] == 3
           and [c[:3] for c in calls_g] == [("gh", "run", "list"),
                                            ("git", "-C", "/nowhere"),
                                            ("gh", "workflow", "run")]
           and calls_g[1][-1] == "+%s:refs/heads/ci/p1" % (_HEAD_B,)
-          and did_g == ["CI aaaaaaa green", "CI dispatched on ci/p1 at bbbbbbb"]
+          and [(s, a) for s, a, _i in verbs_g] == [("full-gate.py", _CI_VERB_RUN)]
+          and did_g == ["CI aaaaaaa: recorded run 777 (success) on P1.ci",
+                        "CI dispatched on ci/p1 at bbbbbbb"]
           and state_g["ci"]["run"] == {"sha": _HEAD_B, "branch": "ci/p1"})
+
+    # Just before the sign-off commit a run CI has not concluded is RECORDED as
+    # not reported, through the same verb; one not listed yet is recorded with
+    # the drive's basis and no run id; and a verb that refuses the record
+    # stops the sign-off with the run still held.
+    running = _ci_signoff("drive_phase_ci_commit_running", _ci_held(3),
+                          _ci_row("", "in_progress"), True,
+                          answer=(0, "[full-gate] recorded run 777 as not "
+                                     "reported on P1.ci (in_progress)\n", ""))
+    unlisted = _ci_signoff("drive_phase_ci_commit_unlisted", _ci_held(3), [],
+                           True, answer=(0, "[full-gate] recorded P1.ci as not "
+                                            "reported\n", ""))
+    un_args = (unlisted[2] or [(None, [], None)])[0]
+    check(_ci_clause("at the sign-off commit a run still going is recorded as "
+                     "not reported through full-gate.py --ci-run and stays held; "
+                     "a run not listed yet is recorded through --ci-unreported "
+                     "with the head the drive pushed and a basis naming the "
+                     "workflow and branch it looked on, on stdin: %r"
+                     % ((running, unlisted),)),
+          running[0] is None
+          and [(s, a) for s, a, _i in running[2]] == [("full-gate.py",
+                                                      _CI_VERB_RUN)]
+          and running[3] == ["CI aaaaaaa: recorded run 777 as not reported on "
+                             "P1.ci (in_progress)"]
+          and running[4]["ci"]["run"] == {"sha": _HEAD_A, "branch": "ci/p1"}
+          and unlisted[0] is None and len(unlisted[2]) == 1
+          and un_args[0] == "full-gate.py"
+          and un_args[1] == ["audit-plan.json", "--ci-unreported", _HEAD_A,
+                             "--phase", PHASE, "--project-dir", "/nowhere",
+                             "--basis", "-"]
+          and "ci.yml" in (un_args[2] or "") and "ci/p1" in (un_args[2] or ""))
+    _ci_no_dead_end_units(check, M)
+
+    source = _read(_loader.script_path("drive-phase.py")).decode("utf-8")
+    consts = [n.value for n in ast.walk(ast.parse(source))
+              if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    gate_source = _read(_loader.script_path("full-gate.py")).decode("utf-8")
+    gate_consts = [n.value for n in ast.walk(ast.parse(gate_source))
+                   if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    FG = _loader.load_script("full-gate.py", "full_gate_cib1", cache=False)
+    check("cib1 RED-FIRST: the bug a CI run owes is reached from one module - "
+          "drive-phase.py names no `bug-add` and holds no `ci_file_red`, it "
+          "hands the run to full-gate.py's `--ci-run`, and full-gate.py is "
+          "where the bug verb is spelled; the one exit the drive does not stop "
+          "on is full-gate.py's own E_UNREAD: %r"
+          % ((consts.count("bug-add"), hasattr(M, "ci_file_red"),
+              "--ci-run" in consts, gate_consts.count("bug-add"),
+              getattr(M, "CI_UNREAD_EXIT", None), getattr(FG, "E_UNREAD", None)),),
+          "bug-add" not in consts and not hasattr(M, "ci_file_red")
+          and "--ci-run" in consts and "--ci-unreported" in consts
+          and "bug-add" in gate_consts and "--ci-run" in gate_consts
+          and getattr(M, "CI_UNREAD_EXIT", None) == getattr(FG, "E_UNREAD", 0)
+          and getattr(FG, "E_UNREAD", None) not in (FG.E_OK, FG.E_FAIL,
+                                                     FG.E_USAGE, 3, 4, 5))
 
     M, _w = _unit_driver("drive_phase_ci_absent")
     fake, calls, _p = _ci_fake(None, lambda _sha: _ci_row("success"))
@@ -20751,17 +21038,24 @@ def _ci_fake(root, runs):
 
 
 def _ci_run(M, root, mpath, runs):
-    """Drive the whole phase with the CI seam faked. -> (calls, events, pushed,
-    heads, run): `events` is the calls interleaved with a marker per close, in
-    the order they happened; `heads` is HEAD as each push was made."""
+    """Drive the whole phase with the CI seam faked, and `gh run view` - asked by
+    the verb that records a listed run - answered by a stub on PATH from the rows
+    the list last returned. -> (calls, events, pushed, heads, run): `events` is
+    the calls interleaved with a marker per close, in the order they happened;
+    `heads` is HEAD as each push was made."""
     fake, calls, pushed = _ci_fake(root, runs)
-    events, heads = [], []
+    events, heads, viewed = [], [], [None]
 
     def seam(ctx, argv):
         if "push" in argv:
             heads.append(_head(root))
         events.append(("call", tuple(argv)))
-        return fake(ctx, argv)
+        said = fake(ctx, argv)
+        if list(argv[:3]) == ["gh", "run", "list"] and viewed[0]:
+            with open(viewed[0], "w", encoding="utf-8") as fh:
+                json.dump(dict((str(r.get("databaseId")), dict(r, jobs=[]))
+                               for r in json.loads(said[1] or "[]")), fh)
+        return said
     real_ci, real_close = M.ci_run, M.close_task
 
     def closing(ctx, state, phase, task, intent_basis=None):
@@ -20771,7 +21065,9 @@ def _ci_run(M, root, mpath, runs):
         return said
     M.ci_run, M.close_task = seam, closing
     try:
-        run = drive(M, root, mpath)
+        with _gh_on_path({}) as runs_path:
+            viewed[0] = runs_path
+            run = drive(M, root, mpath)
     finally:
         M.ci_run, M.close_task = real_ci, real_close
     return calls, events, pushed, heads, run

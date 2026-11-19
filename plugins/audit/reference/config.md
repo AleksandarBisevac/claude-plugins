@@ -28,24 +28,47 @@ What the driver does, at a close that makes a dispatch due:
    +<sha>:refs/heads/ci/<phase>`; the branch is a throwaway the driver owns);
 2. dispatches `ci.workflow` on that branch (`gh workflow run <workflow> --ref
    ci/<phase>`) and **does not wait** — the drive goes on to the next task;
-3. at the **next close**, and at sign-off so a verdict after the last close is
-   not dropped, reads the run for that commit (`gh run list`, one call):
-   - completed `success`: said in the did-line, nothing filed;
-   - completed `failure`, `timed_out` or `startup_failure`: files a `high` bug
-     (`audit-task.py bug-add`) naming the branch, the commit and the run id
-     and URL, so the release guard and the open-bug rule see it at once. If the
-     bug cannot be filed the drive stops on that refusal and the run is read
-     again at the next close;
-   - any other conclusion: said, no bug;
-   - still running, not listed yet, or unreadable: said, and nothing new is
-     dispatched on top of it.
+3. at the **next close**, and when sign-off begins so a verdict after the last
+   close is not dropped, finds the run for that commit (`gh run list`, one
+   call). A completed run is handed to `full-gate.py --ci-run <run> --phase
+   <P>`, the one path from CI to the plan, which reads it (`gh run view`) and
+   records it on the phase as `ci` - `runId`, `sha` (the head the run graded),
+   `conclusion` and `at`:
+   - `failure`, `timed_out` or `startup_failure`: it also files one `high` bug
+     naming the branch, the commit, the run, its URL and its failed jobs, so
+     the release guard and the open-bug rule see it at once;
+   - any other conclusion: recorded, no bug;
+   - the failed jobs are read in a second call, for a red run only: a `gh`
+     that cannot list them still has the run recorded, and the bug says the
+     failed jobs could not be read, in `gh`'s words;
+   - the same run read again: nothing is written and no second bug is filed;
+   - still running, not listed yet, a list that cannot be read, or a run whose
+     id, head, status or conclusion cannot be read (`full-gate.py` exits 6):
+     said in the did-line, nothing recorded, the run read again at the next
+     close, and nothing new is dispatched on top of it.
+4. just before the sign-off commit it reads a run still held once more, and
+   every outcome leaves a record, so the commit says what CI had said by then:
+   - concluded: recorded as above;
+   - still running: recorded with its run id, a `basis` naming its status and
+     no `conclusion`;
+   - not listed yet, or a list that cannot be read (no `gh`, no credentials):
+     recorded through `full-gate.py --ci-unreported` with the head and a basis
+     naming the workflow, the branch and, for an unread list, `gh`'s words;
+   - listed but not readable: recorded the same way with the run's id
+     (`--run`) and a basis saying which read failed, in `gh`'s words.
+   The sign-off goes on in every one of these. It stops only when the record
+   itself is refused (the plan would not validate with it), on a usage error,
+   or on the plan lock; the stop prints `full-gate.py`'s words, which name the
+   repair or the rerun, then that the next `next` reads the run again and that
+   taking `ci.cadence` out of the config goes on without CI.
+
+After the sign-off commit nothing reads CI again: a run that ends red after
+it, or one whose word could not be read at it, stays in the plan as a record
+with a basis and files no bug.
 
 A push or dispatch that fails (no remote, no `gh`, no credentials) is said in
 the did-line and tried again at the next close. The driver never prompts for
 credentials and never reads stdin on these calls.
-
-Not done by this key: reading which jobs and cases failed. The bug names the
-run; its URL is where the failing jobs are.
 
 ## `usage.ledgerDir` — the record a commit's co-author trailer is read from
 

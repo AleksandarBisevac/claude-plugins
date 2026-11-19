@@ -16,6 +16,7 @@ the same fixture shape `test_run_test_gate.py`'s `_full_repo` uses, because
 "does a write actually land and get printed" is a question only a real run
 answers.
 """
+import contextlib
 import json
 import os
 import sys
@@ -1280,6 +1281,435 @@ def _learning_stdin_route_cases(check):
         _harness.remove_tree(root)
 
 
+# --- a phase's CI run: read once, recorded on the phase, a red filed once ------
+# The seam to GitHub is `M.ci_view`, replaced here by an answer this file holds,
+# so no case reaches `gh`; `fgci10` alone runs the real seam, with a PATH that
+# holds no `gh` at all. Every `ci` the verb writes is read back off the plan and
+# held to the published schema by `fgci8`, through the reader validate-manifest
+# uses, an unread keyword counted as a refusal.
+_CI_SHA = "0123456789abcdef0123456789abcdef01234567"
+_CI_JOBS = [{"name": "lint", "status": "completed", "conclusion": "success"},
+            {"name": "linux (3.8)", "status": "completed",
+             "conclusion": "failure"},
+            {"name": "windows", "status": "completed",
+             "conclusion": "timed_out"}]
+
+
+def _ci_json(run_id, status="completed", conclusion="failure", jobs=None,
+             sha=_CI_SHA, branch="ci/p1"):
+    return json.dumps({"databaseId": run_id, "headSha": sha,
+                       "headBranch": branch, "status": status,
+                       "conclusion": conclusion,
+                       "url": "https://example.invalid/r/%s" % (run_id,),
+                       "jobs": _CI_JOBS if jobs is None else jobs})
+
+
+def _ci(root, mpath, args, answer):
+    """`(code, lines, views)` of `main` over `args`, `M.ci_view` answering
+    `answer` - `(code, stdout, stderr)` - and `views` the run ids it was asked
+    for, with the directory and the fields each was asked with."""
+    views, real = [], getattr(M, "ci_view", None)
+
+    def fake(run_id, cwd, fields=None):
+        views.append((run_id, cwd, fields))
+        return answer
+    M.ci_view = fake
+    lines = []
+    try:
+        code = M.main([mpath, "--project-dir", root] + list(args),
+                      out=lines.append)
+    finally:
+        _put_back(M, "ci_view", real)
+    return code, lines, views
+
+
+def _put_back(module, name, value):
+    """Restore `module.name` to `value` - or remove it, when the module had
+    none before a case set it."""
+    if value is None:
+        if hasattr(module, name):
+            delattr(module, name)
+    else:
+        setattr(module, name, value)
+
+
+def _phase_ci(mpath):
+    with open(mpath) as fh:
+        return (json.load(fh)["phases"][0]).get("ci")
+
+
+def _plan_bytes(mpath):
+    with open(mpath, "rb") as fh:
+        return fh.read()
+
+
+def _ci_schema_said(record):
+    """`(findings, unread)` of the published schema's phase `ci` over
+    `record`, read by `_json_schema` - the reader validate-manifest uses."""
+    import _json_schema
+    import _output
+    doc = _json_schema.load_document(os.path.join(
+        _output.PLUGIN_ROOT, "schema", "audit-plan.schema.json"))
+    node = (((doc.get("$defs") or {}).get("phase") or {}).get("properties")
+            or {}).get("ci")
+    if node is None:
+        return ["the schema declares no phase ci"], set()
+    return _json_schema.check_findings(node, record, doc, "phases[0].ci")
+
+
+def _ci_run_cases(check):
+    root, mpath = _full_repo("ci-run", fullgate=None)
+    written = {}
+    try:
+        code, lines, views = _ci(root, mpath, ["--ci-run", "777", "--phase",
+                                               "P1"], (0, _ci_json(777), ""))
+        rec = _phase_ci(mpath)
+        written["red"] = rec
+        _c, bugs, actions = _plan_facts(root, mpath)
+        bug = bugs[0] if len(bugs) == 1 else {}
+        text = bug.get("description") or ""
+        check("fgci1 RED-FIRST: a red CI run read by --ci-run is recorded on the "
+              "phase as ci {runId, sha, conclusion, at} - the sha the run's own "
+              "headSha - and files exactly one high bug whose title names the "
+              "branch, the commit and the run and whose description names the "
+              "run and each failed job, never a green one: %r"
+              % ((code, rec, bugs, views, lines[-2:]),),
+              code == M.E_OK and isinstance(rec, dict)
+              and sorted(rec) == ["at", "conclusion", "runId", "sha"]
+              and rec["runId"] == "777" and rec["sha"] == _CI_SHA
+              and rec["conclusion"] == "failure" and rec["at"]
+              and views == [("777", root, None),
+                            ("777", root, getattr(M, "CI_JOBS_FIELDS", "jobs"))]
+              and len(bugs) == 1 and actions.count("bug.add") == 1
+              and bug.get("title") == "CI red on ci/p1 at 0123456 (run 777)"
+              and bug.get("severity") == "high"
+              and "run 777" in text and "linux (3.8)" in text
+              and "windows" in text and "lint" not in text)
+        after_red = _plan_bytes(mpath)
+        code2, lines2, _v = _ci(root, mpath, ["--ci-run", "777", "--phase",
+                                              "P1"], (0, _ci_json(777), ""))
+        _c, bugs2, actions2 = _plan_facts(root, mpath)
+        check("fgci2 the same run read again files nothing and writes nothing - "
+              "the plan byte for byte as the first read left it, one bug, one "
+              "bug.add row - and says the bug it already has: %r"
+              % ((code2, len(bugs2), _prefixed(lines2)),),
+              code2 == M.E_OK and _plan_bytes(mpath) == after_red
+              and len(bugs2) == 1 and actions2.count("bug.add") == 1
+              and any(bug.get("id") and bug["id"] in ln and "already" in ln
+                      for ln in lines2))
+
+        refused = {}
+        for label, answer in (
+                ("gh-exit", (1, "", "HTTP 404: run not found")),
+                ("not-json", (0, "this is not json", "")),
+                ("other-run", (0, _ci_json(778), "")),
+                ("no-sha", (0, json.dumps({"databaseId": 777,
+                                           "status": "completed",
+                                           "conclusion": "failure"}), ""))):
+            refused[label] = _ci(root, mpath, ["--ci-run", "777", "--phase",
+                                               "P1"], answer)
+        _c, bugs3, _a = _plan_facts(root, mpath)
+        check("fgci3 RED-FIRST: a run that cannot be read - gh refusing, output "
+              "that is not JSON, a different run's answer, a run naming no head - "
+              "is refused with its own exit (E_UNREAD, 6), with a line saying "
+              "nothing was written and naming the rerun and --ci-unreported "
+              "--run, and the plan is byte for byte as it was: %r"
+              % (dict((k, (v[0], _prefixed(v[1]))) for k, v in refused.items()),),
+              getattr(M, "E_UNREAD", None) == 6
+              and all(v[0] == 6 for v in refused.values())
+              and all(any("cannot read CI run 777" in ln
+                          and "nothing was written" in ln
+                          and "--ci-unreported" in ln and "--run 777" in ln
+                          for ln in v[1])
+                      for v in refused.values())
+              and _plan_bytes(mpath) == after_red and len(bugs3) == 1)
+
+        code4, _l4, _v4 = _ci(root, mpath, ["--ci-run", "900", "--phase", "P1"],
+                              (0, _ci_json(900, conclusion="success"), ""))
+        written["green"] = rec4 = _phase_ci(mpath)
+        _c, bugs4, _a = _plan_facts(root, mpath)
+        check("fgci4 a green run replaces the record and says which run it "
+              "superseded, and files no bug: %r" % ((code4, rec4, len(bugs4)),),
+              code4 == M.E_OK and rec4.get("runId") == "900"
+              and rec4.get("conclusion") == "success"
+              and rec4.get("supersedes") == "777" and len(bugs4) == 1)
+
+        code5, _l5, _v5 = _ci(root, mpath, ["--ci-run", "901", "--phase", "P1"],
+                              (0, _ci_json(901, status="in_progress",
+                                           conclusion=""), ""))
+        written["not-reported"] = rec5 = _phase_ci(mpath)
+        _c, bugs5, _a = _plan_facts(root, mpath)
+        check("fgci5 RED-FIRST: a run CI has not concluded is recorded with no "
+              "conclusion and a basis naming the status it was read in - never a "
+              "conclusion filled in - and files no bug: %r"
+              % ((code5, rec5, len(bugs5)),),
+              code5 == M.E_OK and rec5.get("runId") == "901"
+              and "conclusion" not in rec5
+              and "in_progress" in (rec5.get("basis") or "")
+              and rec5.get("sha") == _CI_SHA and len(bugs5) == 1)
+
+        code6, _l6, views6 = _ci(root, mpath, [
+            "--ci-unreported", _CI_SHA, "--phase", "P1", "--basis",
+            "no run of ci.yml on ci/p1 was listed when sign-off read it"],
+            (1, "", "must not be asked"))
+        written["unlisted"] = rec6 = _phase_ci(mpath)
+        check("fgci6 --ci-unreported records the head a dispatched run will "
+              "grade with the caller's basis and no run id and no conclusion, "
+              "asking GitHub nothing: %r" % ((code6, rec6, views6),),
+              code6 == M.E_OK and views6 == [] and "runId" not in rec6
+              and "conclusion" not in rec6 and rec6.get("sha") == _CI_SHA
+              and rec6.get("basis") == ("no run of ci.yml on ci/p1 was listed "
+                                        "when sign-off read it")
+              and rec6.get("supersedes") == "901")
+
+        code7, _l7, _v7 = _ci(root, mpath, ["--ci-run", "902", "--phase", "P1"],
+                              (0, _ci_json(902, conclusion="cancelled"), ""))
+        written["cancelled"] = rec7 = _phase_ci(mpath)
+        _c, bugs7, _a = _plan_facts(root, mpath)
+        check("fgci7 a cancelled run is recorded with its conclusion and files "
+              "no bug: %r" % ((code7, rec7, len(bugs7)),),
+              code7 == M.E_OK and rec7.get("conclusion") == "cancelled"
+              and len(bugs7) == 1)
+
+        said = dict((k, _ci_schema_said(v)) for k, v in written.items())
+        bad = {"no-conclusion-no-basis": {"sha": _CI_SHA, "at": "2026-01-01T00:00:00Z"},
+               "conclusion-no-run": {"sha": _CI_SHA, "at": "2026-01-01T00:00:00Z",
+                                     "conclusion": "success"},
+               "empty-basis": {"sha": _CI_SHA, "at": "2026-01-01T00:00:00Z",
+                               "basis": ""}}
+        refusals = dict((k, _ci_schema_said(v)[0]) for k, v in bad.items())
+        check("fgci8 every shape the verb wrote - red, green superseding, not "
+              "reported, not listed, cancelled - is one the published schema "
+              "accepts with no keyword left unread, and the schema refuses a "
+              "record with neither conclusion nor basis, a conclusion with no "
+              "run, and an empty basis: %r" % ((said, refusals),),
+              len(written) == 5 and all(isinstance(v, dict) for v in written.values())
+              and all(not f and not u for f, u in said.values())
+              and all(refusals.values()))
+
+        real = getattr(M, "ci_record", None)
+        M.ci_record = lambda run, at: {"runId": run["runId"], "at": at,
+                                       "conclusion": run["conclusion"]}
+        before = _plan_bytes(mpath)
+        try:
+            code8, lines8, _v8 = _ci(root, mpath, ["--ci-run", "903", "--phase",
+                                                   "P1"],
+                                     (0, _ci_json(903, conclusion="success"), ""))
+        finally:
+            _put_back(M, "ci_record", real)
+        check("fgci9 RED-FIRST: a record the schema would refuse is never written "
+              "- a composer that drops the sha is refused before the save, exit "
+              "1, the plan unchanged, and the refusal names the repair and the "
+              "way on without CI: %r" % ((code8, _prefixed(lines8)),),
+              code8 == M.E_FAIL and _plan_bytes(mpath) == before
+              and any("schema" in ln and "nothing was written" in ln
+                      and "validate-manifest" in ln and "ci.cadence" in ln
+                      for ln in lines8))
+
+        usage = {}
+        for label, args in (
+                ("no-phase", ["--ci-run", "777"]),
+                ("no-such-phase", ["--ci-run", "777", "--phase", "P9"]),
+                ("beside-learn", ["--ci-run", "777", "--phase", "P1",
+                                  "--learn-from", "RUN-X"]),
+                ("both-ci", ["--ci-run", "777", "--ci-unreported", _CI_SHA,
+                             "--phase", "P1", "--basis", "b"]),
+                ("no-basis", ["--ci-unreported", _CI_SHA, "--phase", "P1"]),
+                ("stray-basis", ["--ci-run", "777", "--phase", "P1",
+                                 "--basis", "b"]),
+                ("run-with-ci-run", ["--ci-run", "777", "--phase", "P1",
+                                     "--run", "777"])):
+            usage[label] = _ci(root, mpath, args, (0, _ci_json(777), ""))
+        check("fgci11 a --ci-run or --ci-unreported asked wrongly - no phase, a "
+              "phase the plan lacks, beside --learn-from, both at once, no "
+              "basis, a basis with a run, --run beside --ci-run - is a usage "
+              "error, exit 2, that asks GitHub nothing, writes nothing and "
+              "points at --help: %r"
+              % (dict((k, (v[0], v[2])) for k, v in usage.items()),),
+              all(v[0] == M.E_USAGE and v[2] == []
+                  and any("--help" in ln for ln in v[1])
+                  for v in usage.values())
+              and _plan_bytes(mpath) == before)
+
+        code12, _l12, views12 = _ci(root, mpath, [
+            "--ci-unreported", _CI_SHA, "--phase", "P1", "--run", "904",
+            "--basis", "run 904 was listed, and reading it failed: gh exited 1: "
+                       "HTTP 404"], (1, "", "must not be asked"))
+        rec12 = _phase_ci(mpath)
+        check("fgci12 RED-FIRST: --ci-unreported --run records the run the list "
+              "named beside the head and the caller's basis, and never a "
+              "conclusion, asking GitHub nothing - and the record is one the "
+              "published schema accepts: %r" % ((code12, rec12, views12),),
+              code12 == M.E_OK and views12 == [] and isinstance(rec12, dict)
+              and rec12.get("runId") == "904" and rec12.get("sha") == _CI_SHA
+              and "conclusion" not in rec12
+              and "HTTP 404" in (rec12.get("basis") or "")
+              and _ci_schema_said(rec12) == ([], set()))
+    finally:
+        _harness.remove_tree(root)
+    _ci_gh_stub_cases(check)
+
+    # --- the real seam, with no `gh` to find -----------------------------------
+    root, mpath = _full_repo("ci-no-gh", fullgate=None)
+    empty = _harness.fixture_root("ci-no-gh-path-")
+    held = os.environ.get("PATH")
+    try:
+        before = _plan_bytes(mpath)
+        os.environ["PATH"] = empty
+        lines = []
+        try:
+            code = M.main([mpath, "--project-dir", root, "--ci-run", "777",
+                           "--phase", "P1"], out=lines.append)
+        finally:
+            os.environ["PATH"] = held if held is not None else ""
+        check("fgci10 with no gh on PATH the real seam answers that it cannot "
+              "ask, and the run is refused unread, exit 6, nothing written: %r"
+              % ((code, _prefixed(lines)),),
+              code == getattr(M, "E_UNREAD", None) == 6
+              and _plan_bytes(mpath) == before
+              and any("cannot read CI run 777" in ln and "gh" in ln
+                      for ln in lines))
+    finally:
+        _harness.remove_tree(empty)
+        _harness.remove_tree(root)
+
+
+# A `gh` of the case's own: `gh run view <id> --json <fields>` answers from the
+# JSON file `GH_STUB_SPEC` names - `{"core": [code, out, err], "jobs": [...]}`,
+# `jobs` when the fields asked for are exactly the jobs - and every call is
+# appended to `GH_STUB_LOG`, one line of its arguments each.
+_GH_STUB = r'''
+import json, os, sys
+args = sys.argv[1:]
+with open(os.environ["GH_STUB_LOG"], "a", encoding="utf-8") as fh:
+    fh.write(" ".join(args) + "\n")
+with open(os.environ["GH_STUB_SPEC"], encoding="utf-8") as fh:
+    spec = json.load(fh)
+fields = args[args.index("--json") + 1] if "--json" in args else ""
+code, out, err = spec["jobs" if fields == "jobs" else "core"]
+sys.stdout.write(out)
+sys.stderr.write(err)
+sys.exit(code)
+'''
+
+
+@contextlib.contextmanager
+def _gh_stub(spec):
+    """A `gh` ahead of everything on PATH answering by `spec` (see `_GH_STUB`):
+    a shell wrapper on POSIX, a batch file on Windows. Yields the path of the
+    log of the calls it took."""
+    where = _harness.fixture_root("full-gate-gh-stub-")
+    bindir = os.path.join(where, "bin")
+    os.makedirs(bindir)
+    stub_py = os.path.join(where, "gh_stub.py")
+    with open(stub_py, "w", encoding="utf-8") as fh:
+        fh.write(_GH_STUB)
+    spec_path = os.path.join(where, "spec.json")
+    with open(spec_path, "w", encoding="utf-8") as fh:
+        json.dump(spec, fh)
+    log = os.path.join(where, "calls.log")
+    if os.name == "nt":
+        with open(os.path.join(bindir, "gh.cmd"), "w", encoding="utf-8") as fh:
+            fh.write('@"%s" "%s" %%*\r\n' % (sys.executable, stub_py))
+    else:
+        path = os.path.join(bindir, "gh")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write('#!/bin/sh\nexec "%s" "%s" "$@"\n' % (sys.executable, stub_py))
+        os.chmod(path, 0o755)
+    names = ("PATH", "GH_STUB_SPEC", "GH_STUB_LOG")
+    held = dict((k, os.environ.get(k)) for k in names)
+    os.environ["PATH"] = bindir + os.pathsep + (held["PATH"] or "")
+    os.environ["GH_STUB_SPEC"] = spec_path
+    os.environ["GH_STUB_LOG"] = log
+    try:
+        yield log
+    finally:
+        for name, value in held.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+        _harness.remove_tree(where)
+
+
+def _stub_calls(log):
+    if not os.path.exists(log):
+        return []
+    with open(log, encoding="utf-8") as fh:
+        return [ln.split() for ln in fh.read().splitlines() if ln.strip()]
+
+
+def _core_json(run_id, conclusion):
+    return json.dumps({"databaseId": run_id, "headSha": _CI_SHA,
+                       "headBranch": "ci/p1", "status": "completed",
+                       "conclusion": conclusion,
+                       "url": "https://example.invalid/r/%s" % (run_id,)})
+
+
+def _ci_gh_stub_cases(check):
+    """What the record needs is read apart from what the bug adds, through the
+    real seam and a `gh` of the case's own on PATH: jobs gh cannot list cost a
+    red run's bug its job names, never the run its record; only the core
+    unreadable refuses the run."""
+    old_gh = "unknown JSON field: \"jobs\"\nAvailable fields: databaseId"
+    root, mpath = _full_repo("ci-gh-stub", fullgate=None)
+    try:
+        with _gh_stub({"core": [0, _core_json(777, "failure"), ""],
+                       "jobs": [1, "", old_gh]}) as log:
+            lines = []
+            code = M.main([mpath, "--project-dir", root, "--ci-run", "777",
+                           "--phase", "P1"], out=lines.append)
+            calls = _stub_calls(log)
+        rec = _phase_ci(mpath)
+        _c, bugs, _a = _plan_facts(root, mpath)
+        text = (bugs[0].get("description") or "") if len(bugs) == 1 else ""
+        check("fgci13 RED-FIRST: a red run whose jobs gh cannot list - a gh that "
+              "does not know the field - is recorded all the same, and its one "
+              "bug says the failed jobs could not be read, in gh's own words; "
+              "the core and the jobs are two calls: %r"
+              % ((code, rec, text, calls, _prefixed(lines)),),
+              code == M.E_OK and isinstance(rec, dict)
+              and rec.get("runId") == "777" and rec.get("conclusion") == "failure"
+              and rec.get("sha") == _CI_SHA and len(bugs) == 1
+              and "could not be read" in text
+              and 'unknown JSON field: "jobs"' in text
+              and [c[-1] for c in calls] == [getattr(M, "CI_CORE_FIELDS", ""),
+                                             "jobs"]
+              and any("failed jobs unread" in ln for ln in lines))
+
+        with _gh_stub({"core": [0, _core_json(905, "success"), ""],
+                       "jobs": [1, "", old_gh]}) as log:
+            code_g = M.main([mpath, "--project-dir", root, "--ci-run", "905",
+                             "--phase", "P1"], out=[].append)
+            calls_g = _stub_calls(log)
+        rec_g = _phase_ci(mpath)
+        _c, bugs_g, _a = _plan_facts(root, mpath)
+        check("fgci14 ...and a green run asks for no jobs at all: recorded from "
+              "its core alone, one call, no bug: %r" % ((code_g, rec_g, calls_g),),
+              code_g == M.E_OK and rec_g.get("runId") == "905"
+              and rec_g.get("conclusion") == "success" and len(calls_g) == 1
+              and len(bugs_g) == 1)
+
+        before = _plan_bytes(mpath)
+        long_said = "HTTP 401: Bad credentials " + "x" * 600
+        with _gh_stub({"core": [1, "", long_said], "jobs": [0, "{}", ""]}) as log:
+            lines_u = []
+            code_u = M.main([mpath, "--project-dir", root, "--ci-run", "906",
+                             "--phase", "P1"], out=lines_u.append)
+            calls_u = _stub_calls(log)
+        said = [ln for ln in lines_u if "cannot read CI run 906" in ln]
+        check("fgci15 RED-FIRST: a run whose core gh cannot read is refused with "
+              "E_UNREAD, nothing written and the jobs never asked, and gh's words "
+              "are quoted bounded - cut, and marked as cut: %r"
+              % ((code_u, calls_u, [len(s) for s in said]),),
+              code_u == getattr(M, "E_UNREAD", None) == 6
+              and _plan_bytes(mpath) == before and len(calls_u) == 1
+              and len(said) == 1 and "HTTP 401: Bad credentials" in said[0]
+              and "x" * 300 not in said[0] and "...;" in said[0])
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _delegation_cases(check)
@@ -1292,6 +1722,7 @@ def _selftest():
         _description_stdin_cases(check)
         _stream_stdin_cases(check)
         _learning_stdin_route_cases(check)
+        _ci_run_cases(check)
     return _harness.run(body)
 
 

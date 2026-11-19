@@ -222,6 +222,19 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   being written waits for that one write inside its own lock wait. `--reconcile` now also
   rewrites `lastRun` from a ledger row newer than it, so after it the pointer and the record
   name one run - which is what the promise above says.
+- **`phase.ci` is an additive key**: the phase's newest CI run, written only by
+  `full-gate.py --ci-run` (and, for a run not listed or listed and not readable,
+  `--ci-unreported`), which the drive runs at a cadence close and just before the sign-off
+  commit. A record `--ci-unreported` wrote may carry `runId` with a `basis` and no
+  `conclusion`: the list named the run and reading it failed. A plan without it validates and
+  reads exactly as before; absent means no run was recorded - CI is not configured, or the phase
+  was never pushed. What is promised is the key's name, that `sha` is the head the run graded
+  and `at` when it was read, that a concluded run carries `runId` and `conclusion`, that a run CI
+  had not concluded carries `basis` and **no** `conclusion` (never a default one), and that the
+  record is replaced rather than appended to. `conclusion` holds GitHub's own word and **may
+  gain members**, so a reader switching on it needs a default arm. No reader of a phase -
+  `/audit:status`, the report, the release guard - reads the key yet, so nothing a user sees
+  moves with it.
 - **A stored terminal phase status keeps winning, and `done` is also DERIVED.** A phase
   carrying `status: done` or `status: cancelled` reads exactly that. Otherwise it reads
   `done` once every task is terminal, `review.status` holds a sign-off verdict (`passed` or

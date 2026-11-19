@@ -2735,6 +2735,80 @@ def _record_landing_cases(check):
                 _harness.remove_tree(root)
 
 
+def _ci_signoff_cases(check):
+    """(cci) The phase's CI run, recorded on the branch by the one verb that
+    writes it (`full-gate.py --ci-run`, its seam to GitHub answered here), is in
+    the phase's shard at the sign-off commit - the state commit the drive's
+    `commit_signoff` and sign-off step b make - and the landing carries that
+    record to the parent as the commit holds it. A run CI has not concluded is
+    recorded the same way, as not reported and with its basis."""
+    FG = _loader.load_script("full-gate.py", "full_gate_cci", cache=False)
+    shard_rel = "docs/audit/phases/P1.json"
+    for label, status, conclusion in (("cci1", "completed", "success"),
+                                      ("cci2", "in_progress", "")):
+        root = None
+        try:
+            root, mpath, git = _record_landing_fixture(
+                "closephase-%s" % (label,), [(0, "failed"), (1, "passed")],
+                files=("src.txt",), sharded=True)
+            # The index row the declared file owes, which the state commit
+            # refuses a plan without; committed on the branch with the work.
+            with open(mpath) as fh:
+                index = json.load(fh)
+            index["fileIndex"] = {"src.txt": ["P1.1"]}
+            with open(mpath, "w") as fh:
+                json.dump(index, fh)
+            git("commit", "-q", "-am", "index")
+            tip = git("rev-parse", "HEAD").stdout.decode().strip()
+            run = json.dumps({"databaseId": 777, "headSha": tip,
+                              "headBranch": "ci/p1", "status": status,
+                              "conclusion": conclusion, "jobs": [],
+                              "url": "https://example.invalid/r/777"})
+            said = []
+            FG.ci_view = lambda run_id, cwd, fields=None: (0, run, "")
+            recorded = FG.main([mpath, "--project-dir", root, "--ci-run",
+                                "777", "--phase", "P1"], out=said.append)
+            done = subprocess.run(
+                [sys.executable, _loader.script_path("commit-task-work.py"),
+                 mpath, "P1", "--state", "--project", root, "--subject",
+                 "sign-off", "--json"], cwd=root, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE)
+            signoff = git("rev-parse", "HEAD").stdout.decode().strip()
+            shown = git("show", "%s:%s" % (signoff, shard_rel)).stdout.decode()
+            at_signoff = (json.loads(shown) if shown else {}).get("ci") or {}
+            git("checkout", "-q", "main")
+            code, text = _close(mpath, root, "--keep-branch")
+            parent = git("show", "main:%s" % (shard_rel,)).stdout.decode()
+            landed = (json.loads(parent) if parent else {}).get("ci")
+            facts = (recorded, said[-1:], done.returncode, signoff != tip,
+                     at_signoff, code, landed == at_signoff, text[-300:])
+            if label == "cci1":
+                check("cci1 RED-FIRST: a signed-off phase's shard carries ci "
+                      "with the run's id, the head it graded and its conclusion "
+                      "in the sign-off commit, and the landing carries the same "
+                      "record to the parent: %r" % (facts,),
+                      recorded == 0 and done.returncode == 0 and signoff != tip
+                      and at_signoff.get("runId") == "777"
+                      and at_signoff.get("sha") == tip
+                      and at_signoff.get("conclusion") == "success"
+                      and at_signoff.get("at")
+                      and code == 0 and landed == at_signoff)
+            else:
+                check("cci2 RED-FIRST: a run CI has not concluded by sign-off is "
+                      "in the sign-off commit as not reported - no conclusion, "
+                      "the basis naming the status it was read in - never "
+                      "left out and never given a conclusion: %r" % (facts,),
+                      recorded == 0 and done.returncode == 0 and signoff != tip
+                      and at_signoff.get("runId") == "777"
+                      and at_signoff.get("sha") == tip
+                      and "conclusion" not in at_signoff
+                      and "in_progress" in (at_signoff.get("basis") or "")
+                      and code == 0 and landed == at_signoff)
+        finally:
+            if root:
+                _harness.remove_tree(root)
+
+
 def _pw_calls(module_path, function):
     """`(calls, shard_reads)` in `function`'s body in the file at
     `module_path`: the names it calls (attribute or bare), and how many
@@ -5407,6 +5481,7 @@ STAGES = (("tk-block", "_takeover_cases"), ("lk-block", "_lock_cases"),
           ("rs-block", "_read_set_reach_cases"), ("ov-block", "_override_cases"),
           ("la-block", "_landing_cases"),
           ("lr-block", "_record_landing_cases"),
+          ("cci-block", "_ci_signoff_cases"),
           ("pw-block", "_plan_walker_cases"),
           ("co-block", "_checked_out_cases"),
           ("sy-block", "_symlink_cases"), ("cm-block", "_composed_cases"),

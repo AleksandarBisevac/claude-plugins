@@ -23956,6 +23956,93 @@ def _record_run_cases(check):
         _harness.remove_tree(tmp)
 
 
+_CIS_SHA = "0123456789abcdef0123456789abcdef01234567"
+_CIS_AT = "2026-11-19T10:00:00Z"
+# Every shape `full-gate.py --ci-run`/`--ci-unreported` writes, by the state it
+# records; `tests/test_full_gate.py` (`fgci8`) holds the verb's own writes to
+# the same schema - these are the schema's half, with no verb in front of it.
+_CIS_SHAPES = {
+    "green": {"runId": "900", "sha": _CIS_SHA, "conclusion": "success",
+              "at": _CIS_AT},
+    "red-superseding": {"runId": "901", "sha": _CIS_SHA,
+                        "conclusion": "failure", "at": _CIS_AT,
+                        "supersedes": "900"},
+    "not-reported": {"runId": "902", "sha": _CIS_SHA, "at": _CIS_AT,
+                     "basis": "run 902 was in_progress when read"},
+    "not-listed": {"sha": _CIS_SHA, "at": _CIS_AT,
+                   "basis": "no run was listed when sign-off read it"}}
+_CIS_REFUSED = {
+    "neither-conclusion-nor-basis": {"runId": "9", "sha": _CIS_SHA,
+                                     "at": _CIS_AT},
+    "conclusion-with-no-run": {"sha": _CIS_SHA, "at": _CIS_AT,
+                               "conclusion": "success"},
+    "no-sha": {"runId": "9", "at": _CIS_AT, "conclusion": "success"},
+    "empty-basis": {"sha": _CIS_SHA, "at": _CIS_AT, "basis": ""},
+    "numeric-run": {"runId": 9, "sha": _CIS_SHA, "at": _CIS_AT,
+                    "conclusion": "success"}}
+
+
+def _cis_plan(ci=None):
+    """The smallest plan the validator reads clean, its phase carrying `ci`
+    when one is given."""
+    phase = {"id": "P1", "title": "One", "status": "pending",
+             "tasks": [{"id": "P1.1", "title": "t", "status": "pending",
+                        "files": ["a.py"], "tests": {"mode": "gate-only"}}]}
+    if ci is not None:
+        phase["ci"] = ci
+    return {"meta": {"version": 3}, "phases": [phase],
+            "fileIndex": {"a.py": ["P1.1"]}}
+
+
+def _ci_schema_cases(check):
+    """The phase's `ci` record in the published schema: every shape the verb
+    writes accepted with nothing unread, each malformed one refused, and a plan
+    with no `ci` validated exactly as the schema before the key read it."""
+    import copy
+    import _json_schema
+    doc = _json_schema.load_document(os.path.join(
+        _output.PLUGIN_ROOT, "schema", "audit-plan.schema.json"))
+    node = ((doc.get("$defs") or {}).get("phase") or {}).get(
+        "properties", {}).get("ci")
+    said = dict((k, _json_schema.check_findings(node or {"not": {}}, v, doc,
+                                                "phases[0].ci"))
+                for k, v in _CIS_SHAPES.items())
+    refused = dict((k, _json_schema.check_findings(node or {}, v, doc,
+                                                   "phases[0].ci")[0])
+                   for k, v in _CIS_REFUSED.items())
+    check("cis1 RED-FIRST: the schema declares the phase's ci and accepts every "
+          "shape the verb writes - concluded, superseding, not reported, not "
+          "listed - with no keyword left unread, and refuses a record with "
+          "neither conclusion nor basis, a conclusion with no run, no sha, an "
+          "empty basis and a run id that is not a string: %r"
+          % ((said, refused),),
+          node is not None
+          and all(not f and not u for f, u in said.values())
+          and all(refused.values()))
+    old = copy.deepcopy(doc)
+    old["$defs"]["phase"]["properties"].pop("ci", None)
+    old["$defs"].pop("ci", None)
+    bare = _cis_plan()
+    with_ci = _cis_plan(_CIS_SHAPES["red-superseding"])
+    bad_ci = _cis_plan(_CIS_REFUSED["conclusion-with-no-run"])
+    now, before = _rules.validate(bare, schema=doc), _rules.validate(bare,
+                                                                    schema=old)
+    carried = _rules.validate(with_ci, schema=doc)
+    wrong = _rules.validate(bad_ci, schema=doc)
+    check("cis2 a plan with no ci validates exactly as it did before the key "
+          "existed - the same findings and warnings under the schema with and "
+          "without it, none of either: %r" % ((now, before),),
+          node is not None and now == before == ([], []))
+    check("cis3 RED-FIRST: a plan whose phase carries a ci the verb writes "
+          "validates with no finding and no warning, and one the schema refuses "
+          "draws the schema's own warning naming the phase's ci: %r"
+          % ((carried, wrong),),
+          node is not None and carried == ([], [])
+          and not wrong[0]
+          and any("phases[0].ci" in w and "published schema" in w
+                  for w in wrong[1]))
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -23993,7 +24080,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("tmg-block", "_timing_cases"),
           ("rr-block", "_record_run_cases"),
           ("grc-block", "_group_record_cases"),
-          ("wg-block", "_stale_wide_gate_cases"))
+          ("wg-block", "_stale_wide_gate_cases"),
+          ("cis-block", "_ci_schema_cases"))
 
 
 if __name__ == "__main__":

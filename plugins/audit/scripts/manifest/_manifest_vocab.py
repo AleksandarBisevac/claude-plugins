@@ -680,6 +680,10 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                # that moment. Absent means it is the recovered commit described
                # on `mergedHead` above.
                "mergedHeadAt",
+               # The phase's newest CI run, written only by `full-gate.py
+               # --ci-run` (or `--ci-unreported`); `$defs/ci` owns the shape.
+               # Absent means no run was recorded, not that CI was green.
+               "ci",
                # not in the schema; reason in `OFF_SCHEMA` below:
                "signOff"}
 # Recommended keys on a parallel-run claim — soft: a claim that omits one draws a

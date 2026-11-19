@@ -46,6 +46,74 @@ plan, where the full list is the tasks' own files. And a miss an OPEN bug
 already tracks, or a coupling that already covers every source named - a
 push retried on the same red would otherwise file the same bug each time.
 
+A PHASE'S CI RUN IS RECORDED HERE, AND A RED ONE FILED HERE - THE ONE PATH
+FROM CI TO THE PLAN. `--ci-run <runId> --phase <P>` reads that run from GitHub
+(`gh run view`, through `ci_view`, the one seam), writes it on the phase as
+`ci` {runId, sha, conclusion, at} - `sha` the head the run graded, as CI
+reports it - and, for a red conclusion (`CI_RED`), files one bug naming the
+run and its failed jobs. The step driver hands every run its `ci.cadence`
+dispatched to this verb; it files no bug of its own.
+
+WHAT THE RECORD NEEDS IS READ APART FROM WHAT THE BUG ADDS. The run's id,
+head, status and conclusion are read first (`CI_CORE_FIELDS`); only they
+being unreadable is "the run cannot be read". The jobs are read in a second
+call, for a red run alone: jobs gh cannot list are said in the bug, in gh's
+words, and the run is recorded all the same. `--ci-unreported` records a run
+whose word no read got - not listed at the sign-off commit, or listed and not
+readable, which `--run` names - and the basis says which. What each state
+writes, and what the step driver then does (`drive-phase.ci_settle`):
+
+  known                    | written on phase.ci    | exit | the drive
+  -------------------------+------------------------+------+----------------
+  run concluded            | runId, sha,            | 0    | did-line; run
+                           |   conclusion, at       |      |   no longer held
+    ...red (CI_RED)        | ...and one bug, unless | 0    | did-line
+                           |   one exists           |      |
+    ...red, jobs unread    | ...and one bug saying  | 0    | did-line
+                           |   they could not be    |      |
+                           |   read, in gh's words  |      |
+  same run read again      | nothing; no second bug | 0    | did-line
+  run not concluded        | runId, sha, at, basis  | 0    | at a close: not
+                           |   (its status), never  |      |   asked; at the
+                           |   a conclusion         |      |   commit: asked
+  not listed, at the       | sha, at, basis         | 0    | goes on
+    commit (--ci-unreported)                       |      |
+  listed, core unreadable  | runId, sha, at, basis  | 0    | goes on
+    at the commit          |   quoting gh (via      |      |
+    (--ci-unreported --run)|   --ci-unreported)     |      |
+  core unreadable (gh      | nothing - refused,     | 6    | at a close:
+    refuses or is absent,  |   naming the rerun and |      |   did-line, run
+    not JSON, another run, |   --ci-unreported      |      |   held; at the
+    no head, no status)    |                        |      |   commit: the row
+                           |                        |      |   above
+  the plan would not       | nothing - refused,     | 1    | stops, with the
+    validate with the      |   naming the repair    |      |   words; the next
+    record                 |   and the way on       |      |   `next` reads
+                           |   without CI           |      |   again
+  plan lock held or stale  | nothing - refused,     | 1    | the same stop
+                           |   naming the rerun or  |      |
+                           |   the lock command     |      |
+  red, bug verb refused    | the record stands; no  | 1    | the same stop;
+                           |   bug, saying a rerun  |      |   the rerun files
+                           |   files it             |      |   it
+  flags asked wrongly      | nothing; GitHub not    | 2    | the same stop
+                           |   asked                |      |
+  CI not configured, or    | nothing: no verb is    | -    | -
+    the phase never pushed |   run, `ci` stays      |      |
+                           |   absent               |      |
+
+A list the drive cannot read reaches this verb only at the sign-off commit,
+as `--ci-unreported` with a basis quoting gh; at a close it is a did-line and
+nothing is recorded. Every stop names its next step, and `ci.cadence` taken
+out of the audit config is the way on that needs no CI at all.
+
+No conclusion is ever filled in: a run CI had not concluded is written with
+the `basis` that says so, never left out and never given a default. The same
+run read again with nothing new writes nothing; a different run replaces the
+record and names the one it replaced (`supersedes`). A bug is filed once per
+run: its title is built from the run's own fields, and any bug of that title,
+open or not, means it is filed.
+
 A RUN RECORDED ELSEWHERE IS LEARNED FROM AFTER IT IS IMPORTED. A CI build
 records into its own shard and learning there would write into a checkout the
 build throws away, so `--learn-from <runId>` runs NOTHING: it reads that row
@@ -59,15 +127,26 @@ in.
 Usage:
   full-gate.py <manifest> [--writer NAME] [--project-dir DIR]
   full-gate.py <manifest> --learn-from RUNID [--project-dir DIR]
+  full-gate.py <manifest> --ci-run RUNID --phase P [--project-dir DIR]
+  full-gate.py <manifest> --ci-unreported SHA --phase P --basis TEXT|-
+                          [--run RUNID] [--project-dir DIR]
+      (a run not reported, or - with --run - listed and not readable; the
+      basis says which)
 
 Exit codes:
   0  no runnable meta.fullGate entry declared (nothing to run), or the full
      run was green;
-     with --learn-from, the learning ran - even when it filed nothing
+     with --learn-from, the learning ran - even when it filed nothing;
+     with --ci-run/--ci-unreported, the run is recorded (or was already)
   1  the full run was red - whether or not a miss was learned from it; with
      --learn-from, the row was refused, the ledger could not be read, a
-     learning verb failed, or the learning raised
-  2  usage error (--learn-from beside --writer), or the manifest will not load
+     learning verb failed, or the learning raised; with --ci-run or
+     --ci-unreported, the record was refused (the plan would not validate
+     with it) or not written (the plan lock), or a red run's bug verb failed
+  2  usage error (--learn-from beside --writer, a CI flag beside another
+     mode, no --phase, a phase the plan lacks, --basis missing or stray,
+     --run without --ci-unreported), or the manifest will not load
+  6  with --ci-run, the run's core could not be read; nothing was written
 
 A verb that fails while learning from a run this file made is printed with its
 exit code and does not change this file's own: the runner's verdict is the
@@ -81,7 +160,10 @@ Stdlib only, Python 3.8 compatible.
 """
 import argparse
 import errno
+import json
 import os
+import shutil
+import subprocess
 import sys
 import time
 
@@ -116,6 +198,8 @@ import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR s
 import _evidence_io as _ev  # noqa: E402  (row_by_run, named_failing_suites)
 import _status_facts  # noqa: E402  (CLOSED_BUG: the one reading of "not open")
 import _panel_write  # noqa: E402  (project_of_manifest: the project a named manifest is in)
+import _manifest_rules as _rules  # noqa: E402  (bound_validator: the plan revalidated with a ci record in place)
+import _utc_stamp  # noqa: E402  (utc_stamp: when a CI run was read)
 
 # --- delegating the run -----------------------------------------------------------
 E_OK, E_FAIL, E_USAGE = 0, 1, 2
@@ -642,6 +726,389 @@ def learn_from(manifest_path, project, run_id, out):
     return E_OK
 
 
+# --- a phase's CI run: read, recorded on the phase, a red one filed ---------------
+# The table of what each state writes is in the module docstring; the code below
+# is its rows, in order: read the run (`ci_view`, `read_ci_run`), compose the
+# record (`ci_record`, `unreported_record`), revalidate the plan with it in place
+# and write it under the plan lock (`write_ci`), then file the bug a red run owes
+# (`file_ci_bug`), once.
+CI_KEY = "ci"
+# The conclusions a bug is filed for: the run failed, ran out of time, or never
+# started. Every other conclusion (success, cancelled, skipped, ...) is recorded
+# and files nothing.
+CI_RED = ("failure", "timed_out", "startup_failure")
+# What a record NEEDS, read first and alone: a `gh` that cannot answer for
+# these cannot say which run it graded or how it ended. The jobs are detail
+# for a red run's bug, read in a second call, so a `gh` that cannot list them
+# (an older one that does not know the field) costs the bug its job names and
+# never costs the run its record.
+CI_CORE_FIELDS = "databaseId,headSha,headBranch,status,conclusion,url"
+CI_JOBS_FIELDS = "jobs"
+CI_TIMEOUT = 120
+# The run's core could not be read: nothing was written, and the caller may go
+# on without it. Distinct from E_FAIL (a record or a bug that was refused), and
+# above the codes `_locks` gives a held, stale or own lock (3, 4, 5), so no
+# reader of an exit code takes one for the other.
+E_UNREAD = 6
+# How much of gh's own words a refusal or a bug quotes: one line, folded, cut
+# by `_output.clip_bytes` and marked when cut.
+CI_SAID_BYTES = 200
+
+
+def ci_view(run_id, cwd, fields=CI_CORE_FIELDS):
+    """`(code, stdout, stderr)` of `gh run view <run_id> --json <fields>` in
+    `cwd`.
+
+    THE ONE SEAM TO GITHUB in this file, which a case replaces. It never
+    raises, never reads stdin and never prompts: no `gh` on PATH, a timeout or
+    a refused start is a code and a sentence, which the reader refuses. `gh`
+    is resolved through PATH by `shutil.which`, so the `.cmd` a Windows install
+    puts there is found as the binary is elsewhere."""
+    gh = shutil.which("gh")
+    if gh is None:
+        return 127, "", "gh is not on PATH, so GitHub could not be asked"
+    env = dict(os.environ, GH_PROMPT_DISABLED="1", GIT_TERMINAL_PROMPT="0")
+    try:
+        done = subprocess.run([gh, "run", "view", str(run_id), "--json",
+                               fields], cwd=cwd, env=env,
+                              stdin=subprocess.DEVNULL, capture_output=True,
+                              text=True, encoding="utf-8", errors="replace",
+                              timeout=CI_TIMEOUT)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return 127, "", "gh could not be run (%s: %s)" % (type(exc).__name__, exc)
+    return done.returncode, done.stdout, done.stderr
+
+
+def _said(text):
+    """The first non-blank line of `text`, folded, at most `CI_SAID_BYTES` of
+    UTF-8 and marked when cut - or "no output"."""
+    lines = [" ".join(ln.split()) for ln in str(text or "").splitlines()
+             if ln.strip()]
+    if not lines:
+        return "no output"
+    cut = _output.clip_bytes(lines[0], CI_SAID_BYTES)
+    return cut if cut == lines[0] else cut.rstrip() + "..."
+
+
+def read_ci_run(run_id, code, text, err):
+    """`(run, None)` - the run's core as GitHub described it - or `(None,
+    why)`.
+
+    A run is READ only when the answer is the run asked for, names the head it
+    graded and a status, and - once completed - a conclusion: anything short
+    of that is a run that cannot be read, and the caller writes nothing,
+    rather than a record holding a guess. `run` carries `runId`, `sha`,
+    `status`, `conclusion` ("" while not completed), `branch` and `url`; the
+    jobs are `read_ci_jobs`'s, and only a red run asks for them."""
+    if code != 0:
+        return None, "gh exited %d: %s" % (code, _said(err or text))
+    try:
+        body = json.loads(text)
+    except ValueError:
+        return None, "gh's answer is not JSON (%s)" % (_said(text),)
+    if not isinstance(body, dict):
+        return None, "gh's answer is not a JSON object"
+    if str(body.get("databaseId")) != str(run_id):
+        return None, "gh answered for run %s, not for run %s" % (
+            body.get("databaseId"), run_id)
+    sha, status = body.get("headSha"), body.get("status")
+    conclusion = body.get("conclusion")
+    if not isinstance(sha, str) or not sha.strip():
+        return None, "the run names no head it graded (headSha)"
+    if not isinstance(status, str) or not status.strip():
+        return None, "the run names no status"
+    if conclusion is not None and not isinstance(conclusion, str):
+        return None, "the run's conclusion is not a word (%r)" % (conclusion,)
+    if status == "completed" and not conclusion:
+        return None, "the run is completed and names no conclusion"
+    return {"runId": str(run_id), "sha": sha.strip(), "status": status,
+            "conclusion": conclusion or "",
+            "branch": str(body.get("headBranch") or ""),
+            "url": str(body.get("url") or "")}, None
+
+
+def read_ci_jobs(code, text, err):
+    """`(jobs, None)` - `{"count", "failed"}`, the names of the jobs whose
+    conclusion is in `CI_RED` - or `(None, why)`, gh's words when it could not
+    list them. Detail for a red run's bug: an answer refused here is said in
+    the bug, never a reason to refuse the run."""
+    if code != 0:
+        return None, "gh exited %d: %s" % (code, _said(err or text))
+    try:
+        body = json.loads(text)
+    except ValueError:
+        return None, "gh's answer is not JSON (%s)" % (_said(text),)
+    jobs = body.get("jobs") if isinstance(body, dict) else None
+    if not isinstance(jobs, list):
+        return None, "gh's answer holds no list of jobs"
+    return {"count": len(jobs),
+            "failed": [str(j.get("name")) for j in jobs if isinstance(j, dict)
+                       and j.get("conclusion") in CI_RED]}, None
+
+
+def ci_record(run, at):
+    """The `ci` a read run writes: its conclusion once CI reported one, else
+    the basis saying it had not - never a conclusion filled in."""
+    record = {"runId": run["runId"], "sha": run["sha"], "at": at}
+    if run["status"] == "completed":
+        record["conclusion"] = run["conclusion"]
+    else:
+        record["basis"] = ("run %s was %s when read at %s, so CI had not "
+                           "reported a conclusion" % (run["runId"],
+                                                      run["status"], at))
+    return record
+
+
+def unreported_record(sha, basis, at, run_id=None):
+    """The `ci` for a run dispatched on `sha` whose word no read got - not
+    listed, or listed as `run_id` and not readable: no conclusion, and the
+    caller's basis saying which."""
+    record = {"sha": sha, "at": at, "basis": basis}
+    if run_id:
+        record["runId"] = str(run_id)
+    return record
+
+
+def _schema_or_finding(line):
+    """Whether a validator warning refuses a `ci` record: a line the
+    whole-plan schema check raised (`_manifest_rules.SCHEMA_CODE_PREFIX`) - its
+    refusal of a value, or a keyword the reader could not check, since a
+    record checked against less than its schema is not known to validate. The
+    `--strict` reading, which a record this verb writes is held to now."""
+    return str(_output.finding_code(line) or "").startswith(
+        _rules.SCHEMA_CODE_PREFIX)
+
+
+def ci_validation_problem(manifest_path, phase_id, record, validator):
+    """Why the plan with `record` as phase `phase_id`'s `ci` would not
+    validate, or None - asked of the plan as it is now and as the record would
+    leave it, through the plugin's own validator with the published schema
+    bound in (`_manifest_rules.bound_validator`). Only what the record ADDS
+    refuses: a line the plan already carried is not this write's to answer."""
+    try:
+        now = _mio.load_manifest(manifest_path)
+    except Exception as exc:
+        return "the plan could not be read to validate the record (%s)" % (exc,)
+    after = json.loads(json.dumps(now))
+    held = [p for p in after.get("phases") or []
+            if isinstance(p, dict) and str(p.get("id")) == str(phase_id)]
+    if not held:
+        return "no phase %s in the assembled plan" % (phase_id,)
+    held[0][CI_KEY] = record
+    was_f, was_w = validator.validate(now)
+    is_f, is_w = validator.validate(after)
+    before = set(was_f) | set(w for w in was_w if _schema_or_finding(w))
+    new = [ln for ln in list(is_f) + [w for w in is_w if _schema_or_finding(w)]
+           if ln not in before]
+    return "; ".join(str(ln) for ln in new[:3]) or None
+
+
+# What a person does next when the record itself is refused: the record is
+# this verb's own composition, so the plan or the plugin is at fault, and the
+# phase still has a way on that does not need CI's word recorded.
+CI_REFUSED_NEXT = (
+    "Run validate-manifest.py on the plan and repair what it reports, then run "
+    "this again; if the plan is clean, file it with /audit:bug. To go on "
+    "without recording CI, take `ci.cadence` out of the audit config.")
+
+
+def _unchanged(previous, record):
+    """Whether `record` says nothing `previous` did not but when it was read."""
+    return (dict((k, v) for k, v in previous.items() if k != "at")
+            == dict((k, v) for k, v in record.items() if k != "at"))
+
+
+def _put_ci(body, sharded, phase_id, record, check):
+    """`write_plan_file`'s change: `(body | None, problem | None, (previous,
+    written))`. The record names the run it replaced; the same record again
+    is no change at all; a record `check` refuses (`ci_validation_problem`) is
+    never put."""
+    phases = [body] if sharded else [
+        p for p in (body.get("phases") or [])
+        if isinstance(p, dict) and str(p.get("id")) == str(phase_id)]
+    if not phases or not isinstance(phases[0], dict):
+        return None, "no phase %s in this plan file" % (phase_id,), None
+    phase = phases[0]
+    previous = phase.get(CI_KEY) if isinstance(phase.get(CI_KEY), dict) else None
+    written = dict(record)
+    if previous and previous.get("runId") != record.get("runId") \
+            and previous.get("runId"):
+        written["supersedes"] = str(previous["runId"])
+    elif previous and previous.get("supersedes"):
+        written["supersedes"] = previous["supersedes"]
+    if previous is not None and _unchanged(previous, written):
+        return None, None, (previous, previous)
+    problem = check(written)
+    if problem:
+        return None, ("the plan with this record would not validate (%s), so "
+                      "nothing was written. %s" % (problem, CI_REFUSED_NEXT)), None
+    phase[CI_KEY] = written
+    return body, None, (previous, written)
+
+
+def write_ci(project, manifest_path, phase_id, record):
+    """`{"written", "reason", "previous", "record", "releaseRefused"}` - the
+    record put on the phase through `_evidence_io.write_plan_file`, the one save
+    of a plan file: the lock every plan writer takes, the file read under it,
+    and the plan revalidated with the record in place before the save.
+    `written` False with no reason is the same record already there."""
+    validator = _rules.bound_validator()
+    if validator.unreadable:
+        return {"written": False, "reason": (
+            "%s, so the record could not be checked and nothing was written"
+            % ("; ".join(str(u) for u in validator.unreadable),))}
+    path, sharded = _ev._phase_file(manifest_path, phase_id)
+    if not path or not os.path.exists(path):
+        return {"written": False, "reason": "no file holds phase %s, so nothing "
+                                            "was written" % (phase_id,)}
+    got = _ev.write_plan_file(
+        project, path, lambda body: _put_ci(
+            body, sharded, phase_id, record,
+            lambda written: ci_validation_problem(manifest_path, phase_id,
+                                                  written, validator)),
+        "recording phase %s's CI run" % (phase_id,),
+        outcome="nothing was written to the plan",
+        repair="run this again once the lock is free")
+    previous, written = got["answer"] or (None, None)
+    return {"written": got["written"], "reason": got["reason"],
+            "previous": previous, "record": written,
+            "releaseRefused": got["releaseRefused"]}
+
+
+def ci_bug_title(run, phase_id):
+    """One title per run, built from the run's own fields, so the same run read
+    twice asks after the same bug - and a bug the drive filed for it before
+    this verb existed reads as that bug."""
+    return "CI red on %s at %s (run %s)" % (
+        run["branch"] or "phase %s" % (phase_id,), run["sha"][:7], run["runId"])
+
+
+def ci_bug_description(run, phase_id, jobs, jobs_why):
+    """The run, the head, how it ended and which jobs failed - that none of
+    the jobs it lists is the failure, or that the jobs could not be read, in
+    gh's words (`jobs_why`); the run's page then has to say."""
+    if jobs is None:
+        listed = ("The failed jobs could not be read (%s); open the run for "
+                  "them." % (jobs_why,))
+    elif jobs["failed"]:
+        listed = "Failed jobs: %s." % (", ".join(jobs["failed"]),)
+    else:
+        listed = ("None of the %d job(s) the run lists ended %s; open the run "
+                  "for why." % (jobs["count"], ", ".join(CI_RED)))
+    return ("CI run %s of phase %s on %s at %s ended %s. %s %s Filed by "
+            "full-gate.py --ci-run." % (
+                run["runId"], phase_id, run["branch"] or "its branch",
+                run["sha"], run["conclusion"], listed,
+                run["url"] or "The run names no URL."))
+
+
+def file_ci_bug(run, phase_id, manifest_path, project, out):
+    """`(clause, failed)` - the bug a red run owes, filed unless a bug of its
+    title is already in the plan, open or not: the clause the summary line
+    carries, and whether the bug verb failed. The jobs are read here, in their
+    own call, only when a bug is to be filed."""
+    title = ci_bug_title(run, phase_id)
+    try:
+        bugs = _mio.load_manifest(manifest_path).get("bugs") or []
+    except Exception as exc:
+        out("%s cannot ask whether run %s's bug is filed: the plan could not "
+            "be re-read (%s); the record stands, and running this again files "
+            "it" % (PREFIX, run["runId"], exc))
+        return "", True
+    held = [b for b in bugs if isinstance(b, dict) and b.get("title") == title]
+    if held:
+        return ("; a bug for it is already filed (%s), none filed"
+                % (held[0].get("id"),)), False
+    jcode, jtext, jerr = ci_view(run["runId"], project, CI_JOBS_FIELDS)
+    jobs, jobs_why = read_ci_jobs(jcode, jtext, jerr)
+    label, test, argv, stdin = _verb_with_text(
+        "bug-add", "run %s" % (run["runId"],),
+        ["bug-add", title, "--severity", "high"], "--description",
+        ci_bug_description(run, phase_id, jobs, jobs_why))
+    code = _run_verb(label, test, argv, stdin, manifest_path, project, out)
+    if code != 0:
+        return ("; its bug could not be filed (audit-task.py exited %d, its "
+                "words above); the record stands, and running this again "
+                "files the bug" % (code,)), True
+    return "; filed a high bug%s" % (
+        "" if jobs is not None else ", its failed jobs unread"), False
+
+
+def record_ci_run(manifest_path, project, phase_id, run_id, unreported, out):
+    """`--ci-run` (`run_id` given) or `--ci-unreported` (`unreported` the
+    triple `(sha, basis, run_id or None)`): the exit code. Everything a
+    refusal leaves is said on one line, with what to do next, and nothing is
+    written past it."""
+    at = _utc_stamp.utc_stamp()
+    run = None
+    if run_id is not None:
+        code, text, err = ci_view(run_id, project)
+        run, why = read_ci_run(run_id, code, text, err)
+        if run is None:
+            out("%s cannot read CI run %s: %s; nothing was written. Run this "
+                "again once `gh run view %s` answers, or record that it could "
+                "not be read with --ci-unreported <sha> --run %s --basis TEXT"
+                % (PREFIX, run_id, why, run_id, run_id))
+            return E_UNREAD
+        record = ci_record(run, at)
+    else:
+        sha, basis, listed = unreported
+        record = unreported_record(sha, basis, at, listed)
+    got = write_ci(project, manifest_path, phase_id, record)
+    if got.get("releaseRefused"):
+        out("%s %s" % (PREFIX, got["releaseRefused"]))
+    if not got["written"] and got["reason"]:
+        out("%s cannot record %s on %s.%s: %s" % (
+            PREFIX, "CI run %s" % (run_id,) if run_id is not None
+            else "an unreported CI run", phase_id, CI_KEY, got["reason"]))
+        return E_FAIL
+    where = "%s.%s" % (phase_id, CI_KEY)
+    if run is None:
+        out("%s recorded %s as not reported: %s" % (PREFIX, where, record["basis"]))
+        return E_OK
+    if "conclusion" not in record:
+        out("%s recorded run %s as not reported on %s (%s)"
+            % (PREFIX, run_id, where, run["status"]))
+        return E_OK
+    tail, failed = "", False
+    if run["conclusion"] in CI_RED:
+        tail, failed = file_ci_bug(run, phase_id, manifest_path, project, out)
+    said = ("recorded run %s (%s) on %s" if got["written"]
+            else "run %s (%s) is already recorded on %s") % (
+                run_id, run["conclusion"], where)
+    out("%s %s%s" % (PREFIX, said, tail))
+    return E_FAIL if failed else E_OK
+
+
+def _ci_usage(args, manifest):
+    """The usage error a CI flag earns, or None."""
+    asked = args.ci_run is not None or args.ci_unreported is not None
+    if not asked:
+        return ("--phase, --basis and --run belong to --ci-run/--ci-unreported"
+                if args.phase is not None or args.basis is not None
+                or args.run is not None else None)
+    if args.run is not None and args.ci_unreported is None:
+        return ("--run names the run --ci-unreported could not read; --ci-run "
+                "takes its run id itself")
+    if args.ci_run is not None and args.ci_unreported is not None:
+        return "--ci-run reads a run and --ci-unreported records none; pass one"
+    if args.learn_from is not None or args.writer:
+        return ("--ci-run/--ci-unreported record a CI run and run no gate, so "
+                "--learn-from and --writer have no place beside them")
+    if not args.phase:
+        return "a CI run is recorded on a phase: pass --phase <id>"
+    if args.ci_unreported is not None and not (args.basis or "").strip():
+        return ("--ci-unreported records no run, so --basis says why: pass "
+                "--basis TEXT, or - to read it from stdin")
+    if args.ci_run is not None and args.basis is not None:
+        return ("--basis is --ci-unreported's; a run read with --ci-run says its "
+                "own state")
+    if not any(isinstance(p, dict) and str(p.get("id")) == str(args.phase)
+               for p in manifest.get("phases") or []):
+        return "no phase %s in the plan" % (args.phase,)
+    return None
+
+
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="full-gate.py", add_help=True)
     p.add_argument("manifest")
@@ -649,6 +1116,12 @@ def main(argv, out=print):
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--learn-from", dest="learn_from", default=None,
                    metavar="RUNID")
+    p.add_argument("--ci-run", dest="ci_run", default=None, metavar="RUNID")
+    p.add_argument("--ci-unreported", dest="ci_unreported", default=None,
+                   metavar="SHA")
+    p.add_argument("--phase", dest="phase", default=None)
+    p.add_argument("--basis", dest="basis", default=None)
+    p.add_argument("--run", dest="run", default=None, metavar="RUNID")
     _claude_home.attach_usage_hint(p)
     try:
         args = p.parse_args(argv)
@@ -658,10 +1131,17 @@ def main(argv, out=print):
         out("%s --learn-from runs no gate and records no row, so --writer "
             "names no file to write; pass one of them" % (PREFIX,))
         return E_USAGE
+    if args.basis == "-":
+        args.basis = sys.stdin.read().strip()
     try:
         manifest = _mio.load_manifest(args.manifest)
     except Exception as exc:
         out("%s cannot read the manifest: %s" % (PREFIX, exc))
+        return E_USAGE
+    wrong = _ci_usage(args, manifest)
+    if wrong:
+        out("%s %s; nothing was asked or written - `full-gate.py --help` "
+            "lists the flags" % (PREFIX, wrong))
         return E_USAGE
     # THE PLUGIN'S ONE ANSWER to which project a named manifest belongs to
     # (`_panel_write.project_of_manifest`: the first ancestor holding
@@ -673,6 +1153,9 @@ def main(argv, out=print):
         args.manifest)
     if args.learn_from is not None:
         return learn_from(args.manifest, project, args.learn_from, out)
+    if args.ci_run is not None or args.ci_unreported is not None:
+        return record_ci_run(args.manifest, project, args.phase, args.ci_run,
+                             (args.ci_unreported, args.basis, args.run), out)
     if not declares_full_gate(manifest):
         left = _ev.full_gate(manifest)["reviewOnly"]
         out(REVIEW_ONLY_LEFT_OUT % (PREFIX, ", ".join(left)) if left

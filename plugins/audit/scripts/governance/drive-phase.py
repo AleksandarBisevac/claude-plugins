@@ -5834,10 +5834,14 @@ floor_contradicted_clause = _fr.floor_contradicted_clause
 # `ci.cadence` asks earlier: at a close that makes it due the driver pushes the
 # phase tip to `ci/<phase>` and dispatches the workflow there, and it never
 # waits - the verdict is read at the NEXT close (and at sign-off, so the last
-# run is not dropped). A red files a bug; a run still going is left alone.
-# Absent, the driver makes no CI call at all.
+# run is not dropped). The drive only finds the run; `full-gate.py --ci-run`
+# reads it, records it on the phase as `ci` and files the bug a red one owes -
+# the one path from CI to the plan, so nothing here files a bug. At a close
+# whatever is not concluded or not readable is a did-line; just before the
+# sign-off commit every outcome is recorded (`ci_settle`), so that commit
+# carries what CI had said by then and a CI read never leaves a phase with no
+# way on. Absent, the driver makes no CI call at all.
 CI_TIMEOUT = 120
-CI_RED = ("failure", "timed_out", "startup_failure")
 CI_LIST_FIELDS = "databaseId,headSha,status,conclusion,url"
 
 
@@ -5885,29 +5889,89 @@ def ci_branch(phase):
     return "ci/%s" % (str(phase["id"]).lower(),)
 
 
-def ci_file_red(ctx, run, row):
-    """The stop, or None, of filing the bug a red run owes: its title names the
-    branch, the commit and the run, so it cannot be mistaken for another."""
-    title = "CI red on %s at %s (run %s)" % (run["branch"], run["sha"][:7],
-                                             row.get("databaseId"))
-    why = ("The phase's CI run %s on %s at %s ended %s. %s - open the run for "
-           "the failing jobs and cases. Filed by the drive's ci.cadence read."
-           % (row.get("databaseId"), run["branch"], run["sha"],
-              row.get("conclusion"), row.get("url") or "no run URL"))
-    _out, stop = _verb_with_text(ctx, "audit-task.py", [
-        "bug-add", title, ctx["manifest"], "--project-dir", ctx["project"],
-        "--severity", "high"], "--description", why)
-    return stop
+# `full-gate.py`'s exit for a run whose core it could not read (its `E_UNREAD`;
+# an entry point is not imported, so `cib1` holds the two equal). The one exit
+# that is not a stop: nothing was written, and the drive goes on without it.
+CI_UNREAD_EXIT = 6
+# Added to every CI stop: the run is read again at the next `next`, and the
+# phase has a way on that needs no CI's word at all.
+CI_WAY_ON = ("The drive reads this run again at the next `next`; to go on "
+             "without CI's word, take `ci.cadence` out of the audit config.")
+# How much of a tool's words a basis quotes: one line, cut by `_clip`.
+CI_SAID_BYTES = 200
 
 
-def ci_settle(ctx, state, cadence):
-    """Read the run the last dispatch left out, without waiting for it: `(done,
-    stop)`. `done` is False while it is unread or still going, so nothing is
-    dispatched on top of it. A run that cannot be read is said, never filed."""
+def _ci_said(text):
+    """The first non-blank line of `text`, folded and bounded, or "no output"."""
+    lines = [" ".join(ln.split()) for ln in str(text or "").splitlines()
+             if ln.strip()]
+    return _clip(lines[0], CI_SAID_BYTES) if lines else "no output"
+
+
+def ci_recorded(ctx, run, args, basis=None):
+    """`full-gate.py`'s CI verb over `args`: `(code, said, stop)` - its exit,
+    its last line with the prefix taken off, and the stop a refusal makes.
+
+    Exit 0 is the did-line `CI <sha>: <said>`. `CI_UNREAD_EXIT` is no stop:
+    the caller decides what an unread run is worth. Every other exit stops on
+    the verb's own words, which name the next step, and `CI_WAY_ON` after
+    them. `basis`, when given, goes on stdin as `--basis -`."""
+    argv = [ctx["manifest"]] + list(args) + ["--project-dir", ctx["project"]]
+    if basis is None:
+        code, out, err = run_verb(ctx, "full-gate.py", argv)
+    else:
+        code, out, err = run_verb(ctx, "full-gate.py", argv + ["--basis", "-"],
+                                  stdin=basis)
+    lines = [ln.strip() for ln in (out or "").splitlines() if ln.strip()]
+    said = lines[-1] if lines else _ci_said(err) if err else (
+        "full-gate.py said nothing")
+    if said.startswith("[full-gate] "):
+        said = said[len("[full-gate] "):]
+    if code == 0:
+        ctx["did"].append("CI %s: %s" % (run["sha"][:7], _clip(said, 120)))
+        return code, said, None
+    if code == CI_UNREAD_EXIT:
+        return code, said, None
+    kind, text = relay_refusal(ctx, "full-gate.py", code, out + err)
+    return code, said, (kind, "%s\n%s" % (text, CI_WAY_ON))
+
+
+def _ci_unread_why(said, run_id):
+    """What `full-gate.py`'s refusal of an unread run says was wrong - the
+    text between its `cannot read CI run <id>: ` and `; nothing was written` -
+    else its whole line, bounded."""
+    head = "cannot read CI run %s: " % (run_id,)
+    body = said[len(head):] if said.startswith(head) else said
+    return _clip(body.split("; nothing was written")[0], CI_SAID_BYTES)
+
+
+def ci_settle(ctx, state, cadence, phase_id, at_commit=False):
+    """Find the run the last dispatch left out, without waiting for it, and hand
+    it to the verb that records it: `(done, stop)`. `done` is False while it is
+    unread or still going, so nothing is dispatched on top of it.
+
+    The drive files nothing itself: a listed run goes to `full-gate.py
+    --ci-run`, which records it on the phase and files a red one's bug. At a
+    close, a run still going, not listed, or unreadable (the list or the run)
+    is a did-line and nothing is recorded. `at_commit` is the read made just
+    before the sign-off commit, and there every outcome leaves a record, so
+    the commit says what CI had said by then: a run still going is recorded
+    as not reported, and a run not listed, a list that cannot be read, or a
+    run listed and not readable goes through `--ci-unreported` with a basis
+    saying which read failed in the tool's own words (and `--run` when the
+    list named the run). Only a refusal of the record itself, a usage error
+    or a lock stops, with the words that name the next step."""
     held = state.get("ci") or {}
     run = held.get("run")
     if not run:
         return True, None
+    sha7 = run["sha"][:7]
+
+    def unreported(basis, run_id=None):
+        argv = ["--ci-unreported", run["sha"], "--phase", phase_id]
+        if run_id:
+            argv += ["--run", str(run_id)]
+        return False, ci_recorded(ctx, run, argv, basis=basis)[2]
     code, out, err = ci_run(ctx, [
         "gh", "run", "list", "--workflow", cadence["workflow"], "--branch",
         run["branch"], "--limit", "10", "--json", CI_LIST_FIELDS])
@@ -5916,26 +5980,49 @@ def ci_settle(ctx, state, cadence):
     except ValueError:
         rows = None
     if not isinstance(rows, list):
-        ctx["did"].append("CI %s unread: %s" % (run["sha"][:7], _clip(
-            (err or out or "exit %d" % (code,)).strip(), 80)))
+        why = _ci_said(err or out or "exit %d" % (code,))
+        if at_commit:
+            return unreported(
+                "the run list of %s on %s could not be read when the sign-off "
+                "commit read it (gh exited %d: %s), so whether CI reported on "
+                "%s is not known" % (cadence["workflow"], run["branch"], code,
+                                     why, run["sha"]))
+        ctx["did"].append("CI %s unread: %s" % (sha7, _clip(why, 80)))
         return False, None
     mine = [r for r in rows if isinstance(r, dict) and r.get("headSha") == run["sha"]]
-    if not mine:
-        ctx["did"].append("CI %s not listed yet" % (run["sha"][:7],))
+    if not mine or mine[0].get("databaseId") in (None, ""):
+        what = "not listed yet" if not mine else "unread: listed with no run id"
+        if at_commit:
+            return unreported(
+                ("no run of %s on %s for %s was listed when the sign-off "
+                 "commit read it" if not mine else "the run list named a run "
+                 "of %s on %s for %s with no run id when the sign-off commit "
+                 "read it") % (cadence["workflow"], run["branch"], run["sha"]))
+        ctx["did"].append("CI %s %s" % (sha7, what))
         return False, None
     row = mine[0]
-    if row.get("status") != "completed":
-        ctx["did"].append("CI %s still running" % (run["sha"][:7],))
+    run_id = str(row.get("databaseId"))
+    finished = row.get("status") == "completed"
+    if not finished and not at_commit:
+        ctx["did"].append("CI %s still running" % (sha7,))
         return False, None
-    if row.get("conclusion") in CI_RED:
-        stop = ci_file_red(ctx, run, row)
-        if stop is not None:
-            return False, stop
-        ctx["did"].append("CI %s red: bug filed" % (run["sha"][:7],))
-    else:
-        ctx["did"].append("CI %s %s" % (run["sha"][:7], "green"
-                          if row.get("conclusion") == "success" else
-                          "ended %s, no bug" % (row.get("conclusion"),)))
+    code, said, stop = ci_recorded(ctx, run, ["--ci-run", run_id,
+                                              "--phase", phase_id])
+    if stop is not None:
+        return False, stop
+    if code == CI_UNREAD_EXIT:
+        why = _ci_unread_why(said, run_id)
+        if at_commit:
+            return unreported(
+                "run %s of %s on %s was listed, and reading it when the "
+                "sign-off commit read it failed: %s" % (
+                    run_id, cadence["workflow"], run["branch"], why),
+                run_id)
+        ctx["did"].append("CI %s unread: run %s: %s" % (sha7, run_id,
+                                                         _clip(why, 80)))
+        return False, None
+    if not finished:
+        return False, None
     held.pop("run", None)
     write_state(ctx, state)
     return True, None
@@ -5978,7 +6065,7 @@ def ci_after_close(ctx, state, phase):
     held = state.setdefault("ci", {})
     held.setdefault("at", ci_started(phase) or now)
     held["closes"] = held.get("closes", 0) + 1
-    settled, stop = ci_settle(ctx, state, cadence)
+    settled, stop = ci_settle(ctx, state, cadence, phase["id"])
     if stop is not None:
         return stop
     if settled and ci_due(cadence, held, now):
@@ -5988,13 +6075,17 @@ def ci_after_close(ctx, state, phase):
     return None
 
 
-def ci_before_signoff(ctx, state):
+def ci_before_signoff(ctx, state, phase_id=None, at_commit=False):
     """Sign-off reads the run the last close left out, so a verdict that arrived
-    after the final close is not dropped. The stop, or None."""
+    after the final close is not dropped: once when sign-off begins, as a close
+    reads it, and once more - `at_commit` - just before the sign-off commit,
+    where a run CI has not concluded is recorded as not reported, so the commit
+    carries the run whatever CI had said by then. The stop, or None."""
     cadence, _problem = _config_rules.ci_cadence_setting(ctx["config"])
     if cadence is None or not (state.get("ci") or {}).get("run"):
         return None
-    return ci_settle(ctx, state, cadence)[1]
+    return ci_settle(ctx, state, cadence, phase_id or ctx["phase"],
+                     at_commit=at_commit)[1]
 
 
 # --- a writer's edit outside the task's files -------------------------------------
@@ -12701,7 +12792,11 @@ def land(ctx, state, phase):
 
 def finish_signoff(ctx, state, phase):
     """The commit, the landing and the lock release after a recorded verdict;
-    the `done` instruction, or the decision or stop that held it."""
+    the `done` instruction, or the decision or stop that held it. The phase's
+    CI run is read and recorded first, so the sign-off commit carries it."""
+    stop = ci_before_signoff(ctx, state, phase["id"], at_commit=True)
+    if stop is not None:
+        return stop
     sha, stop = commit_signoff(ctx, phase)
     if stop is not None:
         return stop
@@ -12823,7 +12918,7 @@ def sign_off(ctx, state, manifest, phase):
                 phase["review"]["status"], ", and landed"
                 if phase.get("mergedAt") else ""))
         return finish_signoff(ctx, state, phase)
-    stop = ci_before_signoff(ctx, state)
+    stop = ci_before_signoff(ctx, state, phase["id"])
     if stop is not None:
         return stop
     # A phase gate launched in the background was launched by a sign-off
