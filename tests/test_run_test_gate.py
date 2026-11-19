@@ -5401,6 +5401,9 @@ def _cases(check):
     # So the cases skip, and say so. Weakening them into something that passes
     # on both would mean asserting a `cancelled` row nothing cancelled.
     _harness.stage(check, "ru0 the verdict-reuse block", _reuse_cases)
+    _harness.stage(check, "pr0 the part-repeat block", _part_reuse_cases)
+    _harness.stage(check, "pgo0 the phase-gate-only block",
+                   _phase_gate_only_cases)
     _harness.stage(check, "ur0 the unrecorded-run block", _unrecorded_cases)
     _harness.stage(check, "nv0 the no-verdict block", _no_verdict_cases)
     _harness.stage(check, "ce0 the empty-and-retry block",
@@ -7828,6 +7831,499 @@ def _unrecorded_cases(check):
           "banners not recorded" in text and "NO OVERLAP" not in text)
 
 
+def _left_word_cases(check):
+    """An entry names a left-out path through a WHOLE name, never a bare substring.
+
+    The over-fire these exist for was driven: a sweep step listing the suites
+    named after the evidence and journal modules read as grading the evidence
+    and the journal, because the directory's last component sat inside a test's
+    file name - so a green sweep was measured again on every unchanged tree.
+    Each repair case has its keep case beside it, because the cheap repair (stop
+    reading the command at all) passes every over-fire case and repeats a
+    verdict over a plan nobody validated.
+    """
+    excluded = ["docs/audit/audit-plan.json", "docs/audit/phases/P1.json",
+                "docs/audit/evidence", "docs/audit/journal"]
+    sweep = ("python3 tools/sweep-selftests.py tests/test__evidence_io.py "
+             "tests/test__journal_io.py")
+    got = M.grades_left_out([("sweep", sweep)], excluded)
+    check("lw1 a sweep step listing the suites named after the evidence and "
+          "journal modules names no left-out path - a word that only CONTAINS a "
+          "left-out name inside a longer file name is not that path: %r" % (got,),
+          got == [])
+    shell = [("sh", "sh -c 'cd tools && python3 sweep-selftests.py "
+                    "../tests/test__evidence_io.py | tee run.log'"),
+             ("near", "cat docs/audit/evidence-old/x.jsonl docs/audit/journal.md "
+                      "src/check-audit-plan.json")]
+    got = M.grades_left_out(shell, excluded)
+    check("lw2 ...nor does the same suite inside a quoted shell body with a "
+          "pipe, nor a sibling whose name only begins with a left-out "
+          "directory's or ends with the manifest's: %r" % (got,),
+          got == [])
+
+    named = [("path", "python3 v.py docs/audit/audit-plan.json"),
+             ("cd", "cd docs/audit && python3 v.py audit-plan.json"),
+             ("body", "sh -c \"cd docs/audit && python3 v.py ./audit-plan.json -q\""),
+             ("pipe", "cat docs/audit/audit-plan.json|python3 -m json.tool"),
+             ("opt", "python3 v.py --manifest=docs/audit/audit-plan.json"),
+             ("shard", "python3 v.py docs/audit/phases/../phases/P1.json")]
+    got = M.grades_left_out(named, excluded)
+    check("lw3 THE KEEP CASE: an entry reading the manifest by its path, by its "
+          "base name after a cd, inside a quoted shell body, before a pipe, as "
+          "an option's value, or a shard through a dotted path, still names "
+          "it: %r" % (got,),
+          got == [("path", "docs/audit/audit-plan.json"),
+                  ("cd", "docs/audit/audit-plan.json"),
+                  ("body", "docs/audit/audit-plan.json"),
+                  ("pipe", "docs/audit/audit-plan.json"),
+                  ("opt", "docs/audit/audit-plan.json"),
+                  ("shard", "docs/audit/phases/P1.json")])
+
+    under = [("row", "python3 read.py docs/audit/evidence/2026-11.jsonl"),
+             ("dir", "ls docs/audit/journal/"),
+             ("same", "python3 r.py ./docs/audit/evidence"),
+             ("opt", "python3 r.py --ledger=docs/audit/evidence/x.jsonl")]
+    got = M.grades_left_out(under, excluded)
+    check("lw4 ...and a file under a left-out directory, or the directory "
+          "itself, or one given as an option's value, is that directory: %r"
+          % (got,),
+          got == [("row", "docs/audit/evidence"),
+                  ("dir", "docs/audit/journal"),
+                  ("same", "docs/audit/evidence"),
+                  ("opt", "docs/audit/evidence")])
+
+    # NO LEXER DECIDES. A quote left open is read like any other text: the
+    # path written in it grades, and an entry naming nothing left out grades
+    # nothing - a shell would refuse to run it, so there is no verdict over the
+    # plan for a repeat to make stale.
+    unsplit = M.grades_left_out(
+        [("v", "python3 v.py \"unterminated"),
+         ("p", "python3 v.py \"docs/audit/audit-plan.json")], excluded)
+    check("lw5 a command with a quote left open is read for the paths written "
+          "in it: one naming the plan grades it, one naming nothing does not: "
+          "%r" % (unsplit,),
+          unsplit == [("p", "docs/audit/audit-plan.json")])
+    body = M.grades_left_out(
+        [("v", "sh -c 'python3 v.py \"unterminated'"),
+         ("p", "sh -c 'python3 v.py \"docs/audit/evidence/x.jsonl'")], excluded)
+    check("lw6 ...and so is a quoted shell body with one: %r" % (body,),
+          body == [("p", "docs/audit/evidence")])
+
+    # A DIRECTORY IS NOT ITS BASE NAME. Given the directories, a bare selector
+    # word spelled like one (`-k journal`) is not the journal, while the same
+    # word still names a FILE by its base name. Without `directories` every
+    # path is read as a file - the conservative reading, a run measured.
+    sel = [("k", "pytest -k journal tests/")]
+    as_dir = M.grades_left_out(sel, excluded, directories=["docs/audit/journal"])
+    as_file = M.grades_left_out(sel, excluded)
+    check("lw7 a bare word spelled like a left-out DIRECTORY's last component "
+          "names nothing once the directory is known to be one, and names it "
+          "while it is not: %r" % ((as_dir, as_file),),
+          as_dir == [] and as_file == [("k", "docs/audit/journal")])
+
+    root = os.path.realpath(_harness.fixture_root("run-test-gate-leftword-"))
+    absw = M.grades_left_out(
+        [("abs", "cat %s" % shlex.quote(os.path.join(root, "docs", "audit",
+                                                     "evidence", "x.jsonl")))],
+        excluded, directories=["docs/audit/evidence"])
+    check("lw8 an absolute path under the project holds the left-out path's "
+          "own text, so a row file spelled from the root still names the "
+          "evidence: %r" % (absw,),
+          absw == [("abs", "docs/audit/evidence")])
+
+    path_line = M.left_out_line("validate", "docs/audit/audit-plan.json")
+    odd = M.grades_left_out([("v", None)], excluded)
+    why_line = M.left_out_line("v", odd[0][1] if odd else "")
+    check("lw9 the line saying why the run is MEASURED still names the entry "
+          "and the path, and an entry whose command is not text names the "
+          "entry and the reason instead: %r" % ((path_line, why_line),),
+          "validate names docs/audit/audit-plan.json" in path_line
+          and "MEASURED and not repeated" in path_line
+          and why_line.startswith("[run-test-gate] v cannot be read for the "
+                                  "paths it names")
+          and "not text" in why_line
+          and "MEASURED and not repeated" in why_line)
+
+    _spaced_word_cases(check, root, excluded)
+    _literal_reading_cases(check, excluded)
+    _plan_reader_cases(check, excluded)
+
+
+def _grading_or_raise(gate, excluded, directories=()):
+    """`grades_left_out`'s answer, or the escape it raised as a string - so a
+    reading that dies on an input is one named failing case, not the end of the
+    block. `BaseException` on purpose: the escape this exists for was a
+    `RecursionError`, and a narrower catch lets the next one out."""
+    try:
+        return M.grades_left_out(gate, excluded, directories=directories)
+    except BaseException as exc:
+        return "RAISED %s: %s" % (type(exc).__name__, str(exc)[:80])
+
+
+def _literal_reading_cases(check, excluded):
+    """A literal left-out path in the command grades it, whatever surrounds it.
+
+    Each input here was driven by a review probe against an export of the
+    phase's base and head: a word reading lost the path behind a delimiter it
+    did not enumerate, recursed until the interpreter stopped it on a whitespace
+    kind it did not enumerate, and called an apostrophe inside double quotes an
+    unsplittable command. So none of these is a shell shape to support; each is
+    a place where the text holds the path and the answer must not depend on
+    what is around it. The allow block beside them is what a reading widened to
+    "any mention" breaks.
+    """
+    dirs = ["docs/audit/evidence", "docs/audit/journal"]
+    plan = "docs/audit/audit-plan.json"
+    glued = [("comma", "python3 v.py --files=docs/audit/audit-plan.json,src/a.py"),
+             ("lead", "python3 v.py --files=src/a.py,docs/audit/audit-plan.json"),
+             ("colon", "python3 v.py docs/audit/audit-plan.json:3"),
+             ("trail", "jq -e .meta docs/audit/audit-plan.json,"),
+             ("brace", "python3 -c \"import json; d={'p': "
+                       "'docs/audit/audit-plan.json'}; json.load(open(d['p']))\""),
+             ("bracket", "python3 -c \"x=['docs/audit/evidence/a.jsonl']\""),
+             # A shell glues `'s` onto this word and reads another file; the
+             # literal path between its quotes still grades - more, never less.
+             ("literal", "echo \"docs/audit/audit-plan.json\"'s copy'")]
+    got = _grading_or_raise(glued, excluded, directories=dirs)
+    check("lw16 a left-out path followed or preceded by a comma, a colon, a "
+          "closing brace or a bracket inside a quoted body, or written "
+          "literally between quotes a shell would glue a word onto, names it: "
+          "%r" % (got,),
+          got == [("comma", plan), ("lead", plan), ("colon", plan),
+                  ("trail", plan), ("brace", plan),
+                  ("bracket", "docs/audit/evidence"), ("literal", plan)])
+
+    # Every whitespace kind a reader might split on, and a nesting deep enough
+    # that a reader re-reading each quoted body would exhaust the stack.
+    kinds = [("nbsp", u"\u00a0"), ("formfeed", "\x0c"), ("vtab", "\x0b"),
+             ("emspace", u"\u2003"), ("ideographic", u"\u3000")]
+    spaced = []
+    for tag, ws in kinds:
+        spaced.append((tag, "python3 v.py%sdocs/audit/audit-plan.json" % ws))
+        spaced.append((tag + "-none", "python3 v.py --title a%sb" % ws))
+        spaced.append((tag + "-quoted", "echo 'x%sy' docs/audit/audit-plan.json"
+                       % ws))
+    spaced.append(("deep", "sh -c " + "'\"" * 400 + plan + "\"'" * 400))
+    got = _grading_or_raise(spaced, excluded, directories=dirs)
+    want = []
+    for tag, _ws in kinds:
+        want.extend([(tag, plan), (tag + "-quoted", plan)])
+    want.append(("deep", plan))
+    check("lw17 an entry holding a non-breaking space, a form feed, a vertical "
+          "tab or another whitespace kind, or quotes nested hundreds deep, "
+          "raises nothing, grades the plan where it is written and nothing "
+          "where it is not: %r" % (got,),
+          got == want)
+
+    apostrophe = [("dq", "python3 -c \"print(\\\"it's fine\\\")\""),
+                  ("k", "pytest -k \"not don't_run\""),
+                  ("then", "echo \"it's\" && python3 v.py docs/audit/audit-plan.json")]
+    got = _grading_or_raise(apostrophe, excluded, directories=dirs)
+    lines = ([M.left_out_line(name, what) for name, what in got]
+             if isinstance(got, list) else [])
+    check("lw18 an apostrophe inside a double-quoted body is no reason to "
+          "measure: an entry naming nothing grades nothing, and one naming the "
+          "plan says it NAMES it - no line claims it cannot be read: %r"
+          % (lines or got,),
+          got == [("then", plan)] and len(lines) == 1
+          and "then names docs/audit/audit-plan.json" in lines[0]
+          and not any("cannot be read" in ln for ln in lines))
+
+    # WINDOWS-SHAPED, BUILT BY HAND so every leg runs them: on Windows a path's
+    # own separators are backslashes, and a reading that treats a backslash as
+    # a POSIX escape eats them - which is how `lw10`'s escaped-space form named
+    # nothing on CI's windows legs while every posix leg was green.
+    base = "C:\\Users\\a b\\proj"
+    row = base + "\\docs\\audit\\evidence\\x.jsonl"
+    wplan = base + "\\docs\\audit\\audit-plan.json"
+    windows = [("dq", "python3 v.py \"%s\"" % wplan),
+               ("sq", "type '%s'" % row),
+               ("esc", "type %s" % row.replace(" ", "\\ ")),
+               ("body", "sh -c 'type \"%s\" | more'" % row),
+               ("mixed", "python3 v.py %s" % wplan.replace("\\", "/")
+                .replace(" ", "\\ ")),
+               ("bare", "python3 v.py docs\\audit\\audit-plan.json")]
+    got = _grading_or_raise(windows, excluded, directories=dirs)
+    check("lw19 a Windows-shaped absolute path - backslash separators, a "
+          "directory whose name holds a space, quoted, single-quoted, with the "
+          "space escaped, inside a shell body, or written with forward "
+          "slashes - and a relative backslash path each name the record: %r"
+          % (got,),
+          got == [("dq", plan), ("sq", "docs/audit/evidence"),
+                  ("esc", "docs/audit/evidence"), ("body", "docs/audit/evidence"),
+                  ("mixed", plan), ("bare", plan)])
+
+    # THE ALLOW CASES, for the mutation that widens the reading until it fires
+    # on any mention: a left-out name inside a longer file name - before or
+    # after it, behind a delimiter, under a Windows path - is not that path.
+    allow = [("sweep", "python3 tools/sweep-selftests.py --files="
+                       "tests/test__evidence_io.py,tests/test__journal_io.py"),
+             ("win", "python3 tools\\sweep-selftests.py "
+                     "C:\\a b\\tests\\test__evidence_io.py:3"),
+             ("near", "cat docs/audit/audit-plan.json.bak my-audit-plan.json "
+                      "docs/audit/evidence-old/x docs/audit/journal_io.md"),
+             ("k", "pytest -k journal tests/"),
+             ("plain", "pytest -q tests/ && ruff check src")]
+    got = _grading_or_raise(allow, excluded, directories=dirs)
+    check("lw20 THE ALLOW CASE: an entry naming only suites whose file names "
+          "contain the evidence's or the journal's name, a backup or a sibling "
+          "whose name runs on past a left-out one, a bare selector, or nothing "
+          "left out at all, grades nothing: %r" % (got,),
+          got == [])
+
+    odd = _grading_or_raise([("v", 3)], excluded, directories=dirs)
+    line = (M.left_out_line("v", odd[0][1])
+            if isinstance(odd, list) and odd else "")
+    check("lw21 a command that is not text cannot be read at all, so it is "
+          "measured - and its line says it cannot be read, in the sentence "
+          "the drive matches by prefix: %r" % (line or odd,),
+          isinstance(odd, list) and len(odd) == 1
+          and line.startswith("[run-test-gate] v cannot be read for the paths "
+                              "it names")
+          and "MEASURED and not repeated" in line)
+
+    # THE LIMITS THE READING STATES, held to what it does. Each `kept` entry is
+    # a stale green the comment above `run-test-gate.UNREADABLE` says it
+    # accepts; each `read` entry is one it says it does not. A change closing a
+    # limit turns this red, and the comment is then the thing to correct.
+    kept = [("var", "python3 v.py \"$AUDIT_PLAN\""),
+            ("glob", "python3 v.py docs/audit/*.json"),
+            ("ancestor", "python3 v.py docs/audit"),
+            ("dot", "python3 v.py ."),
+            ("cd", "cd docs/audit && ls journal"),
+            ("brace", "python3 v.py docs/audit/audit-{plan,x}.json"),
+            # A suite that opens the plan's phases itself, run by a gate that
+            # runs no plan reader: nothing in the command says the plan.
+            ("suite", "python3 tools/sweep-selftests.py tests/test_reads_tasks.py")]
+    read = [("quoted", "python3 v.py docs/audit/audit-\"plan\".json"),
+            ("dotted", "ls docs/audit/phases/../journal/x.jsonl")]
+    got = (_grading_or_raise(kept, excluded, directories=dirs),
+           _grading_or_raise(read, excluded, directories=dirs))
+    check("lw22 the limits the reading documents are what it does: a "
+          "variable, a glob, an ancestor directory, a directory's bare name "
+          "after a cd, a brace expansion and a suite that opens the plan "
+          "itself name nothing, while a name assembled from quoted pieces and "
+          "a path through `..` are read: %r"
+          % (got,),
+          got == ([], [("quoted", plan), ("dotted", "docs/audit/journal")]))
+
+
+def _plan_reader_cases(check, excluded):
+    """More names for the one search: a script the plugin ships, a name in
+    another case, a backslash a shell drops, the directory the shards live in.
+
+    Each was a stale green a review probe drove on an export of the phase: a
+    gate entry running `audit-status.py --gate` reads the plan through the
+    configured path and names none of it; `AUDIT-PLAN.JSON` is the plan on a
+    file system that folds case; `audit-pl\\an.json` is the plan once a shell
+    has dropped the backslash; `ls docs/audit/phases` lists the shards. Every
+    repair has its allow case beside it, because the cheap repair - grade any
+    mention - passes every repair case and repeats nothing at all.
+    """
+    plan = "docs/audit/audit-plan.json"
+    dirs = ["docs/audit/evidence", "docs/audit/journal"]
+    names = M.plugin_script_names()
+    check("lw23 the script names the reading searches are the ones the plugin "
+          "ships, asked of the module that resolves scripts by basename rather "
+          "than typed into the runner: same=%r readers=%r"
+          % (sorted(names) == sorted(_loader.script_index()),
+             [n for n in ("audit-status.py", "validate-manifest.py")
+              if n in names]),
+          len(names) > 0 and sorted(names) == sorted(_loader.script_index())
+          and "audit-status.py" in names and "validate-manifest.py" in names)
+
+    readers = [("status", "python3 plugins/audit/scripts/status/audit-status.py "
+                          "--gate"),
+               ("validate",
+                "python3 plugins/audit/scripts/manifest/validate-manifest.py"),
+               ("bare", "validate-manifest.py -q")]
+    got = _grading_or_raise(readers, excluded, directories=dirs)
+    check("lw24 an entry running one of the plugin's own scripts with no path "
+          "argument - `audit-status.py --gate`, `validate-manifest.py` - grades "
+          "the plan it reads, and says which script: %r" % (got,),
+          got == [("status", "%s through audit-status.py" % (plan,)),
+                  ("validate", "%s through validate-manifest.py" % (plan,)),
+                  ("bare", "%s through validate-manifest.py" % (plan,))])
+    line = (M.left_out_line("status", got[0][1])
+            if isinstance(got, list) and got else "")
+    check("lw25 ...and its line is the sentence the drive matches by prefix: "
+          "%r" % (line,),
+          line.startswith("[run-test-gate] status names ")
+          and "audit-status.py" in line and "MEASURED and not repeated" in line)
+
+    suites = [("suite", "python3 tools/sweep-selftests.py "
+                        "tests/test_run_test_gate.py tests/test_audit_status.py "
+                        "tests/test_validate_manifest.py tests/test__evidence_io.py"),
+              ("near", "python3 my-audit-status.py audit-status.pyc "
+                       "x/validate-manifest.py.bak")]
+    got = _grading_or_raise(suites, excluded, directories=dirs)
+    check("lw26 THE ALLOW CASE: a suite whose file name merely contains a "
+          "script's name - `test_run_test_gate.py` does not name "
+          "`run-test-gate.py`, `test__evidence_io.py` does not name "
+          "`_evidence_io.py` - and a script name run on into a longer one "
+          "grade nothing: %r" % (got,),
+          got == [])
+
+    folded = [("upper", "cat DOCS/AUDIT/AUDIT-PLAN.JSON"),
+              ("mixed", "ls docs/audit/Evidence/x.jsonl"),
+              ("script", "python3 C:\\Plugin\\Audit-Status.py --gate")]
+    got = _grading_or_raise(folded, excluded, directories=dirs)
+    check("lw27 a name written in another case is the same file on a file "
+          "system that folds case - the plan, a left-out directory, a "
+          "script: %r" % (got,),
+          got == [("upper", plan), ("mixed", "docs/audit/evidence"),
+                  ("script", "%s through audit-status.py" % (plan,))])
+    near = [("near", "cat MY-AUDIT-PLAN.JSON docs/audit/EVIDENCE-OLD/x"),
+            ("suite", "python3 tools/sweep-selftests.py TESTS/TEST__EVIDENCE_IO.PY "
+                      "TESTS/TEST_AUDIT_STATUS.PY"),
+            ("k", "pytest -k Journal tests/")]
+    got = _grading_or_raise(near, excluded, directories=dirs)
+    check("lw28 THE ALLOW CASE: folded, a sibling whose name runs on past a "
+          "left-out one, a suite named after a module, and a bare selector "
+          "still grade nothing: %r" % (got,),
+          got == [])
+
+    dropped = [("file", "cat docs/audit/audit-pl\\an.json"),
+               ("dir", "ls docs/audit/evi\\dence/x.jsonl"),
+               ("script", "python3 vali\\date-manifest.py")]
+    got = _grading_or_raise(dropped, excluded, directories=dirs)
+    check("lw29 a backslash a shell drops before a letter hides no name: the "
+          "plan, a left-out directory and a script each grade: %r" % (got,),
+          got == [("file", plan), ("dir", "docs/audit/evidence"),
+                  ("script", "%s through validate-manifest.py" % (plan,))])
+    glued = [("near", "cat docs/audit/audit-pl\\an.json.bak"),
+             ("sibling", "printf 'a\\b' evi\\dence-old/x"),
+             ("win", "type C:\\repo\\tests\\test__evidence_io.py")]
+    got = _grading_or_raise(glued, excluded, directories=dirs)
+    check("lw30 THE ALLOW CASE: with its backslashes dropped, a backup, a "
+          "sibling directory and a Windows suite path still grade nothing: %r"
+          % (got,),
+          got == [])
+
+    shards = [("dir", "ls docs/audit/phases"),
+              ("slash", "ls docs/audit/phases/"),
+              ("glob", "cat docs/audit/phases/P1*.json"),
+              ("win", "dir docs\\audit\\phases")]
+    got = _grading_or_raise(shards, excluded, directories=dirs)
+    check("lw31 the directory holding the shards is a left-out directory: "
+          "named bare, with a trailing separator, under a glob or with "
+          "Windows separators, it grades: %r" % (got,),
+          got == [(tag, "docs/audit/phases") for tag, _c in shards])
+    apart = [("k", "pytest -k phases tests/"),
+             ("near", "ls docs/audit/phases-old/ src/phases.py")]
+    beside = [("plugin", "ruff check plugins/audit tools"),
+              ("ls", "ls docs/audit/")]
+    got = (_grading_or_raise(apart, excluded, directories=dirs),
+           _grading_or_raise(beside, ["docs/audit/audit-plan.json",
+                                      "docs/audit/P1.json"]))
+    check("lw32 THE ALLOW CASE: a bare selector and a sibling of the shards' "
+          "directory grade nothing, and a shard kept beside the plan makes no "
+          "left-out directory of the plan's own - `plugins/audit` would "
+          "otherwise grade on every repository: %r" % (got,),
+          got == ([], []))
+
+
+def _spaced_word_cases(check, root, excluded):
+    """A path holding a space names its record however a shell would quote it.
+
+    CI's spaced leg went red on `lw8`: the case quoted an absolute path under a
+    temp directory whose name held a space, and the entry was read as naming
+    nothing - so a step grading the evidence would have been repeated from a
+    stored verdict, the unsafe direction. These build the space themselves,
+    under the fixture root, so they go red on every leg rather than only on the
+    one that happens to put a space in TMPDIR. Nothing is created on disk: what
+    is asked is whether an entry's text holds the path.
+    """
+    spaced = os.path.join(root, "s p")
+    row = os.path.join(spaced, "docs", "audit", "evidence", "x.jsonl")
+    plan = os.path.join(spaced, "docs", "audit", "audit-plan.json")
+    absolute = [("dq", "python3 v.py \"%s\"" % plan),
+                ("sq", "cat %s" % shlex.quote(row)),
+                ("esc", "cat %s" % row.replace(" ", "\\ ")),
+                ("body", "sh -c 'cat \"%s\" | wc -l'" % row)]
+    got = M.grades_left_out(absolute, excluded)
+    check("lw10 under a project whose path holds a space, an absolute path in "
+          "double quotes, in single quotes, with its space escaped, and inside "
+          "a quoted shell body each name the left-out record it resolves to: "
+          "%r" % (got,),
+          got == [("dq", "docs/audit/audit-plan.json"),
+                  ("sq", "docs/audit/evidence"),
+                  ("esc", "docs/audit/evidence"),
+                  ("body", "docs/audit/evidence")])
+
+    # THE OVER-FIRE DIRECTION. Treating every quoted or spaced word as left out
+    # passes lw10 and turns the repeat off for any project under such a path.
+    plain = [("src", "python3 v.py \"%s\"" % os.path.join(spaced, "src", "a b.py")),
+             ("suite", "python3 tools/sweep-selftests.py %s"
+              % shlex.quote(os.path.join(spaced, "tests",
+                                         "test__evidence_io.py")))]
+    got = M.grades_left_out(plain, excluded)
+    check("lw11 ...and a quoted absolute path under that project naming a "
+          "source file or a suite named after the evidence names nothing: %r"
+          % (got,),
+          got == [])
+
+    # A RELATIVE PATH WITH A SPACE: the project keeps its plan in a directory
+    # whose own name holds one, so the left-out paths do too.
+    rel = ["my plan/audit-plan.json", "my plan/evidence"]
+    dirs = ["my plan/evidence"]
+    named = [("dq", "python3 v.py \"my plan/audit-plan.json\""),
+             ("esc", "cat my\\ plan/evidence/x.jsonl"),
+             ("sq", "ls 'my plan/evidence'"),
+             ("body", "sh -c 'python3 v.py \"my plan/evidence/x.jsonl\"'")]
+    got = M.grades_left_out(named, rel, directories=dirs)
+    check("lw12 a relative path with a space, double-quoted, escaped, "
+          "single-quoted or quoted inside a shell body, names the left-out "
+          "record: %r" % (got,),
+          got == [("dq", "my plan/audit-plan.json"),
+                  ("esc", "my plan/evidence"),
+                  ("sq", "my plan/evidence"),
+                  ("body", "my plan/evidence")])
+    # Unquoted, a shell reads `my` and `plan/evidence/x.jsonl` - two paths, and
+    # neither is under the left-out directory. The reading names it anyway: it
+    # reads the text, not a shell's words, and reading MORE than a shell is the
+    # direction that costs a run rather than a stale verdict. A directory is
+    # read by its last component beside a separator, so a sibling whose own
+    # name only begins with it is still not it.
+    apart = [("two", "cat my plan/evidence/x.jsonl")]
+    near = [("near", "cat \"my plan/evidence-old/x.jsonl\" my\\ plan/evidenced")]
+    got = (M.grades_left_out(apart, rel, directories=dirs),
+           M.grades_left_out(near, rel, directories=dirs))
+    check("lw13 ...the same path unquoted still names it - read more than a "
+          "shell would, never less - while a sibling whose name runs on past "
+          "the directory's is not it: %r" % (got,),
+          got == ([("two", "my plan/evidence")], []))
+
+    unsplit = [("open", "cat \"%s" % row), ("tail", "cat %s\\" % row)]
+    got = M.grades_left_out(unsplit, excluded)
+    lines = [M.left_out_line(name, why) for name, why in got]
+    check("lw14 an entry holding a spaced path that a shell cannot split - a "
+          "quote left open, an escape with nothing after it - still names the "
+          "record written in it, and its line says it NAMES it: %r" % (lines,),
+          got == [("open", "docs/audit/evidence"), ("tail", "docs/audit/evidence")]
+          and all("names docs/audit/evidence" in ln
+                  and "MEASURED and not repeated" in ln for ln in lines))
+
+    # A BACKSLASH BEFORE A NEWLINE joins two lines into one, for a shell. Once a
+    # backslash is read as an escape, an entry wrapped that way must still be
+    # read: split line by line, the first half has an escape with nothing after
+    # it and the whole entry is measured on every run; lexed whole with the pair
+    # kept, the path broken across the lines names nothing, a stored verdict over
+    # the ledger repeated.
+    wrapped = [("wrap", "python3 v.py \\\n  %s" % shlex.quote(row)),
+               ("cut", "cat docs/audit/\\\nevidence/x.jsonl"),
+               ("lines", "true\ncat \"%s\"" % row),
+               ("quoted", "printf '%%s\\n' \"a\nb\" docs/audit/evidence/x.jsonl")]
+    got = M.grades_left_out(wrapped, excluded,
+                            directories=["docs/audit/evidence"])
+    check("lw15 a multi-line entry is read as a shell reads it - a backslash "
+          "before a newline joins the lines, a path broken across them is one "
+          "path, and a quote may span them: %r" % (got,),
+          got == [("wrap", "docs/audit/evidence"), ("cut", "docs/audit/evidence"),
+                  ("lines", "docs/audit/evidence"),
+                  ("quoted", "docs/audit/evidence")])
+
+
 def _reuse_cases(check):
     """A verdict already measured on these bytes, and everything that must stop it.
 
@@ -7883,6 +8379,9 @@ def _reuse_cases(check):
                             ["docs/audit/audit-plan.json"])
           == [("v", "docs/audit/audit-plan.json")])
 
+    _left_word_cases(check)
+    _symlinked_plan_cases(check)
+
     root = _harness.fixture_root("run-test-gate-reuse-")
     os.makedirs(os.path.join(root, "docs", "audit", "phases"))
     os.makedirs(os.path.join(root, ".claude"))
@@ -7934,6 +8433,11 @@ def _reuse_cases(check):
                          "nodePreamble": "source ~/.nvm/nvm.sh && nvm use"}}
     plain_key = M.reuse_identity(root, mp, declared, [("ok", "true")],
                                  ["src/a.py"])
+    # ONE MANIFEST ON BOTH SIDES: the plan's meta is in the key, so a pair whose
+    # manifests differed in `nodePreamble` would differ there and this case
+    # would stop asking about the executed string at all.
+    plain_pre = M.reuse_identity(root, mp, prefixed, [("ok", "true")],
+                                 ["src/a.py"])
     pre_key = M.reuse_identity(
         root, mp, prefixed,
         [("ok", "source ~/.nvm/nvm.sh && nvm use && true")], ["src/a.py"])
@@ -7942,9 +8446,28 @@ def _reuse_cases(check):
           "carries `meta.nodePreamble` in front - and they are the same gate, so "
           "they share an identity. Comparing what was executed would make two "
           "operators whose shell preludes differ unable to ever agree: %r"
-          % (plain_key["key"] == pre_key["key"],),
-          plain_key["key"] is not None
-          and plain_key["key"] == pre_key["key"])
+          % (plain_pre["key"] == pre_key["key"],),
+          plain_pre["key"] is not None
+          and plain_pre["key"] == pre_key["key"])
+
+    # THE PLAN'S META IS IN THE KEY. A step can read the plan without naming
+    # it - this repository's own sweep holds suites that read the live plan's
+    # meta - so an edit to any meta block must measure. The one meta key a
+    # recorded run writes itself, the evidence boundary, is not an edit.
+    def _meta(extra):
+        body = {"buildCommands": {"ok": "true"}}
+        body.update(extra)
+        return M.reuse_identity(root, mp, {"meta": body}, [("ok", "true")],
+                                ["src/a.py"])["key"]
+    meta_a = _meta({"defaultSkills": ["writing-python"]})
+    meta_b = _meta({"defaultSkills": ["no-silent-pass"]})
+    meta_since = _meta({"defaultSkills": ["writing-python"],
+                        _ev_io.SINCE_KEY: {"at": "2026-01-01T00:00:00Z"}})
+    check("ru50 an edit to a meta block the gate does not declare moves the "
+          "key, while the evidence boundary a recorded run writes into meta "
+          "does not: edit moves=%r boundary moves=%r"
+          % (meta_a != meta_b, meta_a != meta_since),
+          meta_a is not None and meta_a != meta_b and meta_a == meta_since)
 
     remapped = M.reuse_identity(root, mp, {"meta": {"buildCommands":
                                                     {"ok": "pytest -q"}}},
@@ -7975,6 +8498,52 @@ def _reuse_cases(check):
           "declarations reach two different verdicts: %r"
           % (other_scope["key"] != plain_key["key"],),
           other_scope["key"] != plain_key["key"])
+
+    # A STEP IS ASKED BY THE COMMAND THAT RUNS, NOT BY ITS NAME. A step the
+    # change widened onto the phase gate is named `affected/phase-gate: <key>`,
+    # and that name is no build key - so a reading of names alone looked the
+    # name up, got the name back, and found no path in it, while the command
+    # under the key validates the plan. This repository's own `validate`,
+    # `gate` and `report` keys read the plan.
+    arm = "%s%s: validate" % (_ev_io.DERIVED_STEP_PREFIX,
+                              _ev_io.DERIVED_PHASE_GATE_ARM)
+    reads_plan = {"meta": {"buildCommands": {
+        "validate": "python3 v.py docs/audit/audit-plan.json"}}}
+    # THE RUNNING COMMAND HOLDS NO PLAN, so only the declared reading - the
+    # key's command - can grade this step, and a reading that dropped it fails
+    # the first conjunct below.
+    by_key = M.reuse_identity(root, mp, reads_plan, [(arm, "true")],
+                              ["src/a.py"])
+    run_only = M.reuse_identity(
+        root, mp, declared,
+        [("%ssuites: tests/test_a.py" % _ev_io.DERIVED_STEP_PREFIX,
+          "python3 tools/sweep.py tests/test_a.py docs/audit/audit-plan.json")],
+        ["src/a.py"])
+    names_nothing = M.reuse_identity(root, mp, {"meta": {"buildCommands": {
+        "validate": "pytest -q tests/"}}}, [(arm, "pytest -q tests/")],
+        ["src/a.py"])
+    check("ru46 a phase-gate arm step whose build key validates the plan while "
+          "its running command names nothing, and a derived step whose "
+          "running command names it, each grade the "
+          "plan; an arm step whose key names nothing left out grades nothing: "
+          "%r" % ((by_key["grading"], run_only["grading"],
+                   names_nothing["grading"]),),
+          by_key["grading"] == [(arm, "docs/audit/audit-plan.json")]
+          and run_only["grading"] == [
+              ("%ssuites: tests/test_a.py" % _ev_io.DERIVED_STEP_PREFIX,
+               "docs/audit/audit-plan.json")]
+          and names_nothing["grading"] == [])
+    other_key = M.reuse_identity(root, mp, {"meta": {"buildCommands": {
+        "validate": "python3 v2.py docs/audit/audit-plan.json"}}},
+        [(arm, "python3 v2.py docs/audit/audit-plan.json")], ["src/a.py"])
+    check("ru47 ...and the arm step's declaration is its key's command, so the "
+          "same arm over a remapped key is a different gate: %r"
+          % ((M.declared_gate([arm], reads_plan["meta"]["buildCommands"]),
+              other_key["key"] != by_key["key"]),),
+          M.declared_gate([arm], reads_plan["meta"]["buildCommands"])
+          == [(arm, "python3 v.py docs/audit/audit-plan.json")]
+          and by_key["key"] is not None
+          and other_key["key"] != by_key["key"])
 
     excluded, _no_drops = _ev_io.recorded_paths(root, mp)
     check("ru5 the paths this recorder writes are DERIVED and include the "
@@ -8090,8 +8659,24 @@ def _reuse_cases(check):
           and "stays inside the content identity" in _sibling_text)
 
     # --- through `main`, which is where the wiring lives --------------------
+    with open(mp) as fh:
+        meta_before = json.load(fh).get("meta") or {}
     code_one, text_one = _run()
+    with open(mp) as fh:
+        meta_after = json.load(fh).get("meta") or {}
     code_two, text_two = _run()
+    check("ru51 THE REPEAT THE PHASE EXISTS FOR SURVIVES THE META HALF: the "
+          "first recorded run on this plan wrote the evidence boundary into "
+          "meta and changed nothing else there, and the ask straight after it "
+          "repeated: added=%r rest same=%r repeated=%r"
+          % (sorted(set(meta_after) - set(meta_before)),
+             dict((k, v) for k, v in meta_after.items()
+                  if k != _ev_io.SINCE_KEY) == meta_before,
+             "GATE VERDICT REUSED" in text_two),
+          sorted(set(meta_after) - set(meta_before)) == [_ev_io.SINCE_KEY]
+          and dict((k, v) for k, v in meta_after.items()
+                   if k != _ev_io.SINCE_KEY) == meta_before
+          and "GATE VERDICT REUSED" in text_two)
     rows = _recorded_rows(evdir)
     first, second = rows[0], rows[1]
     check("ru6 THE REQUIREMENT: a second run over an unchanged tree REPEATS the "
@@ -8464,6 +9049,483 @@ def _reuse_cases(check):
           and "GATE VERDICT REUSED" in after_text
           and (landed.get("reusedFrom") or {}).get("runId")
           == seeded.get("runId"))
+
+
+def _symlinked_plan_cases(check):
+    """A plan reached through a symlink is graded under both of its names.
+
+    The recorder leaves the plan out under its RESOLVED name, so an entry
+    naming the plan the way the project configures it - the link - was read as
+    naming nothing left out, and its green was repeated over a plan nobody had
+    validated. The link is built here, relative, the way a repository that
+    moved its plan keeps the old path working; a platform that will not make
+    one skips by name.
+    """
+    root = os.path.realpath(_harness.fixture_root("run-test-gate-symplan-"))
+    for rel in ("plans", os.path.join("docs", "audit"), ".claude"):
+        os.makedirs(os.path.join(root, rel))
+    with open(os.path.join(root, "plans", "main.json"), "w") as fh:
+        json.dump({"meta": {"version": 3, "buildCommands": {}}, "phases": []}, fh)
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    link = os.path.join(root, "docs", "audit", "audit-plan.json")
+    try:
+        os.symlink(os.path.join("..", "..", "plans", "main.json"), link)
+    except (OSError, NotImplementedError, AttributeError):
+        print("SKIP ru48-ru49 (this platform will not create a symlink here)")
+        return
+    gate = [("configured", "python3 v.py docs/audit/audit-plan.json"),
+            ("target", "python3 v.py plans/main.json"),
+            ("plain", "pytest -q tests/")]
+    got = M.reuse_identity(root, link, {"meta": {}}, gate,
+                           ["src/a.py"])["grading"]
+    check("ru48 a symlinked plan is graded by an entry naming its configured "
+          "path and by one naming its target: %r" % (got,),
+          got == [("configured", "docs/audit/audit-plan.json"),
+                  ("target", "plans/main.json")])
+    near = [("bak", "cat docs/audit/audit-plan.json.bak plans/main.json.orig"),
+            ("dir", "ls plans/ docs/audit/")]
+    got = M.reuse_identity(root, link, {"meta": {}}, near,
+                           ["src/a.py"])["grading"]
+    check("ru49 THE ALLOW CASE: a backup of either name, and the directories "
+          "the two names sit in, grade nothing - the target's directory is not "
+          "a shards' directory: %r" % (got,),
+          got == [])
+
+
+def _part_reuse_cases(check):
+    """A gate holding a step that grades the TREE and a step that grades the
+    PLAN repeats the first and measures the second.
+
+    The plan is among the paths the content identity leaves out, so an entry
+    naming it cannot be repeated - but the step beside it can, and measuring it
+    again only because a sibling names the plan is the cost these cases pin
+    down. Each step appends its name to an ignored log file, so how often each
+    one RAN is counted from the commands themselves rather than read off the
+    row the runner writes about them; the tree step sleeps, so a duration
+    copied from the run it repeats is visible in the row's own figure.
+
+    The word `part-reused` is spelled here as the ledger holds it: a row on disk
+    is the contract, so the fixture does not borrow the module's constant.
+    """
+    root = _harness.fixture_root("run-test-gate-part-reuse-")
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    os.makedirs(os.path.join(root, ".claude"))
+    os.makedirs(os.path.join(root, "src"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    sources = {
+        ".gitignore": "runs.log\n",
+        "src/a.py": "declared = 1\n",
+        "tree.py": ("import sys\nimport time\n"
+                    "with open('runs.log', 'a') as fh:\n"
+                    "    fh.write('tree\\n')\n"
+                    "time.sleep(1.0)\n"
+                    "with open('src/a.py') as fh:\n"
+                    "    sys.exit(1 if 'BROKEN' in fh.read() else 0)\n"),
+        "plan.py": ("import json\nimport sys\n"
+                    "with open('runs.log', 'a') as fh:\n"
+                    "    fh.write('plan\\n')\n"
+                    "with open(sys.argv[1]) as fh:\n"
+                    "    title = json.load(fh)['phases'][0]['title']\n"
+                    "sys.exit(1 if title == 'red' else 0)\n"),
+    }
+    for rel, body in sources.items():
+        with open(os.path.join(root, rel), "w") as fh:
+            fh.write(body)
+    mp = os.path.join(root, "docs", "audit", "audit-plan.json")
+    build = {"tree": "python3 tree.py",
+             "plan": "python3 plan.py docs/audit/audit-plan.json"}
+
+    def _plan(gate, title="one", meta=None):
+        """The index and the shard; the manifest is outside the identity
+        but for its meta, so a title change moves nothing a repeat is keyed
+        on, and `meta` - more keys for the meta block - does."""
+        body = {"version": 3, "buildCommands": build}
+        body.update(meta or {})
+        with open(mp, "w") as fh:
+            json.dump({"meta": body,
+                       "phases": [{"id": "P1", "title": title,
+                                   "shard": "phases/P1.json"}]}, fh)
+        with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+                  "w") as fh:
+            json.dump({"id": "P1", "title": title, "status": "in_progress",
+                       "testGate": gate, "tasks": [
+                           {"id": "P1.1", "title": "t", "status": "in_progress",
+                            "files": ["src/a.py"]}]}, fh)
+
+    _plan(["tree", "plan"])
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", ".gitignore", "docs", ".claude", "src", "tree.py",
+                 "plan.py"],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    evdir = os.path.join(root, "docs", "audit", "evidence")
+
+    def _runs():
+        """`(tree, plan)`: how many times each step's command really ran."""
+        path = os.path.join(root, "runs.log")
+        if not os.path.exists(path):
+            return 0, 0
+        with open(path) as fh:
+            said = fh.read().split()
+        return said.count("tree"), said.count("plan")
+
+    def _run(*extra):
+        lines = []
+        code = M.main([mp, "P1", "--project-dir", root, "--record"]
+                      + list(extra), out=lines.append)
+        return code, "\n".join(lines), _recorded_rows(evdir)[-1]
+
+    def _step(row, name):
+        return next((s for s in row.get("steps") or []
+                     if s.get("name") == name), {})
+
+    def _source(row, name):
+        return (_step(row, name).get("reusedFrom") or {}).get("runId")
+
+    code_a, _text_a, row_a = _run()
+    code_b, text_b, row_b = _run()
+    after_b = _runs()
+    check("pr1 THE REQUIREMENT: asked twice over an unchanged tree, the step "
+          "grading the tree runs ONCE and the step naming the plan runs TWICE; "
+          "the second row is `part-reused`, keeps both steps in declared order, "
+          "and names the first run as the source of the repeated step and of "
+          "nothing else: runs=%r exit=%r/%r source=%r row=%r"
+          % (after_b, code_a, code_b, row_b.get("verdictSource"),
+             [(s.get("name"), s.get("reusedFrom")) for s in row_b["steps"]]),
+          code_a == M.E_OK and code_b == M.E_OK
+          and after_b == (1, 2)
+          and row_a.get("verdictSource") is None
+          and row_b.get("verdictSource") == "part-reused"
+          and [s.get("name") for s in row_b["steps"]] == ["tree", "plan"]
+          and _source(row_b, "tree") == row_a["runId"]
+          and "reusedFrom" not in _step(row_b, "plan")
+          and (row_b.get("reusedFrom") or {}).get("runId") == row_a["runId"]
+          and row_b.get("status") == "passed")
+    check("pr2 ...and the run SAYS so on a line of its own - not the whole-run "
+          "repeat banner, which would claim nothing ran - naming the source run, "
+          "the repeated step and the measured one, and still ends on the green "
+          "banner an orchestrator keys on: %r" % (text_b[-900:],),
+          "GATE VERDICT REUSED" not in text_b
+          and ("repeated from run %s" % (row_a["runId"],)) in text_b
+          and "measured here: plan" in text_b
+          and "GATE GREEN" in text_b)
+    tree_took = _step(row_a, "tree").get("durationMs")
+    check("pr3 A REPEATED STEP'S DURATION IS NOT TIME THIS RUN SPENT: the row's "
+          "durationMs is below what the repeated step took when it was "
+          "measured, and the repeated step carries no durationMs of its own: "
+          "measured tree=%r row=%r repeated step=%r"
+          % (tree_took, row_b.get("durationMs"), _step(row_b, "tree")),
+          isinstance(tree_took, int) and tree_took >= 1000
+          and isinstance(row_b.get("durationMs"), int)
+          and row_b["durationMs"] < tree_took
+          and "durationMs" not in _step(row_b, "tree"))
+
+    # THE PLAN ALONE TURNS RED: the identity cannot see it, the plan step can.
+    _plan(["tree", "plan"], title="red")
+    code_c, text_c, row_c = _run()
+    check("pr4 a manifest change that turns the plan step red records a RED "
+          "verdict, with the tree step still repeated from the first run: "
+          "runs=%r exit=%r status=%r failed=%r source=%r"
+          % (_runs(), code_c, row_c.get("status"), row_c.get("failed"),
+             _source(row_c, "tree")),
+          _runs() == (1, 3) and code_c == M.E_FAIL
+          and row_c.get("status") == "failed"
+          and row_c.get("failed") == ["plan"]
+          and row_c.get("verdictSource") == "part-reused"
+          and _source(row_c, "tree") == row_a["runId"]
+          and "GATE RED: plan" in text_c)
+
+    # A DECLARED FILE CHANGES: the identity moves and nothing may be repeated.
+    _plan(["tree", "plan"])
+    with open(os.path.join(root, "src", "a.py"), "w") as fh:
+        fh.write("declared = 'BROKEN'\n")
+    code_d, _text_d, row_d = _run()
+    check("pr5 an edit to a declared file MEASURES BOTH STEPS - the tree step "
+          "runs again and nothing on the row is repeated: runs=%r exit=%r "
+          "source=%r failed=%r"
+          % (_runs(), code_d, row_d.get("verdictSource"), row_d.get("failed")),
+          _runs() == (2, 4) and code_d == M.E_FAIL
+          and row_d.get("verdictSource") is None
+          and not any("reusedFrom" in s for s in row_d.get("steps") or [])
+          and row_d.get("failed") == ["tree"])
+
+    code_e, text_e, row_e = _run()
+    check("pr6 A RED IS REPEATED AS RED: asked again with no change, the tree "
+          "step that failed is not measured a second time - so a second reading "
+          "cannot come back green and replace a red nobody was shown - and the "
+          "row stays failed, naming the run that measured the red: runs=%r "
+          "exit=%r failed=%r source=%r"
+          % (_runs(), code_e, row_e.get("failed"), _source(row_e, "tree")),
+          _runs() == (2, 5) and code_e == M.E_FAIL
+          and row_e.get("status") == "failed"
+          and row_e.get("failed") == ["tree"]
+          and _source(row_e, "tree") == row_d["runId"]
+          and "GATE RED: tree" in text_e)
+
+    code_f, _text_f, row_f = _run("--no-reuse")
+    check("pr7 `--no-reuse` MEASURES EVERY STEP, the tree step included, and "
+          "its row repeats nothing: runs=%r exit=%r source=%r"
+          % (_runs(), code_f, row_f.get("verdictSource")),
+          _runs() == (3, 6) and code_f == M.E_FAIL
+          and row_f.get("verdictSource") is None
+          and not any("reusedFrom" in s for s in row_f.get("steps") or []))
+
+    # THE ALLOW CASE: a gate with no plan-grading step is untouched.
+    _plan(["tree"])
+    _run()
+    code_h, text_h, row_h = _run()
+    check("pr8 a gate with NO plan-grading step repeats as a whole, as before: "
+          "the tree step runs once for two asks, the row is `reused` with no "
+          "steps, and the summary opens with the whole-run banner: runs=%r "
+          "exit=%r source=%r"
+          % (_runs(), code_h, row_h.get("verdictSource")),
+          _runs() == (4, 6) and code_h == M.E_FAIL
+          and row_h.get("verdictSource") == _ev_io.REUSED
+          and row_h.get("steps") == []
+          and "GATE VERDICT REUSED" in text_h
+          and "measured here:" not in text_h)
+
+    # AN EDIT TO THE PLAN'S META MEASURES, whole run and per step. The tree
+    # step names no plan and reads none here, and that is the point: a step
+    # can read the plan's meta without naming it, so nothing the command
+    # says may decide this.
+    _plan(["tree"], meta={"defaultSkills": ["writing-python"]})
+    code_i, text_i, row_i = _run()
+    runs_i = _runs()
+    code_j, text_j, row_j = _run()
+    check("pr9 an edit to a meta block MEASURES a gate that would repeat as a "
+          "whole - the tree step runs again - and the ask straight after it "
+          "repeats again: runs=%r/%r source=%r/%r"
+          % (runs_i, _runs(), row_i.get("verdictSource"),
+             row_j.get("verdictSource")),
+          runs_i == (5, 6) and _runs() == (5, 6)
+          and row_i.get("verdictSource") is None
+          and "GATE VERDICT REUSED" not in text_i
+          and row_j.get("verdictSource") == _ev_io.REUSED
+          and "GATE VERDICT REUSED" in text_j)
+
+    _plan(["tree", "plan"], meta={"defaultSkills": ["writing-python"]})
+    _run()
+    code_k, _text_k, row_k = _run()
+    runs_k = _runs()
+    _plan(["tree", "plan"], meta={"defaultSkills": ["no-silent-pass"]})
+    code_l, text_l, row_l = _run()
+    check("pr10 ...and per step: with the tree step repeated on the ask before "
+          "it, an edit to a meta block measures EVERY step and the row repeats "
+          "nothing: runs=%r/%r before=%r after=%r"
+          % (runs_k, _runs(), _source(row_k, "tree"),
+             row_l.get("verdictSource")),
+          _source(row_k, "tree") is not None
+          and _runs() == (runs_k[0] + 1, runs_k[1] + 1)
+          and row_l.get("verdictSource") is None
+          and not any("reusedFrom" in s for s in row_l.get("steps") or [])
+          and "GATE VERDICT REUSED" not in text_l)
+
+
+def _pgo_fixture(setting, phase_gate, task_gate):
+    """`(root, mp, evdir, runs)` - a committed project whose phase gate and
+    whose one task's own gate are `phase_gate` and `task_gate`, over two
+    build keys: `sweep`, and `browser`, which stands for a slow browser check.
+    Each step appends its name to an ignored log, so what RAN is counted off
+    the commands themselves, never off the row the runner writes about them.
+    `setting` is `executor.phaseGateOnly` as the config holds it, or None for
+    a config that does not name the key."""
+    root = _harness.fixture_root("run-test-gate-pgo-")
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    os.makedirs(os.path.join(root, ".claude"))
+    os.makedirs(os.path.join(root, "src"))
+    config = {"manifestPath": "docs/audit/audit-plan.json"}
+    if setting is not None:
+        config["executor"] = {"phaseGateOnly": setting}
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump(config, fh)
+    for name in ("sweep", "browser"):
+        with open(os.path.join(root, "%s.py" % (name,)), "w") as fh:
+            fh.write("with open('runs.log', 'a') as fh:\n"
+                     "    fh.write('%s\\n')\n" % (name,))
+    with open(os.path.join(root, ".gitignore"), "w") as fh:
+        fh.write("runs.log\n")
+    with open(os.path.join(root, "src", "a.py"), "w") as fh:
+        fh.write("declared = 1\n")
+    mp = os.path.join(root, "docs", "audit", "audit-plan.json")
+    with open(mp, "w") as fh:
+        json.dump({"meta": {"version": 3, "buildCommands": _PGO_BUILD},
+                   "phases": [{"id": "P1", "title": "one",
+                               "shard": "phases/P1.json"}]}, fh)
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+              "w") as fh:
+        json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                   "testGate": list(phase_gate), "tasks": [
+                       {"id": "P1.1", "title": "t", "status": "in_progress",
+                        "files": ["src/a.py"],
+                        "tests": {"gate": list(task_gate)}}]}, fh)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", ".gitignore", "docs", ".claude", "src",
+                 "sweep.py", "browser.py"],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+
+    def runs():
+        path = os.path.join(root, "runs.log")
+        if not os.path.exists(path):
+            return []
+        with open(path) as fh:
+            return fh.read().split()
+    return root, mp, os.path.join(root, "docs", "audit", "evidence"), runs
+
+
+_PGO_BUILD = {"sweep": "python3 sweep.py", "browser": "python3 browser.py"}
+
+
+def _pgo_run(root, mp, evdir, *extra):
+    """`(code, text, newest row)` of one recorded run of the gate."""
+    lines = []
+    code = M.main([mp, "P1", "--project-dir", root, "--record"] + list(extra),
+                  out=lines.append)
+    rows = _recorded_rows(evdir) if os.path.isdir(evdir) else []
+    return code, "\n".join(lines), (rows[-1] if rows else {})
+
+
+def _pgo_masked(root, text):
+    """`text` with what differs between two fixtures of one shape - the
+    fixture's path, run ids, stamps and durations - masked, so two runs of the
+    same gate compare byte for byte on everything else."""
+    text = text.replace(root, "<root>")
+    # A run id is a stamp followed by random characters, and a stamp alone
+    # dates the boundary: both are masked whole, as one token.
+    text = re.sub(r"\b\d{4}-\d\d-\d\dT\S+", "<stamp>", text)
+    text = re.sub(r"\b[0-9a-f]{12,}\b", "<id>", text)
+    return re.sub(r"\d+", "N", text)
+
+
+def _phase_gate_only_cases(check):
+    """(pgo) `executor.phaseGateOnly` names commands the project leaves to the
+    phase gate. A task's recorded gate leaves out an entry it names when the
+    phase's own gate holds that entry, lists it on the row with the setting as
+    its basis, and says so; an entry it names that the phase gate lacks is run,
+    with the line saying why. A task gate of nothing but such entries is
+    `no-checks`, never `passed`. The phase gate runs every entry whatever the
+    setting says, and an absent or empty setting changes no byte."""
+    both = ["sweep", "browser"]
+    root, mp, evdir, runs = _pgo_fixture(["browser.py"], both, both)
+    code, text, row = _pgo_run(root, mp, evdir, "--task", "P1.1")
+    left = row.get("leftToPhaseGate")
+    check("pgo1 a task gate of a sweep and a browser check, the browser check "
+          "named by the setting and held by the phase gate, RUNS THE SWEEP "
+          "ALONE: its row records one step and lists the browser check as left "
+          "to the phase gate with the setting as its basis, and the run says "
+          "so: exit=%r runs=%r steps=%r left=%r status=%r"
+          % (code, runs(), [s.get("name") for s in row.get("steps") or []],
+             left, row.get("status")),
+          code == M.E_OK and runs() == ["sweep"]
+          and [s.get("name") for s in row.get("steps") or []] == ["sweep"]
+          and row.get("status") == "passed"
+          and left == [{"name": "browser", "arm": "declared",
+                        "basis": "executor.phaseGateOnly",
+                        "matched": "browser.py"}]
+          and "browser is left to the phase gate" in text
+          and "executor.phaseGateOnly" in text)
+    manifest = M._mio.load_manifest(mp)
+    owns = M.owned_files(manifest, "P1", "P1.1")[0]
+    ran_only = M.reuse_identity(root, mp, manifest,
+                                [("sweep", _PGO_BUILD["sweep"])], owns)["key"]
+    check("pgo2 the row's gate digest is the DECLARED gate's, both entries, so "
+          "the binding still compares it with the plan; its reuse identity is "
+          "taken over the entry that RAN: digest=%r identity matches=%r"
+          % (row.get("gateDigest"), row.get("reuseKey") == ran_only),
+          row.get("gateDigest") == _ev_io.gate_digest(both, _PGO_BUILD)
+          and row.get("reuseKey") == ran_only and ran_only is not None)
+    code_r, text_r, row_r = _pgo_run(root, mp, evdir, "--task", "P1.1")
+    check("pgo3 asked again over the unchanged tree, the verdict is repeated "
+          "and the browser check still never runs: exit=%r runs=%r source=%r"
+          % (code_r, runs(), row_r.get("verdictSource")),
+          code_r == M.E_OK and runs() == ["sweep"]
+          and row_r.get("verdictSource") == _ev_io.REUSED)
+
+    root, mp, evdir, runs = _pgo_fixture(["browser.py"], ["sweep"], both)
+    code, text, row = _pgo_run(root, mp, evdir, "--task", "P1.1")
+    check("pgo4 the same task gate with the browser check ABSENT from the phase "
+          "gate runs BOTH, lists nothing as left out, and says the named entry "
+          "runs here because it would otherwise run nowhere: exit=%r runs=%r "
+          "left=%r said=%r"
+          % (code, runs(), row.get("leftToPhaseGate"),
+             [ln for ln in text.splitlines() if "browser" in ln][:2]),
+          code == M.E_OK and sorted(runs()) == ["browser", "sweep"]
+          and "leftToPhaseGate" not in row
+          and "would otherwise run nowhere" in text
+          and "browser is left to the phase gate" not in text)
+
+    root, mp, evdir, runs = _pgo_fixture(["browser.py"], both, ["browser"])
+    code, text, row = _pgo_run(root, mp, evdir, "--task", "P1.1")
+    check("pgo5 a task gate holding ONLY left-out entries records `no-checks` "
+          "with the reason - never `passed`, never the empty gate - runs "
+          "nothing, lists the entry on the row, and exits red: exit=%r runs=%r "
+          "status=%r left=%r basis=%r"
+          % (code, runs(), row.get("status"), row.get("leftToPhaseGate"),
+             (row.get("observations") or {}).get("countsBasis")),
+          code == M.E_FAIL and runs() == []
+          and row.get("status") == "no-checks"
+          and [e.get("name") for e in row.get("leftToPhaseGate") or []]
+          == ["browser"]
+          and "executor.phaseGateOnly" in str(
+              (row.get("observations") or {}).get("countsBasis"))
+          and "GATE GREEN" not in text)
+
+    root, mp, evdir, runs = _pgo_fixture(["browser.py"], both, both)
+    code, text, row = _pgo_run(root, mp, evdir)
+    check("pgo6 the PHASE gate ignores the setting: it runs every entry and "
+          "lists none as left out: exit=%r runs=%r left=%r"
+          % (code, runs(), row.get("leftToPhaseGate")),
+          code == M.E_OK and sorted(runs()) == ["browser", "sweep"]
+          and "leftToPhaseGate" not in row
+          and "left to the phase gate" not in text)
+
+    # ABSENT AND EMPTY ARE THE OLD BEHAVIOUR, BYTE FOR BYTE. The two fixtures
+    # differ only in the config; every printed line and every row field but the
+    # ids, stamps and durations must agree, and nothing may be left out. The
+    # fixture names `browser.py` in neither, so an always-firing split shows.
+    said = {}
+    for setting in (None, []):
+        root, mp, evdir, runs = _pgo_fixture(setting, both, both)
+        code, text, row = _pgo_run(root, mp, evdir, "--task", "P1.1")
+        said[repr(setting)] = (code, sorted(runs()), _pgo_masked(root, text),
+                               sorted(row))
+    check("pgo7 with the setting ABSENT or EMPTY a task's run is the run it was "
+          "before: both entries run, no row key lists anything as left out, "
+          "and the two print the same lines once ids and times are masked: %r"
+          % (dict((k, v[:2] + (v[3],)) for k, v in said.items()),),
+          said["None"][:2] == (M.E_OK, ["browser", "sweep"])
+          and said["None"] == said["[]"]
+          and "leftToPhaseGate" not in said["None"][3]
+          and "phase gate" not in said["None"][2].replace(
+              "the phase's gate", ""))
+
+    # THE OTHER ARM: a step the affected selection's widening proposes is a
+    # command too, so one the setting names is left to the phase gate as well,
+    # and its record says which arm proposed it.
+    plan = getattr(M, "phase_gate_only_plan", None)
+    widened = ("%s%s: browser" % (_ev_io.DERIVED_STEP_PREFIX,
+                                  _ev_io.DERIVED_PHASE_GATE_ARM),
+               _PGO_BUILD["browser"])
+    got = (plan([("sweep", _PGO_BUILD["sweep"]), widened],
+                [("sweep", _PGO_BUILD["sweep"]),
+                 ("browser", _PGO_BUILD["browser"])], ("browser.py",))
+           if plan is not None else None)
+    check("pgo8 a widened phase-gate step the setting names is left out too, "
+          "and its record names the arm that proposed it: %r" % (got,),
+          got is not None
+          and got["run"] == [("sweep", _PGO_BUILD["sweep"])]
+          and got["left"] == [{"name": widened[0],
+                               "arm": _ev_io.DERIVED_PHASE_GATE_ARM,
+                               "basis": "executor.phaseGateOnly",
+                               "matched": "browser.py"}]
+          and got["unheld"] == [])
 
 
 _KILLERS = ("kill", "killpg", "terminate", "send_signal", "tear_down",
@@ -10279,6 +11341,68 @@ def _affected_cases(check):
           and any("exited 3" in ln and "phase gate" in ln
                   for ln in failed_lines))
 
+    # The selection is made slow on purpose - the related listing sleeps before
+    # it answers - so a selection figure starting at the first step reads near
+    # zero, and a durationMs that swallowed the selection reads past the sleep.
+    sleep_ms = 600
+    plan["meta"]["phaseGate"]["derived"]["listing"]["related"] = (
+        "sleep %s; printf '%%s\\n' tests/smoke_test.sh # {paths}"
+        % (sleep_ms / 1000.0,))
+    with open(mpath, "w") as fh:
+        json.dump(plan, fh)
+    M.main([mpath, "P1", "--task", "P1.2", "--project-dir", root, "--no-reuse",
+            "--record"], out=[].append)
+    rows = _recorded_rows(os.path.join(root, "docs", "audit", "evidence"))
+    timed = rows[-1] if rows else {}
+    steps = timed.get("steps") or []
+    step_sum = sum(s.get("durationMs") or 0 for s in steps)
+    took, chose = timed.get("durationMs"), timed.get("selectionMs")
+    check("ag6 a recorded task gate with a derived part carries selectionMs - "
+          "the time from the start of choosing what to run to the first step, "
+          "which here holds the listing's %d ms sleep - while durationMs is "
+          "still the steps alone, no part of that sleep: selectionMs=%r "
+          "durationMs=%r steps=%r"
+          % (sleep_ms, chose, took, [(s.get("name"), s.get("durationMs"))
+                                     for s in steps]),
+          [s.get("name") for s in steps]
+          == ["sh tests/i18n_test.sh", "affected/related: tests/smoke_test.sh"]
+          and isinstance(chose, int) and not isinstance(chose, bool)
+          and chose >= sleep_ms
+          and isinstance(took, int) and 0 <= took - step_sum < sleep_ms)
+
+    # THE REPEAT OF THAT RUN: the same gate over the same tree, the reuse lookup
+    # allowed. Its gathering sleeps the listing's sleep again, and its identity
+    # is made to take a second sleep of its own, so the two windows are each
+    # long and told apart: a duration that also lies inside the selection makes
+    # their sum exceed the wall time the whole call took.
+    identity_ms = 600
+    held_identity = M.reuse_identity
+
+    def slow_identity(*args, **kwargs):
+        time.sleep(identity_ms / 1000.0)
+        return held_identity(*args, **kwargs)
+    M.reuse_identity = slow_identity
+    try:
+        began = time.monotonic()
+        M.main([mpath, "P1", "--task", "P1.2", "--project-dir", root, "--record"],
+               out=[].append)
+        wall_ms = int((time.monotonic() - began) * 1000)
+    finally:
+        M.reuse_identity = held_identity
+    rows = _recorded_rows(os.path.join(root, "docs", "audit", "evidence"))
+    again = rows[-1] if rows else {}
+    took, chose = again.get("durationMs"), again.get("selectionMs")
+    check("ag7 a REPEATED run's selectionMs and durationMs do not overlap: the "
+          "selection holds the gathering's %d ms sleep, the duration the "
+          "identity's %d ms, and the two add up to no more than the %r ms the "
+          "whole call took: repeat=%r selectionMs=%r durationMs=%r"
+          % (sleep_ms, identity_ms, wall_ms,
+             again.get(M._ev.VERDICT_SOURCE), chose, took),
+          again.get(M._ev.VERDICT_SOURCE) == M._ev.REUSED
+          and isinstance(chose, int) and isinstance(took, int)
+          and chose >= sleep_ms and took >= identity_ms
+          and chose + took <= wall_ms)
+
 
 def _affected_scope_cases(check):
     """The affected selection as a task's gate, end to end, over one tree.
@@ -10392,10 +11516,12 @@ def _affected_scope_cases(check):
     code, lines, row, names = run("P1.2")
     check("as3 a narrow declared gate records the affected suites for its "
           "changed path, each under the arm that selected it, and not the "
-          "suite its own gate names: exit=%r steps=%r" % (code, names),
+          "suite its own gate names - joined to the declared entry as one "
+          "step, since both are the recorded spelling: exit=%r steps=%r"
+          % (code, names),
           code == M.E_OK and row.get("status") == "passed"
-          and names == [own, "affected/related: tests/test_other.py",
-                        "affected/python: tests/test_core.py"])
+          and names == [own + " + affected/related: tests/test_other.py"
+                              " + affected/python: tests/test_core.py"])
     states = (binds("P1.2"), binds("P1.1"))
     check("as4 ...and the green rows bind the commit with NO override - the "
           "derived steps beside the declared gate do not read as a changed "
@@ -10453,8 +11579,8 @@ def _affected_scope_cases(check):
           "the runner's own code, recorded under the walk arm: exit=%r steps=%r "
           "lines=%r" % (code, names, [ln for ln in lines if "walk" in ln]),
           code == M.E_OK
-          and names == [own, "affected/python: tests/test_core.py",
-                        "affected/walk: tools/sweep.py"]
+          and names == [own + " + affected/python: tests/test_core.py"
+                              " + affected/walk: tools/sweep.py"]
           and any("tools/sweep.py" in ln and "tests/test_own.py" in ln
                   for ln in lines))
 
@@ -10477,11 +11603,21 @@ raise SystemExit(0 if text == green else 1)
 '''
 
 
-def _derived_base_repo(prefix, base_text, task_text):
+# A declared entry that is not the plan's recorded spelling: a step the
+# affected selection adds beside it stays a step of its own.
+_LONE_GATE = "python3 tests/test_own.py"
+
+
+def _derived_base_repo(prefix, base_text, task_text, gate=None):
     """A one-task plan whose narrow gate gains `affected/related:
     tests/test_other.py` for a change to `pkg/core.py`, that step printing
     `task_text` over the change and `base_text` at HEAD: `(root, mpath, plan,
-    row)` - `row` the recorded task run, taken with the change in place."""
+    row)` - `row` the recorded task run, taken with the change in place.
+
+    `gate` is the task's one declared entry: by default the plan's recorded
+    spelling over `tests/test_own.py`, which the affected step is joined to
+    as one call; `_LONE_GATE` is another runner, beside which the affected
+    step stays a step of its own."""
     root = _harness.fixture_root(prefix)
     for sub in (("docs", "audit", "phases"), (".claude",), ("tools",),
                 ("tests",), ("pkg",), ("gate-out",)):
@@ -10504,7 +11640,7 @@ def _derived_base_repo(prefix, base_text, task_text):
                  {"id": "P1.1", "title": "narrow", "status": "in_progress",
                   "files": ["pkg/core.py", "tests/test_own.py"],
                   "tests": {"mode": "regression",
-                            "gate": [sweep + " tests/test_own.py"]}}]}
+                            "gate": [gate or sweep + " tests/test_own.py"]}}]}
     with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
               "w") as fh:
         json.dump(phase, fh)
@@ -10561,7 +11697,8 @@ def _base_of_derived_cases(check):
     derived = "%srelated: tests/test_other.py" % (_ev_io.DERIVED_STEP_PREFIX,)
     fails = {"tests/test_other.py": ("FAIL c1 a case the base fails too",)}
     red = sweep_red(fails)
-    root, mpath, plan, row = _derived_base_repo("rtg-derived-red-", red, red)
+    root, mpath, plan, row = _derived_base_repo("rtg-derived-red-", red, red,
+                                                gate=_LONE_GATE)
     task_step = ([st for st in row.get("steps") or []
                   if st.get("name") == derived] or [{}])[0]
     code, answer, lines = _base_of_answer(root, mpath, row.get("runId"))
@@ -10585,7 +11722,7 @@ def _base_of_derived_cases(check):
           and len(base_rows) == 1)
 
     g_root, g_mpath, _gp, g_row = _derived_base_repo(
-        "rtg-derived-green-", sweep_red({}), red)
+        "rtg-derived-green-", sweep_red({}), red, gate=_LONE_GATE)
     g_code, g_answer, _gl = _base_of_answer(g_root, g_mpath, g_row.get("runId"))
     g_reading = g_answer.get(_ev_io.BASE_RED_KEY) or {}
     check("bod2 THE TWIN: the same derived step green at the base is re-run "
@@ -10597,7 +11734,7 @@ def _base_of_derived_cases(check):
 
     u_root, u_mpath, _up, u_row = _derived_base_repo(
         "rtg-derived-unnamed-", red,
-        "the runner died before it named a suite\n")
+        "the runner died before it named a suite\n", gate=_LONE_GATE)
     u_code, u_answer, u_lines = _base_of_answer(u_root, u_mpath,
                                                 u_row.get("runId"))
     not_run = u_answer.get("notRun") or []
@@ -10653,6 +11790,297 @@ def _base_of_derived_cases(check):
           "suite: %r / %r" % (s_commands, s_left),
           s_commands == [] and [n.get("name") for n in s_left] == [derived]
           and "test_elsewhere.py" in str(s_left[0].get("reason")))
+
+
+# The fake sweep a joined run is counted with: it runs the suites it is handed,
+# or every one when handed none, and appends the paths it was handed to a log,
+# one line per call - so what RAN is read off the runner itself, never off the
+# row the gate writes about it. The log is OUTSIDE the tree: a file the runs
+# grow inside it would change the content every identity is taken over.
+_CALL_LOG_SWEEP = (
+    "import glob, subprocess, sys\n"
+    "paths = sys.argv[1:] or sorted(glob.glob('tests/test_*.py'))\n"
+    "with open(%r, 'a') as fh:\n"
+    "    fh.write(' '.join(sys.argv[1:]) + '\\n')\n"
+    "bad = [p for p in paths\n"
+    "       if subprocess.call([sys.executable, p]) != 0]\n"
+    "sys.exit(1 if bad else 0)\n")
+
+
+def _joined_repo():
+    """`(root, mpath, phase, build, own, log)` - a committed one-phase plan
+    whose recorded spelling is `python3 tools/sweep.py {paths}`, with a related
+    listing naming `tests/test_other.py` and `tests/test_core.py` importing
+    `pkg/core.py`. `P1.1`'s one entry is that spelling over
+    `tests/test_own.py` (`own`); `P1.2`'s is another runner (`_LONE_GATE`).
+    `log` is the sweep's call log, outside the tree."""
+    log = os.path.join(_harness.fixture_root("run-test-gate-joined-log-"),
+                       "calls.log")
+    root = _harness.fixture_root("run-test-gate-joined-")
+    for sub in (("docs", "audit", "phases"), (".claude",), ("tools",),
+                ("tests",), ("pkg",)):
+        os.makedirs(os.path.join(root, *sub))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    sweep = "python3 tools/sweep.py"
+    own = sweep + " tests/test_own.py"
+    build = {"selftests": sweep, "lint": "true"}
+    with open(mpath, "w") as fh:
+        json.dump({"meta": {"version": 3, "buildCommands": build,
+                            "phaseGate": {"derived": {
+                                "spelling": sweep + " {paths}",
+                                "listing": {"related": "printf '%s\\n' "
+                                            "tests/test_other.py # {paths}"},
+                                "verifiedOn": {"command": "echo v1",
+                                               "answer": "v1"}}}},
+                   "phases": [{"id": "P1", "title": "one",
+                               "shard": "phases/P1.json"}]}, fh)
+    files = ["pkg/core.py", "tests/test_own.py"]
+    phase = {"id": "P1", "title": "one", "status": "in_progress",
+             "testGate": ["selftests", "lint"], "tasks": [
+                 {"id": "P1.1", "title": "joined", "status": "in_progress",
+                  "files": files,
+                  "tests": {"mode": "regression", "gate": [own]}},
+                 {"id": "P1.2", "title": "another runner",
+                  "status": "in_progress", "files": files,
+                  "tests": {"mode": "regression", "gate": [_LONE_GATE]}}]}
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+              "w") as fh:
+        json.dump(phase, fh)
+    reach = "import os, sys\nsys.path.insert(0, os.getcwd())\n"
+    for rel, body in (("tools/sweep.py", _CALL_LOG_SWEEP % (log,)),
+                      ("pkg/__init__.py", ""), ("pkg/core.py", "X = 1\n"),
+                      ("tests/test_core.py", reach + "import pkg.core\n"),
+                      ("tests/test_other.py", "pass\n"),
+                      ("tests/test_own.py", "pass\n"),
+                      # `tests/test_core.py` imports `pkg.core`, and a bytecode
+                      # cache written beside it is content git would report.
+                      (".gitignore", "__pycache__/\n")):
+        with open(os.path.join(root, rel), "w", newline="\n") as fh:
+            fh.write(body)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", "."],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    return root, mpath, phase, build, own, log
+
+
+def _joined_run_cases(check):
+    """A declared entry in the plan's recorded spelling and the affected suites
+    its change can break run as ONE call over the union of their paths, the
+    declared ones first, recorded as one step whose name carries both lists.
+    A declared entry in any other spelling stays its own step, and a run with
+    no affected suite is what it always was. The joined run is still the
+    task's narrowed gate, binds, keeps the identity the two calls would have
+    had, and leaves to the phase gate what the setting names before anything
+    is joined."""
+    import _verdict_binding as _vb
+    import _usage_economics as _ue
+    root, mpath, phase, build, own, log = _joined_repo()
+    evidence = os.path.join(root, "docs", "audit", "evidence")
+    rel = "affected/related: tests/test_other.py"
+    py = "affected/python: tests/test_core.py"
+    joined = own + " + " + rel + " + " + py
+
+    def calls():
+        if not os.path.exists(log):
+            return []
+        with open(log, encoding="utf-8") as fh:
+            return [ln.rstrip("\n") for ln in fh]
+
+    def run(task_id, *extra):
+        before = len(calls())
+        lines = []
+        code = M.main([mpath, "P1", "--task", task_id, "--project-dir", root,
+                       "--record"] + list(extra), out=lines.append)
+        rows = [r for r in _recorded_rows(evidence)
+                if r.get("taskId") == task_id]
+        row = rows[-1] if rows else {}
+        return (code, lines, row, [s.get("name") for s in row.get("steps") or []],
+                calls()[before:])
+
+    code, lines, row, names, ran = run("P1.1")
+    check("jn3 with no affected suite the task's run is its declared entry "
+          "alone - one step, one call handing the runner the declared path "
+          "and nothing else: exit=%r steps=%r calls=%r" % (code, names, ran),
+          code == M.E_OK and names == [own] and ran == ["tests/test_own.py"])
+
+    with open(os.path.join(root, "pkg", "core.py"), "w", newline="\n") as fh:
+        fh.write("X = 2\n")
+    code, lines, row, names, ran = run("P1.1")
+    shown = [ln for ln in lines if own in ln and rel in ln and py in ln]
+    check("jn1 a declared entry in the recorded spelling and the affected "
+          "suites run as ONE step: one call over the union, the declared path "
+          "first and each suite once, recorded under one name carrying the "
+          "declared entry and each affected step, and the printed step line "
+          "shows both lists: exit=%r steps=%r calls=%r shown=%r"
+          % (code, names, ran, shown),
+          code == M.E_OK and row.get("status") == "passed"
+          and names == [joined]
+          and ran == ["tests/test_own.py tests/test_other.py tests/test_core.py"]
+          and len(shown) >= 1)
+
+    task = phase["tasks"][0]
+    entries, source = M._mio.gate_entries(phase, task)
+    state = _vb.binding(root, {"taskId": "P1.1", "phaseId": "P1"}, entries,
+                        source, task["files"], mpath, "record it", "no gate",
+                        config=_journal_io.load_config(root),
+                        build=build)["state"]
+    compared = _ue.gate_scope_comparison(
+        [row, {"taskId": "P1.1", "gateSource": "phase",
+               "durationMs": (row.get("durationMs") or 0) + 1000}])
+    check("jn4 the joined run is still the task's own narrowed gate: "
+          "gateSource task, the digest the declared entry's alone, the row "
+          "binds the commit with no override, and the usage comparison counts "
+          "it as the narrowed run: %r"
+          % ((row.get("gateSource"), row.get("gateDigest"), state,
+              compared),),
+          row.get("gateSource") == "task"
+          and row.get("gateDigest") == M._ev.gate_digest([own], build)
+          and state == "bound" and compared.get("verdict") == "compared"
+          and [t.get("narrowedRuns") for t in compared.get("tasks") or []]
+          == [1])
+
+    # The same two lists run as two calls: the join switched off for one run.
+    held = getattr(M._affected, "joined_steps", None)
+    M._affected.joined_steps = lambda commands, *_a, **_k: (list(commands), [])
+    try:
+        _c, _l, split_row, split_names, split_ran = run("P1.1", "--no-reuse")
+    finally:
+        if held is None:
+            del M._affected.joined_steps
+        else:
+            M._affected.joined_steps = held
+    check("jn5 the reuse identity is the same for the same two lists whichever "
+          "way they ran - one joined step, or the declared entry and each "
+          "affected step one after another: %r"
+          % ((row.get("reuseKey"), split_row.get("reuseKey"), split_names,
+              split_ran),),
+          split_names == [own, rel, py] and len(split_ran) == 3
+          and bool(row.get("reuseKey"))
+          and split_row.get("reuseKey") == row.get("reuseKey"))
+
+    code, lines, row, names, ran = run("P1.2")
+    check("jn2 a declared entry in another spelling stays its own step, and the "
+          "affected suites run beside it, each under its own arm: exit=%r "
+          "steps=%r calls=%r" % (code, names, ran),
+          code == M.E_OK and names == [_LONE_GATE, rel, py]
+          and ran == ["tests/test_other.py", "tests/test_core.py"])
+
+    # What `executor.phaseGateOnly` leaves out is decided before anything is
+    # joined: the python suite is left to a phase gate that holds it, and only
+    # the related suite joins the declared entry.
+    phase["testGate"] = ["selftests", "lint",
+                         "python3 tools/sweep.py tests/test_core.py"]
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+              "w") as fh:
+        json.dump(phase, fh)
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json",
+                   "executor": {"phaseGateOnly": ["tests/test_core.py"]}}, fh)
+    code, lines, row, names, ran = run("P1.1", "--no-reuse")
+    left = [e.get("name") for e in row.get("leftToPhaseGate") or []]
+    check("jn7 a suite the project leaves to the phase gate is left out BEFORE "
+          "the join, by its own command: the joined step carries the declared "
+          "entry and the related suite only, and the row lists the python "
+          "step as left: exit=%r steps=%r left=%r calls=%r"
+          % (code, names, left, ran),
+          names == [own + " + " + rel] and left == [py]
+          and ran == ["tests/test_own.py tests/test_other.py"])
+
+
+def _joined_repeat_cases(check):
+    """A joined step under the per-step repeat: measured when its declared
+    entry or an affected step it carries grades a path the identity leaves
+    out, and, when copied, naming the run it was copied from."""
+    own = "python3 tools/sweep.py tests/test_own.py"
+    rel = "affected/related: tests/test_other.py"
+    joined = own + " + " + rel
+    union = "python3 tools/sweep.py tests/test_own.py tests/test_other.py"
+    repeated, measured = M.repeat_plan(
+        [(joined, union), ("lint", "true")],
+        [(own, "docs/audit/audit-plan.json")])
+    source = {"runId": "r-source", "ts": "2026-11-18T00:00:00Z",
+              "steps": [{"name": joined, "exit": 0}, {"name": "lint", "exit": 0}]}
+    copied = M.part_reused_result({"steps": [], "failed": []}, source, [joined],
+                                  [(joined, union)])
+    step = (copied.get("steps") or [{}])[0]
+    check("jn6 a joined step whose declared entry grades a left-out path is "
+          "measured and not repeated, the step beside it is repeated, and a "
+          "joined step that is repeated names the run it was copied from: "
+          "%r / %r / %r" % (repeated, measured, step),
+          repeated == ["lint"] and measured == [(joined, union)]
+          and step.get("name") == joined
+          and (step.get(M._ev.STEP_REUSED_KEY) or {}).get("runId")
+          == "r-source")
+
+
+def _joined_base_cases(check):
+    """`--base-of` over a red JOINED step: each failing suite is read for the
+    part of the step that ran it - an affected suite is spelled again under
+    its arm, as the lone affected step would be, and a declared suite is run
+    under the declared entry - and read against the base by that part."""
+    own = "python3 tools/sweep.py tests/test_own.py"
+    derived = "affected/related: tests/test_other.py"
+    red = sweep_red({"tests/test_other.py": ("FAIL c1 a case the base fails "
+                                             "too",)})
+    root, mpath, plan, row = _derived_base_repo("rtg-joined-red-", red, red)
+    names = [st.get("name") for st in row.get("steps") or []]
+    code, answer, _lines = _base_of_answer(root, mpath, row.get("runId"))
+    reading = answer.get(_ev_io.BASE_RED_KEY) or {}
+    check("jn8 a red joined step whose failing suite is an affected one is run "
+          "again at the base under that suite's arm and read base-only, with "
+          "nothing left unrun: steps %r / exit %r / answer %r"
+          % (names, code, answer),
+          names == [own + " + " + derived] and code == M.E_OK
+          and answer.get("notRun") == []
+          and [st.get("name") for st in answer.get("steps") or []] == [derived]
+          and reading.get("verdict") == "base-only"
+          and reading.get("atBase") == ["tests/test_other.py"])
+
+    g_root, g_mpath, _gp, g_row = _derived_base_repo(
+        "rtg-joined-green-", sweep_red({}), red)
+    g_code, g_answer, _gl = _base_of_answer(g_root, g_mpath, g_row.get("runId"))
+    g_reading = g_answer.get(_ev_io.BASE_RED_KEY) or {}
+    check("jn9 THE TWIN: the same joined step green at the base is read as the "
+          "task's own red: exit %r / answer %r" % (g_code, g_answer),
+          g_code == M.E_OK and g_answer.get("notRun") == []
+          and g_reading.get("verdict") == "introduced"
+          and g_reading.get("introduced") == ["tests/test_other.py"])
+
+    # A red the declared entry's own suite carries, end to end: the fake sweep
+    # prints the planted text naming `tests/test_own.py` only when it is handed
+    # `tests/test_other.py` too, so the joined call is red and the declared
+    # entry alone at the base is green.
+    o_root, o_mpath, _op, o_row = _derived_base_repo(
+        "rtg-joined-own-", sweep_red({}),
+        sweep_red({"tests/test_own.py": ("FAIL c1 a case of the task's own",)}))
+    o_code, o_answer, _ol = _base_of_answer(o_root, o_mpath, o_row.get("runId"))
+    o_reading = o_answer.get(_ev_io.BASE_RED_KEY) or {}
+    check("jn11 a red joined step whose failing suite is the declared entry's own "
+          "is run at the base under the entry's name, found there by that name, "
+          "and read as the task's own red: exit %r / answer %r"
+          % (o_code, o_answer),
+          o_code == M.E_OK and o_answer.get("notRun") == []
+          and [st.get("name") for st in o_answer.get("steps") or []] == [own]
+          and o_reading.get("run") == o_answer.get("runId") is not None
+          and o_reading.get("verdict") == "introduced"
+          and o_reading.get("introduced") == ["tests/test_own.py"])
+
+    task_step = (row.get("steps") or [{}])[0]
+    mine = dict(task_step, failingSuites=["tests/test_own.py"])
+    commands, _published, left = M.base_commands(dict(row, steps=[mine]),
+                                                 plan, "P1", root)
+    at, introduced, unknown = M._charge_step(mine, [{"name": own, "exit": 0}])
+    check("jn10 a failing suite in the joined step's DECLARED part is run at "
+          "the base under the declared entry, spelled by the plan, and read "
+          "against the base step of that entry - green there, so the task's "
+          "own: %r / %r / %r" % (commands, left, (at, introduced, unknown)),
+          commands == [(own, own)] and left == []
+          and (at, introduced, unknown) == ([], ["tests/test_own.py"], []))
 
 
 def _member_records_cases(check):
@@ -12345,6 +13773,9 @@ def _selftest():
         _harness.stage(check, "ag-block", _affected_cases)
         _harness.stage(check, "as-block", _affected_scope_cases)
         _harness.stage(check, "bod-block", _base_of_derived_cases)
+        _harness.stage(check, "jn-block", _joined_run_cases)
+        _joined_repeat_cases(check)
+        _harness.stage(check, "jnb-block", _joined_base_cases)
         _harness.stage(check, "rp-block", _member_records_cases)
         _harness.stage(check, "rs-block", _shared_records_cases)
         _group_cases(check)

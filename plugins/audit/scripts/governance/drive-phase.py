@@ -173,7 +173,10 @@ chosen one way (`gate_in_background`): one whose recorded mean is past the
 Bash tool's foreground bound, or that no run has measured, is no call inside
 `next` but a step of its own: `dispatch-gate` prints the recorded gate run as
 a `run:` line for the background, `wait-gate` holds until a row of it exists,
-and the verdict is that row's, repeated rather than measured again; one
+and that row is read back (`read_back`): a red is acted on as the row records
+it, asked nothing again, and a green is asked again through the same recorded
+gate, which repeats each step that grades the tree while nothing it graded has
+moved and measures an entry naming a path its identity leaves out; one
 measured under the bound runs inline. A red's base measurement is chosen the
 same way, as `dispatch-base` and `wait-base`, read back off the start's mark
 (`base_reading_for`). A red task gate on a task with a
@@ -357,6 +360,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
+import _skill_places  # noqa: E402  (resolve_skill: whether the session runner finds a skill)
 import _loader  # noqa: E402  (script_path: every verb resolved by basename, never
 #                              loaded - the subprocess boundary is why no edge to
 #                              any of them is counted by `_deps`; load_hooks_config
@@ -389,6 +393,8 @@ import _proc_group  # noqa: E402  (shell_invocation, stop_and_drain: the lint pr
 import _locks  # noqa: E402  (pid_alive: whether the run a base tree's mark names still runs; acquire/release: the one claim on a base launch)
 import _task_outputs  # noqa: E402  (covers: the one rule for whether a declared path covers a changed one)
 import _floor_guard  # noqa: E402  (find_moves: the moves in a task's diff that lower the bar)
+import _task_timing as _timing  # noqa: E402  (make_stage: the one shape of a timing stage)
+import _usage_core  # noqa: E402  (parse_ts: the one reading of an ISO stamp)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
 PREFIX = "[drive-phase]"
@@ -515,8 +521,8 @@ STEPS = {
                 "gate, measured in the background",
         "rule": (WRITER_RULE,)},
     "wait-gate": {
-        "line": "wait %(task)s: the gate launched %(since)s has recorded no run "
-                "for it yet",
+        "line": "wait %(task)s: the gate was handed out at %(since)s; no "
+                "run recorded for it since",
         "rule": ("Started: wait for it to exit, then next. Killed or not "
                  "started: run the run: line --explain prints, in the "
                  "background.",)},
@@ -525,8 +531,8 @@ STEPS = {
                 "%(run)s, measured in the background",
         "rule": (WRITER_RULE,)},
     "wait-base": {
-        "line": "wait %(task)s: the base measurement launched %(since)s has "
-                "left no reading yet",
+        "line": "wait %(task)s: the base measurement was handed out "
+                "at %(since)s; no reading left since",
         "rule": ("Started: wait for it to exit, then next. Not started: run "
                  "the run: line --explain prints, in the background.",)},
     "dispatch-reviewer-session": {
@@ -1042,6 +1048,13 @@ GATE_BANNERS = (("NO OVERLAP WITH THIS WORK", "NO OVERLAP"),
 # measured, its literal mirrored for the same reason; the `bg` and `gc` cases
 # drive the real verb, which is what goes red if it drifts.
 GATE_REUSED_BANNER = "GATE VERDICT REUSED"
+# The flag a read-back's second ask carries. On success `run-test-gate.py`
+# prints one green line when the run had the machine to itself, and that line
+# keeps none of the lines a read-back is said from - the entry naming a path
+# the identity leaves out among them - so a read-back asks for the long form
+# (`_output.terse_cli` prints it under this flag). `rd11` reads a read-back
+# taken in a later second than its run, which is the one-line case.
+READ_BACK_FORM = [_output.VERBOSE_FLAG]
 # The journal row `record-risk-confirmation.py` writes, and the sentence its
 # summary carries the covered ids in. An entry point may not import another,
 # so both are spelled here; the `hr` cases drive the real verb, which is what
@@ -1369,6 +1382,368 @@ def _spend(state, kind, task):
     if not marks:
         state.pop(kind, None)
     return held
+
+
+# --- a task's timing: each stage read back, carried by a write already made --------
+# Every stage the drive reads back - a session from its record, a gate run, its
+# selection or a base run from its evidence row, the commit it timed itself, a
+# hand-out's wait - is queued here under the record it was read from, once, and
+# rides the next write the drive makes for the task anyway: a session's note
+# (`note_sessions`) or the close (`close_task`), each through `--stage`. NO WRITE
+# AND NO COMMIT OF ITS OWN: a metric that adds work to the thing it measures
+# measures itself. The queue lives under `TIMING_KEY`, beside the marks and
+# keyed by task rather than by start, so a stage read before a restart still
+# reaches the shard. A source that cannot be read queues nothing, and the
+# summary then carries that time as unattributed rather than as a zero - and
+# the step says so on its did-line (`stage_unread`), once per stage and
+# reason: a refused write is already said, and a failed read was not.
+TIMING_KEY = "timing"
+STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+# Where `close_task` adds up the commit verb's own runs for the commit stage,
+# in milliseconds - `commit_verb` adds each - so a proof or a gate the step
+# runs between two of them is not inside the figure.
+COMMIT_MS = "commitMs"
+# The roles whose filing appends a `task.return.filed` journal row: the
+# executor's, by `submit` and by `file_writer_return`. A reviewer's return is
+# filed with no row, so the file's modification time is all there is.
+ROW_FILED_ROLES = ("executor",)
+
+
+def queue_stage(state, task, source, stage):
+    """Queue `stage` for `task`, once per `source` - the record it was read from
+    - however many times a step reads that record back. A None stage queues
+    nothing; the caller writes the state."""
+    held = (state.get(TIMING_KEY) or {}).get(task["id"]) or {}
+    seen = list(held.get("seen") or [])
+    if stage is None or source in seen:
+        return
+    state.setdefault(TIMING_KEY, {})[task["id"]] = dict(
+        held, seen=seen + [source],
+        pending=list(held.get("pending") or []) + [stage])
+
+
+def stage_unread(ctx, state, task, kind, why):
+    """Say on the step's did-line that `task`'s `kind` stage is not recorded,
+    and `why` - once per stage and reason, however many reads meet it. True
+    when it was said now, so the caller writes the state. Never a warning and
+    never a stop: timing does not block a gate, a commit or a close."""
+    return timing_said(ctx, state, task, "unread", "%s: %s" % (kind, why),
+                       "timing: %s stage of %s not recorded - %s"
+                       % (kind, task["id"], why))
+
+
+def timing_said(ctx, state, task, bucket, key, sentence):
+    """Put `sentence` on the step's did-line once per `key`, kept in `task`'s
+    timing entry under `bucket`. True when it was said now, so the caller
+    writes the state."""
+    held = (state.get(TIMING_KEY) or {}).get(task["id"]) or {}
+    said = list(held.get(bucket) or [])
+    if key in said:
+        return False
+    state.setdefault(TIMING_KEY, {})[task["id"]] = dict(held, **{bucket: said + [key]})
+    ctx["did"].append(sentence)
+    return True
+
+
+# The Agent route's two roles, each with the stage kind its length is written
+# under.
+AGENT_KINDS = {"executor": "writer", "reviewer": "reviewer"}
+
+
+def agent_handed_out(state, task, role):
+    """Stamp the hand-out of `task`'s `role` Agent for its current start, the
+    moment the dispatch is printed - as a session dispatch's `at` and a gate's
+    launch are stamped. Kept under `TIMING_KEY`, beside the queue, so the
+    `dispatched-<role>` marks keep the value they always held; the caller
+    writes the state."""
+    entry = (state.get(TIMING_KEY) or {}).get(task["id"]) or {}
+    handout = dict(entry.get("handout") or {})
+    handout[role] = {"at": _utc_stamp(), "start": start_key(task)}
+    state.setdefault(TIMING_KEY, {})[task["id"]] = dict(entry, handout=handout)
+
+
+def filed_moment(ctx, task, role):
+    """`(stamp, what)` - when `task`'s `role` return for its current start was
+    filed, and the record that says so: the journal row that filed it, or the
+    filed file's own modification time, read to the whole second as every
+    other stamp here. `what` says which, and for the file why: the journal
+    could not be read, it holds no row for this file, or the role's filing
+    writes none (`ROW_FILED_ROLES`). `(None, why)` when neither can be read."""
+    path = _fr.return_path(ctx["evidence"], task, role)
+    unread = None
+    rows = None
+    if role in ROW_FILED_ROLES:
+        try:
+            rows = _journal_io.read_all(ctx["project"], ctx.get("config"))
+        except Exception as exc:                               # noqa: BLE001
+            unread = "%s: %s" % (type(exc).__name__, exc)
+    row = _fr.already_filed_row(rows, path, ctx["project"]) if rows else None
+    if row is not None and _usage_core.parse_ts(row.get("ts")) is not None:
+        return row["ts"], "journal row %s at %s" % (_fr.RETURN_FILED_ACTION,
+                                                    row["ts"])
+    try:
+        stamp = time.strftime(STAMP_FORMAT, time.gmtime(os.path.getmtime(path)))
+    except (OSError, TypeError) as exc:
+        return None, "the filed %s return's time could not be read (%s: %s)" % (
+            role, type(exc).__name__, exc)
+    if role not in ROW_FILED_ROLES:
+        why = ("no journal row files a %s return, and a modification time "
+               "moves later when the file is written again - a stash, a branch "
+               "switch, a copy - never earlier" % (role,))
+    elif unread is not None:
+        why = ("the journal, which holds the %s row of the %s's filing, could not "
+               "be read (%s)" % (_fr.RETURN_FILED_ACTION, role, unread))
+    else:
+        why = "no journal row of %s names this file" % (_fr.RETURN_FILED_ACTION,)
+    return stamp, "the filed file's modification time, %s - %s" % (stamp, why)
+
+
+def agent_stage(ctx, task, role, at):
+    """`(stage, None)` for an Agent `role` handed out at `at` whose return is
+    filed: from the hand-out to the filing (`filed_moment`). `(None, why)`
+    for a hand-out with no stamp, a filing whose time cannot be read, and a
+    filing stamped more than a second before its hand-out - both stamps are
+    whole seconds - since that is a clock that moved. NO WAIT STAGE ON THIS
+    ROUTE: no record says when the agent began, so its wait cannot be told
+    apart from its work, and the basis says the length holds both rather than
+    a wait of zero being written."""
+    begin = _usage_core.parse_ts(at)
+    if begin is None:
+        return None, "the hand-out of the %s holds no readable stamp (%r)" % (
+            role, at)
+    stamp, what = filed_moment(ctx, task, role)
+    end = _usage_core.parse_ts(stamp)
+    if end is None:
+        return None, what
+    if end < begin - 1:
+        return None, ("the %s's filing (%s) reads before its hand-out at %s"
+                      % (role, what, at))
+    return _timing.make_stage(
+        AGENT_KINDS[role], at, int(round(max(0.0, end - begin) * 1000)),
+        "hand-out to the filed return (%s); the agent's own start is not "
+        "recorded, so any wait before it is inside this length" % (what,)), None
+
+
+def queue_agent_stage(ctx, state, task, role):
+    """Queue the stage of `task`'s `role` Agent once its return is filed - only
+    for an Agent this start handed out, since a session's stages come off its
+    own record - or say why it is not recorded; write the state either way."""
+    entry = (state.get(TIMING_KEY) or {}).get(task["id"]) or {}
+    handout = (entry.get("handout") or {}).get(role) or {}
+    if handout.get("start") != start_key(task):
+        return
+    source = "agent:%s:%s" % (role, handout["start"])
+    if source in (entry.get("seen") or []):
+        return
+    stage, why = agent_stage(ctx, task, role, handout.get("at"))
+    if stage is not None:
+        queue_stage(state, task, source, stage)
+        write_state(ctx, state)
+    elif stage_unread(ctx, state, task, AGENT_KINDS[role], why):
+        write_state(ctx, state)
+
+
+def stage_args(state, task):
+    """The `--stage` arguments carrying every stage queued for `task`."""
+    pending = ((state.get(TIMING_KEY) or {}).get(task["id"]) or {}).get("pending")
+    return [word for stage in pending or []
+            for word in ("--stage", json.dumps(stage, sort_keys=True,
+                                               separators=(",", ":")))]
+
+
+def stages_carried(state, task, closed=False):
+    """The queue emptied once a write carried it; `closed` drops the task's
+    entry whole, since no later write of it will read what was seen."""
+    entries = state.get(TIMING_KEY) or {}
+    if closed:
+        entries.pop(task["id"], None)
+    elif task["id"] in entries:
+        entries[task["id"]] = dict(entries[task["id"]], pending=[])
+    if not entries:
+        state.pop(TIMING_KEY, None)
+
+
+def _length(value):
+    """A recorded length in whole milliseconds, or None for anything that is
+    not a finite number of zero or more - a bool included."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) \
+            or value != value or value < 0 or value == float("inf"):
+        return None
+    return int(round(value))
+
+
+def _stamp_less(stamp, ms):
+    """The whole second `ms` before `stamp`, or None when `stamp` will not read."""
+    epoch = _usage_core.parse_ts(stamp)
+    if epoch is None:
+        return None
+    return time.strftime(STAMP_FORMAT, time.gmtime(int(epoch - ms / 1000.0)))
+
+
+def wait_stage(since, until, basis):
+    """The wait from a hand-out stamped at `since` to the step's own start
+    `until`; None when either will not read.
+
+    BOTH ARE WHOLE SECONDS, and a start derived by subtraction (`run_start`)
+    is floored, so a step that began in its hand-out's own second can read as
+    starting the second before it: that is a wait under a second, written as
+    0 with the basis saying so. A start further back than one second is a
+    clock that moved, and no wait is written."""
+    begin, end = _usage_core.parse_ts(since), _usage_core.parse_ts(until)
+    if begin is None or end is None or end < begin - 1:
+        return None
+    if end < begin:
+        return _timing.make_stage("wait", since, 0, basis + "; under a second: "
+                                  "the start fell in the hand-out's own second")
+    return _timing.make_stage("wait", since, int(round((end - begin) * 1000)), basis)
+
+
+def session_stages(dispatch, run, kind, first):
+    """`[(source, stage)]` for one session outcome read off dispatch
+    `dispatch`'s record: the session itself, from the `startedAt` and
+    `durationMs` its record carries, and - for the first outcome of that
+    dispatch - the wait from its hand-out to the session's start. Nothing for
+    a figure the record lacks."""
+    record = os.path.basename(dispatch.get("record") or "")
+    started, ms = run.get("startedAt"), _length(run.get("durationMs"))
+    out = []
+    if first and isinstance(started, str):
+        out.append(("wait:%s" % (record,), wait_stage(
+            dispatch.get("at"), started,
+            "hand-out stamped by the drive -> startedAt in session record %s"
+            % (record,))))
+    if ms is not None and _usage_core.parse_ts(started) is not None:
+        number = dispatch.get("round", 0) + 1 if kind == "writer" \
+            else dispatch.get("seq", 0) + 1
+        out.append(("%s:%s:%s" % (kind, record, run.get("index")),
+                    _timing.make_stage(kind, started, ms,
+                                       "durationMs in session record %s" % (record,),
+                                       round=number)))
+    return out
+
+
+def ledger_unread(exc):
+    """Why no row was read when the ledger itself would not read. It names no
+    run: the launch's read and its repeat's name two runs of one measurement,
+    and an unreadable ledger cannot say they are one, so the line is said once
+    for the ledger rather than once for each name."""
+    return "the evidence ledger could not be read (%s: %s)" % (
+        type(exc).__name__, exc)
+
+
+def ledger_row(ctx, run_id):
+    """`(row, None)` - the evidence row of `run_id` - or `(None, why)` when the
+    ledger will not read or holds no such row."""
+    try:
+        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+    except Exception as exc:                                   # noqa: BLE001
+        return None, ledger_unread(exc)
+    row = _evio.row_by_run(rows, run_id)
+    if row is None:
+        return None, "the evidence ledger holds no row of run %s" % (run_id,)
+    return row, None
+
+
+def row_stages(row, kind="gate"):
+    """`([(source, stage)], gaps)` for one evidence row: the run's own length
+    under `kind`, and for a gate run the time it spent choosing what to run,
+    which ends where the run's own `startedAt` begins. `gaps` says why a
+    `kind` stage was not built - a row that repeated another run's verdict,
+    named with that run, or a row with no start or no length; a row with no
+    `selectionMs` is one from before the key existed, and is no gap."""
+    if not isinstance(row, dict) or not row.get("runId"):
+        return [], ["the evidence row read names no run"]
+    run_id, started = str(row["runId"]), row.get(_evio.STARTED_KEY)
+    if row.get(_evio.VERDICT_SOURCE) == _evio.REUSED:
+        # A repeat measured nothing and records no start: a stage needs one
+        # (`_task_timing.stage_problems`), and the record's rule is that a
+        # missing source is named. `reusedFrom` is the key
+        # `_evidence_io.measured_row` reads through to the run it repeats.
+        source = (row.get("reusedFrom") or {}).get("runId")
+        return [], ["evidence row %s repeated the verdict %s rather than "
+                    "measuring it, and records no start of its own"
+                    % (run_id, "of run %s" % (source,) if source
+                       else "of a run it does not name")]
+    if _usage_core.parse_ts(started) is None:
+        return [], ["evidence row %s records no readable %s (%r)"
+                    % (run_id, _evio.STARTED_KEY, started)]
+    out, gaps = [], []
+    selection = _evio.selection_ms(row)
+    if kind == "gate" and selection is not None:
+        out.append(("selection:%s" % (run_id,), _timing.make_stage(
+            "selection", _stamp_less(started, selection), selection,
+            "selectionMs in evidence row %s, ending at its startedAt" % (run_id,),
+            run_id=run_id)))
+    ms = _length(row.get("durationMs"))
+    if ms is not None:
+        out.append(("%s:%s" % (kind, run_id), _timing.make_stage(
+            kind, started, ms, "durationMs in evidence row %s" % (run_id,),
+            run_id=run_id)))
+    else:
+        gaps.append("evidence row %s records no readable durationMs (%r)"
+                    % (run_id, row.get("durationMs")))
+    return out, gaps
+
+
+def run_start(row):
+    """When a run began choosing what to run: its `startedAt` less its
+    selection, or its `startedAt` when it recorded none."""
+    started = (row or {}).get(_evio.STARTED_KEY)
+    selection = _evio.selection_ms(row)
+    return _stamp_less(started, selection) if selection is not None else started
+
+
+def queue_row(ctx, state, task, read, kind="gate", since=None):
+    """Queue the stages of the row `read` holds - `(row, why)`, as `ledger_row`
+    and `gate_row_read` return it - for `task`, and the wait from a hand-out
+    stamped at `since` to the run's start, then write the state. A row that
+    could not be read, or a stage it lacks a figure for, is said
+    (`stage_unread`) rather than dropped in silence.
+
+    A row that repeated another run's verdict measured nothing, so the stage
+    is that run's (`_evidence_io.measured_row`), queued under that run's own
+    source as every other read of it is, and the did-line says whose it is -
+    never that the stage is not recorded while this step records it. A
+    repeat whose run the ledger does not hold keeps its own gap."""
+    row, why = read
+    if row is None and why is None:
+        return
+    measured = repeated_measured(ctx, row) if why is None else None
+    repeat = row if measured is not None else None
+    row = measured if measured is not None else row
+    pairs, gaps = row_stages(row, kind) if why is None else ([], [why])
+    if since and pairs:
+        pairs = [("wait:%s:%s" % (kind, row.get("runId")), wait_stage(
+            since, run_start(row), "hand-out stamped by the drive -> start of "
+            "evidence row %s" % (row.get("runId"),)))] + pairs
+    for source, stage in pairs:
+        queue_stage(state, task, source, stage)
+    said = [gap for gap in gaps if stage_unread(ctx, state, task, kind, gap)]
+    own = "%s:%s" % (kind, row.get("runId")) if repeat is not None else None
+    noted = (repeat is not None
+             and any(s == own and st is not None for s, st in pairs)
+             and timing_said(
+                 ctx, state, task, "repeats", "%s: %s" % (kind, repeat.get("runId")),
+                 "timing: %s stage of %s is run %s's - evidence row %s repeated "
+                 "that run's verdict rather than measuring it"
+                 % (kind, task["id"], row.get("runId"), repeat.get("runId"))))
+    if pairs or said or noted:
+        write_state(ctx, state)
+
+
+def repeated_measured(ctx, row):
+    """The row that measured the verdict `row` repeated, when `row` is a repeat
+    and the ledger holds that run (`_evidence_io.measured_row`); None for a row
+    that measured its own verdict, a repeat whose run is gone, and a ledger
+    that will not read - each of which keeps the row's own reading."""
+    if not isinstance(row, dict) or row.get(_evio.VERDICT_SOURCE) != _evio.REUSED:
+        return None
+    try:
+        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+    except Exception:                                          # noqa: BLE001
+        return None
+    found = _evio.measured_row(rows, row)
+    return found if isinstance(found, dict) and found is not row else None
 
 
 # --- reading the plan -------------------------------------------------------------
@@ -2064,6 +2439,9 @@ def dispatch(ctx, state, phase, task, role, tree=None):
     model = (task.get("model") if role == "executor"
              else (phase.get("review") or {}).get("model")) or "unset"
     agent = EXECUTOR_AGENT if role == "executor" else REVIEWER_AGENT
+    if role in AGENT_KINDS:
+        agent_handed_out(state, task, role)
+        write_state(ctx, state)
     return dispatch_said(ctx, role, task["id"], agent, model, brief)
 
 
@@ -2094,14 +2472,45 @@ def session_skills(ctx, task, phase_review=False):
     plan as it stands now - the one resolver, so the writer, the reviewer and the
     executor subagent are given the same names. A session reviewing at phase
     scope (`phase_review`) also starts with the review skill
-    `_areas.resolve_review_skill` resolves, the one the phase brief names; a
-    per-task reviewer never does, since `mode: task` takes no review skill."""
+    `_areas.resolve_review_skill` resolves, the one the phase brief names, when
+    the session runner can find it (`runner_review_skill`); a per-task reviewer
+    never does, since `mode: task` takes no review skill."""
     manifest, phase = load_phase(ctx)
     skills = _areas.resolve_skills(manifest, phase, task)
     if not phase_review:
         return skills
-    review, _basis = _areas.resolve_review_skill(manifest, phase)
+    review, _left_out = runner_review_skill(ctx, manifest, phase)
     return skills + [review] if review and review not in skills else skills
+
+
+def runner_review_skill(ctx, manifest, phase):
+    """`(skill, left_out)`: the review skill `phase` resolves when the session
+    runner would find it in the project, else `(None, why)` - one line naming
+    the skill and the runner's reason - or `(None, None)` when none resolves.
+
+    The runner refuses to start over a `--skill` it cannot find, and it looks
+    only in the user's skills, the tree's `.claude/skills` and its own plugin's
+    `skills/`; a skill another plugin ships, or one bundled with Claude Code, is
+    loadable by an Agent's Skill tool and not by the runner. So the question is
+    put to `_skill_places.resolve_skill`, the runner's own resolver, with the
+    runner's own home and plugin, and a skill it does not find is left out
+    rather than handed to a session that would never start."""
+    skill, _basis = _areas.resolve_review_skill(manifest, phase)
+    if not skill:
+        return None, None
+    hit = _skill_places.resolve_skill(
+        skill, ctx["project"], _claude_home.claude_home(), _output.PLUGIN_ROOT,
+        _skill_places.plugin_name(_output.PLUGIN_ROOT))
+    if hit["found"]:
+        return skill, None
+    why = hit["problem"] or (
+        "not found - looked in %s" % (", ".join(hit["places"]),) if hit["places"]
+        else "not found - a plugin-qualified name is read only from that "
+        "plugin's own skills/, and the runner is plugin %s"
+        % (_skill_places.plugin_name(_output.PLUGIN_ROOT) or "(name unread)",))
+    return None, ("review skill %s left out of the headless validation session: "
+                  "the session runner cannot load it (%s), and it refuses to "
+                  "start over a skill it cannot find" % (skill, why))
 
 
 def writer_argv(ctx, task, writer, prompt, record, tree=None, resume=None,
@@ -2181,14 +2590,26 @@ def open_dispatch(ctx, state, task, round_n, build, tree=None, key="writer",
     record = session_record(ctx, task, seq, "writer" if key == "writer" else "reviewer")
     argv = build(record)
     held["seq"] = seq + 1
+    # `at` is the hand-out, stamped as a gate's launch is: the gap from it to
+    # the session's own start is the wait `session_stages` reads.
     entry = {"seq": seq, "round": round_n, "record": record, "argv": argv,
-             "head": tree_head(ctx, tree)}
+             "head": tree_head(ctx, tree), "at": _utc_stamp()}
     if kind:
         entry["kind"] = kind
     held["dispatches"] = list(held["dispatches"]) + [entry]
     _mark(state, key, task, held)
     write_state(ctx, state)
     return record, argv
+
+
+# The list of skills a session invoked, under the name the session runner
+# records it by and a phase reviewer's return names it by: one word for
+# the reading on both routes.
+INVOKED_FIELD = "skillsInvoked"
+# What a phase reviewer's return says the Skill tool answered when the review
+# skill its brief named would not load: the honest alternative to naming it in
+# `INVOKED_FIELD`, which `submit` files and raises to triage.
+UNAVAILABLE_FIELD = "skillUnavailable"
 
 
 def read_sessions(path):
@@ -2218,7 +2639,7 @@ def read_sessions(path):
         line = str(body.get("line") or "")
         hit = _SESSION_LINE.match(line)
         skills = body.get("skills")
-        invoked = body.get("skillsInvoked")
+        invoked = body.get(INVOKED_FIELD)
         runs.append({"session": hit.group(1) if hit else None,
                      "cost": hit.group(4) if hit else None,
                      "stream": hit.group(6).strip() if hit else None,
@@ -2227,7 +2648,9 @@ def read_sessions(path):
                                   if isinstance(s, dict) and s.get("name")]
                      if isinstance(skills, list) else [],
                      "invoked": [str(n) for n in invoked]
-                     if isinstance(invoked, list) else None})
+                     if isinstance(invoked, list) else None,
+                     "startedAt": body.get("startedAt"),
+                     "durationMs": body.get("durationMs")})
     return runs
 
 
@@ -2328,15 +2751,16 @@ def session_note(round_n, run, who="writer"):
                                        run["exit"], skills_said(run)))
 
 
-def note_task(ctx, task, text):
+def note_task(ctx, task, text, stages=()):
     """Note `text` on `task` through the verb, every path in it spelled the way
     a committed row may say it (`redacted_free_text`: project-relative inside
     the project, a token outside it), since the verb refuses a machine path.
-    None, or the verb's refusal - which the caller records and goes past: a
-    note is a record of a session, and no step waits on it."""
+    `stages` are `stage_args`' words, carried by the same write. None, or the
+    verb's refusal - which the caller records and goes past: a note is a record
+    of a session, and no step waits on it."""
     clean = _journal_io.redacted_free_text(ctx["project"], text)
     code, out, err = run_verb(ctx, "audit-task.py", _task_args(
-        ctx, "note", task["id"]) + ["--text", "-"], stdin=clean)
+        ctx, "note", task["id"]) + ["--text", "-"] + list(stages), stdin=clean)
     if code == 0:
         return None
     return _clip(" ".join((out + err).split()) or "exit %d" % (code,), 160)
@@ -2345,7 +2769,9 @@ def note_task(ctx, task, text):
 def note_sessions(ctx, state, task, key="writer"):
     """Note each outcome the task's writer records - or its reviewer's, under
     `key` - hold that the last step had not seen - once, whether the verb took
-    the note or refused it."""
+    the note or refused it. Each note carries the session's stages and every
+    stage queued before it (`session_stages`, `stage_args`); a refused note
+    leaves them queued for the next write."""
     who = "writer" if key == "writer" else "reviewer"
     held = writer_state(state, task, key)
     for each in held["dispatches"]:
@@ -2354,7 +2780,13 @@ def note_sessions(ctx, state, task, key="writer"):
         resumed = resumed_session(each.get("argv"))
         for run in runs[seen:]:
             run = session_reading(held["runs"], run, resumed)
-            refused = note_task(ctx, task, session_note(each["round"], run, who))
+            for source, stage in session_stages(each, dict(run, index=seen), who,
+                                                seen == 0):
+                queue_stage(state, task, source, stage)
+            refused = note_task(ctx, task, session_note(each["round"], run, who),
+                                stage_args(state, task))
+            if refused is None:
+                stages_carried(state, task)
             held["runs"] = list(held["runs"]) + [dict(run, round=each["round"],
                                                       seq=each["seq"])]
             held["noted"] = dict(held["noted"], **{str(each["seq"]): seen + 1})
@@ -2575,15 +3007,25 @@ def gate_row(ctx, text):
     measured it, for a repeated verdict, when that one is still there - or None
     when the output names no run, the ledger will not read, or no row carries
     the id."""
+    return gate_row_read(ctx, text)[0]
+
+
+def gate_row_read(ctx, text):
+    """`gate_row` with why it holds no row: `(row, None)`, `(None, why)` when
+    the ledger will not read or holds no row of the run the output names, and
+    `(None, None)` when the output names no run - a gate that recorded no run
+    has no stage to lose, so `queue_row` says nothing of it."""
     found = _RUN_ID.search(text or "")
     if not found:
-        return None
+        return None, None
     try:
         rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
-    except Exception:                                          # noqa: BLE001
-        return None
+    except Exception as exc:                                   # noqa: BLE001
+        return None, ledger_unread(exc)
     row = _evio.row_by_run(rows, found.group(1))
-    return _evio.measured_row(rows, row) or row
+    if row is None:
+        return None, "the evidence ledger holds no row of run %s" % (found.group(1),)
+    return _evio.measured_row(rows, row) or row, None
 
 
 GATE_RED_HEAD = "The task gate the drive ran after your session is red. Its failing lines:"
@@ -2902,16 +3344,19 @@ def rerun_alongside(ctx, state, manifest, pending):
 # TWICE MOVED IN ONE START IS A STOP. Only a base unmeasurable because HEAD no
 # longer held the red's code counts: the mark records that reason (`moved`,
 # from `code_moved`), and a red whose steps cannot be re-run at the base
-# (`base_unrunnable`) never sets it - that red goes to the writer every time,
-# bounded by the writer rounds as it always was, since no stop would change
-# what it measures. The start's mark carries how many earlier reds of the start
-# had a moved-code base (`UNMEASURED_BEFORE`, counted by `unmeasured_before`
-# from the mark it replaces); once the start counts `UNMEASURED_BOUND` of them
-# (`unmeasurable_bound`), the red stops as `gate-red-base-unknown`, never
-# another automatic round, so neither `next` nor `auto` can loop gate - moved
-# HEAD - gate. That one predicate is asked twice: of a mark just decided, and
-# in the due branch BEFORE any measurement is launched, inline or in the
-# background, so a sibling that keeps moving the code cannot keep relaunching.
+# (`base_unrunnable`) never sets it - that red goes to the writer every time
+# until the start reaches the bound below, bounded by the writer rounds as it
+# always was, since no stop would change what it measures. The start's mark
+# carries how many earlier reds of the start had a moved-code base
+# (`UNMEASURED_BEFORE`, counted by `unmeasured_before` from the mark it
+# replaces); once the start counts `UNMEASURED_BOUND` of them
+# (`unmeasurable_bound`), a red whose own reading names no base run
+# (`base_behind`) stops as `gate-red-base-unknown`, never another automatic
+# round, so neither `next` nor `auto` can loop gate - moved HEAD - gate; one
+# whose reading does name a base run is decided by it, unmeasured. That one
+# predicate is asked twice: of a mark just decided, and in the due branch
+# BEFORE any measurement is launched, inline or in the background, so a
+# sibling that keeps moving the code cannot keep relaunching.
 # The count lives on the mark, so a new start (`_marked` reads a mark of an
 # earlier start as none) counts from zero, and `measure-base`, which drops the
 # mark, is the owner's own answer rather than a round the drive took.
@@ -3294,24 +3739,33 @@ def read_base_progress(path):
 
 
 def fold_progress(ctx, task_id, held):
-    """`(mark, final)` - the base mark `held` with its background run's own
-    record laid over it, and that record's path when nothing will write it
-    again (else None): the run said it was done, or it ran and no process it
-    named is alive. A mark that is not a background launch, or that `next`
-    has closed, is returned as it is.
+    """`(mark, final)` of `fold_reading`, its liveness reading dropped."""
+    mark, final, _running = fold_reading(ctx, task_id, held)
+    return mark, final
+
+
+def fold_reading(ctx, task_id, held):
+    """`(mark, final, running)` - the base mark `held` with its background
+    run's own record laid over it; that record's path when nothing will write
+    it again (else None): the run said it was done, or it ran and no process it
+    named is alive; and the liveness reading that decided it (`base_running`),
+    None when none was taken. A mark that is not a background launch, or that
+    `next` has closed, is returned as it is.
 
     A run seen dead is read once more after the death was seen: a run that
     wrote its answer and exited between the first read and the liveness
     check left that answer in the file."""
     if not (isinstance(held, dict) and held.get("background")) or held.get("done"):
-        return held, None
+        return held, None, None
     path = base_progress_path(ctx, task_id, launch_key(held))
     progress = read_base_progress(path)
-    final = bool(progress.get("done"))
-    if not final and progress.get("ran") and not base_running(progress):
-        progress = read_base_progress(path)
-        final = True
-    return dict(held, **progress), (path if final else None)
+    final, running = bool(progress.get("done")), None
+    if not final and progress.get("ran"):
+        running = base_running(progress)
+        if not running:
+            progress = read_base_progress(path)
+            final = True
+    return dict(held, **progress), (path if final else None), running
 
 
 def base_mark(ctx, state, task):
@@ -3448,8 +3902,9 @@ def base_said(ctx, task_id, run_id, argv, why=None):
 
 
 def base_wait_said(ctx, task_id, since, argv):
-    """The wait on a base measurement launched at `since` that has left no
-    reading yet, with its command printed again as the `run:` line."""
+    """The wait on a base measurement handed out at `since` - the moment the
+    drive printed its dispatch, never a process it saw start - that has left
+    no reading yet, with its command printed again as the `run:` line."""
     return background_wait(
         "wait-base", task_id, step_text("wait-base", task=task_id, since=since),
         "no base reading for %s since %s" % (task_id, since),
@@ -3499,7 +3954,9 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
     (`unmeasurable_elsewhere`), which is read as no mark; a start that counts
     `UNMEASURED_BOUND` moved-code bases is unknown (`unmeasurable_bound`) -
     asked of the decided mark, and in the due branch before anything is
-    launched - so the drive asks rather than looping. Its reading
+    launched - so the drive asks rather than looping; there a red whose own
+    reading names a base run (`base_behind`) is decided by that reading,
+    with nothing measured. Its reading
     decides only the red it was measured for, or a repeat of that red
     (`red_runs`); any other red of the start is decided by its own row's
     reading, and is unknown where that names no base run. A measurement that
@@ -3516,6 +3973,12 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
     if base_measure_due(state, task, row, runs):
         before = _marked(state, BASE_MEASURED, task)
         if unmeasurable_bound(before):
+            # Past the bound nothing is measured again; a red whose own
+            # reading already stands on a base run is decided by it, as the
+            # decided-mark branch below decides one, and only a red with no
+            # base run of its own is the unknown stop.
+            if base_behind(reading):
+                return None, reading, None
             return None, reading, bound_said(before)
         due, why = gate_in_background(ctx, _evio.red_step_names(row))
         if due:
@@ -3548,6 +4011,11 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
         held = dict(held, decided=True)
         _mark(state, BASE_MEASURED, task, held)
         write_state(ctx, state)
+        # The base run this start measured, read once, as it is decided on;
+        # a launched one also waited from its hand-out.
+        if base_behind(fresh):
+            queue_row(ctx, state, task, ledger_row(ctx, fresh["run"]), "base",
+                      since=held.get("at") if held.get("background") else None)
     use = fresh if (fresh is not None and mine) else reading
     if base_behind(use):
         return None, use, None
@@ -3580,12 +4048,11 @@ def base_gate(ctx, state, phase, task, tree=None):
     """`(print, measured)` while a base measurement launched to the background
     is not decided on yet: the wait on it, or - once its run has ended - the
     verdict of the red run it was launched for, read back (`read_back`) as a
-    background gate's is: a verdict a repeat may copy is repeated by the
-    recorded gate's own call, which on the same tree measures nothing, and a
-    row of any other word stands as recorded (`unrepeatable_red`). Never a
-    rerun's `--no-reuse`: a verdict that does not repeat on this tree is
-    measured again by that call, as `read_back` says on its did-line, and
-    only then. `(None, None)` otherwise."""
+    background gate's is: that run's red as its row records it, asked nothing
+    again (`recorded_red`), and a row of a word no repeat copies as recorded
+    (`unrepeatable_red`). The record-gate call is handed over for a green, which
+    `read_back` asks again - never with a rerun's `--no-reuse`. `(None, None)`
+    otherwise."""
     held = base_mark(ctx, state, task)
     if not (isinstance(held, dict) and held.get("background")
             and not held.get("decided")):
@@ -3594,7 +4061,8 @@ def base_gate(ctx, state, phase, task, tree=None):
         return base_wait_said(ctx, task["id"], held.get("at"),
                               held.get("argv") or []), None
     return None, read_back(ctx, held.get("of"), red_status(ctx, held),
-                           lambda: record_gate(ctx, phase, task, tree),
+                           lambda verbose: record_gate(ctx, phase, task, tree,
+                                                       verbose=verbose),
                            "gate %s" % (task["id"],))
 
 
@@ -3687,13 +4155,22 @@ def sweep_base_trees(ctx, state):
     `remove_base_tree`. A base tree no mark of this phase names is another
     run's and is never touched. Each answer is a did-line, and the marks are
     written once when any changed. A background run's own record is folded
-    in first (`fold_progress`), since the tree and the processes are named
-    there; one nothing will write again is removed once the state holds it."""
+    in first (`fold_reading`), since the tree and the processes are named
+    there; one nothing will write again is removed once the state holds it.
+
+    ONE LIVENESS READING PER RUN DECIDES BOTH THE FOLD AND THE REMOVAL. A
+    reading can flip between two asks - a pid exiting between `_locks`' kill
+    probe and its `ps`, or a `ps` that times out, both read as alive - and a
+    fold that read alive keeps the run's record while a second reading of
+    dead clears the tree from this state alone: the next fold lays the
+    record's tree and pids back, and the mark names a tree that is gone. So
+    the fold's reading is the sweep's; only a mark the fold took no reading
+    of is read here, and a run read dead by the fold is the record it spends."""
     marks = state.get(BASE_MEASURED) or {}
     changed, spent = False, []
     for task_id in sorted(marks):
-        value, final = fold_progress(ctx, task_id,
-                                     (marks[task_id] or {}).get("value"))
+        value, final, running = fold_reading(ctx, task_id,
+                                             (marks[task_id] or {}).get("value"))
         if final is not None:
             spent.append(final)
             marks[task_id] = dict(marks[task_id], value=value)
@@ -3701,13 +4178,15 @@ def sweep_base_trees(ctx, state):
         holder = value.get("tree") if isinstance(value, dict) else None
         if not holder:
             continue
-        running = base_running(value)
+        if running is None:
+            running = base_running(value)
         if running:
             ctx["did"].append("%s's base tree %s is left: the run that measured "
                               "it may still be going (pid %s)" % (
                                   task_id, holder,
                                   ", ".join("%s" % (p,) for p in running)))
             continue
+        there = os.path.exists(holder)
         kept, left = remove_base_tree(ctx, holder)
         value = dict(value)
         value.pop("tree", None)
@@ -3715,8 +4194,12 @@ def sweep_base_trees(ctx, state):
         if kept is not None:
             value["kept"] = holder
             said = "kept: %s" % (kept,)
+        elif left:
+            said = "left behind"
         else:
-            said = "left behind" if left else "removed"
+            # A directory already gone was removed by nobody here; git's
+            # registration of it, if any, is what the removal took down.
+            said = "removed" if there else "already gone from disk"
         ctx["did"].append("%s's base tree %s, left by a drive stopped while it "
                           "measured, %s" % (task_id, holder, said))
         marks[task_id] = dict(marks[task_id], value=value)
@@ -3766,9 +4249,10 @@ def release_orphaned_launches(ctx, state):
 def gate_red_lines(text):
     """The lines of a gate run's output that hold its verdict - every line
     holding GATE but the banner a repeated verdict opens with. The verdict is
-    a line after that banner, and a background gate's red reaches its reader
-    as a repeat every time, so a reader taking the first GATE line would name
-    the banner as the red."""
+    a line after that banner, and a gate run inside `next` that repeated a red
+    opens with it, so a reader taking the first GATE line would name the
+    banner as the red. A background red is read off its row
+    (`recorded_red`) and carries no banner."""
     return [ln for ln in (text or "").splitlines()
             if "GATE" in ln and not ln.startswith(GATE_REUSED_BANNER)]
 
@@ -4775,14 +5259,16 @@ def member_project(ctx, tree):
     return os.path.join(tree, *rel.split(os.sep))
 
 
-def record_gate(ctx, phase, task, tree=None, no_reuse=False):
+def record_gate(ctx, phase, task, tree=None, no_reuse=False, verbose=False):
     """`(code, stdout, stderr)` of the task's recorded gate run - measured in
     the project's directory inside `tree` (`member_project`) when the task runs
     in a tree of its own, and recorded in the project's ledger either way.
     `no_reuse` measures even where an earlier verdict on the same tree could be
-    repeated: what a `rerun` asks for."""
+    repeated: what a `rerun` asks for. `verbose` asks for the long form
+    (`READ_BACK_FORM`), which a read-back reads."""
     return run_verb(ctx, "run-test-gate.py",
-                    gate_args(ctx, phase, task, tree, no_reuse))
+                    gate_args(ctx, phase, task, tree, no_reuse)
+                    + (READ_BACK_FORM if verbose else []))
 
 
 def gate_args(ctx, phase, task, tree=None, no_reuse=False, absolute=False):
@@ -4830,7 +5316,9 @@ def run_followers(ctx, run_id):
     except Exception:                                          # noqa: BLE001
         return []
     # A repeated verdict's row names the run that measured it, and the
-    # followers are that run's: a background gate's red reaches here as one.
+    # followers are that run's: a red a gate run inside `next` repeated
+    # reaches here as one, and so does a background row that repeated one,
+    # whose own id `recorded_red` names.
     row = _evio.row_by_run(rows, run_id)
     row = _evio.measured_row(rows, row) or row or {}
     return [f for f in row.get(_evio.FOLLOWERS_KEY) or []
@@ -5158,14 +5646,25 @@ def committed_sha(out):
     return found.group(1) if found else None
 
 
+def commit_verb(ctx, args):
+    """`run_verb` of `commit-task-work.py` with `args`, its length added to
+    `ctx[COMMIT_MS]` when the close is timing the commit - so the commit stage
+    holds the verb's own runs and nothing the step does between them."""
+    clock = time.monotonic()
+    try:
+        return run_verb(ctx, "commit-task-work.py", args)
+    finally:
+        if isinstance(ctx.get(COMMIT_MS), list):
+            ctx[COMMIT_MS].append((time.monotonic() - clock) * 1000.0)
+
+
 def refusal_answer(ctx, task):
     """The JSON answer (`_scoped_commit.answer`'s shape) of a `commit-task-work.py
     --json` run, asked after a refusal to read WHICH arm refused; None when its
     stdout holds no object. A refusal stages nothing, so the run asks the same
     question of the same tree - and a refusal that came and went commits here,
     which the answer then says."""
-    _code, out, _err = run_verb(ctx, "commit-task-work.py",
-                                commit_args(ctx, task) + ["--json"])
+    _code, out, _err = commit_verb(ctx, commit_args(ctx, task) + ["--json"])
     try:
         answer = json.loads(out)
     except ValueError:
@@ -5430,7 +5929,7 @@ def writer_commit(ctx, state, phase, task):
     back: the refusal is relayed naming it - after the clean ones are set aside
     and the work gated again, so a later close stands on that gate. Any other
     refusal is relayed in the verb's own words."""
-    code, out, err = run_verb(ctx, "commit-task-work.py", commit_args(ctx, task))
+    code, out, err = commit_verb(ctx, commit_args(ctx, task))
     if code == 0:
         return committed_sha(out), None
     answer = refusal_answer(ctx, task)
@@ -5448,7 +5947,7 @@ def writer_commit(ctx, state, phase, task):
     if stop is not None:
         return None, stop
     # Asked again, so a refusal relayed now names what the tree still holds.
-    code, out, err = run_verb(ctx, "commit-task-work.py", commit_args(ctx, task))
+    code, out, err = commit_verb(ctx, commit_args(ctx, task))
     if code != 0:
         return None, relay_refusal(ctx, "commit-task-work.py", code,
                                    (out + err).rstrip("\n") + said)
@@ -5860,6 +6359,26 @@ def _reviewer_facts(state, task, due, reviewer, stepped):
 
 
 # --- a task's close and advance: the facts read, the arm performed ------------
+def close_carrying(ctx, state, task, args, send=None):
+    """Close `task` through `audit-task.py done <args>`, carrying every stage
+    queued for it (`stage_args`) - the one way the drive closes a task, so no
+    route of a close leaves the queue behind. `send(argv)` runs the verb when
+    the close carries a prose value, which goes on stdin through a
+    `_verb_with_text` call the caller writes; else `_verb_or_stop`. None once
+    closed, the queue dropped with the task's timing entry; else the stop,
+    with the queue kept for the close asked again."""
+    done_args = _task_args(ctx, "done", task["id"], *args) + stage_args(state, task)
+    if send is None:
+        _out, stop = _verb_or_stop(ctx, "audit-task.py", done_args)
+    else:
+        _out, stop = send(done_args)
+    if stop is not None:
+        return stop
+    stages_carried(state, task, closed=True)
+    write_state(ctx, state)
+    return None
+
+
 def close_task(ctx, state, phase, task, intent_basis=None):
     """Findings, commit and close for a task whose returns are filed; None when
     the drive goes on, else the instruction or stop to print."""
@@ -5889,15 +6408,28 @@ def close_task(ctx, state, phase, task, intent_basis=None):
     route, _none = _close_plan("route", {
         "writerPath": lambda: writer_path_on(ctx),
         "session": lambda: recorded_session(state, task)})
+    # THE RECORD COMMIT IS TIMED HERE, as the commit verb's own runs added up
+    # (`commit_verb`): no record of it holds a length, and the close below is
+    # the write that carries it. Not around the whole step - a set-aside
+    # proves and gates again between two runs, and that gate is a stage of
+    # its own, so a span around both counted it twice.
+    began, ctx[COMMIT_MS] = _utc_stamp(), []
     if route == "writer-commit":
         sha, stop = writer_commit(ctx, state, phase, task)
-        if stop is not None:
-            return stop
     else:
+        clock = time.monotonic()
         out, stop = _verb_or_stop(ctx, "commit-task-work.py", commit_args(ctx, task))
-        if stop is not None:
-            return stop
-        sha = committed_sha(out)
+        ctx[COMMIT_MS].append((time.monotonic() - clock) * 1000.0)
+        sha = committed_sha(out) if stop is None else None
+    runs = ctx.pop(COMMIT_MS)
+    if stop is not None:
+        return stop
+    if sha:
+        queue_stage(state, task, "commit:%s" % (sha,), _timing.make_stage(
+            "commit", began, int(round(sum(runs))),
+            "commit-task-work.py's own %d run(s), timed by the drive and added "
+            "up, commit %s" % (len(runs), sha[:12])))
+        write_state(ctx, state)
     # A close refused after the commit landed leaves the work committed: close
     # on that commit through the same verb and checks, rather than offer
     # no-change (a false outcome) or retry (the work redone). `own` is a git
@@ -5907,13 +6439,13 @@ def close_task(ctx, state, phase, task, intent_basis=None):
     if closing == "no-change":
         return decision(ctx, state, "no-change", task, "")
     extra = ["--commit", sha, "--from-return"]
-    done_args = _task_args(ctx, "done", task["id"], *extra)
     if intent_basis is None:
-        _out, stop = _verb_or_stop(ctx, "audit-task.py", done_args)
+        stop = close_carrying(ctx, state, task, extra)
     else:
-        _out, stop = _verb_with_text(
-            ctx, "audit-task.py", done_args + ["--intent", "not-asked"],
-            "--intent-basis", intent_basis)
+        stop = close_carrying(
+            ctx, state, task, extra + ["--intent", "not-asked"],
+            lambda argv: _verb_with_text(ctx, "audit-task.py", argv,
+                                         "--intent-basis", intent_basis))
     if stop is not None:
         return stop
     ctx["did"].append("%s %s at %s" % (CLOSED, task["id"], sha[:7]))
@@ -5956,6 +6488,8 @@ def advance(ctx, state, manifest, phase, task, tree=None):
     executor, problem = filed(ctx, task, "executor")
     if problem:
         return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
+    if executor is not None:
+        queue_agent_stage(ctx, state, task, "executor")
     turn, _none = _advance_plan("writer", _writer_facts(
         state, task, executor, lambda: writer_holds(state, task)))
     if turn == "file-return":
@@ -6007,6 +6541,8 @@ def advance(ctx, state, manifest, phase, task, tree=None):
         reviewer, problem = filed(ctx, task, "reviewer")
         if problem:
             return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
+        if reviewer is not None:
+            queue_agent_stage(ctx, state, task, "reviewer")
     review_turn, _none = _advance_plan("reviewer", _reviewer_facts(
         state, task, due, reviewer, False))
     if review_turn == "session-step":
@@ -6082,12 +6618,16 @@ def gate_step(ctx, state, manifest, phase, task, tree=None):
     if said is not None:
         return said
     code, out, err = measured
+    # The run that measured the verdict, a repeat's included (`gate_row`
+    # reads through to it), queued once per run whatever reads it again.
+    queue_row(ctx, state, task, gate_row_read(ctx, out + err))
     if code == 1:
         followed, again = follow_red_gate(ctx, state, phase, task, out + err, tree)
         if followed is not None:
             return followed
         if again is not None:
             code, out, err = again
+            queue_row(ctx, state, task, gate_row_read(ctx, out + err))
     if code == 1:
         return gate_red_decision(ctx, state, manifest, phase, task, out + err,
                                  tree)
@@ -6115,17 +6655,21 @@ def gate_step(ctx, state, manifest, phase, task, tree=None):
 # re-gate on the phase tree, and sign-off's phase gate). The first call prints it
 # as a dispatch whose `run:` line the orchestrator runs in the background, and
 # marks the launch with the subject's ledger rows as they stood; a call before a
-# new row exists waits; a call after one repeats its verdict through the same
-# run-test-gate call, which on the same tree content measures nothing (`GATE
-# VERDICT REUSED`). A gate measured under the bound runs inline and costs the
-# main loop no turn, and so does a gate of no steps, which runs nothing. The
-# words a row's `status` takes are `run-test-gate.py`'s, mirrored because an
-# entry point may not import another; `bg3`, `bg3g` and `bg4` drive the real
-# verb on each, `gs1`-`gs4` the words no repeat copies, and `ge4`-`ge5` the
-# empty gate's, which that verb exits 0 on - its green.
+# new row exists waits; a call after one reads it back (`read_back`): a red is
+# the row's own verdict, asked nothing again, and a green is asked again through
+# the same run-test-gate call, which on unchanged content repeats every step
+# that grades the tree and measures again only an entry naming a path its
+# identity leaves out, saying which on a did-line clause. A gate measured under
+# the bound runs inline and costs the main loop no turn, and so does a gate of no
+# steps, which runs nothing. The words a row's `status` takes are
+# `run-test-gate.py`'s, mirrored because an entry point may not import another;
+# `bg3`, `bg3g` and `bg4` drive the real verb on each, `rd1`-`rd7` a gate holding
+# an entry that names the plan, `gs1`-`gs4` the words no repeat copies, and
+# `ge4`-`ge5` the empty gate's, which that verb exits 0 on - its green.
 GATE_LAUNCH_KEY = "gateLaunched"
 PHASE_GATE_LAUNCH_KEY = "phaseGateLaunched"
 GATE_REPEATABLE = _evio.MEASURED_STATUSES
+GATE_PASSED = _evio.RUN_PASSED
 GATE_EMPTY = "empty-gate"
 GATE_CANCELLED = "cancelled"
 
@@ -6139,18 +6683,23 @@ def runnable_entries(manifest, entries):
     return [e for e in entries or () if not _phases.review_only_entry(e, build)]
 
 
-def task_gate_steps(manifest, phase, task_id):
+def task_gate_steps(manifest, phase, task_id, left=()):
     """`(names, joins)` - the steps `run-test-gate.py --task` runs for the task
     as far as they are known before it runs, and why more may join them.
 
     `names` are its gate's entries (`_mio.gate_entries`, the runner's own
     reading of whose gate it is) less the review-only ones the runner says and
-    never runs (`_phases.review_only_entry`). To a gate that runs anything the
-    runner adds the suites the task's change can break, found by a gathering
-    it runs itself - unless the gate is its phase's, or already carries the phase's
-    wide gate (`_affected_tests.already_wide`, the runner's own test). `joins`
-    is None in those cases, else the reason the steps that join are not known
-    here. `phase` answers for a task the plan does not hold.
+    never runs (`_phases.review_only_entry`), and less the ones the runner
+    leaves to the phase gate: `left` is `executor.phaseGateOnly`, and which
+    entries it leaves out is `_config_rules.phase_gate_only_split` against
+    `_evidence_io.phase_gate_steps` - the runner's own reading. To a gate that
+    runs anything the runner adds the suites the task's change can break,
+    found by a gathering it runs itself - unless the gate is its phase's, or
+    already carries the phase's wide gate (`_affected_tests.already_wide`, the
+    runner's own test, asked of the declared entries before any is left out,
+    as the runner asks it). `joins` is None in those cases, else the reason
+    the steps that join are not known here. `phase` answers for a task the
+    plan does not hold.
 
     The runner's step list itself is not asked for: it is built inside the
     run, after a gathering that may run the project's own listings, and
@@ -6163,9 +6712,16 @@ def task_gate_steps(manifest, phase, task_id):
             owner, task = each, found[0]
             break
     entries, source = _mio.gate_entries(owner, task)
-    names = runnable_entries(manifest, entries)
-    if not names or source != "task" \
-            or _affected.already_wide(names, _mio.gate_entries(owner)[0]):
+    declared = runnable_entries(manifest, entries)
+    names = declared
+    if left:
+        # Asked only when the project names something, as the runner asks it:
+        # an absent or empty setting reads nothing more than it did before.
+        names = [name for name, _command in _config_rules.phase_gate_only_split(
+            _evio.resolved_commands(manifest, declared),
+            _evio.phase_gate_steps(manifest, owner), left)["kept"]]
+    if not declared or source != "task" \
+            or _affected.already_wide(declared, _mio.gate_entries(owner)[0]):
         return names, None
     return names, ("run-test-gate.py adds to it the affected suites - the ones "
                    "this task's change can break - and which those are is known "
@@ -6215,7 +6771,10 @@ def chosen_task_gate(ctx, state, phase, task, tree=None, manifest=None):
     if not isinstance(_marked(state, GATE_LAUNCH_KEY, task), dict):
         if manifest is None:
             manifest = _mio.load_manifest(ctx["manifest"])
-        names, joins = task_gate_steps(manifest, phase, task["id"])
+        # A setting the reader cannot use leaves nothing out here; the runner
+        # refuses it by name, so the refusal reaches the operator either way.
+        left, _problem = _config_rules.phase_gate_only_setting(ctx.get("config"))
+        names, joins = task_gate_steps(manifest, phase, task["id"], left)
         due, why = gate_in_background(ctx, names, joins)
         if not due:
             return None, task_gate(ctx, state, phase, task, tree)
@@ -6236,8 +6795,9 @@ def gate_said(ctx, subject, argv, phase_gate=False, why=None):
 
 
 def gate_wait_said(ctx, task_id, since, argv):
-    """The wait on a gate launched at `since` that has recorded no row yet,
-    with its command printed again as the `run:` line."""
+    """The wait on a gate handed out at `since` - the moment the drive
+    printed its dispatch, never a process it saw start - that has recorded no
+    row yet, with its command printed again as the `run:` line."""
     return background_wait(
         "wait-gate", task_id, step_text("wait-gate", task=task_id, since=since),
         "no gate row for %s since %s" % (task_id, since),
@@ -6304,22 +6864,184 @@ def unrepeatable_red(run_id, status):
             "  evidence: recorded %s\n" % (run_id, status, run_id), "")
 
 
+def recorded_red(ctx, run_id, label):
+    """`(code, out, err)` for a background row that recorded a red verdict: the
+    red as that row holds it - its failed steps on a `GATE RED` line, each
+    step's failing lines under it, and the run on the `evidence: recorded`
+    line every reader of a red keys on - with nothing asked again. A did-line
+    clause says the red was read back from the row."""
+    row, why = ledger_row(ctx, run_id)
+    failed = list((row or {}).get("failed") or [])
+    lines = ["GATE RED: %s" % (", ".join(failed) if failed else
+                               "run %s recorded failed in the background%s"
+                               % (run_id, "" if why is None else " (%s)" % (why,)))]
+    for step in (row or {}).get("steps") or []:
+        if isinstance(step, dict) and step.get("failing"):
+            lines.append("  %s:" % (step.get("name"),))
+            lines.extend("      %s" % (ln,) for ln in step["failing"])
+    lines.append("  evidence: recorded %s" % (run_id,))
+    ctx["did"].append("%s red read back from run %s, not asked again"
+                      % (label, run_id))
+    return 1, "\n".join(lines) + "\n", ""
+
+
+# The lines `run-test-gate.py` prints for an entry naming a path its content
+# identity leaves out (`left_out_line`): such an entry is measured on every ask,
+# so measuring it again on a read-back is no failure to repeat. Mirrored because
+# an entry point may not import another; `rd1`, `rd2`, `rd5` and `rd11` drive
+# the real verb, which is what goes red if either drifts.
+GATE_LEFT_OUT = ("[run-test-gate] %s names ",
+                 "[run-test-gate] %s cannot be read for the paths it names")
+
+
+def grades_left_out(text, name):
+    """True when the gate's output `text` says the entry the step `name` ran
+    names a path its identity leaves out (`GATE_LEFT_OUT`). A joined step's
+    name is the declared entry with the affected steps after it, and the
+    runner's sentence names the declared entry alone, so the entry is read
+    off the name by `_evidence_io.step_parts`; a step that ran no declared
+    entry is matched by its whole name."""
+    entry = _evio.step_parts(name)[0]
+    names = set([str(name)] + ([entry] if entry else []))
+    return any(ln.startswith(form % (n,)) for ln in (text or "").splitlines()
+               for form in GATE_LEFT_OUT for n in names)
+
+
+def step_seconds(step, name=str):
+    """`"<name> (1.2 s)"` for a measured step, `not timed` when its row keeps
+    no duration; `name` spells the step's name (`signal_step_name` for the
+    signal's form)."""
+    ms = step.get("durationMs")
+    took = ("%.1f s" % (ms / 1000.0,) if isinstance(ms, (int, float))
+            and not isinstance(ms, bool) else "not timed")
+    return "%s (%s)" % (name(step.get("name")), took)
+
+
+# A step's name is its gate entry's command text, which nothing bounds. On the
+# one-line signal a read-back clause is carried in a form of its own: each name
+# cut to this width - its head and its tail, where an entry's own words sit -
+# with the did field's clause separator taken out of it, so a long command
+# does not push the clause off the line and one holding `; ` is not read as two
+# clauses. The plain did-line and `--explain` name every step whole. `rd8` and
+# `rd9` hold both on the real read-back.
+SIGNAL_STEP_BYTES = 28
+# Where a step keeps the signal's form of a did-line clause that has one:
+# `{clause: form}`, read by `signal_line`.
+SIGNAL_FORMS_KEY = "signalForms"
+
+
+def signal_step_name(name):
+    """`name` as the signal carries it: on one line, with no ` | ` (`_flat`)
+    and no `; `, and past `SIGNAL_STEP_BYTES` cut to its head and its tail
+    around `...`."""
+    flat = _flat(name).replace("; ", ";")
+    data = flat.encode("utf-8")
+    if len(data) <= SIGNAL_STEP_BYTES:
+        return flat
+    head = (SIGNAL_STEP_BYTES - 3) // 3
+    tail = SIGNAL_STEP_BYTES - 3 - head
+    return (data[:head].decode("utf-8", "ignore") + "..."
+            + data[-tail:].decode("utf-8", "ignore"))
+
+
+def say_clause(ctx, clause, form=None):
+    """Put `clause` on the step's did-line, and `form` - its signal form, when
+    it has one - where `signal_line` reads it."""
+    ctx["did"].append(clause)
+    if form is not None:
+        ctx.setdefault(SIGNAL_FORMS_KEY, {})[clause] = form
+
+
+def repeat_reason(rows, run_id, row):
+    """Why the gate's second ask measured a step that grades the tree, off the
+    identities the gate itself recorded: the second row records none (its
+    `reuseBasis` says why), or it moved from what run `run_id` recorded, or -
+    the same identity - the gate kept the reason to itself."""
+    now = row.get(_evio.REUSE_KEY)
+    if not now:
+        return "the gate recorded no tree identity: %s" % (row.get("reuseBasis"),)
+    then = (_evio.row_by_run(rows, run_id) or {}).get(_evio.REUSE_KEY)
+    if then != now:
+        return ("the tree identity the gate recorded moved since run %s (%s -> %s)"
+                % (run_id, str(then)[-12:], str(now)[-12:]))
+    return ("the gate recorded the tree identity run %s did, and printed no "
+            "reason for measuring it again" % (run_id,))
+
+
+def repeat_said(ctx, run_id, text, label):
+    """`(clause, form)` for the second ask that read back the background row
+    `run_id`, from the row that ask recorded: None when it repeated the whole
+    verdict (`GATE_REUSED_BANNER`, the line the runner prints for it). The
+    clause says which steps it repeated and which it measured again, with
+    their seconds; `did not repeat on this tree` only when a measured step
+    grades the tree - one the gate did not say names a path its identity
+    leaves out (`grades_left_out`) - with the gate's reason (`repeat_reason`).
+    `form` is the signal's shorter form of it, each name cut by
+    `signal_step_name`; None for the clause that names no step."""
+    if GATE_REUSED_BANNER in text:
+        return None
+    found = _RUN_ID.search(text or "")
+    try:
+        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+    except Exception as exc:                                   # noqa: BLE001
+        rows, why = [], ledger_unread(exc)
+    else:
+        why = "the ledger holds no row of the run it names"
+    row = _evio.row_by_run(rows, found.group(1)) if found else None
+    if row is None:
+        return ("%s measured again inside next: run %s did not repeat on this "
+                "tree, and what the second ask measured is unknown - %s"
+                % (label, run_id, why if found else "it named no run")), None
+    steps = [s for s in row.get("steps") or [] if isinstance(s, dict)]
+    repeated = [str(s.get("name")) for s in steps if _evio.step_repeated(s)]
+    measured = [s for s in steps if not _evio.step_repeated(s)]
+    timed = ", ".join(step_seconds(s) for s in measured) or "nothing"
+    short = ", ".join(step_seconds(s, signal_step_name)
+                      for s in measured) or "nothing"
+    if any(not grades_left_out(text, s.get("name")) for s in measured):
+        return ("%s measured again inside next: run %s did not repeat on this "
+                "tree - %s - measured again: %s"
+                % (label, run_id, repeat_reason(rows, run_id, row), timed),
+                "%s did not repeat on this tree: measured %s" % (label, short))
+    return ("%s read back from run %s: %smeasured again: %s" % (
+        label, run_id, "%s repeated, not run again - " % (", ".join(repeated),)
+        if repeated else "", timed),
+        "%s read back: measured %s%s" % (
+            label, short, ", %d repeated" % (len(repeated),) if repeated else ""))
+
+
 def read_back(ctx, run_id, status, repeat, label):
     """`(code, out, err)` for the background row `run_id` of `status`, the one
-    reading the task gate and the phase gate share: a verdict
-    (`GATE_REPEATABLE`) is repeated by `repeat()`, the run-test-gate call that
-    on the same tree measures nothing; an empty gate's row, the runner's own
+    reading the task gate and the phase gate share.
+
+    A RED IS THE LAUNCHED RUN'S OWN; A GREEN IS ASKED AGAIN, AND THE SECOND
+    ASK'S VERDICT IS THE ONE ACTED ON. A red is that
+    row's red (`recorded_red`), asked nothing again, so it reaches the base
+    measurement and the decision as an inline red does: a second ask could
+    come back green and replace a red nobody was shown. A green is asked
+    again through `repeat(verbose)`, the recorded gate's own call, which
+    repeats what it can on this tree - every step grading the tree when
+    nothing moved - and measures the rest: an entry naming a path its identity
+    leaves out (the plan) is measured on every ask, so a second ask on the same
+    content is no free repeat. It is asked with `verbose` True, the long form
+    (`READ_BACK_FORM`), because the one-line green leaves out the lines that
+    say why a step was measured. `repeat_said` puts what it repeated and what
+    it measured on a did-line clause naming `label`, with the signal's shorter
+    form of it.
+    An empty gate's row, the runner's own
     green, is asked again by the same call, which over a gate still empty runs
-    nothing and over one given steps since measures them; any other word is
-    the red the row carries (`unrepeatable_red`). `label` names the gate on
-    the did-line said when a verdict's repeat measured after all - a repeat
-    of an empty gate has no verdict to have repeated, so it says none."""
+    nothing and over one given steps since measures them; it has no verdict to
+    have repeated, so it says none. Any other word is the red the row carries
+    (`unrepeatable_red`)."""
     if status not in GATE_REPEATABLE and status != GATE_EMPTY:
         return unrepeatable_red(run_id, status)
-    code, out, err = repeat()
-    if status != GATE_EMPTY and GATE_REUSED_BANNER not in out + err:
-        ctx["did"].append("%s measured again inside next: run %s did not "
-                          "repeat on this tree" % (label, run_id))
+    if status != GATE_EMPTY and status != GATE_PASSED:
+        return recorded_red(ctx, run_id, label)
+    code, out, err = repeat(True)
+    said = None if status == GATE_EMPTY else repeat_said(ctx, run_id, out + err,
+                                                         label)
+    if said is not None:
+        say_clause(ctx, *said)
     return code, out, err
 
 
@@ -6344,7 +7066,8 @@ def launch_gate(ctx, state, phase, task, tree, argv=None, why=None):
 def background_gate(ctx, state, phase, task, tree):
     """`(print, None)` while the gate is to be launched or waited on, else
     `(None, (code, out, err))` - the verdict of the row the launched run
-    recorded, repeated by `record_gate`. A cancelled row holds no verdict, so
+    recorded, read back by `read_back`: a red as the row holds it, a green
+    asked again through `record_gate`. A cancelled row holds no verdict, so
     the gate is launched again; a row of another word that no repeat may copy
     is decided from as it stands, never measured again here."""
     launched = _marked(state, GATE_LAUNCH_KEY, task)
@@ -6364,8 +7087,10 @@ def background_gate(ctx, state, phase, task, tree):
                            launched.get("argv")), None
     _spend(state, GATE_LAUNCH_KEY, task)
     write_state(ctx, state)
+    queue_row(ctx, state, task, ledger_row(ctx, run_id), since=launched.get("at"))
     return None, read_back(ctx, run_id, status,
-                           lambda: record_gate(ctx, phase, task, tree),
+                           lambda verbose: record_gate(ctx, phase, task, tree,
+                                                       verbose=verbose),
                            "gate %s" % (task["id"],))
 
 
@@ -9176,9 +9901,9 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         write_state(ctx, state)
         return None
     if answer == "no-change":
-        _out, stop = _verb_with_text(
-            ctx, "audit-task.py",
-            _task_args(ctx, "done", task["id"], "--no-change"), "--reason", reason)
+        stop = close_carrying(
+            ctx, state, task, ["--no-change"],
+            lambda argv: _verb_with_text(ctx, "audit-task.py", argv, "--reason", reason))
         if stop is None:
             ctx["did"].append("%s %s (no change)" % (CLOSED, task["id"]))
         return stop
@@ -9533,8 +10258,10 @@ def aggregate_slice_returns(bodies):
     """The one phase return the slice returns `bodies` make, in slice order:
     their findings and pre-existing findings numbered afresh (every slice
     numbers from one), their `tasks` entries joined, the verdict `findings` when
-    any slice found something, and the intent of the slice that answered worst
-    - its notes and missing inputs joined - standing for the phase."""
+    any slice found something, the intent of the slice that answered worst
+    - its notes and missing inputs joined - standing for the phase, and the
+    skills the slices named as invoked, each once, where any named one, and
+    each distinct reason a slice gave for a review skill it could not load."""
     def joined(key):
         items = [item for body in bodies for item in body.get(key) or []]
         return [dict(item, id=n) for n, item in enumerate(items, 1)]
@@ -9558,6 +10285,13 @@ def aggregate_slice_returns(bodies):
            "tasks": [entry for body in bodies for entry in body.get("tasks") or []]}
     if any("preExisting" in body for body in bodies):
         out["preExisting"] = joined("preExisting")
+    named = [str(n) for body in bodies for n in body.get(INVOKED_FIELD) or []]
+    if named:
+        out[INVOKED_FIELD] = [n for i, n in enumerate(named) if n not in named[:i]]
+    said = [r for r in (unavailable_reason(body) for body in bodies) if r]
+    if said:
+        out[UNAVAILABLE_FIELD] = " | ".join(
+            r for i, r in enumerate(said) if r not in said[:i])
     return out
 
 
@@ -10456,6 +11190,9 @@ def validation_dispatch(ctx, state, phase, head, candidates):
     _record, argv = open_dispatch(ctx, state, node, 0, lambda record: writer_argv(
         ctx, node, setting, prompt, record, role="reviewer", phase_review=True),
         None, VALIDATE_KEY)
+    _skill, left_out = runner_review_skill(ctx, load_phase(ctx)[0], phase)
+    if left_out:
+        warn(ctx, left_out)
     held = writer_state(state, node, VALIDATE_KEY)
     held["asked"] = ids
     _mark(state, VALIDATE_KEY, node, held)
@@ -10889,18 +11626,19 @@ def phase_gate_args(ctx, phase, absolute=False):
             fix(ctx["project"]), "--timeout", str(SIGNOFF_STEP_SECONDS)]
 
 
-def run_phase_gate(ctx, phase):
+def run_phase_gate(ctx, phase, verbose=False):
     """`(code, stdout, stderr)` of the phase's recorded gate run, over the gate
-    as the plan holds it now."""
-    return run_verb(ctx, "run-test-gate.py", phase_gate_args(ctx, phase))
+    as the plan holds it now; `verbose` as `record_gate`'s."""
+    return run_verb(ctx, "run-test-gate.py", phase_gate_args(ctx, phase)
+                    + (READ_BACK_FORM if verbose else []))
 
 
-def phase_gate(ctx, phase):
+def phase_gate(ctx, phase, verbose=False):
     """`run_phase_gate`, derived first (`derive_phase_gate`)."""
     failed = derive_phase_gate(ctx, phase)
     if failed is not None:
         return failed
-    return run_phase_gate(ctx, phase)
+    return run_phase_gate(ctx, phase, verbose)
 
 
 def launch_phase_gate(ctx, state, phase, head, argv=None, why=None):
@@ -10953,7 +11691,8 @@ def chosen_phase_gate(ctx, state, phase, head):
                                  launched.get("argv")), None
     state.pop(PHASE_GATE_LAUNCH_KEY, None)
     write_state(ctx, state)
-    return None, read_back(ctx, run_id, status, lambda: phase_gate(ctx, phase),
+    return None, read_back(ctx, run_id, status,
+                           lambda verbose: phase_gate(ctx, phase, verbose),
                            "phase gate")
 
 
@@ -12020,6 +12759,80 @@ def submit_target(manifest, target):
     return None, None
 
 
+def skipped_review_skill(manifest, phase, body):
+    """None when `body`, a phase reviewer's return, names the review skill
+    `_areas.resolve_review_skill` resolves for `phase` in `INVOKED_FIELD`, or
+    says in `UNAVAILABLE_FIELD` what the Skill tool answered when the skill
+    would not load - or when no skill resolves - else the refusal `submit`
+    stops with.
+
+    The drive does not read an Agent reviewer's Skill calls: a headless
+    session's runner reads them off its stream (`uninvoked_skills`), and an
+    Agent's calls are seen by the plugin's hooks, not by the drive. So the
+    return is where that reviewer says it used the skill its brief named, and a
+    return that says neither that nor why it could not is refused rather than
+    filed as a review the skill never shaped. A plugin-qualified name meets a
+    bare one, as for a headless session."""
+    skill, basis = _areas.resolve_review_skill(manifest, phase)
+    if not skill:
+        return None
+    named = body.get(INVOKED_FIELD) if isinstance(body, dict) else None
+    listed = [str(n) for n in named] if isinstance(named, list) else []
+    if _bare_skill(skill) in [_bare_skill(n) for n in listed]:
+        return None
+    if unavailable_reason(body):
+        return None
+    held = ("is absent" if named is None else
+            "is not a list" if not isinstance(named, list) else
+            "is empty" if not listed else "names only %s" % (", ".join(listed),))
+    return ("the phase return for %s does not name the review skill %s (basis: "
+            "%s) as invoked: its `%s` %s, and it has no `%s`. Invoke %s through "
+            "the Skill tool and review with it, then submit again with it listed "
+            "in `%s` - or, when the Skill tool would not load it, submit again "
+            "with `%s` holding what the Skill tool said. Nothing filed."
+            % (phase.get("id"), skill, basis, INVOKED_FIELD, held,
+               UNAVAILABLE_FIELD, skill, INVOKED_FIELD, UNAVAILABLE_FIELD))
+
+
+def unavailable_reason(body):
+    """The non-blank text a return holds in `UNAVAILABLE_FIELD`, stripped, else
+    None - a blank or non-string value says nothing about why the skill did
+    not load, so it is no answer."""
+    said = body.get(UNAVAILABLE_FIELD) if isinstance(body, dict) else None
+    return said.strip() if isinstance(said, str) and said.strip() else None
+
+
+def unavailable_skill_finding(manifest, phase, body, plan_path):
+    """`body` with one med finding added when the phase resolves a review skill
+    and the return says, in `UNAVAILABLE_FIELD`, that it could not be loaded -
+    the finding naming the skill, its basis and the reason, cited at
+    `plan_path`, where the name is declared - and its verdict `findings`; else
+    `body` unchanged.
+
+    A review skill that cannot load where the reviewer runs - a misspelt name,
+    one not installed on this machine or in CI - would otherwise get every phase
+    return refused, and a refusal no reviewer can answer is no gate. Filing the
+    return and raising the gap to triage puts the decision with a human: fix
+    the name, install the skill, or accept a review without it."""
+    skill, basis = _areas.resolve_review_skill(manifest, phase)
+    reason = unavailable_reason(body)
+    if not skill or not reason:
+        return body
+    findings = list(body.get("findings") or [])
+    ids = [f.get("id") for f in findings if isinstance(f, dict)]
+    numbered = [i for i in ids if isinstance(i, int) and not isinstance(i, bool)]
+    findings.append({
+        "id": max(numbered) + 1 if numbered else len(findings) + 1,
+        "severity": "med", "file": plan_path,
+        "issue": "the review skill %s (basis: %s) could not be invoked, so this "
+                 "phase review was not shaped by it; the reviewer reported: %s"
+                 % (skill, basis, reason),
+        "resolution": "make %s loadable where the phase reviewer runs (the name "
+                      "as declared, the skill installed), then review again - or "
+                      "accept this review without it" % (skill,)})
+    return dict(body, findings=findings, verdict="findings")
+
+
 def submitted_shape(role, body, fills, task=None):
     """The ways `body` falls short of `role`'s shape, judged with each field in
     `fills` set aside: those are `submit`'s to supply, not the agent's. `task`
@@ -12429,6 +13242,12 @@ def submit(ctx, manifest, args, cmd, text):
     if machine:
         return _stopped(ctx, "the %s return for %s: %s" % (
             args.role, args.id, machine))
+    if task is None and args.role == "reviewer":
+        # Asked of each slice's return as well as a whole one: every slice's
+        # brief carries the same review-skill section.
+        skipped = skipped_review_skill(manifest, phase, body)
+        if skipped:
+            return _stopped(ctx, skipped)
     owed = task is not None and _fr.owes_red_first(task)
     green = task is not None and _fr.owes_green_first(task)
     executor = task is not None and args.role == "executor"
@@ -12571,6 +13390,13 @@ def submit(ctx, manifest, args, cmd, text):
         if isinstance(body, dict) and isinstance(body.get("tasks"), list):
             body["tasks"] = agreed_commits(phase, body["tasks"])
             text = json.dumps(body, indent=2) + "\n"
+        raised = unavailable_skill_finding(
+            manifest, phase, body, project_relative(ctx, ctx["manifest"]))
+        if raised is not body:
+            body, text = raised, json.dumps(raised, indent=2) + "\n"
+            ctx["did"].append("the review skill could not be invoked (%s); a med "
+                              "finding was raised for triage" % (
+                                  unavailable_reason(body),))
     extra = ["--head", head] if head else []
     if args.shown is not None:
         extra += ["--shown", args.shown]
@@ -12754,10 +13580,13 @@ def signal_line(ctx, verb, subject, clauses, basis, nxt):
     `next:` field shrink for them instead. Inside `SIGNAL_BYTES` whenever those
     clauses and the shorter of the two commands fit beside the head; a step
     whose read events alone are longer prints them whole past the bound, since
-    a dropped one would move a span with nothing saying so."""
+    a dropped one would move a span with nothing saying so. A clause the step
+    gave a signal form of its own (`SIGNAL_FORMS_KEY`) is carried in that form;
+    `--explain` prints the did-line whole."""
     subject = _fit(_flat(subject) or ctx["phase"], 60)
     head = "audit %s %s %s" % (ctx["phase"], verb, subject)
-    read, rest = read_clauses(clauses)
+    forms = ctx.get(SIGNAL_FORMS_KEY) or {}
+    read, rest = read_clauses([forms.get(c, c) for c in clauses])
     did = "; ".join(read)
     fixed = _width(head) + (_width(did) + 1 if did else 0) + _width(" |  | next: ")
     nxt = _flat(nxt) or "wait"

@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "med", "file": "tests/test_drive_phase.py:12378-12388 (stub at :808-812)",
+   "issue": "contradicts task clause: 'Apply it to every case in this suite that hands one mark file to commands that run at the same time' / acceptance (1) 'no case hands one file to two commands that run at the same time'. au32 runs a real `auto` drive over _auto_writer_wave_repo (a wave of width 2); auto_run starts a wave's members together (drive-phase.py auto_run, Popen per command), and both writer-stub sessions append one json line each to the one WS_LOG file (_WRITER_STUB opens it with 'a'), and the case asserts len(_stub_runs(log)) == 2. That is the same shared-append shape the task fixes for au31. The executor's class sweep says WS_LOG is 'written by sessions run one at a time', which is false for au32. Mitigation I verified: au32 is skipped where os.killpg is absent (Windows), and O_APPEND is atomic on POSIX, so it cannot lose a line on the platform that went red; the defect is the unmet clause and the inaccurate claim, not a known red.",
+   "resolution": "Either give each wave member's stub a log of its own (e.g. a per-session WS_LOG derived from WS_SESSION/pid, read together through a directory-reading helper like _auto_marks), or leave au32 as is and state in _auto_marks's docstring and the outcome why it is exempt (POSIX-only, atomic O_APPEND) and correct the class-sweep claim."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "diverges",
+  "note": "Matched clauses: the helper _auto_marks (tests/test_drive_phase.py:11822) now takes a file, a list or a directory and returns the same list of lines, with a docstring naming which cases need which; _auto_wave_member (:12198) gives each wave member its own <subject>.log; au30, au30b and au31 read the directory; au36/au37 and _auto_cases keep one serial file and their order; au31 still asserts the same values by value and au31c asserts two distinct files read off the wave step's own runs (argv[3] of _auto_command, which is [exe,-c,child,mark,code]); only the test file changes. The honest 'could not show it on POSIX' reproduction is stated. Diverges on one clause: 'every case in this suite that hands one mark file to commands that run at the same time' - au32 (:12378-12388) starts two writer-stub sessions together as a wave, both appending to one WS_LOG, and was not changed. The executor's claim that WS_LOG writers 'run one at a time' does not describe au32. The staged table is unchanged and the helpers are module-level, so the second named dependant holds. Case count: au31c is added, none removed.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "The task is a regression task with expectRedFirst false (a fixture shape fix; the Windows red is not reproducible here). The executor's basis stands: shared-file mutation of _auto_wave_member (FAIL au31, au31c, 7/9) and removal of the directory branch (FAIL au31, 8/9) in a throwaway copy; I did not rerun them.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "The one gate command, `python3 tools/sweep-selftests.py tests/test_drive_phase.py`, selects the whole of a very long single suite file; I read only the auto-wave block (au30 to au37d, au32) and its helpers and found no assertion the behaviour never reaches there (au30/au30b's `== []` over a now-empty directory would still turn red if a member ran, because a command would create its file). The remainder of the file was not read, so I do not report none-found for it."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

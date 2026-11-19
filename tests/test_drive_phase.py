@@ -804,12 +804,20 @@ WRITER_COSTS = ("0.4242", "0.5151", "0.6161")
 # argv and the prompt on its stdin - one JSON line per run, writes the files
 # `WS_EDIT` maps (and commits them under `WS_COMMIT`), as a writer would, and
 # ends the stream with the one `result` event the runner reads the session id
-# and cost from, its `result` text `WS_RESULT`.
+# and cost from, its `result` text `WS_RESULT`. `WS_LOG` names a file, which
+# sessions run one after another share, or a directory, in which each session
+# creates a file of its own (`_stub_runs` says which case is which).
 _WRITER_STUB = r'''
-import json, os, subprocess, sys, time
+import json, os, subprocess, sys, tempfile, time
 prompt = sys.stdin.buffer.read().decode("utf-8")
-with open(os.environ["WS_LOG"], "a", encoding="utf-8") as fh:
-    fh.write(json.dumps({"argv": sys.argv[1:], "stdin": prompt}) + "\n")
+line = json.dumps({"argv": sys.argv[1:], "stdin": prompt}) + "\n"
+if os.path.isdir(os.environ["WS_LOG"]):
+    fd, _own = tempfile.mkstemp(suffix=".jsonl", dir=os.environ["WS_LOG"])
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(line)
+else:
+    with open(os.environ["WS_LOG"], "a", encoding="utf-8") as fh:
+        fh.write(line)
 if os.environ.get("WS_MODE") == "killrunner":
     import signal
     os.kill(os.getppid(), signal.SIGKILL)
@@ -836,13 +844,16 @@ if reads is None:
     reads = ["src/mine.py"] * int(os.environ.get("WS_TOOLS") or 0)
 tools = [{"type": "tool_use", "id": "t%d" % n, "name": "Read",
           "input": {"file_path": path}} for n, path in enumerate(reads)]
+result = {"type": "result", "subtype": "success", "is_error": False,
+          "session_id": sid, "total_cost_usd": float(os.environ["WS_COST"]),
+          "result": os.environ.get("WS_RESULT") or "done"}
+if os.environ.get("WS_DURATION"):
+    result["duration_ms"] = int(os.environ["WS_DURATION"])
 for event in ({"type": "system", "subtype": "init", "session_id": sid},
               {"type": "assistant", "session_id": sid,
                "message": {"role": "assistant",
                            "content": [{"type": "text", "text": "working"}] + tools}},
-              {"type": "result", "subtype": "success", "is_error": False,
-               "session_id": sid, "total_cost_usd": float(os.environ["WS_COST"]),
-               "result": os.environ.get("WS_RESULT") or "done"}):
+              result):
     sys.stdout.write(json.dumps(event) + "\n")
 sys.stdout.flush()
 '''
@@ -935,7 +946,7 @@ def _flag(argv, flag):
 
 
 def _stub_environ(bindir, log, cost, session=WRITER_SESSION, mode="ok", edit=None,
-                  result=None, commit=False, tools=0, reads=None):
+                  result=None, commit=False, tools=0, reads=None, duration=None):
     """This process's environment with the stub standing for `claude`. `mode`
     `none` makes the stub exit 7 with no result event, `sleep` makes it
     write its pid and a child's to `WS_PIDS` and sleep, and `killrunner` makes it
@@ -943,7 +954,8 @@ def _stub_environ(bindir, log, cost, session=WRITER_SESSION, mode="ok", edit=Non
     the stub writes to their text, `result` is its last message, `commit`
     has it commit what it wrote and `tools` is how many tool calls its stream
     holds, each a Read of src/mine.py - or, given `reads`, one Read of each
-    path it lists."""
+    path it lists. `duration` is the `duration_ms` its result event carries;
+    None leaves the key out, as every stub before the timing record did."""
     env = dict(os.environ)
     env["PATH"] = bindir + os.pathsep + env.get("PATH", "")
     # A TEMP DIRECTORY OF THE FIXTURE'S, removed with it: the runner makes the
@@ -956,31 +968,98 @@ def _stub_environ(bindir, log, cost, session=WRITER_SESSION, mode="ok", edit=Non
                WS_EDIT=json.dumps(edit or {}), WS_RESULT=(result if result is not None
                           else _said("the session is done")),
                WS_COMMIT="1" if commit else "", WS_TOOLS=str(tools),
-               WS_READS=json.dumps(reads) if reads is not None else "")
+               WS_READS=json.dumps(reads) if reads is not None else "",
+               WS_DURATION="" if duration is None else str(int(duration)))
     return env
 
 
 def _play_session(root, argv, bindir, log, cost, session=WRITER_SESSION,
                   mode="ok", edit=None, result=None, commit=False, tools=0,
-                  reads=None):
+                  reads=None, duration=None):
     """Run the printed session command as the main loop does - its interpreter
     word replaced by this one - with the stub standing for `claude`
     (`_stub_environ` says what each argument makes it do). Returns
     `(code, output)`."""
     env = _stub_environ(bindir, log, cost, session=session, mode=mode, edit=edit,
-                        result=result, commit=commit, tools=tools, reads=reads)
+                        result=result, commit=commit, tools=tools, reads=reads,
+                        duration=duration)
     done = subprocess.run([sys.executable] + list(argv[1:]), cwd=root, env=env,
                           capture_output=True, text=True, encoding="utf-8",
                           errors="replace", timeout=120)
     return done.returncode, done.stdout + done.stderr
 
 
-def _stub_runs(log):
+def _stub_run_lines(path):
     try:
-        with open(log, encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             return [json.loads(ln) for ln in fh if ln.strip()]
     except OSError:
         return []
+
+
+def _stub_runs(where):
+    """The runs the stub `claude` logged, from the one file `where` names, or
+    from every file in the directory it names, in file-name order - an order
+    that is not the order the sessions ran in, so a case reading a directory
+    counts and never reads `[-1]`.
+
+    WHO APPENDS TO WHICH LOG, AND AT ONCE OR ONE AT A TIME. Read off what
+    starts the processes, not off a case's name: `_play_session` and every
+    other direct start in this suite wait for the process to end before the
+    next one starts, and `auto` (`auto_run`) starts a step's commands
+    together, which is more than one only for a wave. Two processes appending
+    to one file at once can lose a line where an append is a seek followed by
+    a write, as on windows; every log below has one writer at a time, or one
+    file per writer.
+
+      log (who appends)          cases                 how they run
+      ------------------------   -------------------   ---------------------
+      `WS_LOG`, a file (each     every case that       one after another:
+      stub session)              passes a file - the   `_play_session`, the
+                                 ws, bg, wf, xs, wl,   members of sr2's and
+                                 wi, wj, ck, rv, pv,   ww's waves included;
+                                 rw, sr, ww, tm, bm,   or `auto` over one
+                                 bdr, bt, bq and brc   task or a phase at
+                                 cases, and au6,       width 1 (au20-au24,
+                                 au20-au24, au32b,     au32b, au33), or a
+                                 au33, au35            one-task `auto` (au6,
+                                                       au35)
+      `WS_LOG`, a directory      au32, au32c           AT ONCE: `auto` over a
+      (each stub session, a                            wave of two writer
+      file of its own)                                 sessions starts both
+      `_AUTO_CHILD` marks        `_auto_cases` and     `_auto_marks` holds
+                                 `_auto_wave_cases`    its own table: a wave
+                                                       member marks a file
+                                                       of its own
+      `_RB_LOG` (each step of    rd1-rd7               one after another:
+      the gate)                                        run-test-gate.py waits
+                                                       on each step, and the
+                                                       read-back `next` runs
+                                                       after `_play_gate`
+                                                       waited for the run
+      `LP_PROBE_LOG`,            the lint-probe cases  one after another:
+      `LP_PROBE_TOUCH` (the                            `run_lint_probe`
+      probe)                                           waits on the probe
+      `DRIVE_CWD_LOG` (the       kr1, kr2              one after another: the
+      restarted task's gate)                           one task the loop
+                                                       runs, its gate waited
+                                                       on by `next`
+      `owner.log` (the           su6, su7              one after another:
+      follower owner, one per                          `claimed_followers`
+      tree)                                            waits on each owner
+
+    Left as it is, and why: the `auto` log the driver opens once and hands a
+    wave's children as their stdout and stderr is the driver's own file,
+    written in append mode, and no case here reads it from a wave - bq5 reads
+    it from a step of one child. `WS_PIDS` is written whole, not appended to,
+    by the one sleeping session of au6 and au35."""
+    if isinstance(where, (list, tuple)):
+        paths = list(where)
+    elif os.path.isdir(where):
+        paths = [os.path.join(where, n) for n in sorted(os.listdir(where))]
+    else:
+        paths = [where]
+    return [run for p in paths for run in _stub_run_lines(p)]
 
 
 def _notes(mpath, task_id):
@@ -1410,8 +1489,9 @@ def _background_gate_cases(check):
     """On the writer path the drive runs no task gate inside `next`: it prints
     the gate as a dispatch whose `run:` line the orchestrator runs in the
     background, waits while no row has come of it, launches it again when the
-    row it left is a cancelled run, and decides from the row it recorded -
-    repeating that verdict, never measuring it a second time."""
+    row it left is a cancelled run, and decides from the row it recorded - a
+    red as that row holds it, asked nothing again, and a green repeated by
+    one more ask, never measured a second time."""
     M, why = _load("drive_phase_bggate", real_gate_choice=True)
     if M is None:
         check("bg1 the driver loads", False, why)
@@ -1442,15 +1522,17 @@ def _background_gate_cases(check):
           code == 0 and _signal_head(line) == ("wait", "P1.1") and not calls
           and argv and _run_argv(wait_block) == argv
           and not _measured_rows(root, mpath, "P1.1"))
+    _handout_wait_case(check, M, root, wait_block)
     ran, said = _play_gate(root, argv)
     code, line = _signal_raw(M, root, mpath)
     check("bg3 the next call after the gate ran decides from its recorded row: "
-          "gate-red-writer, the drive's one gate call repeating that verdict, "
-          "and the ledger holding the one measurement the background run made: %r"
+          "gate-red-writer, with no task gate call at all - a red the background "
+          "run recorded is the verdict acted on, never asked again - and the "
+          "ledger holding the one measurement the background run made: %r"
           % ((ran, said[-300:], code, line, calls,
               len(_measured_rows(root, mpath, "P1.1"))),),
           ran == 1 and code == 0 and "gate-red-writer" in line
-          and [("GATE VERDICT REUSED" in o) for _a, o in _task_gate_runs(calls)] == [True]
+          and not [a for a, _o in _task_gate_runs(calls) if "--base-of" not in a]
           and len(_measured_rows(root, mpath, "P1.1")) == 1)
     green_root, green_mpath, green_calls = _bg_writer_exited(
         M, "bggate-green", ("true",))
@@ -1476,6 +1558,414 @@ def _background_gate_cases(check):
     else:
         _background_kill_case(check, M)
     _background_doc_case(check, M)
+
+
+# --- a background gate read back, with a step that grades the plan ------------------
+# The other gate fixtures here are `true` and `false`, which name no path, so the
+# drive never met a gate whose read-back measures part of it again. These gates
+# hold a sweep - it grades the tree, sleeps, and reads the task's file - and a
+# validator naming the manifest, which the runner's content identity leaves out
+# and so measures on every ask. Each step appends its word to an ignored log, so
+# how often each RAN is counted from the commands rather than read off the rows
+# the runner writes about them.
+_RB_LOG = "rb-runs.log"
+_RB_TREE_SRC = (
+    "import sys\nimport time\n"
+    "with open(%r, 'a') as fh:\n    fh.write('tree\\n')\n"
+    "time.sleep(0.4)\n"
+    "with open('src/f1.txt') as fh:\n    body = fh.read()\n"
+    "strict = sys.argv[1:] == ['strict']\n"
+    "sys.exit(1 if 'BROKEN' in body or (strict and body != 'v0\\n') else 0)\n"
+    % (_RB_LOG,))
+_RB_PLAN_SRC = (
+    "import json\nimport sys\n"
+    "with open(%r, 'a') as fh:\n    fh.write('plan\\n')\n"
+    "with open(sys.argv[1]) as fh:\n    json.load(fh)\n" % (_RB_LOG,))
+_RB_PY = '"%s"' % (sys.executable.replace("\\", "/"),)
+_RB_SWEEP = "%s rb_tree.py" % (_RB_PY,)
+# Red on any change to the task's file, green on the base's own bytes: the red
+# the task introduced, which the base measurement says it is.
+_RB_STRICT = "%s rb_tree.py strict" % (_RB_PY,)
+_RB_VALIDATE = "%s rb_plan.py docs/audit/audit-plan.json" % (_RB_PY,)
+
+
+def _rb_repo(prefix, gate, phase_gate=None):
+    """A one-task fixture whose gate is `gate`, with the two step scripts and an
+    ignore line for their log committed: `(root, mpath)`. No reviewer per task,
+    so a green gate closes the task in the same `next`."""
+    root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=gate,
+                        phase_gate=phase_gate, per_task="phase")
+    _write_lf(os.path.join(root, "rb_tree.py"), _RB_TREE_SRC)
+    _write_lf(os.path.join(root, "rb_plan.py"), _RB_PLAN_SRC)
+    with open(os.path.join(root, ".gitignore"), "a", encoding="utf-8",
+              newline="\n") as fh:
+        fh.write("%s\n" % (_RB_LOG,))
+    for argv in (["add", "-A"], ["commit", "-qm", "the read-back steps"]):
+        _harness.git(root, *argv)
+    return root, mpath
+
+
+def _rb_runs(root):
+    """`(sweep, validator)` - how often each step's command ran in the
+    project's own directory."""
+    try:
+        with open(os.path.join(root, _RB_LOG), encoding="utf-8") as fh:
+            said = fh.read().split()
+    except OSError:
+        return 0, 0
+    return said.count("tree"), said.count("plan")
+
+
+def _rb_next(M, root, mpath):
+    """`(code, text)` of one plain `next`, whose did-line is printed whole."""
+    said = []
+    with _Env(root):
+        code = M.main(["next", PHASE, mpath, "--project-dir", root],
+                      out=said.append)
+    return code, "\n".join(said)
+
+
+def _rb_did(M, text):
+    """The did-line clauses of a plain `next`'s text."""
+    return [c for body in M.did_bodies(text) for c in body.split("; ")]
+
+
+def _rb_background(M, root, mpath, after=None):
+    """Play the Agent-path task to its background gate and run that gate to its
+    end, then `after(root)` - an edit between the run and its read-back - and
+    read the gate back with one plain `next`: `{code, text, did, calls, run}`,
+    `calls` the gate runs the drive made from the dispatch on, `run` the id
+    of the row the background run recorded."""
+    _signal_raw(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    calls = _gate_calls(M)
+    _code, line = _signal_raw(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    ran, _said = _play_gate(root, _run_argv(block) or [])
+    rows = _rows_of(root, mpath, "P1.1")
+    if after is not None:
+        after(root)
+    code, text = _rb_next(M, root, mpath)
+    return {"code": code, "text": text, "did": _rb_did(M, text), "calls": calls,
+            "dispatch": line, "ran": ran,
+            "run": rows[-1].get("runId") if rows else None}
+
+
+def _rb_task_calls(calls):
+    """The drive's own task-gate runs - a base run (`--base-of`) left out."""
+    return [(a, o) for a, o in _task_gate_runs(calls) if "--base-of" not in a]
+
+
+def _rb_measured(root, mpath, name):
+    """How many ledger rows MEASURED the step `name`: a row repeating a whole
+    verdict holds no steps, and a step copied from another run is no run."""
+    return sum(1 for r in _tm_rows(root, mpath).values()
+               for s in r.get("steps") or []
+               if isinstance(s, dict) and s.get("name") == name
+               and not _evio.step_repeated(s))
+
+
+_RB_SECONDS = r" \(\d+\.\d s\)"
+
+
+def _readback_cases(check):
+    """A background gate is read back by asking the recorded gate again, and
+    what that second ask did is said: which steps it repeated, which it
+    measured again and what each took - `did not repeat` only when a step
+    grading the tree was measured again, with the gate's own reason. A red the
+    background run recorded is the verdict acted on, measured nothing more."""
+    M, why = _load("drive_phase_readback", real_gate_choice=True)
+    if M is None:
+        check("rd1 the driver loads", False, why)
+        return
+    gate = (_RB_SWEEP, _RB_VALIDATE)
+    root, mpath = _rb_repo("rb-same", gate)
+    got = _rb_background(M, root, mpath)
+    said = [c for c in got["did"] if _RB_VALIDATE in c]
+    check("rd1 a background gate holding a sweep and the manifest validator, read "
+          "back with no change, ran the sweep once and the validator twice, the "
+          "ledger holding one measured sweep, and the read-back line names the "
+          "validator as measured again with its seconds and the sweep as "
+          "repeated - never `did not repeat`: %r"
+          % ((_rb_runs(root), got["code"], got["text"][-900:],
+              _rb_measured(root, mpath, _RB_SWEEP)),),
+          got["ran"] == 0 and _signal_head(got["dispatch"]) == ("dispatch", "P1.1")
+          and _rb_runs(root) == (1, 2)
+          and _rb_measured(root, mpath, _RB_SWEEP) == 1
+          and len(_rb_task_calls(got["calls"])) == 1
+          and len(said) == 1
+          and re.search(re.escape(_RB_VALIDATE) + _RB_SECONDS, said[0])
+          and _RB_SWEEP + " repeated" in said[0]
+          and "measured again" in said[0]
+          and "did not repeat" not in got["text"]
+          and tasks_of(mpath)["P1.1"].get("status") == "done")
+    gates = _tm_stages(mpath, "gate")
+    rows = _tm_rows(root, mpath)
+    check("rd6 ...and the task's timing holds one gate stage for the background "
+          "run and one shorter one for the read-back that measured the "
+          "validator: %r" % ((gates, sorted(rows)),),
+          len(gates) == 2 and gates[0].get("runId") == got["run"]
+          and gates[1].get("runId") in rows and gates[1].get("runId") != got["run"]
+          and gates[1]["ms"] < gates[0]["ms"])
+
+    def edit(where):
+        _write_lf(os.path.join(where, "src", "f1.txt"), "edited after the gate\n")
+    root, mpath = _rb_repo("rb-moved", gate)
+    got = _rb_background(M, root, mpath, after=edit)
+    said = [c for c in got["did"] if "did not repeat" in c]
+    check("rd2 the same gate read back after an edit to the task's declared "
+          "file measured the sweep again, and the read-back line says run %s did "
+          "not repeat on this tree, names the sweep measured again with its "
+          "seconds and gives the gate's own reason - the identity it recorded "
+          "moved: %r" % (got["run"], (_rb_runs(root), got["text"][-900:]),),
+          _rb_runs(root) == (2, 2) and len(said) == 1
+          and ("run %s did not repeat" % (got["run"],)) in said[0]
+          and re.search(re.escape(_RB_SWEEP) + _RB_SECONDS, said[0])
+          and "identity" in said[0])
+    root, mpath = _rb_repo("rb-true", ("true",))
+    got = _rb_background(M, root, mpath)
+    calls = _rb_task_calls(got["calls"])
+    check("rd3 THE TWIN: a gate of `true` alone reads back as it always did - "
+          "one gate call carrying the reuse banner, the plain green did-line, no "
+          "read-back clause - and one gate stage: %r"
+          % ((got["text"][-600:], _tm_stages(mpath, "gate")),),
+          [("GATE VERDICT REUSED" in o) for _a, o in calls] == [True]
+          and "gate P1.1 green" in got["did"]
+          and not [c for c in got["did"] if "measured again" in c
+                   or "read back" in c]
+          and len(_tm_stages(mpath, "gate")) == 1)
+    root, mpath = _rb_repo("rb-red", (_RB_STRICT, _RB_VALIDATE))
+    got = _rb_background(M, root, mpath)
+    check("rd4 a background run that came back red is read back as red and "
+          "reaches the gate-red decision, with no task gate measured between - "
+          "the validator ran once, the sweep once - and the did-line says the "
+          "red was read back from run %s: %r"
+          % (got["run"], (_rb_runs(root), got["code"], got["text"][-900:],
+                          got["calls"]),),
+          got["code"] == 0 and instruction(got["text"])[:2] == ("decide", "gate-red")
+          and _rb_runs(root) == (1, 1) and not _rb_task_calls(got["calls"])
+          and [r.get("runId") for r in _rows_of(root, mpath, "P1.1")
+               if r.get("scope") == "task"] == [got["run"]]
+          and any(("red read back from run %s" % (got["run"],)) in c
+                  for c in got["did"]))
+    _readback_signal_cases(check, M)
+    _readback_phase_cases(check, M)
+
+
+# A step's name is its gate entry's command text, which no width bounds: one the
+# line cannot hold whole, and one holding the did field's own clause separator.
+# The step script reads its first argument alone, so the words after it change
+# the name and not what the step does.
+_RB_LONG = "%s --pad-%s-end" % (_RB_VALIDATE, "w" * 150)
+_RB_SPLIT = '%s "qa; qb"' % (_RB_VALIDATE,)
+
+
+def _rb_signal_back(M, root, mpath, plays=1):
+    """The background gate of `_rb_background`, its `run:` line played `plays`
+    times - a second play repeats the first one's verdict - and read back by
+    one `next --signal`: `{line, explain, rows}`, `explain` the `--explain`
+    text of the line's subject, read before another `next` replaces it, and
+    `rows` the task's ledger rows before the read-back."""
+    _signal_raw(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    _signal_raw(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    for _n in range(plays):
+        _play_gate(root, _run_argv(block) or [])
+    rows = _rows_of(root, mpath, "P1.1")
+    _code, line = _signal_raw(M, root, mpath)
+    head = _signal_head(line) or (None, None)
+    _c, explain = _explain_of(M, root, mpath, head[1] or "P1.1")
+    return {"line": line, "explain": explain, "rows": rows}
+
+
+def _rb_pieces(M, text):
+    """Every `; `-separated piece of the did field of each line in `text`."""
+    return [c for body in M.did_bodies(text) for c in body.split("; ")]
+
+
+def _readback_signal_cases(check, M):
+    """The read-back clause on the one-line signal: each step it names is
+    clipped to a fixed width, with the did field's separator replaced inside
+    it, so a long name or one holding `; ` neither drops the clause to a count
+    nor splits it into two; `--explain` keeps every name whole. A task gate
+    whose background row repeated an earlier verdict records the stage of the
+    run it repeats and says so, once - never that the stage is not recorded,
+    nor that the row has no readable start. And a joined step whose declared
+    entry names a left-out path is read back with that reason."""
+    root, mpath = _rb_repo("rb-long", (_RB_SWEEP, _RB_LONG))
+    got = _rb_signal_back(M, root, mpath)
+    pieces = _rb_pieces(M, got["line"])
+    said = [p for p in pieces if "read back" in p]
+    # The clause itself on the line is what a drop to a count loses; a `+N`
+    # standing for the clauses after it is `fit_rest`'s rule for whatever the
+    # room does not hold, and says nothing about this one.
+    check("rd8 a measured step whose name is longer than the line leaves the "
+          "read-back clause on the signal line rather than dropped to a count, "
+          "the name clipped, the line within its bound and its three fields, "
+          "and --explain naming the step whole: %r"
+          % ((got["line"], _signal_ok(got["line"])),),
+          len(got["line"].split(" | ")) == 3 and _signal_ok(got["line"]) is None
+          and len(said) == 1 and "..." in said[0] and _RB_LONG not in said[0]
+          and "-end (" in said[0]
+          and got["explain"].count(_RB_LONG) == 1)
+    root, mpath = _rb_repo("rb-split", (_RB_SWEEP, _RB_SPLIT))
+    got = _rb_signal_back(M, root, mpath)
+    pieces = _rb_pieces(M, got["line"])
+    holding = [p for p in pieces if "qa" in p or "qb" in p]
+    check("rd9 a measured step whose name holds the did field's separator is one "
+          "clause on the signal line - both halves of the name in the same "
+          "piece, the line's three fields intact - and --explain names it "
+          "whole: %r" % ((got["line"], holding),),
+          len(got["line"].split(" | ")) == 3 and len(holding) == 1
+          and "qa" in holding[0] and "qb" in holding[0]
+          and "read back" in holding[0]
+          and got["explain"].count(_RB_SPLIT) == 1)
+    root, mpath = _rb_repo("rb-twice", ("true",))
+    got = _rb_signal_back(M, root, mpath, plays=2)
+    rows = got["rows"]
+    first = rows[0].get("runId") if rows else None
+    again = rows[-1].get("runId") if rows else None
+    said = [p for p in _rb_pieces(M, got["explain"])
+            if p.startswith("timing: gate stage of P1.1")]
+    stages = _tm_stages(mpath, "gate")
+    check("rd10 a background row that repeated an earlier run's verdict leaves "
+          "no gate stage of its own, the gate stage the step records is the "
+          "run it repeated, and one sentence names that row and that run - "
+          "never that the stage is not recorded, nor that the row records no "
+          "readable start: %r"
+          % ((said, [(r.get("runId"), r.get("verdictSource")) for r in rows],
+              stages),),
+          len(rows) == 2 and rows[-1].get("verdictSource") == "reused"
+          and (rows[-1].get("reusedFrom") or {}).get("runId") == first
+          and len(said) == 1 and again in said[0] and first in said[0]
+          and "not recorded" not in said[0]
+          and "readable" not in got["explain"]
+          and len([s for s in stages if s.get("runId") == first]) == 1
+          and not [s for s in stages if s.get("runId") == again])
+    _readback_joined_case(check, M)
+
+
+# A joined step: the declared entry in the plan's recorded subset spelling,
+# with the suite a related listing names for the task's change run in the same
+# call. The entry names the plan, which the runner's content identity leaves
+# out, so a read-back measures it again; the runner's sentence saying so names
+# the declared entry alone.
+_RB_JOIN_SUITE = "tests/test_rbj.py"
+_RB_JOINED = "%s + affected/related: %s" % (_RB_VALIDATE, _RB_JOIN_SUITE)
+
+
+def _rb_joined_repo(prefix):
+    """`_rb_repo` over the validator alone, its plan recording the validator's
+    subset spelling and a related listing naming `_RB_JOIN_SUITE` for any
+    change, committed: `(root, mpath)`. The phase's own gate is another
+    command, since a task gate that already runs the phase's is joined by
+    nothing."""
+    root, mpath = _rb_repo(prefix, (_RB_VALIDATE,), phase_gate=("true",))
+    with open(mpath, encoding="utf-8") as fh:
+        plan = json.load(fh)
+    plan.setdefault("meta", {})["phaseGate"] = {"derived": {
+        "spelling": "%s rb_plan.py {paths}" % (_RB_PY,),
+        "listing": {"related": "printf '%%s\\n' %s # {paths}" % (_RB_JOIN_SUITE,)},
+        "verifiedOn": {"command": "echo v1", "answer": "v1"}}}
+    _write_lf(mpath, json.dumps(plan, indent=2) + "\n")
+    suite = os.path.join(root, *_RB_JOIN_SUITE.split("/"))
+    if not os.path.isdir(os.path.dirname(suite)):
+        os.makedirs(os.path.dirname(suite))
+    _write_lf(suite, "pass\n")
+    for argv in (["add", "-A"], ["commit", "-qm", "the subset spelling"]):
+        _harness.git(root, *argv)
+    return root, mpath
+
+
+def _readback_joined_case(check, M):
+    """A joined step whose declared entry names a path the identity leaves out
+    is read back with that reason: measured again, the read-back clause naming
+    the joined step with its seconds, and never `did not repeat`.
+
+    THE READ-BACK STARTS IN A LATER SECOND THAN THE BACKGROUND RUN. Two runs
+    whose whole-second stamps meet are not known to have had the machine to
+    themselves, and the runner then prints its long form; one that had prints
+    its one-line green, which carries no left-out line. The wait makes the
+    second ask the quiet-host one every time, so the case reads the form the
+    drive has to ask for rather than whichever the clock gave it."""
+    root, mpath = _rb_joined_repo("rb-joined")
+    got = _rb_background(M, root, mpath, after=lambda _root: time.sleep(1.5))
+    names = [s.get("name") for r in _rows_of(root, mpath, "P1.1")
+             for s in r.get("steps") or [] if isinstance(s, dict)]
+    said = [c for c in got["did"] if _RB_JOINED in c]
+    check("rd11 a background gate whose one step is joined - the validator "
+          "naming the plan, with an affected suite in the same call - is read "
+          "back with the left-out reason: the step measured again, the "
+          "read-back clause naming the joined step with its seconds, and no "
+          "`did not repeat`: %r"
+          % ((names, said, got["code"], got["text"][-900:],
+              [o for _a, o in _rb_task_calls(got["calls"])]),),
+          bool(names) and set(names) == set([_RB_JOINED])
+          and len(said) == 1 and "read back from run" in said[0]
+          and re.search(re.escape(_RB_JOINED) + _RB_SECONDS, said[0])
+          and "did not repeat" not in got["text"])
+
+
+def _readback_phase_cases(check, M):
+    """Sign-off's phase gate is read back the way a task's is: its sweep is not
+    measured a second time, the read-back line says what was, and a red it
+    recorded is the stop, measured nothing more."""
+    for label, extra in (("rd5", ()), ("rd7", ("false",))):
+        root, mpath = _rb_repo("%s-phase" % (label,), ("true",),
+                               phase_gate=(_RB_SWEEP, _RB_VALIDATE) + extra)
+        _seed_gate_ms(root, mpath, ["true"], _GC_FAST_MS)
+        calls = _gate_calls(M)
+        run = drive(M, root, mpath, cap=16)
+        prints = "\n".join(t for _c, t in run["prints"])
+        phase_calls = _phase_gate_calls(calls)
+        launched = [s for s in run["steps"] if s == ("dispatch", "gate", PHASE)]
+        if label == "rd5":
+            said = [c for c in _rb_did(M, prints) if _RB_VALIDATE in c]
+            check("rd5 the phase gate at sign-off, run in the background, is read "
+                  "back with its sweep not measured again - the sweep ran once, "
+                  "the validator twice - the read-back line naming the validator "
+                  "measured again with its seconds, and the phase lands: %r"
+                  % ((_rb_runs(root), run["steps"], prints[-900:]),),
+                  len(launched) == 1 and len(phase_calls) == 1
+                  and _rb_runs(root) == (1, 2)
+                  and len(said) == 1
+                  and re.search(re.escape(_RB_VALIDATE) + _RB_SECONDS, said[0])
+                  and "did not repeat" not in prints
+                  and run["steps"][-1:] == [DONE])
+        else:
+            check("rd7 a phase gate whose background run came back red is the "
+                  "red stop, naming the red step, with no phase gate measured "
+                  "after it - the validator ran once: %r"
+                  % ((_rb_runs(root), run["steps"], prints[-900:]),),
+                  len(launched) == 1 and not phase_calls
+                  and _rb_runs(root) == (1, 1)
+                  and "GATE RED: false" in prints
+                  and run["steps"][-1:] != [DONE])
+
+
+def _handout_wait_case(check, M, root, wait_block):
+    """The wait on a background gate or base run names the moment the drive
+    handed its dispatch out - the stamp on the launch mark - and claims no
+    launch: the drive never sees the process start, so a line saying the run
+    was launched then asserts what nobody observed. Read off the real wait a
+    `next` printed for the gate, and off the base wait's own renderer."""
+    marks = _drive_state(root).get(getattr(M, "GATE_LAUNCH_KEY", "")) or {}
+    entry = (marks.get("P1.1") or {}) if isinstance(marks, dict) else {}
+    stamp = (entry.get("value") or {}).get("at")
+    gate_lines = [ln for ln in wait_block.splitlines() if "wait P1.1:" in ln]
+    base = M.base_wait_said({"did": [], "manifest": "plan.json",
+                             "project": root, "phase": "P1"},
+                            "P1.1", "2026-10-14T18:24:20Z", ["python3", "x"])
+    base_lines = [ln for ln in base.get("lines") or [] if "wait P1.1:" in ln]
+    said = gate_lines + base_lines
+    check("bg2h the gate's wait and the base's wait each name the stamp as the "
+          "moment the run was handed out and claim no launch: %r"
+          % ((stamp, gate_lines, base_lines),),
+          bool(stamp) and len(gate_lines) == 1 and len(base_lines) == 1
+          and gate_lines[0].count("handed out at %s;" % (stamp,)) == 1
+          and base_lines[0].count("handed out at 2026-10-14T18:24:20Z;") == 1
+          and not [ln for ln in said if "launched" in ln])
 
 
 def _background_kill_case(check, M):
@@ -1646,6 +2136,68 @@ def _gate_choice_cases(check):
           "with no gate run inside next: %r" % ((code, line, calls),),
           code == 0 and _signal_head(line) == ("dispatch", "P1.1")
           and "run-test-gate.py" in line and not calls)
+    _phase_gate_only_view_cases(check, M)
+
+
+def _pgo_plan(phase_gate, task_gate):
+    """An in-memory plan: one phase whose gate is `phase_gate`, one task whose
+    own gate is `task_gate`, over a sweep and a browser check."""
+    return {"meta": {"version": 3, "buildCommands": {
+        "sweep": "python3 sweep.py", "browser": "python3 browser.py"}},
+        "phases": [{"id": "P1", "title": "one", "status": "in_progress",
+                    "testGate": list(phase_gate), "tasks": [
+                        {"id": "P1.1", "title": "t", "status": "in_progress",
+                         "files": ["src/a.py"],
+                         "tests": {"gate": list(task_gate)}}]}]}
+
+
+def _phase_gate_only_view_cases(check, M):
+    """(gc11) The drive's view of a task's gate steps leaves out the entries
+    the recorder leaves out (`executor.phaseGateOnly`), so the background
+    decision and the step text never weigh or name an entry that will not
+    run. Both sides are asked of the same plan; the recorder's answer is its
+    own `phase_gate_only_plan`, never a copy of the rule here."""
+    rtg = _loader.load_script("run-test-gate.py", "rtg_pgo_view", cache=False)
+    both = ["sweep", "browser"]
+    named = ("browser.py",)
+    seen = {}
+    for label, phase_gate in (("held", both), ("unheld", ["sweep"])):
+        plan = _pgo_plan(phase_gate, both)
+        phase = plan["phases"][0]
+        try:
+            drive = M.task_gate_steps(plan, phase, "P1.1", left=named)
+        except TypeError as exc:
+            drive = ("TypeError", str(exc))
+        recorder = getattr(rtg, "phase_gate_only_plan", None)
+        resolve = rtg._ev.resolved_commands
+        got = (recorder(resolve(plan, both), resolve(plan, phase_gate), named)
+               if recorder is not None else None)
+        seen[label] = (drive, None if got is None
+                       else [n for n, _c in got["run"]])
+    check("gc11 the drive's view of a task's gate steps leaves out the entry "
+          "the recorder leaves out - the browser check the setting names and "
+          "the phase gate holds - and keeps it when the phase gate lacks it, "
+          "where the recorder runs it too; the already-wide reading is taken "
+          "over the declared entries, so nothing is said to join: %r" % (seen,),
+          seen["held"] == ((["sweep"], None), ["sweep"])
+          and seen["unheld"] == ((both, None), both))
+    plan = _pgo_plan(both, both)
+    weighed = []
+    held = (M.gate_in_background, M.task_gate)
+    M.gate_in_background = lambda ctx, names, joins=None: (
+        weighed.append(list(names)) or (False, None))
+    M.task_gate = lambda *_a, **_k: (0, "", "")
+    try:
+        for config in ({"executor": {"phaseGateOnly": list(named)}}, {}):
+            M.chosen_task_gate({"config": config, "project": "/nonexistent"},
+                               {}, plan["phases"][0],
+                               plan["phases"][0]["tasks"][0], None, plan)
+    finally:
+        M.gate_in_background, M.task_gate = held
+    check("gc12 ...and the gate choice reads the setting off the project's "
+          "config: the steps it weighs leave the browser check out when the "
+          "config names it, and keep it when the config is silent: %r"
+          % (weighed,), weighed == [["sweep"], both])
 
 
 def _gate_choice_follow_cases(check):
@@ -11871,12 +12423,34 @@ def _auto_scripted(M, root, mpath, steps, args=()):
             "nexts": len(calls)}
 
 
-def _auto_marks(path):
+def _auto_mark_lines(path):
     try:
         with open(path, encoding="utf-8") as fh:
             return [ln.rstrip("\n") for ln in fh if ln.strip()]
     except OSError:
         return []
+
+
+def _auto_marks(where):
+    """The lines `_AUTO_CHILD` children appended, from one mark file, a list of
+    them, or a directory holding one per child - in file-name order, each
+    file's lines in the order they were written.
+
+    Commands one step after another share ONE file, and its order is what a
+    case may assert: every case of `_auto_cases`, and au36/au37 in
+    `_auto_wave_cases`. Commands one step starts together - a wave's members,
+    which `auto_run` starts at once - each get a file of their OWN in a
+    directory, read here as one list: au30, au30b and au31. Two children
+    appending to one file at once can lose a line where an append is a seek
+    followed by a write, as on windows, so a wave sharing one file is a case
+    that can fail while the loop under it is right."""
+    if isinstance(where, (list, tuple)):
+        paths = list(where)
+    elif os.path.isdir(where):
+        paths = [os.path.join(where, n) for n in sorted(os.listdir(where))]
+    else:
+        paths = [where]
+    return [ln for p in paths for ln in _auto_mark_lines(p)]
 
 
 def _auto_cases(check):
@@ -12235,8 +12809,11 @@ _AUTO_NOT_RUNNABLE = ("wait-writer", "wait-gate", "wait-reviewer-session",
 
 def _auto_wave_member(M, step, subject, marks, word):
     """A member as `advance` hands one to `wave_said`: its own step, and a
-    `run:` command unless it is a recipe the drive never runs."""
-    runs = [] if step == "follow-browser" else [_auto_command(marks, 0, word)]
+    `run:` command unless it is a recipe the drive never runs. `marks` is a
+    directory, and the member's child marks a file of its own in it, named
+    for its subject - the members of a wave run at once (`_auto_marks`)."""
+    own = os.path.join(marks, "%s.log" % (subject,))
+    runs = [] if step == "follow-browser" else [_auto_command(own, 0, word)]
     return M.instruction("dispatch", ["%s %s: a member's line" % (step, subject)],
                          M.signal_of(step, subject, "a basis", "wait", runs=runs))
 
@@ -12247,7 +12824,11 @@ def _auto_wave_of(M, ctx, members):
 
 
 def _auto_clear(path):
-    if os.path.exists(path):
+    """Empty a mark file away, or every mark file in a directory of them."""
+    if os.path.isdir(path):
+        for name in os.listdir(path):
+            os.remove(os.path.join(path, name))
+    elif os.path.exists(path):
         os.remove(path)
 
 
@@ -12259,7 +12840,11 @@ def _auto_wave_cases(check):
         check("au30 the driver loads: %r" % (why,), False)
         return
     root, mpath = _repo("auto-wave", task_ids=TASKS[:2])
-    marks = os.path.join(root, "marks.log")
+    # A wave's members run at once, so each marks a file of its own in this
+    # directory; the steps after au31 run one at a time and share `serial`.
+    marks = os.path.join(root, "marks")
+    os.makedirs(marks)
+    serial = os.path.join(root, "marks.log")
     ctx = _step_ctx()
     held = []
     for kind in _AUTO_NOT_RUNNABLE:
@@ -12291,11 +12876,23 @@ def _auto_wave_cases(check):
         _auto_wave_member(M, "dispatch-writer", "P1.1", marks, "first"),
         _auto_wave_member(M, "dispatch-gate", "P1.2", marks, "second")])
     both = _auto_scripted(M, root, mpath, [wave, _auto_said(M, "done-task")])
+    own = [os.path.join(marks, "%s.log" % (t,)) for t in ("P1.1", "P1.2")]
     check("au31 THE TWIN: a wave whose every member is a dispatch with a run: "
-          "command runs each once and asks next again: %r"
-          % ((both, _auto_marks(marks)),),
+          "command runs each once and asks next again, each member's mark in "
+          "its own file: %r"
+          % ((both, _auto_marks(marks), [_auto_marks(p) for p in own]),),
           both["code"] == AUTO_DONE and both["nexts"] == 2
-          and sorted(_auto_marks(marks)) == ["0 first", "0 second"])
+          and sorted(_auto_marks(marks)) == ["0 first", "0 second"]
+          and [_auto_marks(p) for p in own] == [["0 first"], ["0 second"]])
+    # The mark files the wave's commands name, read off the step the loop is
+    # handed rather than off the fixture's own intent: a fixture that went back
+    # to one shared file names one path twice here.
+    named = [shlex.split(r)[3] for r in (wave.get("runs") or [])]
+    check("au31c the two members of a wave that run at once are handed two "
+          "different mark files, one each, and the marks read from them together "
+          "are the two the wave wrote: %r" % ((named, _auto_marks(named)),),
+          len(named) == 2 and len(set(named)) == 2
+          and sorted(_auto_marks(named)) == ["0 first", "0 second"])
 
     _auto_clear(marks)
     real_run = M.auto_run
@@ -12306,7 +12903,7 @@ def _auto_wave_cases(check):
     M.auto_run = unreaped
     try:
         stranded = _auto_scripted(M, root, mpath, [
-            _auto_said(M, "dispatch-writer", runs=[_auto_command(marks, 0, "kept")])])
+            _auto_said(M, "dispatch-writer", runs=[_auto_command(serial, 0, "kept")])])
     finally:
         M.auto_run = real_run
     check("au36 a child still running when the run ended is the stop answer with "
@@ -12317,7 +12914,7 @@ def _auto_wave_cases(check):
 
     warning = "gate P1.1 run r9 was cancelled before a verdict; launched again"
     warned_step = dict(_auto_said(M, "dispatch-writer",
-                                  runs=[_auto_command(marks, 0, "w")]),
+                                  runs=[_auto_command(serial, 0, "w")]),
                        warnings=[warning])
     done = _auto_scripted(M, root, mpath, [warned_step, _auto_said(
         M, "done-task", explain="done-task P1.1: closed\nthe rule under it")])
@@ -12389,8 +12986,14 @@ def _auto_wave_real_cases(check):
     if not hasattr(os, "killpg"):
         _harness.skip(check, "au32 a killed session runner", "no SIGKILL here",
                       True)
+        _harness.skip(check, "au32c a log per session of that wave",
+                      "no SIGKILL here", not hasattr(os, "killpg"))
     else:
-        bindir, log, _stubs = _auto_stub("auto-wkill-stub")
+        bindir, _log, stubs = _auto_stub("auto-wkill-stub")
+        # `auto` starts a wave's two sessions together, so each stub session
+        # logs into a file of its own in this directory (`_stub_runs`).
+        log = os.path.join(stubs, "runs")
+        os.makedirs(log)
         root, mpath = _auto_writer_wave_repo("auto-wkill")
         code, out, err = _auto_process(root, mpath, PHASE, bindir, log,
                                        mode="killrunner")
@@ -12401,6 +13004,13 @@ def _auto_wave_real_cases(check):
               % ((code, out, err[-400:], len(runs)),),
               len(runs) == 2 and code in (AUTO_STOP, AUTO_NEEDS_MODEL)
               and bool(out.strip()))
+        own = [os.path.join(log, n) for n in sorted(os.listdir(log))]
+        check("au32c the two sessions of that wave, which ran at once, each "
+              "logged into a file of its own - two files of one run each - and "
+              "the runs read from them together are the two au32 counts: %r"
+              % ((own, [len(_stub_runs(p)) for p in own]),),
+              len(own) == 2 and [len(_stub_runs(p)) for p in own] == [1, 1]
+              and len(_stub_runs(own)) == len(runs) == 2)
         one_bin, one_log, _one = _auto_stub("auto-wkill1-stub")
         alone, alone_mpath = _repo("auto-wkill1", task_ids=TASKS[:1],
                                    executor=WRITER_EXECUTOR)
@@ -14825,6 +15435,7 @@ def _steps_unit_cases(check):
     _lock_units(check)
     _owed_red_first_units(check)
     _submit_mutant_units(check)
+    _review_skill_submit_units(check)
     _unchecked_ids_units(check)
     _brief_scope_units(check)
     _banner_units(check)
@@ -16089,6 +16700,111 @@ def _submit_mutant_units(check):
           and "stamp taken" in did_m
           and ran_m == [("stamp-verification.py", "take"),
                         ("audit-task.py", "file-return")])
+
+
+def _review_skill_submit_units(check):
+    """A phase reviewer's return filed through `submit` names the review skill
+    the phase resolved in `skillsInvoked`, or says in `skillUnavailable` why it
+    would not load - filed then with a med finding for triage - or nothing is
+    filed; a phase that resolves no skill files a return without either field
+    as before. Each
+    refusal is read off the filing verb never being called, not off the text
+    alone."""
+    M, _w = _unit_driver("drive_phase_review_skill_submit")
+
+    def filed(meta, extra):
+        phase_u = _step_phase([_step_task()])
+        plan_u = _step_plan(phase_u, meta)
+        ctx, calls = _submit_rig(M, None)
+        body = dict({"findings": [], "intent": {"answer": "matches",
+                                                "note": "the phase as asked"},
+                     "verdict": "clean"}, **extra)
+        try:
+            said = _caught(M.submit, ctx, plan_u, _submit_args(PHASE, "reviewer"),
+                           None, json.dumps(body))
+        finally:
+            _harness.remove_tree(ctx["project"])
+        return said, _filed_bodies(calls)
+
+    skill = {"reviewSkill": "code-review"}
+    said, bodies = filed(skill, {})
+    check("rq1 a phase that resolves a review skill refuses a return with no "
+          "`skillsInvoked`, naming the skill and the remedy, and files nothing: "
+          "%r" % ((said, bodies),),
+          said[0] == 1 and "code-review" in said[1]
+          and "`skillsInvoked`" in said[1] and "submit again" in said[1]
+          and "Nothing filed." in said[1] and bodies == [])
+    said, bodies = filed(skill, {"skillsInvoked": ["writing-python"]})
+    check("rq2 the same phase refuses a return whose `skillsInvoked` names "
+          "other skills only - a check that accepted any listed skill goes red "
+          "here: %r" % ((said, bodies),),
+          said[0] == 1 and "code-review" in said[1] and bodies == [])
+    # The allow direction: a check that refuses whenever the field is absent,
+    # or that asks a phase with no skill resolved, goes red on rq3.
+    said, bodies = filed({}, {})
+    check("rq3 a phase that resolves no review skill files a return with no "
+          "`skillsInvoked` exactly as before, the field not added: %r"
+          % ((said, bodies),),
+          said[0] == 0 and len(bodies) == 1
+          and "skillsInvoked" not in bodies[0])
+    said, bodies = filed(skill, {"skillsInvoked": ["superpowers:code-review"]})
+    check("rq4 a return naming the resolved skill - here by a plugin-qualified "
+          "spelling, which the Skill tool's caller may use - files once, the "
+          "list kept on it: %r" % ((said, bodies),),
+          said[0] == 0 and len(bodies) == 1
+          and bodies[0].get("skillsInvoked") == ["superpowers:code-review"])
+    whole = M.aggregate_slice_returns([
+        {"findings": [], "intent": {"answer": "matches"}, "verdict": "clean",
+         "skillsInvoked": ["code-review"]},
+        {"findings": [], "intent": {"answer": "matches"}, "verdict": "clean",
+         "skillsInvoked": ["code-review", "writing-python"]}])
+    bare = M.aggregate_slice_returns([
+        {"findings": [], "intent": {"answer": "matches"}, "verdict": "clean"}])
+    check("rq5 the phase return the slices make keeps the skills they named, "
+          "each once in first-named order, and adds no field when no slice "
+          "named one: %r" % ((whole.get("skillsInvoked"), sorted(bare)),),
+          whole.get("skillsInvoked") == ["code-review", "writing-python"]
+          and "skillsInvoked" not in bare)
+    told = "Unknown skill: code-review"
+    said, bodies = filed(skill, {"skillUnavailable": told})
+    raised = [f for f in (bodies[0].get("findings") if bodies else []) or []
+              if "code-review" in (f.get("issue") or "")]
+    check("rq6 a return saying in `skillUnavailable` what the Skill tool answered "
+          "is filed, not refused, with one med finding naming the skill, its "
+          "basis and that answer, cited at the plan, and the verdict findings: "
+          "%r" % ((said, bodies),),
+          said[0] == 0 and len(bodies) == 1 and len(raised) == 1
+          and raised[0].get("severity") == "med" and told in raised[0]["issue"]
+          and "(basis: meta)" in raised[0]["issue"]
+          and raised[0].get("file") == "audit-plan.json"
+          and bodies[0].get("verdict") == "findings"
+          and bodies[0].get("skillUnavailable") == told)
+    # The mutation this is here for: a check that takes the field's mere
+    # presence as an answer, so a blank one files a review nobody explained.
+    said, bodies = filed(skill, {"skillUnavailable": "  "})
+    check("rq7 a return with neither the skill in `skillsInvoked` nor a reason "
+          "in `skillUnavailable` - here a blank one - is still refused, files "
+          "nothing, and the refusal names both ways to answer: %r"
+          % ((said, bodies),),
+          said[0] == 1 and bodies == [] and "`skillsInvoked`" in said[1]
+          and "`skillUnavailable`" in said[1] and "Nothing filed." in said[1])
+    said, bodies = filed({}, {"skillUnavailable": told})
+    check("rq8 THE OVER-FIRE TWIN: a phase that resolves no review skill files "
+          "a return carrying `skillUnavailable` with no finding raised and its "
+          "verdict as given: %r" % ((said, bodies),),
+          said[0] == 0 and len(bodies) == 1
+          and bodies[0].get("findings") == [] and bodies[0].get("verdict") == "clean")
+    sliced = M.aggregate_slice_returns([
+        {"findings": [], "intent": {"answer": "matches"}, "verdict": "clean",
+         "skillUnavailable": told},
+        {"findings": [], "intent": {"answer": "matches"}, "verdict": "clean",
+         "skillUnavailable": told},
+        {"findings": [], "intent": {"answer": "matches"}, "verdict": "clean"}])
+    check("rq9 the phase return the slices make carries the reason a slice gave "
+          "for a skill it could not load, each distinct reason once, so the "
+          "whole return raises one finding: %r" % ((sliced,),),
+          sliced.get("skillUnavailable") == told
+          and "skillUnavailable" not in bare)
 
 
 UNCHECKED_CLAUSE = ("ids bound to a suite the submit's command did not run are "
@@ -18237,13 +18953,19 @@ def _skill_units(check):
     _skill_invoked_units(check, M)
 
 
-def _vk_validation_argv(M, root, phase, meta):
+def _vk_validation_argv(M, root, phase, meta, project=None, ctx_out=None):
     """The argv `validation_dispatch` starts the phase-scoped reviewer session
-    with, over `phase` in a plan carrying `meta`, its state under `root`."""
+    with, over `phase` in a plan carrying `meta`, its state under `root` and
+    its project at `project` (where the runner looks for a project skill);
+    `ctx_out`, a list, is handed the context so a case can read its warnings."""
     _step_rig(M, phase, meta=meta)
     M.tree_head = lambda ctx, tree=None: None
     ctx = _step_ctx(stateDir=os.path.join(root, phase.get("title", "s")),
                     config={"executor": dict(WRITER_EXECUTOR)})
+    if project is not None:
+        ctx.update(project=project, gitRoot=project)
+    if ctx_out is not None:
+        ctx_out.append(ctx)
     state = {}
     finding = {"id": "P1-R1", "severity": "med", "file": "src/f1.txt:1",
                "issue": "i", "resolution": "r"}
@@ -18253,21 +18975,61 @@ def _vk_validation_argv(M, root, phase, meta):
     return (dispatches[-1].get("argv") if dispatches else None), said
 
 
+def _vk_project_skill(project, name):
+    """Plant `name` as a project skill of `project`, at the path the session
+    runner's resolver (`_skill_places.resolve_skill`) reads a project skill from."""
+    where = os.path.join(project, ".claude", "skills", name)
+    os.makedirs(where, exist_ok=True)
+    with open(os.path.join(where, "SKILL.md"), "w", encoding="utf-8") as fh:
+        fh.write("---\nname: %s\ndescription: d\n---\nbody\n" % (name,))
+
+
+def _vk_reviewer_dispatch_case(check, M, root, task_u, phase, named):
+    """vk3: the per-task reviewer, dispatched through `reviewer_dispatch` - the
+    route `reviewer_session_step` takes - over a phase that resolves a review
+    skill, starts with the task's own skills and not the review skill."""
+    _step_rig(M, phase, meta={
+        "areas": {"api": {"root": "src", "reviewSkill": "area-review"}}})
+    M.tree_head = lambda ctx, tree=None: None
+    real_prompt = M.dispatch_prompt
+    M.dispatch_prompt = lambda ctx, role, node_id, part=None: "the brief"
+    ctx = _step_ctx(stateDir=os.path.join(root, "task"),
+                    project=os.path.join(root, "project"))
+    state = {}
+    try:
+        said = _caught(M.reviewer_dispatch, ctx, state, phase, task_u,
+                       {"model": WRITER_MODEL, "budget": "2.5"}, "the brief")
+    finally:
+        M.dispatch_prompt = real_prompt
+    held = M.writer_state(state, task_u, M.REVIEWER_KEY)
+    rargv = (held.get("dispatches") or [{}])[-1].get("argv")
+    check("vk3 the per-task reviewer session, dispatched by reviewer_dispatch "
+          "over a phase that resolves a review skill, still carries only the "
+          "task's own skills - mode task takes no review skill: %r"
+          % ((rargv, said if rargv is None else ""),),
+          isinstance(rargv, list) and _flag(rargv, "--role") == "reviewer"
+          and _skill_flags(rargv) == named)
+
+
 def _review_skill_session_units(check, M):
     """The headless reviewer session at phase scope - the validation pass over
     the phase review's findings - starts with the review skill the phase
-    resolves, through `_areas.resolve_review_skill`; with none resolving it
-    starts with none; the per-task reviewer (`mode: task`, which takes no
-    review skill) never gets it."""
+    resolves, through `_areas.resolve_review_skill`, when the session runner's
+    own resolver finds it (planted here as a project skill); one the runner
+    cannot find is left out with a warning, since the runner refuses to start
+    over it; with none resolving it starts with none; the per-task reviewer
+    (`mode: task`, which takes no review skill) never gets it."""
     root = _harness.fixture_root("drive-review-skill-")
     try:
         named = ["alpha-house"]
         task_u = _step_task(skills=list(named))
         with_skill = _step_phase([task_u], title="with", area="api")
+        project = os.path.join(root, "project")
+        _vk_project_skill(project, "area-review")
         argv, said = _vk_validation_argv(
             M, root, with_skill,
             {"areas": {"api": {"root": "src", "reviewSkill": "area-review"}},
-             "reviewSkill": "plan-review"})
+             "reviewSkill": "plan-review"}, project=project)
         flags = _skill_flags(argv)
         check("vk1 the validation session's command carries the review skill "
               "the phase resolves (an area's, over the plan's) exactly once, "
@@ -18277,10 +19039,11 @@ def _review_skill_session_units(check, M):
               and flags.count("area-review") == 1
               and "plan-review" not in flags)
         none_phase = _step_phase([_step_task()], title="none")
-        bare_argv, bare_said = _vk_validation_argv(M, root, none_phase, {})
+        bare_argv, bare_said = _vk_validation_argv(M, root, none_phase, {},
+                                                   project=project)
         nulled = _step_phase([_step_task()], title="nulled", reviewSkill=None)
         null_argv, null_said = _vk_validation_argv(
-            M, root, nulled, {"reviewSkill": "plan-review"})
+            M, root, nulled, {"reviewSkill": "plan-review"}, project=project)
         check("vk2 THE OVER-FIRE TWIN: with no review skill anywhere, and with "
               "the phase's explicit null stopping the plan's, the validation "
               "session's command carries no --skill at all: %r"
@@ -18288,16 +19051,23 @@ def _review_skill_session_units(check, M):
                   null_said if null_argv is None else ""),),
               bare_argv is not None and null_argv is not None
               and "--skill" not in bare_argv and "--skill" not in null_argv)
-        _step_rig(M, with_skill, meta={
-            "areas": {"api": {"root": "src", "reviewSkill": "area-review"}}})
-        ctx = _step_ctx(stateDir=os.path.join(root, "task"))
-        rargv = _caught(M.writer_argv, ctx, task_u, {"model": WRITER_MODEL,
-                                                    "budget": "2.5"},
-                        "/p", "/r", role="reviewer")
-        check("vk3 the per-task reviewer session, over a phase that resolves a "
-              "review skill, still carries only the task's own skills - mode "
-              "task takes no review skill: %r" % ((rargv,),),
-              isinstance(rargv, list) and _skill_flags(rargv) == named)
+        _vk_reviewer_dispatch_case(check, M, root, task_u, with_skill, named)
+        # The bare name is planted too, so the only thing keeping the qualified
+        # one from the runner is that its plugin is not the running one.
+        foreign = "elsewhere-plugin:area-review"
+        out = []
+        far = _step_phase([_step_task()], title="far", reviewSkill=foreign)
+        far_argv, far_said = _vk_validation_argv(M, root, far, {}, project=project,
+                                                 ctx_out=out)
+        said_lines = [w for w in (out[0].get("warnings") or []) if foreign in w]
+        check("vk4 a review skill the session runner cannot resolve (another "
+              "plugin's qualified name) is left out of the validation session's "
+              "command, which still starts, and one warning names it and why: %r"
+              % ((far_argv, said_lines, far_said if far_argv is None else ""),),
+              far_argv is not None and _flag(far_argv, "--role") == "reviewer"
+              and _skill_flags(far_argv) == []
+              and len(said_lines) == 1 and "left out" in said_lines[0]
+              and "not found" in said_lines[0])
     finally:
         _harness.remove_tree(root)
 
@@ -19209,6 +19979,770 @@ def _floor_move_cases(check):
           % (((named or {}).get("answer"), (named or {}).get("declared"), _said),),
           (named or {}).get("findings") == [] and len((named or {}).get("declared") or []) == 1
           and "clean apart from declared changes" in _said)
+# --- a task's timing, written as the drive reads each step back -------------------
+# The durations a stub session's result event carries: no two share a digit run,
+# so a stage holding the writer's figure cannot read as the reviewer's.
+TM_WRITER_MS, TM_RESUME_MS, TM_REVIEWER_MS = 41250, 23750, 17125
+# The second gate entry of the red-then-green fixture: green at the base (`v = 1`)
+# and once the writer marks its fix `ok`, red on the first round's `v = 2` - so
+# the first round passes its red-first proof and still fails the gate, and the
+# base measurement charges the red to the task rather than to the base.
+_TM_CHECK = "tests/check_mine.py"
+_TM_CHECK_SRC = ("import sys\n"
+                 "text = open('src/mine.py', encoding='utf-8').read()\n"
+                 "sys.exit(0 if ('v = 1' in text or 'ok' in text) else 1)\n")
+
+
+def _tm_task(mpath, task_id="P1.1"):
+    return tasks_of(mpath).get(task_id) or {}
+
+
+def _tm_stages(mpath, kind=None, task_id="P1.1"):
+    """The stages the task's shard records, oldest first - those of `kind` alone
+    when one is named."""
+    timing = _tm_task(mpath, task_id).get("timing") or {}
+    return [s for s in timing.get("stages") or []
+            if isinstance(s, dict) and (kind is None or s.get("kind") == kind)]
+
+
+def _tm_rows(root, mpath):
+    """`{runId: row}` of every evidence row the fixture recorded."""
+    project, config = _evio.project_config_for(mpath, root)
+    return dict((r.get("runId"), r) for r in _evio.read_rows(project, config)["rows"]
+                if isinstance(r, dict) and r.get("runId"))
+
+
+def _tm_records(argv):
+    """The outcomes the runner appended to the record a session command names."""
+    path = _flag(argv, "--record")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return [json.loads(ln) for ln in fh if ln.strip()]
+    except (OSError, TypeError, ValueError):
+        return []
+
+
+def _tm_epoch(stamp):
+    import _usage_core
+    return _usage_core.parse_ts(stamp)
+
+
+def _tm_actions(root):
+    """The action of every journal row the fixture holds, sorted: what the
+    verbs the drive ran wrote under the lock, one row a write."""
+    import _journal_io
+    return sorted(str(r.get("action")) for r in _journal_io.read_all(root))
+
+
+def _tm_commits(root):
+    return int(_git_out(root, "rev-list", "--count", "HEAD").strip() or 0)
+
+
+def _tm_session_waits(waits, record):
+    """The wait stages whose basis names the session record `record` - one
+    session's own wait, picked by what it is. Never by when it ends: stamps
+    are whole seconds, so another session's zero-length wait handed out in
+    the second this session started ends there too (`tm2b`)."""
+    name = os.path.basename(record or "")
+    if not name:
+        return []
+    named = re.compile(re.escape("session record %s" % (name,)) + r"(;|$)")
+    return [w for w in waits if named.search(str(w.get("basis") or ""))]
+
+
+def _tm_ends_at(wait, stage):
+    """Whether `wait` ends exactly where `stage` starts - the assertion about a
+    wait already picked, never the way to pick one."""
+    return (_tm_epoch(wait["startedAt"]) is not None
+            and _tm_epoch(wait["startedAt"]) + wait["ms"] / 1000.0
+            == _tm_epoch(stage["startedAt"]))
+
+
+def _tm_shared_second_case(check, M):
+    """A writer's wait and a reviewer's that share a second, built by the
+    drive's own `session_stages`: the reviewer handed out in the second the
+    writer's session started, and started in that second, so its wait is 0 and
+    ends where the writer's session starts as the writer's own wait does."""
+    w_record, r_record = "/r/P1.1-writer-1.jsonl", "/r/P1.1-reviewer-1.jsonl"
+    built = (M.session_stages({"at": "2026-11-18T02:04:10Z", "record": w_record,
+                               "round": 0},
+                              {"startedAt": "2026-11-18T02:04:12Z",
+                               "durationMs": TM_WRITER_MS, "index": 0},
+                              "writer", True)
+             + M.session_stages({"at": "2026-11-18T02:04:12Z", "record": r_record,
+                                 "seq": 0},
+                                {"startedAt": "2026-11-18T02:04:12Z",
+                                 "durationMs": TM_REVIEWER_MS, "index": 0},
+                                "reviewer", True))
+    stages = [s for _source, s in built if isinstance(s, dict)]
+    waits = [s for s in stages if s.get("kind") == "wait"]
+    writer = [s for s in stages if s.get("kind") == "writer"]
+    # The selector tm2 used to apply: every wait ending where the writer starts.
+    by_time = [w for w in waits if writer and _tm_ends_at(w, writer[0])]
+    mine = _tm_session_waits(waits, w_record)
+    theirs = _tm_session_waits(waits, r_record)
+    check("tm2b a writer wait and a reviewer wait that share a second are told "
+          "apart by basis: both end where the writer's session starts, so time "
+          "arithmetic picks two, and the basis naming the writer's session "
+          "record picks the writer's two-second wait alone, the reviewer's "
+          "zero-length one by its own record: %r" % ((waits, by_time, mine),),
+          len(waits) == 2 and len(writer) == 1 and len(by_time) == 2
+          and len(mine) == 1 and mine[0]["ms"] == 2000
+          and mine[0]["startedAt"] == "2026-11-18T02:04:10Z"
+          and _tm_ends_at(mine[0], writer[0])
+          and len(theirs) == 1 and theirs[0]["ms"] == 0 and theirs[0] is not mine[0])
+
+
+def _tm_drive_clean(M, prefix, bindir, log, writer_ms=TM_WRITER_MS,
+                    reviewer_ms=TM_REVIEWER_MS, delay=0):
+    """A one-task tdd fixture driven to its close: the writer's session (after
+    `delay` seconds between its hand-out and its run), a green gate, the
+    reviewer's session, the commit and the close. Returns `(root, mpath,
+    {"writer": argv, "reviewer": argv, "lines": [...]})`."""
+    root, mpath = _tdd_writer_repo(prefix, (_wf_gate(),))
+    lines = [_signal_next(M, root, mpath)]
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    writer = _run_argv(block) or []
+    if delay:
+        time.sleep(delay)
+    _play_session(root, writer, bindir, log, "0.31", duration=writer_ms,
+                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST},
+                  result=_WF_CLAIM)
+    lines.append(_signal_next(M, root, mpath))
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    reviewer = _run_argv(block) or []
+    _play_session(root, reviewer, bindir, log, "0.21", session=RV_SESSIONS[2],
+                  duration=reviewer_ms, result=_review_json(mpath), tools=3)
+    lines.append(_signal_next(M, root, mpath))
+    return root, mpath, {"writer": writer, "reviewer": reviewer, "lines": lines}
+
+
+def _tm_parts_add_up(summary):
+    """Whether a summary's parts give back its window: no source missing, and
+    attributed less overrun plus unattributed equal to the window."""
+    return (summary.get("missing") == [] and isinstance(summary.get("windowMs"), int)
+            and summary["attributedMs"] - summary["overrunMs"]
+            + summary["unattributedMs"] == summary["windowMs"])
+
+
+def _timing_cases(check):
+    """Every task the drive runs leaves in its shard how long each stage took,
+    read off the record each length comes from - the session record, the
+    evidence row, the commit verb timed around - and carried by a write the
+    drive already makes, so the drive makes no more commits and no more locked
+    writes than it did."""
+    M, why = _load("drive_phase_timing")
+    if M is None:
+        check("tm1 the driver loads", False, why)
+        return
+    import _task_timing
+    stubs = os.path.realpath(_harness.fixture_root("drive-tm-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+
+    root, mpath, run = _tm_drive_clean(M, "tm", bindir, log, delay=2)
+    task = _tm_task(mpath)
+    rows = _tm_rows(root, mpath)
+    writer_rec = [r for r in _tm_records(run["writer"]) if "durationMs" in r]
+    reviewer_rec = [r for r in _tm_records(run["reviewer"]) if "durationMs" in r]
+    writers, reviewers = _tm_stages(mpath, "writer"), _tm_stages(mpath, "reviewer")
+    gates, picks = _tm_stages(mpath, "gate"), _tm_stages(mpath, "selection")
+    commits = _tm_stages(mpath, "commit")
+    summary = _task_timing.summarize(task)
+    check("tm1 a task driven to done leaves a writer stage, a gate stage with its "
+          "selection, a reviewer stage and a commit stage, each read off its "
+          "source - the session's own record, the gate run's evidence row - and "
+          "the summary's parts add up to the task's window: %r"
+          % ((task.get("status"), task.get("timing"), summary, run["lines"]),),
+          task.get("status") == "done"
+          and len(writers) == 1 and len(writer_rec) == 1
+          and writers[0]["ms"] == TM_WRITER_MS == writer_rec[0]["durationMs"]
+          and writers[0]["startedAt"] == writer_rec[0]["startedAt"]
+          and writers[0].get("round") == 1
+          and len(reviewers) == 1 and len(reviewer_rec) == 1
+          and reviewers[0]["ms"] == TM_REVIEWER_MS == reviewer_rec[0]["durationMs"]
+          and reviewers[0]["startedAt"] == reviewer_rec[0]["startedAt"]
+          and len(gates) >= 1 and all(
+              g.get("runId") in rows and g["ms"] == rows[g["runId"]]["durationMs"]
+              and g["startedAt"] == rows[g["runId"]]["startedAt"] for g in gates)
+          and len(picks) == len(gates) and all(
+              p.get("runId") in rows
+              and p["ms"] == rows[p["runId"]].get("selectionMs") for p in picks)
+          and len(commits) == 1 and commits[0]["ms"] >= 0
+          and all(not _task_timing.stage_problems(s) for s in _tm_stages(mpath))
+          and _tm_parts_add_up(summary)
+          and all(k in summary["byKind"]
+                  for k in ("writer", "selection", "gate", "reviewer", "commit")))
+    waits = _tm_stages(mpath, "wait")
+    writer_wait = _tm_session_waits(waits, _flag(run["writer"], "--record"))
+    check("tm2 a hand-out read back after a delay leaves a wait stage of that "
+          "length: it starts at the writer's hand-out and ends where the writer's "
+          "session starts, and the two-second delay is in it: %r"
+          % ((waits, writers),),
+          len(writer_wait) == 1 and writer_wait[0]["ms"] >= 1000
+          and len(writers) == 1 and _tm_ends_at(writer_wait[0], writers[0])
+          and all(w["ms"] >= 0 for w in waits))
+    _tm_shared_second_case(check, M)
+
+    # THE COUNTS, AGAINST THE SAME DRIVE WITH NO STAGE QUEUED. Every locked
+    # write is a journal row, so the two journals' actions are the locked
+    # writes each made; the stages of the first run then rode on writes the
+    # second made too. The mutant leaves `queue_stage` a no-op and nothing
+    # else, so an extra write made only when a stage is pending shows here.
+    M2, _why = _load("drive_phase_timing_none")
+    M2.queue_stage = lambda state, task, source, stage: None
+    base_root, base_mpath, _run = _tm_drive_clean(M2, "tm-none", bindir, log)
+    check("tm3 the drive makes no more commits and no more locked writes for a "
+          "task than it does with no stage written: the journal's actions and "
+          "the commit count match a drive whose stages are never queued, and "
+          "only the first carries a timing stage: %r"
+          % ((_tm_actions(root), _tm_actions(base_root), _tm_commits(root),
+              _tm_commits(base_root)),),
+          _tm_task(base_mpath).get("status") == "done"
+          and _tm_actions(root) == _tm_actions(base_root)
+          and _tm_commits(root) == _tm_commits(base_root)
+          and _tm_stages(mpath) and not _tm_stages(base_mpath))
+
+    bare_root, bare_mpath, bare = _tm_drive_clean(M, "tm-bare", bindir, log,
+                                                  writer_ms=None)
+    bare_task = _tm_task(bare_mpath)
+    absent = [r.get("timingAbsent") for r in _tm_records(bare["writer"])]
+    bare_summary = _task_timing.summarize(bare_task)
+    check("tm4 a writer session whose record carries no duration leaves no writer "
+          "stage, and the summary carries that time as unattributed - no source "
+          "missing, the window still accounted for: %r"
+          % ((absent, bare_task.get("timing"), bare_summary),),
+          bare_task.get("status") == "done"
+          and absent and all("durationMs" in (a or {}) for a in absent)
+          and not _tm_stages(bare_mpath, "writer")
+          and _tm_stages(bare_mpath, "reviewer")
+          and "writer" not in bare_summary["byKind"]
+          and _tm_parts_add_up(bare_summary))
+    _timing_red_cases(check, M, bindir, log)
+    _timing_background_cases(check)
+    _timing_agent_cases(check, M)
+    _timing_wave_cases(check, M)
+
+
+def _timing_wave_cases(check, M):
+    """A wave member's stages - its writer, its gate measured in its own tree,
+    its commit - are in the phase tree's shard once it is integrated and
+    closed, and no member tree's shard holds them instead."""
+    root, mpath = _wave_repo("tm-wave", 2)
+    code, first = _next_wave(M, root, mpath)
+    sent = _dispatched(first)
+    trees = dict((t, _tree_of(root, t)) for t in sent)
+    filed = [_file_wave_executor(root, mpath, t) for t in sent]
+    code2, second = _next_wave(M, root, mpath)
+    seen = {}
+    for tid in ("P1.1", "P1.2"):
+        rows = dict((r.get("runId"), r) for r in _rows_of(root, mpath, tid))
+        gates = _tm_stages(mpath, "gate", tid)
+        seen[tid] = {
+            "status": _tm_task(mpath, tid).get("status"),
+            "writer": len(_tm_stages(mpath, "writer", tid)),
+            "gates": [(g.get("runId") in rows,
+                       g["ms"] == (rows.get(g.get("runId")) or {}).get("durationMs"))
+                      for g in gates],
+            "commit": len(_tm_stages(mpath, "commit", tid))}
+    # A member tree still standing holds its own copy of the plan; none of its
+    # tasks may carry a stage there, since the stages are the phase tree's.
+    in_trees = []
+    for tid, tree in sorted(trees.items()):
+        plan = os.path.join(tree or "", "docs", "audit", "audit-plan.json")
+        if tree and os.path.isfile(plan):
+            in_trees += [(tid, s) for t in _mio.tasks_by_id(
+                _mio.load_manifest(plan)).values()
+                for s in (t.get("timing") or {}).get("stages") or []]
+    check("tm9 a wave member's writer, gate and commit stages are in the phase "
+          "tree's shard once it is integrated and closed - its gate stage the "
+          "run measured in its own tree - and no member tree's shard holds a "
+          "stage: %r" % ((sent, [c for c, _t in filed], code2, seen, in_trees),),
+          code == 0 and sent == ["P1.1", "P1.2"]
+          and [c for c, _t in filed] == [0, 0] and code2 == 0
+          and all(v["status"] == "done" and v["writer"] == 1 and v["commit"] == 1
+                  and v["gates"] and all(a and b for a, b in v["gates"])
+                  for v in seen.values())
+          and not in_trees)
+
+
+def _tm_filed_rows(root, role):
+    """`ts` of every journal row filing a `role` return, oldest first."""
+    import _journal_io
+    return [str(r.get("ts")) for r in _journal_io.read_all(root)
+            if r.get("action") == "task.return.filed"
+            and str(r.get("target") or "").endswith(".%s.json" % (role,))]
+
+
+def _tm_window(M, root, mpath):
+    """`((first second, last second), (code, line))` around one `next --signal`:
+    the whole seconds a stamp the call took may hold."""
+    before = int(time.time())
+    said = _signal_raw(M, root, mpath)
+    return (before, int(time.time())), said
+
+
+def _timing_agent_cases(check, M):
+    """On the route with no session record - the executor and the reviewer
+    dispatched as Agents - the drive's hand-out stamp and the record of the
+    return's filing bound a writer and a reviewer stage whose basis says the
+    agent's own start is not recorded, and no wait stage is written."""
+    root, mpath = _repo("tm-agent", task_ids=TASKS[:1])
+    windows, lines = [], []
+    for role, play in (("executor", _file_executor), ("reviewer", _file_reviewer)):
+        window, said = _tm_window(M, root, mpath)
+        windows.append(window)
+        lines.append(said)
+        # A real length between the hand-out and the filing.
+        time.sleep(2)
+        play(root, mpath, "P1.1")
+    lines.append(_signal_raw(M, root, mpath))
+    # The executor's filing writes a journal row; a reviewer's writes none, so
+    # its filing is the filed file's own modification time, to the second.
+    reviewed = _filed_path(mpath, "P1.1", "reviewer")
+    filed = {"executor": _tm_filed_rows(root, "executor"),
+             "reviewer": [time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(
+                 os.path.getmtime(reviewed)))] if reviewed
+             and os.path.isfile(reviewed) else []}
+    got = {"executor": _tm_stages(mpath, "writer"),
+           "reviewer": _tm_stages(mpath, "reviewer")}
+
+    def bound(role, window):
+        stages, rows = got[role], filed[role]
+        if len(stages) != 1 or len(rows) != 1:
+            return False
+        start = _tm_epoch(stages[0]["startedAt"])
+        return (window[0] <= start <= window[1]
+                and start + stages[0]["ms"] / 1000.0 == _tm_epoch(rows[0])
+                and stages[0]["ms"] >= 1000 and rows[0] in stages[0]["basis"]
+                and "own start is not recorded" in stages[0]["basis"])
+    check("tm8 on the Agent route the writer and the reviewer stages run from "
+          "the drive's hand-out stamp to the record of each filing - the journal "
+          "row for the executor's, the filed file's time for the reviewer's, "
+          "which no row files - with a basis saying the agent's own start is not "
+          "recorded, and no wait stage is written: %r"
+          % ((lines, windows, filed, _tm_task(mpath).get("timing")),),
+          _tm_task(mpath).get("status") == "done"
+          and M.REVIEWER_AGENT in lines[1][1]
+          and bound("executor", windows[0]) and bound("reviewer", windows[1])
+          and not _tm_stages(mpath, "wait"))
+
+
+def _timing_background_cases(check):
+    """A gate left to the background is read back twice - off its launch, and
+    through the repeat that answers its verdict, which names the run that
+    measured it - and leaves that run once, with the wait from its hand-out."""
+    M, why = _load("drive_phase_timing_bg", real_gate_choice=True)
+    if M is None:
+        check("tm6 the driver loads", False, why)
+        return
+    root, mpath = _repo("tm-bg", task_ids=TASKS[:1], per_task="phase")
+    lines = [_signal_raw(M, root, mpath)]
+    _file_executor(root, mpath, "P1.1")
+    lines.append(_signal_raw(M, root, mpath))
+    # Two seconds between the gate's hand-out and its run, so the wait is
+    # past the whole second both stamps are read at; the same-second case
+    # is tm7's.
+    time.sleep(2)
+    lines.append(_signal_raw(M, root, mpath))
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _play_gate(root, _run_argv(block) or [])
+    lines.append(_signal_raw(M, root, mpath))
+    rows = _tm_rows(root, mpath)
+    gates, waits = _tm_stages(mpath, "gate"), _tm_stages(mpath, "wait")
+    gate_waits = [w for w in waits if gates and "evidence row %s" % (
+        gates[0].get("runId"),) in w["basis"]]
+    check("tm6 a gate run in the background is one gate stage and one selection "
+          "stage of the run that measured it, however many reads name it, and "
+          "the wait from its hand-out ends where that run began: %r"
+          % ((lines, _tm_task(mpath).get("timing")),),
+          "run-test-gate.py --task P1.1" in lines[1][1]
+          and _tm_task(mpath).get("status") == "done"
+          and len(gates) == 1 and gates[0].get("runId") in rows
+          and len(_tm_stages(mpath, "selection")) == 1
+          and len(gate_waits) == 1 and gate_waits[0]["ms"] >= 1000
+          and _tm_epoch(gate_waits[0]["startedAt"]) + gate_waits[0]["ms"] / 1000.0
+          == _tm_epoch(M.run_start(rows[gates[0]["runId"]])))
+    same = M.wait_stage("2026-11-18T02:04:14Z", "2026-11-18T02:04:13Z", "b")
+    moved = M.wait_stage("2026-11-18T02:04:14Z", "2026-11-18T02:04:11Z", "b")
+    after = M.wait_stage("2026-11-18T02:04:14Z", "2026-11-18T02:04:17Z", "b")
+    check("tm7 a start read one second before its hand-out - a floored derived "
+          "start in the hand-out's own second - is a wait of 0 that says so, one "
+          "further back is no wait at all, and one after is its gap: %r"
+          % ((same, moved, after),),
+          isinstance(same, dict) and same["ms"] == 0 and "own second" in same["basis"]
+          and moved is None and isinstance(after, dict) and after["ms"] == 3000
+          and "own second" not in after["basis"])
+
+
+def _timing_red_cases(check, M, bindir, log):
+    """A red gate, the base measurement it asks for and a resumed round: each
+    writer round leaves its own stage with its round, each gate run its own,
+    and the base run one of its own."""
+    root, mpath = _tdd_writer_repo("tm-red", (_wf_gate(), '"%s" %s' % (
+        sys.executable.replace("\\", "/"), _TM_CHECK)))
+    _write_lf(os.path.join(root, *_TM_CHECK.split("/")), _TM_CHECK_SRC)
+    for argv in (["add", "-A"], ["commit", "-qm", "the second gate entry"]):
+        _harness.git(root, *argv)
+    steps = [_signal_next(M, root, mpath)]
+    steps.append(_writer_round(M, root, mpath, bindir, log, "0.31",
+                               duration=TM_WRITER_MS,
+                               edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST},
+                               result=_WF_CLAIM))
+    steps.append(_signal_next(M, root, mpath, "--answer", "resume"))
+    steps.append(_writer_round(M, root, mpath, bindir, log, "0.32",
+                               duration=TM_RESUME_MS,
+                               edit={_WF_SRC: "v = 2  # ok\n"}, result=_WF_CLAIM))
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _play_session(root, _run_argv(block) or [], bindir, log, "0.21",
+                  session=RV_SESSIONS[2], duration=TM_REVIEWER_MS,
+                  result=_review_json(mpath), tools=3)
+    steps.append(_signal_next(M, root, mpath))
+    rows = _tm_rows(root, mpath)
+    writers = _tm_stages(mpath, "writer")
+    gates, bases = _tm_stages(mpath, "gate"), _tm_stages(mpath, "base")
+    check("tm5 a red gate, a base measurement and a second writer round leave two "
+          "writer stages with their rounds and figures, two gate stages of two "
+          "runs with their statuses red then green, and one base stage read off "
+          "the base run's row: %r"
+          % ((steps, _tm_task(mpath).get("timing")),),
+          _tm_task(mpath).get("status") == "done"
+          and [(w.get("round"), w["ms"]) for w in writers]
+          == [(1, TM_WRITER_MS), (2, TM_RESUME_MS)]
+          and len(gates) == 2 and len(set(g.get("runId") for g in gates)) == 2
+          and [rows.get(g.get("runId"), {}).get("status") for g in gates]
+          == ["failed", "passed"]
+          and len(bases) == 1 and bases[0].get("runId") in rows
+          and bases[0]["ms"] == rows[bases[0]["runId"]]["durationMs"]
+          and bases[0]["runId"] not in [g.get("runId") for g in gates])
+
+
+# --- a task's timing across the commit's set-aside and every close ----------------
+# A gate entry that takes a whole second, so a commit stage that held the gate
+# run between the commit verb's two calls is longer than both calls by at
+# least that second, whatever the machine's speed.
+_TM_SLOW = '"%s" -c "import time; time.sleep(1)"' % (
+    sys.executable.replace("\\", "/"),)
+# What the ledger read raises in `tm12`, so the line the step says can be told
+# to carry the reason rather than a fixed phrase.
+_TM_UNREAD = "the ledger is unreadable for tm12"
+
+
+def _tm_timed_verb(M, script):
+    """Wrap `M.run_verb` so each run of `script` is timed from outside it.
+    Returns `(lengths, put_back)`: the milliseconds of each run, in order, and
+    the function that restores the verb runner."""
+    real, lengths = M.run_verb, []
+
+    def timed(ctx, name, args, *rest, **kw):
+        if name != script:
+            return real(ctx, name, args, *rest, **kw)
+        began = time.monotonic()
+        try:
+            return real(ctx, name, args, *rest, **kw)
+        finally:
+            lengths.append((time.monotonic() - began) * 1000.0)
+    M.run_verb = timed
+
+    def put_back():
+        M.run_verb = real
+    return lengths, put_back
+
+
+def _tm_refusing(M, verb, times=None):
+    """Wrap `M.run_verb` so `audit-task.py <verb>` is refused - every time, or
+    the first `times` - the way the verb refuses, with nothing written.
+    Returns `(refused, put_back)`: how many it refused."""
+    real, refused = M.run_verb, []
+
+    def refusing(ctx, name, args, *rest, **kw):
+        if name == "audit-task.py" and list(args)[:1] == [verb] \
+                and (times is None or len(refused) < times):
+            refused.append(list(args)[:2])
+            return 2, "", "%s refused by the fixture\n" % (verb,)
+        return real(ctx, name, args, *rest, **kw)
+    M.run_verb = refusing
+
+    def put_back():
+        M.run_verb = real
+    return refused, put_back
+
+
+def _tm_once_each(stages):
+    """Whether no stage is written twice: a second carrying of the same queue
+    repeats every field, the basis naming its record included."""
+    keys = [(s.get("kind"), s.get("startedAt"), s.get("ms"), s.get("runId"),
+             s.get("round"), s.get("basis")) for s in stages]
+    return len(keys) == len(set(keys))
+
+
+def _timing_close_cases(check):
+    """The commit stage is the commit verb's own time, a close by any route
+    carries the stages queued for it, and a stage whose source cannot be read
+    is said rather than dropped in silence."""
+    M, why = _load("drive_phase_timing_close")
+    if M is None:
+        check("tm10 the driver loads", False, why)
+        return
+    import _task_timing
+    stubs = os.path.realpath(_harness.fixture_root("drive-tmc-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+
+    # (a) THE SET-ASIDE PATH: the first commit is refused over a document no
+    # task declares, the drive sets it aside, proves and gates again, then
+    # commits. The gate in between takes a second of its own, so a commit stage
+    # timed around the whole step is longer than the verb's own calls by it -
+    # the refused commit, the re-read of its refusal and the commit made.
+    root, mpath = _tdd_writer_repo("tm-aside", (_wf_gate(), _TM_SLOW))
+    _xs_with_aside(root)
+    _signal_next(M, root, mpath)
+    _writer_round(M, root, mpath, bindir, log, "0.41",
+                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST,
+                        _XS_ASIDE: _XS_EDIT}, result=_WF_CLAIM)
+    _file_reviewer(root, mpath, "P1.1")
+    lengths, put_back = _tm_timed_verb(M, "commit-task-work.py")
+    try:
+        code, line = _signal_next(M, root, mpath)
+    finally:
+        put_back()
+    task = _tm_task(mpath)
+    commits, gates = _tm_stages(mpath, "commit"), _tm_stages(mpath, "gate")
+    rows = _tm_rows(root, mpath)
+    runs = sorted(r["runId"] for r in rows.values()
+                  if r.get("taskId") == "P1.1"
+                  and r.get(_evio.VERDICT_SOURCE) != _evio.REUSED)
+    summary = _task_timing.summarize(task)
+    verb_ms = sum(lengths)
+    # The drive times inside the wrapper's own window, so its figure is at
+    # least the wrapper's sum less a millisecond a call for the drive's whole
+    # milliseconds, and at most that sum plus a margin far under the second
+    # the gate between the calls takes.
+    check("tm10 on the set-aside path the commit stage is the commit verb's own "
+          "calls - not the proof and the gate run between them - the gate "
+          "run again is one gate stage of its own, and the task's stages do not "
+          "overrun its window: %r"
+          % ((code, line[-300:], lengths, commits, [(g.get("runId"), g["ms"])
+                                                    for g in gates], runs,
+              summary),),
+          code == 0 and task.get("status") == "done" and len(lengths) >= 2
+          and len(commits) == 1
+          and verb_ms - len(lengths) <= commits[0]["ms"] <= verb_ms + 250
+          and "commit-task-work.py" in commits[0]["basis"]
+          and len(runs) == 2 and sorted(g.get("runId") for g in gates) == runs
+          and all(g["ms"] >= 1000 for g in gates)
+          and summary.get("overrunMs") == 0 and _tm_parts_add_up(summary))
+
+    # (b) THE NO-CHANGE ANSWER: the commit finds nothing to commit, the drive
+    # asks, and the answer closes the task through `done --no-change`. On the
+    # Agent route nothing writes the task between the hand-outs and the close,
+    # so every stage queued rides the close or is lost.
+    # HEAD already holds the bytes the executor writes, so its edit changes
+    # nothing and the gate's verdict is of a tree the close finds clean; the
+    # commit step answers as the writer path's verb does over such a tree.
+    root_n, mpath_n = _repo("tm-nochange", task_ids=TASKS[:1])
+    _edit(root_n, "P1.1", "changed by P1.1\n")
+    _harness.git(root_n, "commit", "-qam", "the work, already there")
+    _to_close(M, root_n, mpath_n)
+    real = M.run_verb
+
+    def no_commit(ctx, name, args, *rest, **kw):
+        if name == "commit-task-work.py":
+            return 0, "nothing to commit\n", ""
+        return real(ctx, name, args, *rest, **kw)
+    M.run_verb = no_commit
+    try:
+        code_a, text_a = _next_text(M, root_n, mpath_n)
+    finally:
+        M.run_verb = real
+    queued = list(((_drive_state(root_n).get(M.TIMING_KEY) or {}).get("P1.1")
+                   or {}).get("pending") or [])
+    code_b, text_b = _next(M, root_n, mpath_n, "--answer", "no-change",
+                           "--reason", "the work was already there")
+    task_n = _tm_task(mpath_n)
+    check("tm11 a task closed by the no-change answer carries every stage queued "
+          "for it - the writer's and the reviewer's among them - once each, and "
+          "the drive's state keeps no queue for it: %r"
+          % ((code_a, text_a[-400:], code_b, text_b[-300:], queued,
+              task_n.get("status"), task_n.get("timing"),
+              (_drive_state(root_n).get(M.TIMING_KEY) or {}).get("P1.1")),),
+          instruction(text_a) == ("decide", "no-change", None)
+          and code_b == 0 and task_n.get("status") == "done"
+          and not task_n.get("commit")
+          and set(s.get("kind") for s in queued) >= {"writer", "reviewer"}
+          and _tm_stages(mpath_n) == queued
+          and not (_drive_state(root_n).get(M.TIMING_KEY) or {}).get("P1.1"))
+
+    # (c) THE LEDGER UNREADABLE AT READ-BACK: the gate's verdict is read as it
+    # always is, and only the timing's reads of the row fail. Both reads of the
+    # one run - the launch's and the repeat's - fail on one source, so the line
+    # is said once.
+    _timing_unread_cases(check)
+    _timing_gap_cases(check, M)
+
+    # (d) THE FALLBACK BASES, each saying what was read and why.
+    root_f, mpath_f = _repo("tm-basis", task_ids=TASKS[:1])
+    _to_close(M, root_f, mpath_f)
+    ns = argparse.Namespace(project_dir=root_f, manifest=mpath_f, verbose=False,
+                            phase=PHASE, task_only=False)
+    real_read = M._journal_io.read_all
+
+    def unreadable(project, config=None):
+        raise OSError("the journal is unreadable for tm13")
+    with _Env(root_f):
+        ctx_f = M.context(ns)
+        task_f = _tm_task(mpath_f)
+        row_exec = M.filed_moment(ctx_f, task_f, "executor")
+        try:
+            M._journal_io.read_all = unreadable
+            unread_exec = M.filed_moment(ctx_f, task_f, "executor")
+            M._journal_io.read_all = lambda project, config=None: []
+            rowless_exec = M.filed_moment(ctx_f, task_f, "executor")
+        finally:
+            M._journal_io.read_all = real_read
+        rev = M.filed_moment(ctx_f, task_f, "reviewer")
+    check("tm13 each fallback basis says what was read and why: an executor's "
+          "filing read off its journal row; with the journal unreadable, the "
+          "file's modification time and the reason the row was not read; with "
+          "no row, the modification time and that no row names the file; a "
+          "reviewer's, a modification time that moves later and never earlier: "
+          "%r" % ((row_exec, unread_exec, rowless_exec, rev),),
+          "journal row" in str(row_exec[1]) and "modification" not in str(row_exec[1])
+          and "modification time" in str(unread_exec[1])
+          and "could not be read" in str(unread_exec[1])
+          and "unreadable for tm13" in str(unread_exec[1])
+          and "modification time" in str(rowless_exec[1])
+          and "could not be read" not in str(rowless_exec[1])
+          and "no journal row" in str(rowless_exec[1])
+          and "modification time" in str(rev[1])
+          and "never earlier" in str(rev[1]) and "later" in str(rev[1]))
+
+    # (6) A REFUSED NOTE: every session note is refused, so the stages each
+    # note would have carried stay queued, and the close carries them, once.
+    root_r, mpath_r = _tdd_writer_repo("tm-refused", (_wf_gate(),))
+    refused, put_back = _tm_refusing(M, "note")
+    try:
+        _signal_next(M, root_r, mpath_r)
+        _writer_round(M, root_r, mpath_r, bindir, log, "0.31",
+                      duration=TM_WRITER_MS,
+                      edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST},
+                      result=_WF_CLAIM)
+        _c, block = _explain_of(M, root_r, mpath_r, "P1.1")
+        _play_session(root_r, _run_argv(block) or [], bindir, log, "0.21",
+                      session=RV_SESSIONS[2], duration=TM_REVIEWER_MS,
+                      result=_review_json(mpath_r), tools=3)
+        code_r, line_r = _signal_next(M, root_r, mpath_r)
+    finally:
+        put_back()
+    stages_r = _tm_stages(mpath_r)
+    check("tm14 with every session note refused, the close carries the stages "
+          "those notes would have: one writer, one reviewer, every gate run once, "
+          "none written twice: %r"
+          % ((code_r, line_r[-300:], len(refused), stages_r),),
+          code_r == 0 and _tm_task(mpath_r).get("status") == "done"
+          and len(refused) >= 2
+          and [s["ms"] for s in stages_r if s.get("kind") == "writer"]
+          == [TM_WRITER_MS]
+          and [s["ms"] for s in stages_r if s.get("kind") == "reviewer"]
+          == [TM_REVIEWER_MS]
+          and len(_tm_stages(mpath_r, "commit")) == 1
+          and _tm_stages(mpath_r, "gate") and _tm_once_each(stages_r))
+
+    # A CLOSE REFUSED, THEN TAKEN: the first `done` is refused after the commit
+    # landed, and the next step closes on that commit. The queue stays until a
+    # close takes it, so each stage is written once.
+    root_c, mpath_c = _repo("tm-reclose", task_ids=TASKS[:1])
+    _to_close(M, root_c, mpath_c)
+    refused_c, put_back = _tm_refusing(M, "done", times=1)
+    try:
+        code_c1, _t1 = _next_text(M, root_c, mpath_c)
+        code_c2, text_c2 = _next_text(M, root_c, mpath_c)
+    finally:
+        put_back()
+    stages_c = _tm_stages(mpath_c)
+    check("tm15 a close refused once and then taken writes each queued stage "
+          "once - the writer's, the reviewer's and the commit's: %r"
+          % ((code_c1, code_c2, text_c2[-300:], refused_c, stages_c),),
+          code_c1 != 0 and code_c2 == 0 and len(refused_c) == 1
+          and _tm_task(mpath_c).get("status") == "done"
+          and [k for k in ("writer", "reviewer", "commit")
+               if len(_tm_stages(mpath_c, k)) == 1] == ["writer", "reviewer", "commit"]
+          and _tm_stages(mpath_c, "gate") and _tm_once_each(stages_c))
+
+
+def _timing_gap_cases(check, M):
+    """The reasons a stage is not built, each its own: a row with no start, a
+    row with no length, a hand-out with no stamp - and a whole row none."""
+    started = "2026-11-18T03:00:00Z"
+    whole = {"runId": "r-whole", _evio.STARTED_KEY: started, "durationMs": 1200,
+             "selectionMs": 300}
+    no_start = dict(whole, runId="r-nostart")
+    no_start.pop(_evio.STARTED_KEY)
+    no_length = dict(whole, runId="r-nolength")
+    no_length.pop("durationMs")
+    # A reading of another shape - a driver whose readers say no reason - is
+    # a failed case naming what it got, never a raise that ends the block.
+    try:
+        got = dict((row["runId"], M.row_stages(row))
+                   for row in (whole, no_start, no_length))
+        kinds = dict((k, [s["kind"] for _src, s in v[0]]) for k, v in got.items())
+        stamp = tuple(M.agent_stage({}, {"id": "P1.1"}, "executor", None) or ())
+    except (TypeError, ValueError, KeyError, IndexError) as exc:
+        check("tm16 the readers say why a stage was not built: %r"
+              % ("%s: %s" % (type(exc).__name__, exc),), False)
+        return
+    # OVER-FIRE: the whole row is the case a gap said on every row would fail.
+    check("tm16 a row with no start builds no stage and says so, one with no "
+          "length builds its selection and says the gate stage is missing, a "
+          "whole row says nothing, and a hand-out with no stamp says why no "
+          "writer stage was built: %r" % ((got, stamp),),
+          len(stamp) == 2
+          and kinds == {"r-whole": ["selection", "gate"], "r-nostart": [],
+                        "r-nolength": ["selection"]}
+          and got["r-whole"][1] == []
+          and len(got["r-nostart"][1]) == 1
+          and _evio.STARTED_KEY in got["r-nostart"][1][0]
+          and "r-nostart" in got["r-nostart"][1][0]
+          and len(got["r-nolength"][1]) == 1
+          and "durationMs" in got["r-nolength"][1][0]
+          and stamp[0] is None and "hand-out" in str(stamp[1]))
+
+
+def _timing_unread_cases(check):
+    """The background gate's read-back with the ledger unreadable to the
+    timing's reads alone: no gate or selection stage, and one line naming the
+    stage and the reason."""
+    M, why = _load("drive_phase_timing_unread", real_gate_choice=True)
+    if M is None:
+        check("tm12 the driver loads", False, why)
+        return
+    root, mpath = _repo("tm-unread", task_ids=TASKS[:1], per_task="phase")
+    _signal_raw(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    _signal_raw(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _play_gate(root, _run_argv(block) or [])
+    real = M._evio.read_rows
+    timing_reads = ("ledger_row", "gate_row_read")
+
+    def read_rows(*args, **kw):
+        # Only the reads a stage is built from fail; the verdict's read stands.
+        if sys._getframe(1).f_code.co_name in timing_reads:
+            raise OSError(_TM_UNREAD)
+        return real(*args, **kw)
+    M._evio.read_rows = read_rows
+    try:
+        code, text = _next(M, root, mpath)
+    finally:
+        M._evio.read_rows = real
+    said = [ln for ln in text.splitlines() if "not recorded" in ln]
+    check("tm12 a ledger unreadable at the gate's read-back leaves no gate and no "
+          "selection stage, and the step says so once, naming the stage and the "
+          "reason: %r" % ((code, text[-600:], said, _tm_task(mpath).get("timing")),),
+          code == 0 and not _tm_stages(mpath, "gate")
+          and not _tm_stages(mpath, "selection")
+          and len(said) == 1 and "gate" in said[0] and _TM_UNREAD in said[0]
+          and text.count(_TM_UNREAD) == 1)
 
 
 STAGES = (("e2e-steps", "_e2e_steps_cases"),
@@ -19217,6 +20751,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("gc-block", "_gate_choice_cases"),
           ("gc6-block", "_gate_choice_follow_cases"),
           ("gc8-block", "_gate_choice_signoff_cases"),
+          ("rd-block", "_readback_cases"),
           ("gs-block", "_gate_status_cases"),
           ("ge-block", "_empty_gate_cases"),
           ("ga-block", "_gate_reach_cases"),
@@ -19303,7 +20838,9 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("uy-block", "_wave_unit_cases"),
           ("rf-block", "_ready_first_cases"),
           ("sd-block", "_scope_declared_cases"),
-          ("sb-block", "_stage_cases"))
+          ("sb-block", "_stage_cases"),
+          ("tm-block", "_timing_cases"),
+          ("tm10-block", "_timing_close_cases"))
 
 
 CI_CADENCE_CLAUSE = ("tests/test_drive_phase.py: with ci.cadence "
@@ -21372,23 +22909,22 @@ def _base_background_cases(check):
           and len(_stub_runs(log2)) == 1 and _writer_resumes(root2) == 0)
 
     if not hasattr(os, "killpg"):
-        _harness.skip(check, "bq4", "os.killpg, to stop a base run's whole "
-                      "process group", True)
+        for label in ("bq4", "bq6", "bq7", "bq8"):
+            _harness.skip(check, label, "os.killpg, to stop a base run's whole "
+                          "process group", True)
     else:
         _base_killed_case(check, k02, slow_ms)
+        _base_sweep_reading_case(check, k02, slow_ms)
     _base_auto_case(check, k02)
 
 
-def _base_killed_case(check, k02, slow_ms):
-    """A background base run killed - its own process and the gate run it
-    started - leaves its tree; the next drive sweeps it and stops on a base
-    nobody can know."""
-    M, why = _load("drive_phase_base_bg_killed", real_gate_choice=True)
-    if M is None:
-        check("bq4 the driver loads", False, why)
-        return
+def _killed_base_run(M, prefix, k02, slow_ms):
+    """A background base run started from the drive's own print and killed -
+    its process and the gate run it started - once its mark names its tree and
+    both pids: `(root, mpath, log, line, holder, built, pids)`, `built` whether
+    the tree stood on disk before the kill, `pids` those the mark named."""
     root, mpath, log, line, _block = _base_measure_repo(
-        M, "base-bg-killed", k02, k02, sleep=20, seed_ms=slow_ms)
+        M, prefix, k02, k02, sleep=20, seed_ms=slow_ms)
     argv = _base_run_argv(M, root, mpath)
     proc = _base_popen(root, argv) if argv else None
     mark, deadline = {}, time.monotonic() + 30
@@ -21399,13 +22935,27 @@ def _base_killed_case(check, k02, slow_ms):
         time.sleep(0.1)
     holder = mark.get("tree") or ""
     built = bool(holder) and os.path.isdir(os.path.join(holder, "tree"))
-    for pid in list(mark.get("pids") or []) + ([proc.pid] if proc else []):
+    pids = list(mark.get("pids") or [])
+    for pid in pids + ([proc.pid] if proc else []):
         try:
             os.killpg(os.getpgid(pid), signal.SIGKILL)
         except OSError:
             pass
     if proc is not None:
         proc.wait()
+    return root, mpath, log, line, holder, built, pids
+
+
+def _base_killed_case(check, k02, slow_ms):
+    """A background base run killed - its own process and the gate run it
+    started - leaves its tree; the next drive sweeps it and stops on a base
+    nobody can know."""
+    M, why = _load("drive_phase_base_bg_killed", real_gate_choice=True)
+    if M is None:
+        check("bq4 the driver loads", False, why)
+        return
+    root, mpath, log, line, holder, built, _pids = _killed_base_run(
+        M, "base-bg-killed", k02, slow_ms)
     _code, after = _signal_next(M, root, mpath)
     swept = _base_mark(root)
     check("bq4 a background base run killed while it measures leaves its tree "
@@ -21419,6 +22969,111 @@ def _base_killed_case(check, k02, slow_ms):
           and not os.path.exists(holder) and _base_trees(root) == []
           and not swept.get("tree") and swept.get("unknowable") is True
           and len(_stub_runs(log)) == 1)
+
+
+def _scripted_liveness(M, readings):
+    """Answer every liveness reading of a base mark the driver `M` makes from
+    `readings` - True alive, False dead - one per reading that names a pid of
+    another process, and dead once they are spent; a mark naming no such pid
+    reads dead, as it does for real. A killed run is dead, so only a scripted
+    True departs from the truth, and that one is the reading `ps` gives when a
+    pid exits between its kill probe and its own look, or when it times out:
+    unverified, counted as alive. The real reading is not consulted, so a
+    loaded machine cannot flip a reading the case did not script. Returns the
+    readings taken, in order, as `(pids, answer)`."""
+    taken = []
+
+    def _reading(held):
+        pids = [p for p in (held or {}).get("pids") or [] if p != os.getpid()]
+        if not pids:
+            return []
+        alive = bool(readings.pop(0)) if readings else False
+        taken.append((pids, alive))
+        return pids if alive else []
+
+    M.base_running = _reading
+    return taken
+
+
+def _sweep_claims(M, text, holder):
+    """The did-line clauses of a plain `next`'s `text` saying the base tree
+    `holder` was removed."""
+    return [c for c in _rb_did(M, text)
+            if ("base tree %s" % (holder,)) in c and c.endswith(" removed")]
+
+
+def _base_sweep_reading_case(check, k02, slow_ms):
+    """A killed background base run whose first liveness reading after the
+    kill says alive and every later one dead: one reading per run per sweep
+    decides both the fold of the run's own record and the removal, so the
+    drive that read it alive leaves the tree and its mark as they are, and the
+    next one removes the tree and clears it where the mark is read from - no
+    mark ever names a tree that is gone, and no drive after the removal says
+    it removed one again."""
+    M, why = _load("drive_phase_base_sweep_reading", real_gate_choice=True)
+    if M is None:
+        check("bq6 the driver loads", False, why)
+        return
+    root, mpath, log, _line, holder, built, pids = _killed_base_run(
+        M, "base-sweep-reading", k02, slow_ms)
+    taken = _scripted_liveness(M, [True])
+    # What each drive left, read before the next one runs: its text, the mark,
+    # whether the tree's directory stood and how many base trees git holds.
+    drives, marks, stood, registered = [], [], [], []
+    for _n in range(3):
+        drives.append(_rb_next(M, root, mpath)[1])
+        marks.append(_base_mark(root))
+        stood.append(os.path.isdir(os.path.join(holder, "tree")))
+        registered.append(len(_base_trees(root)))
+    first, last = marks[0], marks[-1]
+    left = [c for c in _rb_did(M, drives[0])
+            if ("base tree %s is left" % (holder,)) in c]
+    check("bq7 the drive whose one reading of a killed base run says alive "
+          "leaves its tree - the directory and git's registration both still "
+          "there - and its mark naming that tree and the run's pids, and says "
+          "the tree is left: %r"
+          % ((built, holder, first.get("tree"), first.get("pids"), pids,
+              stood, registered, left, taken, drives[0][-900:]),),
+          built and len(pids) >= 2 and taken[:1] == [(pids, True)]
+          and len(left) == 1 and stood[0] and registered[0] == 1
+          and first.get("tree") == holder and first.get("pids") == pids)
+    claims = [len(_sweep_claims(M, text, holder)) for text in drives]
+    named_gone = [n for n, m in enumerate(marks)
+                  if m.get("tree") == holder and not stood[n]]
+    check("bq6 a killed base run read alive once and dead after: across three "
+          "drives the tree is removed once and said removed once, no mark "
+          "after a drive names a tree that is gone, the last mark names no "
+          "tree and no pids, and the reading that said alive was the only one "
+          "that did: %r"
+          % ((holder, claims, named_gone, last, _base_trees(root), taken,
+              [d[-600:] for d in drives]),),
+          built and sum(claims) == 1 and named_gone == []
+          and not last.get("tree") and not last.get("pids")
+          and not os.path.exists(holder) and _base_trees(root) == []
+          and [a for _p, a in taken].count(True) == 1
+          and len(_stub_runs(log)) == 1)
+    # A mark naming a tree whose directory is already gone, its run dead: the
+    # sweep clears it and says the directory was gone, never that it removed
+    # one it did not.
+    where = os.path.join(root, ".claude", "state")
+    path = _fr.drive_state_path(where, PHASE)
+    with open(path, encoding="utf-8") as fh:
+        state = json.load(fh)
+    entry = state["baseMeasured"]["P1.1"]
+    entry["value"] = dict(entry["value"], tree=holder, pids=[])
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(state, fh)
+    with _Env(root):
+        ctx = dict(M.context(argparse.Namespace(
+            phase=PHASE, manifest=mpath, project_dir=root, verbose=False,
+            task_only=False)), phase=PHASE, did=[])
+        M.sweep_base_trees(ctx, M.read_state(ctx))
+    said = [d for d in ctx["did"] if ("base tree %s" % (holder,)) in d]
+    check("bq8 a mark naming a base tree already gone from disk, its run "
+          "dead, is cleared and said gone - never said removed: %r"
+          % ((said, _base_mark(root)),),
+          len(said) == 1 and said[0].endswith(" already gone from disk")
+          and not _base_mark(root).get("tree"))
 
 
 def _base_auto_case(check, k02):
@@ -22012,12 +23667,13 @@ def _bi_read_back_cases(check, M, fold):
           "no gate run at all: %r" % ((said, measured, timed),),
           said is None and timed == []
           and measured == M.unrepeatable_red("r-to", "timed-out"))
-    check("bi7 THE TWIN: a red row a repeat may copy is repeated once through "
-          "the recorded gate's own call, never with --no-reuse - a rerun mark "
-          "left on the start does not turn the read-back into a fresh "
+    check("bi7 THE TWIN: a red row a repeat may copy is read back as the row's "
+          "own red, naming its run, with no gate call at all - so a rerun mark "
+          "left on the start cannot turn the read-back into a fresh "
           "measurement: %r" % ((said2, measured2, repeated),),
-          said2 is None and repeated == [("record_gate", False)]
-          and measured2 is not None and measured2[0] == 1)
+          said2 is None and repeated == []
+          and measured2 is not None and measured2[0] == 1
+          and "evidence: recorded r-red" in measured2[1])
 
 
 def _bi_reading_cases(check, M):
@@ -22205,8 +23861,10 @@ def _bi_bound_due_case(check, M):
     """Once the start's mark already counts the bound of moved-code
     unmeasurable reds, a new red is stopped before ANY measurement is
     launched - inline or in the background; THE TWIN, a mark counting the
-    same reds as unrunnable, its code never moved, is measured as before."""
-    def _read(moved, background):
+    same reds as unrunnable, its code never moved, is measured as before; and
+    past the bound a red whose own reading names a base run is decided by it,
+    neither stopped as unknown nor measured."""
+    def _read(moved, background, reading=None):
         ctx, task, phase = _bi_world(M, "drive-bi-due-")
         state = {}
         M._mark(state, M.BASE_MEASURED, task, {
@@ -22214,7 +23872,7 @@ def _bi_bound_due_case(check, M):
             "moved": moved, "unmeasuredBefore": 1, "reading": None,
             "verdict": None, "run": None, "atBase": [], "introduced": [],
             "said": "HEAD moved"})
-        row = dict(_bi_row("r-third"), **{_evio.BASE_RED_KEY: {
+        row = dict(_bi_row("r-third"), **{_evio.BASE_RED_KEY: reading or {
             "verdict": "no-base", "run": None, "head": "abc1234"}})
         started = []
 
@@ -22245,6 +23903,8 @@ def _bi_bound_due_case(check, M):
 
     stopped = [_read(True, bg) for bg in (False, True)]
     twin = [_read(False, bg) for bg in (False, True)]
+    behind = {"verdict": "not-knowable", "run": "r-base", "head": "abc1234"}
+    decided = [_read(True, bg, behind) for bg in (False, True)]
     check("bi16 a start whose mark already counts two moved-code unmeasurable "
           "reds stops a third red as unknown before any base run is launched, "
           "inline or in the background; THE TWIN, the same count of reds "
@@ -22254,6 +23914,12 @@ def _bi_bound_due_case(check, M):
               for got, st in stopped)
           and [st for _g, st in twin] == [[("take", "r-third")],
                                           [("launch", "r-third")]])
+    check("bi17 past the same bound, a red whose own reading already names a "
+          "base run is decided by that reading - no unknown stop claiming its "
+          "base could not be measured, and nothing launched, inline or in the "
+          "background: %r" % (decided,),
+          all(st == [] and got == (None, behind, None)
+              for got, st in decided))
 
 
 def _bi_claim_case(check, M):

@@ -1,0 +1,48 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__task_timing.py tests/test__manifest_phases.py tests/test_audit_task.py tests/test__manifest_vocab.py tests/test__deps.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T00:37:28Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__task_timing.py tests/test__manifest_phases.py tests/test_audit_task.py tests/test__manifest_vocab.py tests/test__deps.py` in a throwaway tree at HEAD exited 1 with 4 of 1259 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code but for the sweep grading the empty file laid where the task adds tests/test__task_timing.py red for printing no contract: tests/test__task_timing.py did not exist at HEAD, which is red for every case it adds, its declared test files new at HEAD (tests/test__task_timing.py) laid over as empty files), each passing with the working tree's implementation - tm1 (house FAIL), tm3 (house FAIL), tm4 (house FAIL), tmg1 (house FAIL): SELFTEST FAILED: 1258/1259 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "New helper plugins/audit/scripts/manifest/_task_timing.py (KINDS, TIMING_KEYS, STAGE_KEYS, make_stage, append_stage, first_start, stage_problems, timing_problems, summarize; reads _usage_core.parse_ts, layer beside _task_outputs in tools/lints/_deps.py LAYERS). Schema: task.properties.timing -> $defs/timing and $defs/timingStage (kind enum = KINDS, ms integer minimum 0, basis required minLength 1, round minimum 1, runId). _manifest_vocab.KNOWN_TASK gains 'timing' (SCHEMA_ANCHORS unchanged: the task anchor now covers it; nested key sets live in _task_timing, pinned to the schema by tt10/tt10b). _manifest_phases._walk_phases: a task carrying timing gets one finding per problem (code phases.walk_phases.timing, text 'task <id>: timing: stages[i]: <field> ...') and the unknown-key warning at the timing and stage levels via _check_timing_keys; a task without the key is asked nothing. audit-task.py _start_task writes task.timing = _task_timing.first_start(task, startedAt), so a first start sets firstStartedAt and a restart keeps it; move/reopen/cancel already carried unknown task keys and now have cases locking that. Docs: COMPATIBILITY.md additive-key bullet in section 1 Promised; PLUGIN-BUILD-GUIDE.md tree line, module-map fence (diffed equal to `_deps.py --render` except the three lines updated) and a section; CHANGELOG.md [Unreleased] Added. Red on current code before implementation: test__task_timing ModuleNotFoundError _task_timing; test__manifest_phases 148/151 (tm1 unknown-key warning on timing, tm3 and tm4 no findings); test_audit_task --stage tmg-block 4/5 (tmg1 timing None after start). After: gate command EXIT=0, '5/5 files ok, 1776 cases'. Dependants checked outside the gate (not gates): sweep over test__help, test__help_lints, test__json_schema, test__manifest_crossrefs, test__manifest_io, test__manifest_rules, test__output, test__output_lints, test__panel_write, test__refs, test_validate_manifest EXIT=0 '11/11 files ok, 1467 cases'; validate-manifest.py EXIT=0 on examples/acme-store/audit-plan.json, templates/audit-plan.starter.json and docs/audit/audit-plan.json; tools/check-rendered-artifacts.py --before-commit EXIT=0 'OK: 3 committed artifact(s) match a fresh render'; ruff EXIT=0 on touched .py; vermin -t=3.8- EXIT=0 on the new files; selftest_coverage() lists scripts/manifest/_task_timing.py as covered. One first-gate failure was mine and fixed: mv36 counts files reading the literal schema-definitions token, and my comment in _task_timing.py spelled it; reworded. Panel writer: probed apply_composition_patch on a task with timing and a model patch -> returned None, model updated, timing unchanged (the panel applies allow-listed patches in place, so unknown task keys survive). Dependants answered: _manifest_vocab importers (guard-release, _evidence_io, _gate_derive, _invariants, _scoped_commit, _tree_stamp, commit-task-work, derive-phase-gate) still correct - only KNOWN_TASK gained a member; _manifest_phases importers (_affected_tests, _gate_derive, _scoped_commit, derive-phase-gate, drive-phase, run-test-gate, _manifest_rules, audit-task) still correct - _walk_phases's return shape is unchanged, it adds findings/warnings only for a task carrying timing; audit-task importers (full-gate, run-test-gate, test suites) still correct - _start_task's return value and journal changes rows are unchanged (no new journal row for timing: _start_changes untouched); tools/lints/_deps.py readers still correct - one LAYERS member added, test__deps green; schema readers (acme example, starter template, check-example-ledgers, prove-gates, verify.sh) still correct - additive optional property, plans validate unchanged; PLUGIN-BUILD-GUIDE/COMPATIBILITY/CHANGELOG readers - prose additions only, doc_prose_numbers green in test__deps. Not done here: the drive's writers of stages and the status surfaces (later P167 tasks); reference/execute-task.md step 2 still names only status/startedAt/attempts for a hand promotion (not in this task's files) - a hand-promoted task has no firstStartedAt and summarize names it missing.",
+    "descriptive": "A task can now carry a validated timing record whose first start survives a restart, with one helper that builds, grades and sums it."
+  },
+  "testsAdded": [
+    "tests/test__task_timing.py tt1-tt13: summary parts add to the window, absent sources named with no total, stage grading, KINDS and key sets equal to the schema, append/first_start purity",
+    "tests/test__manifest_phases.py tm1-tm4: well-formed timing silent (unknown-key warning included), absent key asks nothing, unknown kind / negative ms / no basis each one finding naming task and stages[1], malformed shapes are findings",
+    "tests/test_audit_task.py tmg1-tmg5 (tmg-block): first start writes firstStartedAt, restart moves startedAt and keeps the record, move/reopen/cancel keep it"
+  ],
+  "casesAdded": [
+    [
+      "tt1",
+      "tt2",
+      "tt3",
+      "tt4",
+      "tt5",
+      "tt6",
+      "tt7"
+    ],
+    [
+      "tm1",
+      "tm2",
+      "tm3",
+      "tm4"
+    ],
+    [
+      "tmg1",
+      "tmg2",
+      "tmg3",
+      "tmg4",
+      "tmg5"
+    ]
+  ],
+  "claims": "claims:\n1 _task_timing.summarize names missing sources and returns None totals (the `if missing: return summary` branch); _manifest_phases._walk_phases 'if \"timing\" in task' block is the finding the guide section describes; audit-task._start_task line `task[\"timing\"] = _timing.first_start(...)` is the first-start keep the docstring paragraph describes\n2 red on current code before the fix: tt suite import error, tm1/tm3/tm4 FAIL (148/151), tmg1 FAIL (4/5); second-direction cases tt3, tt7, tm1, tm2 exist for the always-fire mutation but were not mutation-run by hand; the helper's HEAD run is the filed proof\n3 n/a - not a fix of a reported defect; carry-through verbs as a class: move/reopen/cancel each driven (tmg3-5), panel patch path probed (timing kept)\n4 n/a - no rule addressed to an agent\n5 n/a - no property measured\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:207c0129a3c148b545634388d45a9efe6289f5aa7a146ce36f0f7b7d57fbc250\",\"dirtyDigest\":\"sha256:feb7789bdc0a47073ec0fd58c8008f249d869b6a8e3c81034bc166e7c8e5051b\",\"dirtyPaths\":{\"CHANGELOG.md\":\"453e950687169111\",\"COMPATIBILITY.md\":\"5dda9bb1d1955572\",\"PLUGIN-BUILD-GUIDE.md\":\"7a69669067730087\",\"plugins/audit/schema/audit-plan.schema.json\":\"54fc889d3db70ae7\",\"plugins/audit/scripts/manifest/_manifest_phases.py\":\"211584cdda77ca25\",\"plugins/audit/scripts/manifest/_manifest_vocab.py\":\"8e7ea65926be4ddb\",\"plugins/audit/scripts/manifest/_task_timing.py\":\"e20f0833f3c9cfdc\",\"plugins/audit/scripts/manifest/audit-task.py\":\"783ea7eb1a1ff7ab\",\"tests/test__manifest_phases.py\":\"985caa6a3619d6f6\",\"tests/test__task_timing.py\":\"4b89bec8f70fed45\",\"tests/test_audit_task.py\":\"da6d55040cb9f882\",\"tools/lints/_deps.py\":\"f0e6bcc1afaef719\"},\"head\":\"50ae8981\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"COMPATIBILITY.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/scripts/manifest/_manifest_phases.py\",\"plugins/audit/scripts/manifest/_manifest_vocab.py\",\"plugins/audit/scripts/manifest/_task_timing.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test__deps.py\",\"tests/test__manifest_phases.py\",\"tests/test__manifest_vocab.py\",\"tests/test__task_timing.py\",\"tests/test_audit_task.py\",\"tools/lints/_deps.py\"],\"scopeDigest\":\"sha256:97b7676fde69a60e6cac4963da2182c68c2004f8b008e3fc6755adc1acc5e7b3\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

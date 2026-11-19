@@ -1,0 +1,35 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T01:34:42Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py` in a throwaway tree at HEAD exited 1 with 6 of 625 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sel1 (house FAIL), sel2 (house FAIL), sel3 (house FAIL), sel6 (house FAIL), sel7 (house FAIL), ag6 (house FAIL): SELFTEST FAILED: 624/625 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "_evidence_io.py: SELECTION_KEY = 'selectionMs' beside STARTED_KEY with its reason; selection_ms(row) is the one reader - None for an absent key, a bool, a negative or a non-int, never 0; row_for writes the key only when selection_ms(result) answers, before append_row hashes the row. run-test-gate.py: main starts a monotonic selection clock before the affected gathering (so it covers gathering, reuse_identity + ledger lookup, and the reach reading); run_gate takes selection_started=None and returns selectionMs = time from it to the same `started` reading durationMs begins at (None when no caller timed one, so the base-of, --full and other run_gate callers write no key); a reused verdict gets selectionMs from the clock at the reuse decision. durationMs is untouched. COMPATIBILITY.md: one bullet naming selectionMs as an additive evidence-row key, absent = not recorded, durationMs unchanged. Tests: test__evidence_io._selection_time_cases sel1-sel7; test_run_test_gate ag6 in _affected_cases (listing made to sleep 600 ms; asserts selectionMs >= the sleep and durationMs - sum(step durationMs) < the sleep). Gate `python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py` exit 0 (342 + 625 cases). Mutations in a scratch rsync copy, never the shared tree: selection forced to 0 -> ag6 red (selectionMs=0); run_gate's started set to selection_started -> ag6 red (durationMs=1361); reader returning 0 for absent -> sel2, sel3, sel6 red; reader without the type check -> sel2, sel4 red. Dependants, each re-run: _evidence_io.gate_mean_ms reads steps' durationMs only and sel5 pins equal answers with and without the key; doctor gateBudgetMs (test__doctor_trail 155, test__doctor_report 24 ok) and audit-usage (test_audit_usage 183 ok) read durationMs, unchanged; report/panel render steps and took and ignore the key (test__report_html, test__report_md, test_render_report, test__panel_composition ok); hash chain: sel6 verify ok over mixed rows and stored hash == row_hash(row), sel7 a rewritten selectionMs is a finding; drive-phase.py/full-gate.py/test_commit_task_work import run-test-gate - run_gate's new arg defaults None, test_commit_task_work 239 ok; COMPATIBILITY.md readers test_audit_status 411 ok; lints test__deps 284, test__output_lints 183 ok; ruff and vermin -t=3.8- clean on the four .py files. PLUGIN-BUILD-GUIDE.md and CHANGELOG.md not edited - declared by P167.5 (pending), which owns the documentation of this key. The empty-gate path (no commands) is left without selectionMs: it runs no step and selects nothing, so absent reads correctly as not recorded.",
+    "descriptive": "A recorded gate run now records selectionMs, the time spent choosing what to run, beside an unchanged durationMs."
+  },
+  "testsAdded": [
+    "ag6: a recorded task gate with a derived part (related listing slowed by a sleep) carries selectionMs covering the sleep, and its durationMs stays the steps alone",
+    "sel1-sel7: the key's name; selection_ms reads absent as None and a recorded 0 as 0; row_for carries a valid value and writes no key otherwise; gate_mean_ms answers the same with and without the key; verify accepts a chain of old and new rows with the key inside the hash, and a rewritten selectionMs is a finding"
+  ],
+  "casesAdded": [
+    "ag6",
+    [
+      "sel1",
+      "sel2",
+      "sel3",
+      "sel4",
+      "sel5",
+      "sel6",
+      "sel7"
+    ]
+  ],
+  "claims": "claims:\n1 _evidence_io.py SELECTION_KEY comment -> row_for's `selection = selection_ms(result)` branch and selection_ms(); run-test-gate.py main's selection clock comment -> `selection_started = time.monotonic()` before the gathering, reused branch `res[_ev.SELECTION_KEY] = _elapsed_ms(selection_started)`, run_gate's `selection = ... int((started - selection_started) * 1000)` at the reading durationMs starts from; COMPATIBILITY.md bullet -> selection_ms returning None for absent\n2 scratch-copy mutations: selection=0 -> ag6 FAIL selectionMs=0; started=selection_started -> ag6 FAIL durationMs=1361; reader absent->0 -> sel2/sel3/sel6 FAIL; reader type check dropped -> sel2/sel4 FAIL; restored and copy deleted; shared tree never mutated\n3 n/a - not a fix of a reported defect\n4 n/a - no rule to an agent\n5 n/a - no property recorded; the 600 ms sleep is a fixture value and ag6's bound is relative to it\n6 n/a - no guard\n7 no number written into prose; the sleep figure in ag6 is a fixture variable printed by the case",
+  "stamp": "audit-stamp: {\"content\":\"sha256:c74b47530eda0593fc6998ce9e3c445a06b01fad57becdfa4252642ae8e4b302\",\"dirtyDigest\":\"sha256:122446c9a9979b06687c946a3d003191a0e0a7e6813b9c76c1384edbb63567c3\",\"dirtyPaths\":{\"COMPATIBILITY.md\":\"dd1e07ebf870964a\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"4dcb78df41a8f6b4\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"4db4b735a1d5f5ab\",\"tests/test__evidence_io.py\":\"7c2c10f9988740e1\",\"tests/test_run_test_gate.py\":\"f500898a943d6c55\"},\"head\":\"481cc30a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"COMPATIBILITY.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"tests/test__evidence_io.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:c32c1d0e70f764d3d0e5ed4a466534ba7ad9092765bb5b1b0411151204b6f1ae\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -201,6 +201,73 @@ def _cases(check):
           "be satisfied by one that always fires: %r" % (_f3,),
           [x for x in _f3 if "adoTracked" in x] == [])
 
+    # --- tm: a task's timing record, as the walk and the validator read it -----
+    # The key is additive: a plan without it must read exactly as before, and a
+    # well-formed one must raise nothing - not even the unknown-key warning,
+    # which is what a validator whose vocabulary missed the key would say.
+    def _tm_stage(**over):
+        st = {"kind": "writer", "startedAt": "2026-01-01T00:00:00Z",
+              "ms": 1000, "basis": "result:writer", "round": 1}
+        st.update(over)
+        return st
+
+    def _tm_plan(timing):
+        task = _task("P1.1", files=["src/a.ts"], timing=timing)
+        return {"meta": {"version": 2, "buildCommands": {"test": "true"}},
+                "phases": [_phase(id="P1", testGate=["test"], tasks=[task])],
+                "fileIndex": {"src/a.ts": ["P1.1"]}, "bugs": []}
+
+    def _tm_said(found):
+        return [x for x in found if "timing" in x]
+
+    _tm_good = {"firstStartedAt": "2026-01-01T00:00:00Z",
+                "stages": [_tm_stage(), _tm_stage(kind="gate", runId="r1",
+                                                  basis="journal:gate.run")]}
+    _tm_f, _tm_w = _rules.validate(_tm_plan(_tm_good))
+    _tm_wf, _tm_ww = M._walk_phases(_tm_plan(_tm_good)["phases"])[1:]
+    check("tm1 a task carrying a well-formed timing validates with no finding "
+          "and no warning naming it - the unknown-key warning included: f=%r "
+          "w=%r walk=%r" % (_tm_said(_tm_f), _tm_said(_tm_w),
+                            _tm_said(_tm_wf + _tm_ww)),
+          _tm_said(_tm_f) == [] and _tm_said(_tm_w) == []
+          and _tm_said(_tm_wf + _tm_ww) == [])
+    _tm_bare = _tm_plan(None)
+    del _tm_bare["phases"][0]["tasks"][0]["timing"]
+    _tm_bf, _tm_bw = _rules.validate(_tm_bare)
+    check("tm2 ...and a task without the key validates exactly as before: "
+          "nothing about timing is asked of a plan that never writes it: "
+          "f=%r w=%r" % (_tm_bf, _tm_bw),
+          _tm_said(_tm_bf) == [] and _tm_said(_tm_bw) == [])
+    _tm_bad = {
+        "kind": _tm_stage(kind="lunch"),
+        "ms": _tm_stage(ms=-5),
+        "basis": dict((k, v) for k, v in _tm_stage().items() if k != "basis"),
+    }
+    _tm_hits = {}
+    for _tm_field, _tm_st in sorted(_tm_bad.items()):
+        _tm_t = {"firstStartedAt": "2026-01-01T00:00:00Z",
+                 "stages": [_tm_stage(), _tm_st]}
+        _tm_hits[_tm_field] = [x for x in _rules.validate(_tm_plan(_tm_t))[0]
+                               if "timing" in x]
+    check("tm3 a stage with an unknown kind, a negative ms or no basis is a "
+          "validator FINDING naming the task and the stage (stages[1], the bad "
+          "one, never stages[0]) - one finding each, not a warning: %r"
+          % (_tm_hits,),
+          all(len(v) == 1 and "P1.1" in v[0] and "stages[1]" in v[0]
+              and _tm_field in v[0] for _tm_field, v in _tm_hits.items())
+          and sorted(_tm_hits) == ["basis", "kind", "ms"])
+    _tm_shape = {
+        "not-object": [x for x in _rules.validate(_tm_plan("soon"))[0]
+                       if "timing" in x],
+        "stages-not-list": [x for x in _rules.validate(_tm_plan(
+            {"firstStartedAt": "2026-01-01T00:00:00Z", "stages": "x"}))[0]
+            if "timing" in x],
+    }
+    check("tm4 ...and a timing that is not an object, or whose stages is not a "
+          "list, is a finding naming the task rather than a crash or a silent "
+          "pass: %r" % (_tm_shape,),
+          all(v and all("P1.1" in x for x in v) for v in _tm_shape.values()))
+
     # --- ta: what a `tests.add` entry NAMES, and where it must name one ---------
     # The schema documents `tests.add` as FREE PROSE, and `audit-task.py`'s
     # `files` union treated every entry as a path on the premise that a tdd
@@ -638,6 +705,60 @@ def _cases(check):
           "--gate \"<command>\" --replace" in _tg_line
           and "--gate \"<each entry of the phase gate>\"" in _tg_line
           and _tg_line.count("--replace") == 1)
+
+    # --- wgv: a derived wide gate the recorded spelling has made stale -------
+    # A task stored before the project recorded how to run a subset carries the
+    # phase's gate with `phase-no-spelling`; tg8 keeps that silent while no
+    # spelling exists. Once one does, a pending task whose derivation now
+    # narrows is a stale derived value, and `settle` is the verb that writes it.
+    _wg_suite = "tests/test_a.py: the case"
+
+    def _wg_tdd(tid, basis="phase-no-spelling", gate=None, add=None, **kw):
+        return _task(tid, tests={
+            "mode": "tdd", "add": [_wg_suite] if add is None else add,
+            "expectRedFirst": True,
+            "gate": ["test"] if gate is None else gate, "gateBasis": basis},
+            attempts=kw.pop("attempts", 0), **kw)
+
+    def _wg_plan(spelled, tasks):
+        meta = {"version": 2, "buildCommands": {"test": "true"}}
+        if spelled:
+            meta["phaseGate"] = {"derived": {
+                "listing": {"all": "lister --all",
+                            "related": "lister --related {paths}"},
+                "spelling": "runner {paths}",
+                "verifiedOn": {"command": "echo v", "answer": "v"}}}
+        return {"meta": meta, "phases": [
+            _phase(status="in_progress", testGate=["test"], tasks=tasks)]}
+
+    def _wg_lines(plan):
+        f, w = _rules.validate(plan)
+        return f, [x for x in w if "settle" in x and "P0." in x]
+
+    _wg_all = [
+        _wg_tdd("P0.1"),                                       # stale
+        _wg_tdd("P0.2", basis="declared"),
+        _wg_tdd("P0.3", basis="cleared", gate=[]),
+        _wg_tdd("P0.4", status="in_progress", attempts=1,
+                startedAt="2026-01-01T00:00:00Z"),
+        _wg_tdd("P0.5", attempts=1),                           # put back
+        _wg_tdd("P0.6", add=[]),                               # still wide
+    ]
+    _wg_f, _wg_w = _wg_lines(_wg_plan(True, _wg_all))
+    check("wgv1 with a spelling recorded, the validator warns about the ONE "
+          "pending, never-attempted task whose stored wide gate the derivation "
+          "now narrows, names `settle`, and says nothing about a declared or "
+          "cleared gate, a started task, a task put back after an attempt, or "
+          "one whose derivation still gives the wide gate: f=%r w=%r"
+          % (_wg_f, _wg_w),
+          len(_wg_w) == 1 and "P0.1" in _wg_w[0]
+          and not any(t in _wg_w[0] for t in
+                      ("P0.2", "P0.3", "P0.4", "P0.5", "P0.6")))
+    _wg_nf, _wg_nw = _wg_lines(_wg_plan(False, _wg_all))
+    check("wgv2 SECOND DIRECTION: the same tasks under a plan that records NO "
+          "spelling draw no such line - the wide gate is still the "
+          "derivation's answer there, which tg8 holds: %r" % (_wg_nw,),
+          _wg_nw == [])
 
     # --- jp: a value that is several entries joined by commas ----------------
     # One predicate for the validator's joined-key warning and the verb's

@@ -225,6 +225,34 @@ def _cases(check):
           and isinstance(ph2.get("testGateDerived", {})
                         .get("listing", {}).get("durationMs"), int))
 
+    # --- dp-runner: a runner blank once trimmed is no runner ------------------
+    # The validator calls such a value a shape fault, so the derivation reads it
+    # the validator's way (`_manifest_phases.derived_runner`): the default
+    # `gate` entry, never an entry printed as the blank it holds.
+    def _runner_run(runner):
+        d, m, _b = _project(root, mode="shadow")
+        plan = _raw(m)
+        plan["meta"]["phaseGate"]["derived"]["runner"] = runner
+        with open(m, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh, indent=2)
+        code, out = _run([m, "P1"])
+        lines = [x for x in out.split("\n") if "DERIVED sign-off gate" in x]
+        return code, lines, _raw(m)["phases"][0].get("testGateDerived") or {}
+
+    _rb_code, _rb_lines, _rb_doc = _runner_run("   ")
+    check("dp-runner a runner that is blank once trimmed derives the default "
+          "`gate` entry in the printed line and records no `entry`: %r"
+          % ((_rb_code, _rb_lines, _rb_doc.get("entry")),),
+          len(_rb_lines) == 1 and "| gate over" in _rb_lines[0]
+          and "entry" not in _rb_doc)
+    _rk_code, _rk_lines, _rk_doc = _runner_run("listAll")
+    check("dp-runner-b ALLOW CASE: a runner naming a key is printed and "
+          "recorded as that key - the reading must not drop a real one: %r"
+          % ((_rk_code, _rk_lines, _rk_doc.get("entry")),),
+          _rk_code == 0 and len(_rk_lines) == 1
+          and "| listAll over" in _rk_lines[0]
+          and _rk_doc.get("entry") == "listAll")
+
     # --- dp-full: the related listing resolves to the FULL listing (dg1) -----
     d2f, m2f, _base2f = _project(root, mode="shadow", full_spelling=True)
     code2f, out2f = _run([m2f, "P1"])

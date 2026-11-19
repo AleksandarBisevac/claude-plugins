@@ -373,7 +373,8 @@ def _author_chips(u):
             % (e(a), e(_fmt_tokens(v["tokens"])),
                e(_fmt_cost(v["costUSD"])) if show_cost else "",
                "{:,}".format(v["msgs"]), e(share_txt), e(a)))
-    return ('<div class="auchips" id="audit-authors">%s</div>'
+    return ('<div class="auchips" id="audit-authors" role="group" '
+            'aria-label="Author">%s</div>'
             '<p class="muted small">Author chips scope the per-author views of '
             "this section (the By author list, and the per-author panels in "
             "Detail) &mdash; the tiles and trend above stay project-wide, and "

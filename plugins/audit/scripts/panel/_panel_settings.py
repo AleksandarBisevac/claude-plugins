@@ -357,13 +357,15 @@ FIELD_HELP = {
         "the prompt hook and ends the turn with no model request when the drive "
         "finishes or stops. Off sends every such prompt to the model.",
     "executor.phaseGateOnly":
-        "Gate commands a writer session is told not to run itself because they "
-        "are left to the phase gate. Add one entry at a time: a script name such as "
-        "verify.sh, matched against the words of a gate command, or several "
-        "words that must appear in a row such as playwright test. Unset or empty "
-        "means none: every gate command is listed for the writer to run, so a "
-        "gate of your own that shares a name with one of this repository's is "
-        "still run.",
+        "Gate commands left to the phase gate: a writer session is told not to "
+        "run them, and a task's recorded gate does not run them either. That "
+        "holds only for a command the phase gate itself runs; one the phase "
+        "gate does not hold is still run by the task, since nothing else would "
+        "run it. Add one entry at a time: a script name such as verify.sh, "
+        "matched against the words of a gate command, or several words that "
+        "must appear in a row such as playwright test. Unset or empty means "
+        "none: every gate command is run for every task, so a gate of your "
+        "own that shares a name with one of this repository's is still run.",
     "ci.cadence.closes":
         "Dispatch CI at every N-th task close since the last dispatch: the step "
         "driver pushes the phase tip to its ci/ branch and runs the workflow "
@@ -722,7 +724,7 @@ SETTINGS_GROUPS = (
             {"path": "executor.driveWithoutModel",
              "label": "Run the drive from the prompt hook", "kind": "bool"},
             {"path": "executor.phaseGateOnly",
-             "label": "Gate commands the writer leaves to the phase gate",
+             "label": "Gate commands a task leaves to the phase gate",
              "kind": "list", "placeholder": "none"},
         ),
     },

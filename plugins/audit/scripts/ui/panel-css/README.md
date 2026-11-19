@@ -5,7 +5,8 @@ The parts are joined in the order `_ui_theme.PANEL_CSS_PARTS` lists and spliced 
 `<style>` in a page served from `http://localhost`.
 
 **Order is the cascade.** Two rules of equal specificity are decided by which one is
-read last, so this sequence is behaviour: the reset before the shell, the shell
+read last, so this sequence is behaviour: the reset before the shared layer
+(`ui/shared/*.css`, which the report joins too), both before the shell, the shell
 before the views drawn in it, and every narrow-screen block after the rules it
 overrides. Sorting these names alphabetically changes what ships.
 

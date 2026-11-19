@@ -58,21 +58,13 @@
     // sort, which is a poke at one table. The default is omitted, so a report
     // nobody has re-ordered still mints no fragment of its own.
     put('so', phaseOrder === defaultOrder ? '' : phaseOrder);
-    put('q', q ? q.value.trim() : '');
-    put('ps', phaseStatus);
-    // Space-joined, mirroring the data-area attribute — one separator rule for
-    // both carriers of a tag list. `a` and `au` are distinct keys: the codec
-    // that reads the fragment splits on '&' and the FIRST '=', so a key is
-    // always matched whole.
-    put('a', areaFilter.join(' '));
-    put('m', modelFilter);
-    // Two keys, never one. The codec splits on '&' and the FIRST '=', so `tev`
-    // and `tevf` are matched whole and a link can carry either axis alone.
-    put('tev', tevFilter);
-    put('tevf', tevFlag);
-    put('from', dFrom);
-    put('to', dTo);
-    put('au', auFilter);
+    // Every axis under its own keys. The codec that reads the fragment splits
+    // on '&' and the FIRST '=', so a key is always matched whole and `a`/`au`
+    // or `tev`/`tevf` never read as one another.
+    FILTER_AXES.forEach((axis) => {
+      const vals = axis.encode();
+      axis.keys.forEach((k, i) => { put(k, vals[i]); });
+    });
     // Only where this report OWNS the toggle. Embedded as a fragment, the host
     // stamps data-theme on the same root, and a link carrying a theme would flip
     // the page AROUND the report rather than the report. And only alongside a
@@ -89,6 +81,21 @@
       }
     } catch (e) {}
   }
+
+  /**
+   * The current view by its option's data-short, the bracket-free name the
+   * phase count carries. Without one the option's full wording stands in,
+   * which is still the true basis, merely longer.
+   *
+   * @returns {string} e.g. "active & pending"
+   */
+  const viewShort = () => {
+    const opt = viewSel ? [...viewSel.options].find((o) => o.value === viewMode) : null;
+    return (opt && opt.getAttribute('data-short')) || viewName();
+  };
+  // The count's view name: said to a screen reader, drawn to nobody (`.vh`).
+  const countView = document.createElement('span');
+  countView.className = 'vh';
 
   /**
    * Apply every filter to the whole table in one pass, then repaint the counts,
@@ -111,17 +118,29 @@
     // the chips correct until the reader refreshed the page, which the report
     // gate caught by asserting after exactly that reload.
     syncStatusChips();
-    syncAreaOptions();
     const term = (q ? q.value : '').trim().toLowerCase();
     // Filters that narrow the TASKS inside a phase, rather than the phase list.
     // A phase none of whose tasks survive is not a phase that matches: keeping it
     // is the difference between "these four phases used opus" and "here are all
     // twelve, four of them usefully".
-    const narrows = modelFilter !== '' || dFrom !== '' || dTo !== ''
-                  || tevFilter !== '' || tevFlag !== '';
-    const anyFilter = narrows || term !== '' || phaseStatus !== ''
-                    || areaFilter.length > 0;
-    let visP = 0, visT = 0, totT = 0;
+    //
+    // Read off the registry, never listed here: a list written by hand is how
+    // an axis came to filter the table while the counter and Clear ignored it.
+    // `anyFilter` is about the TABLE, so the Usage-only author scope is not in
+    // it; it still offers Clear below, which lifts every axis that is on.
+    const live = FILTER_AXES.filter((axis) => axis.on());
+    const narrows = live.some((axis) => axis.scope === 'tasks');
+    const anyFilter = live.some((axis) => axis.scope !== 'usage');
+    // `totT` and `visT` leave cancelled tasks out on BOTH sides of the
+    // fraction, which is the header's own basis for its task total: a
+    // denominator that counted what the header did not was a second number for
+    // one question. `visX` is what that basis leaves out of the drawn phases -
+    // cancelled tasks that match - so the count can name them instead of
+    // calling a phase drawn for one of them a phase with no match. `outP`
+    // counts the phases that match but sit outside the view, off the verdict
+    // below rather than a second filter pass.
+    let visP = 0, visT = 0, totT = 0, visX = 0, outP = 0;
+    const outSegs = [];
     // Plain `{}` on purpose, and the one map here that keeps its prototype:
     // the key is `data-seg`, which Python's `_seg_of` emits from a closed
     // set of three words. Every other map in this report is keyed by a
@@ -132,9 +151,10 @@
       const tasks = tasksOf(pid);
       const tf = taskStatus[pid] || '';
       const pText = textHit(pr, term);
-      let anyTaskText = false, nMatch = 0;
-      totT += tasks.length;
+      let anyTaskText = false, nMatch = 0, nCounted = 0, nLeftOut = 0;
       tasks.forEach((t) => {
+        const counted = t.getAttribute('data-status') !== 'cancelled';
+        if (counted) totT++;
         const tText = textHit(t, term);
         if (tText) anyTaskText = true;
         // Marked on the row rather than gathered into an array: this runs on
@@ -149,7 +169,11 @@
                   && (!tevFilter || t.getAttribute('data-tev') === tevFilter)
                   && tevFlagOk(t)
                   && dateOk(t);
-        if (t.__hit) nMatch++;
+        if (t.__hit) {
+          nMatch++;
+          if (counted) nCounted++;
+          else nLeftOut++;
+        }
       });
       // phase-level: status + area gates + text (phase title OR any task matches)
       const matchAll = (!phaseStatus || pr.getAttribute('data-status') === phaseStatus)
@@ -159,15 +183,18 @@
       const showP = matchAll
                   // The view gates ALWAYS, filter or no filter. Lifting it
                   // whenever something was typed made the control a lie
-                  // mid-search; matches the view hides are counted instead and
-                  // announced under the table, with the way to see them.
+                  // mid-search; matches the view hides are counted instead, and
+                  // the empty state names them when they are all there is.
                   && inView(pr.__seg);
-      // Would this phase have shown in ALL? Counted before the view is applied,
-      // so the note below can say what the reader is not seeing.
       pr.style.display = showP ? '' : 'none';
       if (showP) {
-        visP++; visT += nMatch;
+        visP++; visT += nCounted; visX += nLeftOut;
         segVis[pr.__seg] = (segVis[pr.__seg] || 0) + 1;
+      }
+      // A match the view is hiding: it would have shown under All phases.
+      if (matchAll && !showP) {
+        outP++;
+        if (outSegs.indexOf(pr.__seg) === -1) outSegs.push(pr.__seg);
       }
       // Manual state, and ONLY manual state. Or-ing the search term and the
       // per-phase task filter into this condition threw every matching phase
@@ -215,31 +242,53 @@
     bugRows.forEach((b) => { b.style.display = textHit(b, term) ? '' : 'none'; });
 
     if (count) {
-      // Tasks as well as phases, now that a filter can narrow a phase from the
-      // inside: with the model or date filters on, the phase count alone moves
-      // hardly at all while the thing being counted moves a great deal.
-      count.textContent = anyFilter
-        ? (visP + ' / ' + phaseRows.length + ' phases · ' + visT + ' of ' + totT + ' tasks')
-        : (phaseRows.length + ' phases');
+      // The view is the basis at rest as well as filtered: "165 phases" over a
+      // table showing five read as the size of the table, and the view was why
+      // it was not. The count is a live region, so a screen reader hears it
+      // without the select beside it, and it names the view by the option's
+      // short name - inside a box clipped to nothing, because a sighted reader
+      // has the View select right beside it, and drawn, the name wrapped the
+      // pinned bar at a laptop width once anything filtered. Tasks join the
+      // phases once something filters, since a filter can narrow a phase from
+      // the inside while the phase count barely moves. The cancelled tasks the
+      // task fraction leaves out of the drawn phases are named as left out,
+      // which stays true whichever filter drew them: called "matches", the
+      // clause claimed tasks in phases no filter had touched.
+      count.textContent = visP + ' of ' + plural(phaseRows.length, 'phase');
+      countView.textContent = ' · ' + viewShort();
+      count.appendChild(countView);
+      if (anyFilter) {
+        count.appendChild(document.createTextNode(' · ' + visT + ' of ' + plural(totT, 'task')
+          + (visX ? ', ' + visX + ' cancelled not counted' : '')));
+      }
     }
     // Filtered down to nothing, the table was an empty frame with no explanation
     // and no way back except undoing each control by hand.
-    if (norow) norow.style.display = (anyFilter && visP === 0) ? 'table-row' : 'none';
-    // There is deliberately NO "N phases match outside this view" row here.
-    // It was removed on the reader's second request: the View select already
-    // offers "All phases", so the row spent a table row telling someone who had
-    // just chosen a narrower view that the view was narrow. The counter above
-    // already says "N / M phases" whenever anything is filtering, which is the
-    // same fact without a control that undoes the reader's own choice.
+    const empty = anyFilter && visP === 0;
+    if (norow) norow.style.display = empty ? 'table-row' : 'none';
+    // Which of its two sentences is true. "No phase matches these filters" is
+    // false when the VIEW hides every match, so then the slot says how many
+    // phases outside it do, by segment, and offers the press that shows them.
+    // Only inside the empty state: a standing notice over drawn rows was removed
+    // on the reader's second request, because it argued with a view they had
+    // just chosen.
+    if (norowOutside) {
+      norowOutside.hidden = !(empty && outP > 0);
+      if (norowSays) norowSays.hidden = empty && outP > 0;
+      if (norowOutsideSays && empty && outP > 0) {
+        const segs = ['active', 'pending', 'archived']
+          .filter((sg) => outSegs.indexOf(sg) !== -1).join(' or ');
+        norowOutsideSays.textContent = 'No phase in ' + viewName() + ' matches — '
+          + plural(outP, segs + ' phase does', segs + ' phases do');
+      }
+    }
     // The toolbar copy appears the moment anything is filtering, so there is a way
     // back that does not depend on the table having rows left to draw it in.
-    clearBtns.forEach((b) => { b.hidden = !anyFilter; });
+    clearBtns.forEach((b) => { b.hidden = !live.length; });
     // A filter folded away inside a closed <details> is how a reader concludes
     // rows are missing. The count on the summary says something is on.
     if (fcount) {
-      const nHidden = (modelFilter ? 1 : 0) + ((dFrom || dTo) ? 1 : 0)
-                    + (areaFilter.length ? 1 : 0)
-                    + (tevFilter ? 1 : 0) + (tevFlag ? 1 : 0);
+      const nHidden = live.filter((axis) => axis.counts).length;
       fcount.textContent = nHidden ? ' · ' + nHidden : '';
     }
     if (expandBtn) {
@@ -250,4 +299,25 @@
     // on a keystroke: it no-ops unless the range actually changed.
     applyUsageRange();
     syncHash();
+  }
+
+  // Show all phases takes the View control's own path - the select set and its
+  // change dispatched - so the stored view, the link and the select cannot
+  // disagree about what is on screen.
+  //
+  // Both buttons of the empty state hide the row they sit in, so each hands
+  // the keyboard to the View select on the way out: a focus left on a hidden
+  // button sends the next Tab past the whole table. The select is the control
+  // that says which phases are now drawn. The Clear here is the second copy of
+  // the toolbar's, whose own press is wired with the others in date-range.js;
+  // only the empty state's copy moves focus, because only it disappears.
+  if (showAllBtn && viewSel) {
+    showAllBtn.addEventListener('click', () => {
+      viewSel.value = 'all';
+      viewSel.dispatchEvent(new Event('change'));
+      viewSel.focus();
+    });
+  }
+  if (norowClear && viewSel) {
+    norowClear.addEventListener('click', () => { viewSel.focus(); });
   }

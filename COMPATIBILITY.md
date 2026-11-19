@@ -311,6 +311,25 @@ current. Neither is legacy, and a mutating command does not nudge you off either
 - **The evidence row's `outcomeBasis` and `derivedGap` step keys are additive.** A row written
   before either existed carries neither key, which is the true reading for it, and a passed
   step's row is unchanged.
+- **The evidence row's `part-reused` `verdictSource` word and its step key `reusedFrom` are
+  additive.** A row whose gate repeated some steps and measured others says `part-reused`
+  beside the existing `reused` (and absent, which still means measured); each copied step
+  carries `reusedFrom` naming the run it repeats and no `durationMs`. A reader switching on
+  `verdictSource` needs a default arm that shows an unknown word as itself. A row written
+  before either existed carries neither, which is the true reading for it.
+- **The evidence row's `selectionMs` key is additive.** It is how long a recorded gate run
+  spent choosing what to run before its first step. A row written before it existed carries
+  none, which `_evidence_io.selection_ms` reads as not recorded, never as zero. `durationMs`
+  keeps its meaning, the steps alone, so every reader deciding on it answers as before.
+- **A task's `timing` key is additive.** A plan that never writes it validates and behaves
+  exactly as before: the validator asks nothing of a task without it, and absent means
+  "nothing measured", never zero. `/audit:task start` writes `timing.firstStartedAt` once
+  and no later start moves it; `move`, `reopen` and `cancel` carry the record unchanged. A
+  stage's `kind` **may gain members** under the standing enum exclusion below, so a reader
+  switching on it needs a default arm. The `timing` block of `/audit:status --json` **may gain
+  keys** and keeps the ones it has. `--gate` reads no timing figure, only the validator's
+  verdict on the record: a malformed record is a finding, so the default `invalid` condition
+  can trip on it, as on any other malformed key.
 - **A ledger written before the evidence rows were hash-chained keeps verifying.**
   Rows now carry `prev` and `hash`; rows written by an earlier release carry neither,
   and `audit-journal.py verify` reports those as a **counted warning naming what is
@@ -487,6 +506,23 @@ is still true of a nested key.
   into one that already exists, so waves are new behaviour only for a project set up
   from this release on.
 
+  **`executor.phaseGateOnly` keeps it for absence and changes what a set value does,
+  which is a major-section change.** Absent or empty, nothing differs: every row and every
+  printed line is what it was. A project that set it was told only that the writer's prompt
+  leaves the named commands to the phase gate; from this release a task's recorded gate
+  (`run-test-gate.py --task`) leaves them out too, when the phase's own `testGate` runs the
+  same command, whichever arm proposed the step - a declared entry or one the affected
+  selection added. The row lists each under `leftToPhaseGate` with the key as its basis,
+  its reuse identity is taken over the steps that ran, and its `gateDigest` stays the
+  declared gate's; the verdict binding reads the list as part of the declaration, so such
+  a row binds and a row short a step for any other reason does not. A task gate of nothing
+  but such commands records `no-checks`, which is red, where it used to run them. A named
+  command the phase gate does not hold is still run, with a line saying why, and the
+  phase gate runs every entry whatever the key says. No value restores the writer-only
+  reading: remove the key to run every command in every task again. Nothing enforces
+  this paragraph against the code; `tests/test_run_test_gate.py` (`pgo`) and
+  `tests/test__verdict_binding.py` (`vb38`, `vb39`) are what hold the behaviour it
+  describes.
   **`floorGuard` keeps it, and what is promised of it is narrow.** The key is read:
   `floorGuard.mode` `"report"` makes `drive-phase.py submit`, and the drive filing a
   headless writer's work, read the task's diff for moves that lower the bar and file what

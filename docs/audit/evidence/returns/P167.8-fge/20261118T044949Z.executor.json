@@ -1,0 +1,41 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T05:14:56Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with 5 of 1008 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tm10 (house FAIL), tm11 (house FAIL), tm12 (house FAIL), tm16 (house FAIL), tm13 (house FAIL): SELFTEST FAILED: 1003/1008 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: (a) the commit stage is now the commit verb's own runs added up - `commit_verb` times each run_verb of commit-task-work.py (the refused commit, the --json re-read of its refusal, the commit made) into ctx[COMMIT_MS], close_task sums them; the set-aside's proof and second gate between them stay their own stages. Basis now `commit-task-work.py's own N run(s), timed by the drive and added up, commit <sha>`. (b) new `close_carrying` is the one way the drive closes a task: close_task's done and the no-change answer's `done --no-change` both go through it, carrying stage_args and dropping the queue only once the close is taken; prose (--intent-basis, --reason) still goes on stdin through a `_verb_with_text` call written at each call site (the mt2/mt3 argv-prose lint reads that shape). (c) new `stage_unread` says `timing: <kind> stage of <task> not recorded - <why>` on the did-line, once per stage and reason (kept under the task's timing entry as `unread`, dropped with it at close), never a warning or stop; `ledger_row` and new `gate_row_read` return (row, why) - an unreadable ledger's reason names no run, so the launch read and the repeat read of one measurement say it once; `row_stages` returns (pairs, gaps) for a row with no start or no durationMs; `agent_stage` returns (stage, why) for a hand-out with no stamp, an unreadable filing time, or a filing before its hand-out; a gate output naming no run stays silent. (d) `filed_moment` reads the journal only for ROW_FILED_ROLES (executor) and its basis says which fallback happened: journal unreadable (with the exception), no row names the file, or - for a reviewer - that no row files one and a modification time moves later, never earlier. tests/test_drive_phase.py: new staged block tm10-block (`_timing_close_cases`, `_timing_unread_cases`, `_timing_gap_cases`) with tm10-tm16. tests/test_audit_task.py: tmg8 in tmg-block. audit-task.py unchanged: its `_stage_changes` already names timing.stages on both rows; tmg8 locks it. PLUGIN-BUILD-GUIDE.md drive-phase section and CHANGELOG Unreleased bullet updated. Gate: `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py` exit 0, `2/2 files ok, 2270 cases`. First sweep had exited 1 on mt2/mt3 (the argv-prose lint flagged a (flag, text) tuple handed to close_carrying); fixed by the send-callable shape, ux-block 127/127 then the full sweep green. ruff clean; vermin min 3.8; house_style_violations and prose_number_claims/doc_prose_numbers report nothing for the changed files. Dependants: decision table and step texts unchanged (only a did-line clause added when a source cannot be read; the full suite is green); launch marks and state shape: one new `unread` list inside the TIMING_KEY entry, dropped with it at close and by drop_state with the whole state; timing never blocks - stage_unread only appends a did-line, close_carrying's stop is the done verb's own; commits and locked writes per task unchanged (tm3 green, no write added); stage shapes status and the summary read unchanged (make_stage only, basis text changed; test__status_facts holds the old basis only as fixture data). orchestrator.md not edited.",
+    "descriptive": "The commit stage times the commit alone, every close carries the queued stages, and a stage the drive could not read is said on the step's line"
+  },
+  "testsAdded": [
+    "tm10 set-aside path: commit stage within the commit verb's own runs as timed from outside, two gate stages for two runs, no overrun",
+    "tm11 no-change answer close carries every queued stage and leaves no queue",
+    "tm12 unreadable ledger at background-gate read-back: no gate/selection stage, one did-line naming the stage and reason",
+    "tm13 filed_moment bases for journal row, journal unreadable, no row, reviewer mtime",
+    "tm14 every session note refused: the close carries the stages once",
+    "tm15 close refused once then taken: each stage written once",
+    "tm16 row with no start / no length / whole row / hand-out with no stamp each say their own reason",
+    "tmg8 journal rows of a note and a close carrying a stage name timing.stages; a plain note names none"
+  ],
+  "casesAdded": [
+    [
+      "tm10",
+      "tm11",
+      "tm12",
+      "tm13",
+      "tm14",
+      "tm15",
+      "tm16"
+    ],
+    "tmg8"
+  ],
+  "claims": "claims:\n1 drive-phase.py commit_verb + close_task's COMMIT_MS sum is the commit stage the docstring/CHANGELOG describe; close_carrying is called by close_task and by the no-change answer (the only two `done` calls: grep '\"done\", task' finds _task_args only inside close_carrying); stage_unread called from queue_row and queue_agent_stage\n2 tm10-tm13, tm16 red on HEAD's code with these test files (scratch export of HEAD: 2/7 passed, tm14/tm15 pass there as locks); in a scratch copy: refused note empties queue -> tm14 red; refused close drops queue -> tm15 red; _stage_changes returns [] -> tmg8 red; _stage_changes on every row (over-fire) -> tmg8 red; stage_unread dedupe removed -> tm12 red; each restored with __pycache__ purged\n3 instance vs class: every close routed through close_carrying (grep shows no other `done` verb call in drive-phase.py); every stage source that returned None silently (ledger_row, gate_row read, row_stages, agent_stage) now returns its reason; session record with no durationMs left as is (tm4: runner records timingAbsent)\n4 rule 'timing never blocks' stated in stage_unread's docstring and held by tm12 (code 0, task closes)\n5 tm10's bound is a timing claim: the drive's figure measured inside the test's wrapper, upper margin 250 ms against a 1 s gate; ran green in three separate runs at different times (commit ms 361, 376, 466 against verb sums within a ms)\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:0e4ee2e0175fa95eae4cee672f4d364965f05efec219f14e7b47139328132dc4\",\"dirtyDigest\":\"sha256:87747c4ee6c090a7b364e440fb9a968265edc2c80d7f04a801f62b6b2c252654\",\"dirtyPaths\":{\"CHANGELOG.md\":\"96642569448c863f\",\"PLUGIN-BUILD-GUIDE.md\":\"5f76a96d03f74152\",\"plugins/audit/scripts/governance/drive-phase.py\":\"0c6dcda0c5b997bc\",\"tests/test_audit_task.py\":\"03624fce524eacd0\",\"tests/test_drive_phase.py\":\"20bb3675c4eb9752\"},\"head\":\"b51dc901\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test_audit_task.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:61c9980ec7d349cb30b3ebfb6713ac805511a21769c18982ca4a3f6be69c0821\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

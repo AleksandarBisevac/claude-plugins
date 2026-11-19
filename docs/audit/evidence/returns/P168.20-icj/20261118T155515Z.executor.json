@@ -1,0 +1,57 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_test_gate.py": "pass",
+    "python3 tools/sweep-selftests.py --spaced tests/test_run_test_gate.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__deps.py tests/test__affected_tests.py tests/test__evidence_io.py tests/test__verdict_binding.py tests/test_drive_phase.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__output_lints.py tests/test__refs.py": "pass",
+    "ruff check plugins/audit/scripts/governance/run-test-gate.py tests/test_run_test_gate.py": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts/governance/run-test-gate.py tests/test_run_test_gate.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T16:25:59Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py` in a throwaway tree at HEAD exited 1 with 2 of 642 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pr9 (house FAIL), pr10 (house FAIL): SELFTEST FAILED: 639/642 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "run-test-gate.py: (1) the reuse key holds meta_part(manifest): the plan's meta as loaded at the ask, minus RECORDER_META = (_ev.SINCE_KEY,). The evidence boundary is the only meta key the runner writes, once, on a plan's first recorded run. drive-phase.py writes no meta key and calls none of the verbs that do (couple/uncouple, mute, record-listing, build-command, default-skills; render-report writes reportSummary). So nothing the drive does between a background gate run and its read-back moves the key. Measured on real git fixtures: ru51 shows the first recorded run added exactly evidenceSince to meta and the ask straight after it repeated. pr9 shows a meta edit measuring a gate that would repeat whole, and the next ask repeating again. pr10 shows a meta edit measuring every step of a part-repeated gate. ru50 is the pure pair. A row recorded before this change keys differently once: one measurement, never a stale repeat. (2) plugin_script_names() = sorted(_loader.script_index()); python3 -c \"import _harness, _loader; M=_loader.load_script('run-test-gate.py','rtg'); print(len(M.plugin_script_names()))\" run from tests/ printed 141 on this tree today. Each name is one more entry in the same whole-name search (_search_names), reported as '<plan> through <script>', so left_out_line's two prefixes are unchanged (lw25). (3) plan_spellings(project, manifest_path) gives the handed spelling (its directory resolved) plus the resolved target. reuse_identity adds them to the grading list only and passes them as plan=. Done in the runner, so _evidence_io.py is unchanged. (4) The readings are the text as written, after quote removal, and after quote removal with every backslash dropped, all casefolded. _shard_directories adds the parent of each left-out .json file as a left-out directory, unless it is the directory of a plan spelling or above it. (5) The limits comment above UNREADABLE now also names ANSI-C quoting, a name a program assembles in its own code, and a suite that opens the plan's phases, tasks or bugs in a gate running no plan reader (stale-green direction). lw22 pins that last one. (6) ru46's arm step now runs 'true', so only the declared reading can grade it. ru1 now compares two keys over one manifest, because meta is in the key. A misread on my part, corrected before filing: I first appended '_' to _NAME_JOINERS, but it was already there; that change was reverted. Mutation probe <scratchpad>/probe/mutations.py (in-memory copy, anchors asserted to match once; run as python3 mutations.py <checkout>): 11/11 rows killed. Reviewer probes on an export of HEAD plus my edits (<scratchpad>/mine): symlink_plan.py prints 'graded: ok'. It calls grades_left_out with recorded_paths only, so it passes through the validate-manifest.py name; the configured-path reading lives in reuse_identity and is held by ru48. forms.py: case-folded, dropped-backslash, shards-dir glob and both no-path readers are no longer UNDER. What stays UNDER is the stated limits (ANSI-C, globs, cd plus bare name, ancestor, program-assembled names) and test__affected_tests.py, which reads meta and is now covered by the key, which the probe cannot see. phase_gate_split.py prints the same split as before because it reads grades_left_out, not the key. Of its two plan-reading suites, test__affected_tests.py reads meta (now keyed). test__manifest_crossrefs.py reads the plan's bugs, which is the stated limit; validate is measured on every run beside it. real_entries.py: 8 of 221 entries grade, up from 4. The 4 new ones are all tools/reach-diff.py task entries from finished P152 tasks naming drive-phase.py (P152.4, P152.13-6jb) or audit-task.py (P152.17-6jb; P152.16-6jb and P152.5 share one entry) as an argument. Those steps stop repeating: reading more, the accepted direction. Suite: 693/693 under the sweep, also under --spaced. Dependants: drive-phase.py is still correct (GATE_LEFT_OUT prefixes unchanged). Its repeat_reason still says 'the tree identity ... moved' when the key moves, and a meta edit is now one such move; that wording is in drive-phase.py, outside my files. full-gate.py and the importing suites do not call any changed name, and test__evidence_io and test_drive_phase are green. _evidence_io.py is unchanged; its prose reference to reuse_identity is still true. PLUGIN-BUILD-GUIDE.md section updated. HANDED BACK: CHANGELOG.md is outside this task's files and was not edited. Its Unreleased section describes the reuse identity ('the reuse identity is taken over the steps that ran'), and its Fixed entry describes the left-out reading as 'read as shell words', which was already stale since ec0dfc31. It owes a sentence that the plan's meta is in the key (one re-measurement for older rows) and on the new names.",
+    "descriptive": "A gate step that reads the plan without naming it (meta-reading suites, the plugin's own no-path readers), a symlinked plan, a name in another case, a dropped backslash and the shards' directory are now measured instead of repeated, while the ask after a recorded run still repeats."
+  },
+  "testsAdded": [
+    "ru50: a meta edit moves the key and the evidence boundary does not",
+    "ru51: the first recorded run writes only evidenceSince into meta and the next ask still repeats",
+    "pr9 and pr10: a meta edit measures every step, whole run and per step, and the ask after it repeats",
+    "lw23: script names come from _loader.script_index",
+    "lw24 and lw25: audit-status.py --gate and validate-manifest.py with no path grade the plan, with the drive's prefix",
+    "lw26: suites whose names contain a script's name do not grade",
+    "ru48 and ru49: a symlinked plan grades under its configured path and its target, and the allow case",
+    "lw27 and lw28: case-folded names grade, and the allow case",
+    "lw29 and lw30: a dropped backslash grades, and the allow case",
+    "lw31 and lw32: the shards' directory grades, and a shard beside the plan makes no left-out directory",
+    "ru46 reworked so its declared reading can fail; lw22 pins the phases/tasks limit"
+  ],
+  "casesAdded": [
+    [
+      "ru50",
+      "ru51",
+      "pr9",
+      "pr10",
+      "lw23",
+      "lw24",
+      "lw25",
+      "ru48",
+      "ru49",
+      "lw27",
+      "lw28",
+      "lw29",
+      "lw30",
+      "lw31",
+      "lw32",
+      "lw26"
+    ]
+  ],
+  "claims": "claims:\n1 run-test-gate.py meta_part/RECORDER_META feed reuse_identity's parts; _search_names holds the script, plan-spelling and shard-dir names; the limits comment above UNREADABLE and the guide paragraph describe these, and lw22 pins the phases/tasks limit\n2 probe/mutations.py: 11/11 rows killed, over-fire rows included (any-mention: lw26/28/30/32/ru49 red; shard beside plan: lw32/ru49 red; underscore joiner removed: lw26 red)\n3 class grep: the reviewers' forms.py UNDER list read line by line; each closed, or kept and stated in the limits comment (ANSI-C, globs, cd plus bare name, ancestor, program-assembled names, suite reading phases/tasks/bugs)\n4 n/a - no rule to an agent\n5 ru51/pr9/pr10 ran in every sweep run (task gate, spaced leg, probe baseline); the count is one reading on this tree\n6 decision reads the text for whole names, unchanged in kind; the allow cases lw26/lw28/lw30/lw32/ru49 were shown going red under the over-fire mutations\n7 no number in prose; the script-name count is given with the command that prints it",
+  "stamp": "audit-stamp: {\"content\":\"sha256:74a8a6482c67202cbc92d031e03faab67b3c221924261eaa2936e186447588d9\",\"dirtyDigest\":\"sha256:cd48ea7da53da7242e38a3619d20371e6ca0a86a0cbd98a9811ba67694e5b447\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"33270806be5dcbd7\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"55095ea7500047b9\",\"tests/test_run_test_gate.py\":\"801bf1df1b96cab9\"},\"head\":\"ff6456dd\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"tests/test__evidence_io.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:717bdbd98e9a39959f9e15ba392ca32370d335276313116618abf95b00fb6317\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

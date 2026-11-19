@@ -2633,6 +2633,119 @@ def _step_mean_cases(check, cost_rows):
           verdicts == (True, (2000, 2)) and none_left == (True, None))
 
 
+def _part_repeat_cases(check):
+    """(prt) a row whose steps are part repeated: a repeated step is no time
+    this run spent and no run of that step, the writer keeps which run it came
+    from, and such a row is a source for the steps it measured and for no
+    other. The word is spelled as the ledger holds it, as a row on disk is the
+    contract."""
+    key = "1:sha256:part"
+    ids = {"phaseId": "P1"}
+    measured = {"runId": "R-measured", "ts": "2026-01-01T00:00:00Z",
+                "scope": "phase", "phaseId": "P1", "status": "passed",
+                M.REUSE_KEY: key,
+                "steps": [{"name": "tree", "exit": 0, "durationMs": 1000},
+                          {"name": "plan", "exit": 0, "durationMs": 100}]}
+    # The repeated step still carries a duration, as a row a hand or an older
+    # writer produced might: the reader must not count it either way.
+    part = {"runId": "R-part", "ts": "2026-01-02T00:00:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "passed",
+            M.REUSE_KEY: key, M.VERDICT_SOURCE: "part-reused",
+            "reusedFrom": {"runId": "R-measured"},
+            "steps": [{"name": "tree", "exit": 0, "durationMs": 1000,
+                       "reusedFrom": {"runId": "R-measured",
+                                      "ts": "2026-01-01T00:00:00Z"}},
+                      {"name": "plan", "exit": 0, "durationMs": 120}]}
+    rows = [measured, part]
+    tree_mean = _harness.attempt(lambda: M.gate_mean_ms(rows, ["tree"]))
+    plan_mean = _harness.attempt(lambda: M.step_mean_ms(rows, "plan"))
+    tally = _harness.attempt(lambda: M.gate_tally(rows, "tree"))
+    check("prt1 a repeated step's duration is not time the run that repeated "
+          "it spent: the tree step's mean is its one measurement - not the same "
+          "figure counted twice - while the plan step, measured by both rows, "
+          "is the mean of both; and a repeat is no run of the step in its "
+          "tally: %r / %r / %r" % (tree_mean, plan_mean, tally),
+          tree_mean == (True, (1000, 1)) and plan_mean == (True, (110, 2))
+          and tally == (True, (1, 0)))
+
+    written = _harness.attempt(lambda: M.row_for(
+        "/nonexistent-project", {
+            "status": "passed", "durationMs": 120,
+            M.VERDICT_SOURCE: "part-reused",
+            "steps": [{"name": "tree", "exit": 0, "durationMs": 1000,
+                       "reusedFrom": {"runId": "R-measured",
+                                      "ts": "2026-01-01T00:00:00Z",
+                                      "extra": "dropped"}},
+                      {"name": "plan", "exit": 0, "durationMs": 120}]},
+        "phase", ids, {"runId": "R-new"}))
+    steps = (written[1] or {}).get("steps") if written[0] else None
+    check("prt2 the writer keeps, step by step, which run a repeated step came "
+          "from - and no duration for it, since this run spent none - while a "
+          "measured step keeps its own: %r" % (steps,),
+          isinstance(steps, list) and len(steps) == 2
+          and steps[0].get("reusedFrom") == {"runId": "R-measured",
+                                              "ts": "2026-01-01T00:00:00Z"}
+          and "durationMs" not in steps[0]
+          and steps[1].get("durationMs") == 120
+          and "reusedFrom" not in steps[1]
+          and (written[1] or {}).get(M.VERDICT_SOURCE) == "part-reused")
+
+    def source(rows_in, steps_in):
+        got = _harness.attempt(lambda: M.reusable_run(
+            rows_in, "phase", ids, key, frozenset(("passed", "failed")),
+            steps=steps_in))
+        return got if not got[0] else (True, (got[1] or {}).get("runId"))
+    for_tree = source(rows, ["tree"])
+    for_plan = source(rows, ["plan"])
+    whole = source(rows, None)
+    unknown = source(rows, ["lint"])
+    check("prt3 a part-repeated row is a source for the steps it MEASURED and "
+          "for no other: the tree step it repeated reaches past it to the run "
+          "that measured it, the plan step it measured is taken from it, a "
+          "whole-run repeat never takes it, and a step no candidate measured "
+          "is no repeat at all: tree=%r plan=%r whole=%r unknown=%r"
+          % (for_tree, for_plan, whole, unknown),
+          for_tree == (True, "R-measured") and for_plan == (True, "R-part")
+          and whole == (True, "R-measured") and unknown == (True, None))
+
+
+def _left_to_phase_gate_cases(check):
+    """(ltp) the entries a task's run left to the phase gate cross onto its
+    row - name, the arm that proposed it, the setting as its basis and the
+    name that matched - and no other field; a run that left nothing
+    out writes no key at all, so a row of the old shape is the same bytes.
+    The key is spelled as the ledger holds it."""
+    left = [{"name": "browser", "arm": "declared",
+             "basis": "executor.phaseGateOnly", "matched": "browser.py",
+             "extra": "dropped"},
+            {"name": "affected/phase-gate: e2e", "arm": "phase-gate",
+             "basis": "executor.phaseGateOnly", "matched": "playwright test"}]
+    base = {"status": "passed", "durationMs": 5,
+            "steps": [{"name": "sweep", "exit": 0, "durationMs": 5}]}
+    written = _harness.attempt(lambda: M.row_for(
+        "/nonexistent-project", dict(base, leftToPhaseGate=left), "task",
+        {"taskId": "P1.1", "phaseId": "P1"}, {"runId": "R-left"}))
+    plain = _harness.attempt(lambda: M.row_for(
+        "/nonexistent-project", dict(base), "task",
+        {"taskId": "P1.1", "phaseId": "P1"}, {"runId": "R-plain"}))
+    row = written[1] if written[0] else {}
+    check("ltp1 the row lists each entry left to the phase gate with its arm, "
+          "the setting as its basis and the matching name, and nothing else; "
+          "a run that left nothing out has no such key: %r / %r"
+          % (row.get("leftToPhaseGate"),
+             sorted(plain[1]) if plain[0] else plain),
+          row.get("leftToPhaseGate") == [dict((k, v) for k, v in e.items()
+                                              if k != "extra") for e in left]
+          and plain[0] and "leftToPhaseGate" not in plain[1])
+    reader = getattr(M, "left_to_phase_gate_names", None)
+    names = (_harness.attempt(lambda: reader(row)) if reader else None,
+             _harness.attempt(lambda: reader({})) if reader else None)
+    check("ltp2 the reader the binding asks gives the DECLARED entries a row "
+          "left out, never a step another arm proposed, and none for a row "
+          "with no key: %r" % (names,),
+          names == ((True, ["browser"]), (True, [])))
+
+
 def _pin_suite_cases(check):
     """(ps) one tracked path for a runner's spelling, and the one own-miss
     reading every third-place reader shares."""
@@ -4407,6 +4520,74 @@ def _gate_reach_row_cases(check):
         _harness.remove_tree(plain)
 
 
+def _joined_step_cases(check):
+    """A declared entry and the affected steps run as ONE call are recorded as
+    one step whose name is the entry followed by each affected step's name.
+    `step_parts` is the one reader of what such a step covers;
+    `declared_steps`, `derived_step_suites` and `step_runs_suite` answer for it
+    through that reader, and for every older name exactly as before. The names
+    are spelled here as a row on disk holds them - the row is the contract."""
+    prefix = M.DERIVED_STEP_PREFIX
+    parts = getattr(M, "step_parts", None)
+    writer = getattr(M, "joined_step_name", None)
+    own = "python3 tools/sweep.py tests/test_own.py"
+    rel = prefix + "related: tests/test_other.py"
+    py = prefix + "python: tests/test_core.py, tests/test_more.py"
+    joined = own + " + " + rel + " + " + py
+    tail_first = rel + " + " + own
+    read = None if parts is None else [
+        parts(joined), parts(own), parts(rel), parts(tail_first),
+        parts("lint + affected/"), parts(own + " + affected/phase-gate: lint")]
+    check("jst1 a joined step's name reads as its declared entry and the "
+          "affected steps joined to it, in order; a declared name, a derived "
+          "name, a derived name with a command after it, a tail that is no "
+          "affected step and a phase-gate tail read as they always did: %r"
+          % (read,),
+          read == [(own, [rel, py]), (own, []), (None, [rel]),
+                   (None, [tail_first]), ("lint + affected/", []),
+                   (own + " + affected/phase-gate: lint", [])])
+    spelled = writer(own, [rel, py]) if writer else None
+    check("jst2 the writer spells the name the reader reads back: %r"
+          % (spelled,),
+          spelled == joined and parts is not None
+          and parts(spelled) == (own, [rel, py]))
+    declared = [M.declared_steps([joined]), M.declared_steps([joined, "lint"]),
+                M.declared_steps([joined, prefix + "phase-gate: lint"]),
+                M.declared_steps([own, rel, py]),
+                M.declared_steps([own, rel, "lint"]),
+                M.declared_steps([tail_first])]
+    check("jst3 declared_steps reads a joined step as its declared entry, and "
+          "an older row - declared steps then derived ones, a declared-looking "
+          "step after a derived one, a derived step with a command after it - "
+          "exactly as before: %r" % (declared,),
+          declared == [([own], 0), ([own, "lint"], 0), ([own], 0), ([own], 0),
+                       ([own, rel, "lint"], 0), ([], 0)])
+    suites = [M.derived_step_suites(joined), M.derived_step_suites(rel),
+              M.derived_step_suites(own),
+              M.derived_step_suites(prefix + "phase-gate: selftests")]
+    check("jst4 derived_step_suites lists every affected suite a joined step "
+          "ran, in its name's order, and an older name's as before: %r"
+          % (suites,),
+          suites == [["tests/test_other.py", "tests/test_core.py",
+                      "tests/test_more.py"], ["tests/test_other.py"], [], []])
+    runs = [M.step_runs_suite({"name": joined}, s)
+            for s in ("tests/test_core.py", "tests/test_other.py",
+                      "tests/test_own.py")]
+    check("jst5 step_runs_suite knows a joined step ran each affected suite "
+          "its name lists, and says nothing of the declared entry's own "
+          "suites, as of any declared step: %r" % (runs,),
+          runs == [True, True, False])
+    head = "c0ffee12"
+    clean = {"head": head, "dirtyDigest": M.CLEAN_DIRTY_DIGEST}
+    lists = {"runId": "r-joined", "ts": "2026-11-01T00:00:00Z",
+             "testedState": clean, "steps": [{"name": joined, "exit": 0}]}
+    found = M.base_run([lists], head, (), [rel], suites=["tests/test_core.py"])
+    check("jst6 a base run is found by an affected suite its joined step ran, "
+          "under a name the asking run does not carry: %r"
+          % ((found or {}).get("runId"),),
+          (found or {}).get("runId") == "r-joined")
+
+
 def _base_scope_cases(check):
     """A run of a task run's red steps at its base: no subject's evidence, and
     found as a base by the suites a derived step ran, not by its name."""
@@ -4518,11 +4699,132 @@ def _foreground_bound_cases(check):
           still == (True, (4500, 1)) and unmeasured == (True, None))
 
 
+def _selection_time_cases(check):
+    """(sel) the time a gate run spent choosing what to run is a key of its own
+    beside `durationMs`, never folded into it: the foreground decision, the
+    doctor's budget and the usage comparisons all read `durationMs` as the
+    steps alone, and a row written before the key existed carries none, which
+    is a run whose selection was not measured rather than one that took no
+    time.
+
+    The key's spelling has no case of its own: sel3 writes `selectionMs` on a
+    result and reads it back off the row under that literal, so a writer that
+    spelled the key any other way is red there."""
+    read = getattr(M, "selection_ms", None)
+
+    # The two zero-like spellings a reader must keep apart: an absent key, and
+    # a recorded zero. A reader using `row.get(key) or 0` passes the first half
+    # and fails the second; one using `row.get(key, 0)` fails the first.
+    readings = None
+    if read is not None:
+        readings = [_harness.attempt(lambda r=r: read(r))
+                    for r in ({}, {"selectionMs": 0}, {"selectionMs": 250},
+                              {"selectionMs": True}, {"selectionMs": -5},
+                              {"selectionMs": "250"}, None)]
+    check("sel2 a row without the key reads as NOT RECORDED (None), a recorded "
+          "zero stays zero, and a bool, a negative or a string is not a "
+          "duration: %r" % (readings,),
+          readings == [(True, None), (True, 0), (True, 250), (True, None),
+                       (True, None), (True, None), (True, None)])
+
+    tmp = _harness.fixture_root("audit-evidence-selection-")
+    try:
+        proj = _project(os.path.join(tmp, "p"), {})
+        base = {"status": "passed", "durationMs": 900, "failed": [],
+                "ranTotal": None, "coverageBasis": "c", "treeBasis": "t",
+                "treeMutated": [], "overlap": [],
+                "steps": [{"name": "unit", "command": "pytest -q", "exit": 0,
+                           "ran": None, "durationMs": 900}]}
+        ident = {"runId": "S1", "attempt": 1, "via": "orchestrator"}
+        timed = dict(base, selectionMs=420)
+        new_row = M.row_for(proj, timed, "task", {"taskId": "P1.1",
+                                                  "phaseId": "P1"}, ident,
+                            published=["pytest -q"])
+        old_row = M.row_for(proj, base, "task", {"taskId": "P1.1",
+                                                 "phaseId": "P1"},
+                            dict(ident, runId="S0"), published=["pytest -q"])
+        check("sel3 a result carrying selectionMs puts it on the row, and "
+              "durationMs is the steps' figure untouched; a result without it "
+              "gets NO key - absent, not a written zero: %r"
+              % ((new_row.get("selectionMs"), new_row.get("durationMs"),
+                  "selectionMs" in old_row),),
+              new_row.get("selectionMs") == 420
+              and new_row.get("durationMs") == 900
+              and "selectionMs" not in old_row
+              and read is not None and read(old_row) is None)
+        bad = M.row_for(proj, dict(base, selectionMs=True), "task",
+                        {"taskId": "P1.1", "phaseId": "P1"},
+                        dict(ident, runId="S2"), published=["pytest -q"])
+        check("sel4 ...and a value that is not a duration is not carried: %r"
+              % (bad.get("selectionMs"),), "selectionMs" not in bad)
+
+        # ROWS AS THE WRITER BUILDS THEM, each from a result whose selection
+        # is far larger than its step, so a writer that folded the selection
+        # into a step's duration moves the steps' figures and the mean the
+        # foreground decision reads by tens of seconds.
+        written = []
+        for i, ms in enumerate((1000, 3000)):
+            res = dict(base, durationMs=ms, selectionMs=50000,
+                       steps=[dict(base["steps"][0], durationMs=ms)])
+            written.append(M.row_for(proj, res, "task",
+                                     {"taskId": "P1.1", "phaseId": "P1"},
+                                     dict(ident, runId="M%d" % i),
+                                     published=["pytest -q"]))
+        steps_ms = [[s.get("durationMs") for s in r.get("steps") or []]
+                    for r in written]
+        meaned = _harness.attempt(lambda: M.gate_mean_ms(written, ["unit"]))
+        check("sel5 rows written from results carrying a 50 s selection keep "
+              "each step's own duration, so gate_mean_ms over them is the steps' "
+              "mean - (2000, 2) - with the selection beside it on each row: "
+              "%r / %r / %r" % (steps_ms, meaned,
+                                [r.get("selectionMs") for r in written]),
+              steps_ms == [[1000], [3000]] and meaned == (True, (2000, 2))
+              and [r.get("selectionMs") for r in written] == [50000, 50000])
+
+        # The chain: an old-shaped row, then a new one, in one file.
+        old_path = M.append_row(proj, M.row_for(
+            proj, base, "task", {"taskId": "P1.1", "phaseId": "P1"},
+            dict(ident, runId="C0"), published=["pytest -q"]))
+        M.append_row(proj, M.row_for(
+            proj, timed, "task", {"taskId": "P1.1", "phaseId": "P1"},
+            dict(ident, runId="C1"), published=["pytest -q"]))
+        with io.open(old_path, encoding="utf-8") as fh:
+            written = [json.loads(ln) for ln in fh.read().splitlines()]
+        verdict = M.verify(proj)
+        check("sel6 the verifier accepts a chain holding a row without the key "
+              "and a row with it, and the key was on the row BEFORE it was "
+              "hashed - the stored hash is the hash of the row as written: %r"
+              % ((verdict.get("ok"), verdict.get("rows"),
+                  verdict.get("findings"),
+                  [r.get("selectionMs") for r in written]),),
+              verdict.get("ok") is True and verdict.get("rows") == 2
+              and verdict.get("findings") == []
+              and [r.get("selectionMs") for r in written] == [None, 420]
+              and written[1]["hash"] == _journal_io.row_hash(written[1]))
+        # The pair for sel6: the key is INSIDE the hash, so rewriting it is a
+        # finding - a key carried beside the chain would verify either way.
+        with io.open(old_path, encoding="utf-8") as fh:
+            text = fh.read()
+        with io.open(old_path, "w", encoding="utf-8") as fh:
+            fh.write(text.replace('"selectionMs":420', '"selectionMs":1'))
+        forged = M.verify(proj)
+        check("sel7 ...and a rewritten selectionMs breaks the chain: %r"
+              % ((forged.get("ok"), len(forged.get("findings") or [])),),
+              text.count('"selectionMs":420') == 1
+              and forged.get("ok") is False and forged.get("findings"))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _foreground_bound_cases(check)
+        _part_repeat_cases(check)
+        _left_to_phase_gate_cases(check)
+        _selection_time_cases(check)
         _base_scope_cases(check)
+        _joined_step_cases(check)
         _claimed_followers_cases(check)
         _tree_key_cases(check)
         _banner_cases(check)

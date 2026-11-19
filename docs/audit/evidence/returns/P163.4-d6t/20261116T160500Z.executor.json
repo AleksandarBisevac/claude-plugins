@@ -1,0 +1,26 @@
+{
+  "gates": {
+    "sh tools/redfirst.sh plugins/audit/scripts/ui/report/filters.js --replace \"syncStatusChips();\" \"\" --render -- node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html (the documented example, run verbatim)": "pass",
+    "python3 tools/sweep-selftests.py tests/test__refs.py tools/affected.py tools/prove-gates.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+    "at": "2026-11-16T16:08:26Z"
+  },
+  "outcome": {
+    "technical": "tools/redfirst.sh header example (lines 9-10): the file is now plugins/audit/scripts/ui/report/filters.js and the anchor `--replace \"syncStatusChips();\" \"\"` (was areas.js / `syncAreaOptions();`, a symbol P163.2 deleted). Line count of the header unchanged, so usage()'s `sed -n '2,34p'` window still prints the whole example (checked: `sh tools/redfirst.sh` with no args prints the new Example block). Anchor occurs exactly once in filters.js (grep -c -> 1; heatmap.js:444 holds the definition `syncStatusChips() {`, which the anchor does not match), satisfying the tool's exactly-one-occurrence rule. Ran the example verbatim in the task tree: exit 0, output 'REDFIRST ok: the gate went red (exit 1), so it does assert this. file: plugins/audit/scripts/ui/report/filters.js (restored byte-for-byte)' with the gate's failing line 'FAIL in the Archived view only archived statuses are offered as chips ([\"done\",\"in_progress\",\"pending\"]): got 2, want 0'. The --render re-render left docs/index.html and examples/acme-store/acme-store-audit.{html,md} differing from HEAD only in the 'generated' timestamp (diff inspected); restored them to HEAD with git restore --source=HEAD, so the tree's only change is tools/redfirst.sh. Sweep of tests/test__refs.py, tools/affected.py, tools/prove-gates.py: 3/3 files ok, 419 cases. No rendered output changes, so no follower refresh owed. Remaining stale mention: tests/test_render_report.py:1475 asserts \"syncAreaOptions\" is NOT in the script - an absence pin, correct as is.",
+    "descriptive": "The red-first tool's worked example names an anchor that exists again and, run as written, turns the browser gate red."
+  },
+  "testsAdded": [],
+  "dependants": {
+    "tools/affected.py": "still correct: it selects tools/redfirst.sh by path (lines 1416-1539) and reads none of the comment text; its selftest 61 cases green.",
+    "tools/prove-gates.py": "still correct: line 406 mentions redfirst.sh only to say `replace` is a whole-text count there too, which is unchanged; selftest 66 cases green.",
+    ".claude/skills/before-you-claim/references/questions.md": "still correct: line 66 names `tools/redfirst.sh` as the tool for one check, no example quoted.",
+    "CLAUDE.md": "still correct: line 347 names the tool and what it does, no example quoted."
+  },
+  "claims": "claims:\n1 tools/redfirst.sh:9-10 now names filters.js and `syncStatusChips();`, which sits at filters.js:105 exactly once; the example was run verbatim and reported the gate red\n2 the example IS the mutation: syncStatusChips(); removed -> check-report-interactive exit 1 ('in the Archived view only archived statuses are offered as chips ... got 2, want 0') -> filters.js restored byte-for-byte by the tool\n3 grep -rn syncAreaOptions over the tree: redfirst.sh:10 fixed; tests/test_render_report.py:1475 left, an absence pin; docs/audit journal/evidence rows left, history\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:716b9561967989d84f0c2a251c42b6ceaf18ec7c2e597c229215afbb122f7a00\",\"dirtyDigest\":\"sha256:8ac501c0355934fb8de208b2011b26565e04cca151553e72889ad3e1f9a091c0\",\"dirtyPaths\":{\"tools/redfirst.sh\":\"5147c89dcb59ea2e\"},\"head\":\"28546228\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/redfirst.sh\"],\"scopeDigest\":\"sha256:cf8cedd55d3553274d8099732215dd6d8c3516f1abd9111aea37a9f78b49c001\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

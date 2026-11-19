@@ -49,6 +49,9 @@ import _locks as _lockmod                          # noqa: E402
 # The exemption's end is graded against a bug the PRODUCT's derivation still
 # calls open, not one this file decides is open.
 import _manifest_io as _mio_sf                     # noqa: E402
+# The `tt` block's records are built by the module the drive writes them with,
+# and its per-task entries are compared against that module's own summary.
+import _task_timing as _timing_tf                  # noqa: E402
 
 _CMD = _loader.load_script("audit-status.py", modname="audit_status_boundary")
 
@@ -2348,8 +2351,234 @@ def _gate_exemption_cases(check):
                               unknown) == ["open-high-bugs"])
 
 
+def _timed_task(tid, first, completed, stages, status="done"):
+    """A task carrying a timing record built by the module that builds one in
+    production, so the stages here have the shape the drive writes."""
+    timing = _timing_tf.first_start({}, first)
+    task = {"id": tid, "title": "t", "status": status, "timing": timing}
+    for kind, at, ms, basis in stages:
+        task["timing"] = _timing_tf.append_stage(
+            task, _timing_tf.make_stage(kind, at, ms, basis))
+    if completed is not None:
+        task["completedAt"] = completed
+    return task
+
+
+def _timing_plan():
+    """One phase holding the two routes' shapes side by side and the two ways a
+    task has no window.
+
+    TT.1 is the session route: every kind, summing short of its window, so the
+    unattributed share is real (75 s). TT.2 is the Agent route: a writer stage
+    alone, from hand-out to the filed return, longer than the task's own window,
+    so the overrun is real too (30 s) - with BOTH non-zero, an aggregate that
+    dropped either term could not add up to the windows. TT.3 carries a record
+    and no `completedAt`; TT.4 carries no record at all."""
+    session = [("writer", "2026-03-01T00:00:05Z", 300000, "durationMs in session record w.json"),
+               ("selection", "2026-03-01T00:05:05Z", 30000, "selectionMs in evidence row R-1"),
+               ("gate", "2026-03-01T00:05:35Z", 120000, "durationMs in evidence row R-1"),
+               ("reviewer", "2026-03-01T00:07:35Z", 60000, "durationMs in session record r.json"),
+               ("commit", "2026-03-01T00:08:35Z", 10000, "commit-task-work.py timed around by the drive"),
+               ("wait", "2026-03-01T00:00:00Z", 5000, "hand-out stamped by the drive -> startedAt")]
+    agent = [("writer", "2026-03-01T01:00:00Z", 150000,
+              "hand-out to the filed return (journal row); the agent's own start "
+              "is not recorded, so any wait before it is inside this length")]
+    tasks = [
+        _timed_task("TT.1", "2026-03-01T00:00:00Z", "2026-03-01T00:10:00Z", session),
+        _timed_task("TT.2", "2026-03-01T01:00:00Z", "2026-03-01T01:02:00Z", agent),
+        _timed_task("TT.3", "2026-03-01T02:00:00Z", None,
+                    [("writer", "2026-03-01T02:00:00Z", 1000, "durationMs in x")],
+                    status="in_progress"),
+        {"id": "TT.4", "title": "t", "status": "done",
+         "completedAt": "2026-03-01T03:00:00Z"},
+    ]
+    return {"meta": {"version": 2},
+            "phases": [{"id": "TT", "title": "Timed", "status": "in_progress",
+                        "tasks": tasks},
+                       {"id": "TU", "title": "Untimed", "status": "pending",
+                        "tasks": [{"id": "TU.1", "title": "t",
+                                   "status": "pending"}]}]}
+
+
+def _timing_cases(check):
+    """The per-task summary and the per-phase aggregate the JSON rollup carries.
+
+    The aggregate's promise is arithmetic: its stage figures, less the overrun,
+    plus the unattributed share, ARE the sum of its tasks' windows. The fixture
+    makes both correction terms non-zero, so a sum that forgot either is red.
+    """
+    plan = _timing_plan()
+    roll = M.timing_rollup(plan)
+    tasks = (roll or {}).get("tasks") or {}
+    agg = ((roll or {}).get("phases") or {}).get("TT") or {}
+    check("tt1 a task with no record has NO timing entry - not a summary of "
+          "zeros, which would be a measurement nobody made: %r"
+          % (sorted(tasks),),
+          sorted(tasks) == ["TT.1", "TT.2", "TT.3"]
+          and M.task_timing(plan["phases"][0]["tasks"][3]) is None)
+    # The figures each entry must hold, written here rather than asked of the
+    # function that computes them: TT.1's six stages sum to 525 s of a 600 s
+    # window, TT.2's single stage overruns its 120 s window by 30 s, and TT.3
+    # has no completion.
+    want = {"TT.1": (600000, 525000, 75000, 0, []),
+            "TT.2": (120000, 150000, 0, 30000, []),
+            "TT.3": (None, None, None, None, ["completedAt"])}
+    got = dict((tid, tuple((tasks.get(tid) or {}).get(k) for k in
+                           ("windowMs", "attributedMs", "unattributedMs",
+                            "overrunMs", "missing")))
+               for tid in want)
+    check("tt2 each task's entry carries the window, the attributed and "
+          "unattributed shares, the overrun and what it lacked, as written in "
+          "the case: %r" % (got,), got == want)
+    kinds_ms = sum(row["ms"] for row in (agg.get("byKind") or {}).values())
+    check("tt3 the phase's stage figures add up to its tasks' windows: "
+          "%r - %r + %r == %r, over the finished tasks only"
+          % (kinds_ms, agg.get("overrunMs"), agg.get("unattributedMs"),
+             agg.get("windowMs")),
+          agg.get("windowMs") == 720000
+          and agg.get("unattributedMs") == 75000
+          and agg.get("overrunMs") == 30000
+          and kinds_ms - agg["overrunMs"] + agg["unattributedMs"]
+          == agg["windowMs"])
+    check("tt4 the median task window, over the tasks that HAVE one (two of "
+          "them here): %r" % (agg.get("medianWindowMs"),),
+          agg.get("medianWindowMs") == 360000 and agg.get("tasks") == 2)
+    check("tt5 the Agent route's basis is carried AS GIVEN beside the session "
+          "route's, so a writer figure says which record each part came from: "
+          "%r" % ((agg.get("byKind") or {}).get("writer"),),
+          ((agg.get("byKind") or {}).get("writer") or {}).get("basis")
+          == sorted([plan["phases"][0]["tasks"][0]["timing"]["stages"][0]["basis"],
+                     plan["phases"][0]["tasks"][1]["timing"]["stages"][0]["basis"]])
+          and ((agg.get("byKind") or {}).get("writer") or {}).get("ms") == 450000)
+    check("tt6 a recorded task with no window is NAMED with what it lacked, "
+          "never folded into the figures as zero: %r"
+          % (agg.get("withoutWindow"),),
+          agg.get("withoutWindow") == {"TT.3": ["completedAt"]})
+    check("tt7 the aggregate states its basis: the window's own and the "
+          "sentence saying what was summed",
+          agg.get("windowBasis") == "timing.firstStartedAt -> completedAt"
+          and agg.get("basis")
+          == "the sum of _task_timing.summarize over this phase's done tasks "
+             "that have a window; every other task carrying a record is named "
+             "under leftOut with the reason it is left out, and summed nowhere")
+    check("tt8 a phase none of whose tasks carries a record has no aggregate "
+          "entry: %r" % (sorted((roll or {}).get("phases") or {}),),
+          sorted((roll or {}).get("phases") or {}) == ["TT"])
+    full = M.rollup(plan, [], [])
+    check("tt9 the rollup carries the same block under `timing`",
+          full.get("timing") == roll and roll is not None)
+    bare = _fixture()
+    bare_roll = M.rollup(bare, [], [])
+    # Byte for byte is test_audit_status.py's tc1 (the golden table) and tc2
+    # (the JSON's whole key list); this case carries the absence alone.
+    check("tt10 SECOND DIRECTION: a plan with no record anywhere has no "
+          "`timing` key at all and no timing text in its JSON",
+          M.timing_rollup(bare) is None and "timing" not in bare_roll
+          and '"timing"' not in json.dumps(bare_roll))
+    check("tt11 a task with a record that is not done is LEFT OUT of the "
+          "phase's figures and named with the reason: %r"
+          % (agg.get("leftOut"),),
+          agg.get("leftOut") == {"TT.3": "not finished"})
+    _cancelled_cases(check)
+
+
+def _cancelled_plan():
+    """One phase: TC.1 done, TC.2 cancelled after it was started - cancelling
+    stamps `completedAt`, so it HAS a window, and a longer one than TC.1's -
+    and TC.3 done with a record that has no first start. Only TC.1 is a
+    finished task with a window."""
+    done = _timed_task("TC.1", "2026-04-01T00:00:00Z", "2026-04-01T00:10:00Z",
+                       [("writer", "2026-04-01T00:00:00Z", 400000, "w1")])
+    cancelled = _timed_task("TC.2", "2026-04-01T01:00:00Z",
+                            "2026-04-01T01:20:00Z",
+                            [("writer", "2026-04-01T01:00:00Z", 900000, "w2")],
+                            status="cancelled")
+    no_first = {"id": "TC.3", "title": "t", "status": "done",
+                "completedAt": "2026-04-01T02:00:00Z",
+                "timing": {"stages": [_timing_tf.make_stage(
+                    "writer", "2026-04-01T01:59:00Z", 1000, "w3")]}}
+    return {"meta": {"version": 2},
+            "phases": [{"id": "TC", "title": "Cancelled", "status": "in_progress",
+                        "tasks": [done, cancelled, no_first]}]}
+
+
+def _cancelled_cases(check):
+    """The phase's line is taken over DONE tasks: a cancelled task carries a
+    window (cancel stamps `completedAt`) that no work finished."""
+    roll = M.timing_rollup(_cancelled_plan()) or {}
+    agg = (roll.get("phases") or {}).get("TC") or {}
+    writer = (agg.get("byKind") or {}).get("writer") or {}
+    figures = (agg.get("tasks"), agg.get("windowMs"), agg.get("medianWindowMs"),
+               writer.get("ms"), writer.get("stages"), agg.get("unattributedMs"))
+    check("tt12 a phase of one done and one cancelled timed task counts ONE "
+          "finished task: the median, the window total, the stage split and "
+          "the unattributed share are the done task's alone (600 s, writer "
+          "400 s, 200 s unattributed), where counting the cancelled one gives "
+          "two tasks, a 1800 s total and a 900 s median: %r" % (figures,),
+          figures == (1, 600000, 600000, 400000, 1, 200000))
+    check("tt13 ...and every task left out is named with the reason - the "
+          "cancelled one as cancelled, the done one with no first start as "
+          "having no window: %r" % (agg.get("leftOut"),),
+          agg.get("leftOut") == {"TC.2": "cancelled", "TC.3": "no window"})
+    check("tt14 SECOND DIRECTION: the cancelled task keeps its own per-task "
+          "entry with its window - it is left out of the PHASE's line, not "
+          "unrecorded: %r" % (((roll.get("tasks") or {}).get("TC.2") or {})
+                              .get("windowMs"),),
+          ((roll.get("tasks") or {}).get("TC.2") or {}).get("windowMs")
+          == 1200000)
+    _unreadable_cases(check)
+
+
+def _unreadable_plan():
+    """One phase: TR.1 done with a window, so the phase line is not empty; TR.2
+    done with a record whose stage list is not a list; TR.3 done with a stage
+    that is not a stage; TR.4 done with a readable record and no first start."""
+    good = _timed_task("TR.1", "2026-05-01T00:00:00Z", "2026-05-01T00:10:00Z",
+                       [("writer", "2026-05-01T00:00:00Z", 400000, "w1")])
+    no_list = {"id": "TR.2", "title": "t", "status": "done",
+               "completedAt": "2026-05-01T01:00:00Z",
+               "timing": {"firstStartedAt": "2026-05-01T00:50:00Z",
+                          "stages": "not a list"}}
+    bad_stage = {"id": "TR.3", "title": "t", "status": "done",
+                 "completedAt": "2026-05-01T02:00:00Z",
+                 "timing": {"firstStartedAt": "2026-05-01T01:50:00Z",
+                            "stages": ["not a stage"]}}
+    no_first = {"id": "TR.4", "title": "t", "status": "done",
+                "completedAt": "2026-05-01T03:00:00Z",
+                "timing": {"stages": [_timing_tf.make_stage(
+                    "writer", "2026-05-01T02:59:00Z", 1000, "w4")]}}
+    return {"meta": {"version": 2},
+            "phases": [{"id": "TR", "title": "Unreadable", "status": "in_progress",
+                        "tasks": [good, no_list, bad_stage, no_first]}]}
+
+
+def _unreadable_cases(check):
+    """A done task whose record cannot be read is named in the JSON with the
+    words its `time` cell prints. The cell's words are asked of
+    `audit-status.py` itself, so the two readings are compared, not one
+    reading with a copy of its own constant."""
+    roll = M.timing_rollup(_unreadable_plan()) or {}
+    left = ((roll.get("phases") or {}).get("TR") or {}).get("leftOut") or {}
+    tasks = roll.get("tasks") or {}
+    cells = dict((tid, _CMD._time_cell(tasks.get(tid)))
+                 for tid in ("TR.2", "TR.3", "TR.4"))
+    check("tt15 a done task whose stage list is not a list, and one holding a "
+          "stage that is not a stage, are named under leftOut as 'not readable' - "
+          "the words their time cells print: %r" % ((left, cells),),
+          left.get("TR.2") == "not readable" == cells["TR.2"]
+          and left.get("TR.3") == "not readable" == cells["TR.3"])
+    # The other direction: a fix that named every done task without a window
+    # 'not readable' would hold tt15 and lose the readable record with none.
+    check("tt16 SECOND DIRECTION: a done task with a readable record and no first "
+          "start stays 'no window' in both, and the task with a window is left "
+          "out of nothing: %r" % ((left, cells),),
+          left.get("TR.4") == "no window" == cells["TR.4"]
+          and sorted(left) == ["TR.2", "TR.3", "TR.4"])
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "tt", _timing_cases)
         _harness.stage(check, "gx", _gate_exemption_cases)
         _harness.stage(check, "iu", _intent_unanswered_cases)
         _harness.stage(check, "fl", _floor_reading_cases)

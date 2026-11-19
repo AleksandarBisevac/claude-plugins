@@ -4,7 +4,7 @@ argument-hint: 'add "<title>" [--phase <id>] [--description TEXT] [--files a,b] 
 allowed-tools: Read, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
-# /audit:task — add a task to the manifest, promote one, close one, re-open one, move one between phases, block one, note on one, or cancel one
+# /audit:task — one task's verbs
 
 Every verb is one call to the writer, which takes the index lock, revalidates, rolls back on a
 finding and journals the write itself - so nothing here is a hand edit and no lock is held by
@@ -34,10 +34,10 @@ abandoned - ask the human (AskUserQuestion), then re-run with `--takeover`.
 2. **Gather the answers (ask only for what's missing):** `--description` (the brief - on stdin
    with `--description -` and a quoted heredoc whenever it holds backticks or code punctuation,
    since a shell eats a backticked span and the writer refuses the hole it leaves; end it
-   `Acceptance: (1) ... (2) ...` - for another form the write says how it read it); `--files`;
+   `Acceptance: (1) ... (2) ...`); `--files`;
    `--outputs` for files the task produces; `--tests-mode tdd|regression|gate-only`;
    `--tests-add "<path>: <what it asserts>"` - the leading path is what reaches `files` and
-   `fileIndex`; `--expect-green-first` for a refactor whose added tests must pass on the base;
+   `fileIndex`; `--expect-green-first` when the added tests must pass on the base;
    `--gate` only to override the derived gate,
    `--gate-clear` for none (refused on tdd/regression; see verbs-in-full);
    `--failing-from <runId>` for a fix task after a red sign-off run; `--risk`; `--model`
@@ -117,6 +117,8 @@ A `--gate` list leaving out an entry the task holds is refused without `--replac
 appends - to the phase's `testGate` on a task with no gate of its own. The success line prints
 the gate the task now holds. `--gate*`, `--tests-add` and `--waive` take one entry per flag: a
 value whose every comma part reads as an entry is refused, naming the repeated spelling.
+On a task not started, a gate the derivation wrote follows `--files` and `--tests-add`; a wide
+one a spelling recorded later narrows is rewritten by `/audit:phase settle`, which the validator names.
 
 ## Subcommand: `move <taskId> --to <phaseId>`
 

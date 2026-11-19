@@ -1042,6 +1042,122 @@ def _spell(spelling, paths, project, lister=None):
     return entries
 
 
+# --- one call for the declared entry and the affected steps ------------------
+# A declared entry that IS the plan's recorded subset spelling over a list of
+# paths, and affected steps that are that spelling over other lists, are the
+# same runner handed different paths. Run one after another, the declared
+# suites run alone in front of the affected ones; run as one call over the
+# union, they share the runner's slots. Only the recorded spelling is read:
+# its `{paths}` word says exactly where the paths go, which a spelling borrowed
+# from a sibling's entry cannot say.
+def union_paths(declared, added):
+    """`declared`, then each path of `added` not already there - a suite both
+    lists hold is passed once, and the declared order comes first."""
+    out = []
+    for path in list(declared or []) + list(added or []):
+        if path not in out:
+            out.append(path)
+    return out
+
+
+def spelled_paths(spelling, command):
+    """The paths `command` hands the recorded `spelling` - the words standing
+    where its `{paths}` word stands, every one of them a path - or None when
+    `command` is not that spelling over a list of paths: another runner, the
+    same runner with an option, no path at all, or a spelling whose
+    placeholder is not a word of its own."""
+    shape, words = _words(spelling), _words(command)
+    if not shape or not words or shape.count("{paths}") != 1:
+        return None
+    at = shape.index("{paths}")
+    head, tail = shape[:at], shape[at + 1:]
+    middle = words[len(head):len(words) - len(tail)]
+    if (len(words) <= len(head) + len(tail) or words[:len(head)] != head
+            or words[len(words) - len(tail):] != tail):
+        return None
+    if not all(_phases.shell_word_path(w) == w and not w.startswith("-")
+               for w in middle):
+        return None
+    return middle
+
+
+def _recorded_spelling(phase, meta):
+    """`_spelling`'s answer when it is the plan's recorded spelling, else None."""
+    spelling, why = _spelling(phase, meta)
+    if why or spelling[1] != _gate_derive.SPELLING_SOURCE:
+        return None
+    return spelling
+
+
+def entry_paths(entry, phase, meta):
+    """The paths a gate entry hands the plan's recorded spelling
+    (`spelled_paths`), or None when the plan records none or the entry is not
+    that spelling over a list of paths."""
+    spelling = _recorded_spelling(phase, meta)
+    return None if spelling is None else spelled_paths(spelling[0][0], entry)
+
+
+def spelled_entry(paths, phase, meta):
+    """The plan's recorded spelling over `paths`, or None when it records
+    none."""
+    spelling = _recorded_spelling(phase, meta)
+    if spelling is None or not paths:
+        return None
+    # The recorded spelling fills its placeholder and reads no tree.
+    return _spell(spelling, paths, None)[0]
+
+
+def _joinable(name, command, recorded):
+    """The paths of an affected step that may join a declared entry: one of a
+    suite arm, spelled in the recorded spelling - or None."""
+    arm = name[len(_evidence_io.DERIVED_STEP_PREFIX):].partition(": ")[0]
+    if arm == _evidence_io.DERIVED_PHASE_GATE_ARM:
+        return None
+    return spelled_paths(recorded, command)
+
+
+def joined_steps(commands, phase, meta):
+    """`(commands, lines)` - `commands`, `[(name, command)]` in run order, with
+    every affected step spelled in the recorded spelling joined to the FIRST
+    declared entry that is that spelling over a list of paths, as one step at
+    the entry's place: named `_evidence_io.joined_step_name` of the entry and
+    the steps, its command the spelling over `union_paths` of the entry's
+    paths and theirs. Every other step stays where it was, and `lines` says
+    what was joined.
+
+    NOTHING IS JOINED - the commands come back as they went in, with no line -
+    when the plan records no spelling of its own, when no declared entry is
+    that spelling (a build key, another runner, the same runner with an
+    option), or when no affected step is."""
+    spelling = _recorded_spelling(phase, meta)
+    if spelling is None:
+        return list(commands or []), []
+    recorded = spelling[0][0]
+    host, host_paths, joined, rest = None, None, [], []
+    for name, command in commands or []:
+        if _evidence_io.is_derived_step(name):
+            paths = _joinable(name, command, recorded)
+            if paths:
+                joined.append((name, paths))
+                continue
+        elif host is None and name == command:
+            host_paths = spelled_paths(recorded, command)
+            if host_paths:
+                host = name
+                rest.append(None)
+                continue
+        rest.append((name, command))
+    if host is None or not joined:
+        return list(commands or []), []
+    union = union_paths(host_paths, [p for _n, paths in joined for p in paths])
+    step = (_evidence_io.joined_step_name(host, [n for n, _p in joined]),
+            _spell(spelling, union, None)[0])
+    said = ("affected: %s run in one call with the task's gate entry `%s` - "
+            "the plan's recorded spelling over %d path(s), the entry's first"
+            % (", ".join(n for n, _p in joined), host, len(union)))
+    return [step if entry is None else entry for entry in rest], [said]
+
+
 def _words(command):
     """`command`'s shell words, or None when it does not split."""
     try:

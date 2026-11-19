@@ -31,6 +31,9 @@ THE RULE, arm by arm, each with its sentence:
   * A newest row that is not `passed`: refused, naming it.
   * A repeated verdict is graded against the run that MEASURED it, through
     `reusedFrom`; a repeat whose source is gone from the ledger is refused.
+    A row that repeated only some steps (`_evidence_io.PART_REUSED`) read the
+    tree itself and is graded as measured; its sentence names the steps it
+    copied and their run (`repeated_clause`).
   * The declared work's digest, with the recorder's own paths left out on both
     sides, must match the row's - a changed LIST is told apart from changed
     CONTENT, and a question the tree cannot answer is said as that.
@@ -296,27 +299,53 @@ def gate_mismatch(measured, entries, source, build=None):
     THE STEPS A TASK'S RUN ADDS ARE NOT ITS GATE: the suites a narrower task
     gate's change can break are recorded after the declared steps, and
     `_evidence_io.declared_steps` - the answer the recorder digests - says
-    which of a row's steps are declared. Only those are compared.
+    which of a row's steps are declared. Only those are compared. A declared
+    entry the run joined with the affected steps into one call is one step
+    named for the entry and each of them, and `declared_steps` reads it as the
+    entry, so it is compared as the entry; one whose name does not open with
+    the entry is not that entry and does not bind.
+
+    THE ENTRIES A TASK'S RUN LEFT TO THE PHASE GATE ARE ITS GATE TOO: a row
+    that lists a declared entry under `_evidence_io.LEFT_TO_PHASE_GATE_KEY`
+    (`executor.phaseGateOnly`, with the phase gate holding it) is one step short
+    for that stated reason, so the comparison is made against the declaration
+    less those entries. A listed name the gate does not declare, or one the row
+    also ran, describes some other gate and does not bind.
 
     THE ONE GATE THAT CAN NEVER BIND, AND SAID AS THAT: an entry of the gate being
-    asked about that starts with `DERIVED_STEP_PREFIX` is read back as a derived
-    step, so the row it recorded is cut short of it and no run can match. The
-    generic sentence below would blame a gate that changed; this one names the
-    entry and the reserved prefix, which is the only repair.
+    asked about that `_evidence_io.step_parts` does not read back as itself - it
+    starts with `DERIVED_STEP_PREFIX`, or it is spelled as a joined step - is
+    read back as one of the steps a run adds, so the row it recorded never
+    holds it and no run can match. The generic sentence below would blame a
+    gate that changed; this one names the entry and the reserved spelling,
+    which is the only repair.
     """
-    reserved = [e for e in entries if _evidence_io.is_derived_step(e)]
-    if reserved:
-        return ("the %s gate entry %r starts with %r, which is reserved for the "
-                "steps a run adds beside the gate - such an entry is read back "
-                "as one of those, so no verdict can bind it; rename the entry"
-                % ("task" if source == "task" else "phase", reserved[0],
-                   _evidence_io.DERIVED_STEP_PREFIX))
+    which = "task" if source == "task" else "phase"
+    for entry in entries:
+        if _evidence_io.is_derived_step(entry):
+            return ("the %s gate entry %r starts with %r, which is reserved for "
+                    "the steps a run adds beside the gate - such an entry is "
+                    "read back as one of those, so no verdict can bind it; "
+                    "rename the entry"
+                    % (which, entry, _evidence_io.DERIVED_STEP_PREFIX))
+        if _evidence_io.step_parts(entry) != (entry, []):
+            return ("the %s gate entry %r carries %r, the spelling reserved for "
+                    "a step that ran a gate entry joined with the steps a run "
+                    "adds beside it - such an entry is read back as one of "
+                    "those, so no verdict can bind it; rename the entry"
+                    % (which, entry, _evidence_io.JOINED_STEP_SEPARATOR
+                       + _evidence_io.DERIVED_STEP_PREFIX))
     recorded, dropped = _evidence_io.declared_steps(
         [s.get("name") for s in (measured.get("steps") or [])
          if isinstance(s, dict)], measured.get("stepsDropped"))
     now = list(entries)
-    same_steps = (recorded == now[:len(recorded)]
-                  and len(recorded) + dropped == len(now))
+    # Nothing else is asked of a listed name: one the gate does not declare
+    # leaves `ran_now` whole, so the recorded steps fall short of it, and one
+    # the row also ran is a step `ran_now` no longer holds.
+    left = _evidence_io.left_to_phase_gate_names(measured)
+    ran_now = [e for e in now if e not in left]
+    same_steps = (recorded == ran_now[:len(recorded)]
+                  and len(recorded) + dropped == len(ran_now))
     was_source = measured.get("gateSource")
     was_digest = measured.get(_evidence_io.GATE_DIGEST_KEY)
     same_digest = (was_digest is None
@@ -329,10 +358,12 @@ def gate_mismatch(measured, entries, source, build=None):
                 "resolved it then, and the same entries resolve to different "
                 "commands now - a verdict about a different gate is not this "
                 "gate's verdict" % (", ".join(recorded),))
-    return ("it was measured under the gate [%s]%s, and the %s declares "
+    return ("it was measured under the gate [%s]%s%s, and the %s declares "
             "[%s] (%s gate) now - a verdict about a different gate is not this "
             "gate's verdict"
             % (", ".join(recorded),
+               " leaving [%s] to the phase gate" % (", ".join(left),)
+               if left else "",
                " (%s gate)" % (was_source,) if was_source else "",
                "task" if source == "task" else "phase",
                ", ".join(entries), source))
@@ -467,9 +498,31 @@ def binding(project, ids, entries, source, owns, manifest_path, record,
                            % (who, VERDICT_PASSED, run, mismatch, record))
         out["arm"] = ARM_GATE_CHANGED
         return out
-    return dict(out, **digest_binding(project, manifest_path, who, owns, config,
-                                      measured, run, record,
-                                      digest_root=digest_root))
+    answer = digest_binding(project, manifest_path, who, owns, config, measured,
+                            run, record, digest_root=digest_root)
+    # A ROW THAT REPEATED PART OF ITS GATE took its own reading of the tree and
+    # its digest, so it binds as a measured row does; what the sentence owes
+    # the reader is which of its steps it copied, and from which run.
+    clause = repeated_clause(measured)
+    if clause:
+        answer = dict(answer, sentence="%s (%s)" % (answer["sentence"], clause))
+    return dict(out, **answer)
+
+
+def repeated_clause(row):
+    """`"tree repeated from run R1, not run by it"` for the steps `row` copied
+    from other runs, in step order, consecutive steps from one run under one
+    clause - None when it copied none."""
+    by_run = []
+    for name, run_id in _evidence_io.repeated_step_sources(row):
+        if by_run and by_run[-1][0] == run_id:
+            by_run[-1][1].append(name)
+        else:
+            by_run.append((run_id, [name]))
+    if not by_run:
+        return None
+    return "; ".join("%s repeated from run %s, not run by it"
+                     % (", ".join(names), run_id) for run_id, names in by_run)
 
 
 def digest_binding(project, manifest_path, who, owns, config, measured, run,

@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_render_report.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression mode, expectRedFirst false: st5 locks the observe loop as HEAD already has it, so HEAD's code turns no case red. Mutation instead, from a probe script that restores in a finally (/tmp/p16311probe/mut.py), with __pycache__ purged and each mutation checked as applied before running: deleting the observe loop, dropping .sectools from its array, dropping snav, and replacing ro.observe(el) each gave 'FAIL st5 ...' and 'SELFTEST FAILED: 312/313 cases passed' (exit 1); restored: True, git status shows only tests/test_render_report.py modified.",
+    "at": "2026-11-16"
+  },
+  "outcome": {
+    "technical": "tests/test_render_report.py st5: the case now matches the observe loop that follows `const ro = new ResizeObserver(measureStack);` with a regex. It extracts the loop's array and requires exactly one such loop, observing [toolbar, snav, document.querySelector('.sectools')] with `if (el) ro.observe(el);` as the body. The label now prints the observed list beside the setProperty names. The existing conjuncts are kept, including the single-constructor count. Gate: python3 tools/sweep-selftests.py tests/test_render_report.py -> exit 0, 1/1 files ok, 313 cases. ruff check tests/test_render_report.py -> All checks passed. No rendered-artifact change, because only a test changed. Dependants: .github/sweep-costs.json (path) is still correct; one added regex over the script string does not move the file's cost figure in any way that matters. plugins/audit/scripts/report/render-report.py (path) is still correct, unchanged, and only read. tools/affected.py (path, and its _cases/_selftest names) is still correct: no file was renamed and no name defined in the suite changed. tests/test__live_copy.py (basename) is still correct, since the basename is unchanged. plugins/audit/scripts/ui/shared/README.md (basename) is still correct, since the basename is unchanged.",
+    "descriptive": "st5 now sees the ResizeObserver loop, so a constructed observer that observes nothing, or misses a layer, turns it red"
+  },
+  "testsAdded": [
+    "st5 extended: the observe loop after the ResizeObserver constructor must exist exactly once and observe toolbar, snav and .sectools"
+  ],
+  "casesAdded": [
+    "st5"
+  ],
+  "claims": "claims:\n1 the st5 label's 'on every observed layer' is now backed by the _ms_loops/_ms_observed conjunct (tests/test_render_report.py, just above st5), which reads page-state.js:142-145\n2 loop deleted / .sectools dropped / snav dropped / ro.observe removed -> each FAIL st5, 312/313, exit 1 -> restored: True. Allow case: the unmutated tree gives 313/313\n3 grep 'ro.observe\\|ResizeObserver(measureStack)' plugins/audit/scripts/ui/: 3 hits. page-state.js:142 and :144 are the pinned site. usage-charts.js:380 is the panel's chart observer, left because no report-script case claims it\n4 n/a, no rule to an agent\n5 n/a, no property recorded\n6 n/a, no guard\n7 n/a, no number written (a comment that said 'three' was reworded to 'every pinned layer')",
+  "stamp": "audit-stamp: {\"content\":\"sha256:fd38456a0c24526099edc72408caeef33a2a470f96deb338d19007b637f1a7f9\",\"dirtyDigest\":\"sha256:648d9b7ea46b92040702d65aa290bd71e170aa0c0717d38cfc575295ea7540d5\",\"dirtyPaths\":{\"tests/test_render_report.py\":\"ff974e8e6ed8bed0\"},\"head\":\"77b76c7f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_render_report.py\"],\"scopeDigest\":\"sha256:f7c0f5a7895e7973598bf39da05938e7b5a547d7c32460d37b01b98fe5fec53e\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

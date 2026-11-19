@@ -1,0 +1,1058 @@
+{
+  "id": "P167",
+  "title": "Wall time per task is recorded by stage and printed",
+  "status": "done",
+  "description": "Users reported that development through the plugin is slow, and a paired measurement put the plugin near three times a plain session's wall time per task while the writer alone was faster than plain. The plugin cannot say where the rest goes: a gate run records its duration, and nothing else does. A writer or reviewer session's own duration is dropped when its cost is read, the time spent selecting affected suites runs before the gate's clock starts, a dispatch for a writer or a reviewer carries no time at all, and the drive's launch stamps die with its state file when the phase ends. This phase records each stage where the plan keeps it (the task in its shard), because the evidence ledger and the drive state are due to be removed and the plan and git are what remains. Nothing here makes a task faster; it makes the next phase's choices measurable. Exit: on a task driven end to end in a fixture, the stage figures and the unattributed remainder add up to the task's whole window, and a stage with no source says so instead of printing zero.",
+  "desiredOutcome": "Every task the drive runs leaves in its shard how long each stage took: each writer round, each recorded gate run with the time spent choosing what to run, a base measurement, the review, the record commit, and the time a handed-out step waited before it started. /audit:status prints the figures and their JSON form carries them, each with the record it was read from, so wall time per task can be measured beside cost and quality.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "1892634fc66963fc987f8167a7b87339bdbe5325",
+  "branch": "audit/p167-wall-time-per-task-is-recorded",
+  "mergedAt": "2026-11-18T06:44:42Z",
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "passed",
+    "findings": [],
+    "readReturns": []
+  },
+  "summary": "Wall time per task is recorded by stage in the task's shard and printed by /audit:status: a session record carries its whole duration, a gate row its selection time, the drive appends writer, gate, selection, base, reviewer, commit and wait stages in writes it already made (on the Agent route a writer stage from hand-out to the filed return), and status shows a time column, a per-phase split and a JSON timing section, each with its basis. Additive: a plan with no record renders byte for byte as before. A three-way code review found one runner crash on an oversized figure and four med findings (last-stretch duration, cancelled tasks counted as finished, an unreadable record shown as unattributed time, a commit stage that double-counted a gate); all fixed in four fix tasks and checked by a verification pass with mutations. Left for later, in the register: the read-back that measures a green gate again, two lows from the review, one case red once under load. Report and panel do not show the figures yet.",
+  "tasks": [
+    {
+      "id": "P167.1",
+      "title": "A writer or reviewer session's record carries how long the session took, read from the session's own result",
+      "status": "done",
+      "description": "The session runner (run-agent-session.py) reads the last result event of the session's stream for the cost and drops what the same event says about time. Its record gains the result's duration_ms, duration_api_ms and num_turns, and the session's start time (the stamp the stream file's name already carries), under the names durationMs, durationApiMs, numTurns and startedAt. A figure the result does not carry, or carries as something that is not a number, is left out and the record's line names the absence; it is never written as zero. Dependants you answer for: drive-phase.py reads this record for the session's cost and exit (note_sessions, session_note, the dispatch read-back) and must keep parsing it unchanged; the line run-agent-session.py prints is parsed by the drive and by the measurement harness outside this repository, so its existing fields keep their order and spelling and new ones are appended; every fixture in tests/test_drive_phase.py that writes a session record by hand must still load. Acceptance: (1) a record written from a stream whose result carries duration_ms, duration_api_ms and num_turns holds the three figures and the start time; (2) a stream with no result event writes a record with none of the three and a line that says no result was read; (3) a result whose duration_ms is a string or a negative number is recorded as absent, with the reason, and not as zero; (4) a record written before this change, with none of the new keys, is read by the drive exactly as before.",
+      "files": [
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "tests/test_run_agent_session.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_agent_session.py: a record carries durationMs, durationApiMs, numTurns and startedAt from the result; a missing result or a non-numeric duration leaves the figure out and names the absence instead of writing zero"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_agent_session.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "50ae8981dc9c",
+      "outcome": {
+        "technical": "plugins/audit/scripts/governance/run-agent-session.py: read_stream now also returns `last` (the last result event whatever it holds, additive key); new TIMING_FIELDS, _figure_problem, started_at, session_timing (pure: figures + absent-with-reason); _in_session reads the stream before the interrupted check and sets ran['timing'] only once claude ran; write_record(..., timing=None) appends durationMs, durationApiMs, numTurns, startedAt after line/exit/skills/skillsInvoked, and timingAbsent {key: reason} when any figure is missing. A figure absent, a string, a boolean, null/other, non-finite or negative is left out and named, never written as zero; no result event names every figure 'no result event was read: <problem>'. startedAt is the stream name's %Y%m%dT%H%M%SZ stamp as YYYY-MM-DDTHH:MM:SSZ. The PRINTED LINE IS UNCHANGED: the drive's _SESSION_LINE (drive-phase.py:432) ends `stream=(.*)$`, so a field appended after stream= would be read as part of the stream path; 'new ones are appended' is honoured in the record, whose new keys follow the existing ones in order (ras69b pins both). Module docstring and PLUGIN-BUILD-GUIDE.md's run-agent-session section say so. tests/test_run_agent_session.py: the stub's last result carries TIMING (STUB_TIMING env, overridable), the first of two results carries decoys; ras27/ras44 updated to the new record shape; new ras69, ras69b, ras70, ras71 (x3 fixtures), ras71b, ras72, ras73. Suite 89/89; gate `python3 tools/sweep-selftests.py tests/test_run_agent_session.py` exit 0, '1/1 files ok, 89 cases'. Mutations in a git-archive HEAD export with my two files overlaid (never the shared tree), __pycache__ purged per cycle: absent-as-zero -> ras70, ras71, ras71b red; no string check -> ras71 red; no negative check -> ras71 red; no bool check -> ras71 red; timing set before the session starts -> first SURVIVED (ras72 only drove a usage refusal, which fires before the skills load), ras72 widened with an io-error run -> red; startedAt dropped -> ras27, ras44, ras69, ras70, ras71, ras71b red; a figure appended to the printed line -> ras8, ras69b red. CHANGELOG.md not touched: no Unreleased section exists and P167.5 declares it for the phase's entry. Dependants: drive-phase.py read_sessions/session_note/note_sessions read only line, exit, skills, skillsInvoked (drive-phase.py:2259-2271) - still correct, unchanged, and ras73 loads the drive and shows an old-shape record and the same record with the new keys give identical read_sessions and session_note; tests/test_drive_phase.py:18463 calls RAS.write_record(path, line, code, skills=, invoked=) - still correct, timing is a new trailing keyword defaulting to None, so its records keep their old shape; tests/test__config_rules.py:431 uses is_full_model_id and tests/test__doctor_policy.py:466 the skill resolution - untouched; tools/affected.py and .github/sweep-costs.json name the file paths only - unchanged paths; _config_rules.py:96 names the script in prose - still correct; PLUGIN-BUILD-GUIDE.md section updated (in my files); CHANGELOG.md left to P167.5; the measurement harness outside this repo parses the printed line, which is byte-identical in shape. test_drive_phase.py itself was not run (own-tests reading).",
+        "descriptive": "A writer or reviewer session's --record line now carries durationMs, durationApiMs, numTurns and startedAt from its own last result, naming any figure it could not read instead of writing zero."
+      },
+      "startedAt": "2026-11-17T23:58:28Z",
+      "completedAt": "2026-11-18T00:23:10Z",
+      "verifiedBy": [
+        "ras69: the last result's three figures and the stream-name start time land in the record, not the first result's decoys",
+        "ras69b: the old keys keep their order ahead of the new ones and the printed line still parses under the drive's regex with its stream intact",
+        "ras70: no result event -> none of the three figures, each named absent 'no result', start time still recorded",
+        "ras71: duration_ms as a string, a negative, a boolean -> no durationMs, never zero, reason names it, other two kept",
+        "ras71b: a result with none of the figures names each with its source field",
+        "ras72: a usage refusal and an io-error record no timing key at all",
+        "ras73: the drive reads an old-shape record identically to one carrying the new keys, note included"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T00:23:06Z.c00e06",
+        "status": "passed",
+        "at": "2026-11-18T00:23:06Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "50ae8981dc9c",
+        "at": "2026-11-18T00:23:10Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T00:09:10Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py` in a throwaway tree at HEAD exited 1 with 8 of 89 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ras27 (house FAIL), ras69 (house FAIL), ras70 (house FAIL), ras71 (house FAIL), ras71 (house FAIL), ras71 (house FAIL), ras71b (house FAIL), ras44 (house FAIL): SELFTEST FAILED: 81/89 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P167.2",
+      "title": "A task has one timing record in its shard: stages with a start, a length and the record each was read from, and a first start that survives a restart",
+      "status": "done",
+      "description": "Add the optional task key timing: an object with firstStartedAt and stages, where a stage is kind, startedAt, ms, basis and optional round and runId. The kinds are a closed list: writer, gate, selection, base, reviewer, commit, wait. One new helper module, plugins/audit/scripts/manifest/_task_timing.py, holds the pure functions every writer and reader uses: build a stage, append it to a task, and summarize a task into per-kind totals, the whole window from firstStartedAt to completedAt, and the unattributed remainder, each with its basis and with an absent source named rather than read as zero. task.startedAt is re-stamped on every restart today, so the first start is lost; starting a task now sets timing.firstStartedAt once and never moves it. The key is additive: a plan that never writes it validates and behaves exactly as before, and COMPATIBILITY.md says so beside its other additive keys. A new module owes the five things CLAUDE.md lists for a file under scripts/ (suite, layer in tools/lints/_deps.py, tree line and section in PLUGIN-BUILD-GUIDE.md, the path preamble; it is a helper, so no entry guard). Dependants you answer for: the schema and the validator's vocabulary must agree (_manifest_vocab.py KNOWN_TASK and SCHEMA_ANCHORS, _help.schema_vocab_drift, the unknown-key warning in _manifest_phases.py); every committed example plan and rendered artifact must still validate and render byte for byte, since none carries the key; audit-task.py's start, reopen, move and cancel verbs copy or reset task fields and must carry timing the way they carry notes; the panel's writer rewrites tasks and must not drop a key it does not know. Acceptance: (1) a task carrying a well-formed timing validates with no warning, and a task without it validates exactly as today; (2) a stage with an unknown kind, a negative ms or no basis is a validator finding that names the task and the stage; (3) a restart keeps firstStartedAt while startedAt moves; (4) the summary of a task whose stages cover part of its window reports the remainder as unattributed, and the parts add up to the window; (5) the summary of a task with no completedAt, or no timing, says which is missing and gives no total; (6) move and reopen keep the record.",
+      "files": [
+        "plugins/audit/scripts/manifest/_task_timing.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test__task_timing.py",
+        "tests/test__manifest_phases.py",
+        "tests/test_audit_task.py",
+        "tools/lints/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "tests/test__manifest_vocab.py",
+        "tests/test__deps.py",
+        "tools/demo/gen-demo-manifest.py",
+        "tests/test_gen_demo_manifest.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__task_timing.py: a summary's stage totals and unattributed remainder add up to the task's window, and a missing completedAt or timing is named rather than totalled",
+          "tests/test__manifest_phases.py: a well-formed timing validates with no warning and a stage with an unknown kind, a negative ms or no basis is a finding naming the task",
+          "tests/test_audit_task.py: a restart keeps timing.firstStartedAt while startedAt moves, and move and reopen keep the record"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__task_timing.py tests/test__manifest_phases.py tests/test_audit_task.py tests/test__manifest_vocab.py tests/test__deps.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": "481cc30a1798",
+      "outcome": {
+        "technical": "Retry 2 of P167.2. Attempt 1's work in the tree is kept unchanged (_task_timing.py, schema $defs timing/timingStage, KNOWN_TASK 'timing', _manifest_phases timing findings and key warnings, audit-task start writes timing.firstStartedAt via first_start, COMPATIBILITY/PLUGIN-BUILD-GUIDE/CHANGELOG, _deps LAYERS row; see attempt 1's outcome). The red gate was tests/test_gen_demo_manifest.py: the schema-coverage case listed task.timing, timing.* and timingStage.* as fields the demo fixture neither carries nor exempts. Fixed the preferred way per the task's newest note - the fixture now CARRIES the record: tools/demo/gen-demo-manifest.py imports _task_timing and gains _stamp_timing(manifest, rows), called last in generate() after _stamp_since (draws nothing from rng, no wall clock). Every done task gets timing = first_start({}, startedAt) plus a writer stage (round 1, startedAt, a third of the startedAt->completedAt window, basis 'the writer session's own result (duration_ms)') and, when the task has a recorded run (latest_by_subject over the same pointer rows), a gate stage whose ms is that row's durationMs, whose runId is that row's runId (= the task's testEvidence.runId), and which ends at the row's ts (start rounded up to whole seconds). Done tasks with no run (the pre-recording phase, the ungraded task) carry the writer stage alone; unfinished tasks carry none. No exemption was added. Byte check: python3 tools/check-rendered-artifacts.py --before-commit EXIT=0 'OK: 3 committed artifact(s) match a fresh render' (docs/demo-large.html included); verify.sh's ledger_compare re-done by hand (gen-demo-usage on examples/acme-store, cmp each committed .jsonl) LEDGER_DIFF_EXIT=0; gen-demo-manifest --phases 40 --tasks 5 then validate-manifest.py EXIT=0 '(40 phases, 200 tasks, 6 bugs)', 71 timed tasks, 66 with a gate stage, timing_problems empty for all. New suite cases tmd1-tmd3 in tests/test_gen_demo_manifest.py, mutation-proved in-process (no shared-tree write, by monkeypatching M._task_timing.make_stage / M._stamp_timing): gate ms+1 -> tmd2 red; writer ms = whole window -> tmd3 red; stamping in-progress tasks -> tmd1+tmd3 red; no stamping -> tmd1+tmd2 red; restored -> all green; tmd3 then tightened to refuse an empty set (it was vacuously true under no-stamp). Gate as the brief names it: python3 tools/sweep-selftests.py tests/test__task_timing.py tests/test__manifest_phases.py tests/test_audit_task.py tests/test__manifest_vocab.py tests/test__deps.py EXIT=0 '5/5 files ok, 1776 cases'. Not gates, run as dependant checks: sweep over test_gen_demo_manifest, test__output_lints, test_validate_manifest, test__json_schema EXIT=0 '4/4 files ok, 390 cases'; python3 tests/test_gen_demo_manifest.py --selftest 'ALL PASS: 137/137'; ruff EXIT=0 and vermin -t=3.8- EXIT=0 on both edited files. Dependants: gen-demo-manifest's readers (check-rendered-artifacts, verify.sh scale_demo_valid and the one-status plan step, gen-demo-usage) still correct - artifacts byte-identical, fixture validates; _task_timing gains one importer (gen-demo-manifest, under tools/demo, outside _deps.LAYERS like its other scripts/ imports); every other dependant answered in attempt 1's outcome is unchanged by this retry (no file of attempt 1 was edited). Not done: the drive's real writers of stages and the status surfaces (later P167 tasks); reference/execute-task.md still names only status/startedAt/attempts for a hand promotion (not in this task's files).",
+        "descriptive": "A task can carry a timing record (first start that survives restarts, stages with basis), validated and summarized, and the demo fixture now shows it on finished tasks without moving any committed artifact."
+      },
+      "startedAt": "2026-11-18T00:56:57Z",
+      "completedAt": "2026-11-18T01:20:19Z",
+      "verifiedBy": [
+        "tests/test__task_timing.py tt1-tt13: summary totals plus unattributed remainder add up to the window; missing completedAt, timing or firstStartedAt named, no total; builder/grader/schema agreement",
+        "tests/test__manifest_phases.py tm1-tm4: well-formed timing validates with no warning, absent key asks nothing, bad stage kind/ms/basis and malformed timing are findings naming the task",
+        "tests/test_audit_task.py tmg1-tmg5: first start writes firstStartedAt, restart keeps it while startedAt moves, move/reopen/cancel keep the record",
+        "tests/test_gen_demo_manifest.py tmd1-tmd3: the demo's finished tasks carry a clean timing record whose gate stage is the length and id of the run its pointer names, with an unattributed remainder"
+      ],
+      "notes": [
+        {
+          "at": "2026-11-18T00:23:44Z",
+          "text": "it quotes the red-first enum of the schema, and this task adds one task property and leaves that enum's text alone",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T00:23:44Z",
+          "text": "it quotes the related-listing sentence of the build guide, and this task adds a tree line and a section of its own",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-18T00:23:44Z",
+          "text": "it quotes the doctor's copy-age sentence of the build guide, which this task does not edit",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-18T00:23:44Z",
+          "text": "it quotes a drive section marker of the build guide, which this task does not edit",
+          "waives": "tests/test_drive_phase.py"
+        },
+        {
+          "at": "2026-11-18T00:23:44Z",
+          "text": "it quotes a config sentence of COMPATIBILITY.md, and this task adds one sentence beside the additive manifest keys",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-18T00:23:44Z",
+          "text": "it quotes the two-keys sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-18T00:57:17Z",
+          "text": "Retry after a red gate: tests/test_gen_demo_manifest.py fails because the new schema fields (task.timing, timing.*, timingStage.*) are neither carried by the demo fixture nor named in gen-demo-manifest.SCHEMA_EXEMPTIONS. tools/demo/gen-demo-manifest.py and its suite are now declared files of this task. Prefer carrying the record on the fixture's finished tasks (fixed values, no wall clock) if every committed rendered artifact stays byte for byte the same (python3 tools/check-rendered-artifacts.py --before-commit, and the demo ledger diff verify.sh runs); if carrying it changes a committed artifact, exempt the fields instead, with the reason that no rendered surface reads them yet. The work already in the tree stays; do not rewrite it."
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T01:20:15Z.32d1ce",
+        "status": "passed",
+        "at": "2026-11-18T01:20:15Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "481cc30a1798",
+        "at": "2026-11-18T01:20:19Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T01:06:07Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__task_timing.py tests/test__manifest_phases.py tests/test_audit_task.py tests/test__manifest_vocab.py tests/test__deps.py` in a throwaway tree at HEAD exited 1 with 4 of 1259 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code but for the sweep grading the empty file laid where the task adds tests/test__task_timing.py red for printing no contract: tests/test__task_timing.py did not exist at HEAD, which is red for every case it adds, its declared test files new at HEAD (tests/test__task_timing.py) laid over as empty files), each passing with the working tree's implementation - tm1 (house FAIL), tm3 (house FAIL), tm4 (house FAIL), tmg1 (house FAIL): SELFTEST FAILED: 1258/1259 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P167.3",
+      "title": "A recorded gate run says how long choosing what to run took, beside how long the steps took",
+      "status": "done",
+      "description": "run-test-gate.py starts its clock at the first step, so the time it spends gathering the affected suites and reading the gate's reach is in no figure at all. The recorded row gains selectionMs: the time from the start of that work to the first step, measured on the same monotonic clock. durationMs keeps its meaning, the steps alone, because other code decides on it. A run that selected nothing (a reused verdict, a gate with no derived part) records selectionMs for the work it did do, and a row written before this change carries no such key, which reads as not recorded. Dependants you answer for: _evidence_io.gate_mean_ms decides whether a gate runs in the foreground from durationMs and must give the same answer on the same rows; the doctor grades meta.gateBudgetMs from durationMs; audit-usage compares narrowed and phase gates and reused and measured runs from durationMs; the report and the panel list a row's steps and its took figure and must render a row with the new key unchanged; the row's hash chain covers the row as written, so a new key must enter the row before it is hashed; COMPATIBILITY.md lists the evidence row's additive keys and gains this one. Acceptance: (1) a recorded task gate with a derived part carries selectionMs and its durationMs equals the sum the steps took, as before; (2) gate_mean_ms over a ledger holding old and new rows returns what it returned over the same rows without the key; (3) a row without selectionMs is read as not recorded by every reader, never as zero; (4) the ledger's verifier accepts a chain holding both kinds of row.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__evidence_io.py",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: a recorded task gate with a derived part carries selectionMs, and its durationMs is still the steps alone",
+          "tests/test__evidence_io.py: gate_mean_ms gives the same answer with and without the key, a row without it reads as not recorded, and the verifier accepts a chain holding both"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "798a336fdf64",
+      "outcome": {
+        "technical": "_evidence_io.py: SELECTION_KEY = 'selectionMs' beside STARTED_KEY with its reason; selection_ms(row) is the one reader - None for an absent key, a bool, a negative or a non-int, never 0; row_for writes the key only when selection_ms(result) answers, before append_row hashes the row. run-test-gate.py: main starts a monotonic selection clock before the affected gathering (so it covers gathering, reuse_identity + ledger lookup, and the reach reading); run_gate takes selection_started=None and returns selectionMs = time from it to the same `started` reading durationMs begins at (None when no caller timed one, so the base-of, --full and other run_gate callers write no key); a reused verdict gets selectionMs from the clock at the reuse decision. durationMs is untouched. COMPATIBILITY.md: one bullet naming selectionMs as an additive evidence-row key, absent = not recorded, durationMs unchanged. Tests: test__evidence_io._selection_time_cases sel1-sel7; test_run_test_gate ag6 in _affected_cases (listing made to sleep 600 ms; asserts selectionMs >= the sleep and durationMs - sum(step durationMs) < the sleep). Gate `python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py` exit 0 (342 + 625 cases). Mutations in a scratch rsync copy, never the shared tree: selection forced to 0 -> ag6 red (selectionMs=0); run_gate's started set to selection_started -> ag6 red (durationMs=1361); reader returning 0 for absent -> sel2, sel3, sel6 red; reader without the type check -> sel2, sel4 red. Dependants, each re-run: _evidence_io.gate_mean_ms reads steps' durationMs only and sel5 pins equal answers with and without the key; doctor gateBudgetMs (test__doctor_trail 155, test__doctor_report 24 ok) and audit-usage (test_audit_usage 183 ok) read durationMs, unchanged; report/panel render steps and took and ignore the key (test__report_html, test__report_md, test_render_report, test__panel_composition ok); hash chain: sel6 verify ok over mixed rows and stored hash == row_hash(row), sel7 a rewritten selectionMs is a finding; drive-phase.py/full-gate.py/test_commit_task_work import run-test-gate - run_gate's new arg defaults None, test_commit_task_work 239 ok; COMPATIBILITY.md readers test_audit_status 411 ok; lints test__deps 284, test__output_lints 183 ok; ruff and vermin -t=3.8- clean on the four .py files. PLUGIN-BUILD-GUIDE.md and CHANGELOG.md not edited - declared by P167.5 (pending), which owns the documentation of this key. The empty-gate path (no commands) is left without selectionMs: it runs no step and selects nothing, so absent reads correctly as not recorded.",
+        "descriptive": "A recorded gate run now records selectionMs, the time spent choosing what to run, beside an unchanged durationMs."
+      },
+      "startedAt": "2026-11-18T01:20:40Z",
+      "completedAt": "2026-11-18T01:49:45Z",
+      "verifiedBy": [
+        "ag6: a recorded task gate with a derived part (related listing slowed by a sleep) carries selectionMs covering the sleep, and its durationMs stays the steps alone",
+        "sel1-sel7: the key's name; selection_ms reads absent as None and a recorded 0 as 0; row_for carries a valid value and writes no key otherwise; gate_mean_ms answers the same with and without the key; verify accepts a chain of old and new rows with the key inside the hash, and a rewritten selectionMs is a finding"
+      ],
+      "notes": [
+        {
+          "at": "2026-11-18T00:24:27Z",
+          "text": "it quotes one refusal sentence of the gate runner, and this task adds a timing key to the row and leaves that sentence alone",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-18T00:24:27Z",
+          "text": "it quotes a config sentence of COMPATIBILITY.md, and this task adds one key to the evidence row's additive list",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-18T00:24:27Z",
+          "text": "it quotes the two-keys sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-18T00:24:27Z",
+          "text": "it quotes the validation-stays-additive sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-18T00:24:27Z",
+          "text": "it quotes a manifest sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "tests/test__manifest_phases.py"
+        },
+        {
+          "at": "2026-11-18T01:20:34Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T01:20:40Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T01:49:40Z.9eb7f7",
+        "status": "passed",
+        "at": "2026-11-18T01:49:40Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "798a336fdf64",
+        "at": "2026-11-18T01:49:45Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T01:34:42Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py` in a throwaway tree at HEAD exited 1 with 6 of 625 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sel1 (house FAIL), sel2 (house FAIL), sel3 (house FAIL), sel6 (house FAIL), sel7 (house FAIL), ag6 (house FAIL): SELFTEST FAILED: 624/625 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P167.4",
+      "title": "The drive writes a task's stages as it reads each step back, and stamps a writer or reviewer dispatch when it hands it out",
+      "status": "done",
+      "description": "When the drive reads a finished step back it appends one stage to the task's timing through the shared helper: a writer round from the session record (start, length, round), a recorded gate run from its ledger row (runId, start, length) with its selection time as a stage of its own, a base measurement from its row, the reviewer session from its record, and the record commit timed around the commit verb. A dispatch for a writer or a reviewer is stamped when it is handed out, the way a gate's is, and the gap between a hand-out and the step's own start is a wait stage, so time the orchestrator spent not calling next is counted rather than lost. The stages go into the shard in a write the drive already makes for that step (the session note, the verdict pointer, the close): this change adds no commit and no locked write of its own, because a metric that slows the thing it measures is wrong by construction. A source that is missing (a session record with no duration, a row that could not be read) appends nothing for that stage and the summary then reports the time as unattributed. A wave member writes its stages in its own tree's shard and integration carries them. Dependants you answer for: the drive's state file and its one-use launch marks (gateLaunched, baseMeasured, phaseGateLaunched) keep their meaning; the wait and dispatch step texts the orchestrator and the prompt hook read keep their wording apart from a since clause where one is added; commit-task-work's refusal on an unexpected shard change must not fire on a timing append; verify-invariants' commit-scope check reads what a task commit staged; tests/test_drive_phase.py holds fixtures of every step and its decision table. Do not edit plugins/audit/reference/orchestrator.md (it sits at its context ceiling); put any text the orchestrator needs into the step the drive prints. Acceptance: (1) a fixture task driven from start to done through a writer round, a green gate, a review and the commit leaves writer, selection, gate, reviewer and commit stages whose figures match their sources, and the summary's parts add up to the window; (2) a red gate followed by a base measurement and a second writer round leaves two writer stages with their rounds, two gate stages and a base stage; (3) a hand-out read back after a delay leaves a wait stage of that length; (4) a session record with no duration leaves no writer stage and the summary reports that time as unattributed; (5) the number of commits and of locked manifest writes the drive makes for the fixture task is the same as before the change; (6) a wave member's stages reach the phase tree's shard at integration.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py",
+        "tests/test_run_agent_session.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a task driven to done leaves writer, selection, gate, reviewer and commit stages that add up to its window with the remainder unattributed; a red gate with a base run and a second round leaves both rounds; a delayed read-back leaves a wait stage; a session with no duration leaves none; the drive makes no more commits or locked writes than before"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P167.1",
+        "P167.2",
+        "P167.3"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "d84b02a670b2",
+      "outcome": {
+        "technical": "drive-phase.py: a per-task timing queue in the drive state (TIMING_KEY; queue_stage once per source, stage_args, stages_carried) whose stages ride writes the drive already makes - the session note's `audit-task.py note --stage` and the close's `audit-task.py done --stage` - so no new commit and no new locked write (tm3 compares journal actions and commit count with a drive whose stages are never queued: equal). Sources: writer/reviewer session records (startedAt, durationMs; a record with no duration writes no stage), gate evidence rows (selection ending at startedAt, gate durationMs, runId), the base run's row, the commit timed around commit-task-work by the drive, and the wait from a session dispatch's or background gate's stamped hand-out to the step's start (wait_stage: a floored start one second early is a wait of 0 that says so, further back is none). NEW THIS ROUND, per the coordinator's three gaps: (1) audit-task.py `--stage` on note and done - not-JSON and stage_problems-graded values are refused before the lock; tmg6 asserts exit E_USAGE, the flag named in the refusal (stdout for note, stderr for done via _refuse_on_stderr) and the plan's and journal's bytes unchanged, on both verbs; tmg7 is the accepted twin. (2) The Agent route: dispatch() now stamps an executor or reviewer Agent's hand-out (agent_handed_out, under TIMING_KEY so the dispatched-<role> marks keep their values); once advance reads the return filed, queue_agent_stage writes a writer/reviewer stage from that stamp to the filing (filed_moment): the task.return.filed journal row for an executor, and - because no journal row files a reviewer's return, which the fixture showed - the filed file's modification time to the whole second, each named in the basis, with 'the agent's own start is not recorded, so any wait before it is inside this length'. No wait stage on that route. tm8 pins it. (3) Wave member: tm9 drives a waveWidth-2 fixture to integration and close and finds each member's writer, gate (the run measured in its own tree, runId and durationMs matching its evidence row) and commit stage in the phase tree's shard, and none in a member tree's plan - the argument held, no code change was needed. Mutation probes in a HEAD export with the working files overlaid (never the shared tree): 13 mutations, each red on its case (hand-out never stamped -> tm8,tm9; reviewer file time not read -> tm8; a wait written on the agent route -> tm8; stage not graded -> tmg6; not-JSON skipped -> tmg6,tmg7; wait never queued, absent duration read as zero, no selection stage, stages ride a note of their own, source dedupe dropped, same-second start dropped, moved clock read as a wait, base run not queued -> the tm cases named in the probe output), restored blocks 9/9 and 7/7. Commands: `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0, '1/1 files ok, 1001 cases'; a wider sweep over test_drive_phase, test_audit_task, test_run_agent_session, test__refs, test_run_test_gate, test_drive_without_model, test__worktrees, test__task_timing, test_commit_task_work exit 0, '9/9 files ok, 3777 cases'; ruff exit 0; vermin -t=3.8- exit 0; house_style_violations, prose_number_claims and doc_prose_numbers report nothing on the changed files. Docs: PLUGIN-BUILD-GUIDE.md drive-phase.py section and a CHANGELOG Unreleased bullet. NOTES: (a) earlier in this run I fed hooks/require-plan.py a hypothetical edit of audit-task.py as a probe, which spent the session's one free file; I did not do it again and will not. (b) lr3's case label in tests/test_audit_task.py was changed with `sed -i` from Bash rather than the Edit tool - a label-text change only. (c) test_run_agent_session.py ras73 now compares the session readings minus the new startedAt/durationMs keys and asserts those two separately. NOT COVERED: the reviewer's Agent-route end is a file modification time, so a reviewer return touched after filing moves it, and no digest row guards it as one does the executor's; review_fix_dispatch and the phase-scope reviewer are not stamped, so a review-fix Agent round and a phase review leave no Agent stage; Agent-route stages carry no round; all stamps are whole seconds, so sub-second wait and Agent lengths are 0 or rounded; the mtime reading is exercised on macOS only, not Windows; plugins/audit/reference/orchestrator.md untouched as ordered.",
+        "descriptive": "The step driver now fills each task's timing - writer, selection, gate, base, reviewer, commit and wait stages - from their own records on writes it already makes, including Agent-dispatched executors and reviewers and wave members."
+      },
+      "startedAt": "2026-11-18T01:49:46Z",
+      "completedAt": "2026-11-18T03:03:57Z",
+      "verifiedBy": [
+        "tm1-tm9 in tests/test_drive_phase.py: stages match their sources and the summary adds up; a delayed read-back leaves a wait; no added commit or locked write; a duration-less session leaves no writer stage and unattributed time; red gate, base, second round give two writer, two gate and one base stage; a background gate is one stage however often read; the wait clamp; the Agent route; a wave member's stages in the phase shard",
+        "tmg6 and tmg7 in tests/test_audit_task.py: --stage refusals on note and done with bytes unchanged, and the accepted twin"
+      ],
+      "notes": [
+        {
+          "at": "2026-11-18T01:20:35Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T02:16:47Z",
+          "text": "Scope widened by the plan owner after the executor's first return was refused for three paths outside its files. audit-task.py and its suite: the drive writes a task's shard only through the note and done verbs, so a stage reaches the shard in a write the drive already makes only if those verbs take one (a repeatable --stage flag); the alternative was a locked write of the drive's own, which the task forbids. tests/test_run_agent_session.py: the drive now reads startedAt and durationMs from a session record, so the case holding that old and new records read identically compares them without those two keys."
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T01:49:46Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T03:03:33Z.3b1b3e",
+        "status": "passed",
+        "at": "2026-11-18T03:03:33Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "d84b02a670b2",
+        "at": "2026-11-18T03:03:57Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T02:41:32Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 6 of 999 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tm1 (house FAIL), tm2 (house FAIL), tm3 (house FAIL), tm4 (house FAIL), tm5 (house FAIL), tm6 (house FAIL): SELFTEST FAILED: 992/999 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P167.5",
+      "title": "/audit:status prints wall time per task and per stage, and its JSON carries the same figures with their basis",
+      "status": "done",
+      "description": "The status render gains a time column, shown only when a task in view carries a timing record, exactly as the tests column appears only when a task has recorded a run: a plan that never recorded a stage renders byte for byte as before. A task's cell is its whole window; the phase's head line gives the median task window and the split by stage over the phase's finished tasks, with the unattributed share named. The JSON rollup carries, per task, the summary the shared helper returns, and per phase the same aggregate, each with its basis; a task with no record carries no timing key rather than zeros. commands/status.md states the column in the fewest words that are true, since the main loop reads that page on every call and tools/measure-context.py holds it to a ceiling. Dependants you answer for: the three views and the fold of finished phases; --phase and --view scoping, which scope the table and never the totals; --section, which projects one top-level key of the JSON and refuses an unknown one; the gate mode, which must not read timing at all; the report and the panel, which call into _status_facts and must be unaffected. Acceptance: (1) a plan with no timing anywhere renders and serializes byte for byte as before; (2) a plan where one task carries a record shows the column, that task's window, and a dash for the others, and the dash means not recorded; (3) the phase line's stage figures add up to its tasks' windows, with the unattributed share printed; (4) the JSON carries the per-task summary and the per-phase aggregate with their basis, and a task without a record has no timing key; (5) --gate output is unchanged on a plan that carries timing.",
+      "files": [
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/commands/status.md",
+        "tests/test__status_facts.py",
+        "tests/test_audit_status.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "README.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_status.py: a plan with no timing renders byte for byte as before, and a plan with one timed task shows the time column, that task's window and a dash for the rest",
+          "tests/test__status_facts.py: the per-phase stage figures add up to the tasks' windows with the unattributed share, and a task without a record carries no timing key"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_status.py tests/test__status_facts.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P167.2"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "8cbdafcefab2",
+      "outcome": {
+        "technical": "_status_facts.py: new section `wall time by stage` - task_timing(task) (None for no record, else _task_timing.summarize), phase_timing(summaries) (sum over tasks WITH a window: tasks, windowMs, medianWindowMs, byKind {ms, stages, basis[] as given}, attributedMs, unattributedMs, overrunMs, windowBasis, basis, withoutWindow {id: missing}), timing_rollup(manifest) ({tasks, phases} or None); rollup() adds `timing` only when timing_rollup is not None; imports _task_timing. audit-status.py: _time_cell (window via _fmt.human_duration, `-` no record, `open` record without completedAt, `no window` otherwise) and _time_clause (head clause: median window per task over N finished tasks, then byKind in KINDS order, unattributed, overrun when non-zero); _phase_table_lines adds a `time` column (before `commit`, after `tests`) only when a task in the shown scope is in summary['timing']['tasks'] - read off the rollup, not re-derived. Docs: commands/status.md one clause in the column paragraph; PLUGIN-BUILD-GUIDE.md section text for both modules plus the module-map line `_status_facts -> ... _task_timing ...` (test__deps g1 went red on the new import edge until that line matched `_deps.py --render`); README.md plugin row; CHANGELOG.md Unreleased/Added entry. Tests: tests/test_audit_status.py stage `tc` (_timing_render_cases, tc1-tc12) and tests/test__status_facts.py stage `tt` (_timing_cases, tt1-tt10), drafted before reading the implementation; first run on HEAD code: tc3,tc4,tc5,tc6,tc8,tc9,tc10,tc12 FAIL and the tt block raised AttributeError (no timing_rollup) - tc1,tc2,tc7,tc11,tt10 are second-direction cases that pass on HEAD by construction. In-process monkeypatch mutations (scratch script, tree untouched): timing_rollup never None -> tt10 red; overrun dropped -> tt3 red; untimed cell '0 ms' -> tc5 red; unattributed dropped -> tc6,tc8 red; clause on every phase -> tc1,tc7 red; open read as dash -> tc9 red. Gate: `python3 tools/sweep-selftests.py tests/test_audit_status.py tests/test__status_facts.py` exit 0, 2/2 files ok, 621 cases (423 + 198). Dependants swept: test__deps (exit 0, 284 cases, after the map line), test__doctor_trail 155, test__evidence_io 342, test__evidence_view 79, test__help_lints 14, test__live_copy 9, test__output_lints 183, test__panel_state 39, test__refs 292, test__report_html 181, test__task_timing 14, test_render_report 317 - all ok. ruff exit 0, vermin -t=3.8- exit 0, tools/measure-context.py --gate exit 0. Live: audit-status.py --phase P167 on this repo's plan shows `time` 29 m 05 s / 74 m 11 s for P167.3/.4, `-` for .1/.2 (no record), `open` for .5, head `time median 51 m 38 s per task over 2 finished tasks: unattributed 103 m 16 s` (those records hold no stages). DEPENDANTS: tools/gate-parity.py, tools/prove-gates.py, tools/measure-context.py, _help_lints/test__help_lints, test__refs name status.md - still correct, only one prose clause added, their suites/gate green. _status_facts importers (drive-phase, full-gate, run-test-gate, _manifest_rules, audit-task, _panel_composition, _panel_paths, _evidence_view, _panel_state, render-report) - still correct: rollup's existing keys unchanged, `timing` appears only on a plan carrying a record; the panel's state payload passes that extra key through to the browser, which reads none of it; render-report reads named keys. --gate: evaluate_gate reads no timing; rollup still computes the block in gate mode (summarize is total over malformed input) and tc11 pins gate stdout/stderr/exit identical with and without timing. --section: `timing` becomes a valid section only on a plan carrying a record; elsewhere it is refused as unknown as before. Views/fold: the column is decided off the same shown_phases list the table lists, so --view and --phase scope it and never the totals (tc10). tests/test__status_facts.py and tests/test_audit_status.py: affected.py and sweep-costs.json name them by path; the new `tc`/`tt` blocks have no cost figure and fall back to the suite's figure over its blocks. README.md/CHANGELOG.md/PLUGIN-BUILD-GUIDE.md: prose lints in test__output_lints and test__deps green.",
+        "descriptive": "/audit:status now shows each task's wall-time window in a time column and a per-phase median and stage split, and --json carries the per-task summary and per-phase aggregate with their basis, while untimed plans render byte for byte as before."
+      },
+      "startedAt": "2026-11-18T03:03:59Z",
+      "completedAt": "2026-11-18T03:31:04Z",
+      "verifiedBy": [
+        "tests/test_audit_status.py tc1-tc12: untimed plan's phase table equals the pre-feature golden and its JSON has no timing key; one timed task grows one `time` column, its cell is its window, others `-`; phase head carries median, each recorded kind and unattributed; Agent-route shape prints only writer; a record without completion reads `open`; --phase scopes the column; --gate output identical with and without timing; --json --section timing carries per-task and per-phase entries",
+        "tests/test__status_facts.py tt1-tt10: untimed task has no entry; per-task entry equals _task_timing.summarize; phase stage figures minus overrun plus unattributed equal the summed windows (both correction terms non-zero); median over windowed tasks; both routes' bases carried as given; recorded task without a window named under withoutWindow; aggregate states windowBasis and basis; untimed phase has no aggregate; rollup carries the block; untimed plan has no timing key"
+      ],
+      "notes": [
+        {
+          "at": "2026-11-18T00:24:28Z",
+          "text": "it quotes the view flag's usage text of the status command page, and this task adds a sentence about the time column and leaves the usage text alone",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T01:20:36Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        }
+      ],
+      "timing": {
+        "stages": [
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T03:24:02Z.904cc5",
+            "kind": "wait",
+            "ms": 5000,
+            "startedAt": "2026-11-18T03:15:55Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T03:24:02Z.904cc5, ending at its startedAt",
+            "kind": "selection",
+            "ms": 24767,
+            "runId": "2026-11-18T03:24:02Z.904cc5",
+            "startedAt": "2026-11-18T03:16:00Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T03:24:02Z.904cc5",
+            "kind": "gate",
+            "ms": 456707,
+            "runId": "2026-11-18T03:24:02Z.904cc5",
+            "startedAt": "2026-11-18T03:16:25Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T03:31:00Z.c8f984, ending at its startedAt",
+            "kind": "selection",
+            "ms": 28445,
+            "runId": "2026-11-18T03:31:00Z.c8f984",
+            "startedAt": "2026-11-18T03:24:08Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T03:31:00Z.c8f984",
+            "kind": "gate",
+            "ms": 383003,
+            "runId": "2026-11-18T03:31:00Z.c8f984",
+            "startedAt": "2026-11-18T03:24:37Z"
+          },
+          {
+            "basis": "commit-task-work.py timed around by the drive, commit 8cbdafcefab2",
+            "kind": "commit",
+            "ms": 1493,
+            "startedAt": "2026-11-18T03:31:01Z"
+          }
+        ],
+        "firstStartedAt": "2026-11-18T03:03:59Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T03:31:00Z.c8f984",
+        "status": "passed",
+        "at": "2026-11-18T03:31:00Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "8cbdafcefab2",
+        "at": "2026-11-18T03:31:04Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T03:15:37Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_status.py tests/test__status_facts.py` in a throwaway tree at HEAD exited 1 with 8 of 423 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tc3 (house FAIL), tc4 (house FAIL), tc5 (house FAIL), tc6 (house FAIL), tc8 (house FAIL), tc9 (house FAIL), tc10 (house FAIL), tc12 (house FAIL): SELFTEST FAILED: 415/423 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P167.6-fge",
+      "title": "A session's recorded duration covers every stretch of the session, an oversized figure cannot crash the runner, and a repeated gate's selection time holds none of its duration",
+      "status": "done",
+      "description": "Findings of the phase review, fixed before sign-off. (a) run-agent-session.py reads the time figures of the LAST result event alone. A headless session woken by a background task writes one init and one result per stretch, and duration_ms and num_turns are per stretch (tools/stream-cost.py states this and sums them; only the cost is a whole-session figure on the last result). So a ten-minute session whose last stretch took five seconds is recorded as five seconds, with nothing saying one stretch was read. Record the whole session: sum the per-stretch figures the way tools/stream-cost.py pairs init and result events, and when the stretches cannot be paired, leave the figure out and name it in timingAbsent with that reason. A shipped script cannot import a repository tool, so the pairing rule is written in the runner and both copies are pinned to one fixture stream by a case; say so in the docstring. (b) A JSON integer too large for a float makes the finiteness test raise, and nothing catches it: the runner dies after the session ran and was paid for, with no printed line and no record. Such a figure is not a usable number: record it as absent with the reason, and make the timing reading unable to take the runner down whatever the stream holds, with the failure named in timingAbsent rather than swallowed. (c) On a repeated gate run, durationMs is measured from the identity lookup and selectionMs from the earlier start of gathering, both to the same end, so the repeat's duration lies inside its selection and a reader adding the two counts it twice; the key's own comment says beside, never inside. Make the two disjoint on every path. (d) On a measured run the selection figure also holds the reading of the tree taken before the first step; say so where the key is defined instead of listing only the gathering, the lookup and the reach reading. (e) The start stamp is when the runner named the stream file, before it prepares and launches the session; the docstrings that call it the session's start say what it is. (f) The case that holds gate_mean_ms unchanged by the key cannot fail against the defect it is named for, and the case that only checks the key's spelling asserts nothing: replace each with a case that fails when selection time is folded into a step's duration, or remove it and say which case carries the claim. Dependants you answer for: the drive's read_sessions, session_note and session_stages, which read durationMs and startedAt from the record; the printed result line, unchanged; the ledger row's hash, taken after the key is set; tests/test_stream_cost.py if a shared fixture stream is added there. Acceptance: (1) a stream of two paired stretches records the sums of duration and turns; (2) stretches that cannot be paired leave the figures out with the reason; (3) an integer too large for a float is absent with the reason, and the runner prints its line and writes its record; (4) a repeated run's selectionMs plus durationMs equals the time from the start of gathering to the end, with no overlap; (5) every docstring this task touches states what the code does; (6) no case added or kept by this task passes with its feature removed.",
+      "files": [
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test_run_agent_session.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__evidence_io.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_agent_session.py: a stream of two stretches records the sum of their durations and turns, a stream whose stretches cannot be paired names the figure as absent, and an integer too large for a float is recorded as absent with the runner still printing its line and writing its record",
+          "tests/test_run_test_gate.py: a repeated run's selectionMs and durationMs do not overlap"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test_run_test_gate.py tests/test__evidence_io.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "d83a77385457",
+      "outcome": {
+        "technical": "run-agent-session.py: read_stream now keeps every result event ('results') and counts init events ('inits'), and skips JSON that is not an object. session_timing sums duration_ms and num_turns (STRETCH_FIELDS) over the stretches when the inits pair one to one with the results (_stretch_figure). duration_api_ms, a whole-session figure, is still read from the last result: in the recorded streams cm-measure/raw/k11n/streams/P123.19.writer.20261112T095825Z.89676.jsonl and k03r/.../BF4.2.writer.*.jsonl it only grew from result to result, while duration_ms and num_turns are per stretch. When the stretches do not pair, the per-stretch figures are named in timingAbsent with both counts. _value_problem catches the OverflowError from math.isfinite and names an integer too large for a float as absent. session_timing wraps the reading in one except that names the exception type and text in timingAbsent for all three figures and still reads startedAt. A comment above STRETCH_FIELDS says the pairing rule is written twice, where it is stricter than tools/stream-cost.py, and that ras74 reads one stream through both copies. The started_at, session_timing and module docstrings now say startedAt is the stamp taken when the runner named the stream, before it prepared and launched the session. run-test-gate.py: the repeat branch takes one end reading and splits it at `started`. selectionMs is the gathering up to the identity; durationMs is the identity plus the lookup, computed as the total minus the selection so the two add up exactly. The selection-clock comment and run_gate's docstring now name run_gate's reading of the tree before the first command as part of the selection. _evidence_io.py: the SELECTION_KEY comment describes both paths and the tree reading. Tests: test_run_agent_session.py has a stub with paired, unpaired, dangling and single stretch shapes, a configurable decoy and raw lines. ras69 is now one stretch, ras27, ras71 and ras73 expect the sums, and ras74-ras78 are new. test_run_test_gate.py has the new ag7. test__evidence_io.py drops sel1 (sel3 carries the key's spelling, as its docstring now says) and replaces sel5 with a case over rows built by row_for. Runs: the task gate exited 0 with 3/3 files ok and 1063 cases. A dependant sweep (test__config_rules, test__doctor_policy, test_drive_phase, test_commit_task_work, test_drive_without_model, test_audit_status, test__doctor_trail, test__affected_tests) exited 0 with 8/8 files ok and 2180 cases. ruff and vermin -t=3.8- exited 0 over the six files. prose_number_claims, house_style_violations, path_preamble_violations, depth_sensitive_paths and _deps.doc_prose_numbers each reported 0. Mutations were run in a git-archive export of HEAD with my six files over it, never in the shared tree. Removing the non-object filter turned ras77 red; removing the except turned ras78 red; disabling the pairing check turned ras75 x2 red; folding selectionMs into steps[0].durationMs in row_for turned sel5 red. After each restore the suites were back at 96/96 and 341/341. Dependants: (1) The drive's read_sessions, session_note and session_stages read durationMs and startedAt under the same keys and types. durationMs is now the whole-session sum, or absent with a reason. startedAt's value is unchanged and only its description changed. ras73 drives read_sessions and session_note over the new record and passed. (2) The printed result line is unchanged: ras69b parses it with the drive's regex and passed. (3) The ledger row's hash: selectionMs is still set on res before row_for and append_row hash the row (sel6 and sel7 pass). A repeat's result carries no startedAt, so the drive's row_stages and run_start yield nothing for a repeat row, and the repeat's new split cannot move a drive stage. (4) tests/test_stream_cost.py does not exist and no shared fixture was added there; the pin loads tools/stream-cost.py from the session suite. (5) The tools/affected.py and .github/sweep-costs.json path references, and the helper names other suites import (_read_text, _cli, _fs_row, ...), are unchanged. (6) PLUGIN-BUILD-GUIDE.md and CHANGELOG.md, declared by P167.8-fge, were not edited. The guide's run-agent-session section, around its line 6078, still says the record takes 'the last result event's duration_ms ... num_turns' and describes startedAt only as the file-name stamp, so it is now stale. P167.8 owes the per-stretch sums, the pairing absence, the too-large integer, the catch-all and the meaning of startedAt; the selectionMs sentence near line 5474 may also want the repeat split.",
+        "descriptive": "A session's recorded duration and turns now cover every stretch, a huge or unreadable figure is named as absent instead of crashing the runner, and a repeated gate run's selection and duration no longer overlap."
+      },
+      "startedAt": "2026-11-18T03:43:15Z",
+      "completedAt": "2026-11-18T04:17:22Z",
+      "verifiedBy": [
+        "ras74: a stream of two paired stretches records the summed duration_ms and num_turns and the last duration_api_ms, and tools/stream-cost.py reads the same stream file to the same sums",
+        "ras75: unpaired (1 init, 2 results) and dangling (2 inits, 1 result) streams leave durationMs and numTurns absent, naming both counts, and keep durationApiMs; stream-cost also reads the unpaired stream as unpaired",
+        "ras76: an integer too large for a float, in the last stretch or in an earlier one, is absent with that reason while the runner exits 0, prints its line and writes its record",
+        "ras77: JSON lines that are not event objects are skipped and the sums stand",
+        "ras78: a timing reading that raises comes back from session_timing as every figure named absent with the exception, startedAt kept",
+        "ag7: a repeated gate run's selectionMs plus durationMs is no more than the wall time of the call, with a slowed gathering and a slowed identity",
+        "sel5 (replaced): rows built by row_for from results carrying a 50 s selection keep each step's own duration, so gate_mean_ms is the steps' mean"
+      ],
+      "notes": [
+        {
+          "at": "2026-11-18T03:43:11Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T03:43:11Z",
+          "text": "it quotes one refusal sentence of the gate runner, and this task changes how a repeated run's two time figures are measured and leaves that sentence alone",
+          "waives": "tools/check-example-ledgers.py"
+        }
+      ],
+      "timing": {
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T04:04:52Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1295000,
+            "startedAt": "2026-11-18T03:43:17Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T04:11:19Z.d1d521",
+            "kind": "wait",
+            "ms": 2000,
+            "startedAt": "2026-11-18T04:05:07Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T04:11:19Z.d1d521, ending at its startedAt",
+            "kind": "selection",
+            "ms": 21040,
+            "runId": "2026-11-18T04:11:19Z.d1d521",
+            "startedAt": "2026-11-18T04:05:09Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T04:11:19Z.d1d521",
+            "kind": "gate",
+            "ms": 347572,
+            "runId": "2026-11-18T04:11:19Z.d1d521",
+            "startedAt": "2026-11-18T04:05:31Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T04:17:18Z.dffc51, ending at its startedAt",
+            "kind": "selection",
+            "ms": 20884,
+            "runId": "2026-11-18T04:17:18Z.dffc51",
+            "startedAt": "2026-11-18T04:11:24Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T04:17:18Z.dffc51",
+            "kind": "gate",
+            "ms": 333284,
+            "runId": "2026-11-18T04:17:18Z.dffc51",
+            "startedAt": "2026-11-18T04:11:45Z"
+          },
+          {
+            "basis": "commit-task-work.py timed around by the drive, commit d83a77385457",
+            "kind": "commit",
+            "ms": 1585,
+            "startedAt": "2026-11-18T04:17:19Z"
+          }
+        ],
+        "firstStartedAt": "2026-11-18T03:43:15Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T04:17:18Z.dffc51",
+        "status": "passed",
+        "at": "2026-11-18T04:17:18Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "d83a77385457",
+        "at": "2026-11-18T04:17:22Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T04:04:50Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test_run_test_gate.py tests/test__evidence_io.py` in a throwaway tree at HEAD exited 1 with 13 of 626 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ras27 (house FAIL), ras71 (house FAIL), ras71 (house FAIL), ras71 (house FAIL), ras73 (house FAIL), ras74 (house FAIL), ras75 (house FAIL), ras75 (house FAIL) and 5 more: SELFTEST FAILED: 625/626 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P167.7-fge",
+      "title": "The phase's time line counts finished tasks only, a record that cannot be read is named instead of shown as unattributed time, and long windows print in hours",
+      "status": "done",
+      "description": "Findings of the phase review, fixed before sign-off. (a) The phase's time line says it is taken over finished tasks, and takes every task that has a window. Cancelling a task stamps its completedAt, so a cancelled task that was once started enters the median, the totals and the count: a phase with one task done and one cancelled reads as two finished tasks, beside a progress bar that says one. Take the line over tasks whose status is done; name the tasks left out and why (cancelled, not finished, no window) in the JSON aggregate, and say cancelled tasks are left out where the line is documented. (b) summarize reads a stages value that is not a list as no stages, so the whole window is returned and printed as unattributed time with nothing named missing, against the module's own rule that an unreadable source is named. Name it under missing and give no attributed or unattributed figure; the same for a stage that fails stage_problems, which today is summed or skipped without a word. Status then prints the cell as not readable rather than as a measured window. (c) The documents say the gate reads none of the record. A malformed record is a validator finding, and invalid is a default gate condition, so it can turn the gate red. Say what is true: the gate reads no timing figure, only the validator's verdict on the record. (d) The time cell has a third value, no window, that no document lists and no case renders; neither does any case render the overrun clause. Document the value and what produces it (a record whose first start is absent, or a completion before the first start) and add a case for each. (e) A reopened task's window runs from its first start to its new completion, so the time it sat closed is unattributed and enters the median. That follows the rule that the first start never moves; state it where the window is documented, since the median is read as time worked. (f) The schema is looser than the Python check: runId may be empty, basis may be blank, ms may be 1.0, and the two stamps carry no pattern. Tighten the schema to what the Python check accepts, so a plan an external validator passes is one the plugin passes. (g) A window past an hour prints as a count of minutes (a day and a quarter reads 1840 m 00 s). Print hours, and days past a day, in the time column and the phase line only: the shared duration formatter keeps its output for every other caller, byte for byte. (h) Cases that cannot fail on their claim: the per-task entry compared with the same function's output, a basis accepted when merely non-empty, a byte-for-byte case that asserts only an absent key, a stage order checked by substring, and the demo's sum identity that holds by construction. Give each a value written in the case, or remove it and name the case that carries the claim. Dependants you answer for: a plan with no timing renders and serializes byte for byte as before in every view and mode (the golden case); the JSON timing key's shape, which gains keys and loses none; commands/status.md's size ceiling; the panel and the report, which call into _status_facts and must not change output; every committed example plan and rendered artifact; the drive, which builds stages through make_stage and must still pass the tightened schema. Acceptance: (1) a phase of one done and one cancelled timed task reports one finished task, with the cancelled one named as left out; (2) a non-list stages value and a failing stage are named under missing, and status prints no window figure for that task; (3) the corrected sentence about the gate is the only claim the documents make about it; (4) the no-window cell and the overrun clause each have a case that renders them; (5) the reopen rule is stated beside the window's definition; (6) every record the drive and the demo generator write validates under the tightened schema, and each of the four loosenesses is refused by it; (7) a window past an hour prints hours in the time column and nowhere else changes; (8) no case added or kept by this task passes with its feature removed.",
+      "files": [
+        "plugins/audit/scripts/manifest/_task_timing.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/commands/status.md",
+        "tests/test__task_timing.py",
+        "tests/test__status_facts.py",
+        "tests/test_audit_status.py",
+        "tests/test_gen_demo_manifest.py",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__status_facts.py: a cancelled task that carries a record is left out of the phase's median, totals and finished count and named beside them; the per-task entry is compared with figures written in the case, not with a second call of the same function",
+          "tests/test__task_timing.py: a stages value that is not a list, and a stage that fails its own check, are named under missing and give no unattributed figure; a negative window is named",
+          "tests/test_audit_status.py: the time cell's no-window value and the overrun clause each render from a fixture, a window past an hour prints hours, and the stage order on the phase line is fixed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__status_facts.py tests/test__task_timing.py tests/test_audit_status.py tests/test_gen_demo_manifest.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "b51dc9011a20",
+      "outcome": {
+        "technical": "FIXES (a)-(h). (a) _status_facts.phase_timing(summaries, statuses) sums only DONE tasks with a window. Every other task carrying a record goes in a new aggregate key leftOut {id: cancelled | not finished | no window}, so withoutWindow is kept and no key is lost. timing_rollup passes the statuses. PHASE_TIMING_BASIS says done tasks. statuses is now a required argument: a default would silently leave every task out as not finished. (b) _task_timing.summarize names a stages value that is not a list under missing as timing.stages (STAGES_FIELD) and gives no window or figures. A stage failing stage_problems was already named as timing.stages[i]. A new is_unreadable(summary) tells those two apart from a readable record that has no window. audit-status _time_cell prints not readable for them and never prints a window figure. (c) The gate sentence now reads: --gate reads no timing figure, only the validator's verdict on the record, so a malformed record can trip the default invalid condition. It is in PLUGIN-BUILD-GUIDE.md, CHANGELOG.md and COMPATIBILITY.md. git grep for the old claim (reads none of it) finds no other hit. tc11 is retitled, and tc13 proves a kind of lunch trips --gate (exit 1, invalid). (d) The no window value (no first start, or a completion before it) and not readable are documented in status.md, PBG, CHANGELOG and the _time_cell docstring. tc14 renders both values, and tc16 renders the overrun clause. (e) The reopen rule (the first start never moves, so the closed time sits inside the window as unattributed time) is stated in the _task_timing module and summarize docstrings, the schema's firstStartedAt description, PBG, status.md and CHANGELOG. (f) The schema gains $defs/timingStamp. Its pattern is _usage_core._TS_RE, plus a refusal of year 0000 and of months outside 01-12, which parse_ts also refuses (probe: parse_ts gives None for 0000-01-01, 2026-00-01, 2026-13-01 and a lowercase t, and accepts day 00 and hour 99, which the pattern also accepts). firstStartedAt and stage startedAt $ref it. basis gains a non-blank pattern, and runId gains minLength 1 and the same pattern. DEVIATION on ms 1.0: no JSON Schema can refuse it, because draft 2020-12 integer admits integral floats and JSON gives 1.0 and 1 one value (ajv reads both as 1, and the repo's _json_schema says the same). So I aligned the other side: stage_problems admits an integral float for ms and round (_is_whole), and _by_kind sums int(ms). Now a plan the schema passes is one the plugin passes, and 1.5 is refused by both (tt22). Acceptance (6)'s 'refused' therefore holds for three of the four loosenesses, and the fourth is closed by agreement. (g) audit-status._wall_duration prints a h mm m past an hour and a d hh h past a day, in the time column and the phase line only. _fmt.human_duration is untouched, and tc19 pins 1840 m 00 s for its other callers. (h) tt2 now compares against figures written in the case. tt7 compares the basis to a literal. tt10 is retitled to what it checks, with a comment naming tc1 and tc2 as the byte-for-byte cases. tc6 compares the whole clause with endswith, so order counts. tmd3 recomputes the window through datetime and the attributed share from the stage lengths, instead of using the identity. tmd4 validates every generated record against the schema's timing definition. Also: audit-status imports _task_timing, and the derived import line in PLUGIN-BUILD-GUIDE.md:438 was updated (test__deps green). MUTATION PROBE: scratchpad/p1677/mutations.py runs over a scratch copy of the tracked tree, with PYTHONDONTWRITEBYTECODE and __pycache__ purged, and the baseline in that copy green first. Each row asserts its anchor matched exactly once. 23 rows: 22 KILLED. Row 'cancelled counted' turned its targets tt12 and tt13 red. My expectation for it also listed tt11, which concerns the in-progress task the mutation does not touch, so the probe reported it as SURVIVED. That was a mis-aimed expectation, not a live mutant. Over-fire rows: is_unreadable always gives tt16, tt17 and tc14 red, and a stamp pattern of Z only gives tt21 red. GATES AND DEPENDANTS: the gate sweep ran without a pipe and exited 0 (4/4 files ok, 794 cases). A sweep of test__json_schema, test__deps, test__help, test__help_lints, test__output_lints, test__manifest_io, test__manifest_phases, test_audit_task, test_validate_manifest, test__refs, test_render_report, test__manifest_vocab and test__manifest_crossrefs printed 13/13 files ok, 3010 cases. Its EXIT=0 line came through a pipe to tail, so its exit code is unverified, though the tally shows every file ok. A sweep of test_drive_phase exited 0 with 1001 cases. check-rendered-artifacts --before-commit exited 0 (3 artifacts match). ruff and vermin exited 0 on the 7 edited .py files. validate-manifest exited 0 on examples/acme-store and docs/audit. The 5 real drive-written records in docs/audit/phases validate under the new timing definition with 0 refused. measure-context --gate exited 0. DISCLOSURE: one edit to tests/test__status_facts.py (a file in my scope) was made with a python heredoc through Bash rather than the Edit tool. Every later edit used Edit, and the plan gate allowed all of them, including PLUGIN-BUILD-GUIDE.md and CHANGELOG.md, which P167.8 also declares.",
+        "descriptive": "The phase time line counts only done tasks and names the ones left out. An unreadable record prints as not readable instead of a measured window. Long windows print in hours and days. The schema refuses what the Python check refuses. The documents' gate sentence is now true."
+      },
+      "startedAt": "2026-11-18T04:17:24Z",
+      "completedAt": "2026-11-18T04:49:48Z",
+      "verifiedBy": [
+        "test__status_facts tt11-tt14: a cancelled timed task (whose cancel stamped completedAt) and an unfinished one are left out of the phase median, totals and count, and named under leftOut. The done task with no first start is named no window, and the cancelled one keeps its own entry. tt2 now checks figures written in the case, and tt7 checks a literal basis.",
+        "test__task_timing tt14-tt22: a non-list stages value and a failing stage are named with no figures, a negative window is named and is not unreadable, both directions of is_unreadable, integral-float lengths, each schema looseness refused by both readers, every writer stamp shape accepted, and 1.0 accepted / 1.5 refused by both.",
+        "test_audit_status tc13-tc19: the gate trips invalid on a malformed record, the no window and not readable cells, no clause when no window is readable, the overrun clause, hours and days in the cell and on the phase line, and the shared formatter unchanged. tc6 now checks the exact clause in the stage order.",
+        "test_gen_demo_manifest tmd3 is rebuilt from independent figures, and tmd4 validates every generated record under the schema"
+      ],
+      "notes": [
+        {
+          "at": "2026-11-18T03:43:12Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T03:43:12Z",
+          "text": "it quotes the red-first enum of the plan schema and the view flag's usage text of the status page, and this task tightens the timing stage's properties and adds sentences about the time column, leaving both quoted texts alone",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T03:43:12Z",
+          "text": "it quotes a config sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-18T03:43:12Z",
+          "text": "it quotes the two-keys sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-18T03:43:12Z",
+          "text": "it quotes the validation-stays-additive sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-18T03:43:12Z",
+          "text": "it quotes a manifest sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "tests/test__manifest_phases.py"
+        }
+      ],
+      "timing": {
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T04:36:02Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1116000,
+            "startedAt": "2026-11-18T04:17:26Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T04:44:26Z.9f1e2c",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-18T04:36:11Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T04:44:26Z.9f1e2c, ending at its startedAt",
+            "kind": "selection",
+            "ms": 22561,
+            "runId": "2026-11-18T04:44:26Z.9f1e2c",
+            "startedAt": "2026-11-18T04:36:11Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T04:44:26Z.9f1e2c",
+            "kind": "gate",
+            "ms": 471264,
+            "runId": "2026-11-18T04:44:26Z.9f1e2c",
+            "startedAt": "2026-11-18T04:36:34Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T04:49:44Z.399e55, ending at its startedAt",
+            "kind": "selection",
+            "ms": 20381,
+            "runId": "2026-11-18T04:49:44Z.399e55",
+            "startedAt": "2026-11-18T04:44:31Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T04:49:44Z.399e55",
+            "kind": "gate",
+            "ms": 292633,
+            "runId": "2026-11-18T04:49:44Z.399e55",
+            "startedAt": "2026-11-18T04:44:52Z"
+          },
+          {
+            "basis": "commit-task-work.py timed around by the drive, commit b51dc9011a20",
+            "kind": "commit",
+            "ms": 1452,
+            "startedAt": "2026-11-18T04:49:45Z"
+          }
+        ],
+        "firstStartedAt": "2026-11-18T04:17:24Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T04:49:44Z.399e55",
+        "status": "passed",
+        "at": "2026-11-18T04:49:44Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "b51dc9011a20",
+        "at": "2026-11-18T04:49:48Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T04:36:00Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__status_facts.py tests/test__task_timing.py tests/test_audit_status.py tests/test_gen_demo_manifest.py` in a throwaway tree at HEAD exited 1 with 10 of 430 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tt7 (house FAIL), tt11 (house FAIL), tt12 (house FAIL), tt13 (house FAIL), tt14 (house FAIL), tt14 (house FAIL), tc14 (house FAIL), tc15 (house FAIL) and 2 more: SELFTEST FAILED: 426/430 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P167.8-fge",
+      "title": "The commit stage times the commit alone, a close that changes nothing keeps its stages, and a stage the drive could not read is said so",
+      "status": "done",
+      "description": "Findings of the phase review, fixed before sign-off. (a) The commit stage is timed around everything the drive's commit step does. When the commit verb refuses a path the writer touched outside the task's files and the drive sets it aside, that step runs a red-first proof and a whole gate before the second commit, and that gate is also written as a gate stage of its own. So the gate's length is counted twice, the task's stages overrun its window, and a figure of half a minute or more is presented as a measured commit under a basis that says the commit verb was timed. Time the commit verb's own calls, sum them when there are two, and let the proof and the gate between them be the stages they already are. (b) The close the no-change answer makes passes no stages and never marks them carried, so on the route where every queued stage rides the close a task closed that way loses all of them, silently. Every close the drive makes carries the queue through one function. (c) A stage whose source cannot be read (the ledger or a row unreadable, a row with no start or length, an agent hand-out with no stamp) appends nothing, which is right, and says nothing, which is not: failures to write are already visible and failures to read are not. Add a line to what the step did, naming the stage and the reason, once per source. (d) The end of an agent's stage falls back to the returned file's modification time under a basis that says no journal row files that return. For an executor that is false when the row exists and could not be read; say which happened. For a reviewer the modification time is the only source, and it moves when the file is rewritten by a stash, a branch switch or a copy: say in the basis that it is a modification time and can move later, never earlier, rather than presenting it as the moment of filing. (e) Cases with no check: nothing asserts that the journal row of a note or a close carrying a stage names the timing change, so removing that change leaves every case green; the commit stage is asserted only to be zero or more, which is why (a) was invisible; a refused note keeping its stages for the close, and a close refused and retried appending each stage once, are stated in comments and held by no case. Add each. Dependants you answer for: the decision table and step texts in tests/test_drive_phase.py; the one-use launch marks and the state file's shape across resume and drop_state; the rule that timing never blocks a gate, a commit or a close; the count of commits and locked writes per task, unchanged; the stage shapes status and the summary read. Do not edit plugins/audit/reference/orchestrator.md. Acceptance: (1) on the set-aside path the commit stage equals the commit verb's own time within the case's clock, the second gate is one gate stage, and the summary shows no overrun; (2) a task closed by the no-change answer has its queued stages in the shard; (3) an unreadable ledger at read-back leaves no gate stage and one line naming it and the reason; (4) each fallback basis says what was read and why; (5) the journal row of a note and of a close that carried a stage names the change, and removing it turns a case red; (6) a refused note's stages reach the shard at the close, once; (7) no case added or kept by this task passes with its feature removed.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_drive_phase.py",
+        "tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a commit refused once, with a path set aside and the gate run again, leaves a commit stage of the commit's own length and a gate stage for the second run, and the task's stages do not overrun its window; a task closed by the no-change answer carries its queued stages; an unreadable ledger leaves no gate stage and a line saying which stage was not recorded and why; a refused note keeps its stages for the close",
+          "tests/test_audit_task.py: the journal row of a note or a close that carried a stage names the timing change"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "d36fb1811c43",
+      "outcome": {
+        "technical": "drive-phase.py: (a) the commit stage is now the commit verb's own runs added up - `commit_verb` times each run_verb of commit-task-work.py (the refused commit, the --json re-read of its refusal, the commit made) into ctx[COMMIT_MS], close_task sums them; the set-aside's proof and second gate between them stay their own stages. Basis now `commit-task-work.py's own N run(s), timed by the drive and added up, commit <sha>`. (b) new `close_carrying` is the one way the drive closes a task: close_task's done and the no-change answer's `done --no-change` both go through it, carrying stage_args and dropping the queue only once the close is taken; prose (--intent-basis, --reason) still goes on stdin through a `_verb_with_text` call written at each call site (the mt2/mt3 argv-prose lint reads that shape). (c) new `stage_unread` says `timing: <kind> stage of <task> not recorded - <why>` on the did-line, once per stage and reason (kept under the task's timing entry as `unread`, dropped with it at close), never a warning or stop; `ledger_row` and new `gate_row_read` return (row, why) - an unreadable ledger's reason names no run, so the launch read and the repeat read of one measurement say it once; `row_stages` returns (pairs, gaps) for a row with no start or no durationMs; `agent_stage` returns (stage, why) for a hand-out with no stamp, an unreadable filing time, or a filing before its hand-out; a gate output naming no run stays silent. (d) `filed_moment` reads the journal only for ROW_FILED_ROLES (executor) and its basis says which fallback happened: journal unreadable (with the exception), no row names the file, or - for a reviewer - that no row files one and a modification time moves later, never earlier. tests/test_drive_phase.py: new staged block tm10-block (`_timing_close_cases`, `_timing_unread_cases`, `_timing_gap_cases`) with tm10-tm16. tests/test_audit_task.py: tmg8 in tmg-block. audit-task.py unchanged: its `_stage_changes` already names timing.stages on both rows; tmg8 locks it. PLUGIN-BUILD-GUIDE.md drive-phase section and CHANGELOG Unreleased bullet updated. Gate: `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py` exit 0, `2/2 files ok, 2270 cases`. First sweep had exited 1 on mt2/mt3 (the argv-prose lint flagged a (flag, text) tuple handed to close_carrying); fixed by the send-callable shape, ux-block 127/127 then the full sweep green. ruff clean; vermin min 3.8; house_style_violations and prose_number_claims/doc_prose_numbers report nothing for the changed files. Dependants: decision table and step texts unchanged (only a did-line clause added when a source cannot be read; the full suite is green); launch marks and state shape: one new `unread` list inside the TIMING_KEY entry, dropped with it at close and by drop_state with the whole state; timing never blocks - stage_unread only appends a did-line, close_carrying's stop is the done verb's own; commits and locked writes per task unchanged (tm3 green, no write added); stage shapes status and the summary read unchanged (make_stage only, basis text changed; test__status_facts holds the old basis only as fixture data). orchestrator.md not edited.",
+        "descriptive": "The commit stage times the commit alone, every close carries the queued stages, and a stage the drive could not read is said on the step's line"
+      },
+      "startedAt": "2026-11-18T04:49:49Z",
+      "completedAt": "2026-11-18T05:30:04Z",
+      "verifiedBy": [
+        "tm10 set-aside path: commit stage within the commit verb's own runs as timed from outside, two gate stages for two runs, no overrun",
+        "tm11 no-change answer close carries every queued stage and leaves no queue",
+        "tm12 unreadable ledger at background-gate read-back: no gate/selection stage, one did-line naming the stage and reason",
+        "tm13 filed_moment bases for journal row, journal unreadable, no row, reviewer mtime",
+        "tm14 every session note refused: the close carries the stages once",
+        "tm15 close refused once then taken: each stage written once",
+        "tm16 row with no start / no length / whole row / hand-out with no stamp each say their own reason",
+        "tmg8 journal rows of a note and a close carrying a stage name timing.stages; a plain note names none"
+      ],
+      "notes": [
+        {
+          "at": "2026-11-18T03:43:13Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        }
+      ],
+      "timing": {
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T05:15:00Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1508000,
+            "startedAt": "2026-11-18T04:49:52Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T05:23:45Z.091462",
+            "kind": "wait",
+            "ms": 1000,
+            "startedAt": "2026-11-18T05:15:12Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T05:23:45Z.091462, ending at its startedAt",
+            "kind": "selection",
+            "ms": 21978,
+            "runId": "2026-11-18T05:23:45Z.091462",
+            "startedAt": "2026-11-18T05:15:13Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T05:23:45Z.091462",
+            "kind": "gate",
+            "ms": 490768,
+            "runId": "2026-11-18T05:23:45Z.091462",
+            "startedAt": "2026-11-18T05:15:35Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T05:29:48Z.ccc787, ending at its startedAt",
+            "kind": "selection",
+            "ms": 20432,
+            "runId": "2026-11-18T05:29:48Z.ccc787",
+            "startedAt": "2026-11-18T05:23:50Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T05:29:48Z.ccc787",
+            "kind": "gate",
+            "ms": 336331,
+            "runId": "2026-11-18T05:29:48Z.ccc787",
+            "startedAt": "2026-11-18T05:24:11Z"
+          },
+          {
+            "basis": "commit-task-work.py timed around by the drive, commit d36fb1811c43",
+            "kind": "commit",
+            "ms": 1725,
+            "startedAt": "2026-11-18T05:30:01Z"
+          }
+        ],
+        "firstStartedAt": "2026-11-18T04:49:49Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T05:29:48Z.ccc787",
+        "status": "passed",
+        "at": "2026-11-18T05:29:48Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "d36fb1811c43",
+        "at": "2026-11-18T05:30:04Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T05:14:56Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with 5 of 1008 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tm10 (house FAIL), tm11 (house FAIL), tm12 (house FAIL), tm16 (house FAIL), tm13 (house FAIL): SELFTEST FAILED: 1003/1008 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P167.9-fge",
+      "title": "What the session runner and the repository's stream reader each make of a stream is held by one table of streams, not by a sentence, and a line the runner cannot parse cannot end it",
+      "status": "done",
+      "description": "Findings of the verification pass over the review fixes. (a) A comment in run-agent-session.py says the runner and tools/stream-cost.py share one pairing rule and differ in a single case. They differ in more: the tool sums duration and turns over any two or more results whatever the init count and drops a result repeated under one uuid, while the runner sums only when inits and results pair and counts a repeated result. The runner never records a wrong figure, since it leaves the figure absent, but the sentence is false, and this is the second sentence in this phase found claiming what the code does not do. So do not correct the sentence into another sentence: replace the claim with a table. One table of streams in the suite (paired stretches, one init with two results, a result repeated under one uuid, a single stretch, no result at all), each row holding what the runner records and what the tool reports, written as values in the case, both codes run over every row. The comment then names the case that holds the table and states only the rule the runner follows and why it is the stricter one. If a row shows the runner should follow the tool (a repeated uuid is the same event read twice, so dropping it is right), change the runner and let the table say so. (b) The runner's stream reader catches only a value error, so a deeply nested JSON line raises a recursion error and ends the runner after the session ran and was paid for, with no printed line and no record. It predates this phase and sits before the timing reading the phase hardened. A line that cannot be parsed for any reason is counted as unparsed, never fatal. (c) In the status JSON a done task whose timing record cannot be read is listed among the tasks left out of the phase line as having no window, while its cell prints not readable, and the documents define no window as a readable record with no first start or a completion before it. Use the cell's words for the same state in both. Dependants you answer for: the drive's reading of the session record; the printed result line, unchanged; tests/test_stream_cost.py, which must stay green untouched since the tool itself is not edited; the status JSON's leftOut values, which the phase added and no released reader depends on. Acceptance: (1) every row of the table states both readings and both are asserted; (2) the comment makes no claim the table does not hold; (3) a deeply nested line leaves the runner printing its line and writing its record, with the line counted as unparsed; (4) the JSON and the cell name an unreadable record with the same words; (5) no case added by this task passes with its feature removed.",
+      "files": [
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "tests/test_run_agent_session.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "tests/test__status_facts.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_agent_session.py: one table of streams (paired stretches, one init with two results, a result repeated under one uuid, a single stretch, no result) is run through the runner's reading and through tools/stream-cost.py, and each one's figures are written in the table; a deeply nested line is skipped as unparsed with the runner still printing its line",
+          "tests/test__status_facts.py: a done task whose record cannot be read is named in the JSON with the same words its cell prints"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__status_facts.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "2a18adc8c445",
+      "outcome": {
+        "technical": "(a) tests/test_run_agent_session.py: STREAM_TABLE has five literal streams (two paired stretches; one init with two results; paired stretches with the last result repeated under one uuid; a single stretch; no result). Each row holds the runner's recorded figures, the names it records as absent, and tools/stream-cost.py's (duration_ms, num_turns, paired), all as values. _table_cases runs each row through the real runner (new stub switch STUB_STREAM writes a stream file verbatim) and through the tool, and asserts both (ras79). The repeated-uuid row showed the runner counting one event twice, so the runner now follows the tool there: read_stream skips an event whose string uuid it has already read. The comment in run-agent-session.py that claimed one shared pairing rule differing in one case is replaced: it states only the runner's rule (dedupe by uuid, a stretch told by its init, per-stretch sums only when inits and results pair) and why that is the stricter reading, and it names STREAM_TABLE / ras79 for how the tool reads the same streams. (b) A new _parse_line catches any exception json.loads raises. Both stream readers in the runner use it (read_stream counts the line as unparsed; invoked_skills skips it), since a RecursionError escaping either ended the runner after the session ran. The could-not-run tail now says 'could not be parsed as JSON', not 'were not JSON', because a too-deep line is JSON. The fixture _too_deep() steps the depth up until this interpreter really raises RecursionError: Python 3.14 parses a line 100000 deep, measured here, and fails at 1000000 with 'Stack overflow'. The line reaches the stub as a file because megabytes overflow an environment variable (E2BIG on the first try). (c) _status_facts._left_out returns LEFT_OUT_NOT_READABLE = 'not readable' for a done task whose record _task_timing.is_unreadable reports. tt15 compares it with audit-status.py's own _time_cell output for the same summary; tt16 keeps 'no window' for a readable record with no first start. PLUGIN-BUILD-GUIDE.md: the runner section is rewritten. It said the figures were 'the last result event's' (per-stretch figures are summed) and that read_sessions 'reads none of them' (drive-phase.py:2591-2592 reads startedAt and durationMs; ras73 asserts it). It now names STREAM_TABLE, _parse_line and ras79-ras81. Both leftOut lists gain 'not readable'. Runs: the task gate exits 0, 2/2 files ok (test__status_facts 204 cases, test_run_agent_session 103). Dependants: tests/test__config_rules.py, test__doctor_policy.py and test_drive_phase.py exit 0, 3/3 files ok, 1245 cases. tools/stream-cost.py's own suite exits 0 with 51 cases, and the tool has no diff. test__output_lints.py, test__deps.py and test_audit_status.py exit 0, 897 cases. ruff and vermin (3.8-) are clean on the four .py files. The task text names tests/test_stream_cost.py; no such file exists here, and the tool's suite is tools/stream-cost.py itself, run as above. Mutation probes ran in a scratch rsync copy, never the shared tree, and were read against that copy's baseline, where ras60-63 fail because the copy lacks .claude/skills. Dedupe off: ras79 dup row red. Parse catching ValueError only: ras80 and ras81 red. Pair check off: ras75 x2 and the ras79 unpaired row red. Tool's uuid dedupe off: the ras79 dup row red on the tool side (11000, 23, False). Not-readable branch off: tt15 red. Not-readable over-fired: tt13 and tt16 red. Dependants: the drive's reading of the session record is still correct, since the record keys and their shape are unchanged and test_drive_phase passes (1008 cases). The printed result line is unchanged: only the could-not-run tail's wording changed, and nothing in the tree matches the old phrase. tests/test_stream_cost.py does not exist; tools/stream-cost.py is untouched and green. The status JSON's leftOut gains the value 'not readable'; audit-status.py's render reads it unchanged and test_audit_status passes (430 cases). tools/affected.py and the remaining import, basename and prose dependants name the files or the functions _read_text, _usage, drop_session_tmp and exit_for, none of which changed. Left, not my file: plugins/audit/commands/status.md:39 says only that 'a cancelled or unfinished one is left out and named under leftOut' and lists no done-task reason; it is incomplete rather than contradicted.",
+        "descriptive": "The runner and the stream-cost tool are compared by a table of streams instead of a sentence. The runner drops a repeated uuid as the tool does and no longer dies on an unparseable line, and the status JSON calls an unreadable record 'not readable', as its cell does."
+      },
+      "startedAt": "2026-11-18T05:39:17Z",
+      "completedAt": "2026-11-18T06:05:14Z",
+      "verifiedBy": [
+        "ras79 STREAM_TABLE: five streams, each through the runner and tools/stream-cost.py, both readings asserted against values in the row",
+        "ras80 a line nested too deep to parse (a RecursionError, confirmed on this interpreter) is read past: exit 0, line printed, record written with the paired sums",
+        "ras81 the deep line and a malformed line are both counted as unparsed in the could-not-run line, which is still printed and recorded",
+        "tt15 a done task whose stage list is not a list, and one with a stage that is not a stage, are named 'not readable' in leftOut, equal to audit-status.py's time cell",
+        "tt16 second direction: a readable record with no first start stays 'no window' in both"
+      ],
+      "notes": [
+        {
+          "at": "2026-11-18T05:39:12Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/scripts/governance/run-agent-session.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/governance/run-agent-session.py - a section headed by its path"
+        }
+      ],
+      "timing": {
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T05:52:33Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 792000,
+            "startedAt": "2026-11-18T05:39:21Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T05:58:00Z.eb69a1",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-18T05:52:41Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T05:58:00Z.eb69a1, ending at its startedAt",
+            "kind": "selection",
+            "ms": 20534,
+            "runId": "2026-11-18T05:58:00Z.eb69a1",
+            "startedAt": "2026-11-18T05:52:41Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T05:58:00Z.eb69a1",
+            "kind": "gate",
+            "ms": 297116,
+            "runId": "2026-11-18T05:58:00Z.eb69a1",
+            "startedAt": "2026-11-18T05:53:02Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T06:05:09Z.f3c424, ending at its startedAt",
+            "kind": "selection",
+            "ms": 21334,
+            "runId": "2026-11-18T06:05:09Z.f3c424",
+            "startedAt": "2026-11-18T05:58:05Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T06:05:09Z.f3c424",
+            "kind": "gate",
+            "ms": 402763,
+            "runId": "2026-11-18T06:05:09Z.f3c424",
+            "startedAt": "2026-11-18T05:58:27Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 2a18adc8c445",
+            "kind": "commit",
+            "ms": 1894,
+            "startedAt": "2026-11-18T06:05:10Z"
+          }
+        ],
+        "firstStartedAt": "2026-11-18T05:39:17Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T06:05:09Z.f3c424",
+        "status": "passed",
+        "at": "2026-11-18T06:05:09Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "2a18adc8c445",
+        "at": "2026-11-18T06:05:14Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T05:52:32Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__status_facts.py` in a throwaway tree at HEAD exited 1 with 4 of 103 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tt15 (house FAIL), ras79 (house FAIL), ras80 (house FAIL), ras81 (house FAIL): SELFTEST FAILED: 100/103 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    }
+  ],
+  "request": "Brzina razvoja postaje merena metrika uz Q1 i Q2: metrika vremena po tasku. Izmereno je oko 3.3x vremena obicne sesije, pisac oko 0.9x, a razlika su gate-ovi.",
+  "openChoices": [
+    "The report page and the panel do not show the new figures in this phase: a change to either surface owes the owner a look before it lands, and he is away. /audit:status and its JSON carry them; the report follows in the surface phase.",
+    "A gate row's durationMs keeps its meaning (the steps alone), because the background-gate decision, the gate budget grading and the usage comparisons all read it; the time spent choosing what to run is a new key beside it rather than added into it."
+  ],
+  "reviewPerTask": "signals",
+  "startedAt": "2026-11-17T23:58:28Z",
+  "testEvidence": {
+    "runId": "2026-11-18T06:36:14Z.d0681b",
+    "status": "passed",
+    "at": "2026-11-18T06:36:14Z"
+  },
+  "mergedHead": "641c6b97aa5758ef40bd9c3d23b6edc2dae74a0f"
+}

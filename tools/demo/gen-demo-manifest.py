@@ -25,7 +25,8 @@ fixture, capture from it, and throw it away.
 WHAT IT DELIBERATELY CONTAINS. A fixture that only holds healthy rows exercises
 none of the surfaces that matter, so this one carries every state a reader can
 filter on: all four phase statuses and all four task statuses, a phase gated behind
-another (`blockedBy`) and a task gated behind a phase, cross-task `dependsOn`,
+another (`blockedBy`) and a task gated behind a phase, a pinned phase (`priority`, so
+the report draws its Sort select), cross-task `dependsOn`,
 budgets both under and over, `area` tags so the monorepo grouping has something to
 group, tasks with and without `skills` so the panel's "needs skills" filter has
 both sides, all three levels of the review-skill chain plus the explicit null that
@@ -88,6 +89,7 @@ import _journal_io  # noqa: E402  (the canonical line spelling, and which month 
 import _manifest_io as _mio  # noqa: E402  (recorded_attempt: one reading of `attempts`, shared with the recorder)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _demo_cast  # noqa: E402  (the demo's author identities, shared with gen-demo-usage)
+import _task_timing  # noqa: E402  (the one builder of a task's `timing` record and its stages)
 
 # --- demo vocab -----------------------------------------------------------------
 # No wall-clock anywhere: every timestamp is derived from this.
@@ -768,6 +770,20 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
         "lastSyncedAt": "2026-08-06T12:05:00Z",
         "origin": "created"}
 
+    # A PIN, ON THE PHASE THE RUN IS ALREADY ON. A plan that pins any phase is
+    # what makes the report draw its Sort select and rank every phase row, and a
+    # fixture with no pin left that control out of every committed page and
+    # every layout measurement taken of one. Which phase carries it is chosen so
+    # the pin demonstrates the control and reorders nothing else: the
+    # in-progress phase is already first among the phases with work ready, so
+    # the ready list keeps its written order, while sorting the table by
+    # execution order still visibly lifts that phase above the finished ones.
+    # Nothing here draws on `rng`.
+    for phase in phases:
+        if phase["status"] == "in_progress":
+            phase["priority"] = 1
+            break
+
     # The merges' real commits, now that every merge exists. Nothing here draws
     # on `rng`, so no byte generated above moves because this runs.
     _stamp_history(phases)
@@ -886,6 +902,11 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
     # could have produced, and a boundary typed here would be a second answer to
     # what `meta.evidenceSince` is.
     _stamp_since(manifest, pointer_rows)
+    # ...and where each finished task's wall time went, off the same rows: a gate
+    # stage is the length of the run the task's pointer names, never a figure
+    # typed here. Last, for the same reason as the two above: nothing in it draws
+    # on `rng`, so no byte generated before it moves.
+    _stamp_timing(manifest, pointer_rows)
     return manifest
 
 
@@ -1056,8 +1077,10 @@ SCHEMA_EXEMPTIONS = {
     # `task.redFirst` AND ITS FIELDS. The block records what happened to a
     # task's red-first proof - `proved`, `could-not-prove` with the refusal
     # verbatim, or `not-attempted`. No exemption here carries a REVISIT trigger,
-    # deliberately: this follows `phase.priority` above, whose row was re-armed
-    # once and then dropped because the reason never depended on the trigger.
+    # deliberately: `phase.priority`'s row was re-armed once and then dropped
+    # because the reason never depended on the trigger - and later the field
+    # itself went into the fixture, so the report's Sort select is drawn on a
+    # committed page.
     "task.redFirst":
         "what happened to the task's RED-FIRST PROOF, which no rendered surface "
         "reads: not the report, not the panel, not /audit:status. The fixture is "
@@ -1237,20 +1260,6 @@ SCHEMA_EXEMPTIONS = {
         "ABOUT WHAT IS PUBLISHED, NOT A GAP IN THE GENERATOR: "
         "generate(with_claim=True) stamps one for a suite that throws its fixture "
         "away, and no CLI flag reaches it. See the section above _claim_for.",
-    "phase.priority":
-        "which phase the pipeline reaches for first among the work that is "
-        "ALREADY ready. Absent is not a gap here, it is the demonstrated state: "
-        "the fixture's whole point is a plan running in written order, and a pin "
-        "in it would reorder the ready list under a report and a panel whose "
-        "committed screenshots show that order. The field is index-only, so in "
-        "the sharded form it would also have to be stamped on a stub this "
-        "generator does not build. Coverage lives in tests/test__priority.py "
-        "(the comparator) and tests/test_set_priority.py (the write). This row "
-        "carried a REVISIT trigger naming the panel's phase row; the panel has "
-        "edited priority for some time and the trigger had fired unread. "
-        "It is dropped rather than re-armed, because the reason above never "
-        "depended on it: carrying a pin would reorder the ready list under "
-        "committed screenshots whatever the panel renders.",
     "phase.adoParent":
         "which EXISTING Azure DevOps work item this phase hangs under. The "
         "fixture carries no `meta.ado` at all - the demo is a plan, not a "
@@ -2322,6 +2331,56 @@ def _stamp_since(manifest, rows):
     if block is not None:
         manifest["meta"][_evidence_io.SINCE_KEY] = block
     return block
+
+
+def _stamp_timing(manifest, rows):
+    """Give every finished task its `timing` record; returns the ids stamped.
+
+    BUILT BY `_task_timing`, the module every writer of the record uses, so the
+    fixture cannot publish a stage shape the validator would grade differently.
+
+    THE GATE STAGE IS READ OFF THE TASK'S OWN NEWEST RUN: its length is that row's
+    `durationMs`, it ends at the row's `ts`, and it names the row's `runId` - so
+    the stage and the run its pointer names cannot disagree. A finished task with
+    no row (the phase before recording began, the one ungraded task) carries the
+    writer stage alone, which is the honest state for work no run measured, and
+    keeps both shapes on the page.
+
+    The writer stage opens the window and runs a fixed fraction of it, so every
+    record leaves part of `firstStartedAt -> completedAt` unattributed: a fixture
+    whose stages tiled the window exactly would never show the remainder
+    `summarize` exists to report. Only finished tasks carry it - a task still
+    running has no window to account for yet.
+    """
+    best = _evidence_io.latest_by_subject(rows)
+    stamped = []
+    for phase in (manifest.get("phases") or []):
+        for task in (phase.get("tasks") or []):
+            started, done = task.get("startedAt"), task.get("completedAt")
+            if task.get("status") != "done" or not started or not done:
+                continue
+            window_ms = int((_epoch(done) - _epoch(started)) * 1000)
+            stages = [_task_timing.make_stage(
+                "writer", started, window_ms // 3,
+                "the writer session's own result (duration_ms)", round=1)]
+            row = best.get(("task", str(task.get("id"))))
+            if row is not None and isinstance(row.get("durationMs"), int):
+                ms = row["durationMs"]
+                # Whole seconds before the run's stamp, rounded UP: a stamp
+                # carries no fraction, and rounding down would end the stage
+                # after the moment its own run was recorded.
+                stages.append(_task_timing.make_stage(
+                    "gate", _iso(datetime.datetime.strptime(
+                        row["ts"], "%Y-%m-%dT%H:%M:%SZ")
+                        - datetime.timedelta(seconds=(ms + 999) // 1000)),
+                    ms, "the recorded gate run's durationMs",
+                    run_id=row.get("runId")))
+            timing = _task_timing.first_start({}, started)
+            for stage in stages:
+                timing = _task_timing.append_stage({"timing": timing}, stage)
+            task["timing"] = timing
+            stamped.append(task.get("id"))
+    return stamped
 
 
 def write_evidence(manifest, out_dir):

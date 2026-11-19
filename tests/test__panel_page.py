@@ -3519,7 +3519,12 @@ def _cases(check):
           "the SHUT control where it is the last thing left saying so",
           ".fdetails>summary{cursor:pointer;font:inherit;font-size:.78rem;"
           in M.UI_HTML
-          and '.fdetails[open]>summary::after{content:"\\25B4"}' in M.UI_HTML
+          # The arrow is the shared layer's, with an empty alternative, and
+          # the page carries no second arrow rule of its own: counted, because
+          # a panel copy left beside the shared one would win on source order.
+          and ':where(.fdetails[open])>summary::after{content:"\\25B4";'
+              'content:"\\25B4" / ""}' in M.UI_HTML
+          and M.UI_HTML.count(">summary::after{") == 2
           and ".fdetails .fcount{font-weight:700;color:var(--accent);"
               "font-variant-numeric:tabular-nums}" in M.UI_HTML
           # The bar holds a fold and a button now, so a centred cross axis would

@@ -424,6 +424,50 @@ def _cases(check):
           and M._proposals_block(dict(_pm, proposals=[])) == ([], [])
           and M._parked_suffix(_pm, _s) == "")
 
+    # --- the empty state's two sentences ------------------------------------------
+    # Cut to the one row: the page also embeds the script, which spells the same
+    # attributes, and a count over the whole document would count the code.
+    _nr = M.render_html(_m, _s, "b", None)
+    _nrow = _nr[_nr.index('<tr class="norows">'):]
+    _nrow = _nrow[:_nrow.index("</tr>")]
+    _outside = re.findall(r"<span data-outside(?:\s[^>]*)?>", _nrow)
+    check("pg21 the empty state carries ONE slot for the matches the view hides, "
+          "hidden as rendered, holding a Show all phases button and a text slot "
+          "the script fills - so the sentence a hidden match makes true has a "
+          "place to be said: %r" % (_outside,),
+          _outside == ["<span data-outside hidden>"]
+          and _nrow.count("data-outside-says") == 1
+          and _nrow.count('<button type="button" class="btn" data-showall>'
+                          "Show all phases</button>") == 1
+          and _nrow.index("<span data-outside") < _nrow.index("data-showall")
+          < _nrow.index("</span>", _nrow.index("data-showall")))
+    check("pg22 SECOND-DIRECTION CASE: the plain sentence stays, in a slot of its "
+          "own and NOT hidden, and the Clear button stays outside the slot - a "
+          "slot that swallowed either would leave an empty state that says "
+          "nothing when the view hides nothing",
+          _nrow.count('<span data-norows-says>No phase matches these filters.'
+                      "</span>") == 1
+          and _nrow.count("data-clear") == 1
+          and _nrow.index("data-clear") > _nrow.index("data-showall"))
+
+    # --- the table's controls, announced ------------------------------------------
+    # Over the markup alone: the script spells these ids too.
+    _ax = re.sub(r"(?is)<script\b.*?</script\s*>", "", _nr)
+    _cnt = re.findall(r'<span id="audit-count"[^>]*>', _ax)
+    check("pg23 the result count is a polite live region, so narrowing the table "
+          "is heard as well as seen: %r" % (_cnt,),
+          _cnt == ['<span id="audit-count" class="muted" aria-live="polite">'])
+    _ps = re.findall(r'<span id="audit-phase-status"[^>]*>', _ax)
+    _tf = re.findall(r'<span class="tf-chips"[^>]*>', _ax)
+    check("pg24 the phase-status chips and each phase's task-status chips are "
+          "labelled groups, a phase's group naming that phase: %r %r" % (_ps, _tf),
+          _ps == ['<span id="audit-phase-status" role="group" '
+                  'aria-label="Phase status">']
+          and sorted(_tf) == ['<span class="tf-chips" role="group" '
+                      'aria-label="Filter P1 tasks by status">',
+                      '<span class="tf-chips" role="group" '
+                      'aria-label="Filter P2 tasks by status">'])
+
 
 def _settled_cases(check):
     """`held by` releases on every TERMINAL blocker, off the derived status."""

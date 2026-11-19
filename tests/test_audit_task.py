@@ -21455,6 +21455,87 @@ def _start_head_cases(check):
           and seen[0] == (rows, task))
 
 
+# --- a project reached through a symlink ----------------------------------------
+def _symlinked_project_cases(check):
+    """`start` sets the plan's own directory aside on the same resolution as
+    the project it subtracts it from.
+
+    A manifest named relative to the working directory comes back resolved -
+    the working directory is the kernel's spelling, every link followed - while
+    `--project-dir` keeps the link as typed. Subtracted across the two
+    spellings, the plan directory climbed out of the project, nothing was set
+    aside, and the plan's own evidence was demanded as a reader of the task's
+    file. The link is made here under `mkdtemp()` rather than borrowed from a
+    symlinked system temp root, so every platform that can make one asks the
+    same question; one that cannot says so as a skip.
+    """
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, git) = _at_kit(tmp)
+    plan_reader = "docs/audit/evidence/run.md"
+    outside_reader = "docs/guide.md"
+    sources = {
+        "src/a.py": "def alpha():\n    return 1\n",
+        plan_reader: "# Run\n\n## `src/a.py`\n\nWhat the run touched.\n",
+        outside_reader: "# Guide\n\n## `src/a.py`\n\nWhat alpha answers.\n",
+    }
+    try:
+        fx = base_manifest()
+        fx["phases"][1]["tasks"][1] = {
+            "id": "P2.3", "title": "change src/a.py", "status": "pending",
+            "description": "", "files": ["src/a.py"],
+            "tests": {"mode": "gate-only", "add": [], "expectRedFirst": False,
+                      "gate": ["test"]},
+            "model": "sonnet", "skills": [], "risk": "low", "blockedBy": [],
+            "dependsOn": [], "attempts": 0, "maxAttempts": 3, "commit": None,
+            "outcome": {"technical": None, "descriptive": None},
+            "startedAt": None, "completedAt": None, "verifiedBy": []}
+        fx["fileIndex"]["src/a.py"] = ["P2.3"]
+        proj, mp = mk("sym-real", fx, git=True)
+        for rel, text in sources.items():
+            full = os.path.join(proj, *rel.split("/"))
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w", encoding="utf-8") as fh:
+                fh.write(text)
+        git(proj, "add", "-A")
+        git(proj, "commit", "-qm", "seed")
+
+        link = os.path.join(tmp, "sym-link")
+        try:
+            os.symlink(proj, link, target_is_directory=True)
+            refused = None
+        except (OSError, NotImplementedError, AttributeError) as exc:
+            refused = "%s: %s" % (type(exc).__name__, exc)
+        if refused is not None:
+            _harness.skip(check, "sym1", "os.symlink is refused here (%s)"
+                          % (refused,), True)
+            return
+        _pin(link, None)
+        try:
+            (code, txt), err = _stderr_of(
+                run, ["start", "P2.3", "docs/audit/audit-plan.json",
+                      "--project-dir", link])
+        finally:
+            _unpin()
+        said = txt + "\n" + err
+        status = (task_in(mp, "P2.3") or {}).get("status")
+        check("sym1 a project spelled through a symlink, its manifest named "
+              "relative to a working directory the kernel reports resolved: "
+              "the plan's own evidence is not demanded as a reader - asked of a "
+              "refusal that did search for readers, since the one outside the "
+              "plan is named: %r" % ((code, status, said[-400:]),),
+              outside_reader in said and plan_reader not in said)
+        # The mutation this one is for: a plan directory set aside so widely
+        # that a reader outside it goes unasked too. The task must still be
+        # refused, naming the reader outside the plan.
+        check("sym2 SECOND-DIRECTION CASE: ...and a reader outside the plan "
+              "directory is still demanded, so the task stays pending: %r"
+              % ((code, status, said[-400:]),),
+              code != 0 and status == "pending" and outside_reader in said)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 # --- which declared paths a files-derived gate's slot takes ----------------------
 # The kind of each path the matrix declares, written out here rather than read
 # from the module: the expectation is the rule as the task states it - a suite
@@ -22825,6 +22906,7 @@ _LR_SAMPLES = {
                ["src/a.py: it cannot reach it", "src/b.py: nor this"]),
     "pair": ("P1-R1=BUG-1,P1-R2=BUG-2", ["P1-R1=BUG-1", "P1-R2=BUG-2"]),
     "held": ("lint,test", ["lint", "test"]),
+    "object": ('{"kind":"wait","ms":0}', ['{"kind":"wait"', '"ms":0}']),
 }
 
 
@@ -22883,9 +22965,10 @@ def _list_flag_cases(check):
             if reading == "split":
                 if refusal is not None or values.get(dest) != parts:
                     bad.append((dest, reading, values.get(dest), refusal))
-            elif reading == "held":
+            elif reading in ("held", "object"):
                 # Names an entry the field already holds and stores nothing:
-                # the door that holds the field answers held or not held.
+                # the door that holds the field answers held or not held. An
+                # `object` value is one JSON object, whose commas are its own.
                 if refusal is not None or values.get(dest) != [joined]:
                     bad.append((dest, reading, values.get(dest), refusal))
             elif refusal is None or flags[dest] not in refusal \
@@ -22893,7 +22976,7 @@ def _list_flag_cases(check):
                     or joined in (values.get(dest) or []):
                 bad.append((dest, reading, values.get(dest), refusal))
         check("lr3 every row, driven through the reader with a comma-joined "
-              "value: a `split` row returns the parts, a `held` row the value "
+              "value: a `split` row returns the parts, a `held` or `object` row the value "
               "as given, every other row refuses "
               "the value naming its flag and each part, and none returns the "
               "joined string; rows that did not: %r" % (bad,),
@@ -23664,6 +23747,334 @@ def _acceptance_reading_cases(check):
               and batch_json["P2.2"].get("line") == "")
     finally:
         _harness.remove_tree(root)
+# --- a task's timing record across the verbs that copy or reset a task ----------
+def _read_bytes(path):
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
+def _timing_cases(check):
+    """`start` sets timing.firstStartedAt once; `move`, `reopen` and `cancel`
+    carry the record the way they carry notes.
+
+    THE FIXTURE'S FIRST START IS DAYS BEFORE ITS startedAt, so a verb that
+    re-derived the first start from `startedAt` (or from the clock) writes a
+    value the case can tell apart from the one it was handed."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, run_on_stdin, base_manifest, mk, mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, pd_fixture, pd_repo, git) = _at_kit(tmp)
+    first = "2025-12-01T00:00:00Z"
+    record = {"firstStartedAt": first, "stages": [
+        {"kind": "writer", "startedAt": first, "ms": 90000,
+         "basis": "result:writer", "round": 1},
+        {"kind": "gate", "startedAt": "2025-12-01T00:01:30Z", "ms": 4000,
+         "basis": "journal:gate.run", "runId": "r1"}]}
+    try:
+        fx = base_manifest()
+        fx["phases"][1]["tasks"].append(
+            {"id": "P2.4", "title": "fresh", "status": "pending",
+             "attempts": 0, "maxAttempts": 3, "startedAt": None,
+             "completedAt": None})
+        proj, mp = mk("tmg-start", fx)
+        code1, txt1 = run(["start", "P2.4", "--project-dir", proj])
+        t1 = task_in(mp, "P2.4") or {}
+        check("tmg1 a first start writes timing.firstStartedAt equal to the "
+              "startedAt it stamps, with no stages invented: %r"
+              % ((code1, t1.get("startedAt"), t1.get("timing")),),
+              code1 == 0 and isinstance(t1.get("startedAt"), str)
+              and t1.get("timing") == {"firstStartedAt": t1.get("startedAt"),
+                                       "stages": []})
+
+        fx2 = base_manifest()
+        fx2["phases"][1]["tasks"].append(
+            {"id": "P2.4", "title": "running", "status": "in_progress",
+             "attempts": 1, "maxAttempts": 3,
+             "startedAt": "2025-12-03T00:00:00Z", "completedAt": None,
+             "timing": json.loads(json.dumps(record))})
+        proj2, mp2 = mk("tmg-restart", fx2)
+        code2, txt2 = run(["start", "P2.4", "--project-dir", proj2])
+        t2 = task_in(mp2, "P2.4") or {}
+        check("tmg2 a RESTART moves startedAt and keeps timing.firstStartedAt "
+              "- and the stages already recorded - as they were: %r"
+              % ((code2, t2.get("startedAt"), t2.get("timing")),),
+              code2 == 0 and t2.get("attempts") == 2
+              and t2.get("startedAt") not in (None, "2025-12-03T00:00:00Z")
+              and t2.get("timing") == record)
+
+        fx3 = base_manifest()
+        fx3["phases"][1]["tasks"][1]["timing"] = json.loads(json.dumps(record))
+        proj3, mp3 = mk("tmg-move", fx3)
+        code3, txt3 = run(["move", "P2.3", "--to", "P3", "--project-dir", proj3])
+        moved = [t for t in _mio.tasks_by_id(_mio.load_manifest(mp3)).values()
+                 if (t.get("movedFrom") or {}).get("id") == "P2.3"]
+        check("tmg3 `move` carries the timing record to the renumbered task "
+              "unchanged: %r" % ((code3, [m.get("timing") for m in moved]),),
+              code3 == 0 and len(moved) == 1 and moved[0].get("timing") == record)
+
+        fx4 = base_manifest()
+        fx4["phases"][1]["tasks"][0].update(
+            commit=_PD_SHA, completedAt="2025-12-02T00:00:00Z", attempts=1,
+            timing=json.loads(json.dumps(record)))
+        proj4, mp4 = mk("tmg-reopen", fx4)
+        code4, txt4 = run(["reopen", "P2.1", "--reason", "regressed",
+                           "--project-dir", proj4])
+        t4 = task_in(mp4, "P2.1") or {}
+        check("tmg4 `reopen` clears the close and keeps the timing record - the "
+              "time already spent stays on the task, and the next start keeps "
+              "its first start: %r" % ((code4, t4.get("status"),
+                                         t4.get("timing")),),
+              code4 == 0 and t4.get("status") == "pending"
+              and t4.get("completedAt") is None and t4.get("timing") == record)
+
+        fx5 = base_manifest()
+        fx5["phases"][1]["tasks"][1]["timing"] = json.loads(json.dumps(record))
+        proj5, mp5 = mk("tmg-cancel", fx5)
+        code5, txt5 = run(["cancel", "P2.3", "--reason", "not needed",
+                           "--project-dir", proj5])
+        t5 = task_in(mp5, "P2.3") or {}
+        check("tmg5 `cancel` keeps the timing record on the cancelled task: %r"
+              % ((code5, t5.get("status"), t5.get("timing")),),
+              code5 == 0 and t5.get("status") == "cancelled"
+              and t5.get("timing") == record)
+
+        # `--stage` on the two writes the step driver makes for a task: a
+        # value that is not JSON, and one `_task_timing.stage_problems`
+        # rejects, are each refused before the lock with nothing written.
+        fx6 = base_manifest()
+        fx6["phases"][1]["tasks"].append(
+            {"id": "P2.4", "title": "running", "status": "in_progress",
+             "attempts": 1, "maxAttempts": 3,
+             "startedAt": "2025-12-03T00:00:00Z", "completedAt": None,
+             "timing": json.loads(json.dumps(record))})
+        proj6, mp6 = mk("tmg-stage", fx6)
+        good = {"kind": "wait", "startedAt": "2025-12-03T00:00:05Z", "ms": 2000,
+                "basis": "hand-out -> start"}
+        bad_values = (("not JSON", '{"kind": "wait", '),
+                      ("graded out", json.dumps({"kind": "nap", "ms": -1,
+                                                 "startedAt": "yesterday"})))
+        verbs = (("note", ["note", "P2.4", "--text", "t"]),
+                 ("done", ["done", "P2.4", "--no-change", "--reason",
+                           "nothing to change"]))
+
+        def written(proj, mp):
+            jdir = os.path.join(proj, "docs", "audit", "journal")
+            rows = sorted(os.listdir(jdir)) if os.path.isdir(jdir) else []
+            return _read_bytes(mp), [(r, _read_bytes(os.path.join(jdir, r)))
+                                     for r in rows]
+        refused = []
+        for (label, value), (verb, argv) in [(b, v) for b in bad_values
+                                             for v in verbs]:
+            before = written(proj6, mp6)
+            # `done` refuses on stderr (`_refuse_on_stderr`), `note` on stdout.
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                code, txt = run(argv + ["--stage", value, "--project-dir", proj6])
+            txt += err.getvalue()
+            refused.append((label, verb, code, "--stage" in txt,
+                            written(proj6, mp6) == before, txt[-160:]))
+        check("tmg6 `note` and `done` each refuse a --stage value that is not "
+              "JSON and one stage_problems rejects, naming the flag, before the "
+              "lock - the plan's and the journal's bytes as they were: %r"
+              % (refused,),
+              len(refused) == 4 and all(code == M.E_USAGE and named and same
+                                        for _l, _v, code, named, same, _t
+                                        in refused)
+              and (task_in(mp6, "P2.4") or {}).get("status") == "in_progress"
+              and (task_in(mp6, "P2.4") or {}).get("timing") == record)
+        code7, txt7 = run(["note", "P2.4", "--text", "t", "--stage",
+                           json.dumps(good), "--project-dir", proj6])
+        noted = ((task_in(mp6, "P2.4") or {}).get("timing") or {}).get("stages")
+        code8, txt8 = run(["done", "P2.4", "--no-change", "--reason",
+                           "nothing to change", "--stage",
+                           json.dumps(dict(good, kind="commit", ms=40)),
+                           "--project-dir", proj6])
+        closed = task_in(mp6, "P2.4") or {}
+        check("tmg7 THE TWIN: a well-formed --stage is appended by the write the "
+              "verb makes anyway - after the note on `note`, with the close on "
+              "`done` - keeping the stages and first start already recorded: %r"
+              % ((code7, txt7[-120:], noted, code8, txt8[-160:],
+                  closed.get("status"), closed.get("timing")),),
+              code7 == 0 and noted == record["stages"] + [good]
+              and code8 == 0 and closed.get("status") == "done"
+              and (closed.get("timing") or {}).get("stages")
+              == record["stages"] + [good, dict(good, kind="commit", ms=40)]
+              and (closed.get("timing") or {}).get("firstStartedAt")
+              == record["firstStartedAt"])
+
+        # The journal is the audit trail of every locked write, so a stage the
+        # write appended is a change its row names. A note with no stage is
+        # here for the other direction: a row that named a timing change on
+        # every note would pass the stage-carrying half alone.
+        fx9 = base_manifest()
+        fx9["phases"][1]["tasks"].append(
+            {"id": "P2.4", "title": "running", "status": "in_progress",
+             "attempts": 1, "maxAttempts": 3,
+             "startedAt": "2025-12-03T00:00:00Z", "completedAt": None,
+             "timing": json.loads(json.dumps(record))})
+        proj9, mp9 = mk("tmg-journal", fx9)
+        steps9 = [
+            run(["note", "P2.4", "--text", "plain", "--project-dir", proj9])[0],
+            run(["note", "P2.4", "--text", "timed", "--stage", json.dumps(good),
+                 "--project-dir", proj9])[0],
+            run(["done", "P2.4", "--no-change", "--reason", "nothing to change",
+                 "--stage", json.dumps(dict(good, kind="commit", ms=40)),
+                 "--project-dir", proj9])[0]]
+
+        def timing_changes(row):
+            return [c.get("field") for c in
+                    ((row.get("details") or {}).get("changes") or [])
+                    if str(c.get("field") or "").startswith("timing")
+                    and c.get("id") == "P2.4"]
+        rows9 = [(r.get("action"), timing_changes(r))
+                 for r in _journal_io.read_all(proj9)
+                 if (r.get("details") or {}).get("taskId") == "P2.4"
+                 and r.get("action") in ("task.note", "task.done")]
+        check("tmg8 the journal row of a note and of a close that each carried a "
+              "stage names the timing change, and a note with no stage names "
+              "none: %r" % ((steps9, rows9),),
+              steps9 == [0, 0, 0]
+              and rows9 == [("task.note", []),
+                            ("task.note", ["timing.stages"]),
+                            ("task.done", ["timing.stages"])])
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _stale_wide_gate_cases(check):
+    """`settle` writes the narrow gate a pending task's derivation gives once the
+    project records how to run a subset, where the task stored the phase's wide
+    gate for want of that spelling - and touches no gate somebody declared or
+    cleared, no started task, and no task the derivation still answers wide."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+    try:
+        proj, mpath = mk("wg-stale", base_manifest(), sharded=True, git=True)
+
+        def tests_of(tid):
+            return dict((task_in(mpath, tid) or {}).get("tests") or {})
+
+        def add_tdd(title, *extra):
+            return run(["add", title, "--phase", "P2", "--tests-mode", "tdd",
+                        "--project-dir", proj] + list(extra))
+
+        suite = "tests/test_a.py: the case the task adds"
+        # Each task below is added BEFORE the project records a spelling, so
+        # each stores the phase's wide gate with the derivation's own word.
+        add_tdd("stale", "--tests-add", suite)                     # P2.4
+        add_tdd("declared", "--tests-add", suite)                  # P2.5
+        add_tdd("cleared", "--tests-add", suite)                   # P2.6
+        add_tdd("started", "--tests-add", suite)                   # P2.7
+        add_tdd("ran once", "--tests-add", suite)                  # P2.8
+        add_tdd("no paths")                                        # P2.9
+        before = dict((t, tests_of(t)) for t in
+                      ("P2.4", "P2.5", "P2.6", "P2.7", "P2.8", "P2.9"))
+        check("wg1 PRECONDITION: a task added before the project records a "
+              "subset spelling stores the phase's wide gate with the basis "
+              "word saying no spelling was known: %r" % (before,),
+              all(v.get("gate") == ["test"]
+                  and v.get("gateBasis") == "phase-no-spelling"
+                  for v in before.values()))
+
+        run(["scope", "P2.5", "--gate", "test", "--project-dir", proj])
+        raw = _mio.load_manifest(mpath)
+        for ph in raw["phases"]:
+            for t in ph.get("tasks") or []:
+                if t.get("id") == "P2.6":
+                    t["tests"].update(gate=[], gateBasis="cleared")
+                if t.get("id") == "P2.7":
+                    t.update(status="in_progress", attempts=1,
+                             startedAt="2026-01-01T00:00:00Z")
+                if t.get("id") == "P2.8":
+                    t["attempts"] = 1
+        _mio.save_sharded(mpath, raw)
+        held = dict((t, tests_of(t)) for t in
+                    ("P2.5", "P2.6", "P2.7", "P2.8", "P2.9"))
+
+        code_rl, txt_rl = run(["record-listing", "--listing-all", "lister --all",
+                               "--listing-related", "lister --related {paths}",
+                               "--spelling", "runner {paths}",
+                               "--verified-on", "echo v-wg",
+                               "--project-dir", proj])
+        # The derivation's answer, computed independently of `settle`: a task
+        # added NOW with the same scope is derived against the spelling.
+        add_tdd("control", "--tests-add", suite)                   # P2.10
+        control = tests_of("P2.10")
+        check("wg2 PRECONDITION: with the spelling recorded, the derivation "
+              "gives a task of the same scope a NARROWER gate than the "
+              "phase's: %r" % (control,),
+              code_rl == 0 and control.get("gate")
+              and control.get("gate") != ["test"]
+              and control.get("gateBasis") not in (None, "phase-no-spelling"))
+        check("wg3 record-listing says how many tasks the new spelling leaves "
+              "with a stale derived gate, and names the verb that settles "
+              "them: %s" % (txt_rl[-400:],),
+              re.search(r"\b1 task\b[^\n]*stale", txt_rl) is not None
+              and "settle" in txt_rl)
+
+        stale_lines = [w for w in _rules.validate(_mio.load_manifest(mpath))[1]
+                       if "settle" in w and "P2." in w]
+        check("wg4 the validator warns about the ONE pending task whose stored "
+              "wide gate the derivation now narrows, and names the verb: %r"
+              % (stale_lines,),
+              len(stale_lines) == 1 and "P2.4" in stale_lines[0]
+              and not any(t in stale_lines[0] for t in
+                          ("P2.5", "P2.6", "P2.7", "P2.8", "P2.9", "P2.10")))
+
+        code, txt = run(["settle", "--project-dir", proj])
+        after = tests_of("P2.4")
+        check("wg5 settle rewrites the stale task's gate to the narrow one, "
+              "with the basis the derivation gives: %r / %s" % (after, txt),
+              code == 0 and after.get("gate") == control.get("gate")
+              and after.get("gateBasis") == control.get("gateBasis"))
+        kept = dict((t, tests_of(t)) for t in held)
+        check("wg6 ...and leaves alone the declared gate, the cleared gate, the "
+              "started task, the task put back to pending after an attempt, and "
+              "the task whose derivation still gives the wide gate: %r"
+              % ([(t, held[t], kept[t]) for t in held if held[t] != kept[t]],),
+              kept == held
+              # ...and each held task IS the case its label names, so a
+              # fixture edit that left them all wide could not pass here.
+              and held["P2.5"].get("gateBasis") == "declared"
+              and held["P2.6"].get("gateBasis") == "cleared"
+              and task_in(mpath, "P2.7").get("status") == "in_progress"
+              and task_in(mpath, "P2.8").get("attempts") == 1
+              and task_in(mpath, "P2.8").get("status") == "pending"
+              and held["P2.9"].get("add") == [])
+        rows = [r for r in _journal_io.read_all(proj)
+                if r.get("action") == "plan.settle"]
+        moved = sorted((c.get("id"), c.get("field")) for r in rows
+                       for c in (r.get("details") or {}).get("changes") or [])
+        check("wg7 ...with ONE plan.settle journal row naming the task and the "
+              "gate it moved, and nothing else: %r" % (moved,),
+              len(rows) == 1 and moved
+              and all(i == "P2.4" for i, _f in moved)
+              and ("P2.4", "tests.gate") in moved)
+        left = [w for w in _rules.validate(_mio.load_manifest(mpath))[1]
+                if "settle" in w and "P2." in w]
+        check("wg8 ...after which the validator has nothing stale to say: %r"
+              % (left,), left == [])
+        def plan_bytes():
+            # The index AND every shard: the layout writes the stale task's
+            # gate into its phase's shard, not into the index.
+            found = {}
+            for root, _dirs, names in os.walk(os.path.dirname(mpath)):
+                for name in names:
+                    path = os.path.join(root, name)
+                    with open(path, "rb") as fh:
+                        found[path] = fh.read()
+            return found
+
+        settled_bytes = plan_bytes()
+        code2, txt2 = run(["settle", "--project-dir", proj])
+        check("wg9 settle on a plan with nothing stale writes nothing and "
+              "journals nothing: %s" % (txt2,),
+              code2 == 0 and "nothing to settle" in txt2
+              and len(settled_bytes) > 1 and plan_bytes() == settled_bytes
+              and len([r for r in _journal_io.read_all(proj)
+                       if r.get("action") == "plan.settle"]) == 1)
+    finally:
+        _harness.remove_tree(tmp)
 
 
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
@@ -23694,13 +24105,16 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("rf-block", "_retired_flag_cases"),
           ("gx-block", "_gate_entry_cases"),
           ("sh-block", "_start_head_cases"),
+          ("sym-block", "_symlinked_project_cases"),
           ("ocg-block", "_tdd_gate_clear_cases"),
           ("dd-block", "_dependant_dispatch_cases"),
           ("gk-block", "_gate_keep_cases"),
           ("lr-block", "_list_flag_cases"),
           ("grt-block", "_gate_reach_cases"),
           ("egf-block", "_expect_green_first_cases"),
-          ("ar-block", "_acceptance_reading_cases"))
+          ("ar-block", "_acceptance_reading_cases"),
+          ("tmg-block", "_timing_cases"),
+          ("wg-block", "_stale_wide_gate_cases"))
 
 
 if __name__ == "__main__":

@@ -62,6 +62,16 @@ RESUME_ID = "0f8e2a4c-1b3d-4e5f-9a7b-6c5d4e3f2a1b"
 # Two results, the first with a decoy figure: the last result is the session's.
 FIRST_COST = 0.1111
 LAST_COST = 1.2345
+# The time figures every stub result carries unless a case hands in others, in
+# the names a recorded result event uses; the first of two results carries
+# DECOY, which differs from each of these, so a reader of either result alone
+# records a figure that is neither the sum nor the last.
+TIMING = {"duration_ms": 48213, "duration_api_ms": 40107, "num_turns": 17}
+# `duration_api_ms` grows from result to result, as it did in every recorded
+# re-invoked stream read on 2026-11-18 (a writer's of 2026-11-12 went 132778,
+# 175899, 192492 across its stretches), so
+# the decoy's is the smaller; `duration_ms` and `num_turns` are each stretch's own.
+DECOY = {"duration_ms": 1111, "duration_api_ms": 2222, "num_turns": 3}
 
 # The prompt carries a space, both quote kinds and a non-ASCII character, so a
 # prompt that went through argv or a lossy encoding cannot come back equal.
@@ -111,6 +121,13 @@ with open(os.environ["STUB_RECORD"] + ".part", "w", encoding="utf-8") as fh:
 os.replace(os.environ["STUB_RECORD"] + ".part", os.environ["STUB_RECORD"])
 mode = os.environ.get("STUB_MODE", "ok")
 sid = os.environ.get("STUB_SESSION", "")
+# A whole stream a case hands in as a file, written verbatim in place of every
+# event below - the one way to put a shape the modes do not build on stdout.
+if os.environ.get("STUB_STREAM"):
+    with open(os.environ["STUB_STREAM"], encoding="utf-8") as fh:
+        sys.stdout.write(fh.read())
+    sys.stdout.flush()
+    raise SystemExit(int(os.environ.get("STUB_EXIT", "0")))
 def emit(event):
     sys.stdout.write(json.dumps(event) + "\n")
 emit({"type": "system", "subtype": "hook_started", "session_id": sid})
@@ -124,17 +141,42 @@ if os.environ.get("STUB_EVENTS"):
                 emit(dict(json.loads(line), session_id=sid))
 emit({"type": "assistant", "session_id": sid,
       "message": {"content": [{"type": "text", "text": "done"}]}})
+# The time figures the last result carries, as a case hands them in; the first
+# result of two carries the decoy figures, so a reader of one result alone
+# records the wrong ones.
+timing = json.loads(os.environ.get("STUB_TIMING") or "{}")
+decoy = json.loads(os.environ.get("STUB_DECOY") or "{}")
+# How the two results of an ok session sit against their init events, as a
+# recorded re-invoked stream holds them: `paired` opens the second stretch with
+# an init of its own (init, result, init, result); `unpaired` gives two results
+# to the one init; `dangling` opens a second stretch that never wrote a result;
+# `single` is one stretch, one result.
+stretches = os.environ.get("STUB_STRETCHES") or "paired"
+# Lines written verbatim between the init and the first result - JSON that is
+# not an event object, which a reader of the stream meets as it is.
+for raw in json.loads(os.environ.get("STUB_RAW") or "[]"):
+    sys.stdout.write(raw + "\n")
 if mode == "ok":
-    emit({"type": "result", "subtype": "success", "is_error": False,
-          "session_id": sid, "total_cost_usd": float(os.environ["STUB_FIRST"])})
-    emit({"type": "result", "subtype": "success", "is_error": False,
-          "session_id": sid, "total_cost_usd": float(os.environ["STUB_LAST"])})
+    if stretches != "single":
+        emit(dict({"type": "result", "subtype": "success", "is_error": False,
+                   "session_id": sid,
+                   "total_cost_usd": float(os.environ["STUB_FIRST"])}, **decoy))
+    if stretches in ("paired", "dangling"):
+        emit({"type": "system", "subtype": "init", "session_id": sid, "model": "x"})
+        emit({"type": "assistant", "session_id": sid,
+              "message": {"content": [{"type": "text", "text": "woken"}]}})
+    if stretches != "dangling":
+        emit(dict({"type": "result", "subtype": "success", "is_error": False,
+                   "session_id": sid,
+                   "total_cost_usd": float(os.environ["STUB_LAST"])}, **timing))
 elif mode == "error0":
-    emit({"type": "result", "subtype": "success", "is_error": True,
-          "session_id": sid, "total_cost_usd": float(os.environ["STUB_LAST"])})
+    emit(dict({"type": "result", "subtype": "success", "is_error": True,
+               "session_id": sid, "total_cost_usd": float(os.environ["STUB_LAST"])},
+              **timing))
 elif mode == "budget":
-    emit({"type": "result", "subtype": "error_max_budget_usd", "is_error": True,
-          "session_id": sid, "total_cost_usd": float(os.environ["STUB_LAST"])})
+    emit(dict({"type": "result", "subtype": "error_max_budget_usd", "is_error": True,
+               "session_id": sid, "total_cost_usd": float(os.environ["STUB_LAST"])},
+              **timing))
 elif mode == "hang":
     # A session still working when its caller gives up on it.
     sys.stdout.flush()
@@ -236,7 +278,8 @@ def _run(root, bindir, role, extra=(), mode="ok", exit_code=0, model=MODEL, tag=
     env.update({"PATH": bindir + os.pathsep + env.get("PATH", ""),
                 "STUB_RECORD": record, "STUB_MODE": mode,
                 "STUB_SESSION": SESSION, "STUB_FIRST": repr(FIRST_COST),
-                "STUB_LAST": repr(LAST_COST), "STUB_EXIT": str(exit_code)})
+                "STUB_LAST": repr(LAST_COST), "STUB_EXIT": str(exit_code),
+                "STUB_TIMING": json.dumps(TIMING), "STUB_DECOY": json.dumps(DECOY)})
     env.update(dict((name, parent_tmp) for name in ("TMPDIR", "TEMP", "TMP")))
     env.update(env_extra or {})
     argv = [sys.executable, SCRIPT, "--role", role, "--task", "P9.1",
@@ -766,9 +809,13 @@ def _cases(check):
               "this script's exit code, the directory made on the way: %r"
               % ((first[0], second[0], lines),),
               len(lines) == 2
-              and lines[0] == {"line": first[1].strip(), "exit": 0, "skillsInvoked": []}
-              and lines[1] == {"line": second[1].strip(), "exit": second[0],
-                               "skillsInvoked": []}
+              and lines[0] == dict({"line": first[1].strip(), "exit": 0,
+                                    "skillsInvoked": []},
+                                   **_timing_keys(first[1].strip(),
+                                                  figures=_summed(DECOY, TIMING)))
+              and lines[1] == dict({"line": second[1].strip(), "exit": second[0],
+                                    "skillsInvoked": []},
+                                   **_timing_keys(second[1].strip()))
               and second[0] == e_budget)
         refused = os.path.join(root, "records", "usage.jsonl")
         code, out, err, rec, dirs = _run(root, bindir, "writer", model="opus",
@@ -791,6 +838,7 @@ def _cases(check):
               code == 0 and out.startswith("session=%s " % SESSION)
               and "could not be written" in err and "Traceback" not in err)
 
+        _timing_cases(check, M, root, bindir)
         _cleanup_cases(check, root, bindir, e_io)
         _skill_cases(check, M, root, bindir, e_io)
 
@@ -1057,7 +1105,9 @@ def _skill_cases(check, M, root, bindir, e_io):
     _run(root, bindir, "writer", tag="skp", env_extra=pinned, extra=["--record", plain])
     check("ras44 a run with no skills records none: the line has no skills key, "
           "rather than an empty list standing for them",
-          [sorted(x) for x in _record_lines(plain)] == [["exit", "line", "skillsInvoked"]])
+          [sorted(x) for x in _record_lines(plain)]
+          == [sorted(["exit", "line", "skillsInvoked"] + list(TIMING_FIELDS.values())
+                     + ["startedAt"])])
 
     # --- the reviewer keeps its --agents body, and the skills ride beside it ----
     code, out, err, rec, dirs = _run(root, bindir, "reviewer", tag="skv", env_extra=pinned,
@@ -1332,7 +1382,7 @@ def _precedence_cases(check, M, root, bindir, pinned):
         first = held.find("<skill ")
         head = held[:first] if first >= 0 else ""
         rule = _sentence_with(head, RULE_ANCHOR)
-        check("ras69%s the text appended for a %s naming a skill says, ahead of the "
+        check("ras82%s the text appended for a %s naming a skill says, ahead of the "
               "first skill and exactly once, that where a skill conflicts with the "
               "prompt the session follows the prompt and names the conflict in its "
               "closing answer - and that sentence is SKILLS_PREAMBLE's: count %d, "
@@ -1347,7 +1397,7 @@ def _precedence_cases(check, M, root, bindir, pinned):
     # mutation this guards is the rule moved where a skill-less session reads it.
     code, out, err, rec, dirs = _run(root, bindir, "writer", tag="spn", env_extra=pinned)
     argv = (rec or {}).get("argv") or []
-    check("ras70 THE OTHER DIRECTION: a session naming no skill is handed no appended "
+    check("ras83 THE OTHER DIRECTION: a session naming no skill is handed no appended "
           "file and the prompt byte for byte as given, the rule in neither its stdin "
           "nor its argv: %r" % ((code, argv, err[-200:]),),
           code == 0 and rec is not None and rec["skills_file"] is None
@@ -1355,6 +1405,443 @@ def _precedence_cases(check, M, root, bindir, pinned):
           and "--append-system-prompt-file" not in argv
           and rec["stdin"].encode("utf-8") == PROMPT.encode("utf-8")
           and not any(RULE_ANCHOR in a for a in argv + [rec["stdin"]]))
+# The result event's time figures and the record keys each is kept under,
+# written out here rather than read from the script, so a key misspelled there
+# is a figure this suite sees missing.
+TIMING_FIELDS = {"duration_ms": "durationMs", "duration_api_ms": "durationApiMs",
+                 "num_turns": "numTurns"}
+# The keys a record carried before the time figures, in the order it wrote them.
+OLD_KEYS = ["line", "exit", "skillsInvoked"]
+# The drive's parse of the printed line, written out here: the line keeps its
+# fields, their order and their spelling, and `stream=` stays last.
+DRIVE_LINE = re.compile(r"^session=(\S+) subtype=(\S+) is_error=(\S+) "
+                        r"total_cost_usd=(\S+) exit=(\S+) stream=(.*)$")
+
+
+def _started_of(stream):
+    """The start time a stream's file name carries, as `YYYY-MM-DDTHH:MM:SSZ` -
+    read here off the name's `YYYYMMDDTHHMMSSZ` stamp, not through the script."""
+    hit = re.search(r"\.(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z\.",
+                    os.path.basename(stream or ""))
+    return "%s-%s-%sT%s:%s:%sZ" % hit.groups() if hit else None
+
+
+def _timing_keys(line, timing=None, figures=None):
+    """The keys a record of the printed `line` gains from a one-result stream
+    carrying `timing` (TIMING by default) - or the record-named `figures`, when a
+    case worked them out for a stream of several stretches - and the start time
+    the line's stream name carries."""
+    got = (dict(figures) if figures is not None else
+           dict((TIMING_FIELDS[k], v) for k, v in (timing or TIMING).items()))
+    got["startedAt"] = _started_of(_fields(line).get("stream"))
+    return got
+
+
+def _summed(first, last):
+    """The record's figures for a two-stretch stream whose results carry `first`
+    and `last`, worked out here rather than asked of the script: `duration_ms`
+    and `num_turns` are each stretch's own and add up, `duration_api_ms` is the
+    whole session's so far and is the last result's."""
+    return {"durationMs": first["duration_ms"] + last["duration_ms"],
+            "durationApiMs": last["duration_api_ms"],
+            "numTurns": first["num_turns"] + last["num_turns"]}
+
+
+def _stream_cost():
+    """`tools/stream-cost.py`, the repository's reading of a stream's stretches,
+    loaded so a case reads one stream through both copies of the pairing rule."""
+    return _loader.load(os.path.join(REPO_ROOT, "tools", "stream-cost.py"),
+                        modname="stream_cost_ras")
+
+
+def _timing_cases(check, M, root, bindir):
+    """The record carries how long the session took, read from its result events
+    stretch by stretch; a figure the results do not carry as a usable number, or
+    one whose stretches cannot be paired, is left out and named, never written
+    as zero."""
+    def recorded(tag, timing, **kw):
+        kept = os.path.join(root, "records", "t-%s.jsonl" % tag)
+        env = dict(kw.pop("env_extra", {}), STUB_TIMING=json.dumps(timing))
+        run = _run(root, bindir, "writer", tag=tag, env_extra=env,
+                   extra=["--record", kept], **kw)
+        lines = _record_lines(kept)
+        return run, (lines[-1] if len(lines) == 1 else None)
+
+    figures = ("durationMs", "durationApiMs", "numTurns")
+    summed = _summed(DECOY, TIMING)
+    run, rec = recorded("tm", TIMING, env_extra={"STUB_STRETCHES": "single"})
+    line = run[1].strip()
+    stream = _fields(line).get("stream")
+    started = _started_of(stream)
+    check("ras69 a record written from a one-stretch stream whose result carries "
+          "duration_ms, duration_api_ms and num_turns holds the three figures and "
+          "the start time its stream's name carries: %r" % ((run[0], rec, started),),
+          run[0] == 0 and rec is not None and started is not None
+          and [rec.get(k) for k in figures] == [TIMING[k] for k in TIMING_FIELDS]
+          and rec.get("startedAt") == started and "timingAbsent" not in rec)
+    hit = DRIVE_LINE.match(line)
+    check("ras69b ...the existing keys keep their order ahead of the new ones, and "
+          "the printed line still parses as the drive reads it, its stream the "
+          "real file: %r" % ((list(rec or {}), line),),
+          rec is not None and list(rec)[:len(OLD_KEYS)] == OLD_KEYS
+          and rec.get("line") == line and hit is not None
+          and hit.group(6).strip() == stream and os.path.isfile(stream or "")
+          and "durationMs" not in line and "duration_ms" not in line)
+
+    run, rec = recorded("tn", TIMING, mode="noresult")
+    absent = (rec or {}).get("timingAbsent") or {}
+    streams = [os.path.join(dp, f) for dp, _dn, fs in os.walk(run[4]["state"])
+               for f in fs if f.endswith(".jsonl")]
+    check("ras70 a stream with no result event writes a record holding none of the "
+          "three figures, naming each as absent because no result was read, a line "
+          "saying no result was read, and the start time all the same: %r"
+          % ((run[0], rec, streams),),
+          run[0] != 0 and rec is not None and len(streams) == 1
+          and not [k for k in figures if k in rec]
+          and sorted(absent) == sorted(figures)
+          and all("no result" in str(why) for why in absent.values())
+          and "no result" in str(rec.get("line"))
+          and rec.get("startedAt") == _started_of(streams[0]))
+
+    bad = [("tstr", "a string", dict(TIMING, duration_ms="48213"), "string"),
+           ("tneg", "a negative number", dict(TIMING, duration_ms=-5), "negative"),
+           ("tbool", "a boolean", dict(TIMING, duration_ms=True), "not a number")]
+    for tag, what, timing, word in bad:
+        run, rec = recorded(tag, timing)
+        absent = (rec or {}).get("timingAbsent") or {}
+        check("ras71 a last result whose duration_ms is %s is recorded with no "
+              "durationMs - not zero, not the value, not the first stretch's "
+              "alone - and the reason names it, while the other two figures are "
+              "kept: %r" % (what, (run[0], rec)),
+              run[0] == 0 and rec is not None and "durationMs" not in rec
+              and 0 not in [rec.get(k) for k in figures]
+              and sorted(absent) == ["durationMs"]
+              and word in str(absent["durationMs"]).lower()
+              and "duration_ms" in str(absent["durationMs"])
+              and rec.get("durationApiMs") == summed["durationApiMs"]
+              and rec.get("numTurns") == summed["numTurns"])
+
+    run, rec = recorded("tnone", {})
+    absent = (rec or {}).get("timingAbsent") or {}
+    check("ras71b a result carrying none of the three figures names each as absent "
+          "with the result's own field name, and writes no figure: %r"
+          % ((run[0], rec),),
+          run[0] == 0 and rec is not None and not [k for k in figures if k in rec]
+          and sorted(absent) == sorted(figures)
+          and all(src in str(absent[dst]) for src, dst in TIMING_FIELDS.items()))
+
+    # Two refusals at two points: a usage refusal before the skills are read, and
+    # an io-error once they are and before claude starts - a figure set anywhere
+    # between reading the skills and starting the session is red on the second.
+    used, used_rec = recorded("tuse", TIMING, model="opus")
+    failed, io_rec = recorded("tio", TIMING, state_is_file=True)
+    check("ras72 THE OTHER DIRECTION: a run refused before any session started - a "
+          "usage refusal, an io-error - records no figure, no start time and no "
+          "absence: there was no session to time: %r"
+          % ((used[0], used_rec, failed[0], io_rec),),
+          used[0] == M.E_USAGE and used_rec is not None
+          and sorted(used_rec) == ["exit", "line"]
+          and failed[0] == M.E_IO and io_rec is not None
+          and sorted(io_rec) == ["exit", "line"] and failed[3] is None)
+
+    # The drive reads a record written before the time figures existed as it
+    # reads one carrying them: the same reading but for the two figures the drive
+    # times a session by - None for the old record, the recorded values for the
+    # new - and the same note.
+    D = _loader.load_script("drive-phase.py", modname="drive_phase_ras73")
+    run, rec = recorded("tdr", TIMING)
+    old = dict((k, v) for k, v in (rec or {}).items() if k in OLD_KEYS)
+    paths = []
+    for name, body in (("new", rec), ("old", old)):
+        path = os.path.join(root, "records", "drive-%s.jsonl" % name)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(body) + "\n")
+        paths.append(path)
+    readings = [D.read_sessions(p) for p in paths]
+    notes = [D.session_note(1, r[0]) if len(r) == 1 else None for r in readings]
+    first = readings[1][0] if len(readings[1]) == 1 else {}
+    timed = ("startedAt", "durationMs")
+    bare = [[dict((k, v) for k, v in r.items() if k not in timed) for r in each]
+            for each in readings]
+    figures = [[tuple(r.get(k) for k in timed) for r in each] for each in readings]
+    check("ras73 a record with none of the new keys is read by the drive as before - "
+          "the session, the cost and the stream off its line - and identically to "
+          "the same record carrying them but for the start and the duration, which "
+          "it reads as absent there, note included: %r" % ((readings, notes),),
+          rec is not None and sorted(old) == sorted(OLD_KEYS)
+          and bare[0] == bare[1] and notes[0] == notes[1]
+          and figures[1] == [(None, None)]
+          and figures[0] == [(rec.get("startedAt"), summed["durationMs"])]
+          and rec.get("startedAt")
+          and notes[0] is not None and first.get("session") == SESSION
+          and float(first.get("cost") or "nan") == LAST_COST
+          and first.get("stream") == _fields(run[1].strip()).get("stream"))
+
+    named = tuple(TIMING_FIELDS[k] for k in TIMING)
+    _stretch_cases(check, recorded, named, summed)
+    _unusable_cases(check, M, recorded, named, summed)
+    _table_cases(check, root, recorded)
+    _nested_cases(check, root, recorded)
+
+
+def _stream_reading(stream):
+    """(duration_ms, num_turns, paired) as `tools/stream-cost.py` reads `stream`:
+    its session result's two per-stretch counts, and whether its init events pair
+    one to one with its result events - None when the tool cannot read it."""
+    SC = _stream_cost()
+    try:
+        session = SC.parse(SC.load_events(stream))
+    except (OSError, ValueError):
+        return None
+    result = session.get("result") or {}
+    return (result.get("duration_ms"), result.get("num_turns"),
+            SC.main_stretches(session)[1] is None)
+
+
+def _stretch_cases(check, recorded, figures, summed):
+    """A session woken by a background task runs in stretches, each opening with
+    an init and closing with a result of its own; the record holds the whole
+    session, and the repository's stream reader is asked the same stream."""
+    run, rec = recorded("ts2", TIMING)
+    stream = _fields(run[1].strip()).get("stream")
+    tool = _stream_reading(stream)
+    check("ras74 a stream of two paired stretches records the SUM of their "
+          "duration_ms and num_turns - neither stretch's alone - and the last "
+          "result's duration_api_ms, the whole session's; tools/stream-cost.py "
+          "reads the same stream to the same two sums: %r"
+          % ((run[0], rec, tool),),
+          run[0] == 0 and rec is not None and "timingAbsent" not in rec
+          and dict((k, rec.get(k)) for k in figures) == summed
+          and tool == (summed["durationMs"], summed["numTurns"], True))
+
+    for tag, shape, inits, results in (("tun", "unpaired", 1, 2),
+                                       ("tdang", "dangling", 2, 1)):
+        run, rec = recorded(tag, TIMING, env_extra={"STUB_STRETCHES": shape})
+        absent = (rec or {}).get("timingAbsent") or {}
+        stream = _fields(run[1].strip()).get("stream")
+        tool = _stream_reading(stream) if shape == "unpaired" else None
+        why = [str(absent.get(k)) for k in ("durationMs", "numTurns")]
+        check("ras75 a stream of %d init events and %d result events (%s) "
+              "cannot be split into stretches: durationMs and numTurns are left "
+              "out and named with that reason, the init and result counts in it, "
+              "while durationApiMs - a whole-session figure - is kept%s: %r"
+              % (inits, results, shape,
+                 "; tools/stream-cost.py reads the same stream as unpaired"
+                 if shape == "unpaired" else "", (run[0], rec, tool)),
+              run[0] == 0 and rec is not None
+              and "durationMs" not in rec and "numTurns" not in rec
+              and sorted(absent) == ["durationMs", "numTurns"]
+              and all("init" in w and "result" in w and str(inits) in w
+                      and str(results) in w for w in why)
+              and rec.get("durationApiMs") == (TIMING if results == 2
+                                               else DECOY)["duration_api_ms"]
+              and (shape != "unpaired" or (tool is not None and tool[2] is False)))
+
+
+def _unusable_cases(check, M, recorded, figures, summed):
+    """A figure no float can hold is not a usable number, and whatever the
+    stream holds, the reading of the time figures cannot stop the runner from
+    printing its line and writing its record."""
+    huge = 10 ** 400
+    runs = (("thuge1", dict(TIMING, duration_ms=huge), DECOY, ["durationMs"]),
+            ("thuge2", dict(TIMING, duration_api_ms=huge),
+             dict(DECOY, num_turns=huge), ["durationApiMs", "numTurns"]))
+    for tag, last, first, gone in runs:
+        run, rec = recorded(tag, last, env_extra={"STUB_DECOY": json.dumps(first)})
+        absent = (rec or {}).get("timingAbsent") or {}
+        line = run[1].strip()
+        check("ras76 an integer too large for a float in %s is recorded as "
+              "absent with that reason, the other figures kept, and the runner "
+              "still exits 0, prints its line and writes its record: %r"
+              % (" and ".join(gone), (run[0], line, rec, run[2][-300:])),
+              run[0] == 0 and DRIVE_LINE.match(line) is not None
+              and rec is not None and rec.get("line") == line
+              and sorted(absent) == sorted(gone)
+              and all("too large" in str(absent[k]) for k in gone)
+              and not [k for k in gone if k in rec]
+              and all(rec.get(k) == summed[k] for k in figures if k not in gone))
+
+    # JSON that is not an event object is no init and no result: a count that
+    # took it for one, or a reader that asked it for a type, loses the sums.
+    raw = ["[1, 2]", '"text"', "7", "null"]
+    run, rec = recorded("traw", TIMING, env_extra={"STUB_RAW": json.dumps(raw)})
+    line = run[1].strip()
+    check("ras77 a stream holding JSON lines that are not event objects is read "
+          "past them: the two paired stretches still record their sums, nothing "
+          "named absent: %r" % ((run[0], line, rec, run[2][-300:]),),
+          run[0] == 0 and DRIVE_LINE.match(line) is not None
+          and rec is not None and rec.get("line") == line
+          and "timingAbsent" not in rec
+          and dict((k, rec.get(k)) for k in figures) == summed)
+
+    # The reading itself failing, whatever made it fail: a reading of the stream
+    # whose result list is not a list stands for every input no branch foresaw.
+    stream = os.path.join("sessions", "P9.1.writer.20261118T010203Z.42.jsonl")
+    broken = {"last": dict(TIMING, type="result"), "results": 7, "inits": 1,
+              "problem": None}
+    got = _harness.attempt(lambda: M.session_timing(broken, stream))
+    held = got[1] if got[0] and isinstance(got[1], dict) else {}
+    absent = held.get("absent") or {}
+    check("ras78 a timing reading that raises does not raise out of "
+          "session_timing: each figure is named absent with the failure in its "
+          "reason, and the start stamp is still recorded: %r" % (got,),
+          got[0] is True and sorted(absent) == sorted(figures)
+          and all("could not be read" in str(absent[k]) and "TypeError" in str(absent[k])
+                  for k in figures)
+          and held.get("figures") == {"startedAt": "2026-11-18T01:02:03Z"})
+
+
+# --- one table of streams, two readers ----------------------------------------
+# Each row is a stream written out event by event, what the runner's record holds
+# for it, and what tools/stream-cost.py reports for it - both as values here,
+# never asked of either code. The two readers do not have to agree, and where
+# they differ the row says how; what a row may not do is leave a reader's
+# reading unwritten, so a sentence about how the two compare has this table to
+# answer to.
+_R1 = {"duration_ms": 1000, "duration_api_ms": 900, "num_turns": 3}
+_R2 = {"duration_ms": 5000, "duration_api_ms": 4000, "num_turns": 10}
+
+
+def _ev_init(uid):
+    return {"type": "system", "subtype": "init", "session_id": SESSION,
+            "model": "x", "uuid": uid}
+
+
+def _ev_result(uid, figures, cost):
+    return dict({"type": "result", "subtype": "success", "is_error": False,
+                 "session_id": SESSION, "total_cost_usd": cost, "uuid": uid},
+                **figures)
+
+
+_EV_TEXT = {"type": "assistant", "session_id": SESSION, "uuid": "u-text",
+            "message": {"content": [{"type": "text", "text": "done"}]}}
+_FIGURES = ["durationMs", "durationApiMs", "numTurns"]
+# (tag, what the stream is, its events, the runner's figures, the names the
+# runner records as absent, the tool's (duration_ms, num_turns, paired)).
+STREAM_TABLE = [
+    ("xpair", "two paired stretches",
+     [_ev_init("u-i1"), _ev_result("u-r1", _R1, 0.5),
+      _ev_init("u-i2"), _ev_result("u-r2", _R2, 1.25)],
+     {"durationMs": 6000, "durationApiMs": 4000, "numTurns": 13}, [],
+     (6000, 13, True)),
+    # The runner is the stricter reader here: two results under one init cannot
+    # be split into stretches, so it records neither per-stretch sum, where the
+    # tool adds both results up and says the stream is unpaired.
+    ("xunp", "one init with two results",
+     [_ev_init("u-i1"), _ev_result("u-r1", _R1, 0.5), _ev_result("u-r2", _R2, 1.25)],
+     {"durationApiMs": 4000}, ["durationMs", "numTurns"],
+     (6000, 13, False)),
+    # A result repeated under one uuid is one event read twice: both readers
+    # drop the copy, so the stream is the two paired stretches again.
+    ("xdup", "two paired stretches, the last result repeated under one uuid",
+     [_ev_init("u-i1"), _ev_result("u-r1", _R1, 0.5),
+      _ev_init("u-i2"), _ev_result("u-r2", _R2, 1.25), _ev_result("u-r2", _R2, 1.25)],
+     {"durationMs": 6000, "durationApiMs": 4000, "numTurns": 13}, [],
+     (6000, 13, True)),
+    ("xone", "a single stretch",
+     [_ev_init("u-i1"), _EV_TEXT, _ev_result("u-r2", _R2, 1.25)],
+     {"durationMs": 5000, "durationApiMs": 4000, "numTurns": 10}, [],
+     (5000, 10, True)),
+    # No result: the runner names all three figures absent; the tool has no
+    # result to report and, with none to pair, does not call the stream unpaired.
+    ("xnone", "no result at all",
+     [_ev_init("u-i1"), _EV_TEXT],
+     {}, _FIGURES,
+     (None, None, True)),
+]
+
+
+def _tool_reading(stream):
+    """(duration_ms, num_turns, paired) as tools/stream-cost.py reads `stream`,
+    a stream with no result included: its result's two per-stretch counts, None
+    each when it has none, and whether its inits and results pair."""
+    SC = _stream_cost()
+    session = SC.parse(SC.load_events(stream))
+    result = session.get("result") or {}
+    return (result.get("duration_ms"), result.get("num_turns"),
+            SC.main_stretches(session)[1] is None)
+
+
+def _table_cases(check, root, recorded):
+    """Every row of STREAM_TABLE run through the runner and through the tool,
+    and both readings held to the row."""
+    os.makedirs(os.path.join(root, "streams"), exist_ok=True)
+    for tag, what, events, figures, absent, tool_want in STREAM_TABLE:
+        path = os.path.join(root, "streams", tag + ".jsonl")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("".join(json.dumps(e) + "\n" for e in events))
+        run, rec = recorded(tag, {}, env_extra={"STUB_STREAM": path})
+        rec = rec or {}
+        got = dict((k, rec.get(k)) for k in _FIGURES if k in rec)
+        gone = sorted(rec.get("timingAbsent") or {})
+        # The tool reads the file the stub wrote verbatim: a run with no result
+        # prints a could-not-run line, which carries no `stream=` field.
+        tool = _harness.attempt(lambda: _tool_reading(path))
+        check("ras79 STREAM TABLE, %s: the runner records %r with %r absent, "
+              "and tools/stream-cost.py reports %r - both as written in the "
+              "table: %r" % (what, figures, absent, tool_want,
+                             (run[0], got, gone, tool, run[2][-300:])),
+              bool(rec) and got == figures and gone == sorted(absent)
+              and tool == (True, tool_want))
+
+
+def _too_deep():
+    """(line, "RecursionError") for the shallowest nested array this interpreter
+    refuses to parse, or (line, None) when none up to the last depth tried is.
+
+    Stepped up rather than fixed: up to 3.13 the parser stops at the recursion
+    limit, while 3.14 measures its C stack and parses a line a hundred thousand
+    deep. The runner runs under this same interpreter, so the depth found here is
+    one its reader meets too - and a fixture that parsed would leave the case
+    proving nothing about a reader that catches ValueError alone."""
+    line = ""
+    for depth in (10 ** 4, 10 ** 5, 10 ** 6, 10 ** 7):
+        line = "[" * depth + "]" * depth
+        try:
+            json.loads(line)
+        except RecursionError:
+            return line, "RecursionError"
+        except ValueError:
+            return line, None
+    return line, None
+
+
+def _nested_cases(check, root, recorded):
+    """A line JSON cannot parse for a reason other than a malformed value - one
+    nested past the interpreter's limit - is a line the runner counts and reads
+    past, not one that ends it after the session ran. The line runs to megabytes
+    on 3.14, past what an environment variable carries, so it reaches the stub as
+    a stream file."""
+    deep, kind = _too_deep()
+
+    def stream(tag, lines):
+        path = os.path.join(root, "streams", tag + ".jsonl")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("".join(ln + "\n" for ln in lines))
+        return recorded(tag, {}, env_extra={"STUB_STREAM": path})
+
+    paired = [_ev_init("u-i1"), _ev_result("u-r1", _R1, 0.5),
+              _ev_init("u-i2"), _ev_result("u-r2", _R2, 1.25)]
+    run, rec = stream("tdeep", [json.dumps(paired[0]), deep]
+                      + [json.dumps(e) for e in paired[1:]])
+    line = run[1].strip()
+    check("ras80 a stream holding a line nested too deep to parse (%s, not a "
+          "ValueError) is read past it: the runner exits 0, prints its line, "
+          "and records the two paired stretches' sums: %r"
+          % (kind, (run[0], line[:200], rec, run[2][-300:])),
+          kind == "RecursionError" and run[0] == 0 and DRIVE_LINE.match(line) is not None
+          and rec is not None and rec.get("line") == line
+          and "timingAbsent" not in rec
+          and dict((k, rec.get(k)) for k in _FIGURES)
+          == {"durationMs": 6000, "durationApiMs": 4000, "numTurns": 13})
+    run, rec = stream("tdeepn", [json.dumps(paired[0]), deep, "{not json"])
+    line = run[1].strip()
+    check("ras81 ...and it is COUNTED as unparsed beside a malformed line: a "
+          "stream with no result names both lines in its printed line, which "
+          "is still printed and recorded: %r" % ((run[0], line, rec),),
+          run[0] != 0 and "2 line(s) of it could not be parsed as JSON" in line
+          and rec is not None and rec.get("line") == line)
 
 
 def _record_lines(path):

@@ -93,6 +93,7 @@ import _areas  # noqa: E402  (meta.areas registry + the resolution every surface
 import _ui_theme as _theme  # noqa: E402  (the words a person reads for a machine value)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _fmt  # noqa: E402  (the one token/cost formatter, since P10.6 — no indirection needed)
+import _task_timing  # noqa: E402  (is_unreadable: which records the time cell cannot read)
 import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
 import _proposals  # noqa: E402  (the proposal READ side: one derivation of the rows
 #                                  and of the "reserved phase (N tasks)" cell that this
@@ -946,6 +947,62 @@ def _evidence_cell(holder):
     return _clip(status, EVIDENCE_CELL_MAX) if status else "-"
 
 
+def _time_cell(summary):
+    """The `time` cell: a task's whole window, `timing.firstStartedAt` to
+    `completedAt`, read off `_status_facts.task_timing`'s summary.
+
+    `-` is no record, the same mark `tests` and `commit` use. A record with no
+    window is never a number: `open` when the one thing it lacks is a
+    completion; `not readable` when its stages could not be read - the list or
+    a stage in it - so no figure from it is printed; `no window` when it is
+    readable and still gives none, which is a record with no first start or a
+    completion before its first start. The JSON's `missing` names which
+    source."""
+    if summary is None:
+        return "-"
+    if summary.get("windowMs") is not None:
+        return _wall_duration(summary["windowMs"]) or "-"
+    if summary.get("missing") == ["completedAt"]:
+        return "open"
+    if _task_timing.is_unreadable(summary):
+        return "not readable"
+    return "no window"
+
+
+def _wall_duration(ms):
+    """A task window or a phase-line figure, in hours past an hour and days past
+    a day; under an hour, `_fmt.human_duration`'s own text. Kept here rather
+    than in the shared formatter, whose every other caller compares step
+    lengths and keeps its output byte for byte - a window spans days, and a
+    count of minutes past an hour reads as a different number."""
+    if not isinstance(ms, int) or isinstance(ms, bool) or ms < 3600000:
+        return _fmt.human_duration(ms)
+    minutes = ms // 60000
+    if minutes < 24 * 60:
+        return "%d h %02d m" % (minutes // 60, minutes % 60)
+    return "%d d %02d h" % (minutes // (24 * 60), (minutes // 60) % 24)
+
+
+def _time_clause(aggregate):
+    """The phase head's clause: the median task window and the split by stage
+    over the phase's done tasks with a window (`_status_facts.phase_timing`
+    leaves a cancelled or unfinished task out, and names it under the JSON's
+    `leftOut`), kinds in `_task_timing.KINDS` order as the aggregate holds them,
+    then the unattributed share and any overrun - so the figures, less the
+    overrun, add up to the summed windows. Empty when no task of the phase is
+    summed."""
+    if not aggregate or not aggregate.get("tasks"):
+        return ""
+    parts = ["%s %s" % (kind, _wall_duration(row["ms"]))
+             for kind, row in (aggregate.get("byKind") or {}).items()]
+    parts.append("unattributed %s" % _wall_duration(aggregate["unattributedMs"]))
+    if aggregate.get("overrunMs"):
+        parts.append("overrun -%s" % _wall_duration(aggregate["overrunMs"]))
+    return "  time median %s per task over %s: %s" % (
+        _wall_duration(aggregate["medianWindowMs"]),
+        _fmt.plural(aggregate["tasks"], "finished task"), ", ".join(parts))
+
+
 def render_status(manifest, summary, width=18, only_phase=None, pt=None,
                   view=None, own=None, manifest_path=None):
     """Plain-ASCII status report. Printed verbatim by /audit:status.
@@ -1163,6 +1220,15 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
                      for pe in shown_phases
                      for t in ((by_id.get(pe.get("id")) or {}).get("tasks") or [])
                      if isinstance(t, dict))
+    # The `time` column is earned the same way, off the rollup's `timing` block
+    # rather than a second reading of the records: a task in the rendered scope
+    # has to carry one.
+    timing = summary.get("timing") or {}
+    timed = timing.get("tasks") or {}
+    show_time = any(str(t.get("id")) in timed
+                    for pe in shown_phases
+                    for t in ((by_id.get(pe.get("id")) or {}).get("tasks") or [])
+                    if isinstance(t, dict))
 
     all_rows = {}
     for pe in shown_phases:
@@ -1181,6 +1247,8 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
             ]
             if show_tests:
                 cells.append(_evidence_cell(t))
+            if show_time:
+                cells.append(_time_cell(timed.get(str(tid))))
             cells += [_short(t.get("commit")),
                       "READY" if tid in ready else ""]
             rows.append(cells)
@@ -1191,6 +1259,7 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
     # The column is as wide as the longest word actually present.
     cols = (("task", "title", "status", "model", "waiting on")
             + (("tests",) if show_tests else ())
+            + (("time",) if show_time else ())
             + ("commit", ""))
     widths = [len(c) for c in cols]
     for rows in all_rows.values():
@@ -1270,6 +1339,8 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
                 word = None
             if word:
                 head += "  full %s" % _clip(word, 88)
+        head += _time_clause(
+            (timing.get("phases") or {}).get(str(pe.get("id"))))
         out.append(head)
         # WHICH COPY THIS ROW IS, whenever it is not this checkout's own live
         # one: a phase in flight elsewhere is shown as that copy holds it, and

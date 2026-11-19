@@ -68,6 +68,7 @@ import _areas  # noqa: E402  (meta.areas registry + the resolution every surface
 import _priority  # noqa: E402  (the ONE expression of execution order, and the skip note)
 import _usage_core  # noqa: E402  (parse_ts — the tree's one ISO reader)
 import _filed_returns as _fr  # noqa: E402  (INTENT_DEFERRED, and floor_block: the one reader of a return's floor block)
+import _task_timing  # noqa: E402  (summarize: the one reading of a task's timing record)
 
 # --- vocabulary -----------------------------------------------------------------
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
@@ -1220,6 +1221,128 @@ def bugs_fixed_elsewhere(own, live, copies):
     return out
 
 
+# --- wall time by stage ------------------------------------------------------------
+# What a task's `timing` record says, summed per phase. Every figure is
+# `_task_timing.summarize`'s, so the status render, its JSON and the record's own
+# validator read one record one way.
+PHASE_TIMING_BASIS = ("the sum of _task_timing.summarize over this phase's done "
+                      "tasks that have a window; every other task carrying a "
+                      "record is named under leftOut with the reason it is "
+                      "left out, and summed nowhere")
+# Why a task carrying a record is not in its phase's figures, in the order they
+# are asked: cancelling stamps `completedAt`, so a cancelled task that was once
+# started HAS a window - one no work finished - and must be told apart from a
+# finished task before its window is looked at.
+LEFT_OUT_CANCELLED = "cancelled"
+LEFT_OUT_NOT_FINISHED = "not finished"
+LEFT_OUT_NO_WINDOW = "no window"
+# A record whose stages could not be read is not a record with no window: the
+# `time` cell `audit-status.py` prints for it says `not readable`, and the JSON
+# names the same state with the same words (test__status_facts.py's tt15 asks
+# both).
+LEFT_OUT_NOT_READABLE = "not readable"
+
+
+def _left_out(status, summary):
+    """Why a task with this status and summary is not summed into its phase's
+    line, or None when it is."""
+    if status == "cancelled":
+        return LEFT_OUT_CANCELLED
+    if status != "done":
+        return LEFT_OUT_NOT_FINISHED
+    if summary.get("windowMs") is None:
+        if _task_timing.is_unreadable(summary):
+            return LEFT_OUT_NOT_READABLE
+        return LEFT_OUT_NO_WINDOW
+    return None
+
+
+def task_timing(task):
+    """The summary of `task`'s timing record, or None when it carries none.
+
+    None rather than a summary naming `timing` as missing: a task the drive never
+    timed has nothing to report, and a block of nulls beside every untimed task
+    would make a plan that recorded nothing serialize differently from before."""
+    if not isinstance(task, dict) or not isinstance(task.get("timing"), dict):
+        return None
+    return _task_timing.summarize(task)
+
+
+def _median(values):
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return int(round((ordered[mid - 1] + ordered[mid]) / 2.0))
+
+
+def phase_timing(summaries, statuses):
+    """The aggregate of `{task id: task_timing summary}` for one phase, or None
+    when the mapping is empty; `statuses` is `{task id: status}`.
+
+    Summed over the DONE tasks that have a window only, so the line counts
+    finished tasks and its arithmetic holds: `byKind` totals less `overrunMs`
+    plus `unattributedMs` is `windowMs`, as it is per task. Every other task is
+    named in `leftOut` with the reason - cancelled, not finished, not
+    readable, no window -
+    and a task whose record gives no window is still listed in `withoutWindow`
+    with what it lacked; with no task summed at all, the window figures are
+    None rather than zero."""
+    if not summaries:
+        return None
+    left_out = {}
+    for tid, s in summaries.items():
+        why = _left_out(statuses.get(tid), s)
+        if why is not None:
+            left_out[tid] = why
+    windowed = [(tid, s) for tid, s in summaries.items() if tid not in left_out]
+    by_kind = {}
+    for kind in _task_timing.KINDS:
+        rows = [s["byKind"][kind] for _tid, s in windowed if kind in s["byKind"]]
+        if rows:
+            by_kind[kind] = {
+                "ms": sum(r["ms"] for r in rows),
+                "stages": sum(r["stages"] for r in rows),
+                "basis": sorted(set(b for r in rows for b in r["basis"]))}
+
+    def total(key):
+        return sum(s[key] for _tid, s in windowed) if windowed else None
+
+    return {"tasks": len(windowed), "windowMs": total("windowMs"),
+            "medianWindowMs": _median([s["windowMs"] for _tid, s in windowed])
+            if windowed else None,
+            "byKind": by_kind, "attributedMs": total("attributedMs"),
+            "unattributedMs": total("unattributedMs"),
+            "overrunMs": total("overrunMs"),
+            "windowBasis": _task_timing.WINDOW_BASIS,
+            "basis": PHASE_TIMING_BASIS,
+            "withoutWindow": {tid: list(s["missing"]) for tid, s in summaries.items()
+                              if s.get("windowMs") is None},
+            "leftOut": left_out}
+
+
+def timing_rollup(manifest):
+    """`{"tasks": {id: summary}, "phases": {id: aggregate}}` for the tasks that
+    carry a timing record, in plan order; None when no task carries one, so a
+    plan that never recorded a stage has no `timing` key at all."""
+    tasks, phases = {}, {}
+    for phase in (manifest.get("phases") or []) if isinstance(manifest, dict) else []:
+        if not isinstance(phase, dict):
+            continue
+        mine, statuses = {}, {}
+        for task in phase.get("tasks") or []:
+            summary = task_timing(task)
+            if summary is not None:
+                mine[str(task.get("id"))] = summary
+                statuses[str(task.get("id"))] = task.get("status")
+        if mine:
+            tasks.update(mine)
+            phases[str(phase.get("id"))] = phase_timing(mine, statuses)
+    if not tasks:
+        return None
+    return {"tasks": tasks, "phases": phases}
+
+
 def rollup(manifest, findings, warnings, usage=None, boundary=None,
            copies=None, own=None):
     """The machine-readable summary --json, render-report and the panel consume.
@@ -1434,6 +1557,12 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None,
     if copies:
         out["readyCopies"] = ready_copy_notes(manifest, out)
         out["copyHeadline"] = copy_headline(out)
+    # Only when a task carries a timing record, for `usage`'s reason: no key
+    # means nothing was timed, and a plan that never recorded a stage
+    # serializes exactly as it did before the record existed.
+    timing = timing_rollup(manifest)
+    if timing is not None:
+        out["timing"] = timing
     return out
 
 

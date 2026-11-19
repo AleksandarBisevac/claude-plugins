@@ -4,8 +4,9 @@ The parts are joined in the order `_ui_theme.REPORT_CSS_PARTS` lists, behind the
 token layer, and served as a single inline `<style>` in a self-contained HTML file.
 
 **Order is the cascade.** Two rules of equal specificity are decided by which one is
-read last, so this sequence is behaviour: the shell before the components that sit
-in it, and the print and forced-colours blocks after the colours they override.
+read last, so this sequence is behaviour: the shared layer (`ui/shared/*.css`, which
+the panel joins too) before every part here, the shell before the components that
+sit in it, and the print and forced-colours blocks after the colours they override.
 Sorting these names alphabetically changes what ships.
 
 The order is declared in `_ui_theme` rather than beside the assembler, because the
@@ -14,14 +15,14 @@ lint over a differently-ordered join would clear a palette nobody serves.
 
 | part | responsibility |
 |---|---|
-| `shell.css` | Reset, scroll behaviour, the app shell, and how its cards compose as the screen grows. |
+| `shell.css` | Reset, scroll behaviour (the one line every anchor lands on, `--sticky-anchor`, and the room after the content that lets the last section reach it - a length the script measures, nothing without it), the rule that keeps every pill and id in the column whole, the app shell, the header filter row and the scope beside each of its labels, and how its cards compose as the screen grows. |
 | `summary.css` | The verdict hero, the summary card and the animated progress bar. |
-| `controls.css` | Toolbar, buttons, filter chips, and the More-filters disclosure. |
+| `controls.css` | Toolbar, buttons, filter chips, the More-filters disclosure, and the one focus rule every filter field shares. |
 | `badges.css` | Status and severity badges, and the test gate's verdict — which reuses the same pill and adds only a hue, while the observations beside it are deliberately not pills. |
-| `tables.css` | The phase and bug tables. |
+| `tables.css` | The phase and bug tables, and the phases table's head: the Sort select and expand-all, which order and open the rows rather than filter them, so they sit on the table and not in the pinned filter bar. |
 | `gate-rail.css` | The gate rail and its signature. |
 | `empty-state.css` | What the page shows when a filter matches nothing. |
-| `forced-colors.css` | Colour that must survive forced-colours mode and paper. |
+| `forced-colors.css` | Colour that must print, and the tablet and phone block: tables scroll in their own frame, the More-filters panel comes into the flow, and the top bar stops being sticky. It holds no forced-colours rule; focus survives that mode through the transparent outline on each control's own focus rule (`controls.css`). |
 | `motion-and-print.css` | Reduced motion, and forcing a light sheet for print. |
 | `ready-now.css` | The ready-now list. |
 | `segments.css` | Phase segments and their headers. |

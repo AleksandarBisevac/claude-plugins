@@ -7,21 +7,44 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 ## [Unreleased]
 
 ### Added
-- **A typed `/audit:run <id>` or `/audit:phase <id>` runs the drive with no model request when
-  the writer is a headless session.** A new UserPromptSubmit hook, `drive-without-model.py`,
-  starts `drive-phase.py auto` when `executor.writerModel` is set; on done and on stop it blocks
-  the prompt, which ends the turn at no cost and shows the drive's answer. A step that needs a
-  model or the human lets the prompt go on, and the command continues the drive from where it
-  stands. `executor.driveWithoutModel: false` turns it off. Plan mode passes through, and so does
-  `/audit:next`: a prompt the hook acts on names its own target, and that one's would be chosen
-  from state the drive itself changes. The drive runs from the session's directory with no
-  `CLAUDE_PROJECT_DIR` and no `--project-dir`, so it resolves the tree the command resolves, and
-  the setting is read from that tree. A hook that cannot start never blocks a prompt. Esc during
-  the drive stops `auto` and its children on POSIX and blocks the prompt with a line naming
-  `/audit:resume`. **On Windows every verb passes through and the command runs as it does with no
-  hook**: no process there can be sent a signal another process can catch, so Esc would end only
-  the launcher while `auto` and its writers kept spending, and the hook stays out of the way until
-  a real run proves a stop there.
+
+- **A task can record where its wall time went.** The optional task key `timing` holds
+  `firstStartedAt` and a list of `stages` - each a `kind` (writer, gate, selection, base,
+  reviewer, commit or wait), a start, a length in milliseconds and the record the length was
+  read from. `/audit:task start` sets `firstStartedAt` once and a restart no longer loses it;
+  `move`, `reopen` and `cancel` keep the record. A stage with an unknown kind, a negative length
+  or no basis is a validation finding naming the task and the stage. The published schema
+  refuses what that check refuses - a malformed stamp, an empty or blank `basis` or `runId` -
+  so a record an external validator passes is one the plugin passes. A plan without the key
+  validates and behaves exactly as before.
+- **The step driver fills a task's timing as it runs it.** Each writer and reviewer session,
+  each recorded gate run with the time it spent choosing what to run, a red's base
+  measurement, the record commit, and the wait between a handed-out step and its start are
+  appended to the task's `timing`, each read off its own record. An executor or reviewer
+  dispatched as an agent is timed from its hand-out to its filed return, with a basis saying
+  the agent's own start is not recorded. When that time is a returned file's modification
+  time, the basis says why - the journal could not be read, or names no row for the file, or the
+  role's filing writes none - and that such a time can move later but never earlier. The
+  commit stage is the commit verb's own runs added up, so a set-aside's second gate between
+  them counts once, as the gate stage it is. They ride the session notes and every close the
+  driver makes, the no-change answer's included, so a task costs no extra commit and no extra
+  write. A session whose record holds no duration adds no stage, and that time shows as
+  unattributed; a stage whose source cannot be read - the ledger or a row, a row with no start
+  or length, an agent hand-out with no stamp - adds none either, and the step's did-line says
+  which stage and why, once. `/audit:task note` and `done` take the stages on a repeatable
+  `--stage`, and the journal row of each names the timing change.
+- **`/audit:status` prints where a task's wall time went.** When a task in view carries a
+  timing record, the table grows a `time` column holding the task's whole window from its
+  first start to its completion, in hours or days once past an hour - `-` for no record, `open`
+  for one not finished, `no window` for a record with no first start or a completion before
+  it, `not readable` for stages that cannot be read. A reopened task's window keeps its first
+  start, so the time it sat closed is inside it. The phase head gives the median window and the
+  split by stage over its done tasks, with the unattributed share named; a cancelled or
+  unfinished task is left out and named. `--json` carries the same figures under `timing`: per
+  task the summary, per phase the aggregate, each with the record it was read from; a task
+  without a record has no entry. A plan that never recorded a stage renders and serializes
+  exactly as before. `--gate` reads no timing figure, only the validator's verdict on the
+  record, so a malformed record can trip the default `invalid` condition.
 - **A task that weakens a test is reported to its reviewer, and nothing is refused for it.**
   `drive-phase.py submit`, and the drive filing a headless writer's work, read the task's diff
   against the HEAD the red-first helper builds its throwaway at, for a test deleted or its
@@ -182,6 +205,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   escaped separator or a continued line starts no command.
 
 ### Changed
+
+- **`executor.phaseGateOnly` now reaches a task's recorded gate, not only the writer's prompt.**
+  A command the key names is left out of a task's recorded run (`run-test-gate.py --task`)
+  when the phase's own `testGate` runs it, whichever arm proposed it - a declared entry or a
+  step the affected selection added - and the run prints a line for each. The evidence row
+  lists each under `leftToPhaseGate` with the key as its basis; the reuse identity is taken
+  over the steps that ran, the `gateDigest` stays the declared gate's, and the verdict binding
+  reads the list as part of the declaration, so such a row binds a commit. A task gate of
+  nothing but such commands records `no-checks`, never `passed`. A named command the phase
+  gate does not hold still runs, with a line saying it would otherwise run nowhere, and the
+  writer's prompt lists it with the same reason. The writer's prompt, the recorded run and the
+  drive's view of a task's gate steps all ask one function, so the three leave out the same
+  commands. The phase gate runs every entry, and an absent or empty key changes nothing.
+  `COMPATIBILITY.md` records this as a change to what a set key does.
+- **A task's own suites and the suites its change can break run as one call.** When a task's
+  gate entry is exactly the plan's recorded subset spelling (`meta.phaseGate.derived.spelling`)
+  over a list of paths, the affected suites spelled the same way join it: the runner is called
+  once over the union, the entry's paths first and each suite once, instead of once for the
+  entry and once per arm after it. The evidence row records one step named for the entry
+  followed by each affected step's name (`<entry> + affected/<arm>: <suites>`), so the row
+  still says which suites were declared and which arm added the rest; the verdict binding
+  reads that step as the entry and binds it, the base measurement of a red reads each failing
+  suite against the part that ran it, and the reuse identity is the one the two calls would
+  have had. Anything left to the phase gate by `executor.phaseGateOnly` is left out before the
+  join. A gate entry in any other spelling, a build key, the same runner with an option, a step
+  the selection widened onto the phase gate, or a run with no affected suite runs exactly as
+  before. A gate entry spelled the way such a step
+  is named cannot bind, and the binding says so.
 - **A brief's rules win over a skill's instruction, and the phase review is handed its review
   skill.** Both agent bodies, the executor's and the reviewer's, now say their hard rules win over
   any skill's instruction and that a conflict is named in the return; a headless session started
@@ -402,7 +453,83 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   markers did not hold until this change, and `tests/test__clause_coverage.py`'s `cw8` now times
   all three at doubling lengths in a child killed at a deadline.
 
+### Fixed
+
+- **A task added before the project recorded how to run a subset gets the narrow gate once it
+  does.** Such a task stored the phase's whole gate, saying no spelling was known, and recording
+  the spelling later changed nothing for it, so it ran the whole gate on its turn. `/audit:phase
+  settle` now rewrites the gate of a task not yet started whose stored gate was the derivation's
+  fallback and whose derivation now gives a narrower one, with the basis it gives; the validator
+  warns about each such task and names the verb, and `record-listing` prints the tasks its new
+  spelling leaves stale. A gate somebody declared or cleared, a started task, and a task put back
+  to pending after an attempt keep their gate.
+- **A derived phase gate whose `meta.phaseGate.derived.runner` is blank once trimmed shows the
+  default `gate` entry** instead of printing and recording the blank, the way the validator
+  already read that value.
+- **A gate step listing a suite named after the evidence or journal module is repeated again,
+  and a step that names the plan is measured however its command spells it.** The test-gate
+  runner leaves the plan, its shards, the evidence ledger and the journal out of the identity a
+  repeat must match, because a recorded run rewrites them, so a step whose command names one of
+  them is measured on every run rather than repeated. It found that name anywhere in the
+  command, so `tests/test__evidence_io.py` read as the evidence directory and a green sweep was
+  measured again on every unchanged tree. Now a step names a left-out path when its command's
+  text holds the path's last component as a whole name - anywhere in the text, in any letter
+  case, whatever quotes or backslashes surround it. A letter or digit running on into it through
+  `.`, `_`, `-`, `+`, `@` or `~` makes it part of a longer name, and a directory counts only with
+  a path separator beside its name, so `-k journal` is not the journal directory. The same
+  search measures a step naming the directory that holds the plan's shards, either spelling of a
+  plan that is a symlink, or any script this plugin ships, because the plugin's own readers find
+  the plan through the project's config with no path given (`audit-status.py --gate`). Each step
+  is read under the command its entry declares and under the command that runs, so a step the
+  change widened onto the phase gate is read by the command it runs, not by its name. A gate
+  command that is not a string is measured, with that reason printed. What the reading cannot
+  see is listed once, beside `UNREADABLE` in `run-test-gate.py` and in `PLUGIN-BUILD-GUIDE.md`'s
+  `run-test-gate.py` section; a step relying on one of those can still repeat a green.
+- **A step that reads the plan's meta without naming the plan is measured again once that meta
+  changes.** The identity a repeat must match now holds the plan's `meta` as it stands when the
+  gate is asked, so an edit to any meta block measures every step, whether the gate would have
+  repeated whole or in part. Before, a suite reading the live plan's meta, run by a sweep that
+  names no plan, repeated its green over a meta it no longer described. The evidence boundary a
+  recorded run stamps into meta itself is left out, so the run after a plan's first recorded run
+  still repeats. A run recorded by an earlier build was keyed without the meta, so it is measured
+  once more rather than repeated. The plan's phases, tasks and bugs stay outside the key, because
+  a recorded run rewrites them.
+- **A recorded gate measures again only the steps that grade the plan.** A gate holding an entry
+  that names the plan or one of its records (above) was measured whole on every run, so a
+  validator beside a sweep paid for the sweep twice. Now only those entries run; every other
+  entry repeats from the newest run that measured it under the same identity - the tree's
+  content, the declared gate and files, and the plan's meta - as a whole gate already did. The
+  row says which steps were repeated and from which run (`reusedFrom` on each copied step,
+  `verdictSource: part-reused` on the row), keeps no duration for a copied step, and its verdict
+  is the worse of the two halves - so a red step is repeated as red rather than measured again
+  until it comes back green. The run prints a line naming the repeated steps and the run they
+  came from, and the measured steps with their times. A gate in which no entry names such a path
+  repeats whole as before, and `--no-reuse` measures every step.
+- **A base tree left by a killed background base run is removed once, and the drive's record
+  stops naming it.** The drive's sweep asked whether the run that measured the tree was still
+  alive twice - once to fold the run's own record into the drive's state, once to decide the
+  removal - and a reading that flipped between the two (a process exiting between the probes, or
+  a `ps` that timed out, which reads as alive) kept the run's record while clearing the tree from
+  the state alone, so the next drive laid the removed tree back on its record and swept it
+  again. One reading per run per sweep now decides both: a run read alive leaves its tree and its
+  record as they are and says so, and the sweep that reads it dead removes the tree once and
+  clears it from the record.
+- **The drive acts on the verdict its background gate recorded, and says what the read-back
+  measured.** A gate the drive sent to the background was read back by asking the recorded gate
+  again, and the drive printed that the run did not repeat on this tree whenever the reuse banner
+  was missing - true of no gate holding an entry that names the plan, which is measured on every
+  ask. Worse, a red background run could be followed by a green second ask, and the task closed
+  with the red never shown. Now a red background run - a task's gate or the phase gate at
+  sign-off - is the verdict acted on as its row records it, with nothing asked again, and goes to
+  the base measurement and the decision as an inline red does. A green one is still asked again,
+  for the gate's long output, since its one-line green keeps none of the lines that say why a
+  step was measured. The did-line names the steps repeated and the steps measured again with
+  their seconds, saying `did not repeat on this tree` only when a measured step is one the gate
+  did not say names a path its identity leaves out - a joined step read by its declared entry -
+  with the reason read off the identities the gate recorded.
+
 ### Security
+
 - **An agent can no longer switch its own governance off with an edit tool.** `.claude/**` is
   outside the plan gate, so an Edit or Write of `.claude/audit.config.json` setting
   `policy.enabled: false`, `planGate: "observe"` or `journal.enabled: false` left only a journal
@@ -593,6 +720,127 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   a call is open is recorded under that call - the row says in whose window the switch went
   off, not whose hand did it (`sn20`); and a switch-off by a call whose pass after never runs
   leaves no row (`sn22`).
+
+## [3.9.0]
+
+### Fixed
+- **The configured review skill now runs at phase sign-off.** Since 3.2.0 the phase reviewer's
+  brief never named `reviewSkill` and the headless phase validation never passed it, so sign-off
+  ran without the skill and nothing said so. The phase brief now names the skill resolved for the
+  phase (`phase.reviewSkill`, then the area's, then `meta.reviewSkill`), and the headless
+  validation session is given it whenever the session's runner can find it; when the runner
+  cannot, the dispatch leaves it out and warns. A phase return must now account for the skill:
+  `drive-phase.py submit` refuses a phase review that neither names it in `skillsInvoked` nor
+  carries `skillUnavailable` with a reason. A reviewer that could not load the skill files an
+  honest `skillUnavailable` return, which is accepted and raises a `med` finding, so a skipped
+  skill is visible at triage instead of silent. `/audit:doctor`'s remedy text says the same.
+- **The report's filters say what they are doing.**
+  - *Clear lifts every filter.* Clear, the shareable link, the stored view and the counters all
+    iterate one registry of filter axes, so no axis can be left behind by one of them.
+  - *An empty view names its reason.* When the filters hide every match, the empty state says
+    how many matches they hide and offers **Show all**, and focus lands where the reader can act.
+  - *The counter states its basis*, naming the view it counts.
+  - *A link restores only filters a control shows.* A report link carrying a value no control on
+    that page can show is not applied, so a page never filters by something the reader cannot
+    see or clear.
+  - *The side-nav marks the section a jump lands on*, at every page size, including the last
+    sections of a short page.
+  - On a phone the filters leave the table room; every header filter names its scope; the filter
+    controls are announced and visibly focused.
+- **The report's layout holds under any font.** The filter bar, its counter and the phases table
+  stay within the space stated for each page size whatever font the browser substitutes, with the
+  wrapping designed rather than accidental. Chips and ids no longer break inside a word in any
+  table, and the More-filters disclosure arrow is one shared, decorative rule on the report and
+  the panel.
+- **The drive no longer loops on a red gate.** Recording a red commits the drive's own state rows,
+  and that commit used to make every later base run refuse because "HEAD has moved", so `next`
+  re-ran the red gate without end. The base run now checks the code the red ran on, and HEAD
+  counts as moved only when it changed something outside the paths the recorder writes. A second
+  base in one start that cannot be measured because the code really moved stops as the
+  `gate-red-base-unknown` ask, checked before any base run is launched.
+- **Taking over or releasing a lock claim is serialised by a kernel mutex in the lock
+  directory.** Every create, removal and rewrite of a claim runs under `flock` (POSIX) or
+  `msvcrt.locking` (Windows) on the lock directory's `.mutex` file, released by the kernel
+  however the holder exits, so two takers can no longer both believe they hold a claim. A
+  takeover removes only the claim it judged. A filesystem that refuses kernel locks outright
+  (`ENOLCK`, `EOPNOTSUPP`, `ENOTSUP`, `ENOSYS`) keeps the behaviour from before the mutex existed
+  and says so on a `mutex:` line in the answer; any other error from the lock call is an error,
+  never a silent skip.
+- **A refused `ps` is a third answer, not "alive" or "dead".** Under a sandbox that refuses
+  `/bin/ps`, a process whose state cannot be read is `unverified`: it counts as live, its basis
+  names the refusal, and a lock holder is not taken over on it.
+- `audit-task.py start` compares the plan directory and the project directory on one path
+  resolution, so a symlinked checkout is no longer read as two places.
+- The simulated-Windows test cases no longer reach for the POSIX-only `os.killpg` when the suite
+  runs on a real Windows host.
+
+### Changed
+- **The cost phase: a task run through the plugin spends less before the writer does any work.**
+  - *The writer's skills are disclosed, not appended whole.* The writer's system prompt carries
+    each declared skill's name, its description and its `## Checklist` section when it has one,
+    instead of every `SKILL.md` in full; the session record names the skills the writer actually
+    invoked, and a resumed writer is not warned about a skill it invoked in an earlier round.
+  - *A slow gate step is left to the drive.* A gate step whose recorded mean outlives the Bash
+    tool's foreground bound is not handed to the writer to run; the brief names it once, with its
+    mean and how many runs measured it, and says the drive's gate runs it.
+  - *Every gate the drive runs inside `next` is chosen one way.* A gate whose recorded mean
+    outlives that bound, or that no run has measured, is dispatched to the background
+    (`dispatch-gate`, then `wait-gate`) and decided from its recorded row, so the CLI moving a
+    long command to the background can no longer kill it into a second measurement; a
+    measured-fast gate runs inline.
+  - *The red excerpt is the failing cases.* The gate row and the drive's resume prompt read
+    failing cases through one reader and say so when no case can be read, instead of quoting
+    the tail of the output.
+  - *A task's dependants include the documents that describe it.* The brief's `Who depends on
+    this` section also lists prose that names a decision, step or config key one of the task's
+    files defines.
+  - *The writer is always told which tests to run.* Every `tests.add` suite a task declares is
+    run by a command the writer brief lists, or the brief names the suite and says why it could
+    give no command; a suite counts as run only by a command that really runs it.
+- **The base of a red gate is measured, and an unknown base stops instead of resuming the
+  writer.** When a task gate is red and no comparable base run is recorded, the drive measures
+  the red steps once per start at the base commit, in a detached tree it removes afterwards, in
+  the background when the step is slow or unmeasured. Red at base is decided only on cases both
+  runs name.
+  - A red whose base fails every case it fails stops as `gate-red-base`, with no writer session
+    sent: `block`, `rerun`, or the owner commits over it with a reason.
+  - A base nobody can know - the base run left no reading, failed or was killed - stops as
+    `gate-red-base-unknown`, an `ask` the owner answers, with no session sent and no round
+    spent: `measure-base`, `rerun`, `block`, or commit over it. Before this release that red was
+    read as introduced by the task and sent back to the writer.
+  - One launch has one base run, and a claim left by a base run that died is taken over by the
+    next one, so a killed base run never wedges the drive.
+- The drive's wait wording says a step was handed out rather than launched, and its documents
+  state the base-measure bound.
+
+### Added
+- **A typed `/audit:run <id>` or `/audit:phase <id>` runs the drive with no model request when
+  the writer is a headless session.** A new UserPromptSubmit hook, `drive-without-model.py`,
+  starts `drive-phase.py auto` when `executor.writerModel` is set; on done and on stop it blocks
+  the prompt, which ends the turn at no cost and shows the drive's answer. A step that needs a
+  model or the human lets the prompt go on, and the command continues the drive from where it
+  stands. `executor.driveWithoutModel: false` turns it off. Plan mode passes through, and so does
+  `/audit:next`: a prompt the hook acts on names its own target, and that one's would be chosen
+  from state the drive itself changes. The drive runs from the session's directory with no
+  `CLAUDE_PROJECT_DIR` and no `--project-dir`, so it resolves the tree the command resolves, and
+  the setting is read from that tree. A hook that cannot start never blocks a prompt. Esc during
+  the drive stops `auto` and its children on POSIX and blocks the prompt with a line naming
+  `/audit:resume`. **On Windows every verb passes through and the command runs as it does with no
+  hook**: no process there can be sent a signal another process can catch, so Esc would end only
+  the launcher while `auto` and its writers kept spending, and the hook stays out of the way until
+  a real run proves a stop there.
+- **`drive-phase.py auto` runs the drive's mechanical steps itself** and ends with a distinct
+  answer on done, on stop, and on a step that needs a model; it is what the prompt hook above
+  starts. A wave runs under `auto` only when every member is a dispatch with a command, a step
+  that owes a board echo goes to the model, and an unreaped child or a closed terminal ends the
+  drive with an answer that says so.
+- The report's browser gate runs a wide-font pass locally, so a layout that holds only under the
+  developer's own font fails before CI.
+
+### Known limits
+- **The prompt hook passes through on Windows.** `/audit:run` and `/audit:phase` there run as
+  they did with no hook, with a model request, until a real run proves that Esc can stop the
+  drive and its writers.
 
 ## [3.8.0]
 

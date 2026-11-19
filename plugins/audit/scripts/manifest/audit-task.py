@@ -433,6 +433,8 @@ import _loader                # noqa: E402  (load_hooks_config: where the driver
 import _filed_returns as _fr  # noqa: E402  (a filed return's path, shape and
                               # write-once create, shared with the brief and the commit;
                               # and the landing property, shared with close-phase.py)
+import _task_timing as _timing  # noqa: E402  (first_start: the one stamp of a task's
+                                #                first start, which a restart keeps)
 import _config_rules          # noqa: E402  (review_per_task_mode: the one reading of
                               # `review.perTask`, refused rather than defaulted)
 import _affected_tests as _affected  # noqa: E402  (_python_arm: the import graph a
@@ -5085,6 +5087,14 @@ def _start_task(task, now):
     but that is a question about the prescription, and answering it differently
     here in silence is how one field comes to mean two things.
 
+    THE FIRST START IS KEPT BESIDE IT, not in it: `timing.firstStartedAt` is
+    set by the first start this verb makes and never moved by a later one
+    (`_task_timing.first_start`), so a reader that needs the task's whole
+    window reads that field and `startedAt` keeps the meaning step 2 gives it.
+    A task promoted by a hand edit, or started before the field existed, has
+    no first start recorded until this verb starts it, and a summary of it
+    names the field as missing rather than borrowing `startedAt`.
+
     THE STAMP IS `_filed_returns.next_start_at`'s, not `now` as read: a start's
     `startedAt` is its identity to every place that keys by start, at
     one-second resolution, so a re-start inside the second of the start it
@@ -5101,6 +5111,7 @@ def _start_task(task, now):
            "blockedReason": task.get("blockedReason")}
     task["status"] = "in_progress"
     task["startedAt"] = _fr.next_start_at(was["startedAt"], now)
+    task["timing"] = _timing.first_start(task, task["startedAt"])
     task["attempts"] = (was["attempts"] or 0) + 1
     # A running task is not waiting, so the reason `block` recorded goes with the
     # status it explained; the task.start row keeps it as the `from` half.
@@ -6440,6 +6451,21 @@ def _named_edits(node, paths):
     return named
 
 
+def _project_rel(path, project):
+    """`path` relative to `project`, "/"-spelled, with the directories on both
+    sides resolved first.
+
+    The two sides reach here spelled by different hands: a manifest named
+    relative to the working directory comes back through the kernel's spelling,
+    every link followed, while `--project-dir` keeps a link as typed. Subtracted
+    as strings, the plan's own directory climbed out of the project, nothing was
+    set aside, and every file under it was demanded as a reader. The last
+    component is left as it is, so a tracked link is named, not its target."""
+    head, tail = os.path.split(os.path.abspath(path))
+    return _output.posix_rel(os.path.join(os.path.realpath(head), tail),
+                             os.path.realpath(project))
+
+
 def _owed_now(project, config, mpath, node):
     """`(found, declared, waived, git_root)` - `_impact.owed` over the task as it
     stands, bounded by what the task edits; `found` is None outside a git work
@@ -6479,7 +6505,7 @@ def _owed_now(project, config, mpath, node):
                if s and s not in named]
     removed = [s for s in (spec_of(p) for p in _removed_paths(node)) if s]
     waived = [s for s in (spec_of(p) for p in _waived_paths(node)) if s]
-    plan_dir = _output.posix_rel(os.path.dirname(os.path.abspath(mpath)), project)
+    plan_dir = _project_rel(os.path.dirname(os.path.abspath(mpath)), project)
     exclude = [s for s in [spec_of(plan_dir)] if s and s not in (".", "./")]
     found = _impact.owed(git_root, declared, exclude=exclude, regions=regions,
                          readers=readers, removed=removed)
@@ -6500,8 +6526,8 @@ def _unanswered_readers(project, config, mpath, node):
     # Readers are found relative to the checkout's top and `--files` is read
     # relative to the project, so the remedy spells each the way `scope` reads it.
     for row in unanswered:
-        rel = _output.posix_rel(os.path.join(git_root, *row["file"].split("/")),
-                                project)
+        rel = _project_rel(os.path.join(git_root, *row["file"].split("/")),
+                           project)
         row["entry"] = row["file"] if rel.startswith("..") else rel
     return unanswered, found["errors"]
 
@@ -8206,10 +8232,13 @@ def _locked_done(args, project, config, mpath, tid, out):
     # The key this close was held to, kept where nothing recorded one: a task
     # blocked from `pending` reaches here with no `start` having written it.
     _record_key(node, phase, key)
+    stages, _refusal = _stage_values(args)
+    _append_stages(node, stages)
     phase_id = phase.get("id")
     # THE FIX IS RECORDED ON ITS FINDINGS IN THIS WRITE: `add --fixes` named them
     # and no other verb has to be remembered afterwards.
     finding_changes = record_fix_on_findings(phase, tid, sha) if sha else []
+    finding_changes = finding_changes + _stage_changes(tid, stages)
     # A bug this task fixes derives `fixed` (and its `fixedIn`) from this close, so
     # both are stored on the bug - in the index, which is where `bugs[]` lives.
     settled = _settle(assembled, set(
@@ -8918,6 +8947,39 @@ def _locked_unblock(args, project, config, mpath, tid, reason, out):
 # --description` refuses one because its brief is what its attempts were judged
 # against, and a finding that arrived since belongs beside the brief, dated,
 # rather than in place of it.
+def _stage_values(args):
+    """`(stages, refusal)` - each `--stage` value read as one timing stage and
+    graded by `_task_timing.stage_problems`, or the sentence refusing the first
+    that will not read. Asked before the lock, so a stage nobody can check
+    costs no write; the step driver is the caller, and its stages ride the
+    note or the close it already writes rather than a write of their own."""
+    stages = []
+    for raw in getattr(args, "stage", None) or []:
+        try:
+            stage = json.loads(raw)
+        except ValueError as exc:
+            return [], "[audit-task] --stage is not JSON (%s): %s" % (exc, raw[:120])
+        problems = _timing.stage_problems(stage)
+        if problems:
+            return [], ("[audit-task] --stage %s: %s -- nothing written"
+                        % (raw[:120], "; ".join(problems)))
+        stages.append(stage)
+    return stages, None
+
+
+def _append_stages(node, stages):
+    """`stages` appended, in order, to `node`'s timing record in place - the
+    node this verb is already writing."""
+    for stage in stages:
+        node["timing"] = _timing.append_stage(node, stage)
+
+
+def _stage_changes(tid, stages):
+    """The journal change recording the stages a write appended; none for none."""
+    return [{"id": tid, "field": "timing.stages", "from": None, "to": list(stages)}] \
+        if stages else []
+
+
 def cmd_note(args, out):
     project = _resolve_project(args)
     if not os.path.isdir(project):
@@ -8931,6 +8993,10 @@ def cmd_note(args, out):
     if not text:
         out("[audit-task] note needs --text \"<what to record>\" -- an empty note "
             "records nothing and would still take a journal row")
+        return E_USAGE
+    _stages, refusal = _stage_values(args)
+    if refusal:
+        out(refusal)
         return E_USAGE
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_note(
@@ -8955,12 +9021,15 @@ def _locked_note(args, project, config, mpath, tid, text, out):
     phase_id = phase.get("id")
     entry = {"at": _utc_stamp.utc_stamp(), "text": text}
     node["notes"] = list(notes or []) + [entry]
+    stages, _refusal = _stage_values(args)
+    _append_stages(node, stages)
     wrote = _write_plan(project, mpath, raw_index, assembled, vm, [phase_id],
                         "the note", out)
     if isinstance(wrote, int):
         return wrote
     written, written_manifest, warnings = wrote
-    changes = [{"id": tid, "field": "notes", "from": None, "to": entry}]
+    changes = [{"id": tid, "field": "notes", "from": None, "to": entry}] \
+        + _stage_changes(tid, stages)
     jres = _journal_row(project, config, mpath, "task.note",
                         "%s note in %s: %s" % (tid, phase_id, text),
                         {"taskId": tid, "phaseId": phase_id, "changes": changes})
@@ -10563,6 +10632,61 @@ def _rederive_gate(tid, node, tests, phase, assembled, project):
     return changes
 
 
+# The derivation's words for the arms that end in its FALLBACK rather than in a
+# gate pointed at the task's own paths: the phase's wide gate, or for a gate-only
+# task with no suite `meta.phaseGate.always`. A later input of the derivation - a
+# recorded spelling above all - can move such a task onto a narrow arm with no
+# scope edit, which is the one thing `_gate_follows_scope` never sees.
+_WIDE_GATE_BASES = ("phase-no-spelling", "phase-no-paths", "files-no-suite",
+                    "gate-only-no-suite")
+
+
+def _narrowed_wide_gates(assembled, project):
+    """`[(phase, task, tests, changes)]` - each task whose stored gate is one of
+    the derivation's fallbacks and whose derivation now gives a narrower one:
+    `tests` is a copy carrying the new gate and basis, `changes` the journal
+    rows `_rederive_gate` reports. Nothing in `assembled` is written.
+
+    THE SAME RULE A SCOPE EDIT FOLLOWS (`_gate_follows_scope`), and the same
+    derivation (`_rederive_gate`): a task not started, whose basis is the
+    derivation's own word. A declared or cleared gate carries another word, and
+    a started task keeps the gate its attempt is graded against. NARROWER means
+    a non-empty gate that is neither the phase's `testGate` nor the stored one,
+    so a task the derivation still answers wide - its word moving from one
+    fallback to another included - is left as it stands.
+    """
+    found = []
+    for phase, task in _mio.iter_tasks(assembled):
+        tests = task.get("tests")
+        if not isinstance(tests, dict) or not _gate_follows_scope(task, tests) \
+                or tests.get("gateBasis") not in _WIDE_GATE_BASES:
+            continue
+        now = dict(tests)
+        changes = _rederive_gate(task.get("id"), task, now, phase, assembled,
+                                 project)
+        wide = [g for g in (phase.get("testGate") or []) if isinstance(g, str)]
+        if now.get("gate") and now.get("gate") != wide \
+                and now.get("gate") != tests.get("gate"):
+            found.append((phase, task, now, changes))
+    return found
+
+
+def _settle_wide_gates(assembled, project):
+    """`(rows, phase_ids)` - `_narrowed_wide_gates` written onto `assembled`,
+    as `_settle`'s rows (`kind` "task") and the phases whose shards they move."""
+    rows, phase_ids = [], []
+    for phase, task, now, changes in _narrowed_wide_gates(assembled, project):
+        basis = ("the derivation now narrows it; stored as the fallback `%s`"
+                 % (task["tests"].get("gateBasis"),))
+        task["tests"] = now
+        if phase.get("id") not in phase_ids:
+            phase_ids.append(phase.get("id"))
+        rows.extend({"kind": "task", "id": c["id"], "field": c["field"],
+                     "stored": c["from"], "derived": c["to"], "basis": basis}
+                    for c in changes)
+    return rows, phase_ids
+
+
 def _scope_gate_flags(args):
     """The gate flags a `scope` call passed, in the usage block's order."""
     return [flag for flag, given in (
@@ -11867,7 +11991,7 @@ def cmd_done(args, out):
     if not tid:
         _refuse_on_stderr(args, out, "[audit-task] done needs a task id")
         return E_USAGE
-    refusal = _done_flags_refusal(args)
+    refusal = _done_flags_refusal(args) or _stage_values(args)[1]
     if refusal:
         _refuse_on_stderr(args, out, refusal)
         return E_USAGE
@@ -13955,7 +14079,9 @@ def _print_group_plan(args, plan, ids, mrel, landing, sharded, out):
 # about each one and names this verb. It is the ONE writer of a whole plan's derived
 # values, under the index lock with revalidate-or-roll-back and a journal row, the
 # path every mutating verb here takes - and it never runs on its own initiative: the
-# warning names it, and whoever owns the plan decides when.
+# warning names it, and whoever owns the plan decides when. A task's derived wide
+# gate is one of those values (`_settle_wide_gates`): recording a spelling moves no
+# gate, so a task stored with the fallback before it keeps the wide gate until here.
 def cmd_settle(args, out):
     # `settle` takes no title, so a manifest named in the first free positional is
     # the manifest - the verb's usage line spells it `settle [manifest]`.
@@ -13982,9 +14108,11 @@ def _locked_settle(args, project, config, mpath, out):
             out("FINDING: " + line)
         return E_INVALID
     rows = _settle(assembled, None)
+    gate_rows, gate_phases = _settle_wide_gates(assembled, project)
+    rows = rows + gate_rows
+    moved_phases = [r["id"] for r in rows if r["kind"] == "phase"] + gate_phases
     phase_ids = []
-    for pid in ([r["id"] for r in rows if r["kind"] == "phase"]
-                + [row[0] for row in _mio.stale_stubs(mpath)]):
+    for pid in (moved_phases + [row[0] for row in _mio.stale_stubs(mpath)]):
         if pid not in phase_ids:
             phase_ids.append(pid)
     bugs_moved = any(r["kind"] == "bug" for r in rows)
@@ -13998,8 +14126,8 @@ def _locked_settle(args, project, config, mpath, out):
             result.update(project_basis_key(args))
             out(json.dumps(result, indent=2, sort_keys=True))
             return 0
-        out("[audit-task] nothing to settle -- %s, and every stored status is the "
-            "derived one" % (examined,))
+        out("[audit-task] nothing to settle -- %s, every stored status is the "
+            "derived one, and no task's derived wide gate narrows" % (examined,))
         return 0
     paths = [mpath]
     for pid in phase_ids:
@@ -14038,8 +14166,7 @@ def _locked_settle(args, project, config, mpath, out):
         for line in findings:
             out("FINDING: " + line)
         return E_INVALID
-    stubs = [pid for pid in phase_ids
-             if pid not in [r["id"] for r in rows if r["kind"] == "phase"]]
+    stubs = [pid for pid in phase_ids if pid not in moved_phases]
     changes = [{"id": r["id"], "field": r["field"], "from": r["stored"],
                 "to": r["derived"]} for r in rows]
     jres = _journal_row(project, config, mpath, "plan.settle",
@@ -15292,12 +15419,20 @@ def _locked_record_listing(args, project, config, mpath, out):
                         {"field": "meta.phaseGate.derived",
                          "from": ", ".join(was) or None, "to": moved})
     index_note = _index_dirty_note(written, mpath, project, None)
+    # Counted by the derivation `settle` writes with, so the number said here
+    # is the number of gates the next `settle` moves.
+    stale = [task.get("id") for _p, task, _n, _c
+             in _narrowed_wide_gates(written_manifest, project)]
     if args.as_json:
-        result = {"ok": True, "derived": derived, "written": written}
+        result = {"ok": True, "derived": derived, "written": written,
+                  "staleGates": stale}
         out(_json_tail(result, args, jres, warnings, written_manifest,
                        index_note))
         return 0
     out("[audit-task] %s" % (summary,))
+    out("  %d task(s) left with a stale derived gate this spelling narrows%s"
+        % (len(stale), (" (%s) -- `/audit:phase settle` writes the narrow gate"
+                        % (", ".join(stale),)) if stale else ""))
     _report_tail(out, jres, "listing.recorded", warnings, written_manifest,
                  written, index_note)
     return 0
@@ -15965,7 +16100,7 @@ VERB_FLAGS = {
     # flags the verb READS, and the door says which of them it requires.
     "done": ("commit", "descriptive", "technical", "verified_by", "intent",
              "intent_basis", "no_change", "reason", "override_verdict",
-             "from_return"),
+             "from_return", "stage"),
     # `file-return` takes the role and nothing that could name a path; the
     # return itself arrives on stdin. A phase return adds the head its brief
     # was computed at, which keys the file, and the tasks that brief showed.
@@ -16005,8 +16140,9 @@ VERB_FLAGS = {
     "block": ("reason",),
     # `unblock` resets a spent attempt count on a human's word, and records it.
     "unblock": ("reason",),
-    # `note` appends one entry, and its text is its one flag.
-    "note": ("text",),
+    # `note` appends one entry, and its text is its one flag; the drive's
+    # timing stages ride the same write on `--stage`.
+    "note": ("text", "stage"),
     # `couple` writes `meta.coupling`: the test, what it is coupled to, and
     # the run that taught it. `--phases` is the only learning flag that may
     # be absent -- a coupling learned off a run with no phase scope narrows
@@ -16317,6 +16453,10 @@ def build_parser():
                    default=False,
                    help="done: take the outcome, verifiedBy, redFirst and the "
                         "intent answer from the returns filed for this start")
+    p.add_argument("--stage", action="append", default=None, metavar="JSON",
+                   help="note, done: one timing stage (kind, startedAt, ms, "
+                        "basis; round, runId) appended to the task's timing in "
+                        "the same write; the flag may repeat")
     # `file-return` only. Whose return arrives on stdin; no value names a path.
     # No `choices`: argparse would refuse on stderr before `main` buffers
     # anything, so the door grades the word and says it takes no path.
@@ -16519,6 +16659,8 @@ def option_dests(parser=None):
 #   nothing - `--gate-drop`. A plan written before the reader existed may hold
 #   a joined entry, and the drop is the way to remove it, so the value is
 #   passed as given and the door that holds the gate answers held or not held.
+# - `object`: one JSON object per flag - `--stage`. Its commas are the
+#   object's own, so it is never read as joined; `_stage_values` grades it.
 #
 # `add --from-file` reads the same table, and `CSV_FLAG_READINGS` beside it:
 # each list key of the batch carries the reading of the flag that writes it
@@ -16543,6 +16685,7 @@ LIST_FLAG_READINGS = {
     "gate_set": "gate",
     "waive": "waiver",
     "accept_open": "pair", "carried": "pair",
+    "stage": "object",
 }
 CSV_FLAG_READINGS = {"skills": "split", "outputs": "split", "area": "split"}
 

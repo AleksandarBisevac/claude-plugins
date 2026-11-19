@@ -153,6 +153,7 @@ claude-plugins/                           # this repo (personal, public)
           _manifest_vocab.py              # the manifest's words + the shape checks every level shares
           _json_schema.py                 # the published JSON Schema, read as ajv reads it, with the stdlib alone
           _task_outputs.py                # what a task's `outputs` pattern may be, and what an honoured one reaches
+          _task_timing.py                 # a task's `timing` record: build a stage, grade it, sum the window
           _filed_returns.py               # an agent's filed return: its derived path, the shape its role owes, the write-once create
           _manifest_phases.py             # the one walk over phases/tasks, and what a phase carries
           _manifest_ado.py                # meta.ado: the connector config, one front door with the panel
@@ -271,7 +272,7 @@ claude-plugins/                           # this repo (personal, public)
           _panel_usage.py                 # the Usage tab's facts, and the one manifest read per request
           _panel_state.py                 # the panel's READ side: everything GET /api/* answers with
           _panel_write.py                 # the panel's WRITE side: everything PUT /api/* actually does
-        ui/                               # four directories of ordered parts (report/, report-css/, panel/, panel-css/) + panel.html, no .py
+        ui/                               # directories of ordered parts (shared/, report/, report-css/, panel/, panel-css/) + panel.html, no .py
       templates/
         audit.config.example.json         # per-repo hook config template
         audit-plan.starter.json           # minimal manifest skeleton with $schema
@@ -356,6 +357,7 @@ L3:
   _runner_output -> _output
   _skill_places -> _output
   _task_outputs -> _output
+  _task_timing -> _output, _usage_core
   _ui_theme -> _output
   _worktrees -> _loader, _output
 
@@ -370,14 +372,14 @@ L4:
   _id_shape -> _branch, _loader, _manifest_io, _manifest_vocab, _output
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
   _manifest_crossrefs -> _ado_parent, _id_refs, _json_schema, _manifest_io, _manifest_vocab, _output, _priority
-  _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output, _task_outputs
+  _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output, _task_outputs, _task_timing
   _manifest_typos -> _areas, _manifest_vocab, _output
   _panel_ui -> _output, _ui_theme
   _proc_group -> _locks, _output
   _report_html -> _areas, _fmt, _manifest_io, _manifest_vocab, _output, _priority, _ui_theme
   _report_ui -> _output, _ui_theme
   _scope_companions -> _output, _runner_collects
-  _status_facts -> _areas, _filed_returns, _manifest_io, _manifest_vocab, _output, _priority, _usage_core
+  _status_facts -> _areas, _filed_returns, _manifest_io, _manifest_vocab, _output, _priority, _task_timing, _usage_core
   _tree_stamp -> _journal_io, _loader, _manifest_vocab, _output
   _usage_coverage -> _manifest_io, _output, _usage_core
   _usage_economics -> _fmt, _manifest_io, _output, _usage_core
@@ -438,15 +440,15 @@ L9:
   audit-lock -> _claude_home, _locks, _output
   audit-logs -> _claude_home, _gate_feed, _output
   audit-lookup -> _areas, _claude_home, _clause_coverage, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _impact, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _scoped_commit
-  audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme, _worktrees
-  audit-task -> _affected_tests, _areas, _branch, _claude_home, _clause_coverage, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _impact, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
+  audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _task_timing, _ui_theme, _worktrees
+  audit-task -> _affected_tests, _areas, _branch, _claude_home, _clause_coverage, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _impact, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _task_timing, _tree_stamp, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _scoped_commit, _tree_stamp, _utc_stamp, _verdict_binding, _worktrees
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _panel_write, _scoped_commit, _verdict_binding, usage_ledger
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _invariants, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _utc_stamp
-  drive-phase -> _affected_tests, _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _floor_guard, _gate_derive, _invariants, _journal_io, _loader, _locks, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _verdict_binding, _wave, _worktrees
+  drive-phase -> _affected_tests, _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _floor_guard, _gate_derive, _invariants, _journal_io, _loader, _locks, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _skill_places, _status_facts, _task_outputs, _task_timing, _tree_stamp, _usage_core, _verdict_binding, _wave, _worktrees
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
@@ -469,7 +471,7 @@ L9:
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
   run-agent-session -> _claude_home, _help, _manifest_io, _output, _proc_group, _skill_places
-  run-test-gate -> _affected_tests, _claude_home, _evidence_io, _fmt, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp, _worktrees
+  run-test-gate -> _affected_tests, _claude_home, _config_rules, _evidence_io, _fmt, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp, _worktrees
   set-priority -> _claude_home, _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _claude_home, _evidence_io, _filed_returns, _invariants, _locks, _manifest_io, _output, _proc_group, _runner_output, _task_outputs, _tree_stamp, _worktrees
   validate-config -> _config_rules, _output
@@ -2454,8 +2456,9 @@ screenshots, on demand instead of committing it — the same flags always produc
 bytes, so CI builds it, captures from it, and discards it, and nothing drifts the way the
 uncommitted original did. `gen-demo-manifest.py <out-dir> [--phases 50] [--tasks 20] [--seed
 11] [--single-file]` deliberately carries every state a reader can filter on (all phase/task
-statuses, `blockedBy`, `dependsOn`, budgets over/under, `area` tags, a full bug lifecycle),
-deterministically (fixed seed, no wall-clock) and validator-legal by construction (a `done`
+statuses, `blockedBy`, `dependsOn`, budgets over/under, `area` tags, a full bug lifecycle,
+and a `priority` pin on the running phase so the report draws its Sort select without the pin
+reordering any ready work), deterministically (fixed seed, no wall-clock) and validator-legal by construction (a `done`
 phase never contains an unfinished task). `--selftest`.
 
 It also writes the **evidence ledger** beside the manifest and points the plan at it:
@@ -2707,6 +2710,38 @@ to hold — and a rule the plan gate must ask spent that premise for an unrelate
 sits beside `_locks` for `_locks`' argument word for word: the smaller the module a hook resolves
 by path on every tool call, the better.
 
+### `plugins/audit/scripts/manifest/_task_timing.py`
+A task's **`timing`** record: `firstStartedAt`, which `/audit:task start` sets once and no
+restart moves — `startedAt` is re-stamped on every restart, so it cannot open the task's
+window — and `stages`, one entry per measured stretch (`kind`, `startedAt`, `ms`, `basis`, and
+`round`/`runId` when they apply). The kinds are a closed list, `KINDS`; the schema's
+`$defs/timingStage` enum states the same list, and `tests/test__task_timing.py` holds the two,
+and both key sets, to agreeing.
+
+**One module, every writer and every reader.** `make_stage` and `append_stage` build a stage
+and the record it joins, returning new values rather than editing the task; `first_start` is
+the stamp the start verb writes; `timing_problems` is what `_manifest_phases._walk_phases`
+reports as a finding naming the task and the stage; `summarize` gives the per-kind totals,
+the window from `firstStartedAt` to `completedAt`, and the remainder no stage accounts for.
+
+**A missing source is named, never read as zero.** With no record, no first start, a `stages`
+value that is not a list, a stage that fails `stage_problems` or no `completedAt`,
+`summarize` lists what it lacked under `missing` and gives no window and no total; a
+completion before the first start is named as no window the same way, and `is_unreadable`
+tells a record whose stages could not be read from one that is readable and has no window. A
+kind no stage recorded is absent from the totals rather than present at zero.
+
+**The window runs from the first start, whatever happened between.** The first start never
+moves, so a reopened task's window runs from it to the new completion, and the time the task
+sat closed is inside it as unattributed time: a median of windows is time on the plan, not
+time worked, for a task that was reopened.
+
+**The schema is never looser than the Python check.** `$defs/timingStamp` is the stamp
+`_usage_core.parse_ts` reads, `basis` and `runId` refuse a blank string, and `tests/test__task_timing.py`
+holds each looseness refused by both readers. An integral float length (`7.0`) is the one
+value no schema can refuse — JSON gives it the value of `7` — so `stage_problems` admits it
+too and `summarize` sums it as an int.
+
 ### `plugins/audit/scripts/manifest/_manifest_phases.py`
 The **one walk** over every phase and every task, and the three checks it makes on
 the way. `_walk_phases` visits each object once and returns a five-key **index**
@@ -2729,7 +2764,15 @@ finding naming which fired - beside `expectRedFirst` true, and beside an empty `
 draws nothing for a task without the field. Also the
 per-phase rules a schema cannot express — a parallel-run `claim` left on a finished phase,
 an `area` that normalises to no tags at all, a `budgetUSD` of zero, and a phase marked done
-over tasks that are not **finished** (done *or* cancelled).
+over tasks that are not **finished** (done *or* cancelled). `stale_spelled_gates(manifest)`, run
+from `_check_phase_gate`, warns about each pending task with no recorded attempt still holding
+`phase-no-spelling` under a recorded `{paths}` spelling while it names a `tests.add` path or a
+suite among its `files`, and names `/audit:phase settle`. It asks only the arms certain without
+the derivation, which sits above this layer: a narrowing that comes from a sibling's entry or a
+relating slot is `settle`'s to find, not this warning's (`wgv1`, `wgv2`). `derived_runner(derived)`
+is the one reading of `meta.phaseGate.derived.runner` - the key, or None with the validator's
+reason for a value blank once trimmed - which the shape check here and `derive-phase-gate.py`'s
+printed line and `testGateDerived.entry` both take (`dp-runner`, `dp-runner-b`).
 
 ### `plugins/audit/scripts/manifest/_scope_companions.py`
 `derive(intent, repo, lister=None)` returns `{"companions": [{path, kind, basis}], "notes": [...]}`
@@ -3386,6 +3429,14 @@ findings, not compared (a clean answer with a file left unread), could not tell 
 reading each block through `_filed_returns.floor_block` alone; the reader of a task's filed return
 is the caller's, since nothing here opens a file, and a task with no trusted block is not measured,
 never clean (`fl1`-`fl8`).
+`task_timing`, `phase_timing` and `timing_rollup` read a task's `timing` record through
+`_task_timing.summarize` and sum it per phase over the DONE tasks that have a window, so the
+stage figures less the overrun plus the unattributed share are the summed windows. Cancelling
+stamps `completedAt`, so a cancelled task that was started has a window; it is left out with
+every other unsummed task, each named under `leftOut` with its reason (cancelled, not
+finished, not readable, no window) — a done task's reason in the words its `time` cell prints
+(`tt15`, `tt16`). `rollup` carries the result under `timing` only when a task holds a
+record.
 
 ### `plugins/audit/scripts/status/_live_copy.py`
 Which copy holds a phase in flight live: a phase run under a lock, or worked on in
@@ -3410,7 +3461,16 @@ conditions — default `invalid,open-high-bugs,blocked-tasks`, tunable with `--f
 plan that has never recorded a run must not start failing builds on upgrade, and both
 read phases as well as tasks). The human render carries the same words in a `tests`
 column, which — like the report's optional columns — is drawn only when a task in view
-has recorded a run, so an unchanged plan renders exactly as it did before.
+has recorded a run, so an unchanged plan renders exactly as it did before. A `time` column
+follows the same rule for a task's timing record: its window, in hours or days once past an
+hour (`_wall_duration`; the shared `_fmt.human_duration` keeps its output for every other
+caller), `-` for no record, `open` for a record with no completion, `no window` for a record
+with no first start or a completion before it, `not readable` for stages that cannot be read
+(`_task_timing.is_unreadable`); the phase head adds the median window and the split by stage
+over the phase's done tasks with the unattributed share, and the JSON names every task it
+left out under `leftOut` (cancelled, not finished, not readable, no window). `--gate` reads no timing
+figure, only the validator's verdict on the record: a malformed record is a finding, so the
+default `invalid` condition can trip on it.
 Under a phase whose sign-off is due the human render adds a line per kind of floor reading that
 is not a plain clean (`floor_readings_block`, read through `_fr.read_filed_return_checked` against
 the journal's filing rows); a phase read from another copy says its returns are filed there, and
@@ -3812,8 +3872,11 @@ reviewer's carries the executor's return as filed for the task's current start
 (byte-identical), the diff, the recorded run and the gate commands, and is refused with exit 4
 (`E_REFUSED`), writing nothing, until that return is filed. The phase reviewer's carries a
 `## Review skill` section naming the skill `_areas.resolve_review_skill` resolves and the basis
-it returns (`review_skill_lines`; no section when none resolves or an explicit null stops the
-lookup, `rk1`-`rk5`), the request as saved (`phase.request`, or a sentence saying none was saved), one fixed question
+it returns, and asking for it to be named in the return's `skillsInvoked` or, when the Skill
+tool will not load it, for what the tool said in `skillUnavailable` — `drive-phase.py submit`
+refuses a phase return carrying neither, and its header says the section adds both fields to
+the agent file's shape (`review_skill_lines`; no section, and the plain header, when none
+resolves or an explicit null stops the lookup, `rk1`-`rk7`), the request as saved (`phase.request`, or a sentence saying none was saved), one fixed question
 about what the request left open, and per task its commit, files, description, filed
 executor return, recorded run and `tests.gate` — an entry naming a `key:project` the plan
 cannot resolve is kept and said to be unresolved — and is refused while any task has no
@@ -4158,6 +4221,15 @@ their shape end to end: an unknown tree stays `None` rather than flattening to t
 truthy reader would call clean, and a step's `ran` keeps its `None` rather than vanishing into
 "absent", which a reader could mistake for zero.
 
+**A step can repeat another run's measurement.** On a `part-reused` row (`PART_REUSED`, the third
+`verdictSource` word beside `reused` and absent), a copied step carries `reusedFrom`
+(`STEP_REUSED_KEY`, kept to `runId` and `ts`) and `_step` writes no `durationMs` for it.
+`step_repeated()` is the one reading of that key: `_gate_cost_walk` and `_matching_steps` skip such a
+step, so `gate_mean_ms`, `step_mean_ms`, `gate_cost_ms` and the tallies count a step's time and its
+run once, on the row that measured it. `reusable_run(..., steps=names)` finds the newest row that
+measured every named step - a `part-reused` row qualifies for the steps it measured, never for a
+whole-run repeat - and `measured_row()` returns a `part-reused` row itself, since it read the tree.
+
 **`read_rows()` counts what it lost.** A torn line is skipped *and* counted, which is where this
 departs from `usage_ledger.read_ledger`'s silent `continue`: that is right for telemetry and wrong
 for evidence. It reports the file count too, because "no rows" and "no files" are different answers
@@ -4287,6 +4359,15 @@ step known to have run one of the given suites (`step_runs_suite()`). A row file
 `BASE_SCOPE` is a run of a task run's red steps at its base (`run-test-gate.py --base-of`), naming
 that run under `BASE_OF_KEY`; `subject_key()` gives it no subject, so no pointer is written or
 reconciled onto it.
+
+**A joined step.** A task's declared entry and the affected steps run as one call are recorded as
+one step named `joined_step_name()` of the entry and each affected step's name, separated by
+`JOINED_STEP_SEPARATOR`. The name carries both lists, rather than a key on the step, because
+every reader of a row's steps already reads the name. `step_parts()` is the one reader of what a
+step covers - `(entry, [affected names])`, the entry only at the head of the name - and
+`declared_steps()`, `derived_step_suites()` and `step_runs_suite()` answer through it, so a joined
+step reads as its entry to the binding and as its affected suites to the base lookup, and every
+older name reads as it did (`jst1`-`jst6`).
 
 **The foreground bound.** `FOREGROUND_BOUND_MS` is the one statement of how long the Bash tool
 keeps a command in the foreground, and `outlives_foreground()` the one comparison against it:
@@ -4475,6 +4556,18 @@ those paths taken out, are a declared entry's command, that entry runs every sui
 the support file can reach, so no phase-gate step joins and the line names the
 entry. A path-scoped entry, the same runner with an option, or another key leaves
 the widening standing.
+
+`joined_steps()` makes the declared entry and the affected steps one call when both are the
+plan's recorded spelling over different paths: the first declared entry that is exactly that
+spelling over a list of paths (`spelled_paths()` reads the words standing where `{paths}` stands,
+every one a path) takes every affected step spelled the same way, and runs the spelling over
+`union_paths()` of their paths - the entry's first, each suite once - as one step at the entry's
+place, named `_evidence_io.joined_step_name()` of the entry and the steps. Only the recorded
+spelling is read, because its `{paths}` word says where the paths go and a sibling's entry does
+not. A build key, another runner, the same runner with an option, the phase-gate arm, or no
+affected step leaves the commands as they were, with no line (`af44`-`af52`).
+`entry_paths()` and `spelled_entry()` are the same reading for `run-test-gate.py`'s base
+measurement of a joined step's declared suites.
 
 `reach_answers()` is the gate-reach reading's half of this module: each path asked of `select()`
 ALONE (`path_reach()`), its listings run side by side first (`prefetch_listings()`), because a
@@ -4798,6 +4891,68 @@ the reuse path prints them again under their own literals — the ones `drive-ph
 `gate-coverage` decision on. A row written before the key holds none, which is *not recorded*
 and not *none*, and the reuse path says so.
 
+**An entry that names a path the identity leaves out is measured, never repeated, and "names" is
+read off its text, not off shell words.** `grades_left_out` asks whether the command holds the
+left-out path's last component as a whole name — no letter or digit runs on into it through the
+characters that join a name — and, for a path that is a directory on disk, with a separator of
+either kind beside it (`_holds_name`). The text is searched as written, as a shell's quote removal
+leaves it (`_quote_removed`) and with every backslash then dropped, all three case-folded, so no
+quote, escape, option glue, delimiter, whitespace kind or letter case can hide the path, a
+backslash-separated Windows path is read on every host, and nothing in the reading can fail or
+recurse. The same search holds more names (`_search_names`): the directory holding the shards, as
+a directory; every spelling of the plan the runner was handed (`plan_spellings` — a symlinked plan
+is excluded under its target, and an entry naming the configured link reads the same bytes); and
+every script this plugin ships (`plugin_script_names`, read off `_loader.script_index`), which
+grades the plan, because `audit-status.py --gate` and `validate-manifest.py` find it through the
+config with no path at all. A name only containing the left-out one inside a longer file name does
+not grade, so a sweep listing `tests/test__evidence_io.py` or `tests/test_run_test_gate.py` stays
+repeatable, and a bare `-k journal` is no reading of the journal directory. Reading more than a
+shell would is the accepted direction; what it reads less — a variable, a glob, an ancestor
+directory, a directory's bare name after a `cd`, a brace expansion or ANSI-C quoting, a name a
+program assembles in its own code, and a suite that opens the plan's phases, tasks or bugs itself
+in a gate that runs no plan reader (a stale green: only the plan's meta is in the key) — is listed
+beside `UNREADABLE`, and `lw22` holds the list to what the reading does. Each step is read under
+its declared command and under the command that runs (`_grading_steps`), so a step widened onto
+the phase gate is read through its entry's build command (`declared_gate`). A command that is not
+text is reported as naming one, with `UNREADABLE` as the reason (`left_out_line`), because the
+other guess repeats a verdict nobody measured.
+
+**The plan's meta is in the key** (`meta_part`), because a step can read the plan without naming
+it: this repository's own sweep holds suites that read the live plan's meta. An edit to any meta
+block measures every step, whole run and per step. The one meta key a recorded run writes itself,
+the evidence boundary (`RECORDER_META`, the writer's own `SINCE_KEY`), is left out of it, or the
+ask after a plan's first recorded run could never repeat; `ru51` drives that pair. A row recorded
+before the meta joined the key keys differently once: one measurement, never a stale repeat.
+
+**It is the entry that is measured, not the whole gate.** `repeat_plan` splits the gate: the
+entries `grades_left_out` names run, and every other entry is repeated from the newest row that
+measured it — `_evidence_io.reusable_run(..., steps=...)`, the whole-run rule asked one step at a
+time, so a row that only copied a step is no source for it, a muted newest row is none, and a step
+that reached no verdict there is not copied. `part_reused_result` joins the two halves in declared
+order: each copied step carries `reusedFrom` (`STEP_REUSED_KEY`) and no `durationMs`, the row's
+`verdictSource` is `part-reused` (`PART_REUSED`) and its `reusedFrom` names the source run, and the
+verdict is the worse of the two — a repeated step that failed makes the run `failed`, so a red is
+repeated as red. The tree reading, `durationMs`, the counts and the mutes are the measured steps'
+alone; coverage and owed followers join the source's. The run prints `part_reuse_line` — no
+`GATE` word in it — then the step table, where a copied step reads `(repeated)`. With no step
+left to repeat, with no source row, or under `--no-reuse`, every entry is measured; a gate naming
+no left-out path repeats whole exactly as before.
+
+**A task's run leaves to the phase gate what the project said it may.** Under `--task` (not
+`--own`), once the affected steps have joined and the declared part has been read for the digest,
+`phase_gate_only_plan` asks `_config_rules.phase_gate_only_split` which steps
+`executor.phaseGateOnly` names and the phase's own gate (`_evidence_io.phase_gate_steps`) runs -
+by entry name or by resolved command, so a widened `affected/phase-gate:` step is held by the
+phase entry it copies. Those are left out, each printed (`phase_gate_only_lines`) and kept on the
+result as one `_evidence_io.left_to_phase_gate_record` under `leftToPhaseGate`: its name, the arm
+that proposed it, the key as its basis and the name it matched. A named step the phase gate lacks
+runs, with a line saying it would otherwise run nowhere. The identity, the reach and the steps run
+are taken over what is left; `gateDigest` stays the declared gate's, because the binding compares
+it with the plan. A task gate of nothing but left-out steps is `_all_left`: a `no-checks` row
+(`all_left_result`) whose bases say why, exit 1. An unusable key is refused by name before anything
+runs. The phase-scope run never asks. The `pgo` cases in `tests/test_run_test_gate.py` drive each
+arm through `main`.
+
 **`observations.countsBasis` is written here for the first time.** It has been copied into every
 evidence row by `_evidence_io.row_for` and rendered by the report and the panel since the ledger
 existed, while nothing ever set it — a three-valued count shipping without the basis that
@@ -4980,6 +5135,16 @@ red step that cannot run again - its runner named no failing suite, a suite it n
 one path its name lists, the plan has no path-scoped spelling, a declared step kept as a digest -
 is named in the answer's `notRun` with its reason,
 and when that is every red step nothing runs and the answer still prints, with an empty `steps`.
+A JOINED step - the declared entry and the affected steps run as one call
+(`_affected_tests.joined_steps`) - is read part by part through `_evidence_io.step_parts`: a
+failing suite one of its affected steps lists is spelled again under that step's arm and name, as
+a lone derived step's would be, and one of the entry's own paths is run under the entry's name,
+the recorded spelling over those suites (`_joined_at_base`); `_charge_step` answers each against
+the base step of the same part. The join comes after the `executor.phaseGateOnly` split, so what
+the setting leaves out is weighed step by step as each arm proposed it, and the reuse identity is
+taken over the steps before the join, so the same two lists are one identity whichever way they
+ran; `repeat_plan` measures a joined step when any entry it carries grades a left-out path. The
+`jn` cases drive the run, the repeat and the base.
 `bc1`-`bc4` and `be1`-`be5` drive the comparison; the `bod` cases the derived step's base; the
 drive's `bm`, `bdr` and `bt` cases drive `--base-of`.
 
@@ -5221,17 +5386,42 @@ is) is past `_evidence_io.FOREGROUND_BOUND_MS`, or that no run has measured, is 
 one measured under it runs inline and costs the main loop no turn, and so does a gate of no steps,
 which runs nothing. The steps weighed are the ones the run will take (`task_gate_steps`, and
 `runnable_entries` for the phase's): the entries `_manifest_io.gate_entries` names, less the
-review-only ones the runner never runs. A task's own gate that does not already carry its phase's
+review-only ones the runner never runs, and - for a task - less the ones the runner leaves to the
+phase gate under `executor.phaseGateOnly` (`_config_rules.phase_gate_only_split`, read off
+`ctx["config"]`; `gc11` and `gc12` compare the two). A task's own gate whose declared entries do
+not already carry its phase's
 wide gate (`_affected_tests.already_wide`) is joined by the affected suites the runner gathers
 itself, which nothing knows before it runs, so it is weighed as unmeasured. The step prints
 `dispatch-gate`, whose `run:` line is the command `gate_args` (or `phase_gate_args`) spells for the
 inline run too, under `WRITER_RULE`, with the reason on the line below it, and marks the launch
 with the subject's ledger rows as they stood. A `next` before a new row exists is `wait-gate`,
-printing the same `run:` line; a new `cancelled` row - a gate stopped mid-run - launches it again;
-a `passed` or `failed` row is repeated through the same call, which on the same tree content
-measures nothing (`GATE VERDICT REUSED`), an `empty-gate` row - the runner's own green - is asked
-again the same way, and a row of any other word is decided from as recorded (`read_back`, one
-reading for the task gate and the phase gate). A red read back names its verdict line, never the
+printing the same `run:` line and the moment the dispatch was handed out - which is all the drive
+saw, since it never sees the gate process start; a new `cancelled` row - a gate stopped mid-run - launches it again;
+a `failed` row is the verdict acted on as the row holds it, with no gate asked again
+(`recorded_red`: its failed steps on a `GATE RED` line and its run on the `evidence: recorded`
+line, so it reaches the base measurement and the decision - or the phase gate's stop - as an
+inline red does, and no second ask can come back green over a red nobody was shown); a `passed`
+row is asked again through the same call, which on unchanged content repeats every step grading
+the tree and measures again only an entry naming a path the runner's identity leaves out (the
+plan); an `empty-gate` row - the runner's own green - is asked again the same way; and a row of
+any other word is decided from as recorded (`read_back`, one reading for the task gate and the
+phase gate). What the second ask did is a did-line clause (`repeat_said`, off the row it
+recorded): nothing for a whole repeat (`GATE VERDICT REUSED`); else the steps it repeated and the
+ones it measured again with their seconds, and `did not repeat on this tree` only when a measured
+step is one the runner did not say names a left-out path (`GATE_LEFT_OUT`, its line mirrored),
+with the reason taken from the identities the runner recorded on the two rows. A joined step is
+matched by its declared entry, read off its name by `_evidence_io.step_parts`, since the runner's
+line names that entry alone (`grades_left_out`, `rd11`). The second ask is made for the long
+form (`READ_BACK_FORM`): a green run that had the machine to itself prints one line, which keeps
+none of the lines the clause is said from. On the one-line
+signal that clause rides in a shorter form of its own (`say_clause` keeps it under
+`SIGNAL_FORMS_KEY`, which `signal_line` reads): each step's name - its gate entry's command text,
+which nothing bounds - cut to `SIGNAL_STEP_BYTES` around `...` and with the did field's `; `
+taken out of it (`signal_step_name`), so a long command does not drop the clause to a count and
+one holding the separator is not read as two clauses; the plain did-line and `--explain` name
+every step whole (`rd8`, `rd9`). A read-back that
+measured steps is a gate stage of its own with its own length; a whole repeat adds none, since its
+row names the run already staged. A red read back names its verdict line, never the
 repeat's banner (`gate_red_lines`, read by the gate-red decision, the re-gate on the phase
 tree and the phase gate's stop). A phase gate launched by a sign-off answer resumes that sign-off
 at the same head and is forgotten at another. A wave print carries the rules of each member with a `run:` line once.
@@ -5264,10 +5454,12 @@ whose measurement raised; `lc9` and `lc10` hold the replaced launch's release an
 `lc11` the earlier start's, `lc12` the sweep after a kill, and `lc13` and `lc14` the claims it
 leaves - the current launch's, and one whose holder is not read as gone. The drive makes no exclusive file of its own, and `lc5` in the suite
 reads its source to hold that. Once the run has ended, the red's verdict is read back from the row it was launched
-for, through the same `read_back` the gate's background row goes through: a row no repeat may copy
-stands as recorded, and no rerun's `--no-reuse` is added; the dispatch and the wait are printed by the same builders as the gate's
-(`background_dispatch`, `background_wait`). The `bg`, `gc`, `gs`, `ge` and `ga` cases in
-`tests/test_drive_phase.py` drive each arm against the real `run-test-gate.py`, `bq1`-`bq5` the
+for, through the same `read_back` the gate's background row goes through: that red as its row
+records it, with no gate asked again, so no rerun's `--no-reuse` can reach it; the dispatch and the wait are printed by the same builders as the gate's
+(`background_dispatch`, `background_wait`). The `bg`, `gc`, `gs`, `ge`, `ga` and `rd` cases in
+`tests/test_drive_phase.py` drive each arm against the real `run-test-gate.py` - the `rd` cases
+with a gate holding a sweep beside an entry that names the plan, task and phase gate alike, read
+back unchanged, after an edit, and red - `bq1`-`bq5` the
 base's, the `bi` cases the base run and `next` interleaved in a chosen order (`bi13` the
 claim), and the `lc` cases the claim's holder killed, live, unreadable or empty.
 
@@ -5335,8 +5527,12 @@ half-way loses the reading; measured under the bound it runs inside `next`, held
 run stopped there is handed to the background rather than read. The start's mark is written before
 the run, wherever it is, and names the tree and every process measuring in it, so a run killed
 during it is not followed by a second measurement, and the next drive removes the tree it left
-(`sweep_base_trees`) unless a process the mark names is still alive. `bt1`-`bt4` drive the bound,
-the mark and the sweep, `bq1` and `bq4` the background run and its kill. When the reading taken
+(`sweep_base_trees`) unless a process the mark names is still alive. That question is asked once
+per run per sweep: the reading the fold of the run's own record took (`fold_reading`) is the one
+the removal acts on, since a reading can flip between two asks and a fold that kept the record
+over a removal from the state alone lays the gone tree back on the mark. `bt1`-`bt4` drive the
+bound, the mark and the sweep, `bq1` and `bq4` the background run and its kill, and `bq6` and
+`bq7` a run read alive once and dead after. When the reading taken
 again is `base-only` the decision is `gate-red-base`, which sends no writer session and offers
 `block` and `rerun` - the owner's commit over the red is `commit-task-work.py --override-verdict`,
 their own act. `bm1`-`bm4` drive it. A base nobody can know - the run left no reading, failed, or
@@ -5354,17 +5550,20 @@ False): that mark is no mark to any red but its own (`unmeasurable_elsewhere`), 
 measured on its own, and the first such red goes to the writer as no-base. Only a base whose
 code moved counts toward a bound: the mark records that reason (`moved`, set when `code_moved`
 answered), and a red whose steps cannot be re-run at the base (`base_unrunnable`) never sets it,
-so it goes to the writer every time, bounded by the writer rounds. The start's mark counts the
+so it goes to the writer every time until the start reaches the bound below, bounded by the
+writer rounds. The start's mark counts the
 moved-code reds up to it (`unmeasuredBefore`, `unmeasured_before`), and a start that has reached
-`UNMEASURED_BOUND` of them (`unmeasurable_bound`) stops as `gate-red-base-unknown` rather than
+`UNMEASURED_BOUND` of them (`unmeasurable_bound`) stops a red whose own reading names no base
+run (`base_behind`) as `gate-red-base-unknown` rather than
 another gate or writer round, under `next` and under `auto` alike, so neither can loop on a HEAD
 that keeps moving. That one predicate is asked of a mark just decided and in the due branch before
-any measurement is launched, inline or in the background; the count lives on the mark, so a new
+any measurement is launched, inline or in the background - where a red whose own reading does
+name a base run is decided by it, with nothing measured; the count lives on the mark, so a new
 start counts from zero (`bdr4`, `bi14`-`bi16`, `brc3`, `brc4`, `brc6`, and `dm85`, `dm86` in
 `test_drive_without_model.py`). A mark's reading decides
 only the red run it was measured for or a repeat of it, and a mark an earlier version wrote for
 a cut base (no `ran`, no `background`, no base run named) reads as unknown. A red run whose code HEAD has since moved (`code_moved`) keeps reading
-`no-base` and goes to the writer as before, and so does a red whose steps `--base-of` answered it
+`no-base` and goes to the writer as before until the start reaches that bound, and so does a red whose steps `--base-of` answered it
 cannot run again at all (`base_unrunnable`: every red step in `notRun`): no later measurement could
 answer either, so neither is the unknown stop, which stays for a base run that was started and
 then cut, killed, failed or left no row. `bq2` and `bq3` drive it, the `bdr` cases a derived
@@ -5674,7 +5873,16 @@ a print does not grow with where the project sits on disk.
 executor|reviewer [--head SHA] [--case ...] [--introduces ...] [--deps-from DIR]
 [-- <test command>]` reads the return on stdin and runs, in order, what the agent prompts used
 to explain step by step: the shape check (`submitted_shape`, with the fields `submit` fills set
-aside, so a malformed return costs no red run and writes nothing); for an executor whose return
+aside, so a malformed return costs no red run and writes nothing); for a phase reviewer's
+return - whole or one slice - when the phase resolves a review skill
+(`_areas.resolve_review_skill`), a refusal unless its `skillsInvoked` names that skill, a
+plugin-qualified spelling meeting the bare one, or its `skillUnavailable` holds non-blank text
+(`skipped_review_skill`; with no skill resolved nothing is asked, and the slices' lists and
+reasons ride into the aggregated return), since the drive does not read an Agent's Skill calls
+— the plugin's hooks see them — and the return is where the reviewer says it used the skill; a
+return answered with `skillUnavailable` is filed with one med finding naming the skill, its
+basis and the reason, cited at the plan, for triage (`unavailable_skill_finding`,
+`rq1`-`rq9`); for an executor whose return
 is already filed for this start, a refusal before anything runs (`already_filed`); for an
 executor whose attempt changed a path its task does not declare, a refusal naming each path and
 the scope remedy (`submit_strays`), asked as the task commit asks it -
@@ -5726,6 +5934,45 @@ filed as `could-not-tell` naming its type, and the filing goes on (`flr5`); `flo
 off` files no block. `file_writer_return` runs the same reading for a headless writer's work
 (`flrw1`). In the phase tree the diff is every change against HEAD, so work already dirty when the
 task started is read as the task's.
+
+**A task's timing is written as the drive reads each step back.** Each stage is queued in the
+drive's state under the record it was read from (`queue_stage`, once per source): a writer or
+reviewer session from the `startedAt` and `durationMs` its session record carries
+(`session_stages`, the writer's round counted from one); a gate run, and the time it spent
+choosing what to run, from its evidence row's `startedAt`, `durationMs` and `selectionMs`
+(`row_stages`, read through `gate_row_read` to the run that measured a repeated verdict); the
+base run a red's measurement took, when its reading is decided on; and the record commit, since
+no record holds that length: the commit verb's own runs, each timed by `commit_verb` and added
+up, so a set-aside's proof and second gate between two runs - a gate stage of their own - are
+not counted inside it as well. A writer or
+reviewer dispatch is stamped when it is handed out (`at` on its entry), as a gate's launch is,
+and the gap to the step's own start is a `wait` stage (`wait_stage`; a start floored into the
+hand-out's own second is a wait of 0 that says so). An executor or reviewer dispatched as an
+Agent has no session record, so its hand-out is stamped under the same key
+(`agent_handed_out`, leaving the `dispatched-<role>` marks as they were) and its writer or
+reviewer stage runs from that stamp to the filing (`agent_stage`, `filed_moment`): the journal
+row that filed an executor's return, or the filed file's own modification time - for an executor
+when the journal could not be read or names no row for the file, and for a reviewer always,
+since no row files one. The basis says which, and for a modification time that it moves later
+when the file is written again and never earlier. That route writes no wait stage, because no
+record says when the agent began, and the stage's basis says its length holds the wait too. The
+queue rides writes the drive already makes - each session's note and the close, through
+`audit-task.py`'s `--stage` - and never a write or a commit of its own; a refused note leaves it
+queued for the next one. Every close the drive makes goes through `close_carrying`, the commit's
+and the no-change answer's alike, so no route of a close leaves the queue behind. A wave member's
+notes and close are the phase tree's writes, so its stages land in the phase tree's shard. A
+source that cannot be read queues nothing, and `_task_timing.summarize` then carries that time
+as unattributed; the step says so on its did-line (`stage_unread`) - the ledger or a row
+unreadable, a row with no start or length, a hand-out with no stamp - once per stage and reason,
+never as a warning or a stop. A row that repeated another run's verdict is no stage: it measured
+nothing and records no start, which a stage must carry (`_task_timing.stage_problems`), so the
+stage `queue_row` queues for it is the run it repeats (`repeated_measured`, through
+`_evidence_io.measured_row`), under that run's own source as every other read of it, and the line
+says whose stage it is rather than that none was recorded (`rd10`); only a repeat whose run the
+ledger no longer holds keeps the gap, naming that row and the run. The `tm` cases drive each stage from its source, `tm3` compares the
+journal's actions and the commit count with a drive whose stages are never queued, `tm8` holds
+the Agent route, `tm9` a wave member's stages in the phase tree's shard, and `tm10` to `tm16` the
+set-aside's commit stage, the no-change close, the unread lines and the fallback bases.
 
 ### `plugins/audit/scripts/governance/propose-gates.py`
 A plan proposal that reads what previous runs in THIS repository actually ran and what they
@@ -5799,7 +6046,11 @@ first layer above `_evidence_io` (the ledger) and `_tree_stamp` (the digest), wh
 cannot hold it. `binding()` takes the subject's ids, the gate entries that measure it and their
 source, its declared files and the caller's own sentences, and answers `bound`, `no-gate` or
 `refused` with a sentence naming the run: the newest row for the subject, never the plan's
-pointer; a repeat graded through `reusedFrom`; a gate changed after the run; a red nothing
+pointer; a repeat graded through `reusedFrom`, while a `part-reused` row binds as measured and its
+sentence names the steps it copied and their run (`repeated_clause()`); a row listing declared
+entries under `leftToPhaseGate` (`_evidence_io.left_to_phase_gate_names`) compared against the
+declaration less those entries, so it binds one step short for that reason and for no other
+(`vb38`, `vb39`); a gate changed after the run; a red nothing
 retired; an unparseable line that could be the subject's; the digest with the recorder's paths
 left out on both sides. Every refusal carries the `arm` that produced it, and a close reads the
 arm rather than the sentence: `close_refusal()` refuses a close on every arm in
@@ -6688,10 +6939,10 @@ with the conflict named in the session's closing answer — because the headless
 no agent body and a prompt with no rules (`compose_writer_prompt`), and the reviewer, whose agent
 body carries its own rule of
 the kind, is handed the same file. The sentence reaches a session through that file alone
-(`ras69`, `ras69b`). The argv
+(`ras82`, `ras82b`). The argv
 carries that flag only when a skill was named, and the prompt on stdin is untouched, so a session
 naming no skill is handed the prompt it was measured on, byte for byte, and no appended file
-(`ras70`). The
+(`ras83`). The
 subagent-definition `skills` field was probed on claude 2.1.307 and the session did not see the
 skill, so the reviewer's `--agents` body is left as it was and its skills ride in the same appended
 file. `--record` adds a `"skills"` key to its line — name, path and the sha256 of the file's bytes —
@@ -6701,10 +6952,30 @@ and no such key when none were named, and, once a session ran and its stream was
 empty list for a stream holding events and no such call, and no key when no stream was read or the
 stream holds no event at all — an empty stream is no reading, not a reading of none. A resumed
 run's stream holds that round's events alone, so its list names that round's calls alone.
+A run that started a session also records how long it took (`session_timing`), after those keys
+and never on the printed line, whose `stream=` runs to the end of it: `duration_ms` and
+`num_turns` summed over the stretches a re-invoked session runs in, `duration_api_ms` from the last
+result, as `durationMs`, `numTurns` and `durationApiMs`, and `startedAt`, the stamp the stream's
+file name carries, as `YYYY-MM-DDTHH:MM:SSZ`. A stretch is told by its `init` event, an event
+repeated under one `uuid` is read once, and the two per-stretch figures are summed only when the
+init events pair one to one with the result events. A figure a result does not carry as a finite
+number of zero or more — a string, a boolean, a negative — a per-stretch figure whose stretches
+cannot be paired, or every figure when no result event was read, is left out and named in
+`timingAbsent` with the reason, never written as zero; a run refused before a session started
+carries none of these keys. How `tools/stream-cost.py` reads the same streams is held as values in
+`STREAM_TABLE` in the suite (`ras79`), each stream run through both codes, not described here. A
+stream line that cannot be parsed for any reason — malformed, or nested past the parser's limit —
+is counted as unparsed (`_parse_line`) and never ends the run (`ras80`, `ras81`).
+`read_sessions` in the drive reads `startedAt` and `durationMs` where a record has them and None
+where it does not, so a record written before they existed is otherwise read as it was (`ras73`).
 `drive-phase.py`'s `writer_argv` adds one `--skill` per name `_areas.resolve_skills` returns, for
 the writer, the reviewer and the validation session alike; the validation session, which reviews
 at phase scope, also gets the review skill `_areas.resolve_review_skill` resolves (the
-`phase_review` argument of `session_skills`, `vk1`-`vk3`), and the per-task reviewer never does. Its note of each session
+`phase_review` argument of `session_skills`) when `_skill_places.resolve_skill`, the runner's own
+resolver, finds it in the project — the runner refuses to start over a `--skill` it cannot find,
+so another plugin's skill is left out and the dispatch warns, naming it and the runner's reason
+(`runner_review_skill`, `vk1`, `vk2`, `vk4`) — and the per-task reviewer never does (`vk3`,
+through `reviewer_dispatch`). Its note of each session
 (`session_note`, through `skills_said`) names a declared skill the session never invoked — a
 `plugin:skill` declaration is met by a call with the bare name — or says that no `skillsInvoked`
 was recorded to judge by. A resumed round is judged against the session it resumes
@@ -7095,6 +7366,12 @@ shard (`_manifest_io.stale_stubs`) - under the index lock, revalidated, rolled b
 with one `plan.settle` row naming each value it moved. It is the command `validate-manifest`'s
 warnings name, and it only ever moves a value towards the derivation: a stored terminal status and
 a person's `wontfix`/`not_a_bug` win inside the derivation, so settle cannot overwrite either.
+A task's derived wide gate is one of those values (`_settle_wide_gates`): a task not started whose
+`tests.gateBasis` is one of the derivation's fallback words (`_WIDE_GATE_BASES`) and whose
+derivation - `_rederive_gate`, the one a `scope --files`/`--tests-add` edit runs - now gives a
+non-empty gate that is neither the phase's `testGate` nor the stored one gets that gate and its
+basis. A declared or cleared gate carries another word, and a started task, a pending one with a
+recorded attempt included, keeps the gate its attempt is graded against (`wg1`-`wg9`).
 
 `add-phase --park` writes the same phase `add-phase` builds as a parked proposal instead
 (`PROP-<n>[-suffix]`; on a side branch the reserved phase id is the placeholder `P<n>-<suffix>`,
@@ -7176,6 +7453,8 @@ fails or prints nothing. The shape is the validator's (`_check_phase_gate_derive
 raises about this field after the write rolls every file back, exit 1, with the finding printed,
 so a `spelling` or `related` with no `{paths}` is refused in the validator's words. The write is
 index-only and records `listing.recorded`, naming the fields that moved rather than the commands.
+It then prints the tasks the new spelling leaves with a stale derived gate - counted by
+`_narrowed_wide_gates`, the reading `settle` writes from - and `--json` carries them as `staleGates`.
 
 `build-command <key> --command "<cmd>" [--replace]` / `build-command <key> --remove` sets or drops
 one `meta.buildCommands` key on a plan that exists, the door that does not need the panel's browser
@@ -7414,7 +7693,8 @@ reordering it would change every diff against an earlier render for a presentati
 
 ### `plugins/audit/scripts/report/_report_ui.py`
 The report's CSS and inline JS, off disk as the ordered feature parts under
-`scripts/ui/report-css/` and `scripts/ui/report/`, mirroring `_panel_ui.py`'s split so both
+`scripts/ui/report-css/` and `scripts/ui/report/`, behind the `scripts/ui/shared/` parts both
+surfaces join, mirroring `_panel_ui.py`'s split so both
 surfaces follow one convention. Each `_PARTS` tuple IS the load/cascade order, and a part
 nothing joins is a feature that silently never ships. `render-report.py`
 used to carry `_CSS`/`_SCRIPT` as raw-string literals (plain CSS plus `_ui_theme.TOKEN_CSS`,
@@ -7776,6 +8056,13 @@ reads, so the form can never offer a value the validator rejects. Three modules 
 and all three used to load `validate-config.py` through `_loader` — including
 `_panel_settings` from beside this module, the deepest inversion `KNOWN_LAYER_DEBT`
 then carried, which is why `_panel_settings` moved up a layer in the same change.
+
+It also holds the one reading of `executor.phaseGateOnly`: `phase_gate_only_setting` reads the
+key, `phase_gate_only_match` and `left_to_phase_gate` match a name against a command's words,
+and `phase_gate_only_split` divides a task's steps into kept, left (named, and held by the phase
+gate by name or by command) and unheld (named, not held, still kept). The writer's prompt in
+`audit-lookup.py`, the recorded task gate in `run-test-gate.py` and the drive's
+`task_gate_steps` all call it, so none of them can leave out a step the others run.
 
 `floorGuard` is checked by `_check_floor_guard`: a value that is not an object, a `mode`
 outside `FLOOR_GUARD_MODES` or an `acceptedSuppressions` that is not a list of strings is a

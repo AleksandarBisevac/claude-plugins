@@ -168,6 +168,8 @@ import _affected_tests as _affected  # noqa: E402  (which suites a task's change
 import _invariants  # noqa: E402  (record_rels/is_record_path: the one definition of
 #                                  which paths are the plan's records, shared with
 #                                  integrate-task, audit-task and commit-task-work)
+import _config_rules  # noqa: E402  (phase_gate_only_split: the one reading of
+#                                    executor.phaseGateOnly, the writer's too)
 
 E_OK, E_FAIL, E_ASK = 0, 1, 2
 # A `--record` run that measured and stored nothing. Its own code because it is
@@ -713,10 +715,18 @@ def _charge_step(step, base_steps):
     compared as a whole - introduced when the base step was green, NOT
     KNOWABLE when it was red too, because neither run says whether the same
     thing failed. A step whose suites were cut at their bound adds one
-    not-knowable entry for the suites past the cut, which no row carries."""
+    not-knowable entry for the suites past the cut, which no row carries.
+
+    A JOINED step (`_evidence_io.step_parts`) is read part by part: a suite one
+    of its affected steps' names lists is answered as a derived step's, and
+    any other is its declared entry's, answered by the base step of that
+    entry's name."""
     named = _ev.named_failing_suites([step])
     same = _base_step(base_steps, step)
-    if same is None and not (_ev.is_derived_step(step.get("name")) and named):
+    declared, derived = _ev.step_parts(step.get("name"))
+    joined = declared is not None and bool(derived)
+    if same is None and not ((_ev.is_derived_step(step.get("name")) or joined)
+                             and named):
         return [], [], ["%s (the base run has no such step)" % (step["name"],)]
     if not named:
         if not _ev._counts_as_failed(same):
@@ -728,10 +738,16 @@ def _charge_step(step, base_steps):
         unknown.append("%s (its runner named more failing suites than the row "
                        "carries, so a suite past the cut is compared with "
                        "nothing)" % (step["name"],))
+    listed = _ev.derived_step_suites(step.get("name"))
     for suite in named:
-        answering = ([same] if same is not None else
-                     [st for st in base_steps or []
-                      if _ev.step_runs_suite(st, suite)])
+        if same is not None:
+            answering = [same]
+        elif joined and _ev.resolve_named(suite, listed)[0] is None:
+            entry = _base_step(base_steps, {"name": declared})
+            answering = [] if entry is None else [entry]
+        else:
+            answering = [st for st in base_steps or []
+                         if _ev.step_runs_suite(st, suite)]
         word = (_suite_at_base(suite, step, answering) if answering
                 else "%s (no step of the base run ran it)" % (suite,))
         if word == "at-base":
@@ -766,10 +782,15 @@ def base_red(steps, head, task_id, rows):
         out["basis"] = ("git named no HEAD for this run, so no run at its base "
                         "commit can be looked up")
         return out
-    suites = [suite for st in red if _ev.is_derived_step(st.get("name"))
+    # A joined step's affected suites find a base the way a derived step's do,
+    # and its declared entry is asked for by the entry's own name.
+    suites = [suite for st in red if _ev.step_parts(st.get("name"))[1]
               for suite in _ev.named_failing_suites([st])]
-    base = _ev.base_run(rows, head, [task_id], [st.get("name") for st in red],
-                        suites=suites)
+    names = [st.get("name") for st in red]
+    names += [head_of for head_of, parts in
+              (_ev.step_parts(st.get("name")) for st in red)
+              if head_of is not None and parts and head_of not in names]
+    base = _ev.base_run(rows, head, [task_id], names, suites=suites)
     if base is None:
         out["basis"] = ("no run of this gate is recorded at base %s on a clean "
                         "tree, so whether the base is red too is not known"
@@ -2541,11 +2562,29 @@ def declared_gate(entries, build):
     operator's preamble in front of each of these before a shell sees it, and the
     two are different things to compare: the preamble is a property of the
     machine the gate is being run on, and two machines running the same declared
-    gate must not read as two different gates. Spelled once and called twice so
-    the pair cannot come apart.
+    gate must not read as two different gates.
+
+    A STEP WIDENED ONTO THE PHASE GATE is named `affected/phase-gate: <entry>`,
+    and that name is no build key: its declaration is its ENTRY's command, as
+    the step was built from it, so a remapped key is a different gate and the
+    command is what `grades_left_out` reads.
     """
-    return [(e, build.get(e, e)) for e in entries
-            if isinstance(e, str) and e.strip()]
+    return [(e, build.get(_declared_entry(e), _declared_entry(e)))
+            for e in entries if isinstance(e, str) and e.strip()]
+
+
+# The name a step widened onto the phase gate carries before its gate entry,
+# spelled as that step is named where it is built.
+_PHASE_GATE_STEP = "%s%s: " % (_ev.DERIVED_STEP_PREFIX, _ev.DERIVED_PHASE_GATE_ARM)
+
+
+def _declared_entry(name):
+    """The gate entry a step named `name` declares: the entry after the
+    phase-gate arm's prefix for a step widened onto the phase gate, else the
+    name itself."""
+    if name.startswith(_PHASE_GATE_STEP) and name[len(_PHASE_GATE_STEP):].strip():
+        return name[len(_PHASE_GATE_STEP):]
+    return name
 
 
 def _resolved(entries, build, preamble=None):
@@ -2795,8 +2834,7 @@ def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
     wide, _left = split_not_commands(
         _resolved([e for e in phase_entries if e not in names], build,
                   meta.get("nodePreamble")), manifest)
-    steps = [("%s%s: %s" % (_ev.DERIVED_STEP_PREFIX, _ev.DERIVED_PHASE_GATE_ARM,
-                            name), command)
+    steps = [(_PHASE_GATE_STEP + name, command)
              for name, command in wide]
     return steps, [command for _name, command in wide], info
 
@@ -2979,8 +3017,8 @@ def affected_lines(info):
 
 
 # --- a verdict already measured on these bytes --------------------------------
-# WHAT MAKES TWO GATE RUNS THE SAME RUN. Three things, and the identity is the
-# digest of all three together:
+# WHAT MAKES TWO GATE RUNS THE SAME RUN. The things below, and the identity is
+# the digest of all of them together:
 #
 #   * THE TREE'S CONTENT, through `_tree_stamp.content_digest`. Not
 #     `testedState`: that block's dirty digest records WHICH paths were dirty and
@@ -2999,15 +3037,28 @@ def affected_lines(info):
 #     ownership split, the coverage answer and the excused red are all read
 #     against that list, so two runs over one tree with different declared files
 #     reach different verdicts and are not one run.
+#   * THE PLAN'S META AS IT STANDS AT THE ASK (`meta_part`), because a step can
+#     read the plan without naming it: a suite reading the live plan's meta, run
+#     by a sweep that names no plan, is graded by bytes the tree half leaves out.
+#     So an edit to any meta block measures every step. The keys a recorded run
+#     writes into meta itself (`RECORDER_META`) are not an edit, or the run
+#     after the first one recorded on a plan could never repeat.
 #
 # WHAT THE IDENTITY DOES NOT ESTABLISH IS PRINTED BESIDE IT, in `REUSE_LIMIT`.
-REUSE_LIMIT = ("the tree's content and the gate the manifest declares - not that "
-               "the machine is the one that measured. A file git ignores, an "
-               "installed package, an environment variable, the clock, the "
-               "network and a check that answers differently twice are all "
-               "outside it, and so are this plugin's own records: the manifest, "
-               "its shards, the ledger and the trail are left out because a "
-               "recorded run rewrites them")
+REUSE_LIMIT = ("the tree's content, the gate the manifest declares and the "
+               "plan's meta - not that the machine is the one that measured. A "
+               "file git ignores, an installed package, an environment "
+               "variable, the clock, the network and a check that answers "
+               "differently twice are all outside it, and so are this plugin's "
+               "own records: the manifest's phases and tasks, its shards, the "
+               "ledger and the trail are left out because a recorded run "
+               "rewrites them")
+
+# THE META KEYS A RECORDED RUN WRITES ITSELF, named by their writer's own
+# constant: the evidence boundary, stamped once by the first recorded run on a
+# plan (`_evidence_io.write_evidence_since`). No other meta key is written by
+# this runner or by the drive; every other writer is a verb an operator runs.
+RECORDER_META = (_ev.SINCE_KEY,)
 
 # WHICH VERDICTS SURVIVE BEING REPEATED, and it is a short list on purpose.
 # `passed` and `failed` are statements about the work under test that the same
@@ -3043,7 +3094,206 @@ def subject_ids(phase_id, task_id, source):
     return ids
 
 
-def grades_left_out(gate, excluded):
+# --- whether a gate entry names a path the identity leaves out -------------------
+# THE RULE, IN TWO SENTENCES. An entry names a left-out path when its command's
+# text holds that path's last component as a whole name - no letter or digit
+# runs on into it, through the characters that join a name (`_NAME_JOINERS`),
+# on either side - and, for a path known to be a directory, with a path
+# separator of either kind directly beside it. The text is searched as written,
+# as a shell's quote removal leaves it (`_quote_removed`) and with every
+# backslash then dropped, all three case-folded, never split into words, so no
+# quote, escape, delimiter, whitespace kind or letter case can hide an
+# occurrence, and nothing in the reading can fail or recurse.
+#
+# MORE NAMES FOR THE SAME SEARCH (`_search_names`). Beside each left-out path:
+# the directory holding the plan's shards, as a directory; every spelling of
+# the plan the runner was handed, a symlink's and its target's; and the name of
+# every script this plugin ships (`plugin_script_names`), which grades the
+# plan, because the plugin's own readers find the plan through the project's
+# config and are routinely run with no path at all (`audit-status.py --gate`).
+#
+# WHICH WAY EACH THING IT CANNOT READ FAILS. A command that is not text grades
+# (`UNREADABLE`): measured, the safe direction. Reading more than a shell would
+# - a path inside a comment or an `echo`, a sibling directory sharing a left-out
+# directory's last component, two unquoted words that only together spell a
+# spaced path - also grades: a run measured that could have been repeated. What
+# it reads LESS than a shell would, each a stale green if an entry relies on it,
+# and each kept because no literal reading can see it: a path reached only
+# through a variable (`"$PLAN"`), a glob (`docs/audit/*.json`), a word naming an
+# ancestor directory of a left-out path (`docs/audit`, `.`), a left-out
+# directory named by its bare last component after a `cd` (`ls journal`), and
+# a last component a shell assembles by brace expansion (`audit-{plan,x}.json`)
+# or ANSI-C quoting (`audit-$'plan'.json`), a name a program assembles in its
+# own code (`'audit-' + 'plan.json'`, a directory joined from its components),
+# and a suite that opens the plan's phases, tasks or bugs itself, in a gate that
+# runs no plan reader and names no plan path - its command holds nothing of the
+# plan, and only the plan's meta is in the key, so that green repeats over a
+# plan whose phases changed under it.
+# One assembled only from quoted pieces is read (`audit-"plan".json`), and so
+# is a path through `..`, since its last component is still written. The
+# earlier readings split the entry into shell words and matched words, and each
+# failed on a shape its enumeration lacked: a delimiter, a whitespace kind it
+# re-read without end, an apostrophe its lexer refused.
+
+# The reason an entry is reported for when its command cannot be read at all.
+# `left_out_line` keys its sentence on this prefix, so the two cannot drift.
+UNREADABLE = "its command is not text"
+
+# Characters that continue a file name, as `audit-plan.json` and
+# `test__evidence_io.py` continue: an occurrence a letter or digit reaches
+# through these is part of a longer name. Every other character - whitespace of
+# any kind, a quote, a separator, `,`, `:`, `=`, a brace - ends one.
+_NAME_JOINERS = "._-+@~"
+
+# Both separators, whatever the host: a Windows path in an entry is read on a
+# posix leg too, and its separators are backslashes.
+_SEPARATORS = "/\\"
+
+
+def _quote_removed(text):
+    """`text` as a POSIX shell's quote removal leaves it: each backslash-newline
+    pair taken out, a backslash dropped before a character that is not a letter
+    or digit (`my\\ plan`, `\\"`), and every remaining quote character dropped.
+
+    A SECOND READING, NEVER THE ONLY ONE. It is what lets `my\\ plan/x.json`
+    hold `my plan` and `docs/"audit-plan".json` hold the plan's name; the text
+    as written is searched as well, so a backslash before a letter is kept here
+    because on Windows it is the separator before a directory's name."""
+    text = text.replace("\\\n", "")
+    kept = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if (char == "\\" and index + 1 < len(text)
+                and not text[index + 1].isalnum()):
+            kept.append(text[index + 1])
+            index += 2
+            continue
+        if char not in "'\"":
+            kept.append(char)
+        index += 1
+    return "".join(kept)
+
+
+def _reaches_letter(text, start, step):
+    """True when, walking from `start` by `step` through letters, digits and
+    `_NAME_JOINERS`, a letter or digit is met: the occurrence beside `start`
+    is part of a longer name."""
+    index = start
+    while 0 <= index < len(text) and (text[index].isalnum()
+                                      or text[index] in _NAME_JOINERS):
+        if text[index].isalnum():
+            return True
+        index += step
+    return False
+
+
+def _holds_name(text, name, is_dir):
+    """True when `text` holds `name` as a whole name - and, for a directory,
+    with a separator directly beside it, because a bare `-k journal` is a
+    selector and not the journal directory."""
+    start = text.find(name)
+    while start >= 0:
+        end = start + len(name)
+        whole = (not _reaches_letter(text, start - 1, -1)
+                 and not _reaches_letter(text, end, 1))
+        beside = ((start > 0 and text[start - 1] in _SEPARATORS)
+                  or (end < len(text) and text[end] in _SEPARATORS))
+        if whole and (beside or not is_dir):
+            return True
+        start = text.find(name, start + 1)
+    return False
+
+
+def _last_name(path):
+    """The last component of a left-out path, either separator; the whole path
+    when it has no such component (`.`, `..`, a bare separator), so an
+    exclusion is never searched as the empty string."""
+    name = re.split(r"[/\\]", path.rstrip(_SEPARATORS))[-1]
+    return path if name in ("", ".", "..") else name
+
+
+def plugin_script_names():
+    """The base name of every script this plugin ships, as the module that
+    resolves scripts by basename indexes them (`_loader.script_index`) - so
+    the list is what is on disk, never one typed here."""
+    return sorted(_loader.script_index())
+
+
+def _parent(path):
+    """`path`'s parent, `/`-separated; empty for a path with none."""
+    return path.replace("\\", "/").rstrip("/").rpartition("/")[0]
+
+
+def _depth(path):
+    """How many components `path` has, either separator."""
+    return len([p for p in re.split(r"[/\\]", path) if p])
+
+
+def _plan_among(paths, dirs):
+    """The left-out path read as the plan when the caller named none: the
+    shallowest `.json` file, the first of a tie, since shards resolve under the
+    plan's own directory. None when no left-out path is a file."""
+    files = [p for p in paths if p not in dirs]
+    candidates = [p for p in files if p.lower().endswith(".json")] or files
+    return min(candidates, key=_depth) if candidates else None
+
+
+def _shard_directories(paths, dirs, plans):
+    """The directories holding the plan's shards: the parent of each left-out
+    `.json` file, unless that parent is the directory of a spelling of the plan
+    or one above it - which leaves the plan itself and a symlinked plan's
+    target out, and a shard kept beside the plan, which would otherwise make a
+    left-out directory of `docs/audit`, whose `audit` is written in every path
+    under `plugins/audit`."""
+    plan_dirs = [_parent(p) for p in plans]
+    found = []
+    for path in paths:
+        if path in dirs or not path.lower().endswith(".json"):
+            continue
+        parent = _parent(path)
+        if (not parent or parent in found or parent in dirs or parent in paths
+                or any(d == parent or d.startswith(parent + "/")
+                       for d in plan_dirs)):
+            continue
+        found.append(parent)
+    return found
+
+
+def _search_names(paths, dirs, plans):
+    """`[(name, is_dir, what)]`: every name the rule searches for and what an
+    entry holding it grades - each left-out path by its last component, the
+    shards' directory, and each script this plugin ships, which grades the
+    plan (`plans[0]`, or the plan read off `paths`)."""
+    plan = plans[0] if plans else _plan_among(paths, dirs)
+    names = [(_last_name(p), p in dirs, p) for p in paths]
+    names.extend((_last_name(d), True, d)
+                 for d in _shard_directories(paths, dirs,
+                                             plans or [p for p in [plan] if p]))
+    names.extend((script, False, "%s through %s"
+                  % (plan if plan else "the plan", script))
+                 for script in plugin_script_names())
+    return [(name.casefold(), is_dir, what) for name, is_dir, what in names]
+
+
+def left_out_line(name, what):
+    """The line saying why an entry naming a left-out path is measured, not
+    repeated: the entry, and the path it names or the reason it was read as
+    naming one. The gate's other entries may still be repeated
+    (`part_reused_result`)."""
+    if what.startswith(UNREADABLE):
+        return ("[run-test-gate] %s cannot be read for the paths it names - %s - "
+                "so it is treated as naming a path this identity leaves out, and "
+                "this entry is MEASURED and not repeated. A guess the other way "
+                "would repeat a verdict nobody measured" % (name, what))
+    return ("[run-test-gate] %s names %s, which this identity leaves out, so "
+            "this entry is MEASURED and not repeated. Whether the command reads "
+            "that path is not established here; naming it is enough, because "
+            "the other way round is a verdict that no longer describes the "
+            "thing it graded" % (name, what))
+
+
+def grades_left_out(gate, excluded, directories=(), plan=()):
     """The gate entries whose command NAMES a path this identity leaves out.
 
     WHY AN ENTRY CAN BE ITS OWN COUNTER-EXAMPLE. The content identity drops the
@@ -3059,39 +3309,122 @@ def grades_left_out(gate, excluded):
     reads it - nothing short of running it could establish that, and running it
     is the cost this whole feature exists to avoid. So the conclusion is the
     conservative one and the sentence says which it is: a named path means the
-    verdict is MEASURED rather than repeated. Wrong in this direction costs a run;
+    ENTRY is MEASURED rather than repeated, while the gate's other entries may
+    still be repeated (`part_reused_result`). Wrong in this direction costs a run;
     wrong in the other direction is a stale pass, which is the failure the rest of
     this module is written against.
 
-    The basename is matched as well as the path, because a gate entry commonly
-    names the plan the way the operator types it rather than the way the manifest
-    resolves it.
+    THE COMMAND IS READ AS TEXT, FOR WHOLE NAMES. The rule, the directions it
+    fails in and the limits it keeps are stated once, above `UNREADABLE`. A
+    file is named by its last component anywhere in the text, because a gate
+    entry commonly names the plan the way the operator types it after a `cd`;
+    `directories` are the left-out paths that are directories on disk, named
+    only with a separator beside that component. A bare substring is not
+    enough: `tests/test__evidence_io.py` holds the evidence directory's last
+    component inside a longer name, and a sweep listing it was once measured
+    again on every unchanged tree. A command that is not text is reported with
+    `UNREADABLE` in place of a path.
+
+    `plan` is every spelling of the plan, the configured one first - a plan
+    reached through a symlink has two. Absent, the plan is read off
+    `excluded` (`_plan_among`). An entry holding a script this plugin ships
+    is reported as naming the plan `through` that script.
     """
+    paths = [p for p in (excluded or []) if isinstance(p, str) and p.strip()]
+    dirs = set(directories or ())
+    plans = [p for p in (plan or ()) if isinstance(p, str) and p.strip()]
+    names = _search_names(paths, dirs, plans)
     named = []
     for name, command in gate or []:
-        text = command if isinstance(command, str) else ""
-        for path in excluded or []:
-            if not (isinstance(path, str) and path.strip()):
-                continue
-            if path in text or os.path.basename(path) in text:
-                named.append((name, path))
-                break
+        if not isinstance(command, str):
+            named.append((name, "%s (it is %s)"
+                          % (UNREADABLE, type(command).__name__)))
+            continue
+        removed = _quote_removed(command)
+        readings = [text.casefold()
+                    for text in (command, removed, removed.replace("\\", ""))]
+        hit = next((what for searched, is_dir, what in names
+                    if any(_holds_name(text, searched, is_dir)
+                           for text in readings)),
+                   None)
+        if hit is not None:
+            named.append((name, hit))
     return named
+
+
+def _grading_steps(commands, build):
+    """`[(name, command)]` to read for left-out paths: each step under its
+    declared command (`declared_gate`) AND under the command that runs - the
+    preamble in front, a derived step's suites - so a path either one names
+    grades the step. A step is named once in the answer."""
+    steps = []
+    for name, running in commands or []:
+        steps.extend((name, text) for _n, text in declared_gate([name], build))
+        steps.append((name, running))
+    return steps
+
+
+def meta_part(manifest):
+    """The plan's meta as the key holds it: every key but the ones a recorded
+    run writes itself (`RECORDER_META`), under a label of its own."""
+    meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    if not isinstance(meta, dict):
+        meta = {}
+    return ["meta", dict((k, v) for k, v in meta.items()
+                         if k not in RECORDER_META)]
+
+
+def plan_spellings(project, manifest_path):
+    """Every project-relative name the plan is reached by, the one it was
+    handed first: a plan that is a symlink is excluded under its target alone
+    (`_evidence_io.recorded_paths` resolves it), and an entry naming the
+    configured link reads the same bytes. The link's own directory is resolved
+    so a project reached through a symlink spells it once. A name outside the
+    project is not one."""
+    if not manifest_path:
+        return []
+    root = os.path.realpath(project)
+    handed = os.path.abspath(manifest_path)
+    spelled = os.path.join(os.path.realpath(os.path.dirname(handed)),
+                           os.path.basename(handed))
+    names = []
+    for path in (spelled, os.path.realpath(handed)):
+        try:
+            rel = _output.posix_rel(path, root)
+        except ValueError:
+            # Another drive than the project's, on Windows: not a name in it.
+            continue
+        if rel == "." or rel == ".." or rel.startswith("../") or rel in names:
+            continue
+        names.append(rel)
+    return names
+
+
+def _first_per_step(grading):
+    """`grading` with each step named once, at its first path."""
+    seen = set()
+    kept = []
+    for name, what in grading:
+        if name not in seen:
+            seen.add(name)
+            kept.append((name, what))
+    return kept
 
 
 def reuse_identity(project, manifest_path, manifest, commands, owns, group=None,
                    tree=None):
     """`{key, basis, limit, grading, unexcluded}` - what this run would have to
-    match to be a repeat, and the entries that stop it being one.
+    match to be a repeat, and the entries that are measured whatever matches.
 
     `key` is None when the tree's content could not be established; the basis
     then says why, and a None never matches a None - `reusable_run` refuses an
     empty key outright, for `field_state`'s reason one module over.
 
-    `grading` is non-empty when an entry names a path the identity leaves out.
-    The key is still computed and still recorded in that case, because the row
-    has to carry what this run was taken on whether or not a repeat was allowed -
-    a run that recorded no identity leaves the next one nothing to match.
+    `grading` is non-empty when an entry names a path the identity leaves out:
+    those entries are measured on every run, and the rest may still be
+    repeated (`part_reused_result`). The key is computed and recorded either
+    way, because the row has to carry what this run was taken on - a run that
+    recorded no identity leaves the next one nothing to match.
 
     `unexcluded` is `recorded_paths`' own report of a write it could not turn
     into a project-relative exclusion. It travels on the identity for the same
@@ -3117,16 +3450,23 @@ def reuse_identity(project, manifest_path, manifest, commands, owns, group=None,
     gate = [[name, command] for name, command
             in declared_gate([n for n, _c in (commands or [])], build)]
     scope = _tree_stamp.declared_scope(owns)
-    grading = grades_left_out(gate, excluded)
+    plans = plan_spellings(project, manifest_path)
+    grading = _first_per_step(grades_left_out(
+        _grading_steps(commands, build),
+        excluded + [p for p in plans if p not in excluded],
+        directories=[p for p in excluded
+                     if os.path.isdir(os.path.join(project, p))],
+        plan=plans))
     if content is None:
         return {"key": None, "basis": cbasis, "limit": REUSE_LIMIT,
                 "grading": grading, "unexcluded": unexcluded}
-    parts = [content, gate, scope]
+    parts = [content, gate, scope, meta_part(manifest)]
     if group:
         parts.append(["group", sorted(str(g) for g in group)])
     return {"key": _tree_stamp.identity_of(parts),
             "basis": "%s; over that, the %d gate command(s) this manifest "
-                     "declares and the %d file(s) the work under test declares"
+                     "declares, the plan's meta and the %d file(s) the work "
+                     "under test declares"
                      % (cbasis, len(gate), len(scope)),
             "limit": REUSE_LIMIT,
             "grading": grading,
@@ -3227,6 +3567,137 @@ def reused_result(identity, row, elapsed_ms, newer=None):
     }
 
 
+# --- a gate repeated in part ---------------------------------------------------
+# An entry naming a path the identity leaves out (the plan, the ledger) grades
+# bytes no repeat can vouch for, so it is measured on every run. The entries
+# beside it grade the tree, which the identity does hold, so they are repeated
+# from the newest row that measured them (`_evidence_io.reusable_run` with
+# `steps`) - the same rule a whole-run repeat follows, one step at a time.
+def repeat_plan(commands, grading):
+    """`(repeated names, measured commands)` for a gate whose `grading` entries
+    name a path the identity leaves out: every other entry may be repeated, and
+    only the grading ones run. Empty names when no entry is left to repeat.
+
+    A JOINED step runs every entry it carries (`_evidence_io.step_parts`), so
+    it is measured when any one of them grades - the identity's grading names
+    are the steps before the join."""
+    graded = set(name for name, _what in grading or ())
+
+    def grades(name):
+        declared, derived = _ev.step_parts(name)
+        return any(part in graded
+                   for part in [name, declared] + list(derived))
+    return ([name for name, _command in commands if not grades(name)],
+            [(name, command) for name, command in commands if grades(name)])
+
+
+def repeated_step(stored, command, source):
+    """A step copied from `source`'s row: its verdict fields (`STEP_KEYS`), the
+    command as this run declares it, and `STEP_REUSED_KEY` naming the run. No
+    duration - this run spent none on it - and `exit`/`ran` kept present, None
+    where the stored step had none, because the step table reads both."""
+    step = dict((key, stored[key]) for key in _ev.STEP_KEYS
+                if key in stored
+                and key not in ("durationMs", _ev.STEP_REUSED_KEY))
+    step.setdefault("exit", None)
+    step.setdefault("ran", None)
+    step["command"] = command
+    step[_ev.STEP_REUSED_KEY] = {"runId": source.get("runId"),
+                                 "ts": source.get("ts")}
+    return step
+
+
+def part_reused_result(measured, source, repeated, commands):
+    """`run_gate`'s answer over the grading entries alone, joined with the
+    `repeated` steps copied from `source` into one run in declared order.
+
+    THE VERDICT IS THE WORSE OF THE TWO KINDS, by `run_status`' own
+    precedence: a repeated step that failed makes the run `failed`, which
+    outranks every other word; otherwise the measured part's word stands. So a
+    red is repeated as red - a second measurement of a tree step that came back
+    green cannot replace a red nobody was shown - and a plan entry turned red
+    by an edit the identity cannot see is red here too.
+
+    WHAT WAS OBSERVED HERE STAYS THIS RUN'S: `durationMs`, the tree reading, the
+    counts, the mutes and the selection are the measured steps' alone. Two
+    readings join the source's: the coverage, since the runner-named paths of
+    the repeated steps are as much this gate's answer as the measured ones'
+    (None when either half has none), and the followers its steps owed.
+    """
+    res = dict(measured)
+    by_name = dict((s.get("name"), s) for s in source.get("steps") or []
+                   if isinstance(s, dict))
+    ran_here = list(measured.get("steps") or [])
+    steps, copied = [], []
+    for name, command in commands:
+        if name in repeated:
+            step = repeated_step(by_name.get(name) or {}, command, source)
+            copied.append(step)
+            steps.append(step)
+            continue
+        found = next((s for s in ran_here if s.get("name") == name), None)
+        if found is not None:
+            ran_here.remove(found)
+            steps.append(found)
+    steps.extend(ran_here)
+    repeated_red = failed_steps(copied)
+    red = set(repeated_red) | set(measured.get("failed") or [])
+    res["steps"] = steps
+    res["failed"] = [s["name"] for s in steps if s["name"] in red]
+    if repeated_red:
+        res["status"] = "failed"
+        # The excuse an already-dirty tree gives a measured red says nothing
+        # about a repeated one, which was measured on a tree it did not see.
+        res["notAttributable"] = None
+        res["attributionBasis"] = None
+    prior_cover = (source.get("observations") or {}).get("coverage")
+    if measured.get("overlap") is None or prior_cover is None:
+        res["overlap"] = None
+        res["coverageBasis"] = (
+            "%s; run %s, which the repeated step(s) %s come from, %s, so the "
+            "two halves cannot be joined" % (
+                measured.get("coverageBasis") or "no coverage basis here",
+                source.get("runId"), ", ".join(repeated),
+                "recorded no coverage" if prior_cover is None
+                else "recorded coverage this run's half has none to join"))
+    else:
+        res["overlap"] = sorted(set(measured["overlap"]) | set(prior_cover))
+        res["coverageBasis"] = (
+            "%s; joined with the paths run %s's repeated step(s) %s named"
+            % (measured.get("coverageBasis") or "no coverage basis here",
+               source.get("runId"), ", ".join(repeated)))
+    res["countsBasis"] = (
+        "%s; counted over the step(s) measured here only - the repeated "
+        "step(s) %s ran no check in this run"
+        % (measured.get("countsBasis") or "no count basis here",
+           ", ".join(repeated)))
+    owed = list(measured.get(_ev.FOLLOWERS_KEY) or [])
+    owed.extend(f for f in source.get(_ev.FOLLOWERS_KEY) or [] if f not in owed)
+    res[_ev.FOLLOWERS_KEY] = owed
+    res[_ev.VERDICT_SOURCE] = _ev.PART_REUSED
+    res["reusedFrom"] = {"runId": source.get("runId"), "ts": source.get("ts"),
+                         "status": source.get("status")}
+    return res
+
+
+def part_reuse_line(res):
+    """The line a part-repeated run prints in place of the whole-run repeat
+    banner, which would claim nothing ran: which steps were repeated and from
+    which run, which were measured here and what each took. It holds no `GATE`
+    banner word, so a reader keying on those meets only the verdict line."""
+    prior = res.get("reusedFrom") or {}
+    repeated = [s["name"] for s in res.get("steps") or []
+                if _ev.step_repeated(s)]
+    measured = ["%s (%s)" % (s["name"], human_duration(s.get("durationMs"))
+                             or "not timed")
+                for s in res.get("steps") or [] if not _ev.step_repeated(s)]
+    return ("[run-test-gate] part repeated: %s repeated from run %s (%s, "
+            "recorded %s) - nothing ran for them here; measured here: %s. "
+            "Re-run with --no-reuse to measure every step."
+            % (", ".join(repeated), prior.get("runId"), prior.get("status"),
+               prior.get("ts"), ", ".join(measured) or "nothing"))
+
+
 EMPTY_GATE = "empty-gate"
 
 
@@ -3269,6 +3740,67 @@ def empty_gate_result(source, basis):
         "sharedCounts": [], "notAttributable": None, "attributionBasis": None,
         "cancelledBy": None, "overlap": None,
         "coverageBasis": "%s and no runner named a path" % (nothing,),
+    }
+
+
+# --- what a task's run leaves to the phase gate ---------------------------------
+# `executor.phaseGateOnly` names commands the project leaves to the phase gate.
+# A task-scope run leaves out a step it names when the phase's own gate holds
+# it - whichever arm proposed the step, a declared entry or the affected
+# selection's widening - and runs one the phase gate lacks, saying why. The
+# rule is `_config_rules.phase_gate_only_split`, the one the writer's prompt
+# and the drive's view of a task's steps read, so the three agree. The phase
+# gate itself never asks it.
+def phase_gate_only_plan(commands, phase_commands, names):
+    """`{run, left, unheld}` for a task-scope run of `commands` against its
+    phase's own gate (`phase_commands`, `_ev.phase_gate_steps`) under the
+    setting's `names`: the steps to run, in order; one row record
+    (`_ev.left_to_phase_gate_record`) per step left to the phase gate; and
+    `(name, command, matched)` per named step the phase gate does not hold,
+    which stays in `run`."""
+    split = _config_rules.phase_gate_only_split(commands, phase_commands, names)
+    return {"run": split["kept"],
+            "left": [_ev.left_to_phase_gate_record(
+                name, matched, _config_rules.PHASE_GATE_ONLY_KEY)
+                for name, _command, matched in split["left"]],
+            "unheld": split["unheld"]}
+
+
+def phase_gate_only_lines(plan, phase_id):
+    """The line each left-out and each unheld step earns, in that order."""
+    lines = ["[run-test-gate] %s is left to the phase gate: %s names %s and "
+             "phase %s's gate runs it, so this task's run does not"
+             % (rec["name"], rec["basis"], rec["matched"], phase_id)
+             for rec in plan["left"]]
+    lines += ["[run-test-gate] %s is named by %s (%s), but phase %s's gate does "
+              "not hold it, so it runs here - left out, it would otherwise run "
+              "nowhere" % (name, _config_rules.PHASE_GATE_ONLY_KEY, matched,
+                           phase_id)
+              for name, _command, matched in plan["unheld"]]
+    return lines
+
+
+def all_left_result(source, left, phase_id):
+    """`run_gate`'s shape for a task gate whose every step is left to the phase
+    gate: `no-checks`, the word a gate that counted nothing earns, with the
+    reason in its basis - never `passed`, which would claim a measurement, and
+    never `empty-gate`, which says the gate declares nothing when it declares
+    entries another gate runs."""
+    names = ", ".join(rec["name"] for rec in left)
+    why = ("every step of this gate (%s) is left to the phase gate by %s, and "
+           "phase %s's gate runs it at sign-off - nothing ran here"
+           % (names, _config_rules.PHASE_GATE_ONLY_KEY, phase_id))
+    return {
+        "status": "no-checks", "gateSource": source,
+        "failed": [], "steps": [], "durationMs": 0,
+        "treeMutated": None, "treeBasis": "%s, so the tree was not bracketed"
+                                          % (why,),
+        "treeMutatedOwned": None, "treeMutatedForeign": None,
+        "ranTotal": 0, "countsBasis": "%s, so no check was counted" % (why,),
+        "sharedCounts": [], "notAttributable": None, "attributionBasis": None,
+        "cancelledBy": None, "overlap": None,
+        "coverageBasis": "%s, so no runner named a path" % (why,),
+        _ev.LEFT_TO_PHASE_GATE_KEY: list(left),
     }
 
 
@@ -4119,7 +4651,7 @@ def observed_step(name, command, code, text, facts, duration_ms):
 def run_gate(project, commands, runner=None, owns=None, timeout=None,
              recorded=None, task_scope=False, keep_text=False,
              derived_check=None, muted=None, today=None, preamble=None,
-             withheld=None, task=None, say=print):
+             withheld=None, task=None, say=print, selection_started=None):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -4167,6 +4699,11 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     whose gate it is grading, while the row keeps the declared command. A step
     that runs another copy of `audit-status.py` is run as declared and `say`
     gets one line, once per step, that the exemption was not applied.
+    `selection_started` is the caller's `time.monotonic()` reading from when it
+    began choosing what to run; `res["selectionMs"]` is the time from it to the
+    reading `durationMs` starts from - taken after this function's own reading
+    of the tree before the first command, so that reading is in the selection -
+    and None when no caller timed a selection.
     """
     runner = runner or _shell
     today = _vocab.mute_today() if today is None else today
@@ -4180,6 +4717,10 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     # this is taken; `commit-task-work` grades the row with the same set.
     state = _tree_stamp.tested_state(project, owns, before, excluded=recorded)
     started = time.monotonic()
+    # One clock, read at the one origin both figures share: the selection ends
+    # exactly where `durationMs` begins, so neither holds any of the other.
+    selection = (None if selection_started is None
+                 else int((started - selection_started) * 1000))
     # THE WALL CLOCK BESIDE THE MONOTONIC ONE, and both are needed for different
     # questions. `started` measures how long this run took and is immune to a
     # clock that moves under it; `started_at` says WHEN it was happening, which
@@ -4407,6 +4948,8 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             "sharedCounts": shared,
             "durationMs": _elapsed_ms(started),
             "startedAt": started_at,
+            # None when no caller timed a selection, so the row omits it.
+            "selectionMs": selection,
             # THE PATHS AND THE SENTENCE TRAVEL TOGETHER OR NOT AT ALL. Both are
             # None on the ordinary run, which is this file's shape for a claim
             # nobody is making: a basis with no claim under it is noise, and a
@@ -4467,6 +5010,15 @@ def _render_steps(res, out, quiet):
     """
     for step in res["steps"]:
         if quiet and _quiet_step(step):
+            continue
+        if _ev.step_repeated(step):
+            # NOTHING RAN FOR IT HERE, so it prints no duration and no count
+            # of its own - only the verdict it copies and where from.
+            out("  %-12s exit %-3s %10s  repeated from run %s, not run here"
+                % (step["name"], step.get("exit"), "(repeated)",
+                   (step[_ev.STEP_REUSED_KEY] or {}).get("runId")))
+            for line in step.get("failing") or ():
+                out("      %s" % (line,))
             continue
         ran = step["ran"]
         # WHAT THE STEP COST, ON THE STEP'S OWN LINE AND NOT AS A TOTAL (P46.5).
@@ -5279,8 +5831,11 @@ def base_commands(row, manifest, phase_id, tree):
             commands.append((name, step["command"]))
             published.append(step["command"])
             continue
-        if _ev.is_derived_step(name):
-            derived, why = _derived_at_base(step, manifest, phase_id, tree)
+        declared, parts = _ev.step_parts(name)
+        if _ev.is_derived_step(name) or (declared is not None and parts):
+            reader = (_derived_at_base if declared is None
+                      else _joined_at_base)
+            derived, why = reader(step, manifest, phase_id, tree)
             commands += derived
             if why:
                 left.append({"name": name, "reason": why})
@@ -5288,6 +5843,59 @@ def base_commands(row, manifest, phase_id, tree):
         left.append({"name": name, "reason": "its row keeps a digest of the "
                                              "command, which cannot be run again"})
     return commands, published, left
+
+
+def _joined_at_base(step, manifest, phase_id, tree):
+    """`(commands, why)` - the commands that run a red JOINED step's failing
+    suites in `tree`, each under the part of the step that ran it
+    (`_evidence_io.step_parts`), or why there are none.
+
+    A suite one of its affected steps' names lists is spelled again under that
+    step, as `_derived_at_base` spells a derived step's. A suite of the
+    declared entry's own paths is run under the declared entry, spelled by the
+    plan's recorded spelling over those suites - the spelling the entry was
+    joined in. A suite neither lists, or a runner that named none, leaves the
+    step unrun with the reason."""
+    declared, derived = _ev.step_parts(str(step.get("name")))
+    named = _ev.named_failing_suites([step])
+    if not named:
+        return [], ("its runner named no failing suite, so no suite of it can "
+                    "be run again at the base")
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    phase = _phase_by_id(manifest, phase_id) or {}
+    own_paths = _affected.entry_paths(declared, phase, meta) or []
+    owed, mine, unmatched = {}, [], []
+    for suite in named:
+        part = next((p for p in derived if _ev.resolve_named(
+            suite, _ev.derived_step_suites(p))[0] is not None), None)
+        if part is not None:
+            owed.setdefault(part, []).append(suite)
+            continue
+        path, why = _ev.resolve_named(suite, own_paths)
+        if path is None:
+            unmatched.append("%s (%s)" % (suite, why))
+        elif path not in mine:
+            mine.append(path)
+    if unmatched:
+        return [], ("a failing suite its runner named is not one path its "
+                    "affected steps or its declared entry list, so it cannot be "
+                    "spelled as the joined step was: %s" % ("; ".join(unmatched),))
+    commands = []
+    if mine:
+        spelled = _affected.spelled_entry(mine, phase, meta)
+        if spelled is None:
+            return [], ("its declared entry's suites cannot be spelled again: "
+                        "the plan records no subset spelling")
+        commands.append((declared, spelled))
+    for part in derived:
+        if part not in owed:
+            continue
+        more, why = _derived_at_base(dict(step, name=part, failingSuites=owed[part]),
+                                     manifest, phase_id, tree)
+        if why:
+            return [], why
+        commands += more
+    return commands, None
 
 
 def _record_base_run(project, args, res, published, out=print):
@@ -5766,6 +6374,29 @@ def wave_tree_refusal(project, args):
             "evidence. Remedy: pass `--tree %s`." % (args.task, tree, tree))
 
 
+def _all_left(project, args, manifest, source, subject, declared, left,
+              out=print):
+    """A task run whose every step is left to the phase gate: recorded as
+    `no-checks` (`all_left_result`) under the declared gate's digest, said,
+    and red - a run that measured nothing is not a verdict to commit on."""
+    res = all_left_result(source, left, args.phase)
+    res["subject"] = subject
+    res[_ev.GATE_DIGEST_KEY] = _ev.gate_digest(
+        [name for name, _command in declared or []],
+        (manifest.get("meta") or {}).get("buildCommands"))
+    if args.record:
+        res["recorded"] = _record_run(project, args, res, source, declared,
+                                      manifest, out=out)
+    if args.as_json:
+        out(json.dumps(res, indent=2, sort_keys=True))
+        return E_FAIL
+    out("NO CHECK RAN: %s. That is not a verdict, and it cannot sign this task "
+        "off - give the task a gate entry of its own that runs here, or take "
+        "the command out of %s." % (res["countsBasis"],
+                                    _config_rules.PHASE_GATE_ONLY_KEY))
+    return E_FAIL
+
+
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="run-test-gate.py", add_help=True)
     p.add_argument("manifest")
@@ -5974,6 +6605,14 @@ def main(argv, out=print):
     if terr:
         out("[run-test-gate] %s" % terr)
         return E_ASK
+    # THE SELECTION'S CLOCK: on a measured run, from here to the first step -
+    # gathering the affected suites, the identity and the reuse lookup, the
+    # reach reading, and `run_gate`'s reading of the tree before its first step
+    # - is `selectionMs` (`_evidence_io.SELECTION_KEY`), read by `run_gate`
+    # where its own step clock starts; on a repeat, which runs no step, from
+    # here to the identity, whose time and the lookup's are the repeat's
+    # `durationMs`. The two never overlap on either path.
+    selection_started = time.monotonic()
     # THE TASK'S OWN GATE, AND WHAT ITS CHANGE CAN BREAK. The declared part is
     # what the gate digest binds a commit to, while the affected steps are
     # measured, never declared.
@@ -6017,6 +6656,56 @@ def main(argv, out=print):
     # the part a later comparison recovers, never over a second split of it.
     declared_commands = commands[:len(_ev.declared_steps(
         [name for name, _command in commands])[0])]
+    # WHAT THIS TASK'S RUN LEAVES TO THE PHASE GATE (`phase_gate_only_plan`),
+    # asked after the affected steps joined, so a step any arm proposed is
+    # weighed, and after the declared part was read, so the digest above stays
+    # the declared gate's - the binding compares it with the plan. Everything
+    # below - the identity, the reach, the steps run - is taken over what is
+    # left to run. A task-scope recorded or plain run only: the phase gate
+    # ignores the setting, and `--own` runs the task's own suites alone.
+    left_plan = None
+    if args.task is not None and not args.own:
+        _cfg_project, config = _ev.project_config_for(args.manifest,
+                                                      args.project_dir)
+        named, problem = _config_rules.phase_gate_only_setting(config)
+        if problem:
+            out("[run-test-gate] %s - this task's run cannot tell which of its "
+                "commands the project leaves to the phase gate; fix the config "
+                "key, or remove it to run every command" % (problem,))
+            return E_ASK
+        if named:
+            left_plan = phase_gate_only_plan(
+                commands, _ev.phase_gate_steps(
+                    manifest, _phase_by_id(manifest, args.phase)), named)
+            say = _say_on_stderr if args.as_json else out
+            for line in phase_gate_only_lines(left_plan, args.phase):
+                say(line)
+            commands = left_plan["run"]
+            if reach_args is not None:
+                ran = set(name for name, _command in commands)
+                reach_args = reach_args[:4] + (
+                    [s for s in reach_args[4] if s[0] in ran],
+                    [s for s in reach_args[5] if s[0] in ran]) + reach_args[6:]
+    if left_plan is not None and left_plan["left"] and not commands:
+        return _all_left(project, args, manifest, source, subject,
+                         declared_commands, left_plan["left"], out=out)
+    # ONE CALL FOR THE DECLARED ENTRY AND THE AFFECTED STEPS, when both are the
+    # plan's recorded spelling over different paths (`_affected.joined_steps`).
+    # Joined AFTER the split above, so what the setting leaves to the phase
+    # gate is decided step by step as each arm proposed it, and after the
+    # declared part was read, so the digest is the declared gate's. The
+    # identity below is taken over the steps as they stood before the join:
+    # the same two lists are the same gate whichever way they are called.
+    unjoined = commands
+    if affected_info is not None:
+        commands, joined_said = _affected.joined_steps(
+            commands, _phase_by_id(manifest, args.phase) or {},
+            manifest.get("meta"))
+        # Printed as the affected lines above are, and withheld from `--json`
+        # with them: the joined step's name in the steps says the same.
+        if not args.as_json:
+            for line in joined_said:
+                out("[run-test-gate] %s" % (line,))
     # THE HALF OF THE OVERLAP QUESTION THAT NEEDS NOTHING FROM THE RUN, asked
     # here rather than at the end of one. Both sides of it - the files the work
     # declares, and the fact that an empty declaration can be related to nothing -
@@ -6039,6 +6728,9 @@ def main(argv, out=print):
     # `reuse_identity` and the lookup it feeds are both a cost this run has
     # no question to spend them on.
     started = time.monotonic()
+    # `(source row, repeated names, commands to measure)` when only some of the
+    # gate is to run (`repeat_plan`), else None.
+    part = None
     if args.own:
         identity = {"key": None,
                     "basis": "--own is never recorded, so nothing here is "
@@ -6048,7 +6740,7 @@ def main(argv, out=print):
     else:
         # `group=also`: a group run and a solo run over the same files are two
         # claims, so the members a run owns are part of what a repeat must match.
-        identity = reuse_identity(project, args.manifest, manifest, commands,
+        identity = reuse_identity(project, args.manifest, manifest, unjoined,
                                   owns, group=also, tree=tree)
         if identity.get("unexcluded"):
             # A NARROWING THAT DID NOT APPLY, SAID RATHER THAN LEFT FOR A COUNT TO
@@ -6071,11 +6763,20 @@ def main(argv, out=print):
             # silent, and it names the entry - an operator who sees a gate measure
             # every time is owed the reason, or the next reader removes the cache.
             for name, path in identity["grading"]:
-                out("[run-test-gate] %s names %s, which this identity leaves out, so "
-                    "this run is MEASURED and not repeated. Whether the command reads "
-                    "that path is not established here; naming it is enough, because "
-                    "the other way round is a verdict that no longer describes the "
-                    "thing it graded" % (name, path))
+                out(left_out_line(name, path))
+            # ...AND IT IS THE ENTRY THAT IS MEASURED, NOT THE WHOLE GATE. The
+            # entries beside it grade the tree the identity holds, so each is
+            # repeated from the newest row that measured it, exactly as a whole
+            # gate is below, and only the grading entries run.
+            repeatable, graded_commands = repeat_plan(commands,
+                                                      identity["grading"])
+            if repeatable and not args.no_reuse:
+                found = _ev.reusable_run(
+                    _ev.read_rows(project)["rows"], source,
+                    subject_ids(args.phase, args.task, source),
+                    identity["key"], REUSABLE_STATUS, steps=repeatable)
+                if found is not None:
+                    part = (found, repeatable, graded_commands)
         elif not args.no_reuse:
             ledger = _ev.read_rows(project)["rows"]
             prior = _ev.reusable_run(ledger, source,
@@ -6083,7 +6784,17 @@ def main(argv, out=print):
                                      identity["key"], REUSABLE_STATUS)
             newer = _ev.newer_for_identity(ledger, identity["key"], prior)
     if prior is not None:
-        res = reused_result(identity, prior, _elapsed_ms(started), newer=newer)
+        # A REPEAT'S TWO FIGURES SPLIT ONE WINDOW AT `started`, read off one end
+        # reading: its selection is the gathering, up to the identity, and its
+        # `durationMs` the identity and the lookup that found the row it repeats -
+        # so the two add up to the time from the start of gathering to here and
+        # neither holds any of the other.
+        ended = time.monotonic()
+        chose = int((started - selection_started) * 1000)
+        res = reused_result(identity, prior,
+                            int((ended - selection_started) * 1000) - chose,
+                            newer=newer)
+        res[_ev.SELECTION_KEY] = chose
     else:
         # ARMED AROUND THE MEASUREMENT AND NOWHERE ELSE. This is the window a stop
         # signal actually lands in - a gate step is where the wall clock goes - and
@@ -6102,7 +6813,8 @@ def main(argv, out=print):
                 except KeyboardInterrupt as exc:
                     return stopped_before_run(
                         exc, _say_on_stderr if args.as_json else out)
-            res = run_gate(tree or project, commands, owns=owns,
+            res = run_gate(tree or project,
+                           commands if part is None else part[2], owns=owns,
                            timeout=args.timeout,
                            recorded=_ev.recorded_paths(project,
                                                        args.manifest)[0],
@@ -6115,11 +6827,14 @@ def main(argv, out=print):
                            preamble=declared_preamble(manifest),
                            withheld=withheld_mutes(manifest, args.task),
                            task=args.task,
+                           selection_started=selection_started,
                            # `--json` keeps stdout parseable, so its note goes
                            # to stderr instead of being dropped.
                            say=(_say_on_stderr if args.as_json else out))
         finally:
             _disarm_interrupt(previous)
+        if part is not None:
+            res = part_reused_result(res, part[0], part[1], commands)
         # ON THE MEASURED RUN AND NOT ON THE REPEAT'S SOURCE. `run_gate` takes no
         # manifest and must not: it is the function the cases drive without a
         # repository around it, and an identity computed inside it would be a
@@ -6160,6 +6875,8 @@ def main(argv, out=print):
     # ledger and the other stays a fact of this process's own output.
     res["gateSource"] = source
     res["subject"] = subject
+    if left_plan is not None and left_plan["left"]:
+        res[_ev.LEFT_TO_PHASE_GATE_KEY] = left_plan["left"]
     if res.get(_ev.VERDICT_SOURCE) != _ev.REUSED:
         res["banners"] = verdict_banners(res)
     if also:
@@ -6322,6 +7039,10 @@ def main(argv, out=print):
     # observations it never made.
     if res.get(_ev.VERDICT_SOURCE) == _ev.REUSED:
         return render_reuse(res, out=out)
+    # A PART-REPEATED RUN IS A RUN, rendered as one, with the line saying which
+    # steps it copied ahead of the table that marks them.
+    if res.get(_ev.VERDICT_SOURCE) == _ev.PART_REUSED:
+        out(part_reuse_line(res))
     return (render_quiet if args.quiet else render)(res, out=out)
 
 

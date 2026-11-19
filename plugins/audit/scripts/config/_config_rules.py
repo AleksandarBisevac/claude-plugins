@@ -307,15 +307,19 @@ def writer_session_setting(config):
     return {"model": model, "budget": "%s" % (budget,)}, None
 
 
+PHASE_GATE_ONLY_KEY = "executor.phaseGateOnly"
+
+
 def phase_gate_only_setting(config):
     """`(names, problem)`: the gate commands `executor.phaseGateOnly` names as
     left to the phase gate, each trimmed, as a tuple.
 
     Absent is `((), None)` - the empty default is the contract, because a name
     this repository happens to use (`verify.sh`) is also a project's own gate and
-    the writer must run that one. A value that is not a list of non-empty strings
-    is `((), problem)`, never an empty tuple standing in for it: the empty tuple
-    would read as the key not being set and turn the sentence off unannounced."""
+    the writer and a task's recorded gate must run that one. A value that is not
+    a list of non-empty strings is `((), problem)`, never an empty tuple standing
+    in for it: the empty tuple would read as the key not being set and quietly
+    put every named command back into every task's run."""
     block = (config or {}).get("executor")
     if not isinstance(block, dict) or "phaseGateOnly" not in block:
         return (), None
@@ -326,6 +330,62 @@ def phase_gate_only_setting(config):
                     "command names (a script name such as verify.sh, or words "
                     "such as 'playwright test')" % (names,))
     return tuple(n.strip() for n in names), None
+
+
+def _command_words(text):
+    """The words of a command or an entry, quotes off and each reduced to its
+    basename, so `"./scripts/verify.sh"` and `verify.sh` are the same word."""
+    return [w.strip("\"'").rsplit("/", 1)[-1] for w in str(text or "").split()]
+
+
+def phase_gate_only_match(command, names):
+    """The entry of `names` (`executor.phaseGateOnly`) that a resolved gate
+    command matches - its words appear in the command's words in a row - or
+    None. No name is built in - `verify.sh` is also a user project's own gate -
+    so an empty `names` matches no command."""
+    words = _command_words(command)
+    for name in names or ():
+        token = _command_words(name)
+        if token and any(words[i:i + len(token)] == token
+                         for i in range(len(words))):
+            return name
+    return None
+
+
+def left_to_phase_gate(command, names):
+    """Whether a resolved gate command is one `names` names
+    (`phase_gate_only_match`)."""
+    return phase_gate_only_match(command, names) is not None
+
+
+def phase_gate_only_split(steps, phase_steps, names):
+    """`{kept, left, unheld}` - a task's gate steps, `[(name, command)]` in run
+    order, split by `executor.phaseGateOnly` (`names`) against its phase's own
+    gate (`phase_steps`, resolved the same way).
+
+    THE ONE READING OF THE SETTING. The writer's prompt, the recorded task gate
+    and the drive's view of a task's steps all ask this function, so the three
+    cannot name different entries as left to the phase gate.
+
+    A step the setting names is `left` - `(name, command, matched name)` - only
+    when the phase gate HOLDS it: an entry of that name, or one resolving to the
+    same command, so a step another arm proposed under a name of its own is held
+    by the phase entry that runs it. A named step the phase gate lacks is
+    `unheld` and stays in `kept`, because leaving it out would leave it to a
+    gate that never runs it. With no names every step is kept, in order."""
+    held_names = set(name for name, _command in phase_steps or ())
+    held_commands = set(command for _name, command in phase_steps or ())
+    kept, left, unheld = [], [], []
+    for name, command in steps or ():
+        matched = phase_gate_only_match(command, names)
+        if matched is None:
+            kept.append((name, command))
+        elif name in held_names or command in held_commands:
+            left.append((name, command, matched))
+        else:
+            unheld.append((name, command, matched))
+            kept.append((name, command))
+    return {"kept": kept, "left": left, "unheld": unheld}
 
 
 def portability_mode(config, defaults=None):

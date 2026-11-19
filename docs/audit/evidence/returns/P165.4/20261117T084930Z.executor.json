@@ -1,0 +1,74 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__report_ui.py tests/test__ui_theme.py tests/test__ui_theme_lints.py tests/test_render_report.py tests/test__refs.py": "pass",
+    "node tools/capture-screenshots.mjs --check": "pass",
+    "report browser check over acme-store, demo-large and a plan-window render (sh -c ... check-report-interactive.mjs)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T10:04:05Z",
+    "basis": "`python3 tests/test__report_ui.py --selftest` in a throwaway tree at HEAD: inline suite plugins/audit/scripts/ui/panel-css/usage-tab.css (its test file is its implementation file): it is not Python, and an inline suite's test hunks are read from Python definitions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "New shared/disclosure.css holds the disclosure arrow once: :where(.fdetails)>summary::after{content:\"\\25BE\";content:\"\\25BE\" / \"\";...} plus the [open] variant and the ::-webkit-details-marker hide. It is the first stylesheet part in ui/shared/. It is wired the way shared JS parts are: _ui_theme.REPORT_CSS_PARTS (first) and PANEL_CSS_PARTS (right after tokens-and-reset.css, which carries the panel's token placeholder), and _ui_theme_lints.UI_ASSETS. _output.ui_surface_sources already files shared/ under both surfaces by name, so there is no new assembly mechanism and no architecture change. The per-surface copies are removed from report-css/controls.css and panel-css/usage-tab.css (the panel's copy had no empty alternative, so it announced the triangle). Arrow choice: a text glyph with an empty alt rather than a border or background drawing, because forced-colours repaints text in the system colour instead of dropping it; ax5 measures that in Chromium (content still generated, color rgb(0, 0, 159) under forcedColors:active). The plain content declaration comes first because alt text for generated content is Baseline newly. Tests: ax4 and ax5 added to tools/check-report-interactive.mjs. da1 added to test__report_ui (shared rule present, exactly two >summary::after rules). cs8 and cs9 added to test__ui_theme (same shared CSS list in both cascades, read before surface parts). cs1 now finds shell.css as the first report-css part. cs2 and cs5 in test__ui_theme_lints now include shared CSS in each surface's declared set. Panel pin uf7 in test__panel_page now pins the shared rule and counts two arrow rules. Docs: shared/README (intro plus a disclosure.css row), report-css and panel-css READMEs (cascade sentence), and PLUGIN-BUILD-GUIDE (ui/ tree line now names shared/; _report_ui section). Followers refreshed: examples/report.sh (acme html+md), docs/demo-large.html, docs/index.html, and all screenshots via node tools/capture-screenshots.mjs (exit 0; 26 files incl. captured-at.json). check-rendered-artifacts --before-commit OK. Plan gate: tools/lints/_ui_theme_lints.py was allowed as the session's free file; tests/test__panel_page.py is exempt (test_*); the orchestrator then widened P165.4's files with panel-css/README.md, tests/test__panel_page.py, tools/lints/_ui_theme_lints.py and tools/capture-screenshots.mjs. Panel browser cases, in tools/capture-screenshots.mjs (driven by --check): pa1 in openUsageFilters() reads the Usage Filters summary's accessible name from the browser's AX tree on first sight, shut and then open, and fails on any Geometric Shapes glyph or an empty name. assertUsageHoverParity() (called from assertUsageWorks after the unfiltered compare, followed by a second unfiltered compare proving the tab is left as found) reads each control's computed style at rest and under a twice-moved pointer: ph1 #usage .fdetails>summary (border/background), ph2 .urow.pick:not(.on) (background), ph3 .ulegend b.pick (underline), then after clicking a ranked row to turn a filter on, ph4 .uchip (border) and ph5 the chip row's .lnk (underline); filters cleared with clearAll() at the end. Report-side tests.add entries map to the pre-existing is1-is9 cases in check-report-interactive.mjs, which already read those controls' own boxes; they were not written by this task. Screenshots: a second full capture after adding the panel cases had the same UI digests (panel 8378f2e130b1, report 68b2058d9445) but its report filters.png showed the opened More-filters panel scrolled off-screen below the gate card, where the first capture's showed it in view - a report-leg flake this task did not touch. The first capture's set was restored (sc1/sc2 green, 292/292); the flake is a finding for the register, not fixed here. Dependants: _ui_theme.py now declares the new part in both tuples. _ui_theme_lints.py's UI_ASSETS gains it and its themed_stylesheets() joins the tuples, so cs3 and cs7 stay byte-equal. panel-css/README, report-css/README and shared/README are updated. Rendered pages and screenshots are refreshed. check-report-interactive.mjs is extended. _report_html.py, test__report_html.py, shell.css and forced-colors.css are untouched and still correct: no selector they name moved. find-shared-candidates.mjs, the skills and guard-release.py are still correct: they name the directory, not its contents. _report_page.py was declared but not touched.",
+    "descriptive": "The More-filters/Filters disclosure arrow is one shared rule with an empty alternative; the report (ax4/ax5) and the panel (pa1) prove in a browser that neither surface announces it, and the panel's usage controls gain hover-parity cases (ph1-ph5)."
+  },
+  "testsAdded": [
+    "ax4 report: More-filters summary accessible name has no arrow glyph, shut or open",
+    "ax5 report: under forced colours the arrow is still generated in a painting colour",
+    "da1 report sheet carries the shared arrow rule with empty alt and no second copy",
+    "cs8 shared stylesheet parts identical in both cascades",
+    "cs9 shared stylesheet parts read before surface parts",
+    "pa1 panel (capture-screenshots.mjs openUsageFilters): the Usage Filters summary's accessible name has no arrow glyph, shut or open",
+    "ph1-ph5 panel (capture-screenshots.mjs assertUsageHoverParity): .fdetails>summary, .urow.pick, .ulegend b.pick, .uchip and the chip row's .lnk each change a property their hover rule sets, read in their own box"
+  ],
+  "casesAdded": [
+    [
+      "ph1"
+    ],
+    [
+      "ph5"
+    ],
+    [
+      "ph4"
+    ],
+    [
+      "ph3"
+    ],
+    [
+      "ph2"
+    ],
+    [
+      "is1"
+    ],
+    [
+      "is5"
+    ],
+    [
+      "is6"
+    ],
+    [
+      "is7"
+    ],
+    [
+      "is8"
+    ],
+    [
+      "is2"
+    ],
+    [
+      "is4"
+    ],
+    [
+      "is3"
+    ],
+    [
+      "is9"
+    ]
+  ],
+  "claims": "claims:\n1 shared/disclosure.css:16-19 is the rule its comment describes; _ui_theme.py REPORT_CSS_PARTS/PANEL_CSS_PARTS join it; the forced-colours sentence is measured by ax5 (content generated, rgb(0, 0, 159))\n2 alt dropped -> ax4/ax3 red, arrow removed -> ax5 red, HEAD's panel arrow -> pa1 red, five usage :hover rules stripped -> ph1-ph5 red, panel tuple without part -> cs8/cs9/cs5/uf7 red, part after shell.css -> cs9 red, report copy appended -> da1 red; all restored by cmp, green after\n3 grep 'summary::after' over ui/*-css: 4 hits (2 report, 2 panel) all moved to the shared part; no other surface draws a summary arrow\n4 n/a - no rule to an agent (the shared README's ordering sentence names cs8/cs9 as its mechanism)\n5 n/a - no property recorded beyond ax5's per-run measurement, which the gate re-takes each run\n6 n/a - no guard\n7 n/a - no number written into prose (the guide's 'four directories' was replaced by a list, not a new count)",
+  "stamp": "audit-stamp: {\"content\":\"sha256:8dbdfcfd166d08f2752538f962286bfba74567ec72cedcd85da6f81a82e5a424\",\"dirtyDigest\":\"sha256:f2e646097bab014f4cf31b49eaad23a9002097e4371f6d7f3d5e0bb635a890c4\",\"dirtyPaths\":null,\"head\":\"6e26bb8c\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"docs/demo-large.html\",\"docs/index.html\",\"docs/screenshots\",\"examples\",\"plugins/audit/scripts/_ui_theme.py\",\"plugins/audit/scripts/report/_report_page.py\",\"plugins/audit/scripts/ui/panel-css/README.md\",\"plugins/audit/scripts/ui/panel-css/usage-narrow.css\",\"plugins/audit/scripts/ui/panel-css/usage-tab.css\",\"plugins/audit/scripts/ui/report-css/README.md\",\"plugins/audit/scripts/ui/report-css/controls.css\",\"plugins/audit/scripts/ui/report-css/forced-colors.css\",\"plugins/audit/scripts/ui/shared\",\"tests/test__panel_page.py\",\"tests/test__report_page.py\",\"tests/test__report_ui.py\",\"tests/test__ui_theme.py\",\"tests/test__ui_theme_lints.py\",\"tests/test_render_report.py\",\"tools/capture-screenshots.mjs\",\"tools/check-report-interactive.mjs\",\"tools/lints/_ui_theme_lints.py\"],\"scopeDigest\":\"sha256:4108d31338a4a5585214547749badd06cc9faecb680c3307be87dabc4add3607\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

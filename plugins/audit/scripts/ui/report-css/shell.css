@@ -25,8 +25,24 @@ html{background:var(--bg);scrollbar-gutter:stable}
 /* Every anchor in this document lands under a sticky bar unless it says otherwise
    — and this report is navigated almost entirely by anchor. One rule covers the
    section headings, the phase rows a "held by" link points at, and anything a
-   later section adds an id to. */
-[id]{scroll-margin-top:calc(var(--sticky-2) + var(--sp-2))}
+   later section adds an id to. The side nav's marker reads this margin back
+   off each target (landingLine in page-state.js), so the line a jump lands on
+   and the line that decides which section is lit are this one value. */
+:root{--sticky-anchor:calc(var(--sticky-2) + var(--sp-2))}
+[id]{scroll-margin-top:var(--sticky-anchor)}
+/* Room after the content for the last target to reach that line. Without it
+   the document ended before a short final section - or the one above it - got
+   there, so a jump stopped short and the marker lit a different entry. HOW
+   MUCH is a measurement no stylesheet can make: it is what the last nav
+   target lacks, which depends on the screen's height, the sticky stack and
+   how tall everything from that target down has been drawn (endRoom in
+   page-state.js publishes it, re-measured on every change of those). A fixed
+   screen's worth left most of a screen of blank page after a long last
+   section that needed none. With no script it is nothing, which costs
+   nothing: the marker it serves is the script's. On screen only, since a
+   printed page has no line to reach. */
+@media screen{.snav ~ .content::after{content:"";display:block;
+  height:var(--end-room,0px)}}
 body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
      margin:0;padding:0;-webkit-font-smoothing:antialiased}
 
@@ -68,21 +84,51 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 .tb-id h1,.tb-id .meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
 .tb-id .meta{font-size:.72rem}
 .tb-actions{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;justify-content:flex-end}
-/* The global filter row (C1/C2): a second line of the SAME sticky bar, never a
+/* The header filter row (C1/C2): a second line of the SAME bar, never a
    separate floating element — the full argument lives on the Python builder
    (_report_html._global_filter_row). Geometry cost is absorbed by the measured
    --topbar-h, print cost is zero (the whole .topbar is dropped from paper by a
    pinned rule), and on a phone the row wraps under the title like any flex
-   line. flex-basis:100% is what makes it a row of the bar rather than one more
-   item competing with the actions for the first line. */
-.gfilters{flex-basis:100%;display:flex;align-items:center;gap:.3rem .5rem;
+   line - and the bar stops being sticky there (forced-colors.css). flex-basis:100% is what makes it a row of the bar rather than one more
+   item competing with the actions for the first line.
+   Where its controls do not fit one row they wrap onto rows with a gap, and the
+   date range wraps as ONE item (.gfrange): its scope names the pair, so the
+   pair, its scope and its All-time button move to a new row together rather
+   than leaving the scope stranded under the controls it describes. Below the
+   width of the range itself, on a phone, the range wraps inside, with the same
+   gap. How many rows that takes depends on the font the machine draws the page
+   in, which the page does not ship; what it costs the reader is the pinned
+   stack's height, and tools/check-report-interactive.mjs holds that to a
+   budget per viewport class (lm4) rather than counting rows. */
+.gfilters{flex-basis:100%;display:flex;align-items:center;gap:var(--sp-1);
   flex-wrap:wrap;padding-top:.45rem;border-top:1px solid var(--border)}
+.gfrange{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-1)}
 .gfilters .gf{display:inline-flex;align-items:center;gap:.3rem}
 .gfilters select,.gfilters input[type=date]{font:inherit;font-size:.76rem;
   padding:.28rem .4rem;color:var(--text);background:var(--bg);
   border:1px solid var(--field-border);border-radius:var(--radius);max-width:11rem}
-.gfilters select:focus,.gfilters input[type=date]:focus{outline:none;
-  border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+/* Their focus ring is the one every filter field shares: controls.css. */
+/* The scope beside a label: which section the control narrows. Part of the
+   label, quieter than it, so the control's name still reads first. */
+.gfilters .gfscope{color:var(--muted);font-size:var(--t-label);font-weight:400}
+/* Where the bar is pinned but the row is short of room for its labels, each
+   scope sits UNDER its label rather than beside it, in two short lines inside
+   the height the controls already set; it is still drawn and still the first
+   words of each control's accessible name. This used to switch off at 64rem,
+   exactly where the row fitted on one line in the font it was drawn in: in a
+   wider font the row wrapped above that width with the scopes still beside
+   their labels. The bound is 70rem now because the row's one-line width, read
+   in Verdana (measured 2026-11-17: 916px to 924px on the two committed
+   example reports, against 961px of row at 64rem), is more than an eighth
+   short of the row a 70rem screen leaves, so the scopes go back beside their
+   labels only where that wider font still fits them with room to spare. The selects keep the
+   width their option takes: narrowed, they cut off a long author's address.
+   At 52rem and below the bar is not pinned, and the scopes stay beside their
+   labels on the rows a phone wraps them onto. */
+@media (52rem < width < 70rem){
+  .gfilters .gf>.tbl{display:inline-flex;flex-direction:column;line-height:1.1}
+  .gfrange>.gfscope{max-width:6em;line-height:1.1}
+}
 .gfilters .btn{font-size:.72rem;padding:.3rem .55rem}
 .shell{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:var(--shell-gap);
   max-width:96rem;margin:0 auto;padding:1.25rem 1.5rem 4rem;align-items:start}
@@ -94,10 +140,27 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 /* `anywhere` lowers a table cell's min-content width to one letter, so the columns would
    collapse and split titles mid-word; `break-word` wraps the same tokens without that, and the
    table keeps its natural column sizing inside its scrolling wrapper. tables.css carves a
-   narrower exception back OUT of this for the value atoms a title is not - a status chip, a
-   risk word, a cost band - because a title's long tokens get a renderer-placed break point and
-   theirs do not, so their column needs the size reduction this rule declines to give titles. */
+   narrower exception back OUT of this for the runs a title is not - an evidence count, an
+   observation, a sentence-long mark - because a title's long tokens get a renderer-placed
+   break point and theirs do not, so their column needs the size reduction this rule declines
+   to give titles. A pill and an id get neither: the rule below keeps them whole. */
 .content :where(table){overflow-wrap:break-word}
+/* A pill or an id never breaks, wherever in the column it sits. A pill says one
+   value of a short, closed vocabulary (a status, a risk word, a cost band, a
+   delta, an area, what holds a phase shut) and an id names one thing (a task,
+   phase or bug id, a short commit, a month); broken inside a word either reads
+   as two - "Fixe" over "d", "BUG-" over "10" - which is what a crowded bugs
+   table drew at a laptop width. `.chip` already said nowrap where it is
+   defined, but the column's `anywhere` above reaches every run in it, and most
+   of these never declared a `white-space` of their own, so a hyphen inside an
+   id or a space inside a chip was a place to cut. In a table this makes the
+   widest of them a column's floor, which the vocabulary bounds and the plan's
+   prose does not; a table wider than its frame for it scrolls inside the frame,
+   so the page stays the screen's width at a phone's size as at every other.
+   One rule over the column, not one per table, so a table or a list added
+   later is held to it without being named. The gate's lm5 reads every one of
+   these by the same list (ATOMS in tools/check-report-interactive.mjs). */
+.content :is(.chip,.rchip,.bandpill,.dl,.heldby,.area-tag,.mono){white-space:nowrap}
 /* Prose keeps a measure even when the shell is wide. A 1400px-wide sentence is
    not "using the space", it is unreadable. Tables and charts take the full
    column; text does not. */

@@ -186,6 +186,57 @@ def full_gate_commands(manifest):
     return [command for _name, command in full_gate(manifest)["commands"]]
 
 
+def phase_gate_steps(manifest, phase):
+    """`[(name, command)]` - the phase's own `testGate` as its sign-off run
+    executes it: resolved once (`resolved_commands`), less the review-only
+    entries, which are said and never run.
+
+    WHAT `executor.phaseGateOnly` IS ASKED AGAINST. A task-scope run leaves a
+    command the setting names to the phase gate only when this list holds it,
+    and the writer's prompt, the recorder and the drive's view of a task's
+    steps all read it here, so the three agree on what the phase gate runs."""
+    manifest = manifest if isinstance(manifest, dict) else {}
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    build = meta.get("buildCommands")
+    entries = _mio.gate_entries(phase if isinstance(phase, dict) else {})[0]
+    keep = [e for e in entries
+            if not _manifest_vocab.review_only_entry(e, build)]
+    return resolved_commands(manifest, keep)
+
+
+# --- what a task's run left to the phase gate --------------------------------
+# A task-scope run leaves out a command `executor.phaseGateOnly` names when the
+# phase's own gate holds it (`_config_rules.phase_gate_only_split`). The row
+# lists each one under this key, so the run is one step short of its declared
+# gate for a reason the row itself states: the verdict binding reads the key
+# as part of the declaration (`left_to_phase_gate_names`), and a reader of the
+# row sees what the run did not measure. `arm` is `declared` for an entry of
+# the task's gate, else the arm of the derived step that proposed it.
+LEFT_TO_PHASE_GATE_KEY = "leftToPhaseGate"
+LEFT_DECLARED_ARM = "declared"
+LEFT_TO_PHASE_GATE_FIELDS = ("name", "arm", "basis", "matched")
+
+
+def left_to_phase_gate_record(name, matched, basis):
+    """One entry of `LEFT_TO_PHASE_GATE_KEY`: the step `name`, the arm that
+    proposed it (`LEFT_DECLARED_ARM`, or a derived step's arm), `basis` - the
+    setting that left it out - and the setting's entry it `matched`."""
+    arm = LEFT_DECLARED_ARM
+    if is_derived_step(name):
+        arm = name[len(DERIVED_STEP_PREFIX):].partition(": ")[0]
+    return {"name": name, "arm": arm, "basis": basis, "matched": matched}
+
+
+def left_to_phase_gate_names(row):
+    """The DECLARED gate entries `row` lists as left to the phase gate, in the
+    order it lists them; [] for a row with no such key. A step another arm
+    proposed is not a declared entry, so it never stands in for one."""
+    listed = row.get(LEFT_TO_PHASE_GATE_KEY) if isinstance(row, dict) else None
+    return [str(e.get("name")) for e in (listed if isinstance(listed, list) else [])
+            if isinstance(e, dict) and e.get("arm") == LEFT_DECLARED_ARM
+            and e.get("name")]
+
+
 # --- where it lives -----------------------------------------------------------
 def evidence_dir(project, config=None):
     """Absolute path of the evidence directory.
@@ -357,6 +408,20 @@ ACTION_RECORDED = "test.evidence.recorded"
 # that does not write it.
 VERDICT_SOURCE = "verdictSource"
 REUSED = "reused"
+# A THIRD WORD, FOR A ROW THAT IS NEITHER. A gate holding an entry that names a
+# path the content identity leaves out (the plan, the ledger) measures that
+# entry on every run and may repeat the rest; such a row measured some steps
+# and copied others, so `reused` would claim nothing ran and absence would
+# claim everything did. Each copied step carries `STEP_REUSED_KEY` naming the
+# run it came from; the row's own `reusedFrom` names that same run. The
+# row's tree reading, its `durationMs` and its counts are the measured steps'
+# alone, so a row with this word is graded as the measurement it is
+# (`measured_row` returns it, not its source).
+PART_REUSED = "part-reused"
+# On a step: the run whose measurement this step repeats, `{runId, ts}`. A step
+# carrying it ran nothing here, so no reader counts it as a run of that step
+# or as time spent (`step_repeated`), and the writer keeps no duration for it.
+STEP_REUSED_KEY = "reusedFrom"
 
 # WHO RAN THE SUITE, WHICH IS NOT THE SAME QUESTION AS `via`. `via` names the
 # interface the recorder was reached through and answers "cli" on every row ever
@@ -391,6 +456,21 @@ RUNNER_WORDS = (RUNNER_GATE, RUNNER_OUTSIDE)
 # says so in its basis. A derivation presented as a record is how a cheap read
 # comes to be trusted like a measurement.
 STARTED_KEY = "startedAt"
+# HOW LONG CHOOSING WHAT TO RUN TOOK, beside `durationMs` and never inside it,
+# on the same monotonic clock. On a measured run it runs from the start of the
+# gathering to the first step, so it holds the gathering of a task's affected
+# suites, the identity and the reuse lookup, the reach reading, and the reading
+# of the tree `run_gate` takes before its first command. On a repeat, which runs
+# no step, it runs from the start of the gathering to the identity, and the
+# identity and the lookup are the repeat's `durationMs`; on either path the two
+# figures meet without overlapping (`run-test-gate.py`'s selection clock).
+# On a measured run `durationMs` stays the steps alone because `gate_mean_ms`,
+# the doctor's gate budget and the usage comparisons all decide on it, and a
+# figure that grew a second meaning would move every one of their answers.
+# ABSENT IS NOT ZERO: a
+# row written before the key existed measured no selection, and
+# `selection_ms` is the one reader that keeps those two apart.
+SELECTION_KEY = "selectionMs"
 # The identity that has to match for one run to stand in for another. It is
 # recorded on the row rather than re-derived, because it is a statement about the
 # tree AT THAT MOMENT and the moment is gone.
@@ -420,17 +500,74 @@ def is_derived_step(name):
 DERIVED_PHASE_GATE_ARM = "phase-gate"
 
 
+# A DECLARED ENTRY AND THE AFFECTED STEPS RUN AS ONE CALL. When the entry is the
+# plan's recorded subset spelling over a list of paths and the affected steps
+# are that spelling over other lists, the run makes one call over the union
+# (`_affected_tests.joined_steps`), recorded as ONE step named for the entry
+# followed by each affected step's name, joined by this separator. The name, not
+# a key on the step, carries both lists because every reader of a row's steps
+# already reads the name - the binding, the base lookup, the repeat, the printed
+# step line - so none of them has to be handed the step instead.
+#
+# `step_parts` IS THE ONE READER of what such a step covers, and
+# `declared_steps`, `derived_step_suites` and `step_runs_suite` answer through
+# it. An older name reads exactly as it did: a declared one as itself, a derived
+# one as itself, and a name whose tail is no affected step as a declared one.
+JOINED_STEP_SEPARATOR = " + "
+
+
+def joined_step_name(declared, derived):
+    """The name of one step that ran the declared entry `declared` and the
+    affected steps named `derived` as one call - what `step_parts` reads."""
+    return JOINED_STEP_SEPARATOR.join([str(declared)] + [str(d) for d in derived])
+
+
+def _joinable_part(part):
+    """Whether `part` is an affected step's name a joined step may carry: an arm,
+    then a non-empty suite list. The phase-gate arm carries a gate entry, never
+    a suite list, so it is never joined."""
+    arm, sep, listed = part[len(DERIVED_STEP_PREFIX):].partition(": ")
+    return (bool(sep) and bool(arm.strip()) and " " not in arm
+            and arm != DERIVED_PHASE_GATE_ARM and bool(listed.strip()))
+
+
+def step_parts(name):
+    """`(declared, derived)` - the declared gate entry a recorded step ran, or
+    None when it ran none, and the names of the affected steps it ran.
+
+    A declared step is `(name, [])` and a derived one `(None, [name])`. A JOINED
+    step - the declared entry, then each affected step's name, each after
+    `JOINED_STEP_SEPARATOR` - is `(entry, [names])`, and only when the entry
+    comes FIRST: a name opening with the derived prefix is a derived step
+    whatever follows it, so the declared slot is the head of the name or
+    nothing. A tail that is not an affected step's name with an arm and a suite
+    list leaves the whole name declared, as it always read."""
+    name = str(name)
+    if is_derived_step(name):
+        return None, [name]
+    head, sep, rest = name.partition(JOINED_STEP_SEPARATOR + DERIVED_STEP_PREFIX)
+    if not sep or not head.strip():
+        return name, []
+    derived = [DERIVED_STEP_PREFIX + part for part in
+               rest.split(JOINED_STEP_SEPARATOR + DERIVED_STEP_PREFIX)]
+    if not all(_joinable_part(part) for part in derived):
+        return name, []
+    return head, derived
+
+
 def derived_step_suites(name):
-    """The suite paths a derived step's name lists after its arm - the
+    """The suite paths the derived steps a step ran list after their arm - the
     `<prefix><arm>: <suite>, <suite>` spelling `_affected_tests.steps_for`
-    writes - or [] for a declared step and for the phase-gate arm, whose name
-    carries a gate entry instead."""
-    if not is_derived_step(name):
-        return []
-    arm, sep, listed = name[len(DERIVED_STEP_PREFIX):].partition(": ")
-    if not sep or arm == DERIVED_PHASE_GATE_ARM:
-        return []
-    return [part.strip() for part in listed.split(", ") if part.strip()]
+    writes, read for each derived step a joined step carries (`step_parts`) -
+    or [] for a declared step and for the phase-gate arm, whose name carries a
+    gate entry instead."""
+    out = []
+    for part in step_parts(name)[1]:
+        arm, sep, listed = part[len(DERIVED_STEP_PREFIX):].partition(": ")
+        if not sep or arm == DERIVED_PHASE_GATE_ARM:
+            continue
+        out.extend(p.strip() for p in listed.split(", ") if p.strip())
+    return out
 
 
 def declared_steps(names, dropped=0):
@@ -447,14 +584,19 @@ def declared_steps(names, dropped=0):
     derived step kept, every dropped one came after it and none was declared;
     with none kept, which of them were declared is not recorded, so all are
     counted as declared and a gate the row cannot speak for is refused.
+
+    A JOINED step is read through `step_parts` as the declared entry it ran:
+    it stands at that entry's place among the declared steps, so the declared
+    gate is the same list whether the affected steps ran joined to it or after
+    it. A step that ran no declared entry ends the declared part.
     """
     names = [str(n) for n in (names or [])]
     dropped = dropped if isinstance(dropped, int) and dropped > 0 else 0
-    cut = next((i for i, name in enumerate(names) if is_derived_step(name)),
-               len(names))
-    if any(not is_derived_step(name) for name in names[cut:]):
+    heads = [step_parts(name)[0] for name in names]
+    cut = next((i for i, head in enumerate(heads) if head is None), len(names))
+    if any(head is not None for head in heads[cut:]):
         return names, dropped
-    return names[:cut], dropped if cut == len(names) else 0
+    return heads[:cut], dropped if cut == len(names) else 0
 
 # THE BANNERS A MEASURED RUN PRINTED THAT A GREEN EXIT STILL CARRIES, kept on its
 # row so a later repeat of that verdict can print them again. Without them a
@@ -589,11 +731,35 @@ MAX_FAILING = 10
 # learns failing suites off a row. A quarantined, known failure is not
 # something the gate caught. Kept to suite, bug and day, cut at `MAX_PATHS`
 # and each suite path redacted as `failingSuites` is.
+#
+# `reusedFrom` (`STEP_REUSED_KEY`) IS THE RUN A REPEATED STEP COPIES, kept to
+# its `runId` and `ts`; `_step` writes no `durationMs` beside it.
 STEP_KEYS = ("name", "exit", "ran", "measured", "durationMs", "outcome",
              "timeoutSeconds", "teardown", "failing", "failingBasis",
              "failingSuites", "failingSuitesBasis", "suiteReader",
              "retriedAfterSignal", "retryBasis", "outcomeBasis", "derivedGap",
-             "flaky", "flakyBasis", "muted")
+             "flaky", "flakyBasis", "muted", STEP_REUSED_KEY)
+
+
+def step_repeated(step):
+    """True when a recorded step repeats another run's measurement rather than
+    ran here: it carries `STEP_REUSED_KEY`. Every reader that counts a step as
+    a run of it, or its duration as time spent, asks this first."""
+    return isinstance(step, dict) and step.get(STEP_REUSED_KEY) is not None
+
+
+def repeated_step_sources(row):
+    """`[(step name, runId)]` for each step of `row` that repeats another run,
+    in step order - empty for a row that repeated none."""
+    found = []
+    for step in (row or {}).get("steps") or []:
+        if not step_repeated(step):
+            continue
+        source = step[STEP_REUSED_KEY]
+        found.append((str(step.get("name")),
+                      str(source.get("runId") if isinstance(source, dict)
+                          else source)))
+    return found
 STATE_KEYS = ("head", "headBasis", "scopeDigest", "scopeBasis",
               "scopeListDigest", "dirtyDigest", "dirtyBasis", "tree")
 _PORCELAIN_RENAME = " -> "
@@ -741,7 +907,17 @@ def _step(project, step, published):
             # caller.
             out[key] = redacted_text(project, str(step[key]))
             continue
+        if key == STEP_REUSED_KEY:
+            source = step[key] if isinstance(step[key], dict) else {
+                "runId": step[key]}
+            out[key] = dict((k, str(source[k])) for k in ("runId", "ts")
+                            if source.get(k) is not None)
+            continue
         out[key] = step[key]
+    # A REPEATED STEP RAN NOTHING HERE, so this row holds no duration for it:
+    # the time is its source run's, and that row keeps it.
+    if step_repeated(out):
+        out.pop("durationMs", None)
     command = step.get("command")
     if command is None:
         return out
@@ -912,9 +1088,10 @@ def base_run(rows, head, exclude_tasks=(), names=None, suites=None):
 
 def step_runs_suite(step, suite):
     """Whether a recorded step is known to have run `suite`: its runner named
-    the suite as failing, or it is a derived step whose name lists it. A
-    declared step that names no such suite may have run it green or not at
-    all, and the row cannot say which."""
+    the suite as failing, or a derived step's name lists it - the step's own,
+    or one a joined step carries (`derived_step_suites`). A declared step that
+    names no such suite may have run it green or not at all, and the row cannot
+    say which; a joined step's declared entry is such a step."""
     if not isinstance(step, dict):
         return False
     named = (NAMED_FAILING in (step.get("failingSuitesBasis") or "")
@@ -1191,6 +1368,17 @@ def row_for(project, result, scope, ids, identity, published=None):
     # when the writer computed one.
     if result.get(GATE_DIGEST_KEY) is not None:
         row[GATE_DIGEST_KEY] = str(result[GATE_DIGEST_KEY])
+    # WHAT THIS RUN LEFT TO THE PHASE GATE (`LEFT_TO_PHASE_GATE_KEY`): the
+    # fields `LEFT_TO_PHASE_GATE_FIELDS` names per entry and nothing else, cut
+    # at `MAX_STEPS` as `steps` is.
+    # Written only when the run left something out, so a run under an absent
+    # or empty `executor.phaseGateOnly` writes the row it always wrote.
+    left = [e for e in (result.get(LEFT_TO_PHASE_GATE_KEY) or [])
+            if isinstance(e, dict)][:MAX_STEPS]
+    if left:
+        row[LEFT_TO_PHASE_GATE_KEY] = [
+            dict((k, str(e[k])) for k in LEFT_TO_PHASE_GATE_FIELDS
+                 if e.get(k) is not None) for e in left]
     # THE IDENTITY THE NEXT RUN COMPARES ITSELF AGAINST. It is not derivable from
     # anything else on the row and it never will be: `testedState` holds a digest
     # of WHICH paths were dirty, which is silent about their contents, so a
@@ -1231,6 +1419,13 @@ def row_for(project, result, scope, ids, identity, published=None):
         row[RUNNER_KEY] = str(identity[RUNNER_KEY])
     if identity.get(STARTED_KEY) is not None:
         row[STARTED_KEY] = str(identity[STARTED_KEY])
+    # WRITTEN ONLY WHEN THE RUN MEASURED ITS SELECTION, and only as a duration:
+    # a written zero for a run that never timed it would read as a selection
+    # that took no time. On the row before `append_row` hashes it, like every
+    # key above.
+    selection = selection_ms(result)
+    if selection is not None:
+        row[SELECTION_KEY] = selection
     # PRESENT ONLY WHEN SOMETHING WENT. A count that appears solely when non-zero
     # cannot be told from a count nobody computed, so its ABSENCE has to mean
     # "nothing was cut" and never "nobody looked".
@@ -1304,7 +1499,9 @@ def tree_key(tree):
 def measured_row(rows, row):
     """The row that measured what `row` says: `row` itself, or the run a repeated
     verdict repeats (`reusedFrom`), newest by moment - None when that run is not
-    in `rows`, since a repeat whose source is gone names no tree."""
+    in `rows`, since a repeat whose source is gone names no tree. A
+    `PART_REUSED` row is its own answer: it read the tree itself, before the
+    steps it measured."""
     if not isinstance(row, dict) or row.get(VERDICT_SOURCE) != REUSED:
         return row if isinstance(row, dict) else None
     return row_by_run(rows, (row.get("reusedFrom") or {}).get("runId"))
@@ -1895,11 +2092,15 @@ def _matching_steps(rows, key, value):
 
     `rows` is whatever `read_rows(...)["rows"]` returned - unordered by this
     function's own contract, since a tally needs a count and not a sequence.
-    A caller that wants oldest-first sorts by `ts` before calling this."""
+    A caller that wants oldest-first sorts by `ts` before calling this.
+
+    A REPEATED STEP (`step_repeated`) IS NO RUN OF THE STEP: its run is the one
+    it names, which this walk already meets on that run's own row."""
     out = []
     for row in (rows or []):
         for step in (row.get("steps") or []):
-            if isinstance(step, dict) and step.get(key) == value:
+            if isinstance(step, dict) and step.get(key) == value \
+                    and not step_repeated(step):
                 out.append({"ts": row.get("ts"), "runId": row.get("runId"),
                             "exit": step.get("exit"), "outcome": step.get("outcome"),
                             "muted": step.get("muted"),
@@ -1947,11 +2148,17 @@ def _gate_cost_walk(rows, name):
     beside a count of exactly those steps. `gate_cost_ms` and
     `gate_cost_measured` both read this one walk rather than each summing and
     counting for itself, so a future step key can never make the sum and the
-    count disagree about which steps contributed."""
+    count disagree about which steps contributed.
+
+    A REPEATED STEP (`step_repeated`) IS SKIPPED, whatever duration it carries:
+    the run it names spent that time and is counted on its own row, so adding
+    it here would bill one measurement twice."""
     total, measured = 0, 0
     for row in (rows or []):
         for step in (row.get("steps") or []):
             if not (isinstance(step, dict) and step.get("name") == name):
+                continue
+            if step_repeated(step):
                 continue
             duration = step.get("durationMs")
             if isinstance(duration, (int, float)) and not isinstance(duration, bool):
@@ -2443,6 +2650,20 @@ def runner_of(row):
     if value is None:
         return RUNNER_GATE
     return str(value)
+
+
+def selection_ms(row):
+    """The milliseconds a run spent choosing what to run, or None when the row
+    did not record it - a row from before `SELECTION_KEY` existed, or a value
+    that is not a whole non-negative duration. None and never 0: a reader
+    summing or comparing selection times must see the rows that cannot answer,
+    not fold them in as instant selections."""
+    if not isinstance(row, dict):
+        return None
+    value = row.get(SELECTION_KEY)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
 
 
 def window_of(row):
@@ -2963,8 +3184,17 @@ def _same_subject(row, ids):
     return True
 
 
-def reusable_run(rows, scope, ids, key, statuses):
+def reusable_run(rows, scope, ids, key, statuses, steps=None):
     """The newest recorded run a caller may repeat instead of measuring, or None.
+
+    `steps` names the steps a caller repeats when it repeats only some of its
+    gate (the rest it measures, `PART_REUSED`); None repeats the whole run. A
+    row is a source for a named step only where it MEASURED that step - the
+    step is on it, copies no other run (`step_repeated`) and reached a verdict
+    (no `outcome`). So a `PART_REUSED` row is a candidate for the steps it
+    measured and for no other, and never for a whole-run repeat; and when the
+    newest candidate lacks a named step, the answer is None rather than an
+    older row, for the newest-decides rule below.
 
     EVERY CONDITION NARROWS. The identity has to match, the
     subject has to be the same work and the row has to be a MEASUREMENT rather
@@ -2996,18 +3226,33 @@ def reusable_run(rows, scope, ids, key, statuses):
     # bytes and is passed over; a verdict a mute excused IS one, and it is the
     # newest, so it ends the search with no repeat rather than letting an older
     # red - which the tree has since moved past - be handed back instead.
-    chosen = newest_row([r for r in _identity_measurements(rows, scope, ids, key)
+    chosen = newest_row([r for r in _identity_measurements(rows, scope, ids, key,
+                                                           steps)
                          if r.get("status") in statuses])
     # A VERDICT A MUTE EXCUSED holds only while the mute does, and whether
     # it still does depends on the day - which no content identity sees.
     if chosen is None or chosen.get("muted"):
         return None
+    if steps is not None and not _measured_steps(chosen, steps):
+        return None
     return chosen
 
 
-def _identity_measurements(rows, scope, ids, key):
+def _measured_steps(row, names):
+    """True when `row` MEASURED every step in `names`: each is on it, copies no
+    other run, and reached a verdict - a step with an `outcome` (it timed out,
+    could not start) is a fact about the machine, which a repeat would cache."""
+    found = dict((s.get("name"), s) for s in row.get("steps") or []
+                 if isinstance(s, dict))
+    return all(name in found and not step_repeated(found[name])
+               and not found[name].get("outcome") for name in names)
+
+
+def _identity_measurements(rows, scope, ids, key, steps=None):
     """The rows that MEASURED something for this identity, scope and subject: a
-    repeat copies a verdict and is not one, so it is left out."""
+    repeat copies a verdict and is not one, so it is left out - and a row that
+    repeated part of its gate is one only for the `steps` it measured, and for
+    a whole-run repeat (`steps` None) not at all."""
     found = []
     for row in rows or []:
         if not isinstance(row, dict):
@@ -3015,6 +3260,9 @@ def _identity_measurements(rows, scope, ids, key):
         if row.get(REUSE_KEY) != key:
             continue
         if row.get(VERDICT_SOURCE) == REUSED:
+            continue
+        if row.get(VERDICT_SOURCE) == PART_REUSED and (
+                steps is None or not _measured_steps(row, steps)):
             continue
         if str(row.get("scope") or "") != str(scope or ""):
             continue

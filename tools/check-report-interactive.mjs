@@ -67,8 +67,8 @@ import { FRAMED_BELOW } from './ui-checks/responsive.mjs';
 // file. Imported by both gates so there is one copy of it.
 import { HEATMAP_NAV, USAGE_DETAIL_CHARTS, readDisclosure,
          disclosureSummary } from './ui-checks/disclosures.mjs';
-// The RELATIVE arm of the phone-layout question, beside the absolute bar this file
-// has always carried. That file says why there are two, why they measure different
+// The RELATIVE arm of the phone-layout question, beside the absolute stack check
+// this file carries. That file says why there are two, why they measure different
 // quantities and how far a figure may move; this one measures and reports.
 import { PHONE_VIEWPORT, applyRecording, documentKey, emptyBaseline, judge,
          readBaseline, share, writeBaseline } from './ui-checks/layout-baseline.mjs';
@@ -181,6 +181,8 @@ const FEATURE_ABSENT = [
              'Clear filters restores the hidden phases',
              '...and the chip stops reporting itself as on', '...and a= leaves the URL',
              'the area dropdown keeps only', 'the dropdown selection is a link (a=',
+             'in the Archived view the area select still offers every area',
+             '...and so do the area chips',
              'All areas restores every phase', '...and hides all',
              'the "'] },
   // A plan naming no third place, or one that merged nothing, paints no chip;
@@ -199,6 +201,21 @@ const FEATURE_ABSENT = [
   { note: 'the long-print stress check was not asked for',
     covers: ['(setting up the long print) the uncut sheet was grown past the crashing',
              'a page past the length that crashed the printer prints'] },
+  // No More-filters disclosure on the phone: nothing to open while stuck, and no
+  // open state for the stack over the table to be measured in. No chip inside
+  // it: nothing to switch on so the summary has a count to say.
+  { note: 'phone panel check skipped',
+    covers: ['lm6', 'lm7', 'lm5 with More filters open', 'lm8 with More filters open'] },
+  // No wide font installed, or none wider than the page's own: the layout
+  // matrix reads one font, and says so in its notes and its summary line.
+  { note: 'wide-font pass NOT RUN',
+    covers: ['lm the wide-font pass draws the page in the font it names'] },
+  // A plan that cancelled no task has no match the task fraction leaves out;
+  // the basis check above still holds the clause absent on every report.
+  { note: 'no cancelled task in this plan',
+    covers: ['a search for the cancelled task'] },
+  { note: 'its announced count skipped',
+    covers: ['ax3 with one filter on, More filters is announced'] },
   { note: 'nothing is ready in this plan',
     covers: ['every ready task is a term', 'the list carries as many terms',
              'every term names its task id', 'every definition says why',
@@ -211,8 +228,16 @@ const FEATURE_ABSENT = [
   // ready task in a tagged phase keeps being checked.
   { note: 'no ready task sits in a tagged phase',
     covers: ['tasks of tagged phases wear the area chips'] },
+  // A plan where no single press empties a narrowed view while phases outside
+  // it match: the truth rule above still runs over every press, and only the
+  // halves that prove it was exercised have nothing to point at.
+  { note: 'no press empties a view while phases outside it match',
+    covers: ['...and a view hiding every match is among the presses',
+             'es2 after Show all phases the keyboard is on the View select'] },
+  { note: 'no press empties the table',
+    covers: ['es1 after the Clear inside the empty state'] },
   { note: 'no status chips in this report',
-    covers: ['no matches-outside-this-view row is emitted any more',
+    covers: ['no matches-outside-this-view notice shows while rows do',
              '...and choosing All phases from the View select reaches them instead',
              '...with the search still applied'] },
   // The heatmap's absence is reported by the calendar block's own else, and it
@@ -230,7 +255,7 @@ const FEATURE_ABSENT = [
   { note: 'a plan with nothing active opens on all phases',
     covers: ['on load the archived phases are off screen',
              '...and the view rides the shareable fragment',
-             'no matches-outside-this-view row is emitted any more',
+             'no matches-outside-this-view notice shows while rows do',
              '...and choosing All phases from the View select reaches them instead',
              '...with the search still applied'] },
 ];
@@ -349,6 +374,11 @@ const state = () => page.evaluate(() => {
 // pass so an old report names everything it is missing at once, instead of one
 // element per run.
 const source = readFileSync(path, 'utf8');
+// The chip attributes the page's own script wires, read off the document. The
+// empty-state block presses every chip carrying one, and the Clear block reports
+// a wired attribute no exercised chip carries, so neither keeps a list by hand.
+const WIRED_CHIP_ATTRS = [...new Set([...source.matchAll(/wireChips\([^,()]+, '(data-[a-z]+)'/g)]
+  .map((m) => m[1]))].sort();
 const REQUIRED = [
   ['table.phases', 'the phase table'],
   ['table.phases thead', 'its column headers'],
@@ -360,7 +390,7 @@ const REQUIRED = [
   ['.sectools', 'the sticky filter bar'],
   ['.sectools [data-clear]', 'the Clear-filters button'],
   ['#audit-q', 'the filter box'],
-  ['#audit-expand', 'the expand-all button'],
+  ['.tablehead #audit-expand', 'the expand-all button, in the phases table\'s head'],
   ['#audit-phase-status', 'the status chip row'],
   ['table.phases tbody tr.seghead', 'the segment header rows (D1)'],
   ['tr.seghead [data-segcsv]', 'the per-segment CSV export (D2)'],
@@ -462,6 +492,52 @@ if (seg0.defaultView === 'active') {
   expect('a plan with nothing active opens on all phases', load.phases, load.total);
 }
 expect('on load, tasks are collapsed', load.tasks, 0);
+// At rest too, the count says what it counts IN. A bare "165 phases" over a
+// table showing five read as the size of the table, and the view was the reason.
+// It names the view by the selected option's short name, read off the select
+// here rather than written into this file, so a count that names some other
+// view, or none, is wrong. The count is a live region: a screen reader hears it
+// without the select beside it. No brackets: the option's full wording inside
+// them wrapped the bar.
+{
+  const rest = /^(\d+) of (\d+) phases? · ([^()]+)$/.exec(load.count);
+  const short = await page.evaluate(() => {
+    const sel = document.getElementById('audit-view');
+    const opt = sel ? sel.options[sel.selectedIndex] : null;
+    return opt ? opt.getAttribute('data-short') : null;
+  });
+  expect('at rest the count names the view the View select sets, by its short name '
+    + 'and without brackets (' + JSON.stringify(load.count) + ', short name '
+    + JSON.stringify(short) + ')',
+    !!rest && !!short && rest[3] === short
+      && Number(rest[1]) === load.phases && Number(rest[2]) === load.total, true);
+  // ...SAID, and not drawn. The View select beside the count already shows the
+  // view, and drawn, the name wrapped the pinned bar at a laptop width. Drawn
+  // means a text node no ancestor up to the count has clipped to a pixel - the
+  // same reading lm3 holds inside the bar - so a name moved out of its clipped
+  // box, or a clipped box that kept the whole count, is told apart.
+  const drawn = await page.evaluate(() => {
+    const c = document.getElementById('audit-count');
+    let out = '';
+    const walk = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      let clipped = false;
+      for (let p = n.parentElement; p && p !== c.parentElement; p = p.parentElement) {
+        const b = p.getBoundingClientRect();
+        if (b.width <= 1 || b.height <= 1) clipped = true;
+      }
+      if (!clipped) out += n.textContent;
+    }
+    return out;
+  });
+  expect('vh1 at rest the count says the view to a screen reader and draws only the '
+    + 'phase fraction (drawn ' + JSON.stringify(drawn) + ', said '
+    + JSON.stringify(load.count) + ')',
+    !!rest && !!short && drawn === rest[1] + ' of ' + rest[2] + ' phase'
+      + (rest[2] === '1' ? '' : 's') && load.count.indexOf(short) >= 0, true);
+}
+// ...and the count it leaves stays inside its bar at every size, in either
+// font: lm3 in the layout matrix below.
 
 // Switching the view is an EXPANDER in the standing sense — it may not grow a
 // sideways scroll box — and it must not lose the reader's place either.
@@ -498,16 +574,22 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
   if (archivedTerm) {
     await page.fill('#audit-q', archivedTerm.trim());
     await page.waitForTimeout(350);
-    const hidden = await page.evaluate(() => ({
-      notice: !!document.querySelector('[data-outside]'),
-      visible: [...document.querySelectorAll('table.phases tbody tr.phase')]
-        .filter((r) => r.style.display !== 'none').length,
-    }));
-    // The "N phases match outside this view — Show all phases" row is GONE, on
-    // the reader's second request: the View select already offers "All phases",
-    // so the row spent a table row arguing with a choice the reader had just
-    // made. This asserts its absence rather than trusting the deletion.
-    expect('no matches-outside-this-view row is emitted any more', hidden.notice, false);
+    const hidden = await page.evaluate(() => {
+      const slot = document.querySelector('tr.norows [data-outside]');
+      return {
+        notice: !!slot && slot.getClientRects().length > 0,
+        visible: [...document.querySelectorAll('table.phases tbody tr.phase')]
+          .filter((r) => r.style.display !== 'none').length,
+      };
+    });
+    // There is no STANDING "N phases match outside this view" row: it was removed
+    // on the reader's second request, because the View select already offers
+    // "All phases" and the row argued with a choice the reader had just made.
+    // What replaced it is the empty state, which names those matches only when
+    // nothing at all is drawn - so the rule is "no notice while rows show".
+    expect('no matches-outside-this-view notice shows while rows do '
+      + '(' + hidden.visible + ' phase rows shown)',
+      hidden.notice && hidden.visible > 0, false);
     // What it must NOT cost: the route to those matches. The select is that route,
     // so the search has to survive switching to All and still find them.
     await page.selectOption('#audit-view', 'all');
@@ -522,6 +604,208 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
     expect('...with the search still applied', after.visible > 0, true);
     await page.fill('#audit-q', '');
     await page.waitForTimeout(300);
+  }
+}
+
+// THE EMPTY STATE IS TRUE. "No phase matches these filters" was printed over a
+// view that hid every match: on acme-store, Test gate "Before recording" emptied
+// the default view while the archived phase held both matching tasks. So for
+// every press a reader can make, in each narrowed view, whenever the empty state
+// shows: either View=All shows no phase either and the plain sentence is the
+// truth, or the sentence names exactly the count View=All shows and its button
+// lands there. And while rows show, the slot that names hidden matches stays
+// hidden. Everything runs inside one evaluate: a refresh is synchronous, and a
+// round trip per press would make this the slowest block in the file for no
+// extra truth.
+//
+// The presses are DERIVED, never listed: every chip in the table's toolbar that
+// carries an attribute the page's own script wires (WIRED_CHIP_ATTRS, the list
+// the Clear block reads too), each again on top of a search, the search alone,
+// and the date range set to a single day at either end of the span the date
+// inputs allow. A chip axis added tomorrow is pressed here without this block
+// naming it. The search term is a phase id from the archive when there is one,
+// so in the default view the search alone already hides every match it has.
+//
+// The two buttons of the empty state then have to hand the keyboard somewhere
+// that is still on the page: each hides the row it sits in, and a focus left on
+// a hidden button sends the next Tab past the whole table. The View select is
+// that place - the control that says which phases are drawn.
+{
+  const truth = await page.evaluate((wired) => {
+    const viewSel = document.getElementById('audit-view');
+    const norow = document.querySelector('tr.norows');
+    const clear = document.querySelector('.sectools [data-clear]');
+    if (!viewSel || !norow || !clear) return null;
+    const before = viewSel.value;
+    const slot = norow.querySelector('[data-outside]');
+    const btn = norow.querySelector('[data-showall]');
+    const norowClear = norow.querySelector('[data-clear]');
+    const q = document.getElementById('audit-q');
+    const from = document.getElementById('audit-from');
+    const to = document.getElementById('audit-to');
+    const seen = (el) => !!el && el.getClientRects().length > 0;
+    const shown = () => [...document.querySelectorAll('table.phases tbody tr.phase')]
+      .filter((r) => r.style.display !== 'none').length;
+    const pick = (v) => { viewSel.value = v; viewSel.dispatchEvent(new Event('change')); };
+    // Enter, not an input event: typing is debounced, and Enter is the key the
+    // search filters on at once.
+    const search = (v) => {
+      q.value = v;
+      q.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    };
+    const setDate = (el, v) => {
+      el.value = v;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    const chips = [...document.querySelectorAll('.sectools button')]
+      .map((c) => ({ c, attr: wired.find((a) => c.hasAttribute(a)) }))
+      .filter((x) => x.attr);
+    const termRow = document.querySelector('table.phases tbody tr.phase[data-seg="archived"]')
+      || document.querySelector('table.phases tbody tr.phase');
+    const term = q && termRow
+      ? (termRow.getAttribute('data-phase') || '').toLowerCase() : '';
+    const presses = [];
+    const chipPress = ({ c, attr }, withTerm) => ({
+      what: (withTerm ? 'q=' + withTerm + ' + ' : '') + attr + '=' + c.getAttribute(attr),
+      on: () => {
+        if (c.hidden) return false;   // a chip this view does not offer
+        if (withTerm) search(withTerm);
+        c.click();
+        return true;
+      },
+      // Released by its own second press, not by Clear alone: this block
+      // proves the empty state, and leaning on Clear would make it a second
+      // test of Clear that fails wherever Clear does.
+      off: () => {
+        if (c.getAttribute('aria-pressed') === 'true') c.click();
+        if (withTerm) search('');
+      },
+    });
+    chips.forEach((x) => presses.push(chipPress(x, '')));
+    if (term) {
+      presses.push({ what: 'q=' + term, on: () => { search(term); return true; },
+                     off: () => search('') });
+      chips.forEach((x) => presses.push(chipPress(x, term)));
+    }
+    const span = from && to && from.min && from.max ? [from.min, from.max] : [];
+    span.forEach((day) => presses.push({
+      what: 'from/to ' + day,
+      on: () => { setDate(from, day); setDate(to, day); return true; },
+      off: () => { setDate(from, ''); setDate(to, ''); },
+    }));
+    const out = [];
+    ['active', 'archived'].forEach((v) => {
+      presses.forEach((p, i) => {
+        clear.click();
+        pick(v);
+        const resting = shown();
+        if (!p.on()) return;
+        // Whether the press did anything: fewer rows than the view draws at
+        // rest, or the toolbar's Clear offered. Made is not the same as
+        // effective - a search whose Enter no longer filters is still made.
+        // The two are kept apart, because Clear shows for a term the search
+        // never applied: a field holding text is a filter that is on.
+        const r = { view: v, i, press: p.what,
+                    rows: shown(), empty: seen(norow), slot: seen(slot) };
+        r.fewer = r.rows < resting;
+        r.narrowed = r.fewer || seen(clear);
+        if (r.empty && r.slot) {
+          const said = slot.textContent;
+          const m = /(\d+)/.exec(said);
+          r.said = said.trim();
+          r.named = m ? Number(m[1]) : -1;
+          btn.click();
+          r.landedView = viewSel.value;
+          r.landed = shown();
+        } else if (r.empty) {
+          pick('all');
+          r.all = shown();
+        }
+        out.push(r);
+        pick(v);
+        p.off();
+      });
+    });
+    // Where the keyboard lands after each empty-state button, from a press
+    // that put the reader in front of it. Focus is moved OFF the select first,
+    // so a select that merely kept a focus it already had cannot pass.
+    const landsOnView = (r, act) => {
+      clear.click();
+      pick(r.view);
+      presses[r.i].on();
+      if (document.activeElement) document.activeElement.blur();
+      act();
+      const ok = document.activeElement === viewSel;
+      pick(r.view);
+      presses[r.i].off();
+      return ok;
+    };
+    const emptied = out.find((r) => r.empty);
+    const hid = out.find((r) => r.empty && r.slot);
+    const focus = {
+      clear: emptied && norowClear ? { press: emptied.view + ':' + emptied.press,
+        onView: landsOnView(emptied, () => norowClear.click()) } : null,
+      showAll: hid ? { press: hid.view + ':' + hid.press,
+        onView: landsOnView(hid, () => btn.click()) } : null,
+    };
+    // Back to the view this block found, not the default: the steps below were
+    // written against the view the search block above left behind.
+    clear.click();
+    pick(before);
+    return { presses: presses.length, term, dates: span.length > 0, out, focus };
+  }, WIRED_CHIP_ATTRS);
+  if (!truth) {
+    failures.push('FAIL the empty state, the View select and a Clear button are all on the page');
+  } else {
+    const lies = truth.out.filter((r) => r.empty && (r.slot
+      ? (r.named !== r.landed || r.landedView !== 'all' || r.named < 1)
+      : r.all !== 0));
+    expect('the empty state is true - whenever nothing is drawn, it names exactly '
+      + 'the count View=All shows and its button lands there, or All shows none '
+      + 'either (' + truth.out.length + ' presses; wrong: ' + JSON.stringify(lies) + ')',
+      lies.length, 0);
+    const noisy = truth.out.filter((r) => r.rows > 0 && r.slot);
+    expect('...and no press that leaves rows drawn shows the hidden-matches slot ('
+      + JSON.stringify(noisy) + ')', noisy.length, 0);
+    // Which kinds of press were made AND narrowed something, so a pass that
+    // made none of a kind, or made only presses that filtered nothing, says so
+    // rather than reading as covered. The search alone is its own kind: a
+    // search with a chip still narrows through the chip when the search is dead.
+    // A search counts only by the rows it took away: with the term held in the
+    // field and never applied, Clear still shows. The term is an archived
+    // phase's id, so the default view always draws fewer rows when it applies.
+    const effective = (re, by) => truth.out.some((r) => re.test(r.press) && r[by]);
+    const kinds = {
+      chip: effective(/^(?!q=|from\/to )/, 'narrowed'),
+      search: effective(/^q=(?!.* \+ )/, 'fewer'),
+      'search + chip': effective(/ \+ /, 'fewer'),
+      'from/to': effective(/^from\/to /, 'narrowed'),
+    };
+    expect('es0 the presses include a chip, a search, a search with a chip, and a date '
+      + 'range, each at least once narrowing the view, a search by drawing fewer rows ('
+      + JSON.stringify(kinds)
+      + '; term ' + JSON.stringify(truth.term) + ')',
+      Object.values(kinds).every(Boolean), true);
+    const hiding = truth.out.filter((r) => r.empty && r.slot);
+    if (hiding.length) {
+      expect('...and a view hiding every match is among the presses, so the rule '
+        + 'above was exercised and not satisfied by never emptying a view ('
+        + hiding.map((r) => r.view + ':' + r.press + ' says ' + JSON.stringify(r.said))
+          .join('; ') + ')', hiding.length > 0, true);
+      expect('es2 after Show all phases the keyboard is on the View select, not on '
+        + 'the hidden button (' + truth.focus.showAll.press + ')',
+        truth.focus.showAll.onView, true);
+    } else {
+      notes.push('ok   (no press empties a view while phases outside it match - '
+        + 'the hidden-matches sentence was not exercised)');
+    }
+    if (truth.focus.clear) {
+      expect('es1 after the Clear inside the empty state the keyboard is on the View select, '
+        + 'not on the hidden button (' + truth.focus.clear.press + ')',
+        truth.focus.clear.onView, true);
+    } else {
+      notes.push('ok   (no press empties the table - the Clear inside the empty state was not pressed)');
+    }
   }
 }
 
@@ -568,32 +852,39 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
     expect('...and the archived statuses that exist ARE offered, so the rule is '
       + 'not satisfiable by hiding everything', !wantedSome || chips.offered.length > 0, true);
   }
-  // The AREA select is the same fault one control over. Area and view
-  // are ANDed too, so in the Archived view an area whose only phase is active
-  // could still be picked, and picking it gave "0 / 4 phases". Found by
-  // sweeping every control instead of waiting for a second report.
+  // The AREA controls are NOT pruned by the view, and that is the decision rather
+  // than the oversight. Pruning them left a select whose only option was "All
+  // areas" - a control every use of which is a no-op - and an area the view
+  // hides is now answered where the answer is true: the empty state names the
+  // phases outside the view and offers the one press that shows them, which the
+  // empty-state block above holds for every area chip. So in the Archived view
+  // the select and the chips offer every area the plan tags.
   {
     const areas = await page.evaluate(() => {
-      const segs = {};
+      const tagged = new Set();
       document.querySelectorAll('table.phases tbody tr.phase').forEach((r) => {
-        (r.getAttribute('data-area') || '').split(' ').filter(Boolean).forEach((a) => {
-          (segs[a] || (segs[a] = [])).push(r.getAttribute('data-seg'));
-        });
+        (r.getAttribute('data-area') || '').split(' ').filter(Boolean)
+          .forEach((a) => tagged.add(a));
       });
       const sel = document.getElementById('audit-area-select');
-      return { segs, offered: sel
-        ? [...sel.options].filter((o) => o.value && !o.hasAttribute('data-multi'))
-            .map((o) => o.value) : [] };
+      const bar = document.getElementById('audit-areas');
+      return {
+        tagged: [...tagged].sort(),
+        offered: sel ? [...sel.options].filter((o) => o.value && !o.hasAttribute('data-multi'))
+          .map((o) => o.value).sort() : null,
+        chips: bar ? [...bar.querySelectorAll('[data-a]')].filter((c) => !c.hidden)
+          .map((c) => c.getAttribute('data-a')).sort() : null,
+      };
     });
-    const unreachable = areas.offered.filter((a) => !(areas.segs[a] || []).includes('archived'));
-    expect('in the Archived view only areas with an archived phase are offered '
-      + '(' + JSON.stringify(areas.offered) + ')', unreachable.length, 0);
-    // Same vacuity guard as the chips: an area that IS archived must survive.
-    const anyArchived = Object.keys(areas.segs)
-      .some((a) => areas.segs[a].includes('archived'));
-    expect('...and an area that does have an archived phase is still offered, so '
-      + 'the rule is not satisfiable by emptying the select',
-      !anyArchived || areas.offered.length > 0, true);
+    if (areas.offered !== null) {
+      expect('in the Archived view the area select still offers every area the plan '
+        + 'tags (' + JSON.stringify(areas.offered) + ')',
+        areas.offered.join(','), areas.tagged.join(','));
+    }
+    if (areas.chips !== null) {
+      expect('...and so do the area chips (' + JSON.stringify(areas.chips) + ')',
+        areas.chips.join(','), areas.tagged.join(','));
+    }
   }
   // The `technical` trim. The invariant holds on ANY fixture, which is what keeps
   // this out of the feature-absence table: a box that overflows five lines must
@@ -1031,9 +1322,54 @@ if (termInfo.term === null) {
   if (hit.phases < 1 || hit.phases >= load.total) {
     failures.push(`FAIL filtering by "${term}" narrows the list: got ${hit.phases} of ${load.total}${guardNote}`);
   } else notes.push(`ok   filtering by "${term}" narrows the list: ${hit.phases} of ${load.total}${guardNote}`);
-  if (!/\d+\s*\/\s*\d+/.test(hit.count)) {
+  if (!/\d+ of \d+ phases? · [^()]+ · \d+ of \d+ tasks?/.test(hit.count)) {
     failures.push(`FAIL the count reports the filtered total: got "${hit.count}"`);
   } else notes.push(`ok   the count reports the filtered total: "${hit.count}"`);
+  // The counter's BASIS, read against what it must agree with: the header's own
+  // totals (whose task total leaves cancelled work out), and the cancelled
+  // matches it leaves out named rather than dropped - counted here off the rows
+  // the page shows, so a clause that is missing and one that is invented both
+  // disagree. "165 phases" over a table showing five, and a task denominator
+  // counting what the header did not, were the defect.
+  {
+    const basis = await page.evaluate((t) => {
+      const meta = (document.querySelector('.tb-id .meta') || {}).textContent || '';
+      const hp = /(\d+) phases? · (\d+) tasks?/.exec(meta);
+      const shownRows = [...document.querySelectorAll('table.phases tbody tr.phase')]
+        .filter((r) => r.style.display !== 'none');
+      // A task is a match when its own row OR its phase's row holds the term:
+      // a phase found by its title brings every one of its tasks with it. The
+      // row's match badge is left out - the page read the row's words before
+      // any filter wrote one.
+      const own = (r) => {
+        const badge = r.querySelector('.pmatch');
+        return r.textContent.replace(badge ? badge.textContent : '', '').toLowerCase();
+      };
+      const phaseHit = new Map(shownRows.map((r) =>
+        [r.getAttribute('data-phase'), own(r).includes(t)]));
+      const sel = document.getElementById('audit-view');
+      const opt = sel ? sel.options[sel.selectedIndex] : null;
+      return {
+        count: (document.getElementById('audit-count') || {}).textContent || '',
+        short: opt ? opt.getAttribute('data-short') : null,
+        phases: hp ? Number(hp[1]) : null,
+        tasks: hp ? Number(hp[2]) : null,
+        shown: shownRows.length,
+        cancelled: [...document.querySelectorAll('table.phases tbody tr.task[data-status="cancelled"]')]
+          .filter((r) => phaseHit.has(r.getAttribute('data-phase'))
+            && (phaseHit.get(r.getAttribute('data-phase'))
+              || r.textContent.toLowerCase().includes(t))).length,
+      };
+    }, term);
+    const m = /^(\d+) of (\d+) phases? · ([^()]+) · (\d+) of (\d+) tasks?(?:, (\d+) cancelled not counted)?$/
+      .exec(basis.count);
+    expect('the filtered count names its basis - shown of the header\'s phases, the '
+      + 'view by its short name, tasks of the header\'s task total, and the cancelled '
+      + 'tasks it leaves out (' + JSON.stringify(basis) + ')',
+      !!m && Number(m[1]) === basis.shown && Number(m[2]) === basis.phases
+        && !!basis.short && m[3] === basis.short
+        && Number(m[5]) === basis.tasks && Number(m[6] || 0) === basis.cancelled, true);
+  }
   // A TEXT filter is the one that used to force its matches open — one character
   // typed grew the page by screens and scrolled away what was being read, and
   // clearing it afterwards shut rows that had been opened by hand. Asserted here
@@ -1042,6 +1378,51 @@ if (termInfo.term === null) {
   expect('a text filter does not auto-expand the phases it matches', hit.tasks, 0);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(250);
+}
+
+// A cancelled task a search finds is shown in its phase, and the task fraction
+// leaves it out - so the count has to say it is there, or the screen holds a
+// match the count calls zero. Searched by the task's own id, in View=All so its
+// phase is drawn whatever segment it files under.
+{
+  const cx = await page.evaluate(() => {
+    const r = document.querySelector('table.phases tbody tr.task[data-status="cancelled"]');
+    const id = r && r.querySelector('td.tid');
+    return id ? id.textContent.trim().toLowerCase() : null;
+  });
+  if (cx === null) {
+    notes.push('ok   (no cancelled task in this plan - the cancelled clause was not exercised)');
+  } else {
+    const viewWas = await page.$eval('#audit-view', (s) => s.value);
+    await page.selectOption('#audit-view', 'all');
+    await page.fill('#audit-q', cx);
+    await page.waitForTimeout(300);
+    const said = await page.evaluate((t) => {
+      // The same rule as the basis check above: its own row or its phase's,
+      // the phase's match badge left out.
+      const own = (r) => {
+        const badge = r.querySelector('.pmatch');
+        return r.textContent.replace(badge ? badge.textContent : '', '').toLowerCase();
+      };
+      const phaseHit = new Map([...document.querySelectorAll('table.phases tbody tr.phase')]
+        .filter((r) => r.style.display !== 'none')
+        .map((r) => [r.getAttribute('data-phase'), own(r).includes(t)]));
+      return {
+        count: document.getElementById('audit-count').textContent,
+        truth: [...document.querySelectorAll('table.phases tbody tr.task[data-status="cancelled"]')]
+          .filter((r) => phaseHit.has(r.getAttribute('data-phase'))
+            && (phaseHit.get(r.getAttribute('data-phase'))
+              || r.textContent.toLowerCase().includes(t))).length,
+      };
+    }, cx);
+    const m = /, (\d+) cancelled not counted$/.exec(said.count);
+    expect(`a search for the cancelled task ${cx} names the cancelled tasks the task count `
+      + `leaves out (${JSON.stringify(said)})`,
+      !!m && said.truth > 0 && Number(m[1]) === said.truth, true);
+    await page.fill('#audit-q', '');
+    await page.selectOption('#audit-view', viewWas);
+    await page.waitForTimeout(250);
+  }
 }
 
 // ...and the closed row has to say WHY it survived, which is what replaces the
@@ -1330,7 +1711,7 @@ if (areaParts.length) {
   expect('...and a= leaves the URL', /[!&]a=/.test(areaOff.hash), false);
 } else notes.push('ok   (no phase in this plan carries an area tag — area chips skipped)');
 
-// 6d. The global filter row (C1/C2): a second line of the sticky top bar
+// 6d. The header filter row (C1/C2): a second line of the top bar
 //     carrying an authors dropdown, an area dropdown and the date range. Each
 //     control is a twin of a filter that already exists elsewhere in the
 //     document, so the gates here are PAIRINGS, not a version sweep: a report
@@ -1536,8 +1917,9 @@ if (await page.$('#audit-area-select')) {
 }
 
 // The new chrome must not grow any scroll box (the assertHintsFit rule): the
-// filter row lives in the sticky bar at every width, so at no width may the
-// PAGE scroll sideways because of it. 390px is the width that found the last
+// filter row lives in the top bar at every width (sticky above 52rem unless the
+// screen is under 32rem tall, scrolling with the page otherwise), so at no width may the PAGE scroll sideways because
+// of it. 390px is the width that found the last
 // such defect (the filter panel).
 for (const w of [1512, 390]) {
   await page.setViewportSize({ width: w, height: w > 700 ? 945 : 780 });
@@ -1547,7 +1929,7 @@ for (const w of [1512, 390]) {
     row: !!document.querySelector('.gfilters'),
   }));
   if (grow.row) {
-    expect(`at ${w}px the global filter row does not push the page sideways `
+    expect(`at ${w}px the header filter row does not push the page sideways `
       + `(scrollWidth ${grow.dw} vs client ${grow.cw})`, grow.dw <= grow.cw + 1, true);
   }
 }
@@ -2341,6 +2723,11 @@ if (barState.open === true) {
 } else {
   measured.filterBarShutShare = share(barState.h, PHONE_VIEWPORT.height);
 }
+
+//    The stack pinned over the table, the lines the bars take and where an open
+//    More filters lands are the layout matrix's, below, at every measured size
+//    and in every state. What stays here is the PHONE's own: the open panel's
+//    controls, and the two figures the layout baseline records at PHONE_VIEWPORT.
 //    Same pairing as step 6: the <details> without the panel inside it is a
 //    contradiction in one document, so it is named rather than dereferenced.
 if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
@@ -2377,30 +2764,662 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
   } else {
     measured.filterBarOpenShare = share(openState.h, PHONE_VIEWPORT.height);
   }
-
-  //    In flow the panel's height IS the bar's height, and the bar is sticky: 156px
-  //    shut, 481px open, on a 780px screen. Pinned, that is 62% of the viewport
-  //    covering the table it filters. Open, it has to scroll away like the block of
-  //    controls it now is.
-  const covered = await page.evaluate(async () => {
-    const st = document.querySelector('.sectools');
-    window.scrollTo(0, window.scrollY + st.getBoundingClientRect().top + 500);
-    await new Promise((r) => setTimeout(r, 300));
-    const b = st.getBoundingClientRect();
-    const vis = Math.max(0, Math.min(b.bottom, window.innerHeight) - Math.max(b.top, 0));
-    return Math.round((vis / window.innerHeight) * 100);
-  });
-  if (covered > 40) {
-    failures.push(`FAIL an open filter panel does not pin itself over the table: ${covered}% of the screen is filter bar`);
-  } else notes.push(`ok   scrolled, the open filter panel gives the table the screen back (${covered}% bar)`);
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.click('.fdetails > summary');
   await page.waitForTimeout(150);
 } else notes.push('ok   (this plan records no models or dates — phone panel check skipped)');
 
+// --- the layout matrix: every measured size, in every state, in two fonts -----
+//
+// ONE method for one question - what the pinned chrome costs a reader of the
+// table - asked at every size below, in every state a reader reaches, and in
+// two fonts. A size or a state added here is asked every question; a question
+// added here is asked of every cell; a failing cell is named by size, state and
+// font.
+//
+// Sizes: a phone upright and on its side, a tablet upright, a small laptop, the
+// laptop this file reads the page at, and a desktop. States, read off the page:
+// every View option at rest, then the default view with one phase-status chip
+// on, and with a search typed. Each cell asks:
+//   lm1  the stack pinned over the table is no more than the layers pinned there
+//   lm2  ...and leaves the table its share of the screen, whatever those are
+//   lm3  the count's drawn text lies inside its bar
+//   lm4  the pinned stack is within the budget of the size's viewport class
+//   lm5  no control, chip or label of the chrome breaks inside a word, and no
+//        pill or id in any table or list of the report does either
+//   lm6  More filters, opened over the table, is on the screen and painted
+//   lm7  ...and where it opens in the bar's flow, the bar holding it does not pin
+//   lm8  nothing runs past its box, no control's text is cut off, and the page
+//        is no wider than the screen
+// and lm5 and lm8 again with More filters open.
+//
+// WHY NO CELL COUNTS LINES. How many lines a row of controls takes is a property
+// of the font's metrics, and the page ships no font: it names a stack and takes
+// whatever the machine resolves. The matrix used to hold the filter bar to one
+// line at a laptop and the header's filter row to one line at a tablet; both
+// held on the machine that wrote them, with no room to spare, and both failed on
+// a CI runner whose default sans is wider. A line count asserted there is a
+// claim about one font. What the page DOES control, and what a reader pays for,
+// is asked instead: whether anything overflows or is cut off (lm8), whether a
+// word is split (lm5), whether the count stays in its bar (lm3), and how much of
+// the screen the pinned layers take (lm1, lm2, lm4). Wrapping onto another row
+// is allowed wherever those hold - the stylesheet lays the rows out with a gap
+// on purpose - and it is the budget, not a line count, that says when the rows
+// have cost the reader too much.
+//
+// THE SECOND PASS. The same cells are read again with every element's
+// font-family overridden to the first font of WIDE_FONTS that is installed and
+// draws a sample line wider than the page's own font does on this machine (the
+// pass prints both widths), so a layout that holds here has headroom against a
+// runner's wider font rather than fitting this machine's to the pixel. Every label of that pass carries "wide
+// font" and the font's name. Where no candidate is installed, or the widest one
+// installed is no wider than the page's own font, the pass does not run and the
+// output says so, in its notes and in the closing summary line; it is never
+// reported as a pass it did not make.
+//
+// lm1 measures what a reader sees, not a sum of heights: scrolled into the table,
+// from the top of the screen down its middle, the first point that is the table's
+// own is where the pinned layers end - a hit-test sees whatever pins over the
+// rows, including a layer nobody meant to make sticky. Its bound is the layers
+// whose computed position is sticky in that same layout and that span the
+// column the scan walks - the top bar, the section strip, the filter bar - plus
+// STACK_SLACK_PX. Where TOPBAR_SCROLLS's query matches, a phone's screen, the top
+// bar is not granted: it pinning there fails lm1 by name, however small it is.
+// The slack is there because the scan steps whole pixels, and the bar sticks at
+// an offset published rounded to a whole pixel (px() in page-state.js), so the
+// first table pixel can sit up to a pixel and a half below the layers' exact sum. Anything else pinning clears that slack many
+// times over.
+//
+// What that bound cannot see is the layers themselves growing, or a layer that
+// should scroll pinning instead, because it grows with them. So lm2 holds the
+// same measurement to a bound read off nothing on the page - STACK_CEILING_SHARE
+// of the screen it is read on - and it is that ceiling, not the relative arm, that
+// stands for a report the layout baseline is not about (outside this checkout, or
+// a scratch render), where judge() records nothing and compares nothing. The
+// basis of the ceiling: the pinned layers are chrome over the rows a reader
+// scrolled down to read, so the table keeps at least half of the screen. Past
+// that the chrome is the page and the table is what peeks out under it. It is a
+// destination bound, not a ratchet: how far a committed report's bar moved is the
+// relative arm's question, asked through the figures recorded above.
+//
+// lm4 is the stricter, per-class form of the same bound: STACK_BUDGET, stated
+// once below, gives each viewport class the share of its screen the pinned
+// layers may take, and viewportClass() derives a size's class from the size
+// itself, so a size added to the list is budgeted without a row of its own.
+// The shares are what each class is designed to spend - a desktop pins every
+// layer on one row each; a laptop or tablet may wrap the filter bar, and the
+// header's filter row, onto a second row; a phone pins only the strip and the
+// filter bar, which wraps the most - and every class must be reached by some
+// size, or the run fails naming the class nothing measured.
+// lm3 reads the count's lines off its text's own client rects, which is what a
+// reader sees, and holds every one to the bar's content box: the count may wrap
+// onto its own row or wrap its own words, but never run out of the card.
+// lm5 reads each word's own rects: a word drawn on two lines was split inside
+// itself, which no font makes legible. A word is a run of letters and digits, so
+// a break at a space, a hyphen or a slash is a row break and not a split word.
+// The pill-and-id half reads a token rather than a word (ATOMS says why).
+// lm8 holds every in-flow child of the bar, the header's filter row, the top
+// bar's actions and the table's head to its container's content box; every
+// field to the width of what it shows - a select to the width it takes holding
+// only its chosen option, a date field to its own natural width, an empty search
+// field to its placeholder - and every button and chip to its own content; and
+// the page to the screen's width.
+const STACK_SLACK_PX = 2;
+const STACK_CEILING_SHARE = 0.5;
+const STACK_TABLE_SHARE = +(1 - STACK_CEILING_SHARE).toFixed(2);
+// The share of the screen the pinned stack may take, per viewport class.
+// The rule the shares aim at: the largest stack a size's cells draw in either
+// font, plus one row of headroom, over that size's height - a class holds
+// sizes of different heights, and lm4 applies the share to each size. They
+// were set before that was measured and are not computed from it, so meeting
+// the rule is not assumed: the measurement below says which classes do, and
+// the phone does not. A share is a fraction of the HEIGHT while
+// the stack is a sum of rows, so a tall screen spends a smaller share on the
+// same rows: the tablet cell is portrait and pins more pixels than the laptop
+// cell does, yet a smaller part of its screen, which is why the tablet's share
+// is the smaller of the two.
+// Measured 2026-11-17 on macOS, as headroom = budget - stack at each class's
+// tightest cell over both passes; re-derive it by running
+//   node tools/check-report-interactive.mjs <report> 2>&1 | grep lm4
+// over examples/acme-store/acme-store-audit.html and docs/demo-large.html and
+// taking the smallest gap per class between "<stack>px against <budget>px" -
+// a wide-font cell's label carries "[wide font: <name>]", and the wide font
+// here was Verdana. Each line names the pass its cell was read in:
+//   phone    27px at 844x390, both passes, either report, a status chip on
+//            or a search typed (stack 148px, budget 175px)
+//   laptop   37px at 1024x768, both passes, demo-large, a status chip on
+//            (270px, 307px)
+//   tablet   52px at 834x1194, a status chip on or a search typed: the
+//            wide-font pass in either report, the page's own font in
+//            acme-store only (306px, 358px)
+//   desktop  56px at 1920x1080, wide-font pass only, demo-large, a status
+//            chip on or a search typed (214px, 270px) - the page's own font
+//            pins 182px there, so the extra 32px is a row the desktop wraps
+//            only in the wider font.
+// What one more row costs at the phone was read in the wide font at 844x390
+// itself, not carried over from the desktop: the filter bar's rows sit 8px
+// apart, its shortest item is 19.4px tall and its count 24px, so a further
+// row costs at least 27.4px and, holding the count, 32px. The check prints
+// none of that; it was read off the bar's own boxes, twice with a gap, by
+//   [...document.querySelectorAll('.sectools > *')].map((e) => e.getBoundingClientRect())
+// in a page sized 844x390 with the wide-font pass's override applied.
+// So the phone has LESS than a row of headroom, but by how much is not a
+// thing these readings settle. Its 27px is under the cheapest row the bar can
+// add there (27.4px) by less than lm4's own error: the stack lm4 judges is a
+// whole-pixel scan (stackInTable), which can sit up to a pixel and a half off
+// the layers' exact sum (STACK_SLACK_PX above says why). So a further row
+// holding the count, at 32px, is shown to fail lm4 at the phone, and the
+// cheapest row is not shown either way. That is a fact of the phone's budget
+// at 0.45, stated here rather than met; the laptop, tablet and desktop each
+// clear 32px.
+// Changing a share means re-measuring this, not editing a figure above.
+const STACK_BUDGET = { phone: 0.45, tablet: 0.3, laptop: 0.4, desktop: 0.25 };
+// A phone is where the top bar scrolls (TOPBAR_SCROLLS, read by the page's own
+// matchMedia); past that the class is the width's: under 64rem a tablet, under
+// 100rem a laptop, a desktop beyond.
+const viewportClass = (size, phone) => (phone ? 'phone'
+  : size.width < 1024 ? 'tablet' : size.width < 1600 ? 'laptop' : 'desktop');
+const LAYOUT_SIZES = [
+  { width: PHONE_VIEWPORT.width, height: 844 },
+  { width: 844, height: PHONE_VIEWPORT.width },
+  { width: 834, height: 1194 },
+  { width: 1024, height: 768 },
+  { width: 1512, height: 945 },
+  { width: 1920, height: 1080 },
+];
+// Wide sans fonts, in the order a pass reaches for them: Verdana is on macOS
+// and Windows; DejaVu Sans, the usual Linux default, and Bitstream Vera Sans,
+// its parent, are the fallbacks where it is not. Which one is wider than the
+// page's own font is measured, never assumed (wideFontsHere()).
+const WIDE_FONTS = ['Verdana', 'DejaVu Sans', 'Bitstream Vera Sans'];
+// The layers that may pin over the table, by the names a label prints.
+const STACK_LAYERS = [['top bar', '.topbar'], ['strip', '.snav'], ['filter bar', '.sectools']];
+// Where the top bar scrolls instead: the query is written here and not read
+// off the stylesheet, because the fault it is held against is that rule going
+// missing, and a query read off a missing rule asks nothing.
+const TOPBAR_SCROLLS = ['top bar', '(max-width:52rem),(max-height:32rem)'];
+// The committed pages whose fixture pins a phase, so the matrix measures the
+// phases table's head with its Sort select in it: on one of these, a matrix
+// that drew no select fails by name instead of noting the coverage as absent.
+const SORT_REQUIRED = new Set(['docs/demo-large.html']);
+// The chrome lm5 and lm8 read: the pinned layers, the header's own rows and the
+// table's head. `open` adds the More-filters panel.
+const CHROME = ['.topbar', '.snav', '.sectools', '.tablehead'];
+const readChrome = (open) => page.evaluate(([roots, withPanel]) => {
+  const shown = (n) => !!n && n.getClientRects().length > 0
+    && (!n.checkVisibility || n.checkVisibility());
+  const inFlow = (box) => [...(box ? box.children : [])]
+    .filter((k) => shown(k) && getComputedStyle(k).position !== 'absolute');
+  // A node inside a box clipped to a pixel is said to a screen reader and drawn
+  // to nobody, so neither its lines nor its words are on the screen.
+  const drawn = (n, upTo) => {
+    for (let p = n.parentElement; p && p !== upTo; p = p.parentElement) {
+      const b = p.getBoundingClientRect();
+      if (b.width <= 1 || b.height <= 1 || !shown(p)) return false;
+    }
+    return true;
+  };
+  const contentBox = (el) => {
+    const cs = getComputedStyle(el);
+    const b = el.getBoundingClientRect();
+    return {
+      left: b.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft),
+      right: b.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight),
+      top: b.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop),
+      bottom: b.bottom - parseFloat(cs.borderBottomWidth) - parseFloat(cs.paddingBottom),
+    };
+  };
+  // Half a pixel either way: edges land on fractional pixels, and a box laid
+  // flush against the padding edge reads a rounding error past it.
+  const outside = (r, box) => r.left < box.left - 0.5 || r.right > box.right + 0.5
+    || r.top < box.top - 0.5 || r.bottom > box.bottom + 0.5;
+  const named = (k) => (k.id ? `#${k.id}`
+    : `${k.tagName.toLowerCase()}${[...k.classList].map((c) => `.${c}`).join('')}`);
+  const textRects = (el) => {
+    const rects = [];
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      if (!drawn(n, el.parentElement)) continue;
+      const r = document.createRange();
+      r.selectNodeContents(n);
+      rects.push(...[...r.getClientRects()].filter((x) => x.width > 0));
+    }
+    return rects;
+  };
+  const rootEls = roots.concat(withPanel ? ['.filterpanel'] : [])
+    .map((s) => document.querySelector(s)).filter(shown);
+  // lm5: a word whose own rects sit on two lines was split inside itself.
+  const split = [];
+  for (const root of rootEls) {
+    const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      if (!drawn(n, root.parentElement)) continue;
+      const re = /[\p{L}\p{N}]+/gu;
+      for (let m = re.exec(n.data); m; m = re.exec(n.data)) {
+        const r = document.createRange();
+        r.setStart(n, m.index);
+        r.setEnd(n, m.index + m[0].length);
+        const tops = new Set([...r.getClientRects()].filter((x) => x.width > 0)
+          .map((x) => Math.round(x.top)));
+        if (tops.size > 1) split.push(`${named(n.parentElement)} "${m[0]}"`);
+      }
+    }
+  }
+  // lm8: children out of their row, fields cut short, buttons overrun.
+  const rows = ['.sectools', '.topbar .gfilters', '.topbar .tb-actions', '.tablehead']
+    .concat(withPanel ? ['.filterpanel'] : [])
+    .map((s) => document.querySelector(s)).filter(shown);
+  // A box that scrolls on an axis holds its rows past its edge on purpose -
+  // the More-filters panel is capped in height and scrolls the rest - so only
+  // the axis it does not scroll is held to its edges.
+  const spill = rows.flatMap((row) => {
+    const box = contentBox(row);
+    const scrollsY = /auto|scroll/.test(getComputedStyle(row).overflowY);
+    const held = scrollsY ? { ...box, top: -Infinity, bottom: Infinity } : box;
+    return inFlow(row).filter((k) => outside(k.getBoundingClientRect(), held))
+      .map((k) => `${named(k)} out of ${named(row)}`);
+  });
+  const ctx = document.createElement('canvas').getContext('2d');
+  const cut = [];
+  for (const root of rootEls) {
+    for (const el of root.querySelectorAll('input, select, button, summary, .fchip, .tf-chip')) {
+      if (!shown(el)) continue;
+      const w = el.getBoundingClientRect().width;
+      if (el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.type === 'date')) {
+        // The width the same control takes unconstrained, holding only what it
+        // shows now: a select's chosen option, a date field's own fields.
+        const twin = el.cloneNode(el.tagName !== 'SELECT');
+        if (el.tagName === 'SELECT' && el.selectedOptions[0]) {
+          twin.append(el.selectedOptions[0].cloneNode(true));
+        }
+        twin.style.cssText = 'position:absolute;visibility:hidden;width:auto;'
+          + 'min-width:0;max-width:none;flex:none';
+        el.parentElement.append(twin);
+        const need = twin.getBoundingClientRect().width;
+        twin.remove();
+        if (need > w + 0.5) cut.push(`${named(el)} ${Math.round(w)}px of ${Math.round(need)}px`);
+      } else if (el.tagName === 'INPUT') {
+        if (el.value || !el.placeholder) continue;
+        const cs = getComputedStyle(el);
+        ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        const need = ctx.measureText(el.placeholder).width;
+        const room = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+        if (need > room + 0.5) {
+          cut.push(`${named(el)} placeholder ${Math.round(need)}px in ${Math.round(room)}px`);
+        }
+      } else if (el.scrollWidth > el.clientWidth + 1) {
+        cut.push(`${named(el)} ${el.clientWidth}px of ${el.scrollWidth}px`);
+      }
+    }
+  }
+  const st = document.querySelector('.sectools');
+  const count = document.getElementById('audit-count');
+  const top = document.querySelector('.topbar');
+  const sort = document.getElementById('audit-sort');
+  const head = document.querySelector('.tablehead');
+  const bar = contentBox(st);
+  return {
+    countOut: textRects(count).filter((r) => outside(r, bar)).length,
+    room: Math.round(bar.right - bar.left),
+    split,
+    spill,
+    cut,
+    pageWide: document.scrollingElement.scrollWidth,
+    screenWide: window.innerWidth,
+    barPx: Math.round(st.getBoundingClientRect().height),
+    sortDrawn: !!sort && !!head && shown(sort) && head.contains(sort),
+    topPx: Math.round(top.getBoundingClientRect().height),
+  };
+}, [CHROME, !!open]);
+// lm5 over the report's column, beside lm5 over the chrome: every pill and
+// every id the column draws, in every table and list it holds - the phases and
+// their tasks, the bugs, the ready-now list, the usage tables - found by what
+// it IS rather than by which table it sits in, so a table added later is read
+// without a line here. The list is the stylesheet's (shell.css keeps exactly
+// these whole), and the word is a run of non-space characters, not of letters:
+// an id or a chip value is one token, and its hyphen or apostrophe joins it -
+// "BUG-" over "10" and "Won'" over "t fix" are both one token cut in two, and
+// a letters-only word sees neither. A break at a space is a row break. A page
+// that drew none of them read nothing, and says so rather than passing.
+const ATOMS = ['.chip', '.rchip', '.bandpill', '.dl', '.heldby', '.area-tag', '.mono'];
+const readAtoms = () => page.evaluate((atoms) => {
+  const where = (el) => {
+    const t = el.closest('table');
+    if (t) return `table.${[...t.classList].join('.') || '(no class)'}`;
+    const box = el.closest('dl, ul, ol, section, [id]');
+    return box ? `${box.tagName.toLowerCase()}${box.id ? `#${box.id}`
+      : [...box.classList].map((c) => `.${c}`).join('')}` : 'the column';
+  };
+  const split = new Set();
+  let read = 0;
+  for (const el of document.querySelectorAll(atoms.map((a) => `.content ${a}`).join(', '))) {
+    if (!el.getClientRects().length || (el.checkVisibility && !el.checkVisibility())) continue;
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      for (const m of n.data.matchAll(/\S+/g)) {
+        const r = document.createRange();
+        r.setStart(n, m.index);
+        r.setEnd(n, m.index + m[0].length);
+        const rects = [...r.getClientRects()].filter((x) => x.width > 0);
+        if (!rects.length) continue;
+        read += 1;
+        if (new Set(rects.map((x) => Math.round(x.top))).size > 1) {
+          split.add(`${where(el)} ${el.tagName.toLowerCase()}.${[...el.classList].join('.')} "${m[0]}"`);
+        }
+      }
+    }
+  }
+  return { split: [...split], read };
+}, ATOMS);
+// Scrolled into the table, the hit-test and the layers it is held to, read in
+// one pass so the bound and the measurement come from one layout.
+const stackInTable = () => page.evaluate(() => {
+  const t = document.querySelector('table.phases');
+  window.scrollTo(0, window.scrollY + t.getBoundingClientRect().top + 10);
+}).then(() => page.waitForTimeout(300)).then(() => page.evaluate(([layers, scrolls]) => {
+  const t = document.querySelector('table.phases');
+  const wrap = t.closest('.tablewrap') || t;
+  const x = Math.round(window.innerWidth / 2);
+  let stack = null;
+  for (let y = 0; stack === null && y < window.innerHeight; y += 1) {
+    const at = document.elementFromPoint(x, y);
+    if (at && wrap.contains(at)) stack = y;
+  }
+  // A layer is held to only where it pins over the column the scan walks: on
+  // a wide screen the section strip is a sidebar, sticky and as tall as its
+  // links, beside the table rather than over it.
+  const pinned = layers.map(([name, sel]) => {
+    const el = document.querySelector(sel);
+    const r = el ? el.getBoundingClientRect() : null;
+    return { name, px: r ? r.height : 0,
+             over: !!el && getComputedStyle(el).position === 'sticky'
+               && r.left <= x && r.right >= x };
+  }).filter((l) => l.over);
+  // Where the screen is a phone's, the top bar is not a layer the bound may
+  // grant: it pinning there is the fault, and counting it in would grow the
+  // bound with it.
+  const phone = window.matchMedia(scrolls[1]).matches;
+  const refused = phone ? pinned.filter((l) => l.name === scrolls[0]) : [];
+  return { stack, pinned: pinned.filter((l) => refused.indexOf(l) < 0), refused, phone };
+}, [STACK_LAYERS, TOPBAR_SCROLLS]));
+const judgeStack = (id, cell, size, m) => {
+  if (id === 'lm1') {
+    expect(`lm1 ${cell}: where ${TOPBAR_SCROLLS[1]} matches, the top bar scrolls rather `
+      + `than pinning over the table (${m.phone ? 'the query matches' : 'the query does not match'}; `
+      + `pinned there and refused: ${m.refused.map((l) => `${l.name} ${l.px.toFixed(1)}px`).join(', ') || 'nothing'})`,
+      m.refused.length, 0);
+  }
+  const bound = m.pinned.reduce((sum, l) => sum + l.px, 0) + STACK_SLACK_PX;
+  const parts = m.pinned.map((l) => `${l.name} ${l.px.toFixed(1)}`).join(' + ') || 'nothing';
+  const ceiling = Math.floor(size.height * STACK_CEILING_SHARE);
+  const pct = share(m.stack, size.height);
+  if (id === 'lm7') {
+    expect(`lm7 ${cell}: with More filters open in the bar's flow the bar does not pin, and `
+      + `the stack is no more than the layers still pinned (${m.stack}px against `
+      + `${bound.toFixed(1)}px = ${parts} + slack ${STACK_SLACK_PX}; ${pct}% of the screen)`,
+      m.stack <= bound && !m.pinned.some((l) => l.name === 'filter bar'), true);
+    return;
+  }
+  expect(`lm1 ${cell}: the stack pinned over the table is no more than the layers pinned `
+    + `there (${m.stack}px against ${bound.toFixed(1)}px = ${parts} + slack `
+    + `${STACK_SLACK_PX}; ${pct}% of the screen)`,
+    m.stack <= bound, true);
+  expect(`lm2 ${cell}: the table keeps at least ${STACK_TABLE_SHARE} of the screen (${m.stack}px `
+    + `pinned against a ${ceiling}px ceiling = ${STACK_CEILING_SHARE} of ${size.height}px)`,
+    m.stack <= ceiling, true);
+  const klass = viewportClass(size, m.phone);
+  const budget = Math.floor(size.height * STACK_BUDGET[klass]);
+  expect(`lm4 ${cell}: the pinned stack is within the ${klass} budget (${m.stack}px against `
+    + `${budget}px = ${STACK_BUDGET[klass]} of ${size.height}px; ${parts})`,
+    m.stack <= budget, true);
+  return klass;
+};
+// The font a run of the page's text is drawn in, asked of the renderer: the
+// family it actually used, not the stack the stylesheet names.
+const drawnFont = async (selector) => {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    await cdp.send('DOM.enable');
+    await cdp.send('CSS.enable');
+    const { root } = await cdp.send('DOM.getDocument', { depth: 0 });
+    const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector });
+    const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
+    return fonts.map((f) => f.familyName).join(' + ') || 'no font reported';
+  } catch (e) {
+    return `unknown (${e.message.split('\n')[0]})`;
+  } finally {
+    await cdp.detach();
+  }
+};
+// Which WIDE_FONTS are installed, and how wide a sample line is in each against
+// the page's own font. Installed means the name changes what a canvas draws over
+// two different generic fallbacks, so a missing font is never read as present.
+const wideFontsHere = () => page.evaluate((names) => {
+  const ctx = document.createElement('canvas').getContext('2d');
+  const sample = 'Filter phases & tasks by text - Phase status: In progress';
+  const wide = (family) => { ctx.font = `15px ${family}`; return ctx.measureText(sample).width; };
+  const present = (n) => wide(`"${n}",monospace`) !== wide('monospace')
+    && wide(`"${n}",serif`) !== wide('serif');
+  const own = getComputedStyle(document.querySelector('.sectools .tbl')).fontFamily;
+  return { own: Math.round(wide(own)),
+           fonts: names.map((n) => ({ name: n, present: present(n),
+                                      px: Math.round(wide(`"${n}",monospace`)) })) };
+}, WIDE_FONTS);
+const FONT_PASSES = [];
+{
+  const hasPanel = !!(await page.$('.fdetails > summary')) && !!(await page.$('.filterpanel'));
+  const viewWas = await page.$eval('#audit-view', (s) => s.value);
+  const viewOpts = await page.$$eval('#audit-view option', (os) => os.map((o) => o.value));
+  // A row as tall as two screens at the foot of the table, for the matrix's
+  // length only: a narrowed table can be shorter than the chrome over it, and
+  // then no point under the stack is the table and the stack is unmeasured.
+  // The chrome is the subject; the table only has to be there to be covered.
+  await page.evaluate(() => {
+    const body = document.querySelector('table.phases tbody');
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-lm-spacer', '');
+    tr.innerHTML = '<td colspan="99" style="height:200vh"></td>';
+    body.append(tr);
+  });
+  // Every phase opened for the matrix, because the pill-and-id half of lm5
+  // reads only what is drawn, and a resting page draws no task row: the task
+  // ids and their chips would be the one table nobody read. The chrome the
+  // other questions measure does not move with it. Shut again at the end.
+  const matrixShut = await page.evaluate(() =>
+    [...document.querySelectorAll('tr.task')].every((r) => r.offsetParent === null));
+  if (matrixShut) { await page.click('#audit-expand'); await page.waitForTimeout(250); }
+  await page.selectOption('#audit-view', seg0.defaultView);
+  await page.waitForTimeout(200);
+  const probe = await page.evaluate(() => {
+    const chip = [...document.querySelectorAll('#audit-phase-status .fchip')]
+      .find((c) => c.getClientRects().length > 0);
+    if (chip) chip.setAttribute('data-lm-chip', '');
+    const row = [...document.querySelectorAll('table.phases tbody tr.phase')]
+      .find((r) => r.style.display !== 'none');
+    const id = row && row.querySelector('.mono');
+    return { chip: !!chip, term: id ? id.textContent.trim() : null };
+  });
+  const states = viewOpts.map((v) => ({ name: `View=${v} at rest`, view: v, rest: true }));
+  if (probe.chip) states.push({ name: `View=${seg0.defaultView}, one phase-status chip on`, view: seg0.defaultView, chip: true });
+  else failures.push('FAIL lm the default view draws no phase-status chip, so no cell was read with one on');
+  if (probe.term) states.push({ name: `View=${seg0.defaultView}, searched for ${probe.term}`, view: seg0.defaultView, term: probe.term });
+  else failures.push('FAIL lm the default view draws no phase row, so no cell was read with a search typed');
+  let cells = 0, sortCells = 0;
+  const classesRead = new Set();
+  const runPass = async (tag) => {
+    for (const s of states) {
+      await page.setViewportSize({ width: 1512, height: 945 });
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.selectOption('#audit-view', s.view);
+      if (s.chip) await page.click('[data-lm-chip]');
+      if (s.term) await page.fill('#audit-q', s.term);
+      await page.waitForTimeout(350);
+      for (const size of LAYOUT_SIZES) {
+        const cell = `${size.width}x${size.height}${tag} ${s.name}`;
+        await page.setViewportSize(size);
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await page.waitForTimeout(250);
+        const at = await readChrome(false);
+        cells += 1;
+        if (at.sortDrawn) sortCells += 1;
+        expect(`lm3 ${cell}: the count's drawn text lies inside its bar (${at.countOut} line(s) `
+          + `outside a ${at.room}px bar; bar ${at.barPx}px)`, at.countOut, 0);
+        expect(`lm5 ${cell}: no control, chip or label of the chrome breaks inside a word `
+          + `(split: ${at.split.join(', ') || 'nothing'})`, at.split.length, 0);
+        const atoms = await readAtoms();
+        expect(`lm5 ${cell}: no pill or id in any table or list of the report breaks inside `
+          + `a word (${atoms.read} word(s) read; split: ${atoms.split.slice(0, 8).join(', ')
+            + (atoms.split.length > 8 ? ` (+${atoms.split.length - 8} more)` : '') || 'nothing'})`,
+          atoms.read ? (atoms.split.length ? 'split' : 'none') : 'read no pill or id', 'none');
+        expect(`lm8 ${cell}: nothing runs past its box, no control's text is cut off, and the `
+          + `page is no wider than the screen (outside: ${at.spill.join(', ') || 'nothing'}; `
+          + `cut off: ${at.cut.join(', ') || 'nothing'}; page ${at.pageWide}px on a `
+          + `${at.screenWide}px screen; top bar ${at.topPx}px)`,
+          at.spill.length === 0 && at.cut.length === 0 && at.pageWide <= at.screenWide, true);
+        const shut = await stackInTable();
+        if (shut.stack === null) {
+          failures.push(`FAIL lm1 ${cell}: scrolled into the table, no point down the middle of `
+            + 'the screen is the table - the stack over it could not be measured');
+        } else classesRead.add(judgeStack('lm1', cell, size, shut));
+        if (!hasPanel) continue;
+        await page.click('.fdetails > summary');
+        await page.waitForTimeout(350);
+        const open = await page.evaluate(() => {
+          const p = document.querySelector('.filterpanel');
+          const b = p.getBoundingClientRect();
+          const x = b.left + b.width / 2;
+          const painted = [b.top + 4, b.bottom - 4].every((y) => {
+            const hit = document.elementFromPoint(x, y);
+            return Boolean(hit && p.contains(hit));
+          });
+          return { open: document.querySelector('.fdetails').open,
+                   inFlow: getComputedStyle(p).position === 'static',
+                   top: Math.round(b.top), bottom: Math.round(b.bottom),
+                   left: Math.round(b.left), right: Math.round(b.right),
+                   w: innerWidth, h: innerHeight, painted };
+        });
+        expect(`lm6 ${cell}: More filters opened over the table lies within the screen and is `
+          + `painted top and bottom (open ${open.open}, box ${open.left},${open.top}-`
+          + `${open.right},${open.bottom} on ${open.w}x${open.h})`,
+          open.open && open.top >= 0 && open.bottom <= open.h && open.left >= 0
+            && open.right <= open.w && open.painted, true);
+        const inside = await readChrome(true);
+        expect(`lm5 with More filters open, ${cell}: no control, chip or label of the chrome or `
+          + `the panel breaks inside a word (split: ${inside.split.join(', ') || 'nothing'})`,
+          inside.split.length, 0);
+        expect(`lm8 with More filters open, ${cell}: nothing runs past its box, no control's `
+          + `text is cut off, and the page is no wider than the screen (outside: `
+          + `${inside.spill.join(', ') || 'nothing'}; cut off: ${inside.cut.join(', ') || 'nothing'}; `
+          + `page ${inside.pageWide}px on a ${inside.screenWide}px screen)`,
+          inside.spill.length === 0 && inside.cut.length === 0
+            && inside.pageWide <= inside.screenWide, true);
+        if (open.open && open.inFlow) {
+          const m = await stackInTable();
+          if (m.stack === null) {
+            failures.push(`FAIL lm7 ${cell}: scrolled into the table with More filters open, no `
+              + 'point down the middle of the screen is the table');
+          } else judgeStack('lm7', cell, size, m);
+        }
+        await page.click('.fdetails > summary');
+        await page.waitForTimeout(150);
+      }
+      await page.setViewportSize({ width: 1512, height: 945 });
+      if (s.chip) await page.click('[data-lm-chip]');
+      if (s.term) await page.fill('#audit-q', '');
+      await page.waitForTimeout(300);
+    }
+  };
+  // Pass one, in the page's own font.
+  await page.setViewportSize({ width: 1512, height: 945 });
+  const ownFont = await drawnFont('.sectools .tbl');
+  FONT_PASSES.push(`page's own font (${ownFont})`);
+  notes.push(`ok   (layout matrix, first pass: the page's own font, drawn in ${ownFont})`);
+  await runPass('');
+  const firstCells = cells;
+  // Pass two, in the first installed wide font - when there is one wider than
+  // the page's own, which is the only thing that pass is for.
+  const here = await wideFontsHere();
+  const said = here.fonts.map((f) => (f.present ? `${f.name} ${f.px}px` : `${f.name} not installed`))
+    .join(', ');
+  const installed = here.fonts.filter((f) => f.present);
+  const wide = installed.find((f) => f.px > here.own);
+  if (!installed.length) {
+    FONT_PASSES.push(`wide-font pass NOT RUN - none of ${WIDE_FONTS.join(', ')} is installed`);
+    notes.push(`ok   (layout matrix, wide-font pass NOT RUN: none of ${WIDE_FONTS.join(', ')} `
+      + 'is installed, so the layout was read in one font only)');
+  } else if (!wide) {
+    FONT_PASSES.push('wide-font pass NOT RUN - no installed candidate is wider than the page\'s '
+      + 'own font');
+    notes.push(`ok   (layout matrix, wide-font pass NOT RUN: no installed candidate draws a `
+      + `sample line wider than the ${here.own}px it takes in the page's own font, so a second `
+      + `pass would repeat the first; candidates: ${said})`);
+  } else {
+    const style = await page.addStyleTag({ content: ':root,*,*::before,*::after'
+      + `{font-family:"${wide.name}",sans-serif!important}` });
+    await page.waitForTimeout(200);
+    const wideDrawn = await drawnFont('.sectools .tbl');
+    FONT_PASSES.push(`wide font ${wide.name} (${wideDrawn})`);
+    notes.push(`ok   (layout matrix, wide-font pass: ${wide.name}, drawn in ${wideDrawn}; a `
+      + `sample line is ${wide.px}px in it against ${here.own}px in the page's own font; `
+      + `candidates: ${said})`);
+    expect(`lm the wide-font pass draws the page in the font it names (asked for ${wide.name}, `
+      + `drawn in ${wideDrawn})`, wideDrawn.split(' + ')[0], wide.name);
+    await runPass(` [wide font: ${wide.name}]`);
+    await style.evaluate((n) => n.remove());
+    await page.waitForTimeout(200);
+  }
+  notes.push(`ok   (the layout matrix read ${cells} cells: ${LAYOUT_SIZES.length} sizes by `
+    + `${states.length} states, ${cells === firstCells ? 'in one font' : 'in two fonts'})`);
+  for (const k of Object.keys(STACK_BUDGET)) {
+    if (!classesRead.has(k)) {
+      failures.push(`FAIL lm4 no size in the layout list is a ${k} by viewportClass(), so the `
+        + `${k} budget (${STACK_BUDGET[k]} of the screen) was never asked`);
+    }
+  }
+  // Whether the Sort select was drawn in the phases table's head in every cell
+  // the matrix measured. The select is drawn only for a plan that pins a phase,
+  // and the rows' execution ranks are the other half of that same plan fact,
+  // emitted on their own: ranks with no select drawn is a pinned plan whose
+  // ordering control is missing, or has gone back into the pinned filter bar.
+  const ranked = await page.$$eval('table.phases tr.phase[data-porder]', (rs) => rs.length);
+  if (ranked > 0 && sortCells < cells) {
+    failures.push(`FAIL lm the plan pins a phase (${ranked} rows carry an execution rank) but `
+      + `the Sort select was drawn in the phases table's head in ${sortCells} of the ${cells} `
+      + 'cells read');
+  } else if (ranked > 0) {
+    notes.push(`ok   (the Sort select was in the phases table's head in every cell: ${ranked} `
+      + 'rows carry an execution rank)');
+  } else {
+    notes.push('ok   (this plan pins no phase, so the Sort select is not drawn and no cell '
+      + 'measured the table\'s head with it - that coverage is absent from this run)');
+  }
+  // ...and where it is absent is a property of the fixture, so a fixture BUILT
+  // to carry the select owes it: gen-demo-manifest.py pins a phase so the scale
+  // demo draws one, and a demo that stopped pinning would otherwise land in the
+  // branch above as an honest note and pass. Keyed by the committed document,
+  // as FULLRUN_REQUIRED is.
+  const sortKey = documentKey(path);
+  const sortOwed = SORT_REQUIRED.has(sortKey);
+  expect(`lm the Sort select is in the matrix on every page whose fixture is built to carry `
+    + `it (${sortKey || file} ${sortOwed ? 'is' : 'is not'} one; ${ranked} row(s) carry an `
+    + `execution rank; the select was drawn in ${sortCells} of ${cells} cells)`,
+    sortOwed && !(ranked > 0 && sortCells === cells)
+      ? `no Sort select on ${sortKey}, whose fixture pins a phase` : 'none', 'none');
+  await page.evaluate(() => {
+    for (const n of document.querySelectorAll('[data-lm-spacer]')) n.remove();
+    for (const n of document.querySelectorAll('[data-lm-chip]')) n.removeAttribute('data-lm-chip');
+  });
+  if (matrixShut) { await page.click('#audit-expand'); await page.waitForTimeout(250); }
+  await page.selectOption('#audit-view', viewWas);
+  await page.setViewportSize(PHONE_VIEWPORT);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(200);
+}
+
 // --- the relative arm: what this document's layout was recorded at ------------
 //
-// The bar above is ABSOLUTE and stays exactly as it is: an open panel may not pin
-// more than its share of the screen over the table, whatever it did yesterday.
+// The stack check above is ABSOLUTE: shut or open, no layer but the ones its
+// bound names may pin over the table, and never more than the ceiling's share of
+// the screen, whatever it did yesterday.
 // This asks the other question — has THIS document's filter chrome moved from the
 // figure this repository recorded — and the two are reported on separate lines so
 // a reader knows which they have.
@@ -2426,13 +3445,171 @@ await page.waitForTimeout(150);
 const onPaper = await page.evaluate(() => {
   const st = document.querySelector('.sectools');
   const fp = document.querySelector('.filterpanel');
+  const th = document.querySelector('.tablehead');
   const gone = (el) => !el || getComputedStyle(el).display === 'none' || el.offsetParent === null;
-  return { bar: gone(st), panel: gone(fp) };
+  return { bar: gone(st), panel: gone(fp), head: !!th, headGone: gone(th) };
 });
 await page.emulateMedia({ media: null });
 await page.setViewportSize({ width: 1512, height: 945 });
 expect('the filter bar never reaches portrait paper, where its phone rules also apply', onPaper.bar, true);
 expect('...nor the panel inside it', onPaper.panel, true);
+expect('...nor the phases table\'s head, whose Sort and expand-all do nothing on paper '
+  + `(the head rendered: ${onPaper.head})`, onPaper.head && onPaper.headGone, true);
+
+// --- interaction states: each control's own box ------------------------------
+//
+// A rest-state snapshot cannot see a hover or focus rule that stopped matching,
+// and a focus ring drawn only as box-shadow is erased by forced-colours mode,
+// which drops every shadow. So each control is put in its state and its OWN
+// computed style compared with its rest: at least one property its rule sets
+// must have moved. A focus rule must also leave an outline standing under
+// forced colours, which is what that mode repaints instead of a shadow.
+// `needs` opens whatever the control lives behind and returns its undo.
+{
+  const READ = ['outlineStyle', 'outlineWidth', 'borderTopColor', 'boxShadow',
+    'backgroundColor', 'color', 'transform', 'filter'];
+  const openPanel = async () => {
+    await page.click('.fdetails > summary');
+    await page.waitForTimeout(250);
+    return () => page.click('.fdetails > summary');
+  };
+  const expandAll = async () => {
+    await page.click('#audit-expand');
+    await page.waitForTimeout(300);
+    return () => page.click('#audit-expand');
+  };
+  const STATES = [
+    { id: 'is1', sel: '#audit-q', how: 'focus', sets: ['borderTopColor', 'boxShadow', 'outlineStyle'] },
+    { id: 'is2', sel: '.frow input[type=date]', how: 'focus', needs: openPanel,
+      sets: ['borderTopColor', 'boxShadow', 'outlineStyle'] },
+    { id: 'is3', sel: '.gfilters select', how: 'focus', sets: ['borderTopColor', 'boxShadow', 'outlineStyle'] },
+    { id: 'is4', sel: '.gfilters input[type=date]', how: 'focus',
+      sets: ['borderTopColor', 'boxShadow', 'outlineStyle'] },
+    { id: 'is5', sel: '.tablehead .btn:not(.btn-primary)', how: 'hover',
+      sets: ['borderTopColor', 'backgroundColor', 'transform', 'boxShadow'] },
+    { id: 'is6', sel: '.btn-primary', how: 'hover', sets: ['filter'] },
+    { id: 'is7', sel: '#audit-phase-status .fchip:not(.on)', how: 'hover', sets: ['borderTopColor', 'transform'] },
+    { id: 'is8', sel: '.fdetails > summary', how: 'hover', sets: ['borderTopColor', 'backgroundColor'] },
+    { id: 'is9', sel: '.tf-chip:not(.on)', how: 'hover', needs: expandAll, sets: ['borderTopColor', 'transform'] },
+    { id: 'is10', sel: '.snav a:not([aria-current="true"])', how: 'hover', sets: ['color', 'backgroundColor'] },
+    // The same links drawn as the strip under the bar, where shell.css gives
+    // them a presentation of their own (a bottom border, not a left one), so
+    // the hover is read again in that box rather than assumed from the column.
+    { id: 'is11', sel: '.snav a:not([aria-current="true"])', how: 'hover', at: { width: 1000, height: 800 },
+      sets: ['color', 'backgroundColor'] },
+  ];
+  const styleOf = (loc) => loc.evaluate((el, props) => {
+    const cs = getComputedStyle(el);
+    return Object.fromEntries(props.map((p) => [p, cs[p]]));
+  }, READ);
+  const settle = async () => {
+    await page.mouse.move(1, 1);
+    await page.evaluate(() => document.activeElement && document.activeElement.blur());
+    await page.waitForTimeout(350);    // > --dur, so a transition has finished
+  };
+  await page.setViewportSize({ width: 1512, height: 945 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  for (const s of STATES) {
+    if (s.at) await page.setViewportSize(s.at);
+    const undo = s.needs ? await s.needs() : null;
+    const loc = page.locator(s.sel).filter({ visible: true }).first();
+    if (!(await loc.count())) {
+      failures.push(`FAIL ${s.id} no visible ${s.sel} to put in its ${s.how} state - the `
+        + 'interaction rule for it could not be checked');
+      if (undo) await undo();
+      if (s.at) await page.setViewportSize({ width: 1512, height: 945 });
+      continue;
+    }
+    await loc.scrollIntoViewIfNeeded();
+    await settle();
+    const rest = await styleOf(loc);
+    if (s.how === 'hover') await loc.hover();
+    else await loc.focus();
+    await page.waitForTimeout(350);
+    const on = await styleOf(loc);
+    const moved = s.sets.filter((p) => rest[p] !== on[p]);
+    let forced = 'n/a';
+    if (s.how === 'focus') {
+      await page.emulateMedia({ forcedColors: 'active' });
+      await loc.focus();
+      await page.waitForTimeout(100);
+      const fc = await styleOf(loc);
+      forced = fc.outlineStyle !== 'none' && parseFloat(fc.outlineWidth) >= 1 ? 'outline' : 'no outline';
+      await page.emulateMedia({ forcedColors: 'none' });
+    }
+    expect(`${s.id} ${s.sel} in its ${s.how} state changes its own box (${moved.join(',') || 'nothing'} moved)`
+      + (s.at ? ` at ${s.at.width}x${s.at.height}` : '')
+      + (s.how === 'focus' ? ' and keeps an outline under forced colours' : ''),
+      `${moved.length > 0}/${forced}`, `true/${s.how === 'focus' ? 'outline' : 'n/a'}`);
+    await settle();
+    if (undo) await undo();
+    if (s.at) await page.setViewportSize({ width: 1512, height: 945 });
+  }
+
+  // The More-filters summary is NAMED by its text, so the count it shows is the
+  // count a screen reader hears. Asked of the browser's accessibility tree,
+  // because a name is computed - an aria-label replaces the text, generated
+  // content joins it - and no markup check can see either.
+  const chip = page.locator('.filterpanel .fchip').first();
+  if (await chip.count()) {
+    await page.click('.fdetails > summary');
+    await chip.click();
+    await page.waitForTimeout(200);
+    const cdp = await page.context().newCDPSession(page);
+    const { root } = await cdp.send('DOM.getDocument', { depth: -1 });
+    const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: '.fdetails > summary' });
+    const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { nodeId, fetchRelatives: false });
+    const name = (nodes[0] && nodes[0].name && nodes[0].name.value) || '';
+    const shown = await page.evaluate(() => document.querySelector('.fdetails > summary').textContent);
+    await cdp.detach();
+    expect(`ax3 with one filter on, More filters is announced by the words and the count it shows (${JSON.stringify(name)})`,
+      name, shown.trim());
+    await chip.click();
+    await page.click('.fdetails > summary');
+    await page.waitForTimeout(150);
+  } else notes.push('ok   (this plan has no chip in More filters — its announced count skipped)');
+
+  // The arrow beside "More filters" is a picture, so it must not join the name
+  // in either state - shut and open draw different triangles, and a rule that
+  // gave one of them an empty alternative and not the other would be heard half
+  // the time. Independent of a chip, so it runs on every plan with the control.
+  // Then forced colours, which repaints text rather than dropping it: the arrow
+  // must still be generated there, in a colour that paints.
+  if (await page.$('.fdetails > summary')) {
+    const ARROWS = /[■-◿]/;
+    const axName = async () => {
+      const cdp = await page.context().newCDPSession(page);
+      try {
+        const { root } = await cdp.send('DOM.getDocument', { depth: -1 });
+        const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: '.fdetails > summary' });
+        const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { nodeId, fetchRelatives: false });
+        return (nodes[0] && nodes[0].name && nodes[0].name.value) || '';
+      } finally { await cdp.detach(); }
+    };
+    await page.evaluate(() => { document.querySelector('.fdetails').open = false; });
+    await page.waitForTimeout(150);
+    const shutName = await axName();
+    await page.evaluate(() => { document.querySelector('.fdetails').open = true; });
+    await page.waitForTimeout(150);
+    const openName = await axName();
+    expect(`ax4 the More-filters summary's accessible name carries no arrow glyph, shut or open (shut ${JSON.stringify(shutName)}, open ${JSON.stringify(openName)})`,
+      `${!!shutName && !ARROWS.test(shutName)}/${!!openName && !ARROWS.test(openName)}`, 'true/true');
+    await page.evaluate(() => { document.querySelector('.fdetails').open = false; });
+    await page.emulateMedia({ forcedColors: 'active' });
+    await page.waitForTimeout(150);
+    const fc = await page.evaluate(() => {
+      const cs = getComputedStyle(document.querySelector('.fdetails > summary'), '::after');
+      return { content: cs.content, color: cs.color };
+    });
+    await page.emulateMedia({ forcedColors: 'none' });
+    await page.waitForTimeout(150);
+    const painted = ARROWS.test(fc.content) && !/^rgba\(.*,\s*0\)$|^transparent$/.test(fc.color);
+    expect(`ax5 under forced colours the arrow is still generated, in a colour that paints (content ${fc.content}, color ${fc.color})`,
+      painted, true);
+  } else notes.push('ok   (this report has no More-filters control — its arrow name skipped)');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(150);
+}
 
 // 10. The responsive contract, at every width either side of a breakpoint
 //     the report's or the panel's stylesheet declares. What existed before this was two
@@ -3161,6 +4338,489 @@ if (!STRESS) {
   await Promise.race([ctx.close(), new Promise((r) => setTimeout(r, 5000))]);
 }
 
+// --- Clear lifts every axis, derived from the page ----------------------------
+// Each filter control is turned on ALONE on a fresh load, Clear is pressed, and
+// the page has to be back where it opened - nothing pressed, no count on More
+// filters, nothing in the link or the stored view, every phase back - and still
+// so after a reload. The controls are read off the DOM by KIND (every pressable
+// chip in a filter bar, every field in the toolbar and the global row), never
+// listed, so a chip row added tomorrow is exercised without editing this. Its
+// own page and context: the main page above carries expanded rows and stored
+// state that would make "back where it opened" a different place.
+{
+  const CL_CHIPS = '.sectools [aria-pressed], .tf-chips [aria-pressed], .auchips [aria-pressed]';
+  const CL_FIELDS = '.sectools input, .gfilters input, .gfilters select';
+  const CL_ALL = CL_CHIPS + ', ' + CL_FIELDS;
+  // A wired attribute no exercised chip carries is reported as not exercised.
+  const wiredAttrs = WIRED_CHIP_ATTRS;
+  const cctx = await browser.newContext({ viewport: { width: 1512, height: 945 } });
+  const cp = await cctx.newPage();
+  const clErrors = [];
+  cp.on('pageerror', (e) => clErrors.push(e.message));
+  const fresh = async () => {
+    // A hash-only change is a same-document navigation and would not reload.
+    await cp.goto('about:blank');
+    await cp.goto('file://' + path);
+    await cp.waitForTimeout(60);
+  };
+  const dropStored = () => cp.evaluate(() => {
+    Object.keys(localStorage).filter((k) => k.indexOf('audit-') === 0)
+      .forEach((k) => localStorage.removeItem(k));
+  });
+  // What "back where it opened" means, read the same way at load, after Clear
+  // and after the reload.
+  const clSnap = () => cp.evaluate(({ all, chips }) => {
+    const g = document.querySelector('table.phases');
+    const h = location.hash || '';
+    const hashKeys = h.indexOf('#!') === 0
+      ? h.slice(2).split('&').filter(Boolean).map((p) => p.split('=')[0]).sort() : [];
+    return {
+      phases: [...g.querySelectorAll('tbody tr.phase')].filter((r) => r.style.display !== 'none').length,
+      tasks: [...g.querySelectorAll('tbody tr.task')].filter((r) => r.offsetParent !== null).length,
+      pressed: [...document.querySelectorAll(chips)]
+        .filter((c) => c.getAttribute('aria-pressed') === 'true')
+        .map((c) => [...c.attributes].filter((a) => a.name.indexOf('data-') === 0)
+          .map((a) => a.name + '=' + a.value)[0] || c.textContent.trim()),
+      fcount: ((document.getElementById('audit-fcount') || {}).textContent || '').trim(),
+      hashKeys: hashKeys.join(','),
+      stored: Object.keys(localStorage).filter((k) => k.indexOf('audit-view-') === 0)
+        .map((k) => localStorage.getItem(k)).filter(Boolean).join(' | '),
+      fields: [...document.querySelectorAll(all)].filter((e) => 'value' in e && !e.hasAttribute('aria-pressed'))
+        .map((e) => e.value).join('\u0001'),
+      clear: !!document.querySelector('.sectools [data-clear]:not([hidden])'),
+      // What More filters folds away and has switched on: a pressed chip or a
+      // field holding a value inside the disclosure. Its badge is about these.
+      panelOn: [...document.querySelectorAll('.fdetails [aria-pressed], .fdetails input, .fdetails select')]
+        .filter((e) => (e.hasAttribute('aria-pressed')
+          ? e.getAttribute('aria-pressed') === 'true' : !!e.value)).length,
+    };
+  }, { all: CL_ALL, chips: CL_CHIPS });
+  const describe = (s) => [
+    s.pressed.length ? 'pressed ' + s.pressed.join(' ') : '',
+    s.fcount ? 'More filters says ' + JSON.stringify(s.fcount) : '',
+    s.hashKeys ? 'link keys ' + s.hashKeys : '',
+    s.stored ? 'stored ' + JSON.stringify(s.stored) : '',
+  ].filter(Boolean).join(', ');
+
+  await fresh();
+  await dropStored();
+  await fresh();
+  const atLoad = await clSnap();
+  const n = await cp.evaluate((all) => document.querySelectorAll(all).length, CL_ALL);
+  const left = { offer: [], pressed: [], fcount: [], hash: [], stored: [], phases: [], fields: [], reload: [],
+                 badge: [] };
+  const idle = [];
+  const unseen = [];
+  const exercised = new Set();
+  for (let i = 0; i < n; i++) {
+    // Turn on exactly control i. Returns its label and what kind of input it
+    // needs, or why it cannot be reached on this page.
+    const prep = await cp.evaluate(({ all, i, wired }) => {
+      const el = document.querySelectorAll(all)[i];
+      const attr = [...el.attributes].map((a) => a.name).find((a) => wired.indexOf(a) >= 0);
+      const label = attr ? attr + '=' + el.getAttribute(attr)
+        : el.id ? '#' + el.id : el.tagName.toLowerCase();
+      const d = el.closest('details');
+      if (d) d.open = true;
+      const tf = el.closest('tr.taskfilter');
+      return { label, attr: attr || '', tag: el.tagName, type: el.type || '',
+               tfPhase: tf ? tf.getAttribute('data-phase') : '',
+               min: el.min || '', max: el.max || '',
+               opt: el.tagName === 'SELECT'
+                 ? ([...el.options].find((o) => o.value && o.value !== '~multi') || {}).value || '' : '' };
+    }, { all: CL_ALL, i, wired: wiredAttrs });
+    // The page's own querySelectorAll order, the one `i` was counted in.
+    const handle = (await cp.evaluateHandle(({ all, i }) => document.querySelectorAll(all)[i],
+      { all: CL_ALL, i })).asElement();
+    if (prep.tfPhase) {
+      const row = await cp.$(`tr.phase[data-phase="${prep.tfPhase}"] strong`);
+      if (row && await row.isVisible()) await row.click();
+    }
+    if (!(await handle.isVisible())) {
+      unseen.push(prep.label + ' (not on screen in the default view)');
+      await dropStored(); await fresh(); continue;
+    }
+    const before = await clSnap();
+    if (prep.tag === 'SELECT') {
+      if (!prep.opt) { unseen.push(prep.label + ' (no option to pick)'); await dropStored(); await fresh(); continue; }
+      await handle.selectOption(prep.opt);
+    } else if (prep.type === 'date') {
+      const v = /to$/.test(prep.label) ? prep.min : prep.max;
+      if (!v) { unseen.push(prep.label + ' (no min or max to pick a date from)'); await dropStored(); await fresh(); continue; }
+      await handle.evaluate((e, val) => { e.value = val; e.dispatchEvent(new Event('change', { bubbles: true })); }, v);
+    } else if (prep.tag === 'INPUT') {
+      const term = await cp.evaluate(() => {
+        const t = document.querySelector('table.phases tbody tr.phase strong');
+        return t ? t.textContent.trim().split(/\s+/)[0].toLowerCase() : 'a';
+      });
+      await handle.fill(term);
+      await handle.press('Enter');
+    } else {
+      await handle.click();
+    }
+    await cp.evaluate(() => { document.querySelectorAll('details.fdetails').forEach((d) => { d.open = false; }); });
+    const on = await clSnap();
+    if (prep.attr) exercised.add(prep.attr);
+    if (!on.clear) {
+      // A control that changed nothing a reader can see (the All-time preset
+      // on a view already spanning all time) has nothing to lift. One that
+      // changed the table, the link or the stored view and offers no way back
+      // is the defect this case exists for.
+      const changed = on.phases !== before.phases || on.tasks !== before.tasks
+        || on.hashKeys !== atLoad.hashKeys || on.stored !== atLoad.stored || on.fcount !== atLoad.fcount;
+      if (changed) left.offer.push(prep.label + ' (' + (describe(on) || 'the table narrowed') + ')');
+      else idle.push(prep.label);
+      await dropStored();
+      await fresh();
+      continue;
+    }
+    // The More-filters badge counts what is on INSIDE it, and only that: a
+    // count over a panel with nothing pressed sends the reader looking for a
+    // filter that is not there, and no count over a pressed one hides it.
+    // Judged here, past the branch above, so only a control that is filtering
+    // is asked: the All-time preset lights a chip and filters nothing.
+    if (Boolean(on.fcount) !== (on.panelOn > 0)) {
+      left.badge.push(prep.label + ' (More filters says ' + JSON.stringify(on.fcount)
+        + ' with ' + on.panelOn + ' of its own controls on)');
+    }
+    await cp.click('.sectools [data-clear]');
+    const cleared = await clSnap();
+    if (cleared.pressed.length) left.pressed.push(prep.label + ' (still pressed: ' + cleared.pressed.join(' ') + ')');
+    if (cleared.fcount !== atLoad.fcount) left.fcount.push(prep.label + ' (' + JSON.stringify(cleared.fcount) + ')');
+    if (cleared.hashKeys !== atLoad.hashKeys) left.hash.push(prep.label + ' (' + cleared.hashKeys + ')');
+    if (cleared.stored !== atLoad.stored) left.stored.push(prep.label + ' (' + JSON.stringify(cleared.stored) + ')');
+    if (cleared.phases !== atLoad.phases) left.phases.push(prep.label + ' (' + cleared.phases + ' of ' + atLoad.phases + ')');
+    if (cleared.fields !== atLoad.fields) left.fields.push(prep.label);
+    await fresh();
+    const reloaded = await clSnap();
+    const stillDirty = describe(reloaded) || (reloaded.phases !== atLoad.phases ? reloaded.phases + ' phases' : '')
+      || (reloaded.fields !== atLoad.fields ? 'a field kept a value' : '');
+    if (stillDirty) left.reload.push(prep.label + ' (' + stillDirty + ')');
+    // Whatever a failed Clear left behind must not leak into the next control,
+    // and neither may a phase opened to reach its task-status chips.
+    if (stillDirty || reloaded.stored || prep.tfPhase) { await dropStored(); await fresh(); }
+  }
+  await cctx.close();
+  const ran = n - unseen.length - idle.length;
+  expect('cl0 Clear lifts every axis - the page offers filter controls to exercise, '
+    + 'read off the DOM', ran > 0, true);
+  expect('cl1 Clear lifts every axis - every control that filters offers Clear',
+    left.offer.join(' · ') || 'none', 'none');
+  expect('cl2 Clear lifts every axis - nothing stays pressed after Clear',
+    left.pressed.join(' · ') || 'none', 'none');
+  expect('cl3 Clear lifts every axis - More filters counts nothing after Clear',
+    left.fcount.join(' · ') || 'none', 'none');
+  expect('cl4 Clear lifts every axis - no filter key is left in the link after Clear',
+    left.hash.join(' · ') || 'none', 'none');
+  expect('cl5 Clear lifts every axis - the stored view is gone after Clear',
+    left.stored.join(' · ') || 'none', 'none');
+  expect('cl6 Clear lifts every axis - every phase shown at load is shown again after Clear',
+    left.phases.join(' · ') || 'none', 'none');
+  expect('cl7 Clear lifts every axis - every field holds its value at load again after Clear',
+    left.fields.join(' · ') || 'none', 'none');
+  expect('cl8 Clear lifts every axis - the cleared view is still clear after a reload',
+    left.reload.join(' · ') || 'none', 'none');
+  expect('cl10 More filters counts a filter exactly while one of its own controls is on',
+    left.badge.join(' · ') || 'none', 'none');
+  expect('cl9 Clear lifts every axis - the page raised no error while being driven',
+    clErrors.slice(0, 2).join(' | ') || 'none', 'none');
+  const notExercised = wiredAttrs.filter((a) => !exercised.has(a));
+  notes.push(`note Clear lifts every axis: ${ran} of ${n} controls exercised`
+    + (idle.length ? `; turned on nothing to clear: ${idle.join(', ')}` : '')
+    + (unseen.length ? `; not exercised: ${unseen.join(', ')}` : '')
+    + (notExercised.length ? `; wired chip attributes no exercised control carries `
+      + `(not exercised, not passed): ${notExercised.join(', ')}` : ''));
+}
+
+// --- a link restores only what a control can show -----------------------------
+// A filtered view is a link, and a link is typed by whoever sends it. A value
+// no control offers - an area the plan has no tag for, a model nobody ran, a
+// prototype key, a string that is not a date - used to be restored as it
+// stood: it hid rows, and nothing on the page was pressed to say why. Each key
+// of every axis in the page's registry is loaded ALONE with such a value, and
+// the page has to open exactly as it opens with no link. The keys are the
+// ones the running page publishes off its own registry (`data-link-keys` on
+// the root), not listed here and not read out of the source text, and the
+// allow half (hr2) loads each one with a value its control DOES offer and
+// wants that value back on - so a key read wrongly, or a check that drops
+// everything, is red rather than vacuously quiet.
+{
+  // Free text: every string is a value a search box offers, so a link's value
+  // there is the reader's query, not a filter nothing shows. The one exemption,
+  // and it must name a key the page still publishes (hr0).
+  const HR_FREE_TEXT = ['q'];
+  const HR_DATE_KEYS = { from: ['#audit-from', '#audit-gfrom'], to: ['#audit-to', '#audit-gto'] };
+  const HR_BOGUS = ['nosuch-value', 'constructor', 'toString'];
+  const HR_BOGUS_DATE = ['notadate', '2026-02-30', 'constructor'];
+  const hctx = await browser.newContext({ viewport: { width: 1512, height: 945 } });
+  const hp = await hctx.newPage();
+  const hrErrors = [];
+  hp.on('pageerror', (e) => hrErrors.push(e.message));
+  const openAt = async (frag) => {
+    await hp.goto('about:blank');
+    await hp.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
+    await hp.goto('file://' + path + (frag ? '#!' + frag : ''));
+    await hp.waitForTimeout(60);
+  };
+  // Everything a restored filter can change that a reader sees: which phases
+  // and usage rows are drawn, what is pressed, what the fields hold, whether
+  // More filters counts anything and whether Clear is offered.
+  const hrSnap = () => hp.evaluate(() => {
+    const g = document.querySelector('table.phases');
+    const shown = (sel) => [...document.querySelectorAll(sel)]
+      .filter((r) => !r.hidden && r.style.display !== 'none').length;
+    return {
+      phases: g ? [...g.querySelectorAll('tbody tr.phase')].filter((r) => r.style.display !== 'none')
+        .map((r) => r.getAttribute('data-phase')).join(' ') : '',
+      usage: shown('.smcell') + '/' + shown('.rank[data-author]'),
+      pressed: [...document.querySelectorAll('.sectools [aria-pressed="true"], .auchips [aria-pressed="true"]')]
+        .map((c) => [...c.attributes].filter((a) => a.name.indexOf('data-') === 0)
+          .map((a) => a.name + '=' + a.value)[0] || c.textContent.trim()).sort().join(' '),
+      fields: [...document.querySelectorAll('.sectools input, .gfilters input, .gfilters select, #audit-view')]
+        .map((e) => (e.id || e.tagName) + '=' + e.value).join(' '),
+      fcount: ((document.getElementById('audit-fcount') || {}).textContent || '').trim(),
+      clear: !!document.querySelector('.sectools [data-clear]:not([hidden])'),
+    };
+  });
+  const hrDiff = (a, b) => Object.keys(a).filter((k) => a[k] !== b[k])
+    .map((k) => `${k} ${JSON.stringify(b[k])} (no link: ${JSON.stringify(a[k])})`).join('; ');
+  await openAt('');
+  const hrBase = await hrSnap();
+  const published = await hp.evaluate(() => document.documentElement.getAttribute('data-link-keys'));
+  const pageKeys = (published || '').split(' ').filter(Boolean);
+  const HR_KEYS = pageKeys.filter((k) => !HR_FREE_TEXT.includes(k));
+  const staleFree = HR_FREE_TEXT.filter((k) => !pageKeys.includes(k));
+  const leaked = [];
+  const kept = [];
+  const gaps = [];
+  let bogusRan = 0;
+  for (const key of HR_KEYS) {
+    for (const bad of (HR_DATE_KEYS[key] ? HR_BOGUS_DATE : HR_BOGUS)) {
+      await openAt(key + '=' + encodeURIComponent(bad));
+      const d = hrDiff(hrBase, await hrSnap());
+      bogusRan++;
+      if (d) leaked.push(`${key}=${bad}: ${d}`);
+    }
+    // The allow half: a value the control offers comes back on.
+    const offered = await hp.evaluate(([k, dateSels]) => {
+      if (dateSels) {
+        const f = dateSels.map((s) => document.querySelector(s)).find(Boolean);
+        return f ? { v: f.min || f.max || '', sels: dateSels } : null;
+      }
+      const c = document.querySelector('[data-' + k + ']');
+      return c ? { v: c.getAttribute('data-' + k) } : null;
+    }, [key, HR_DATE_KEYS[key] || null]);
+    if (!offered || !offered.v) { gaps.push(key); continue; }
+    // An area link may name several tags: the one offered must survive the
+    // bogus one beside it, not be dropped with it.
+    const val = key === 'a' ? offered.v + ' ' + HR_BOGUS[0] : offered.v;
+    await openAt(key + '=' + encodeURIComponent(val));
+    const got = await hp.evaluate(([k, v, sels]) => {
+      if (sels) return sels.map((s) => document.querySelector(s)).filter(Boolean).map((f) => f.value === v);
+      return [...document.querySelectorAll('[data-' + k + ']')]
+        .filter((c) => c.getAttribute('aria-pressed') === 'true')
+        .map((c) => c.getAttribute('data-' + k) === v);
+    }, [key, offered.v, offered.sels || null]);
+    const ok = got.length > 0 && got.every(Boolean);
+    kept.push(`${key}=${val}: ${ok ? 'on' : 'NOT restored (' + JSON.stringify(got) + ')'}`);
+  }
+  expect(`hr0 the running page publishes its registry's link keys (${published === null
+    ? 'no data-link-keys on the root' : JSON.stringify(published)}), every one but free text `
+    + `was driven, and the free-text exemption names a key the page still has`,
+    published === null ? 'the page publishes no link keys'
+      : !HR_KEYS.length ? 'no key to drive'
+        : staleFree.length ? `exempt key the page no longer has: ${staleFree.join(', ')}`
+          : bogusRan > 0 ? 'ok' : 'nothing driven',
+    'ok');
+  expect(`hr1 a link naming a value no control offers restores nothing, on every key of every `
+    + `axis the registry declares (${HR_KEYS.join(',')}) - nothing hidden, nothing pressed, `
+    + 'no field filled', !HR_KEYS.length ? 'no key driven' : (leaked.join(' · ') || 'none'), 'none');
+  expect('hr2 a link naming a value its control offers restores it on'
+    + (gaps.length ? ` (no control on this page for: ${gaps.join(', ')})` : ''),
+    kept.filter((k) => !/: on$/.test(k)).join(' · ') || (kept.length ? 'none' : 'no axis had a control'),
+    'none');
+
+  // A status the restored view hides. The link writer never emits that pairing -
+  // a view change clears a status it hides - so it is a hand-made link, or one
+  // made before the plan's default view changed. Either way the reader asked
+  // for those phases, and the page answers with a chip pressed for that status
+  // and the phases of it drawn under a view that holds them, never with a
+  // filter silently dropped or a pressed chip the view has hidden.
+  const statuses = await hp.evaluate(() => [...document.querySelectorAll('#audit-phase-status [data-ps]')]
+    .map((c) => c.getAttribute('data-ps')));
+  const psWrong = [];
+  for (const st of statuses) {
+    await openAt('ps=' + encodeURIComponent(st));
+    const r = await hp.evaluate((s) => {
+      const chip = document.querySelector('#audit-phase-status [data-ps="' + s + '"]');
+      const drawn = [...document.querySelectorAll('table.phases tbody tr.phase')]
+        .filter((p) => p.style.display !== 'none');
+      return { pressed: !!chip && chip.getAttribute('aria-pressed') === 'true' && !chip.hidden,
+               drawn: drawn.length, other: drawn.filter((p) => p.getAttribute('data-status') !== s).length,
+               view: (document.getElementById('audit-view') || {}).value || '' };
+    }, st);
+    if (!r.pressed || !r.drawn || r.other) psWrong.push(`ps=${st} in view ${r.view}: ${JSON.stringify(r)}`);
+  }
+  expect(`hr3 a link naming any status the plan has presses that chip and draws only its phases, `
+    + `whatever view the page opens on (${statuses.length} statuses)`,
+    psWrong.join(' · ') || (statuses.length ? 'none' : 'no status chips'), 'none');
+  expect('hr4 the page raised no error while restoring links', hrErrors.slice(0, 2).join(' | ') || 'none', 'none');
+  await hctx.close();
+}
+
+// --- a side-nav jump lights the section it lands on ----------------------------
+// The nav's links are plain anchors and the marker is a script, so the two
+// decide "which section is this" separately: the jump by the scroll-margin the
+// stylesheet gives every id, the marker by the line it reads back off the same
+// rule. When those lines differed the jump stopped just short of the marker's,
+// and every click lit the section ABOVE the one it opened. And where the
+// document ended before a target reached the line, the jump stopped short of
+// it and a different entry was lit. Each visible entry is clicked at every
+// size of the layout matrix, and the marker has to name it - with no
+// exemption for the end of the document, which the room after the content
+// (endRoom in page-state.js) is there to remove. sn3 holds that room from
+// the other side, so it is only what the furthest target lacks.
+{
+  const sctx = await browser.newContext({ viewport: { width: 1512, height: 945 } });
+  const snp = await sctx.newPage();
+  const snErrors = [];
+  snp.on('pageerror', (e) => snErrors.push(e.message));
+  const wrong = [];
+  let clicked = 0;
+  // The other side of that room: it may not be more than the furthest target
+  // needs. The need is computed HERE, from the page with the room taken out by
+  // a style this gate adds, never read off the value the page published - a
+  // bound read off the thing it bounds compares a number with itself. With the
+  // room out: the target that sits furthest down, its landing line, the
+  // document's end, and the blank tail the content leaves on its own (the last
+  // drawn child's bottom to the end - margins and the shell's padding). The
+  // need is the screen's height less the line less the run from that target's
+  // top to the end, never below 0. Then, with the room back and the page at its
+  // end, the tail is held to need + own tail, one pixel of rounding over. A
+  // page that adds a screen of blank whatever its last section's height fails
+  // here; a page that adds too little fails sn1, which is the side that keeps
+  // this bound from being met by adding nothing.
+  const tails = [];
+  const tailAt = async (when) => {
+    const geometry = () => snp.evaluate(() => {
+      const de = document.documentElement;
+      const col = document.querySelector('.snav ~ .content');
+      const drawn = [...document.querySelectorAll('.snav a')].map((a) => {
+        try { return document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1))); }
+        catch (e) { return null; }
+      }).filter((t) => t && t.getClientRects().length);
+      const y = window.scrollY;
+      const last = drawn.reduce((a, b) => (b.getBoundingClientRect().top
+        > a.getBoundingClientRect().top ? b : a), drawn[0]);
+      const kids = col ? [...col.children].filter((k) => k.getClientRects().length) : [];
+      const lastKid = kids[kids.length - 1];
+      return {
+        end: de.scrollHeight, view: de.clientHeight, y,
+        targetTop: last ? last.getBoundingClientRect().top + y : NaN,
+        target: last ? `#${last.id}` : '(none)',
+        line: last ? parseFloat(getComputedStyle(last).scrollMarginTop) || 0 : NaN,
+        contentEnd: lastKid ? lastKid.getBoundingClientRect().bottom + y : NaN,
+      };
+    });
+    const out = await snp.addStyleTag({ content: '.snav ~ .content::after{display:none!important}' });
+    await snp.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+    const bare = await geometry();
+    await out.evaluate((n) => n.remove());
+    await snp.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+    await snp.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
+    await snp.waitForTimeout(120);
+    const full = await geometry();
+    const need = Math.max(0, bare.view - bare.line - (bare.end - bare.targetTop));
+    const own = bare.end - bare.contentEnd;
+    const tail = full.y + full.view - full.contentEnd;
+    const bound = need + own + 1;
+    const at = full.y + full.view >= full.end - 1;
+    tails.push({ over: !at || !(tail <= bound) || Number.isNaN(tail),
+      said: `${when}: tail ${Math.round(tail)}px against ${Math.round(bound)}px = need `
+        + `${Math.round(need)} (${bare.target}, line ${Math.round(bare.line)}) + own `
+        + `${Math.round(own)} + 1${at ? '' : ', and the page never reached its end'}` });
+  };
+  for (const { width: w, height: h } of LAYOUT_SIZES) {
+    await snp.setViewportSize({ width: w, height: h });
+    await snp.goto('about:blank');
+    await snp.goto('file://' + path);
+    await snp.waitForTimeout(150);
+    await tailAt(`${w}x${h} as loaded`);
+    const hrefs = await snp.evaluate(() => [...document.querySelectorAll('.snav a')]
+      .filter((a) => a.getClientRects().length && getComputedStyle(a).visibility !== 'hidden')
+      .map((a) => a.getAttribute('href')));
+    for (const href of hrefs) {
+      await snp.locator(`.snav a[href="${href}"]`).first().click();
+      await snp.waitForTimeout(200);
+      const r = await snp.evaluate((hr) => {
+        const cur = document.querySelector('.snav a[aria-current="true"]');
+        let t = null;
+        try { t = document.getElementById(decodeURIComponent(hr.slice(1))); } catch (e) { t = null; }
+        const top = t ? t.getBoundingClientRect().top : NaN;
+        const line = t ? parseFloat(getComputedStyle(t).scrollMarginTop) || 0 : NaN;
+        const atEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+        return { cur: cur ? cur.getAttribute('href') : '', top: Math.round(top), line: Math.round(line), atEnd };
+      }, href);
+      clicked++;
+      if (r.cur === href) continue;
+      wrong.push(`${w}x${h} ${href} lit ${r.cur || 'nothing'} (landed at ${r.top}px, line ${r.line}px`
+        + `${r.atEnd ? ', the document ended first' : ''})`);
+    }
+  }
+  // The room is re-measured when what it reads changes, not only at load: each
+  // size again WITHOUT a reload, then the rows opened and shut. After a resize
+  // the furthest visible entry is clicked too, because that is the one a room
+  // measured for the previous screen would leave short.
+  const lastEntry = () => snp.evaluate(() => {
+    const vis = [...document.querySelectorAll('.snav a')]
+      .filter((a) => a.getClientRects().length && getComputedStyle(a).visibility !== 'hidden');
+    const top = (a) => {
+      const t = document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1)));
+      return t ? t.getBoundingClientRect().top : -Infinity;
+    };
+    const far = vis.reduce((a, b) => (top(b) > top(a) ? b : a), vis[0]);
+    return far ? far.getAttribute('href') : null;
+  });
+  for (const { width: w, height: h } of LAYOUT_SIZES) {
+    await snp.setViewportSize({ width: w, height: h });
+    await snp.waitForTimeout(250);
+    await tailAt(`resized to ${w}x${h}`);
+    const href = await lastEntry();
+    if (!href) continue;
+    await snp.locator(`.snav a[href="${href}"]`).first().click();
+    await snp.waitForTimeout(200);
+    const cur = await snp.evaluate(() => {
+      const c = document.querySelector('.snav a[aria-current="true"]');
+      return c ? c.getAttribute('href') : '';
+    });
+    clicked++;
+    if (cur !== href) wrong.push(`resized to ${w}x${h} ${href} lit ${cur || 'nothing'}`);
+  }
+  if (await snp.$('#audit-expand')) {
+    for (const when of ['every phase opened', 'every phase shut again']) {
+      await snp.click('#audit-expand');
+      await snp.waitForTimeout(250);
+      await tailAt(`${when}, ${LAYOUT_SIZES[LAYOUT_SIZES.length - 1].width}x`
+        + `${LAYOUT_SIZES[LAYOUT_SIZES.length - 1].height}`);
+    }
+  } else {
+    tails.push({ over: true, said: 'no #audit-expand on the page, so no reading was taken '
+      + 'with the rows opened' });
+  }
+  await sctx.close();
+  expect(`sn1 clicking a side-nav entry lights that entry, at every layout size `
+    + `(${LAYOUT_SIZES.map((s) => s.width + 'x' + s.height).join(', ')}; ${clicked} clicks)`,
+    clicked > 0 ? (wrong.join(' · ') || 'none') : 'no entry clicked', 'none');
+  expect(`sn3 scrolled to the end, the blank tail after the report's last content is no `
+    + `more than the room its furthest nav target lacks plus the content's own bottom `
+    + `padding, at every layout size, as loaded and after a resize, an expand and a `
+    + `collapse (${tails.length} reading(s))`,
+    tails.length ? (tails.filter((t) => t.over).map((t) => t.said).join(' · ') || 'none')
+      : 'nothing read', 'none');
+  expect('sn2 the page raised no error while the side nav was driven',
+    snErrors.slice(0, 2).join(' | ') || 'none', 'none');
+}
+
 assertLivenessWasChecked('report', liveness, {
   report: (m) => failures.push(`FAIL ${m}`),
   ok: (m) => notes.push(`ok   ${m}`),
@@ -3372,8 +5032,11 @@ if (RECORDING) {
   process.exit(0);
 }
 
+// The fonts the layout matrix read the page in, on the summary line itself: a
+// pass that could not run is said where the verdict is read, not only in a note.
 console.log(
-  failures.length
+  (failures.length
     ? `\nREPORT IS INERT: ${failures.length} interaction(s) did not work in ${file}`
-    : `\nreport is interactive: ${notes.length} checks passed in ${file}`);
+    : `\nreport is interactive: ${notes.length} checks passed in ${file}`)
+  + `\nlayout matrix fonts: ${FONT_PASSES.join('; ') || 'the matrix did not run'}`);
 process.exit(failures.length ? 1 : 0);

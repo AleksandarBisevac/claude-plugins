@@ -2198,9 +2198,16 @@ def _wp_manifest(gate=("selftests", "lint", "report", "shots", "interactive"),
             "tests": {"mode": "tdd", "expectRedFirst": True,
                       "add": list(add), "gate": list(gate)},
             "startedAt": _BF_START, "attempts": 1, "maxAttempts": 3}
+    # THE PHASE GATE HOLDS THE TASK'S ENTRIES: an entry `executor.phaseGateOnly`
+    # names is left to the phase gate only when that gate runs it, so a fixture
+    # whose cases leave the browser checks out gives the phase a gate that has
+    # them. A task declaring none gets no phase gate either, or it would borrow
+    # one. `_writer_agreement_cases` takes them away to see the other half.
     phase = {"id": "P1", "title": "Refunds", "status": "in_progress",
              "desiredOutcome": "refunds add up to the order total",
              "tasks": [task]}
+    if gate:
+        phase["testGate"] = list(gate)
     return {"meta": {"version": 2, "buildCommands": commands},
             "phases": [phase], "bugs": [],
             "fileIndex": {"src/refund.py": ["P1.1"],
@@ -2292,6 +2299,7 @@ def _writer_prompt_cases(check):
     pw = _wp_manifest(gate=("selftests",))
     pw["meta"]["buildCommands"]["pw"] = "npx playwright test --project=chromium"
     pw["phases"][0]["tasks"][0]["tests"]["gate"] = ["selftests", "pw"]
+    pw["phases"][0]["testGate"].append("pw")
     pw_default = M.compose_writer_prompt(pw, pw["phases"][0],
                                          pw["phases"][0]["tasks"][0])
     pw_named = M.compose_writer_prompt(pw, pw["phases"][0],
@@ -2480,6 +2488,50 @@ def _writer_prompt_cases(check):
           bad_code == M.E_CONFIG and not os.path.exists(written)
           and "executor.phaseGateOnly" in out.getvalue() + err.getvalue())
     shutil.rmtree(root, ignore_errors=True)
+
+
+def _writer_agreement_cases(check):
+    """(wa) The writer's brief and the recorded task gate name the same
+    entries as left to the phase gate: both ask `_config_rules`'
+    `phase_gate_only_split`, so an entry the setting names is left out by
+    both when the phase gate holds it and run by both when it does not. The
+    recorder's side is its own `phase_gate_only_plan`, asked of the same plan,
+    never a copy of the rule written here."""
+    rtg = _loader.load_script("run-test-gate.py", modname="rtg_for_agreement")
+    recorder = getattr(rtg, "phase_gate_only_plan", None)
+    seen = {}
+    for label, phase_gate in (
+            ("held", None),
+            ("unheld", ["selftests", "lint", "report", "verifysh"])):
+        man = _wp_manifest()
+        phase = man["phases"][0]
+        if phase_gate is not None:
+            phase["testGate"] = phase_gate
+        task = phase["tasks"][0]
+        lines = M.compose_writer_prompt(man, phase, task,
+                                        phase_gate_only=_WP_LEFT)
+        said = [ln for ln in lines if ln.startswith("Do not run")]
+        brief_left = [c for c in _WP_BROWSER if said and c in said[0]]
+        items = _ws_items(lines)
+        steps = _evio.resolved_commands(man, task["tests"]["gate"])
+        got = (recorder(steps, _evio.resolved_commands(man, phase["testGate"]),
+                        _WP_LEFT) if recorder is not None else None)
+        run_left = (None if got is None else
+                    [c for n, c in steps if n in [e["name"] for e in got["left"]]])
+        seen[label] = (brief_left, run_left, items)
+    held_brief, held_run, _items = seen["held"]
+    check("wa1 with the phase gate holding both browser checks, the brief leaves "
+          "out exactly the entries the recorded run leaves out: brief=%r run=%r"
+          % (held_brief, held_run),
+          held_brief == _WP_BROWSER and held_run == _WP_BROWSER)
+    free_brief, free_run, free_items = seen["unheld"]
+    check("wa2 with the phase gate holding neither, neither side leaves them "
+          "out: the brief lists both to run, each saying it would otherwise run "
+          "nowhere, and the run leaves nothing out: brief=%r run=%r items=%r"
+          % (free_brief, free_run, free_items),
+          free_brief == [] and free_run == []
+          and all(any(ln.startswith("- %s" % (c,)) and "runs nowhere" in ln
+                      for ln in free_items) for c in _WP_BROWSER))
 
 
 def _ws_items(lines):
@@ -3338,6 +3390,7 @@ def _selftest():
         _harness.stage(check, "nl-block", _nested_scope_cases)
         _harness.stage(check, "nm-block", _nested_member_cases)
         _harness.stage(check, "wp-block", _writer_prompt_cases)
+        _harness.stage(check, "wa-block", _writer_agreement_cases)
         _harness.stage(check, "ws-block", _writer_slow_cases)
         _harness.stage(check, "rq-block", _red_command_reader_cases)
         _harness.stage(check, "ow-block", _owed_red_first_brief_cases)
@@ -3915,6 +3968,36 @@ def _review_skill_brief_cases(check):
               resolved_null == (None, "area api")
               and stopped != "" and _rk_section(stopped) == (0, [])
               and "plan-review" not in stopped)
+        # The field the section asks for is the one `drive-phase.py submit`
+        # reads, so a rename on either side reads as this case going red.
+        drive = _loader.load_script("drive-phase.py", "drive_phase_rk",
+                                    cache=False)
+        _count, body = _rk_section(_rk_brief(root, "field", {},
+                                             {"reviewSkill": "plan-review"}))
+        asks = [ln for ln in body if "`%s`" % (drive.INVOKED_FIELD,) in ln]
+        check("rk6 the review-skill section asks, on one line, for the skill to "
+              "be named in the return's `%s` field and says submit refuses a "
+              "phase return that does not name it: %r"
+              % (drive.INVOKED_FIELD, body),
+              len(asks) == 1 and "submit" in asks[0] and "refuses" in asks[0]
+              and drive.INVOKED_FIELD == "skillsInvoked")
+        field = "`%s`" % (drive.UNAVAILABLE_FIELD,)
+        written = _rk_brief(root, "unavailable", {}, {"reviewSkill": "plan-review"})
+        _count, body = _rk_section(written)
+        tells = [ln for ln in body if field in ln and "submit" in ln
+                 and "files" in ln and "med finding" in ln]
+        rules = [ln for ln in written.splitlines() if ln.startswith("The rules")]
+        bare_rules = [ln for ln in bare.splitlines() if ln.startswith("The rules")]
+        check("rk7 the review-skill section tells a reviewer whose Skill tool "
+              "will not load the skill to say so in %s, which submit files with "
+              "a med finding; the header says the brief adds both fields to the "
+              "agent file's shape, and a brief with no review skill keeps the "
+              "plain header: %r" % (field, (tells, rules, bare_rules)),
+              len(tells) == 1 and drive.UNAVAILABLE_FIELD == "skillUnavailable"
+              and len(rules) == 1 and field in rules[0]
+              and "`skillsInvoked`" in rules[0]
+              and bare_rules == ["The rules and the return shape are "
+                                 "agents/audit-reviewer.md's."])
     finally:
         _harness.remove_tree(root)
 

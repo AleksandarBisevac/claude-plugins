@@ -40,6 +40,15 @@ def _cases(check):
     check("CSS starts with the TOKEN_CSS block", M.CSS.startswith(_theme.TOKEN_CSS))
     check("CSS is TOKEN_CSS immediately followed by the CSS parts joined in cascade order",
           M.CSS == _theme.TOKEN_CSS + css_file)
+    # Counted, because a report copy left beside the shared rule would be
+    # read after it and win on source order, and a presence check passes on
+    # both of them.
+    check("da1 the More-filters arrow is the shared layer's rule, carrying an "
+          "empty alternative, and the report holds no second arrow rule "
+          "(%d `>summary::after` rules)" % (M.CSS.count(">summary::after{"),),
+          ':where(.fdetails)>summary::after{content:"\\25BE";content:"\\25BE" / ""'
+          in M.CSS
+          and M.CSS.count(">summary::after{") == 2)
 
     # --- exactly one <script> open/close in SCRIPT -------------------------------
     check("exactly one <script> open tag in SCRIPT",

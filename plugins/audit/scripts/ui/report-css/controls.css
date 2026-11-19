@@ -2,7 +2,10 @@
 /* The toolbar moved into the top bar: these are global actions (search the whole
    plan, filter every phase, print, download, theme) and they were scrolling away
    from the reader halfway down a long report. */
-.toolbar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:0}
+/* Its items wrap onto rows with the same gap between rows as between items, so
+   a bar that runs out of width - in a wider font than this machine's, or with a
+   filter's Clear button showing - grows a designed row rather than an accident. */
+.toolbar{display:flex;gap:var(--sp-1);align-items:center;flex-wrap:wrap;margin:0}
 /* Section-scoped controls sit on the thing they act on, sticky under the top bar
    so they stay reachable while you scroll the table they filter — and stop
    existing once you have scrolled past it. */
@@ -19,11 +22,38 @@
    offset it computed from --sticky-2 — no sentinel element, no second observer. */
 .sectools.stuck{box-shadow:var(--shadow-sm)}
 @media print{.sectools{display:none!important}}
-#audit-q{flex:0 1 15rem;min-width:8rem;padding:.5rem .75rem;font:inherit;color:var(--text);
+/* The count is the bar's last item and takes a row of its own when it does not
+   fit beside the controls: its basis is its whole text, which is what a wrapping
+   flex line places, so it moves down whole rather than squeezing in beside them.
+   Given a small basis instead, it held the bar to one flex line by taking two or
+   three lines of text inside it. Only where its text is wider than the whole bar
+   - a phone's, with a filter on - does it shrink and wrap its own words; held
+   unbroken there it ran out of the bar's card and gave the page a sideways
+   scroll. The view's name is not drawn (the .vh below), which is what keeps the
+   text short. tools/check-report-interactive.mjs holds this at every size and
+   state, in the page's own font and in a wider one: lm3 the count's drawn text
+   inside the bar, lm4 the pinned stack within its viewport class's budget, lm8
+   every control inside the bar and none of their text cut off. */
+#audit-count{flex:0 1 auto}
+/* Said to a screen reader, drawn to nobody: the count's view name, which the
+   View select beside it already shows. The panel's base-controls.css carries
+   the same rule under the same name; the two are a pair until the surfaces
+   share a stylesheet part. */
+.vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;
+  overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+/* The search box gives way first: a wrapping flex line is filled by each item's
+   BASIS before anything shrinks, so a 15rem basis pushed the rest of the bar's
+   controls onto a line of their own at a laptop width. It gives way no further
+   than its placeholder: the floor is counted in `ch`, the width of the field's
+   own digit, so it widens with whatever font the machine draws the field in -
+   a floor in rem cut the old, longer placeholder off in a font wider than the
+   one it was sized on. The placeholder has fewer glyphs than the count, and a
+   text glyph is on average narrower than a digit, which is the headroom; the
+   field's accessible name carries the full sentence. */
+#audit-q{flex:1 1 9rem;min-width:calc(16ch + 2 * var(--sp-2));max-width:15rem;padding:.5rem .75rem;font:inherit;color:var(--text);
   background:var(--bg);border:1px solid var(--border);border-radius:var(--pill);
   transition:border-color var(--dur),box-shadow var(--dur)}
 #audit-q::placeholder{color:var(--muted)}
-#audit-q:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
 .tbl{font-size:.76rem;color:var(--muted);margin-left:.25rem}
 #audit-phase-status{display:inline-flex;gap:.25rem;flex-wrap:wrap}
 
@@ -71,27 +101,34 @@
    and where the scroll-spy fold sits — so a panel that pushed the bar taller
    when opened would move all three under the reader mid-scroll. Out of flow, the
    bar is one height open or shut, and the panel is drawn OVER the table. */
-.fdetails{position:relative}
+/* Brought into view below what stays pinned when it opens off screen (the
+   toggle handler in page-state.js reads this back). The gap is the smallest
+   step, so a disclosure inside the STUCK bar - whose top sits the bar's padding
+   below --sticky-2 - already counts as on screen and the page never moves. */
+.fdetails{scroll-margin-top:calc(var(--sticky-2) + var(--sp-0))}
 .fdetails>summary{cursor:pointer;font:inherit;font-size:.82rem;line-height:1;
   display:inline-flex;align-items:center;gap:.4em;padding:.5rem .75rem;
   border-radius:var(--pill);border:1px solid var(--field-border);background:var(--surface);
   color:var(--text);list-style:none;transition:background var(--dur),border-color var(--dur)}
-.fdetails>summary::-webkit-details-marker{display:none}
-.fdetails>summary::after{content:"\25BE";font-size:.7em;color:var(--muted)}
-.fdetails[open]>summary::after{content:"\25B4"}
+/* The arrow, and the platform marker it replaces, are `shared/disclosure.css`. */
 .fdetails>summary:hover{border-color:var(--field-border-hover);background:var(--surface-2)}
 .fdetails>summary:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 /* The count of what is narrowing the table, on the closed control. A panel that
    hides an active filter behind a fold is how a reader concludes the report is
    missing rows; the summary has to say that something is on. */
 .fdetails .fcount{font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
-/* Hung from its control's RIGHT edge, because this control sits near the right of
-   the bar: anchored left, a panel this wide ran off the side of the viewport and
-   took its last column with it.
+/* Hung from the BAR's right edge, under the bar. Anchored left, a panel this wide
+   ran off the side of the viewport and took its last column with it; hung from
+   its own control's right edge it did the same thing the other way whenever the
+   control wrapped to the left of a second line: at 1024x768 in the Archived view
+   the panel spanned x=-26 to 486 (lm6 in tools/check-report-interactive.mjs).
+   `.fdetails` is therefore not positioned, so the panel's containing block is the
+   sticky `.sectools`, whose right edge is on the screen whichever line the
+   control lands on.
 
-   The floor was 19rem, then 27rem — the width at which "Worked between: [date]
-   and [date]" stopped wrapping after the word "and" and reading as a broken
-   sentence. 27rem cleared that but left the panel feeling cramped: four control
+   The floor was 19rem, then 27rem — the width at which the date row (then
+   "Worked between: [date] and [date]") stopped wrapping after its middle word
+   and reading as a broken sentence. 27rem cleared that but left the panel feeling cramped: four control
    rows at .5rem apart inside .75rem of padding, with nothing to separate the
    date range from the model chips from the note. 32rem with roomier padding and
    gap is the same content given space to be read. `max-width` still caps it to
@@ -122,7 +159,15 @@
 .frow{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
 .frow input[type=date]{font:inherit;font-size:.78rem;padding:.3rem .45rem;color:var(--text);
   background:var(--bg);border:1px solid var(--field-border);border-radius:var(--radius)}
-.frow input[type=date]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
 #audit-model,#audit-presets{display:inline-flex;gap:.25rem;flex-wrap:wrap}
+
+/* ---- a field's focus ----------------------------------------------------
+   One rule for every text field and select in the filter controls. The ring a
+   sighted reader sees is the accent border and the soft shadow; the outline is
+   transparent, so it changes nothing here - and it is the half that survives
+   forced-colours mode, which drops every box-shadow and repaints an outline in
+   a system colour. With the outline removed, as it was, the field had no focus
+   indicator at all in that mode. */
+#audit-q:focus,.frow input[type=date]:focus,.gfilters select:focus,.gfilters input[type=date]:focus{outline:2px solid transparent;outline-offset:2px;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
 .fnote{margin:0;font-size:.7rem;line-height:1.45;color:var(--muted)}
 

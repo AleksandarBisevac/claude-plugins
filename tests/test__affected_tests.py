@@ -951,9 +951,105 @@ def _interrupt_cases(check):
         shutil.rmtree(tree, ignore_errors=True)
 
 
+def _join_cases(check):
+    """A declared entry spelled exactly as the plan's recorded subset spelling
+    over a list of paths, and the affected steps spelled the same way, are one
+    call over the union of their paths (`joined_steps`), the declared paths
+    first. Anything else - another runner, a build key, the same runner with
+    an option, a spelling borrowed from a sibling, the phase-gate arm - keeps
+    the steps as they were. The joined step's name is written out here as a
+    row on disk holds it, since that is the contract its readers parse."""
+    union = getattr(M, "union_paths", None)
+    joiner = getattr(M, "joined_steps", None)
+    got = union(["tests/test_own.py", "tests/test_b.py"],
+                ["tests/test_c.py", "tests/test_own.py", "tests/test_d.py",
+                 "tests/test_c.py"]) if union else None
+    check("af44 the union of the declared paths and the affected paths keeps "
+          "the declared ones first and in their order, then each affected one "
+          "not already there, so a suite present in both lists is passed "
+          "once: %r" % (got,),
+          got == ["tests/test_own.py", "tests/test_b.py", "tests/test_c.py",
+                  "tests/test_d.py"])
+
+    sweep = "python3 tools/sweep.py"
+    meta = {"buildCommands": {"selftests": sweep, "lint": "true"},
+            "phaseGate": {"derived": {"spelling": sweep + " {paths}"}}}
+    phase = {"id": "P1", "tasks": []}
+    own = sweep + " tests/test_own.py"
+    related = ("affected/related: tests/test_other.py, tests/test_own.py",
+               sweep + " tests/test_other.py tests/test_own.py")
+    python = ("affected/python: tests/test_core.py",
+              sweep + " tests/test_core.py")
+
+    def join(commands, on_meta=meta, on_phase=phase):
+        if joiner is None:
+            return "no joined_steps", None
+        return joiner(commands, on_phase, on_meta)
+
+    joined, lines = join([(own, own), ("lint", "true"), related, python])
+    check("af45 a declared entry in the recorded spelling and the affected "
+          "steps in that spelling are ONE step at the declared entry's place: "
+          "its name is the entry followed by each affected step's name, and "
+          "its command passes the union once, the declared path first - a "
+          "suite both lists hold is not passed twice; a line says what was "
+          "joined: %r / %r" % (joined, lines),
+          joined == [
+              (own + " + affected/related: tests/test_other.py, "
+                     "tests/test_own.py + affected/python: tests/test_core.py",
+               sweep + " tests/test_own.py tests/test_other.py "
+                       "tests/test_core.py"),
+              ("lint", "true")]
+          and isinstance(lines, list) and len(lines) == 1
+          and own in lines[0] and "tests/test_core.py" in lines[0])
+
+    two = sweep + " tests/test_two.py"
+    first, _lines = join([(own, own), (two, two), python])
+    check("af46 with two declared entries in the recorded spelling the affected "
+          "steps join the FIRST one and the second stays as it was: %r"
+          % (first,),
+          first == [(own + " + affected/python: tests/test_core.py",
+                     sweep + " tests/test_own.py tests/test_core.py"),
+                    (two, two)])
+
+    # THE OTHER DIRECTION: an "always join" or "join on the runner's name"
+    # version passes af45. Each of these is not the recorded spelling over a
+    # list of paths, so every step stays its own.
+    keyed = dict(meta["buildCommands"], own=own)
+    sibling = {"id": "P1", "tasks": [
+        {"id": "P1.9", "tests": {"gate": ["sh tests/sib_test.sh"]}}]}
+    shell = ("affected/related: tests/smoke_test.sh", "sh tests/smoke_test.sh")
+    stays = [
+        ("af47", "another runner", [("python3 tests/test_own.py",
+                             "python3 tests/test_own.py"), related, python],
+         meta, phase),
+        ("af49", "a build key", [("own", own), related, python],
+         dict(meta, buildCommands=keyed), phase),
+        ("af50", "the same runner with an option",
+         [(sweep + " --fast tests/test_own.py",
+           sweep + " --fast tests/test_own.py"), related, python], meta, phase),
+        ("af51", "a sibling's spelling, not the recorded one",
+         [("sh tests/i18n_test.sh", "sh tests/i18n_test.sh"), shell],
+         {"buildCommands": {}}, sibling),
+        ("af52", "the phase-gate arm", [(own, own),
+                                        ("affected/phase-gate: " + two, two)],
+         meta, phase),
+    ]
+    for case_id, label, commands, on_meta, on_phase in stays:
+        kept, said = join(commands, on_meta, on_phase)
+        check("%s %s stays its own step beside the affected ones, and no line "
+              "claims a join: %r / %r" % (case_id, label, kept, said),
+              kept == commands and said == [])
+
+    alone, said = join([(own, own), ("lint", "true")])
+    check("af48 with no affected step the commands come back exactly as they "
+          "went in, with no line: %r / %r" % (alone, said),
+          alone == [(own, own), ("lint", "true")] and said == [])
+
+
 def _selftest():
     def body(check):
         _cases(check)
+        _join_cases(check)
         _gather_cases(check)
         _interrupt_cases(check)
     return _harness.run(body)

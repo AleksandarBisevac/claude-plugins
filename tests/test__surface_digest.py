@@ -65,6 +65,24 @@ def _ask(scripts, seed="0"):
     return done.returncode, parsed
 
 
+def _missing_ui_parts(error, sources):
+    """The parts of the `ui/` tree a child's not-found error names, as `ui/`-relative paths.
+
+    Only the path's tail after its `ui` segment is read, because the error is the last
+    few hundred characters of a traceback and a deep scratch directory can push the head
+    of the path out of it; and the separators are any run of either slash, because the
+    text is a repr of a repr, which doubles a Windows backslash twice. A tail counts only
+    when it is a part `ui_surface_sources` lists, so a missing file elsewhere that merely
+    sits under some directory called `ui` is not the answer.
+    """
+    if "FileNotFoundError" not in error:
+        return []
+    parts = set(rel for rels in sources.values() for rel in rels)
+    tails = [re.sub(r"[/\\]+", "/", m.group(1)).strip("/")
+             for m in re.finditer(r"[/\\]ui((?:[/\\]+[\w.-]+)+)", error)]
+    return sorted(set(t for t in tails if t in parts))
+
+
 def _read(path):
     with open(path, "r", encoding="utf-8", newline="") as fh:
         return fh.read()
@@ -180,13 +198,15 @@ def _cases(check):
         os.rename(found["root"], hidden)
         code_gone, gone_run = _ask(scripts, "8")
         os.rename(hidden, found["root"])
+        named = _missing_ui_parts(gone_run["error"] or "", found["sources"])
         check("sd5 a scripts tree whose `ui/` is gone yields NO digests and a non-zero "
               "exit with the reason in what the child wrote - the pages are assembled at "
               "import, so the missing part stops the child before it can answer, and a "
-              "digest of whatever was left would be stable, comparable and about nothing: "
-              "%r" % ((code_gone, gone_run["error"]),),
+              "digest of whatever was left would be stable, comparable and about nothing. "
+              "The reason must name a part of the removed tree, whichever the assembly "
+              "happens to read first: %r" % ((code_gone, named, gone_run["error"]),),
               code0 == 0 and code_gone != 0 and gone_run["digests"] == {}
-              and "shell.css" in (gone_run["error"] or ""))
+              and len(named) > 0)
 
         # --- sd6: what is digested is what the modules assemble -------------------
         texts = M.surface_texts()

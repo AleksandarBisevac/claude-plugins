@@ -651,7 +651,11 @@ def review_skill_lines(manifest, phase):
     name and the basis are printed as it returns them; a level that answers
     with an explicit null resolves nothing and gets no section, exactly like a
     plan that declares none - the reviewer then reviews without a skill, which
-    agents/audit-reviewer.md already states for that case."""
+    agents/audit-reviewer.md already states for that case. The section, not the
+    agent file, carries the `skillsInvoked` ask, its `skillUnavailable`
+    alternative and why: `drive-phase.py submit`'s `skipped_review_skill` is
+    what refuses a return with neither, and `unavailable_skill_finding` what
+    files the second with a finding for triage."""
     skill, basis = _areas.resolve_review_skill(manifest, phase)
     if not skill:
         return []
@@ -659,7 +663,18 @@ def review_skill_lines(manifest, phase):
         "- %s (basis: %s, as _areas.resolve_review_skill resolves "
         "phase.reviewSkill, then each area tag's, then meta.reviewSkill)"
         % (skill, basis),
-        "Invoke it via the Skill tool FIRST, before reading the diff."])
+        "Invoke it via the Skill tool FIRST, before reading the diff.",
+        "Then name it in your return's `skillsInvoked` field, a list of the "
+        "skill names you invoked - the name the session runner records a "
+        "headless session's calls under. The drive does not read your Skill "
+        "calls (the plugin's hooks see them), so the return is where you say "
+        "you used the skill: `drive-phase.py submit` refuses a phase return - "
+        "each slice's included - that neither names this skill in "
+        "`skillsInvoked` nor carries `skillUnavailable`, and files nothing.",
+        "If the Skill tool will not load it, do not review as if it had: put "
+        "what the Skill tool said in `skillUnavailable`, a string. submit "
+        "files that return and adds a med finding naming the skill and that "
+        "reason, so a human decides whether the review stands without it."])
 
 
 def compose_executor_brief(manifest, phase, task, ctx, files, gate):
@@ -959,24 +974,14 @@ WRITER_COMMIT_LINE = ("Fix whatever does not pass. When everything is green, "
                       "leave the changes uncommitted: the drive commits them.")
 
 
-def _command_words(text):
-    """The words of a command or an entry, quotes off and each reduced to its
-    basename, so `"./scripts/verify.sh"` and `verify.sh` are the same word."""
-    return [w.strip("\"'").rsplit("/", 1)[-1] for w in str(text or "").split()]
+# `executor.phaseGateOnly`'s matcher is `_config_rules`', the one the recorded
+# task gate and the drive's view of a task's steps read too.
+left_to_phase_gate = _config_rules.left_to_phase_gate
 
-
-def left_to_phase_gate(command, names):
-    """Whether a resolved gate command is one the project named in
-    `executor.phaseGateOnly`: the words of some entry appear in the command's
-    words in a row. No name is built in - `verify.sh` is also a user project's own
-    gate - so an empty `names` is False for every command."""
-    words = _command_words(command)
-    for name in names:
-        token = _command_words(name)
-        if token and any(words[i:i + len(token)] == token
-                         for i in range(len(words))):
-            return True
-    return False
+# What a command the setting names says beside itself when the phase gate does
+# not hold it: it stays on the list, and why.
+UNHELD_NOTE = ("executor.phaseGateOnly names it, but the phase gate does not "
+               "hold it: left out here, it runs nowhere")
 
 
 # The clause list is `_clause_coverage`'s: the closing line below asks for an
@@ -1404,11 +1409,16 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
     sets none, which is the default).
 
     A gate entry that names no `meta.buildCommands` key is a literal command, as
-    the gate itself runs it (`_evio.resolved_commands`); one the project named in
-    `phase_gate_only` is left out of the commands to run and listed, once, as left
-    to the phase gate - the only thing the sentence says, since nothing here
-    knows who runs it. A plan whose gate has no such entry gets no sentence:
-    naming commands the task does not have would be a claim with no basis.
+    the gate itself runs it (`_evio.resolved_commands`). Which entries the
+    project's `phase_gate_only` leaves to the phase gate is
+    `_config_rules.phase_gate_only_split`'s answer against the phase's own gate
+    (`_evio.phase_gate_steps`) - the one the recorded task gate acts on, so
+    the writer is told to leave out exactly what that run leaves out. Such an
+    entry is left out of the commands to run and listed, once, as left to the
+    phase gate; one the setting names that the phase gate does not hold stays
+    on the list with `UNHELD_NOTE` beside it. A plan whose gate has no such
+    entry gets no sentence: naming commands the task does not have would be a
+    claim with no basis.
 
     `slow` is `gate_step_readings`' answer - `(name, mean_ms, runs)` per gate
     entry, by the step name the ledger records. An entry whose mean outlives
@@ -1440,23 +1450,29 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
     meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
     build = meta.get("buildCommands") if isinstance(meta.get("buildCommands"), dict) else {}
     steps = [(name, build.get(name, name)) for name, _c in resolved]
+    split = _config_rules.phase_gate_only_split(
+        resolved, _evio.phase_gate_steps(manifest, phase), phase_gate_only)
+    to_phase = set(name for name, _command, _matched in split["left"])
+    unheld = set(name for name, _command, _matched in split["unheld"])
     listed = []
     for name, command in resolved:
         mean_ms, runs = readings.get(name, (None, None))
+        notes = [UNHELD_NOTE] if name in unheld else []
         if _evio.outlives_foreground(mean_ms):
             slowed = True
             left.append("%s (%s)" % (command, _slow_basis(mean_ms, runs)))
             cut = own_suite_command(command, own_files)
             if cut is not None and cut not in own:
                 own.append(cut)
-        elif left_to_phase_gate(command, phase_gate_only):
+            continue
+        if name in to_phase:
             left.append(command)
-        elif name in readings and mean_ms is None:
-            plain.append("%s (%s)" % (command, UNMEASURED_NOTE))
-            listed.append(build.get(name, name))
-        else:
-            plain.append(command)
-            listed.append(build.get(name, name))
+            continue
+        if name in readings and mean_ms is None:
+            notes.append(UNMEASURED_NOTE)
+        plain.append("%s (%s)" % (command, "; ".join(notes)) if notes
+                     else command)
+        listed.append(build.get(name, name))
     lines = ["Implement the following task in this repository.", "",
              "Task: %s" % (task.get("title"),), ""]
     lines += _verbatim(task.get("description"), "The task records no description.")
@@ -2249,9 +2265,14 @@ def phase_brief_parts(manifest, phase, ctx):
              "Computed by audit-lookup.py brief from %s at %s, plugin copy %s."
              % (ctx["manifest"], ctx["at"], ctx["plugin"]),
              "head: %s" % (head,) if head else
-             "head: not read - %s" % (head_why,),
-             "The rules and the return shape are agents/audit-reviewer.md's."]
-    lines += review_skill_lines(manifest, phase)
+             "head: not read - %s" % (head_why,)]
+    skill_lines = review_skill_lines(manifest, phase)
+    lines.append(
+        "The rules and the return shape are agents/audit-reviewer.md's, and the "
+        "Review skill section below adds `skillsInvoked` and `skillUnavailable` "
+        "to that shape." if skill_lines else
+        "The rules and the return shape are agents/audit-reviewer.md's.")
+    lines += skill_lines
     lines += _section("The request, as saved", _verbatim(
         phase.get("request"),
         "No request was saved for this phase (phase.request is absent), so "

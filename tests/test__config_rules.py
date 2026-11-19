@@ -502,6 +502,52 @@ def _cases(check):
           _pg_set == (("verify.sh", "playwright test"), None)
           and _pg_none == ((), None) and _pg_bad[0] == ()
           and "executor.phaseGateOnly" in (_pg_bad[1] or ""))
+    # THE ONE MATCHER, and the split every reader of the setting asks. The
+    # writer's prompt, the recorded task gate and the drive's view of a task's
+    # steps each call `phase_gate_only_split`, so the three cannot name
+    # different entries as left to the phase gate. Read through `getattr` so a
+    # module without them fails these cases rather than the whole block.
+    _match = getattr(M, "left_to_phase_gate", lambda _c, _n: None)
+    _split = getattr(M, "phase_gate_only_split", lambda *_a: {})
+    _seen = [_match(c, n) for c, n in (
+        ("sh ./tools/verify.sh --fast", ("verify.sh",)),
+        ("npx playwright test e2e", ("playwright test",)),
+        ("npx playwright show-report", ("playwright test",)),
+        ("python3 tests/test_verify.sh.py", ("verify.sh",)),
+        ("sh tools/verify.sh", ()))]
+    check("pg4 left_to_phase_gate matches a name against the command's words "
+          "by basename, several words in a row, and never inside a word: %r"
+          % (_seen,), _seen == [True, True, False, False, False])
+    _steps = [("sweep", "python3 sweep.py"), ("browser", "node browser.mjs"),
+              ("e2e", "npx playwright test")]
+    _held = _split(
+        _steps, [("sweep", "python3 sweep.py"), ("browser", "node browser.mjs")],
+        ("browser.mjs", "playwright test"))
+    check("pg5 an entry the setting names is LEFT when the phase gate holds it "
+          "and RUN, as `unheld`, when it does not; the rest are kept in declared "
+          "order, and each left or unheld entry carries the name that matched "
+          "it: %r" % (_held,),
+          _held.get("kept") == [("sweep", "python3 sweep.py"),
+                                ("e2e", "npx playwright test")]
+          and _held.get("left") == [("browser", "node browser.mjs",
+                                     "browser.mjs")]
+          and _held.get("unheld") == [("e2e", "npx playwright test",
+                                       "playwright test")])
+    _by_command = _split(
+        [("affected/phase-gate: browser", "node browser.mjs")],
+        [("browser", "node browser.mjs")], ("browser.mjs",))
+    check("pg6 the phase gate holds an entry by its resolved COMMAND as well as "
+          "by its name, so a step another arm proposed under its own name is "
+          "held by the phase entry that runs the same command: %r"
+          % (_by_command,),
+          _by_command.get("left") == [("affected/phase-gate: browser",
+                                       "node browser.mjs", "browser.mjs")]
+          and _by_command.get("kept") == [] and _by_command.get("unheld") == [])
+    _none = _split(_steps, _steps, ())
+    check("pg7 no names is no change: every step kept, in order, none left and "
+          "none unheld - the allow case an always-firing split turns red: %r"
+          % (_none,),
+          _none == {"kept": list(_steps), "left": [], "unheld": []})
 
     f, w = M.validate_config({"journal": {"strictManifestState": "ask"}})
     check("journal.strictManifestState 'ask' is a legal, known key",

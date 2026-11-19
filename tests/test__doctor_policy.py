@@ -402,11 +402,16 @@ def _cases(check):
         mfs["meta"]["reviewSkill"] = "code-review-and-quality"
         rep = _skills(mfs, {"skills": [{"name": "writing-python"}]})
         check("dp27 a skill the plan names and this machine cannot find is "
-              "WARNED about, naming the skill AND where the plan names it - a "
-              "review skill that does not resolve means sign-off runs with no "
-              "reviewer: %r" % (_detail(rep, "skills"),),
+              "WARNED about, naming the skill AND where the plan names it, and "
+              "the remedy says what an unresolved review skill now costs - left "
+              "out of the validation session, answered with skillUnavailable - "
+              "not that sign-off runs with no reviewer: %r"
+              % ((_detail(rep, "skills"), _fix(rep, "skills")),),
               "'code-review-and-quality'" in _detail(rep, "skills")
               and "P1 review skill" in _detail(rep, "skills")
+              and "`skillUnavailable`" in _fix(rep, "skills")
+              and "validation session" in _fix(rep, "skills")
+              and "no reviewer" not in _fix(rep, "skills")
               # This read `!= "finding"` and could not fail. `Report.finding`
               # writes "FINDING", so the comparison was true of every row it would
               # ever see, and the half of dp27 that names the TIER was asserting

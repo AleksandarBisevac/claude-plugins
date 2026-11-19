@@ -55,13 +55,37 @@
      `color-mix()` this sheet already paints every status pill with. */
   .sectools:has(.fdetails[open]){position:static}
 }
+@media (max-width:52rem),(max-height:32rem){
+  /* The top bar scrolls with the page on a narrow screen AND on a short one.
+     Wrapped onto a phone it is three lines - the title, the document actions and
+     the header's filter row - and pinned with the section strip and the table's
+     own filter bar it held more than half of a 390x844 screen over the rows
+     before this rule. Held sideways the same phone is wider than 52rem and only
+     390px tall, and the width query alone left the bar pinned there: three
+     quarters of the screen. lm1 in tools/check-report-interactive.mjs fails a
+     top bar that pins wherever this query matches - it carries the query as its
+     own copy, so deleting this rule turns it red rather than moving its bound -
+     and measures the stack by hit-test at every size it reads. None of the
+     bar's lines is what a reader needs while reading a table row; the strip
+     (where am I) and the table's bar (what is filtering it) are, and they stay
+     pinned. A viewport query rather than a container query because the cost is a
+     share of the SCREEN, and the bar is as wide as the screen anyway. 32rem
+     (512px) tall sits above the phone held sideways that lm1 measures, and below
+     the viewport a 768px-tall laptop screen leaves under the browser's bars.
+     measureStack() reads the bar's computed position and publishes a zero offset
+     while it is static; the token below is the same answer for a page whose
+     script did not run. */
+  .topbar{position:static}
+  :root{--topbar-h:0px}
+}
 @media (max-width:40rem){
   body{padding:1.5rem .75rem 3rem;font-size:14.5px}
   h1{font-size:1.1rem}
   .vd-word{font-size:1.75rem}
   .overall,.summary{padding:.75rem 1rem}
   .toolbar{gap:.5rem .5rem}
-  #audit-q{flex-basis:100%;order:-1}
+  /* The full row, so no cap: the laptop rule's max-width is about sharing a line. */
+  #audit-q{flex-basis:100%;order:-1;max-width:none}
   .bar{max-width:52vw}
   /* A date field is the widest control the panel has and the one with the most to
      lose from being squeezed: below its intrinsic width the UA elides the picker

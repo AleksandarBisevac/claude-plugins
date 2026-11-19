@@ -15,7 +15,7 @@
 //   therefore in both surfaces.
 //
 //   BUILDING a map from keys that came from outside (`TASKS`, `TFROW`,
-//   `STATUS_SEG`, `AREA_SEGS`, `expanded`, `taskStatus`, `HASH`):
+//   `STATUS_SEG`, `expanded`, `taskStatus`, `HASH`):
 //   `Object.create(null)`, because `m['__proto__'] = v` on a plain object
 //   re-points the prototype instead of storing anything and no read helper can
 //   recover what was never written. Phase and task ids carry NO `pattern` in the
@@ -316,7 +316,7 @@ describe('a phase id that names an inherited member is an ordinary phase', () =>
 
   it('every index is prototype-free, which is what makes the reads safe', () => {
     const { ctx } = page();
-    ['TASKS', 'TFROW', 'STATUS_SEG', 'AREA_SEGS', 'expanded', 'taskStatus', 'HASH']
+    ['TASKS', 'TFROW', 'STATUS_SEG', 'expanded', 'taskStatus', 'HASH']
       .forEach((name) => {
         expect(vm.runInContext('Object.getPrototypeOf(' + name + ')', ctx), name)
           .toBe(null);
@@ -349,20 +349,18 @@ describe('a phase id that names an inherited member is an ordinary phase', () =>
     expect(tfOf('no-such-phase')).toBe(null);
   });
 
-  it('areaInView answers true/false, and answers it per area', () => {
+  it('areaOk keeps exactly the phases carrying an area named after an inherited member', () => {
+    // The area controls are no longer pruned by view, so no index of area tags
+    // is built; the filter reads each row's own `data-area` against an array.
+    // Kept AND dropped for each tag, or a gate that kept everything would pass.
     const { ctx } = page();
-    const { areaInView } = reach(ctx, ['areaInView']);
-    // The default view is `active`, whose segments are active AND pending, so
-    // the archived phase's tag is the one that must answer false. Both
-    // directions, or a function that always said true would pass this.
-    expect(areaInView('storefront')).toBe(true);
-    expect(areaInView('constructor')).toBe(true);
-    expect(areaInView('__proto__')).toBe(true);
-    expect(areaInView('valueOf')).toBe(false);
-    // An area nothing is tagged with is not in view either; an empty tag is the
-    // documented "no area filter" case and stays true.
-    expect(areaInView('toString')).toBe(false);
-    expect(areaInView('')).toBe(true);
+    const { areaOk } = reach(ctx, ['areaOk']);
+    ['storefront', 'constructor', '__proto__', 'valueOf'].forEach((tag) => {
+      vm.runInContext('areaFilter = ' + JSON.stringify([tag]), ctx);
+      const kept = vm.runInContext('phaseRows', ctx).filter((r) => areaOk(r))
+        .map((r) => r.getAttribute('data-phase'));
+      expect(kept, tag).toEqual(PHASES.filter((p) => p.area === tag).map((p) => p.id));
+    });
   });
 
   it('statusInView reads the segment each STATUS was filed under', () => {
@@ -531,12 +529,6 @@ describe('the proofs above can fail', () => {
     expect(tfOf('nodeType')).toBe(1);
     expect(typeof tfOf('getAttribute')).toBe('function');
     expect(Object.getPrototypeOf(vm.runInContext('TFROW', ctx))).not.toBe(null);
-  });
-
-  it('goes red when the area index gets a prototype back — at LOAD', () => {
-    expect(() => page({
-      mutate: mutateOnce('const AREA_SEGS = Object.create(null);', 'const AREA_SEGS = {};'),
-    })).toThrow(/\.indexOf is not a function/);
   });
 
   it('goes red when the status index gets a prototype back', () => {

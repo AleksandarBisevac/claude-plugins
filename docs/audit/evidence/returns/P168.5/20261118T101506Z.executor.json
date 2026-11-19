@@ -1,0 +1,43 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__deps.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test_derive_phase_gate.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T10:23:50Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py` in a throwaway tree at HEAD exited 1 with 6 of 1271 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - wgv1 (house FAIL), wg3 (house FAIL), wg4 (house FAIL), wg5 (house FAIL), wg7 (house FAIL), wg9 (house FAIL): SELFTEST FAILED: 1266/1271 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Attempt 2, same worktree, everything from attempt 1 kept (settle's _narrowed_wide_gates/_settle_wide_gates over _rederive_gate, the stale-wide-gate validator warning, record-listing's count, docs, wg1-wg9 and wgv1-wgv2). Attempt 1's affected sweep was red on tests/test__deps.py ck2/ck16: phaseGate.derived.runner read as typed by governance/derive-phase-gate.py and through strip by manifest/_manifest_phases.py. Diagnosis: the strip read is the pre-existing one in _check_phase_gate_derived (unchanged since ed8b946a). The config-mirror lint walks a module's scope merging locals by name across functions, and attempt 1's _recorded_spelling binds `derived = gate.get(\"derived\")` off `meta.get(\"phaseGate\")`, so the old `derived.get(\"runner\")` became visible to it. The divergence was real: the validator called a runner blank once trimmed a shape fault while derive-phase-gate echoed it as an entry. Repair (files widened by the orchestrator for it; the plan gate allowed every write): _manifest_phases.derived_runner(derived) -> (key, problem) is the one reading - None/None when absent or null, None plus the validator's own sentence when not a string or blank once trimmed, else the key; _check_phase_gate_derived files its runner-shape finding from that problem (wording unchanged) and its unknown-key check from the key; derive-phase-gate.py calls _phases.derived_runner at both sites (the printed DERIVED line's entry, `or \"gate\"`, and testGateDerived.entry). Now only _manifest_phases reads the key, so there is no divergence and no KNOWN_CONFIG_MIRRORS row was added. I did not take the shortcuts of renaming locals or swapping .strip() for a spelling the lint does not count. tests/test_derive_phase_gate.py: dp-runner (a runner of three spaces prints `| gate over` and records no `entry`) was RED before the derive-phase-gate edit - line '| ' + blanks + ' over', entry '   ', 37/38 - and green after; dp-runner-b, the allow case, keeps `listAll` printed and recorded. Its over-fire mutation (a reader that always returns None) was not run, only reasoned: it would print `gate` and fail dp-runner-b's `| listAll over`. CHANGELOG Unreleased/Fixed has one line for the user-visible change; PLUGIN-BUILD-GUIDE's _manifest_phases section names derived_runner. Runs from the worktree, all exit 0: python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py -> '2/2 files ok, 1424 cases'; python3 tools/sweep-selftests.py tests/test__deps.py -> '1/1 files ok, 284 cases' (ck2, ck16 green); python3 tools/sweep-selftests.py tests/test_derive_phase_gate.py -> '1/1 files ok, 38 cases'. Dependants: derive-phase-gate.py's readers - same output for any runner that is a non-blank string; only a blank runner changes, from the blank to `gate`. _manifest_phases importers - derived_runner is a new public name, and _check_phase_gate_derived's codes and sentences are byte-identical. The attempt-1 answers for the other dependants stand (no signature changed; committed plans docs/audit/audit-plan.json, examples/acme-store/audit-plan.json and templates/audit-plan.starter.json validate with 0 findings and 0 stale-wide-gate warnings). The brief re-printed for this attempt still lists the original seven files (computed at attempt start, 10:15:07Z), so the widening is known from the orchestrator's message and from the plan gate allowing the two writes, not from the brief. No panel/ui file touched, so no screenshot re-capture is owed.",
+    "descriptive": "settle now rewrites a pending task's stale derived wide gate to the narrow one, the validator and record-listing name such tasks, and phaseGate.derived.runner has one reading that the validator and derive-phase-gate share."
+  },
+  "testsAdded": [
+    "wg1-wg9 (test_audit_task.py, wg-block): after record-listing, settle rewrites a pending phase-no-spelling task to the gate a freshly added task of the same scope derives, leaves a declared, cleared, started, ran-once and still-wide task unchanged, journals one plan.settle row naming only that task, and a second settle writes nothing",
+    "wgv1-wgv2 (test__manifest_phases.py): with a recorded spelling the validator warns about exactly the one stale task and names settle; with no spelling it warns about none",
+    "dp-runner, dp-runner-b (test_derive_phase_gate.py): a runner blank once trimmed prints the default `gate` and records no entry; a real key is still printed and recorded"
+  ],
+  "casesAdded": [
+    [
+      "wg1",
+      "wg2",
+      "wg3",
+      "wg4",
+      "wg5",
+      "wg6",
+      "wg7",
+      "wg8",
+      "wg9"
+    ],
+    [
+      "wgv1",
+      "wgv2"
+    ]
+  ],
+  "claims": "claims:\n1 derived_runner in _manifest_phases.py is the reading its docstring describes, called by _check_phase_gate_derived and at derive-phase-gate.py's two sites (the DERIVED line's entry, testGateDerived.entry); stale_spelled_gates and _narrowed_wide_gates/_settle_wide_gates as in attempt 1\n2 dp-runner red before the derive-phase-gate edit (37/38), green after; dp-runner-b is the allow case, its over-fire mutation reasoned not run; attempt 1's five scratch-copy mutations still stand\n3 class: one config key read two ways; a grep of derive-phase-gate.py for runner reads leaves only the derived_runner call; the lint (ck2/ck16) is the tree-wide check, green\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:eb1bc20ed12f80111f2b6c04befe70eb93056ff5685dfced1bc5e8469c8edf95\",\"dirtyDigest\":\"sha256:657f77b537a0066f7ad76fa30fa01e661f7cf86a7ca9366b49d1ab8230c9f583\",\"dirtyPaths\":{\"CHANGELOG.md\":\"013f860fbe94d240\",\"PLUGIN-BUILD-GUIDE.md\":\"6efc063b5ca4d419\",\"plugins/audit/commands/task.md\":\"bc836aafddd8dd47\",\"plugins/audit/scripts/governance/derive-phase-gate.py\":\"1cf48a1038e1a7b2\",\"plugins/audit/scripts/manifest/_manifest_phases.py\":\"e788bec8bfa62df2\",\"plugins/audit/scripts/manifest/audit-task.py\":\"8aa1def6c09e5ae9\",\"tests/test__manifest_phases.py\":\"ed01bb46cc54bc3a\",\"tests/test_audit_task.py\":\"6fe8fc28c0ee352c\",\"tests/test_derive_phase_gate.py\":\"01e4000448a0ce24\"},\"head\":\"ed8b946a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/commands/task.md\",\"plugins/audit/scripts/governance/derive-phase-gate.py\",\"plugins/audit/scripts/manifest/_manifest_phases.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test__manifest_phases.py\",\"tests/test_audit_task.py\",\"tests/test_derive_phase_gate.py\"],\"scopeDigest\":\"sha256:df250033929eb53e8eb164c445a7c4412ae80a61ddeac7e5399d3cee4b2ad200\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

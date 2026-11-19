@@ -220,10 +220,17 @@ def _cases(check):
 
     # --- the audited sheet must be the shipped sheet --------------------------
     _rc = M.REPORT_CSS_PARTS
+    # A shared stylesheet part ships in BOTH sheets, so it belongs to each
+    # surface's declared set; left out, a shared part nobody joined would pass.
+    _shared_css = set(n for n in L.UI_ASSETS
+                      if n.startswith("shared/") and n.endswith(".css"))
     check("cs2 every declared part exists and every report-css asset is "
-          "declared - a part on disk that the sheet does not join is a feature "
-          "that silently never ships",
-          set(_rc) == set(n for n in L.UI_ASSETS if n.startswith("report-css/")))
+          "declared, the shared stylesheet parts (%r) with them - a part on "
+          "disk that the sheet does not join is a feature that silently never "
+          "ships" % (sorted(_shared_css),),
+          bool(_shared_css)
+          and set(_rc) == set(n for n in L.UI_ASSETS
+                              if n.startswith("report-css/")) | _shared_css)
     _shipped = M.TOKEN_CSS + "".join(M.read_asset(_n) for _n in _rc)
     check("cs3 the sheet the theme lints audit IS the sheet the page receives, "
           "byte for byte - auditing a differently-ordered join would clear a "
@@ -235,9 +242,10 @@ def _cases(check):
     # panel joined its own alphabetically, and no case above would notice.
     _pc = M.PANEL_CSS_PARTS
     check("cs5 every declared panel part exists and every panel-css asset is "
-          "declared - a part on disk that the sheet does not join is a feature "
-          "that silently never ships",
-          set(_pc) == set(n for n in L.UI_ASSETS if n.startswith("panel-css/")))
+          "declared, the shared stylesheet parts with them - a part on disk "
+          "that the sheet does not join is a feature that silently never ships",
+          set(_pc) == set(n for n in L.UI_ASSETS
+                          if n.startswith("panel-css/")) | _shared_css)
     _panel_join = "".join(M.read_asset(_n) for _n in _pc)
     check("cs7 the panel sheet the theme lints audit IS the one the browser "
           "receives, byte for byte - the marker replaced, the parts in "

@@ -109,6 +109,11 @@ import { unwiredStages, stageSources } from './ui-checks/wiring.mjs';
 // several disclosures wear on purpose, so it identifies a behaviour and not a
 // disclosure; the rule and the scar it came from are in that file.
 import { USAGE_DETAIL_CHARTS, readDisclosure } from './ui-checks/disclosures.mjs';
+// Pressing a confirm for a write and reading what it did. It lives in its own
+// module because the stage checks below need it too, and they cannot import this
+// file back.
+import { confirmWrite, COMPOSITION_WRITE, CONFIG_WRITE,
+         PROPOSAL_WRITE } from './ui-checks/confirm-write.mjs';
 // The panel-tab stages. They are NOT re-exported: nothing outside this file
 // has ever called them, and a facade for a name with one caller is a second home
 // for no reason. What they need is handed over as `stageCtx`, built once in main().
@@ -197,6 +202,16 @@ const RUNSTATUS_URL = '**/api/runstatus';
 
 /** The endpoint a settings/config Save PUTs to. Fixtures for it go HERE. */
 const CONFIG_URL = '**/api/config';
+
+/** The endpoint a Composition Save PUTs to, as a route pattern. */
+const COMPOSITION_URL = '**/api/composition';
+
+/**
+ * How long the proving leg holds a save's request before letting it through: past
+ * every fixed wait the gate used to sleep after a confirm, so that a read put back
+ * on such a timer lands before the write does and goes red.
+ */
+const HELD_ANSWER_MS = 2500;
 
 const problems = [];
 
@@ -868,7 +883,8 @@ async function openUsageFilters(page) {
       chipsFirst: c ? c.compareDocumentPosition(d) === 4 : null,
     };
   });
-  if (!page.__usageFoldSeen) {
+  const firstSight = !page.__usageFoldSeen;
+  if (firstSight) {
     page.__usageFoldSeen = true;
     if (st.open) {
       fail('usage: the Filters fold was already open when the tab was first '
@@ -887,7 +903,116 @@ async function openUsageFilters(page) {
          + 'nothing on screen naming what is scoping every number below it');
     }
   }
+  const shutName = firstSight ? await usageFoldName(page) : null;
   if (!st.open) await page.click('#usage summary[data-ufilters]');
+  if (firstSight) {
+    // The arrow beside "Filters" is a picture: the summary's name is its words
+    // and its count, in both states, because shut and open draw different
+    // triangles. Asked of the browser's accessibility tree - the name is
+    // computed, and generated content joins it unless it says otherwise.
+    const openName = await usageFoldName(page);
+    const ARROWS = /[■-◿]/;
+    const bad = [['shut', shutName], ['open', openName]]
+      .filter(([, n]) => !n || ARROWS.test(n));
+    if (bad.length) {
+      fail(`pa1 usage: the Filters summary is announced as ${bad.map(([s, n]) => `${s} `
+         + JSON.stringify(n)).join(' and ')} - the disclosure arrow is decoration `
+         + 'and must not join the name');
+    } else {
+      note(`pa1 usage: the Filters summary is named ${JSON.stringify(shutName)} shut and `
+         + `${JSON.stringify(openName)} open, no arrow in either`);
+    }
+  }
+}
+
+/** The Usage Filters summary's accessible name, as the browser computes it. */
+async function usageFoldName(page) {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const { root } = await cdp.send('DOM.getDocument', { depth: -1 });
+    const { nodeId } = await cdp.send('DOM.querySelector',
+      { nodeId: root.nodeId, selector: '#usage summary[data-ufilters]' });
+    if (!nodeId) return '';
+    const { nodes } = await cdp.send('Accessibility.getPartialAXTree',
+      { nodeId, fetchRelatives: false });
+    return (nodes[0] && nodes[0].name && String(nodes[0].name.value || '')) || '';
+  } finally { await cdp.detach(); }
+}
+
+/**
+ * The usage tab's pointer states, each read in its OWN box.
+ *
+ * A hover rule that names the wrong selector, or one a later rule out-ranks,
+ * leaves the control looking inert under the pointer while every substring pin
+ * still finds the rule. So each control's computed style is read at rest and
+ * again under the pointer, and at least one property its rule sets must have
+ * moved. The pointer is moved twice per read because headless hover applies on
+ * the next move, not the first.
+ *
+ * The chip row and its "clear all" link exist only while a filter is on, so a
+ * ranked row is clicked first - the way a reader turns one on - and the filters
+ * are cleared again at the end, leaving the tab as the next leg expects it.
+ */
+async function assertUsageHoverParity(page) {
+  const READ = ['borderTopColor', 'backgroundColor', 'textDecorationLine', 'color'];
+  const styleOf = (loc) => loc.evaluate((el, props) => {
+    const cs = getComputedStyle(el);
+    return Object.fromEntries(props.map((p) => [p, cs[p]]));
+  }, READ);
+  const park = async () => {
+    await page.mouse.move(1, 1);
+    await page.mouse.move(2, 2);
+    await page.waitForTimeout(150);
+  };
+  const pointAt = async (loc) => {
+    const b = await loc.boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.move(b.x + b.width / 2 + 1, b.y + b.height / 2);
+    await page.waitForTimeout(150);
+  };
+  const STATES = [
+    { id: 'ph1', sel: '#usage .fdetails > summary', sets: ['borderTopColor', 'backgroundColor'] },
+    { id: 'ph2', sel: '#usage .urow.pick:not(.on)', sets: ['backgroundColor'] },
+    { id: 'ph3', sel: '#usage .ulegend b.pick', sets: ['textDecorationLine'] },
+    { id: 'ph4', sel: '#usage .uchip', sets: ['borderTopColor'], filtered: true },
+    { id: 'ph5', sel: '#usage .uchips .lnk', sets: ['textDecorationLine'], filtered: true },
+  ];
+  let filtered = false;
+  for (const s of STATES) {
+    if (s.filtered && !filtered) {
+      const row = page.locator('#usage .urow.pick:not(.on):not(.tail)')
+        .filter({ visible: true }).first();
+      if (await row.count()) {
+        await row.click();
+        await page.waitForTimeout(250);
+      }
+      filtered = true;
+    }
+    const loc = page.locator(s.sel).filter({ visible: true }).first();
+    if (!(await loc.count())) {
+      fail(`${s.id} usage: no visible ${s.sel} to put in its hover state - a parity `
+         + 'check over nothing would read as a pass');
+      continue;
+    }
+    await loc.scrollIntoViewIfNeeded();
+    await park();
+    const rest = await styleOf(loc);
+    await pointAt(loc);
+    const hot = await styleOf(loc);
+    const moved = s.sets.filter((p) => rest[p] !== hot[p]);
+    if (moved.length) {
+      note(`${s.id} usage: ${s.sel} in its hover state changes its own box `
+         + `(${moved.join(',')} moved)`);
+    } else {
+      fail(`${s.id} usage: ${s.sel} in its hover state changes nothing its rule `
+         + `sets (${s.sets.join(',')} read the same at rest and under the pointer)`);
+    }
+  }
+  await park();
+  if (filtered) {
+    await page.evaluate(() => clearAll());
+    await page.waitForTimeout(200);
+  }
 }
 
 /** The defect this whole script exists to prevent. */
@@ -1254,6 +1379,8 @@ async function assertUsageWorks(page) {
   // arrival, which is the claim no substring pin can make.
   await openUsageFilters(page);
   await compare('unfiltered', 'true');
+  await assertUsageHoverParity(page);
+  await compare('unfiltered again, after the pointer-state reads', 'true');
 
   // --- sparklines -----------------------------------------------------------
   // Drawn, not merely present: a path element with one point, or with a `d` the
@@ -3196,8 +3323,7 @@ async function assertConfirmFlowWorks(page) {
   }
   await saveBtn.click();
   await awaitConfirmDialog(page);
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(900);
+  await confirmWrite(page, 'composition', COMPOSITION_WRITE, during);
   const saved = await onDisk();
   const shownFor = (id) => page.evaluate((x) => {
     const tr = [...document.querySelectorAll('#comp tr.task')]
@@ -3277,8 +3403,7 @@ async function assertConfirmFlowWorks(page) {
   during('composition (moved manifest): Save, then its confirm dialog');
   await saveBtn.click();
   await awaitConfirmDialog(page);
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(900);
+  await confirmWrite(page, 'composition (moved manifest)', COMPOSITION_WRITE, during);
   const warned = await page.evaluate(() => ({
     diff: (document.querySelector('#comp [data-cfdiff]') || {}).textContent || null,
     toast: (document.querySelector('#toast') || {}).className,
@@ -3478,8 +3603,7 @@ async function assertConfirmFlowWorks(page) {
   } else {
     note(`settings: the dialog lists "${cfgRows[0].join(' · ')}"`);
   }
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(700);
+  await confirmWrite(page, 'settings', CONFIG_WRITE, during);
   const cfgSaved = await page.evaluate(async (p) => {
     const s = await api('GET', '/api/state');
     const v = p.split('.').reduce((o, k) => (o == null ? o : o[k]), s.config);
@@ -3665,8 +3789,7 @@ async function assertSkillTriState(page) {
     fail(`skills: the confirm dialog lists ${JSON.stringify(dlg)} — null must read `
        + `as the opt-out, not as "not set"`);
   }
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(900);
+  await confirmWrite(page, 'skills', COMPOSITION_WRITE, during);
   const onDisk = await page.evaluate(async (id) => {
     const s = await api('GET', '/api/state');
     const t = (s.composition.tasks || []).find((x) => x.id === id);
@@ -3688,12 +3811,29 @@ async function assertSkillTriState(page) {
     note(`skills: ${pick.optId}.skills saved as null and re-read as the opt-out chip`);
   }
   // --- and back: the chip's × clears the answer to [] -------------------------
+  // This save is also the proof that confirmWrite waits for the answer rather than
+  // for a clock. Its request is held before it reaches the server, for longer than
+  // any fixed wait this file used to sleep after a confirm, and then let through:
+  // a read put back on such a timer runs while the file still holds null, and the
+  // check below goes red. The hold is counted, because a route that never matched
+  // would leave this leg green while proving nothing about the wait.
   await rowOf(pick.optId).locator('.tskills .chip.optout button').click();
   await page.waitForTimeout(200);
   await saveBtn.click();
   await awaitConfirmDialog(page);
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(900);
+  let held = 0;
+  await page.route(COMPOSITION_URL, async (route) => {
+    if (route.request().method() === COMPOSITION_WRITE.method) {
+      held += 1;
+      await new Promise((res) => setTimeout(res, HELD_ANSWER_MS));
+    }
+    await route.continue();
+  });
+  try {
+    await confirmWrite(page, 'skills', COMPOSITION_WRITE, during);
+  } finally {
+    await page.unroute(COMPOSITION_URL);
+  }
   const back = await page.evaluate(async (id) => {
     const s = await api('GET', '/api/state');
     const t = (s.composition.tasks || []).find((x) => x.id === id);
@@ -3703,6 +3843,13 @@ async function assertSkillTriState(page) {
     fail(`skills: clearing the opt-out did not write [] back for ${pick.optId}`);
   } else {
     note('skills: the opt-out clears back to [] through the same save flow');
+  }
+  if (held !== 1) {
+    fail(`skills: the delayed-answer hold caught ${held} save request(s), not one — `
+       + `the leg that proves the confirm waits for its answer proved nothing`);
+  } else if (back) {
+    note(`skills: a save whose request was held ${HELD_ANSWER_MS} ms was read once `
+       + `it answered, not on a fixed clock`);
   }
   // --- the inventory hint (v0.37 B3): a name discovery does not know ----------
   // The probe name is INJECTED, and the fixture home declares every name the
@@ -4469,13 +4616,13 @@ async function assertSaveNoteLifecycle(page) {
   } else if (okUp) {
     note('settings: "saved" card present after the save, gone on its 5s clock');
   }
-  // Leave the fixture as found.
+  // Leave the fixture as found - and wait for that save to land, since every leg
+  // after this one starts from the config it writes.
   await box.click();
   await page.waitForTimeout(200);
   await page.locator('#guards').getByRole('button', { name: 'Save settings' }).click();
   await awaitConfirmDialog(page);
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(400);
+  await confirmWrite(page, 'settings (restoring the fixture)', CONFIG_WRITE, during);
 }
 
 /* ---- v0.34 C4 (fp): filter persistence — reload, share link, clearAll -------
@@ -5892,8 +6039,7 @@ async function assertProposalsWork(page) {
   } else {
     note('proposals: the drop dialog shows the reason before it is written');
   }
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(900);
+  await confirmWrite(page, 'proposals (drop)', PROPOSAL_WRITE, during);
   const afterDrop = (await read()).find((p) => p.id === target.id) || {};
   if (afterDrop.status !== 'dropped' || !/declined by the gate/.test(afterDrop.text)) {
     fail(`proposals: after dropping, ${target.id} reads `
@@ -5906,8 +6052,7 @@ async function assertProposalsWork(page) {
   await open();
   await page.locator(`#props [data-proprevive="${target.id}"]`).click();
   await awaitConfirmDialog(page);
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(900);
+  await confirmWrite(page, 'proposals (revive)', PROPOSAL_WRITE, during);
   const revived = (await read()).find((p) => p.id === target.id) || {};
   if (revived.status !== 'proposed') {
     fail(`proposals: revive left ${target.id} at ${JSON.stringify(revived.status)}`);
@@ -5919,8 +6064,9 @@ async function assertProposalsWork(page) {
   await open();
   await page.locator(`#props [data-propmat="${target.id}"]`).click();
   await awaitConfirmDialog(page);
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(1200);
+  // The plan POST that sized this dialog was answered before it opened, so the
+  // request confirmWrite matches is the materialize itself.
+  await confirmWrite(page, 'proposals (materialize)', PROPOSAL_WRITE, during);
   const done = (await read()).find((p) => p.id === target.id) || {};
   const inPlan = await page.evaluate((pid) => {
     // Bare `STATE`, not `window.STATE`: a top-level `let` in the page's script
@@ -7411,7 +7557,7 @@ async function main() {
   // to say so in its signature, which is the property the split was for. `tabTo`,
   // `shot` and `awaitConfirmDialog` are function declarations and therefore hoisted,
   // so naming them here is safe however far below they sit.
-  const stageCtx = { note, fail, tabTo, shot, awaitConfirmDialog };
+  const stageCtx = { note, fail, tabTo, shot, awaitConfirmDialog, during };
 
   // FIRST, BEFORE THE BROWSER IS EVEN IMPORTED, and a hard exit rather than a
   // `fail()`: this one says the pictures this host produces would carry its

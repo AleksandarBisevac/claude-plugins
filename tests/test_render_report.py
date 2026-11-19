@@ -123,6 +123,209 @@ def _tables_and_wrappers(markup):
     return out
 
 
+# --- the filter-axis registry -------------------------------------------------
+# Chips the script wires that are NOT a filter, each with why. Read in both
+# directions: an attribute here that nothing wires any more is a stale row.
+NOT_A_FILTER = {
+    "data-g": "the heatmap's granularity picks the grain one chart is drawn "
+              "at; it hides no row, no phase and no view, so Clear owes it "
+              "nothing",
+}
+# The vocabulary a registry entry's `scope` is drawn from - what the axis
+# narrows, which is what refresh() reads to decide what it counts.
+AXIS_SCOPES = ("text", "phases", "tasks", "drill", "usage")
+AXIS_BEHAVIOURS = ("on", "reset", "paint", "encode", "decode")
+
+
+def _registry_text(script):
+    """The `FILTER_AXES` array literal of `script`, or '' when there is none."""
+    start = script.find("const FILTER_AXES = [")
+    if start < 0:
+        return ""
+    # The literal closes at its own indent, whatever follows the bracket: the
+    # registry maps its entries through the link check on the same line.
+    end = script.find("\n  ]", start)
+    return script[start:end] if end > 0 else ""
+
+
+def _filter_axes(script):
+    """One dict per registry entry, read off the array literal's own text:
+    `id`, `attrs`, `keys`, `unkept` (the first literal of the reason, or ''),
+    `scope`, `counts`, the behaviours it declares, and the state names its
+    `reset` assigns. Parsed rather than evaluated, because the claim being
+    tested is about what the SOURCE declares in one place."""
+    text = _registry_text(script)
+    starts = [m for m in re.finditer(r"\bid: '([a-z-]+)'", text)]
+    axes = []
+    for n, m in enumerate(starts):
+        body = text[m.start():starts[n + 1].start() if n + 1 < len(starts)
+                    else len(text)]
+        lists = dict((k, re.findall(r"'([^']*)'", v)) for k, v in
+                     re.findall(r"\b(attrs|keys): \[([^\]]*)\]", body))
+        unkept = re.search(r"\bunkept: '([^']*)'", body)
+        scope = re.search(r"\bscope: '([a-z]+)'", body)
+        counts = re.search(r"\bcounts: (true|false)\b", body)
+        reset = re.search(r"\breset: \(\) => \{(.*?)\},\n", body, re.S)
+        axes.append({
+            "id": m.group(1),
+            "attrs": lists.get("attrs"),
+            "keys": lists.get("keys"),
+            "unkept": unkept.group(1) if unkept else "",
+            "scope": scope.group(1) if scope else None,
+            "counts": counts.group(1) if counts else None,
+            "behaviours": [b for b in AXIS_BEHAVIOURS
+                           if re.search(r"\b%s: \(" % b, body)],
+            "state": sorted(set(re.findall(r"([A-Za-z_]\w*(?:\.value)?) = ",
+                                           reset.group(1)))) if reset else [],
+        })
+    return axes
+
+
+def _axis_body(registry, axis_id):
+    """The text of one registry entry, from its `id:` to the next entry's."""
+    i = registry.find("id: '%s'" % axis_id)
+    if i < 0:
+        return ""
+    j = registry.find("\n    {\n", i)
+    return registry[i:j] if j > 0 else registry[i:]
+
+
+def _names_in(text, names):
+    """The names of `names` that `text` spells as a whole identifier."""
+    return sorted(n for n in names
+                  if re.search(r"(?<![\w.])%s(?!\w)" % re.escape(n), text))
+
+
+def _function_body(text, signature):
+    """`signature` through the first line closing a two-space-indented block
+    after it - the span of a top-level function in a report part - or ''."""
+    i = text.find(signature)
+    if i < 0:
+        return ""
+    j = text.find("\n  }\n", i)
+    return text[i:j] if j > 0 else ""
+
+
+def _filter_axis_cases(check):
+    """rx: every filter axis is declared ONCE, and the four places that used to
+    list the axes by hand - Clear, the link writer, the restore and refresh()'s
+    counters - iterate the declaration instead."""
+    script = M._SCRIPT
+    axes = _filter_axes(script)
+    page_state = _theme.read_asset("report/page-state.js")
+    check("rx1 the registry is declared once, in the part that owns the "
+          "filter state, and declares axes",
+          script.count("const FILTER_AXES = [") == 1
+          and page_state.count("const FILTER_AXES = [") == 1
+          and len(axes) > 0, repr([a["id"] for a in axes]))
+    # Derived from the script: every chip attribute a `wireChips` call binds is
+    # an axis or a row of NOT_A_FILTER. A chip row added without a registry
+    # entry fails here BY NAME, which is the whole point of the registry.
+    wired = set(re.findall(r"wireChips\([^,()]+, '(data-[a-z]+)'", script))
+    registered = [x for a in axes for x in (a["attrs"] or [])]
+    missing = sorted(wired - set(registered) - set(NOT_A_FILTER))
+    named = ("data-ps", "data-m", "data-tev", "data-tevf", "data-a", "data-au",
+             "data-days", "data-ts")
+    check("rx2 every chip attribute the page wires is a registered axis "
+          "(or a named non-filter), and so is every axis the page renders",
+          bool(wired) and not missing
+          and not sorted(set(named) - set(registered)),
+          "wired %r, registered %r, unregistered %r"
+          % (sorted(wired), sorted(registered), missing))
+    check("rx2b ...and NOT_A_FILTER names only attributes the script still "
+          "wires, so an exemption cannot outlive its chip",
+          set(NOT_A_FILTER) <= wired, repr(sorted(set(NOT_A_FILTER) - wired)))
+    dup_attrs = sorted(set(x for x in registered if registered.count(x) > 1))
+    check("rx3 each chip attribute belongs to exactly one axis",
+          bool(registered) and not dup_attrs, repr(dup_attrs))
+    bad = [a["id"] for a in axes
+           if a["behaviours"] != list(AXIS_BEHAVIOURS)
+           or a["scope"] not in AXIS_SCOPES or a["counts"] is None
+           or a["attrs"] is None or a["keys"] is None or not a["state"]]
+    check("rx4 every axis declares how it is on, reset, painted, encoded and "
+          "decoded, what it narrows, whether the panel counts it, and the "
+          "state its reset clears",
+          bool(axes) and not bad, repr(bad))
+    keys = [k for a in axes for k in (a["keys"] or [])]
+    unexplained = [a["id"] for a in axes
+                   if bool(a["keys"]) == bool(a["unkept"].strip())]
+    check("rx5 an axis is kept across a reload under its own link keys, or "
+          "says in one line why it is not - never both, never neither - and "
+          "no two axes share a key",
+          bool(keys) and not unexplained
+          and len(keys) == len(set(keys))
+          and set(("q", "from", "to")) <= set(keys),
+          "keys %r, neither-or-both %r" % (keys, unexplained))
+    # The consumers. The forbidden names are DERIVED from the registry - the
+    # state each axis's reset assigns - so a new axis's variable is forbidden
+    # in a hand list the moment the axis is declared.
+    state = sorted(set(s for a in axes for s in a["state"]))
+    date_range = _theme.read_asset("report/date-range.js")
+    filters = _theme.read_asset("report/filters.js")
+    exports = _theme.read_asset("report/exports.js")
+    clear = _function_body(date_range, "function clearAll()")
+    sync = _function_body(filters, "function syncHash()")
+    restore = exports[exports.find("// Restore what the link asked"):]
+    refresh = _function_body(filters, "function refresh()")
+    counters = re.findall(
+        r"const (?:live|narrows|anyFilter|nHidden) = [^;]*;"
+        r"|clearBtns\.forEach\([^;]*;", refresh)
+    sites = (("clearAll", clear, (".reset()", ".paint()")),
+             ("syncHash", sync, (".encode()",)),
+             ("the restore block", restore, (".decode(HASH)", ".paint()")),
+             ("refresh's counters", "\n".join(counters), (".on()",)))
+    for name, body, calls in sites:
+        check("rx6 %s iterates the registry and names no axis's state by hand"
+              % name,
+              bool(state) and "FILTER_AXES" in body
+              and all(c in body for c in calls)
+              and not _names_in(body, state),
+              "state %r named %r, body %d chars"
+              % (state, _names_in(body, state), len(body)))
+    check("rx7 refresh's counters are exactly the statements the registry "
+          "feeds - the live set, the narrowing test, the filter test, the "
+          "panel count and the Clear offer",
+          len(counters) == 5 and "const live = FILTER_AXES.filter(" in refresh,
+          repr(counters))
+    hash_reads = sorted(set(k for k in keys
+                            if re.search(r"HASH\.%s\b" % re.escape(k), script)))
+    check("rx8 no part reads a registered key off the link by hand - the "
+          "registry's decode is the one reader",
+          bool(keys) and not hash_reads, repr(hash_reads))
+    ts = [a for a in axes if "data-ts" in (a["attrs"] or [])]
+    # The badge on More filters counts what is folded away inside that panel;
+    # these chips sit in the table rows. The behaviour - a count exactly while
+    # a control inside the panel is on - is cl10 in the browser gate, which
+    # derives the panel's controls off the page; this is the declaration it
+    # rests on.
+    check("rx9 the per-phase task-status chips are not counted on More "
+          "filters, which does not hold them, and still offer Clear (a table "
+          "scope, not the Usage-only one)",
+          len(ts) == 1 and ts[0]["counts"] == "false"
+          and ts[0]["scope"] not in ("usage",), repr(ts))
+    # A construct pin: that a link naming a value no control offers restores
+    # nothing, on every key the page publishes, is hr1's in the browser gate.
+    # What this holds is WHERE the check sits - once, on the registry, wrapping
+    # every entry's decode as the array is built - so no entry re-implements
+    # it and an entry declared with no hook is held to it. A `takes` hook is
+    # the declared exception, for values that are not whole chip values.
+    reg = _registry_text(script)
+    wrap = ("].map((axis) => ({ ...axis, decode: (h) => "
+            "axis.decode(keptFromLink(axis, h)) }));")
+    hooked = sorted(a["id"] for a in axes
+                    if re.search(r"(?m)^      takes: ", _axis_body(reg, a["id"])))
+    check("rx10 the registry applies the link check to every axis as it is "
+          "built, no entry's decode reads the controls itself, and only the "
+          "axes whose values are not whole chip values declare a `takes` hook "
+          "(%s)" % ", ".join(hooked),
+          bool(reg) and page_state.count(wrap) == 1
+          and page_state.index(wrap) > page_state.index("const FILTER_AXES = [")
+          and "offeredBy(" not in reg and ".includes(h." not in reg
+          and "const takes = axis.takes || takesOffered;" in page_state
+          and hooked == ["area", "dates", "search"],
+          repr(hooked))
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
 
@@ -422,25 +625,29 @@ def _cases(check):
           and ".tablewrap{overflow-x:clip}" not in M._CSS)
     # u14kt was one column named by hand; this is the rule it was standing in
     # for. `overflow-wrap:anywhere` (not `break-word`) is what actually shrinks
-    # a cell's min-content width, so every value atom that is not a title gets
-    # it - a status chip, a risk word, a cost band, a delta, the name of what
-    # holds a phase shut, and both evidence-mark classes - regardless of
-    # whether the word it happens to carry has a hyphen to break at.
-    # The ancestor is deliberately not wrapped in `:where()`: each atom also
-    # carries its own component rule elsewhere (e.g. `.bandpill{white-space:
-    # nowrap}` in usage.css), declared at the same zero-added specificity a
+    # a cell's min-content width, so every run of text a table carries outside
+    # a title gets it - the evidence count, the observation, a mark that may be
+    # a sentence - regardless of whether it happens to have a hyphen to break at.
+    # The ancestor is deliberately not wrapped in `:where()`: each run also
+    # carries its own component rule elsewhere (e.g. `.ptev{white-space:nowrap}`
+    # in badges.css), declared at the same zero-added specificity a
     # `:where()`-wrapped ancestor would leave this at - so whichever file
     # happened to load later decided the column's floor by source order
     # alone, in a real engine, regardless of what either rule said. A real
     # `table.phases`/`table.data` ancestor outranks that base rule on its own
     # terms, by construction, at any load order.
-    check("u14ktw every status/value atom a table carries - not just the bugs "
-          "table's test-gate cell - may wrap and break anywhere, so no single "
-          "atom's length alone can set its column's floor",
-          "table.phases :is(.chip,.rchip,.bandpill,.dl,.heldby,"
-          ".tevn,.tevf,.ptev),\ntable.data :is(.chip,.rchip,.bandpill,.dl,"
-          ".heldby,.tevn,.tevf,.ptev){" in M._CSS
-          and "white-space:normal;overflow-wrap:anywhere}" in M._CSS)
+    # A pill and an id were in this list and are not: broken anywhere, a bugs
+    # table drew "Fixe" over "d" and "BUG-" over "10". They are kept whole by
+    # one rule over the column instead. Both clauses are construct pins - that
+    # no pill or id is drawn split, in every table and list at every size, is
+    # the browser gate's lm5.
+    check("u14ktw every run of text a table carries outside a title may wrap and "
+          "break anywhere, so no single run's length alone can set its column's "
+          "floor - and every pill and id in the column is kept whole instead",
+          "table.phases :is(.tevn,.tevf,.ptev),\ntable.data :is(.tevn,.tevf,"
+          ".ptev){\n  white-space:normal;overflow-wrap:anywhere}" in M._CSS
+          and M._CSS.count(".content :is(.chip,.rchip,.bandpill,.dl,.heldby,"
+                           ".area-tag,.mono){white-space:nowrap}") == 1)
     # A missing `;` after a custom property annexes the comment and declarations
     # that follow it. Silent, and it killed every animation in this stylesheet once.
     _unterm = _ui_theme_lints.unterminated_css_decls(M._CSS)
@@ -568,11 +775,40 @@ def _cases(check):
     # viewport. Most targets are <h2> elements a line and a half tall, so usually
     # NONE was in the band and the nav marked nothing at all. Order, not
     # visibility: whichever heading last passed under the bar is where you are.
-    check("shell: the marker is decided by which heading last passed the fold, so "
-          "one link is always marked - a band-based observer marked none",
+    # The line is the one a jump lands on - each target's own scroll-margin,
+    # read back resolved - so a nav click lights the section it opened; the
+    # browser gate's sn1 clicks every entry at every layout size to hold that.
+    check("shell: the marker is decided by which heading last reached the line a "
+          "jump lands on, so one link is always marked - a band-based observer "
+          "marked none",
           "new IntersectionObserver" not in M._SCRIPT
           and "if (best < 0) best = 0;" in M._SCRIPT
-          and "getBoundingClientRect().top <= fold" in M._SCRIPT)
+          and "getBoundingClientRect().top <= landingLine(el)" in M._SCRIPT
+          and "getComputedStyle(el).scrollMarginTop" in M._SCRIPT)
+    # A construct pin: that every entry is lit by its own jump at every size is
+    # sn1's, in the browser gate. What this holds is that the marker has ONE
+    # rule - the line - and no end-of-document rule lighting the last entry
+    # for a jump the document ended before, and that the room after the
+    # content that makes the line reachable is the script's measurement - none
+    # with no script - rather than a screen's height whatever the page needs.
+    # That the room is enough is sn1's; that it is no more than the furthest
+    # target lacks is sn3's.
+    _spy_at = M._SCRIPT.find("const markSpy = () => {")
+    _spy = (M._SCRIPT[_spy_at:M._SCRIPT.find("\n  };\n", _spy_at)]
+            if _spy_at >= 0 else "")
+    check("sn0 the scroll-spy keeps no end-of-document rule, and the room after "
+          "the content that replaces it is the script's measured --end-room, "
+          "nothing without it, on screen only",
+          bool(_spy) and "scrollHeight" not in _spy
+          and "findLastIndex" not in _spy
+          and ":root{--sticky-anchor:calc(var(--sticky-2) + var(--sp-2))}" in M._CSS
+          and "[id]{scroll-margin-top:var(--sticky-anchor)}" in M._CSS
+          and "@media screen{.snav ~ .content::after{content:\"\";display:block;\n"
+              "  height:var(--end-room,0px)}}" in M._CSS
+          and "100vh - var(--sticky-anchor)" not in M._CSS
+          and M._SCRIPT.count("root.style.setProperty('--end-room'") == 1
+          and M._SCRIPT.count("root.style.removeProperty('--end-room')") == 1,
+          "markSpy %d chars" % len(_spy))
 
     # --- the sticky stack ------------------------------------------------------
     # Four hand-tuned offsets (4.1rem nav, 3.6rem filter bar, 3.5rem headers,
@@ -602,14 +838,48 @@ def _cases(check):
           and not re.search(r"(?:^|[},])\s*thead th\{[^}]*position:sticky", _css_decl)
           and ".tablewrap[data-fits] thead th{position:sticky;top:var(--sticky-3);"
               "z-index:var(--z-thead)}" in _css_decl)
-    check("sticky: the stack is restated at runtime, because its height depends "
-          "on the title, the width and the reader's font size",
-          "measureStack" in M._SCRIPT and "--topbar-h" in M._SCRIPT
-          and "ResizeObserver" in M._SCRIPT)
+    # Judged over measureStack()'s own body, not the whole script: the name, the
+    # property names and ResizeObserver all appear outside it (the declaration,
+    # the listeners, the scroll-spy), so a script-wide presence check stayed
+    # green over a function emptied to a no-op. Each layer's setProperty is
+    # counted inside the body, and the body is what the observer and the resize
+    # listener are handed.
+    _ms_head = "const measureStack = () => {\n"
+    _ms_at = M._SCRIPT.find(_ms_head)
+    _ms_body = (M._SCRIPT[_ms_at + len(_ms_head):
+                          M._SCRIPT.index("\n  };\n", _ms_at)]
+                if _ms_at >= 0 else "")
+    _ms_sets = re.findall(r"root\.style\.setProperty\('(--[\w-]+)'", _ms_body)
+    # A constructed observer that observes nothing never fires, so the loop
+    # handing it each layer is read too: one loop, straight after the
+    # constructor, calling ro.observe on every pinned layer and nothing else.
+    _ms_loops = re.findall(
+        r"const ro = new ResizeObserver\(measureStack\);\n\s*"
+        r"for \(const el of \[([^\]]*)\]\) \{\n\s*if \(el\) ro\.observe\(el\);\n\s*\}",
+        M._SCRIPT)
+    _ms_observed = [[x.strip() for x in loop.split(",")] for loop in _ms_loops]
+    check("st5 the stack is restated at runtime, because its height depends "
+          "on the title, the width and the reader's font size - measureStack() "
+          "itself publishes the bar, the strip and the section tools' heights, "
+          "and runs on load, on every resize and on every observed layer: %s, "
+          "observing %s" % (_ms_sets, _ms_observed),
+          M._SCRIPT.count(_ms_head) == 1
+          and _ms_observed == [["toolbar", "snav",
+                                "document.querySelector('.sectools')"]]
+          and sorted(_ms_sets) == ["--sectools-h", "--strip-h", "--topbar-h"]
+          and "root.style.setProperty('--topbar-h', pinnedPx(toolbar) + 'px');"
+              in _ms_body
+          and "px(st) + 'px');" in _ms_body
+          and "  };\n  measureStack();\n" in M._SCRIPT
+          and M._SCRIPT.count("new ResizeObserver(measureStack)") == 1
+          and M._SCRIPT.count(
+              "window.addEventListener('resize', measureStack, { passive: true });")
+              == 1)
     # Anchors are how this report is navigated; every one of them landed under the
     # bar, which reads as "the link goes somewhere slightly below the heading".
     check("sticky: every anchor clears the stack instead of landing beneath it",
-          "[id]{scroll-margin-top:calc(var(--sticky-2)" in M._CSS)
+          "[id]{scroll-margin-top:var(--sticky-anchor)}" in M._CSS
+          and "--sticky-anchor:calc(var(--sticky-2)" in M._CSS)
     check("sticky: the scrollbar's width is reserved, so a short page and a long "
           "one do not centre the shell at two different offsets",
           "scrollbar-gutter:stable" in M._CSS)
@@ -691,9 +961,15 @@ def _cases(check):
     check("c5: the date picker opens on the months the plan actually covers",
           re.search(r'id="audit-from"[^>]*min="\d{4}-\d{2}-\d{2}"[^>]*'
                     r'max="\d{4}-\d{2}-\d{2}"', html_out) is not None)
+    # A construct pin: that the panel lands on the screen at every size and
+    # wherever its control wraps to is lm6's, in the browser gate.
     check("c5: the panel is out of flow, so opening it cannot move the sticky "
-          "stack every anchor and column header is pinned against",
-          ".filterpanel{position:absolute" in M._CSS and ".fdetails{position:relative}" in M._CSS)
+          "stack every anchor and column header is pinned against - and hung "
+          "from the bar rather than from its own control, which is not "
+          "positioned",
+          ".filterpanel{position:absolute" in M._CSS
+          and ".fdetails{scroll-margin-top:" in M._CSS
+          and ".fdetails{position:" not in M._CSS)
     # The panel is a popover, so it answers to the two things every popover
     # answers to. A <details> does neither on its own — it closes only through its
     # own summary — and this one is absolutely positioned, so left open it covers
@@ -763,12 +1039,9 @@ def _cases(check):
           "chip.getAttribute('data-tokens')" in M._SCRIPT
           and "chip.getAttribute('data-share')" in M._SCRIPT
           and "of all spend" in M._SCRIPT)
-    check("c3: the author filter is a link (au=) and restores from one",
-          "put('au', auFilter)" in M._SCRIPT and "if (HASH.au)" in M._SCRIPT)
-    check("c3: clear-all lifts the author scope with everything else "
-          "(pinned INSIDE clearAll - the declaration up top spells the same "
-          "bytes and satisfied a whole-script substring)",
-          "auFilter = '';" in M._SCRIPT.split("function clearAll()")[1])
+    # The author's link key, its restore and its Clear are no longer written
+    # per axis: the filter-axis registry carries them, and the rx cases pin
+    # that the registry holds the author and that every consumer iterates it.
     check("c3: hidden actually hides a rank row and a hidden smcell - the "
           "author-facing rules a UA default cannot win against",
           ".rank[hidden]{display:none}" in M._CSS
@@ -802,27 +1075,18 @@ def _cases(check):
           "with none selected it admits everything",
           "areaFilter.includes(tag)" in M._SCRIPT
           and "if (!areaFilter.length) return true;" in M._SCRIPT)
-    check("d1: the area selection is a link (a=) and restores from one - "
-          "spelled apart from the author's au=, which stays wired",
-          "put('a', areaFilter.join(' '));" in M._SCRIPT
-          and "if (HASH.a)" in M._SCRIPT
-          and "put('au', auFilter)" in M._SCRIPT and "if (HASH.au)" in M._SCRIPT)
-    check("d1: clear-all lifts the area gate with everything else, and both "
-          "the way-back button and the panel count own it "
-          "(the reset is pinned INSIDE clearAll - the declaration up top "
-          "spells the same bytes and satisfied a whole-script substring)",
-          "areaFilter = [];" in M._SCRIPT.split("function clearAll()")[1]
-          and "|| areaFilter.length > 0" in M._SCRIPT
-          and "(areaFilter.length ? 1 : 0)" in M._SCRIPT)
+    # The area's link key (a=, apart from the author's au=), its restore, its
+    # Clear and its place in the panel count are the registry's now; the rx
+    # cases pin the registry entry and the consumers that iterate it.
     check("d1: the chips are wired, not built - report.js attaches behaviour "
           "to the server-rendered row",
           "wireChips(areaBar, 'data-a'" in M._SCRIPT
           and "function paintAreas()" in M._SCRIPT)
 
-    # --- g: the global filter row (C1/C2) — document-level composition. --------
+    # --- g: the header filter row (C1/C2) — document-level composition. --------
     # The row's own markup is pinned in _report_html's selftest; what needs a
     # whole document is what render_html feeds it and where it lands.
-    check("g1 the sticky top bar carries the global filter row when there is "
+    check("g1 the top bar carries the header filter row when there is "
           "anything to filter by, with both authors as options",
           'class="gfilters"' in uh
           and uh.index('class="gfilters"') < uh.index('<div class="shell">')
@@ -856,6 +1120,72 @@ def _cases(check):
           "as the named line report.js writes into #audit-urange)",
           ".gfilters{flex-basis:100%" in M._CSS
           and "audit-urange" in M._SCRIPT)
+    # A focus ring drawn only as box-shadow is erased by forced-colours mode,
+    # which drops every shadow; an outline is repainted in a system colour
+    # instead. Transparent, so the ring a sighted reader sees is unchanged.
+    _css_rules = re.sub(r"(?s)/\*.*?\*/", "", M._CSS)
+    _field_focus = re.findall(r"([^{}]*:focus)\{outline:2px solid transparent;"
+                              r"outline-offset:2px;border-color:var\(--accent\);"
+                              r"box-shadow:0 0 0 3px var\(--ring\)\}", _css_rules)
+    check("fo1 every text field and select in the report's filter controls has "
+          "ONE focus rule, and it carries an outline forced-colours repaints: %r"
+          % (_field_focus,),
+          [s.strip() for s in _field_focus]
+          == ["#audit-q:focus,.frow input[type=date]:focus,.gfilters select:focus,"
+              ".gfilters input[type=date]:focus"])
+    check("fo2 SECOND-DIRECTION CASE: no rule in the report's stylesheet removes "
+          "the outline any more - one left anywhere is a control with no focus "
+          "indicator under forced colours",
+          M._CSS.count("outline:none") == 0)
+    # The phone stack. The bar carries the title, the document actions and the
+    # header's filter row, and on a phone those wrap onto lines that pinned
+    # more than half the screen over the table - held upright or sideways. On a
+    # narrow or a short screen the bar scrolls with the page, and the measured
+    # offset says so. lm1 in the browser gate measures the stack at every size
+    # it reads, both of these among them; this pins the query they rest on, and
+    # that it is the only home of the rule.
+    _below = M._CSS[M._CSS.index("@media (max-width:52rem),(max-height:32rem){\n"):]
+    _below = _below[:_below.index("\n}\n")]
+    check("st1 below 52rem wide or 32rem tall the top bar scrolls with the page, "
+          "and with no script the offset the strip pins under is zero to match",
+          ".topbar{position:static}" in _below
+          and ":root{--topbar-h:0px}" in _below
+          and M._CSS.count(".topbar{position:static}") == 1)
+    # The scroll-spy keeps no line of its own any more: it reads the
+    # scroll-margin the stylesheet derives from --topbar-h, which is this
+    # measurement, so the bar is counted in one place for both.
+    check("st2 measureStack() counts the bar's height only while the bar is "
+          "actually sticky, and the scroll-spy reads that measure back through "
+          "the stylesheet rather than keeping a fold of its own - one helper "
+          "read off the layout, not a second copy of the breakpoint",
+          "const pinnedPx = (el) => (el && getComputedStyle(el).position === "
+          "'sticky' ? px(el) : 0);" in M._SCRIPT
+          and "root.style.setProperty('--topbar-h', pinnedPx(toolbar) + 'px');"
+          in M._SCRIPT
+          and "const fold" not in M._SCRIPT
+          and "px(toolbar)" not in M._SCRIPT.replace("pinnedPx(toolbar)", "")
+          and "matchMedia('(max-width:52rem)')" not in M._SCRIPT)
+    check("st3 opening More filters brings the panel into view - on a phone the "
+          "open bar leaves the sticky stack, so a panel opened while it was stuck "
+          "would otherwise open above the top of the screen",
+          "scrollIntoView({ block: 'nearest' })" in M._SCRIPT
+          and ".fdetails{scroll-margin-top:" in M._CSS)
+    # The reason the bar stops pinning is written twice - in the row's docstring
+    # and in the rule's own comment - and it is the measurement: the pinned stack
+    # held MORE than half the screen. "Nearly half" argues against the rule it
+    # explains. The stylesheet's figure is lm1's to print, so the comment names
+    # lm1 rather than carrying a before-figure of its own. Whitespace is folded
+    # because both texts wrap mid-phrase.
+    _phone_reason = [" ".join(t.split()) for t in
+                     (_report_html._global_filter_row.__doc__, _below)]
+    check("st4 the docstring and the stylesheet give one reason the top bar "
+          "scrolls on a narrow or a short screen - the stack held more than half "
+          "the screen - and the stylesheet points at lm1 for the measured share: %r"
+          % ([(t.count("more than half"), t.count("nearly half"))
+              for t in _phone_reason],),
+          [(t.count("more than half"), t.count("nearly half"))
+           for t in _phone_reason] == [(1, 0), (1, 0)]
+          and "lm1" in _below)
 
     # --- rd: Ready now as a definition list (C4) --------------------------------
     check("rd1 Ready now is a definition list naming the ready task, and the "
@@ -884,7 +1214,48 @@ def _cases(check):
           ".pmatch[hidden]{display:none}" in M._CSS)
     check("c5: the count reports tasks as well as phases, now that a filter can "
           "narrow a phase from the inside without changing the phase count",
-          "' of ' + totT + ' tasks'" in M._SCRIPT)
+          "' of ' + plural(totT, 'task')" in M._SCRIPT)
+    # The counter's basis, pinned as the construct each half of it rests on. A
+    # count of "165 phases" over a table showing five was the defect: the view
+    # was a gate on the rows and on nothing the counter said.
+    # A construct pin: the wording's behaviour - the count matches the rows
+    # drawn, names the selected option's short name, and keeps its drawn text
+    # inside its bar at every size and in every state, free to wrap onto a row
+    # of its own or across its own words - is the browser gate's ("at rest the
+    # count names the view the View select sets", lm3).
+    check("c5b: the phase count names the view it counts in, at rest as well as "
+          "filtered - by the option's bracket-free short name, said in the live "
+          "region and drawn to nobody (the View select beside it shows it), never "
+          "a bare total beside a narrowed table, and never the View select's "
+          "wording in brackets beside it",
+          M._SCRIPT.count(
+              "count.textContent = visP + ' of ' + plural(phaseRows.length, 'phase');") == 1
+          and M._SCRIPT.count("countView.textContent = ' · ' + viewShort();") == 1
+          and "countView.className = 'vh';" in M._SCRIPT
+          and M._SCRIPT.count("count.appendChild(countView);") == 1
+          and re.search(r"(?m)^\.vh\{position:absolute;width:1px;height:1px;", M._CSS)
+              is not None
+          and "opt.getAttribute('data-short')" in M._SCRIPT
+          and "' (' + viewName() + ')'" not in M._SCRIPT
+          and "(phaseRows.length + ' phases')" not in M._SCRIPT)
+
+    check("c5c: the task denominator is the header's - cancelled work counted on "
+          "neither side of the fraction, exactly as the header's task total "
+          "leaves it out",
+          M._SCRIPT.count("t.getAttribute('data-status') !== 'cancelled'") == 1
+          and "if (counted) totT++;" in M._SCRIPT
+          and "if (counted) nCounted++;" in M._SCRIPT
+          and "visT += nCounted;" in M._SCRIPT
+          and "totT += tasks.length;" not in M._SCRIPT)
+    # The browser gate holds the clause's number to the cancelled rows a search
+    # draws, in both directions; this is the construct it rests on.
+    check("c5d: what that basis leaves out of the drawn phases - cancelled "
+          "tasks that match - is counted apart and named in the count as left "
+          "out, which is true whichever filter drew them, not called matches",
+          "else nLeftOut++;" in M._SCRIPT
+          and "visX += nLeftOut;" in M._SCRIPT
+          and "visX + ' cancelled not counted'" in M._SCRIPT
+          and "cancelled match" not in M._SCRIPT)
     # Same trap as tr.taskfilter: with no script running every row is shown, so an
     # empty state that rendered by default would be a statement contradicted by
     # the table directly beneath it.
@@ -1212,6 +1583,13 @@ def _cases(check):
           and '<option value="archived"' in _sgh
           and '<option value="all"' in _sgh
           and "audit-arch" not in _sgh)
+    # Every option, counted: a view the count would fall back to the long,
+    # bracketed wording for shows up here as a missing row, not as a pass.
+    _vshort = re.findall(r'<option value="([a-z]+)" data-short="([^"]*)"', _sgh)
+    check("vw1b every View option carries the short name the phase count names it "
+          "by, and none holds a bracket (%r)" % (_vshort,),
+          [v for v, _ in _vshort] == ["active", "archived", "all"]
+          and all(sh and "(" not in sh and ")" not in sh for _, sh in _vshort))
     check("vw2 the archive segment holds BOTH terminal states - a cancelled "
           "phase is finished, and filing it under pending would leave dropped "
           "work looking like work still to come",
@@ -1242,8 +1620,29 @@ def _cases(check):
           "because the select already says this",
           "viewMode" in M._SCRIPT
           and "audit-view" in M._SCRIPT
-          and "archOpen" not in M._SCRIPT
-          and "data-outside" not in M._SCRIPT)
+          and "archOpen" not in M._SCRIPT)
+    # The decided rule, after the standing row was removed: the matches a view
+    # hides are named ONLY by the empty state, and only when it is showing.
+    check("vw4b the matches a view hides are said only when nothing is drawn: "
+          "the slot is revealed by the same condition that reveals the empty "
+          "state, and counted from the verdict refresh() already reached - "
+          "never a second filter pass",
+          "if (matchAll && !showP)" in M._SCRIPT
+          and "const empty = anyFilter && visP === 0;" in M._SCRIPT
+          and "norowOutside.hidden = !(empty && outP > 0);" in M._SCRIPT
+          and "norowSays.hidden = empty && outP > 0;" in M._SCRIPT
+          and _markup(html_out).count("<span data-outside hidden>") == 1)
+    check("vw4d the Area controls offer every area in every view: nothing in the "
+          "script prunes them by view any more, because a select left holding "
+          "only All areas is a control every use of which is a no-op - an area "
+          "the view hides is answered by the empty state instead",
+          "syncAreaOptions" not in M._SCRIPT
+          and "areaInView" not in M._SCRIPT)
+    check("vw4c Show all phases takes the View control's own path - it sets the "
+          "select and dispatches its change, so the stored view and the link "
+          "cannot disagree with the select",
+          "viewSel.value = 'all';" in M._SCRIPT
+          and "viewSel.dispatchEvent(new Event('change'));" in M._SCRIPT)
     check("vw5 the view survives a reload - in the shareable fragment first, "
           "and in localStorage when History is refused (a report opened over "
           "file:// is the common case, and that is where filters vanished)",
@@ -1882,14 +2281,9 @@ def _cases(check):
           "list, not as a substring of a longer marker name",
           "(' ' + (t.getAttribute('data-tev-flags') || '') + ' ')" in M._SCRIPT
           and ".indexOf(' ' + tevFlag + ' ')" in M._SCRIPT)
-    check("tv-r5 both axes travel in the link under distinct keys, and both "
-          "come back - a filtered view somebody sends has to arrive filtered",
-          "put('tev', tevFilter);" in M._SCRIPT
-          and "put('tevf', tevFlag);" in M._SCRIPT
-          and "if (HASH.tev) {" in M._SCRIPT and "if (HASH.tevf) {" in M._SCRIPT)
-    check("tv-r6 ...and both are counted by the badge on the folded filter "
-          "panel, so a filter nobody can see still says it is on",
-          "+ (tevFilter ? 1 : 0) + (tevFlag ? 1 : 0)" in M._SCRIPT)
+    # Both axes travel in the link under distinct keys, come back, count on the
+    # folded panel and are lifted by Clear - through their registry entries,
+    # which the rx cases pin by attribute and by key.
     # The stylesheet. The badge is a `.chip` and the observation deliberately is
     # not: two pills side by side read as two verdicts.
     check("tv-r7 the verdict reuses the one pill grammar this sheet already "
@@ -2246,6 +2640,7 @@ def _rl_stage(check):
 def _selftest():
     def body(check):
         _cases(check)
+        _filter_axis_cases(check)
         _resolve_cases(check)
         _harness.stage(check, "rl", _rl_stage)
     return _harness.run(body)

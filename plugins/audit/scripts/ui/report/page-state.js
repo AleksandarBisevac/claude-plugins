@@ -113,11 +113,24 @@
   const px = (el) => (el ? Math.round(el.getBoundingClientRect().height) : 0);
 
   /**
+   * The height an element pins over the content: its rendered height while it
+   * is sticky, and nothing while it scrolls with the page. On a screen below
+   * 52rem wide or 32rem tall the top bar is not sticky, and an offset still
+   * carrying its height would leave the strip, the filter bar and every
+   * anchor hanging a bar's height below the top of the screen with nothing
+   * above them. Read off the computed style so
+   * the stylesheet stays the one place that says where the bar sticks.
+   * @param {Element|null} el
+   * @returns {number}
+   */
+  const pinnedPx = (el) => (el && getComputedStyle(el).position === 'sticky' ? px(el) : 0);
+
+  /**
    * Publish the measured height of each sticky layer as a custom property.
    * @returns {void}
    */
   const measureStack = () => {
-    if (toolbar) root.style.setProperty('--topbar-h', px(toolbar) + 'px');
+    if (toolbar) root.style.setProperty('--topbar-h', pinnedPx(toolbar) + 'px');
     root.style.setProperty('--strip-h',
       (snav && stripQ && stripQ.matches ? px(snav) : 0) + 'px');
     // Queried here rather than through the sectools binding further down: the
@@ -133,6 +146,30 @@
     }
   }
   window.addEventListener('resize', measureStack, { passive: true });
+
+  // More filters, opened where it can be seen. On a phone the open bar leaves the sticky stack (the 52rem block makes it
+  // static, so an open panel cannot pin itself over the table). Opened while the
+  // bar was STUCK, that sends the bar back to its place in the flow - above the
+  // top of the screen - and the panel the reader just asked for opens out of
+  // sight. So an opened disclosure that is not wholly on screen is scrolled to
+  // the nearest edge. "On screen" starts below what stays pinned, and that line
+  // is the disclosure's own scroll-margin, which the stylesheet computes from
+  // the sticky offsets - read back resolved rather than recomputed here.
+  // Measured after the frame the layout changes in, and only acted on when the
+  // disclosure is off screen, so a panel that opened in view never moves the page.
+  const moreFilters = document.querySelector('.fdetails');
+  if (moreFilters) {
+    moreFilters.addEventListener('toggle', () => {
+      if (!moreFilters.open) return;
+      requestAnimationFrame(() => {
+        const b = moreFilters.getBoundingClientRect();
+        const clear = parseFloat(getComputedStyle(moreFilters).scrollMarginTop) || 0;
+        if (b.top < clear - 1 || b.bottom > window.innerHeight) {
+          moreFilters.scrollIntoView({ block: 'nearest' });
+        }
+      });
+    });
+  }
 
   // --- the table frames, released where their table fits -----------------------
 
@@ -232,28 +269,111 @@
   });
 
   /**
+   * The line a jump to this element puts its top on: the scroll-margin the
+   * stylesheet gives every id, read back resolved. A section is being read
+   * once its top has reached that line, so the section a nav click scrolls to
+   * is the section the marker lights. The marker used to keep a line of its
+   * own a few pixels above the stylesheet's, and every jump then stopped just
+   * short of it and lit the section above. One pixel of slack, because the
+   * browser rounds a scroll offset to whole device pixels.
+   * @param {Element} el a nav link's target
+   * @returns {number} in viewport pixels
+   */
+  const landingLine = (el) => (parseFloat(getComputedStyle(el).scrollMarginTop) || 0) + 1;
+
+  /**
    * Mark exactly one nav link as the section being read.
    * @returns {void}
    */
   const markSpy = () => {
     if (!navLinks.length) return;
-    const fold = px(toolbar) + (snav && stripQ && stripQ.matches ? px(snav) : 0) + 4;
     let best = -1;
     spyTargets.forEach((el, i) => {
-      if (el && el.getBoundingClientRect().top <= fold) best = i;
+      if (el && el.getBoundingClientRect().top <= landingLine(el)) best = i;
     });
     if (best < 0) best = 0;   // above the first heading, the first link still answers
-    // At the end of the document nothing further can cross the fold, so a short
-    // final section would otherwise be unreachable by the marker.
-    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2) {
-      const lastResolved = spyTargets.findLastIndex((el) => Boolean(el));
-      if (lastResolved >= 0) best = lastResolved;
-    }
+    // No end-of-document rule: endRoom below leaves room after the content, so
+    // every target, the last included, can scroll to its line. A rule lighting
+    // the last entry at the bottom used to stand in for that room, and it lit
+    // the last entry for a jump to an earlier one the document had ended
+    // before.
     navLinks.forEach((a, i) => {
       if (i === best) a.setAttribute('aria-current', 'true');
       else a.removeAttribute('aria-current');
     });
   };
+
+  // --- the room after the content ----------------------------------------------
+
+  // The column whose `::after` is the room (shell.css). Absent with no side nav,
+  // and then there is no marker for a room to serve.
+  const spyColumn = document.querySelector('.snav ~ .content');
+
+  /**
+   * The room the furthest nav target lacks to reach its landing line, in whole
+   * pixels; 0 when it lacks nothing. Measured with the room the page carries
+   * now taken back out, so the answer does not feed on itself: the document's
+   * end is the body's bottom less that room, and the target's top is its
+   * distance from the top of the document. A jump puts that top on the line
+   * when the document still runs a screen's height past the line from there;
+   * whatever it falls short by is the room.
+   * @returns {number}
+   */
+  const endRoom = () => {
+    const drawn = spyTargets.filter((el) => el && el.getClientRects().length);
+    if (!spyColumn || !drawn.length) return 0;
+    const y = window.scrollY || 0;
+    const last = drawn.reduce((a, b) =>
+      (b.getBoundingClientRect().top > a.getBoundingClientRect().top ? b : a));
+    const held = parseFloat(getComputedStyle(spyColumn, '::after').height) || 0;
+    const end = document.body.getBoundingClientRect().bottom + y - held;
+    const top = last.getBoundingClientRect().top + y;
+    const line = landingLine(last) - 1;
+    const lacks = document.documentElement.clientHeight - line - (end - top);
+    return lacks > 0 ? Math.ceil(lacks) : 0;
+  };
+
+  // Re-measured on the next frame after anything it reads changes: the
+  // window's height, the sticky stack (which moves the line), and the column's
+  // own height, which every expand, collapse, filter and view switch changes.
+  // Writing the room changes the column's height too, and the next pass then
+  // finds the same answer and writes nothing, so the observer settles.
+  let endRoomQueued = false;
+
+  /**
+   * Publish the room, writing only when it changed; at 0 the property is
+   * removed, and the stylesheet's room is then nothing at all.
+   * @returns {void}
+   */
+  const placeEndRoom = () => {
+    const room = endRoom();
+    const now = root.style.getPropertyValue('--end-room');
+    if (room === 0 && now) root.style.removeProperty('--end-room');
+    else if (room > 0 && now !== room + 'px') root.style.setProperty('--end-room', room + 'px');
+  };
+
+  /**
+   * Ask for one re-measurement of the room on the next frame.
+   * @returns {void}
+   */
+  const queueEndRoom = () => {
+    if (endRoomQueued || !spyColumn) return;
+    endRoomQueued = true;
+    requestAnimationFrame(() => {
+      endRoomQueued = false;
+      placeEndRoom();
+    });
+  };
+  if (window.ResizeObserver && spyColumn) {
+    const roomRo = new ResizeObserver(queueEndRoom);
+    for (const el of [spyColumn, toolbar, snav, document.querySelector('.sectools')]) {
+      if (el) roomRo.observe(el);
+    }
+  }
+  window.addEventListener('resize', queueEndRoom, { passive: true });
+  // Once now rather than on a frame: a link opened at a fragment is scrolled
+  // there as the page loads, and the room has to exist by then.
+  if (spyColumn) placeEndRoom();
 
   // One scroll listener drives the marker and BOTH bars' elevation, coalesced to
   // a frame: scroll fires far faster than the screen repaints.
@@ -368,6 +488,16 @@
   const fcount = document.getElementById('audit-fcount');
   const clearBtns = Array.from(document.querySelectorAll('[data-clear]'));
   const norow = grouped ? grouped.querySelector('tr.norows') : null;
+  // The empty state's two sentences: the plain one, and the slot that names the
+  // matches the view is hiding, with the press that shows them.
+  const norowSays = norow ? norow.querySelector('[data-norows-says]') : null;
+  const norowOutside = norow ? norow.querySelector('[data-outside]') : null;
+  const norowOutsideSays = norow ? norow.querySelector('[data-outside-says]') : null;
+  const showAllBtn = norow ? norow.querySelector('[data-showall]') : null;
+  // The empty state's own copy of Clear, apart from the toolbar's: it is the
+  // one that hides with the row it sits in, so it is the one that has to hand
+  // the keyboard on.
+  const norowClear = norow ? norow.querySelector('[data-clear]') : null;
 
   // The author chips live in the Usage section and scope ONLY it: tasks record
   // no author, so these never enter refresh() or touch the task table.
@@ -377,7 +507,7 @@
   const smCells = Array.from(document.querySelectorAll('.smcell'));
   const auRows = Array.from(document.querySelectorAll('.rank[data-author]'));
 
-  // The global filter row is a second line of the sticky top bar. Each control
+  // The header filter row is a second line of the top bar. Each control
   // is a compact twin of a filter that already exists (author chips, area chips,
   // the panel's date pair) over the SAME state variables, so the two
   // presentations can never disagree about what is filtered.
@@ -386,6 +516,276 @@
   const gClear = document.getElementById('audit-gclear');
   const auSelect = document.getElementById('audit-au-select');
   const areaSelect = document.getElementById('audit-area-select');
+
+  // --- what a link may restore -------------------------------------------------
+
+  // A link is typed by whoever sends it, so the restore keeps only a value some
+  // control on the page offers. Restored as it stood, a value no control
+  // offers hid rows with nothing pressed to say why, and Clear was the only
+  // sign anything was on. The check is the registry's, applied to every axis
+  // on the way in (keptFromLink), so an axis declared with no hook of its own
+  // is held to it: its vocabulary is read off the toggles carrying its
+  // `attrs`, and a chip the renderer adds is offered with nothing else to
+  // edit. Array membership, never a property read: `constructor` is a key
+  // every plain object answers.
+
+  /**
+   * The values an axis's controls offer: every toggle carrying one of its
+   * `attrs`, and every option of its `twin` select bar the synthetic summary
+   * one. A toggle is an element with `aria-pressed`, which is what tells it
+   * from a table row carrying the same attribute as data.
+   * @param {{attrs: string[], twin?: HTMLSelectElement|null}} axis
+   * @returns {string[]} the non-empty values, in page order
+   */
+  const offeredBy = (axis) => [
+    ...axis.attrs.flatMap((attr) => [...document.querySelectorAll('[aria-pressed][' + attr + ']')]
+      .map((c) => c.getAttribute(attr))),
+    ...(axis.twin ? [...axis.twin.options].filter((o) => !o.hasAttribute('data-multi'))
+      .map((o) => o.value) : []),
+  ].filter(Boolean);
+
+  /**
+   * One link value as an axis with no `takes` hook keeps it: whole, when a
+   * control offers it, and not at all otherwise.
+   * @param {string} v the value the link carries
+   * @param {string[]} offered offeredBy() of the axis
+   * @returns {string} `v`, or '' for nothing kept
+   */
+  const takesOffered = (v, offered) => (offered.includes(v) ? v : '');
+
+  /**
+   * The link as one axis may restore it: each of the axis's keys, holding only
+   * what its `takes` hook keeps of the value - or, with no hook, the value
+   * whole when a control offers it. Every axis's decode is handed this and
+   * never the link itself, so no axis restores past the check.
+   * @param {{keys: string[], attrs: string[], twin?: HTMLSelectElement|null,
+   *   takes?: (v: string, offered: string[]) => string}} axis
+   * @param {Object<string, string>} h the decoded link
+   * @returns {Object<string, string>} prototype-free; a key the axis keeps
+   *   nothing of is absent
+   */
+  const keptFromLink = (axis, h) => {
+    const offered = offeredBy(axis);
+    const takes = axis.takes || takesOffered;
+    const kept = Object.create(null);
+    for (const k of axis.keys) {
+      const v = h[k] ? takes(h[k], offered) : '';
+      if (v) kept[k] = v;
+    }
+    return kept;
+  };
+
+  /**
+   * Whether the page's date fields would hold this value. A date field empties
+   * itself on anything that is not a real calendar day, so the control answers
+   * for its own vocabulary; it is asked through a detached copy, so the field
+   * the reader sees is never written by the question.
+   * @param {string} v
+   * @returns {boolean} false too when the page renders no date field
+   */
+  const dateFieldTakes = (v) => {
+    const field = fromInput || gFrom || toInput || gTo;
+    if (!field || !v) return false;
+    const probe = field.cloneNode(false);
+    probe.value = v;
+    return probe.value === v;
+  };
+
+  /**
+   * Bring a status a link names into the view, when the restored view hides
+   * it. The link writer never emits that pairing - a view change clears a
+   * status its view hides - so it is a link typed by hand, or one made before
+   * the plan's default view changed. Either way the sender asked for those
+   * phases. Dropping the status would show a different filter than the link
+   * named, and keeping it under a view that hides its chip would press a
+   * control nobody can see over a table with nothing in it. Switching the View
+   * select is the one answer where every control agrees with the rows drawn,
+   * and the select is on screen saying so. The first view VIEWS declares that
+   * holds the status, which is the narrowest, so a done phase opens under
+   * Archived rather than under every phase.
+   * @param {string} st a phase status some row carries
+   * @returns {void}
+   */
+  const viewForStatus = (st) => {
+    if (statusInView(st)) return;
+    const holds = Object.keys(VIEWS).find((v) => lookup(VIEWS, v).includes(STATUS_SEG[st]));
+    if (!holds) return;
+    viewMode = holds;
+    if (viewSel) viewSel.value = holds;
+  };
+
+  // --- the filter axes, declared once ------------------------------------------
+
+  /**
+   * Every filter this page offers, declared ONCE.
+   *
+   * Clear, the link writer, the restore after a reload and the counters in
+   * refresh() each used to list the axes by hand, and three axes in a row were
+   * added to some of those lists and not the others: a filter Clear could not
+   * lift, still counted, still written to the link and restored on the next
+   * open. They all iterate this array now, so an axis declared here is cleared,
+   * encoded, restored and counted without being named anywhere else.
+   *
+   * What an entry carries:
+   * - `attrs`: the chip attributes its controls carry, so a test can hold the
+   *   chips the page wires against the axes declared here.
+   * - `keys`: its link keys, in the order `encode` returns values; empty when
+   *   the axis is deliberately not kept, and then `unkept` says why.
+   * - `scope`: what it narrows - `text` (the search), `phases` (whole phase
+   *   rows), `tasks` (tasks, hiding a phase none of whose tasks survive),
+   *   `drill` (tasks inside one phase only) or `usage` (the Usage section, never
+   *   the table).
+   * - `counts`: whether the More-filters badge counts it - true exactly when
+   *   the axis has a control folded away inside that panel, since the badge
+   *   is how a reader learns something is on behind the closed disclosure.
+   * - `on`, `reset`, `paint`, `encode`, `decode`: is it filtering; return it to
+   *   its default; repaint every control that shows it; its values for `keys`;
+   *   take its state from the link as keptFromLink() hands it - only what a
+   *   control offers - saying whether there was any.
+   * - `twin` (optional): the select showing the same state as the chips, whose
+   *   options join what the axis offers.
+   * - `takes` (optional): what the axis keeps of one link value, for an axis
+   *   whose values are not whole chip values - a tag list, a date, free text.
+   *   Without it, a value is kept whole when a control offers it.
+   *
+   * The behaviours call painters declared in later parts (`highlight`,
+   * `paintAreas`, `paintDates`, `applyAuthor`, `tfHosts`). They run only once
+   * the whole script has loaded, never while this array is being built.
+   *
+   * @type {Array<{id: string, attrs: string[], keys: string[], unkept?: string,
+   *   scope: string, counts: boolean, twin?: HTMLSelectElement|null,
+   *   takes?: (v: string, offered: string[]) => string,
+   *   on: () => boolean, reset: () => void,
+   *   paint: () => void, encode: () => string[],
+   *   decode: (h: Object<string, string>) => boolean}>}
+   */
+  const FILTER_AXES = [
+    {
+      id: 'search', attrs: [], keys: ['q'], scope: 'text', counts: false,
+      // Free text: every string is a value a search box offers.
+      takes: (v) => v,
+      on: () => !!q && q.value.trim() !== '',
+      reset: () => { if (q) q.value = ''; },
+      paint: () => {},
+      encode: () => [q ? q.value.trim() : ''],
+      decode: (h) => { if (!q || !h.q) return false; q.value = h.q; return true; },
+    },
+    {
+      id: 'phase-status', attrs: ['data-ps'], keys: ['ps'], scope: 'phases',
+      counts: false,
+      on: () => phaseStatus !== '',
+      reset: () => { phaseStatus = ''; },
+      paint: () => { if (phaseStatusBar) highlight(phaseStatusBar, 'data-ps', phaseStatus); },
+      encode: () => [phaseStatus],
+      decode: (h) => {
+        if (!h.ps) return false;
+        phaseStatus = h.ps;
+        viewForStatus(h.ps);
+        return true;
+      },
+    },
+    {
+      // Space-joined in the link, mirroring the data-area attribute: one
+      // separator rule for both carriers of a tag list.
+      id: 'area', attrs: ['data-a'], keys: ['a'], scope: 'phases', counts: true,
+      twin: areaSelect,
+      // Each tag on its own: a link naming one real area beside one that is
+      // not keeps the real one. Once each, since a chip holds a tag or not.
+      takes: (v, offered) => v.split(/\s+/)
+        .filter((t, i, all) => offered.includes(t) && all.indexOf(t) === i).join(' '),
+      on: () => areaFilter.length > 0,
+      reset: () => { areaFilter = []; },
+      paint: () => { paintAreas(); },
+      encode: () => [areaFilter.join(' ')],
+      decode: (h) => { if (!h.a) return false; areaFilter = h.a.split(' '); return true; },
+    },
+    {
+      id: 'model', attrs: ['data-m'], keys: ['m'], scope: 'tasks', counts: true,
+      on: () => modelFilter !== '',
+      reset: () => { modelFilter = ''; },
+      paint: () => { if (modelBar) highlight(modelBar, 'data-m', modelFilter); },
+      encode: () => [modelFilter],
+      decode: (h) => { if (!h.m) return false; modelFilter = h.m; return true; },
+    },
+    {
+      // Two axes and two keys, never one: a link can carry either alone.
+      id: 'test-gate', attrs: ['data-tev'], keys: ['tev'], scope: 'tasks',
+      counts: true,
+      on: () => tevFilter !== '',
+      reset: () => { tevFilter = ''; },
+      paint: () => { if (tevBar) highlight(tevBar, 'data-tev', tevFilter); },
+      encode: () => [tevFilter],
+      decode: (h) => { if (!h.tev) return false; tevFilter = h.tev; return true; },
+    },
+    {
+      id: 'observed', attrs: ['data-tevf'], keys: ['tevf'], scope: 'tasks',
+      counts: true,
+      on: () => tevFlag !== '',
+      reset: () => { tevFlag = ''; },
+      paint: () => { if (tevFlagBar) highlight(tevFlagBar, 'data-tevf', tevFlag); },
+      encode: () => [tevFlag],
+      decode: (h) => { if (!h.tevf) return false; tevFlag = h.tevf; return true; },
+    },
+    {
+      // The presets are a way of SETTING this range, not a filter of their
+      // own: the span a lit chip chose is what from/to carry, so a restored
+      // range comes back as a range and the chip stays unlit.
+      id: 'dates', attrs: ['data-days'], keys: ['from', 'to'], scope: 'tasks',
+      counts: true,
+      // Its chips carry a span of days, not a date, so the date fields answer
+      // for the values. Each end on its own: a link with one real date keeps
+      // that end.
+      takes: (v) => (dateFieldTakes(v) ? v : ''),
+      on: () => dFrom !== '' || dTo !== '',
+      reset: () => { dFrom = ''; dTo = ''; preset = ''; },
+      paint: () => { paintDates(); },
+      encode: () => [dFrom, dTo],
+      decode: (h) => {
+        if (!h.from && !h.to) return false;
+        dFrom = h.from || ''; dTo = h.to || '';
+        return true;
+      },
+    },
+    {
+      // Scopes the Usage section only: tasks record no author, so this never
+      // narrows the table and the badge in the table's own panel skips it.
+      id: 'author', attrs: ['data-au'], keys: ['au'], scope: 'usage', counts: false,
+      twin: auSelect,
+      on: () => auFilter !== '',
+      reset: () => { auFilter = ''; },
+      paint: () => {
+        if (authorBar) highlight(authorBar, 'data-au', auFilter);
+        applyAuthor();
+      },
+      encode: () => [auFilter],
+      decode: (h) => { if (!h.au) return false; auFilter = h.au; return true; },
+    },
+    {
+      id: 'task-status', attrs: ['data-ts'], keys: [],
+      unkept: 'keyed by phase id, so the link would carry a list as long as '
+        + 'the plan to describe a drill-down inside one row',
+      // Not counted: these chips sit in the table rows, not in More filters,
+      // and a badge over a panel with nothing pressed in it sends the reader
+      // looking for a filter that is not there. Clear still lifts them.
+      scope: 'drill', counts: false,
+      on: () => Object.keys(taskStatus).some((pid) => taskStatus[pid] !== ''),
+      reset: () => { taskStatus = Object.create(null); },
+      paint: () => {
+        tfHosts.forEach((h) => { highlight(h, 'data-ts', taskStatus[h.__pid] || ''); });
+      },
+      encode: () => [],
+      decode: () => false,
+    },
+  // The check is applied HERE, to every entry as the registry is built, so each
+  // `decode` an entry declares is only ever handed what keptFromLink kept, and
+  // no caller can reach a decode past it.
+  ].map((axis) => ({ ...axis, decode: (h) => axis.decode(keptFromLink(axis, h)) }));
+
+  // The keys the link carries, published on the root the way the measured
+  // stack is: the browser gate reads them here to drive every axis with a value
+  // no control offers, so an axis added to the registry is driven with nothing
+  // else to edit. A copy, written once: nothing reads it back.
+  root.setAttribute('data-link-keys', FILTER_AXES.flatMap((axis) => axis.keys).join(' '));
 
   /**
    * The per-day usage layer that both the range controls and the heatmap
@@ -555,6 +955,19 @@
   // Object.prototype.constructor threw out of the first filter pass.
   const inView = (seg) => (lookup(VIEWS, viewMode) || VIEWS.all).includes(seg);
 
+  /**
+   * The current view as the View select words it, so the counter and the
+   * empty state name the basis in the reader's own vocabulary rather than a
+   * second copy of it. The view id stands in only when the select is absent,
+   * which is still the true basis, merely terser.
+   *
+   * @returns {string} e.g. "Active & pending"
+   */
+  const viewName = () => {
+    const opt = viewSel ? [...viewSel.options].find((o) => o.value === viewMode) : null;
+    return opt ? opt.textContent : viewMode;
+  };
+
   // Which order the phase rows are listed in, the same shape as the view above:
   // the element, the vocabulary, the default. `plan` is the written plan, which
   // is how the table always ARRIVES; `priority` is the overlay, spelled the way
@@ -592,32 +1005,6 @@
   });
   /** Can a phase of this status appear in the current view at all? */
   const statusInView = (st) => !st || inView(STATUS_SEG[st]);
-
-  /**
-   * Which segments each area tag actually occurs in.
-   *
-   * An area is not one segment the way a status is: `storefront` can tag an
-   * active phase AND an archived one, so this keeps the whole set and asks
-   * whether ANY of it survives the view. Derived from the rendered rows for the
-   * same reason `STATUS_SEG` is - the alternative is a second copy of Python's
-   * segment rule, and two copies of a rule is one copy and one lie.
-   *
-   * Prototype-free for the reason STATUS_SEG above is, and this one is the
-   * plainer key: an area tag is documented free text. `'constructor' in
-   * AREA_SEGS` was true, so the array was never created and `.indexOf` on the
-   * inherited function threw while the page was still loading.
-   *
-   * @type {Object<string, string[]>}
-   */
-  const AREA_SEGS = Object.create(null);
-  phaseRows.forEach((pr) => {
-    (pr.getAttribute('data-area') || '').split(' ').filter(Boolean).forEach((a) => {
-      if (!(a in AREA_SEGS)) AREA_SEGS[a] = [];
-      if (AREA_SEGS[a].indexOf(pr.__seg) === -1) AREA_SEGS[a].push(pr.__seg);
-    });
-  });
-  /** Can a phase tagged with this area appear in the current view at all? */
-  const areaInView = (a) => !a || (AREA_SEGS[a] || []).some((seg) => inView(seg));
 
   /**
    * @param {string} pid a phase id

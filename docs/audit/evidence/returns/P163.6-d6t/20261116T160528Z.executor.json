@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__usage_detail.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-16T16:23:28Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__usage_detail.py` in a throwaway tree at HEAD exited 1 with 2 of 57 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ud33a (house FAIL), ud37 (house FAIL): SELFTEST FAILED: 55/57 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "plugins/audit/scripts/report/_usage_detail.py: the heatmap granularity span now renders <span id=\"audit-hm-gran\" role=\"group\" aria-label=\"Heatmap period\">, named after the period the Previous/Next period arrows next to it step through. tests/test__usage_detail.py: added a stdlib HTMLParser scanner, chip_rows(html), that records every element with a .fchip/.tf-chip/.auchip button as a DIRECT child (a void-aware parent stack; script bodies are CDATA to the parser, so chip markup inside JS strings is never read as a row). New cases: ud33a (the heatmap fragment's only chip row is ('#audit-hm-gran','group','Heatmap period')); ud36 (the scanner proves itself on a fixture: a direct parent, once per row, a chip nested in <b> reported against <b>, a non-chip button not reported, a whitespace label read as empty); ud37 (render examples/acme-store with the shipped render-report.py into a mkdtemp scratch dir, as examples/report.sh renders it, then require every chip row to have role=group and a non-empty aria-label; it also requires #audit-hm-gran and #audit-phase-status to be among the rows, so a render without the usage or table section cannot pass vacuously; if the render fails, could_not_run fails the case). Mutations, each red and then restored with __pycache__ purged: empty label -> ud33a+ud37 red; role dropped -> ud33a+ud37 red; scanner takes the outermost ancestor -> ud33a+ud36+ud37 red; scanner knows fchip only -> ud36 red. Restored: 57/57. Full sweep 196/196 files ok; ruff clean; vermin clean; house_style_violations and prose_number_claims report nothing. Followers refreshed in this tree, as the orchestrator asked: examples/report.sh (examples/acme-store/acme-store-audit.html + .md, docs/index.html as its byte copy) and docs/demo-large.html per check-rendered-artifacts.py --how. The diff is the two attributes plus the generated stamp; check-rendered-artifacts.py --before-commit OK. check-report-interactive.mjs on the example: 229 checks passed. capture-screenshots.mjs --check OK. No recapture: the change adds only aria attributes, which paint nothing. These four rendered paths are outside the task's declared files. They are the followers the orchestrator's context told this task to refresh in the same task, and without them check-rendered-artifacts goes red. Dependants: _report_usage.py still correct, because it re-exports _usage_heatmap by identity (ud34 green), and test__report_usage uh1/uh4 still find the substring id=\"audit-hm-gran\" (111 cases ok). PLUGIN-BUILD-GUIDE.md section 6802 is still correct: it names the heatmap and does not describe its markup. _usage_overview.py is still correct: it names this module by basename only and its own row #audit-authors already passes ud37. .github/sweep-costs.json: the 0.3s row still matches the measured 0.3s with the render. tests/test__usage_detail.py is changed as described.",
+    "descriptive": "The heatmap's period chips are now a labelled group, and one case holds every chip row in a rendered report to role=group plus a name, so a new row cannot be missed."
+  },
+  "testsAdded": [
+    "the heatmap granularity row is a group labelled Heatmap period",
+    "the chip-row scanner reports direct parents only, once each, and no non-chip button",
+    "every chip row in the rendered acme-store report is role=group with a non-empty aria-label"
+  ],
+  "casesAdded": [
+    [
+      "ud37",
+      "ud36",
+      "ud33a"
+    ]
+  ],
+  "claims": "claims:\n1 _usage_detail.py:483 renders role=\"group\" aria-label=\"Heatmap period\"; the new comment says only that the row is announced as a group and named for its period\n2 empty label / dropped role -> ud33a+ud37 red; outermost-ancestor scanner -> ud33a+ud36+ud37 red; fchip-only scanner -> ud36 red; each restored, 57/57\n3 class: a chip container with no group role. grep fchip|tf-chip|auchip under scripts/: _usage_overview.py:376 labelled, _report_html.py (areas, model, tev, tevf, presets) labelled, _report_page.py:354 tf-chips and :714 phase-status labelled, _usage_detail.py:470 was the one without, now fixed; ud37 holds the class over a full render, not a list of ids\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "undeclaredPaths": [
+    "docs/demo-large.html",
+    "docs/index.html",
+    "examples/acme-store/acme-store-audit.html",
+    "examples/acme-store/acme-store-audit.md"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:6d6be9bb43a6f8b39ed046fabbd9e835dabc808d3b851c2903e9be25d7680392\",\"dirtyDigest\":\"sha256:d1a497b82d156f1f1d5bb1e270abac16d715aad4496ae936cc08f687997699a7\",\"dirtyPaths\":{\"docs/demo-large.html\":\"e41d9b7d503568ad\",\"docs/index.html\":\"524243fe69604b03\",\"examples/acme-store/acme-store-audit.html\":\"524243fe69604b03\",\"examples/acme-store/acme-store-audit.md\":\"ce0590c5e38c1a88\",\"plugins/audit/scripts/report/_usage_detail.py\":\"deec3419f28fe5d1\",\"tests/test__usage_detail.py\":\"d6a68c07c883c3bf\"},\"head\":\"28546228\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/report/_usage_detail.py\",\"tests/test__usage_detail.py\"],\"scopeDigest\":\"sha256:0a0a9c81768807634cdb4fd2c6f95208fa2dd0232bc9db51a77259ff80ea1b65\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

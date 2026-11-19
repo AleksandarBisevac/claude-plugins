@@ -76,6 +76,7 @@ import _task_outputs as _touts  # noqa: E402  (what an `outputs` pattern may be 
 #                                              all read)
 import _ado_parent as _parent  # noqa: E402  (what an `adoParent` declaration may say)
 import _ado_tracked as _tracked  # noqa: E402  (and what an `adoTracked` one may say)
+import _task_timing as _timing  # noqa: E402  (what a task's `timing` record may hold)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_manifest_rules.py` unchanged, and an alias keeps them reading the same names
@@ -91,6 +92,20 @@ _check_ado = _vocab._check_ado
 _require_fields = _vocab._require_fields
 _safe_list = _vocab._safe_list
 _unknown_keys = _vocab._unknown_keys
+
+
+def _check_timing_keys(timing, twhere, warnings):
+    """The unknown-key warning at the two levels inside a task's `timing`,
+    against `_task_timing`'s tables - the same warning every other level
+    gets, so a misspelled `firstStartedAt` is named rather than read as a
+    record with no first start."""
+    if not isinstance(timing, dict):
+        return
+    _unknown_keys(timing, _timing.TIMING_KEYS, "%s timing" % (twhere,), warnings)
+    stages = timing.get("stages")
+    for i, stage in enumerate(stages if isinstance(stages, list) else []):
+        _unknown_keys(stage, _timing.STAGE_KEYS,
+                      "%s timing.stages[%d]" % (twhere, i), warnings)
 
 
 # --- what a phase carries --------------------------------------------------------
@@ -416,6 +431,25 @@ def phase_gate_suite_gap(manifest, suite_keys=None):
 PHASE_GATE_MODES = ("shadow", "enforce")
 
 
+def derived_runner(derived):
+    """`(key, problem)` - the ONE reading of `meta.phaseGate.derived.runner`.
+
+    `key` is the `meta.buildCommands` key the runner names, or None when there
+    is none to use: the field absent or null (`problem` None), or a value that is
+    not a string or is blank once trimmed (`problem` says so in the validator's
+    words). The validator files the problem and `derive-phase-gate.py` prints
+    and records the key, so both read a blank runner as no runner rather than
+    one module refusing it while the other echoes the blank as an entry.
+    """
+    runner = derived.get("runner") if isinstance(derived, dict) else None
+    if runner is None:
+        return None, None
+    if not (isinstance(runner, str) and runner.strip()):
+        return None, ("must be a non-blank buildCommands key, got %s"
+                      % (type(runner).__name__,))
+    return runner, None
+
+
 def _check_phase_gate_derived(derived, build_keys):
     """WARNINGS for `meta.phaseGate.derived` - shape only, no ledger, no running.
 
@@ -447,14 +481,13 @@ def _check_phase_gate_derived(derived, build_keys):
             "meta.phaseGate.derived: must be an object or null, got %s"
             % (type(derived).__name__,))]
     out = []
-    runner = derived.get("runner")
-    if runner is not None:
-        if not (isinstance(runner, str) and runner.strip()):
-            out.append(_output.finding(
-                "phases.phase_gate_derived.runner-shape",
-                "meta.phaseGate.derived.runner: must be a non-blank "
-                "buildCommands key, got %s" % (type(runner).__name__,)))
-        elif build_keys and runner not in build_keys:
+    runner, runner_problem = derived_runner(derived)
+    if runner_problem:
+        out.append(_output.finding(
+            "phases.phase_gate_derived.runner-shape",
+            "meta.phaseGate.derived.runner: %s" % (runner_problem,)))
+    elif runner is not None:
+        if build_keys and runner not in build_keys:
             out.append(_output.finding(
                 "phases.phase_gate_derived.runner-unknown-key",
                 "meta.phaseGate.derived.runner: %r is not a buildCommands "
@@ -733,7 +766,73 @@ def _check_phase_gate(manifest):
         phase_ids = set(p.get("id") for p in (manifest.get("phases") or [])
                         if isinstance(p, dict))
         findings.extend(_check_coupling(meta.get("coupling"), phase_ids))
+    findings.extend(stale_spelled_gates(manifest))
     return findings
+
+
+# --- a derived wide gate a recorded spelling has made stale ----------------------
+def _recorded_spelling(meta):
+    """Whether `meta.phaseGate.derived.spelling` holds a template the derivation
+    uses - one carrying the `{paths}` slot, which is what
+    `_gate_derive.resolve_shape` reads it for and the only spelling it takes."""
+    gate = meta.get("phaseGate") if isinstance(meta, dict) else None
+    derived = gate.get("derived") if isinstance(gate, dict) else None
+    spelling = derived.get("spelling") if isinstance(derived, dict) else None
+    return isinstance(spelling, str) and "{paths}" in spelling
+
+
+def _names_a_spelled_path(task, tests):
+    """Whether the task names a path any recorded spelling narrows to: a
+    `tests.add` entry naming a file (the derivation's first arm takes every one),
+    or a suite among `files` (every slot takes a suite, `slot_takes`)."""
+    if any(tests_add_path(e) for e in (tests.get("add") or [])
+           if isinstance(e, str)):
+        return True
+    return any(isinstance(p, str) and slot_takes(p, False)
+               for p in (task.get("files") or []))
+
+
+def stale_spelled_gates(manifest):
+    """WARNINGS naming each task whose stored wide gate the recorded spelling
+    has made a stale derived value, for `/audit:phase settle` to rewrite.
+
+    A task added before the project recorded how to run a subset stores the
+    phase's gate with `phase-no-spelling`, and recording the spelling later
+    moves no gate: only a scope edit re-derives one. Named here: a task not
+    started - pending with no recorded attempt, since a started task's gate is
+    the one its attempt is graded against - whose basis is still
+    `phase-no-spelling`, under a plan whose spelling now has a `{paths}` slot,
+    naming a path that spelling narrows to (`_names_a_spelled_path`). A gate
+    somebody declared or cleared carries another word and is never named.
+
+    WHAT THIS CANNOT SEE, AND WHERE THE ANSWER IS. The derivation itself is
+    `audit-task.py`'s and sits above this layer, so this asks only the arms
+    whose answer is certain without it. A task whose only narrowing comes from
+    a sibling's path-scoped entry, or from source files a relating slot takes,
+    is not named here; `settle` asks the derivation and rewrites it anyway, and
+    `record-listing` counts by the derivation too. The body is the same bytes
+    for every task, so `_warning_groups` folds the tasks into one line.
+    """
+    meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    if not _recorded_spelling(meta):
+        return []
+    out = []
+    for _phase, task in _mio.iter_tasks(manifest):
+        tests = task.get("tests")
+        if not isinstance(tests, dict) or task.get("status") != "pending" \
+                or (_mio.recorded_attempt(task) or 0) > 0 \
+                or tests.get("gateBasis") != "phase-no-spelling" \
+                or not _names_a_spelled_path(task, tests):
+            continue
+        out.append(_output.finding(
+            "phases.phase_gate.stale-wide-gate",
+            "task %s: tests.gate is the phase's wide gate, stored as "
+            "`phase-no-spelling` before meta.phaseGate.derived.spelling "
+            "recorded how to run a subset, and the task names a path that "
+            "spelling narrows to - a stale derived value; `/audit:phase "
+            "settle` writes the narrow gate the derivation now gives"
+            % (task.get("id"),)))
+    return out
 
 
 def _check_full_gate(manifest, warnings):
@@ -1949,6 +2048,14 @@ def _walk_phases(phases, build_keys=()):
                          % (twhere, type(outputs).__name__)))
             for _entry, why in _touts.output_problems(outputs):
                 f.append(_output.finding("phases.walk_phases.outputs", "%s: outputs %s" % (twhere, why)))
+            # `timing` is additive: a task without it is asked nothing. A
+            # malformed record is a FINDING, because a stage with no basis or a
+            # kind outside the closed list is a figure nobody can check, and
+            # every summary of it would be read as measured.
+            if "timing" in task:
+                for why in _timing.timing_problems(task["timing"]):
+                    f.append(_output.finding("phases.walk_phases.timing", "%s: timing: %s" % (twhere, why)))
+                _check_timing_keys(task["timing"], twhere, w)
             if task.get("status") not in STATUS:
                 f.append(_output.finding("phases.walk_phases.task-status", "%s: status %r not in %s" % (twhere, task.get("status"), list(STATUS))))
             if (phase.get("status") == "pending"

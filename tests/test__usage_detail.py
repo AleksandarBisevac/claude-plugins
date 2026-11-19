@@ -24,9 +24,15 @@ only one that catches an unconditional block.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import os
+import shutil
+import subprocess
 import sys
+import tempfile
+from html.parser import HTMLParser
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402  (REPO_ROOT, SCRIPTS_DIR: the example and its renderer)
 from _output import safe_stdio                     # noqa: E402
 import _usage_detail as M                          # noqa: E402
 import _usage_viz as _viz                          # noqa: E402
@@ -50,6 +56,81 @@ def _months(n):
             "plan": dict((m, {"tasksCompleted": 1, "bugsReported": 0,
                               "bugsFixed": 0, "phasesMerged": 0})
                          for m in months)}
+
+
+# --- the chip rows of a whole document -----------------------------------------
+# The classes a filter toggle wears. A row of them is a set of choices, so the
+# element holding them is announced as a group with a name of its own.
+CHIP_CLASSES = ("fchip", "tf-chip", "auchip")
+# Elements with no end tag: never pushed, so they cannot become a parent.
+_VOID = frozenset(("area", "base", "br", "col", "embed", "hr", "img", "input",
+                   "link", "meta", "source", "track", "wbr"))
+
+
+class _ChipRows(HTMLParser):
+    """Every element with a chip button as a DIRECT child, read off the markup
+    with a parent stack. A class because `HTMLParser` is one; it holds the
+    state of one parse and nothing else."""
+
+    def __init__(self):
+        HTMLParser.__init__(self, convert_charrefs=True)
+        self.stack = []
+        self.rows = []
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == "button" and self.stack and set(
+                (a.get("class") or "").split()) & set(CHIP_CLASSES):
+            parent = self.stack[-1]
+            if not any(r is parent for r in self.rows):
+                self.rows.append(parent)
+        if tag not in _VOID:
+            self.stack.append({"tag": tag, "attrs": a})
+
+    def handle_endtag(self, tag):
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i]["tag"] == tag:
+                del self.stack[i:]
+                return
+
+
+def chip_rows(html):
+    """`[(name, role, label)]` for every chip row in `html`, in document order;
+    `name` is the row's id, else its tag and class, so a finding says which."""
+    p = _ChipRows()
+    p.feed(html)
+    p.close()
+    return [("#" + r["attrs"]["id"] if r["attrs"].get("id")
+             else "%s.%s" % (r["tag"], r["attrs"].get("class") or ""),
+             r["attrs"].get("role"), (r["attrs"].get("aria-label") or "").strip())
+            for r in p.rows]
+
+
+def _render_example():
+    """`(html, why)` - the worked example's report, rendered by the shipped
+    renderer into a scratch directory the way `examples/report.sh` renders the
+    committed one (its ledger found through CLAUDE_PROJECT_DIR); `html` None
+    beside why when it could not be rendered."""
+    project = os.path.join(_output.REPO_ROOT, "examples", "acme-store")
+    manifest = os.path.join(project, "audit-plan.json")
+    if not os.path.isfile(manifest):
+        return None, "no %s in this tree" % manifest
+    out = tempfile.mkdtemp(prefix="ud-chiprows-")
+    try:
+        r = subprocess.run(
+            [sys.executable, os.path.join(_output.SCRIPTS_DIR, "report",
+                                          "render-report.py"),
+             manifest, "--out-dir", out, "--format", "html", "--basename", "r"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120,
+            env=dict(os.environ, CLAUDE_PROJECT_DIR=project))
+        path = os.path.join(out, "r.html")
+        if r.returncode != 0 or not os.path.isfile(path):
+            return None, "render exited %d: %s" % (r.returncode, _harness.tail_bytes(
+                (r.stdout + r.stderr).decode("utf-8", "replace"), 600))
+        with open(path, encoding="utf-8") as fh:
+            return fh.read(), ""
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
 
 
 # --- cases --------------------------------------------------------------------
@@ -327,6 +408,40 @@ def _cases(check):
           'data-png="heatmap"' in out
           and 'data-png="heatmap"' not in M._usage_heatmap(
               _u(heatmap=grid, daily={})), "")
+    _gran = chip_rows(out)
+    check("ud33a ...and its granularity chips are a labelled group named for "
+          "the period the arrows beside it step through: %r" % (_gran,),
+          _gran == [("#audit-hm-gran", "group", "Heatmap period")])
+
+    # --- every chip row in a rendered report ---
+    # The invariant, not a list of the rows somebody fixed: a row added later
+    # is held to it the day it renders, with nobody having to name it here.
+    _probe = chip_rows(
+        '<div id="ok" role="group" aria-label="Ok">'
+        '<button class="fchip">a</button><button class="fchip">b</button></div>'
+        '<p><span class="tf-chips"><b><button class="tf-chip">c</button></b>'
+        '<button class="tf-chip">d</button></span>'
+        '<button class="btn">not a chip</button></p>'
+        '<div id="blank" role="group" aria-label=" ">'
+        '<input type="checkbox"><button class="auchip x">e</button></div>')
+    check("ud36 the scanner names the DIRECT parent of a chip, once per row, and "
+          "nothing for a button that is not a chip - so a row it misses is not "
+          "a row it never looked at: %r" % (_probe,),
+          _probe == [("#ok", "group", "Ok"), ("b.", None, ""),
+                     ("span.tf-chips", None, ""), ("#blank", "group", "")])
+    html, why = _render_example()
+    if html is None:
+        _harness.could_not_run(check, "ud37 every chip row in the rendered "
+                               "example is a labelled group", why)
+    else:
+        rows = chip_rows(html)
+        bad = [r for r in rows if r[1] != "group" or not r[2]]
+        names = [r[0] for r in rows]
+        check("ud37 every chip row in the rendered example report is "
+              "role=group with a non-empty aria-label - unlabelled: %r (of %r)"
+              % (bad, names),
+              bad == [] and "#audit-hm-gran" in names
+              and "#audit-phase-status" in names)
 
     # --- the aliases ---
     _names = ("_small_multiples", "_monthly_block", "_routing_table",

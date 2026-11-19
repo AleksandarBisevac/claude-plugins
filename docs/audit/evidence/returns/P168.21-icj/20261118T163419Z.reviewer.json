@@ -1,0 +1,21 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "CHANGELOG.md:97-99",
+   "issue": "\"a directory counts only with a path separator beside its name, so `-k journal` is not the journal directory\" is true only for a left-out directory that exists on disk when the gate is asked. `reuse_identity` passes `directories=[p for p in excluded if os.path.isdir(...)]`, and a path not in that list is read as a file whose bare last component grades. On a plan whose evidence or journal directory has not been created yet, a bare `-k journal` or `evidence` word grades. PLUGIN-BUILD-GUIDE.md says \"a path that is a directory on disk\"; the changelog drops that qualifier.",
+   "resolution": "Say \"a left-out directory that exists\" (or \"a directory on disk\"), matching the guide's wording."},
+  {"id": 2, "severity": "low", "file": "CHANGELOG.md:105-107",
+   "issue": "\"listed once, beside `UNREADABLE` in `run-test-gate.py` and in `PLUGIN-BUILD-GUIDE.md`'s section\" says once and names two places. The guide's section restates the list (variable, glob, ancestor directory, `cd`, brace expansion, ANSI-C quoting, assembled name, a suite opening the plan's phases/tasks/bugs). The sentence is still a pointer and not a copy, but `once` contradicts the two locations.",
+   "resolution": "Say \"is listed beside `UNREADABLE` in `run-test-gate.py`, and the guide's run-test-gate.py section carries the same list\", or drop \"once\"."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "The diff rewrites the evidence/journal-suite Fixed entry to the text-reading rule that ships (whole name in the command's text, quote and case insensitive, directory needs a separator, shard directory, both plan spellings, every plugin script, declared and running command, non-string measured). It adds a meta-in-key entry, corrects the part-repeat identity and printed line, adds the base-tree sweep entry, and tightens the read-back and join sentences. Every sentence checked against run-test-gate.py or drive-phase.py is true; the two low wording items are the only imprecisions. The executor's outcome describes this diff: its list of five sentences found false, two made precise and the rest left matches what changed. Its claim that no number is written is correct.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: gate-only document task, tests.expectRedFirst false, tests.add empty, so no case and no red was owed. The basis holds.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate is the literal `python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py`, which selects two document-lint suites. I did not open them. The review was scoped to sentence-versus-code, and the behaviour this task names is the truth of changelog sentences, which no selected test reads, so I cannot say whether any of their cases would survive deleting it."
+ },
+ "verdict": "findings"
+}

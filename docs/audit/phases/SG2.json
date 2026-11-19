@@ -248,7 +248,8 @@
         "tests/test__refs.py",
         "tests/test__floor_guard.py",
         "tools/prove-gates.py",
-        "tests/test__status_facts.py"
+        "tests/test__status_facts.py",
+        "plugins/audit/commands/task.md"
       ],
       "tests": {
         "mode": "gate-only",

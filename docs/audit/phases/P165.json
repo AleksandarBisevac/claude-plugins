@@ -1,0 +1,651 @@
+{
+  "id": "P165",
+  "title": "Quick lows before 3.9.0",
+  "status": "done",
+  "description": "The last phase of 3.9.0: lows whose fix is small and needs no design decision. Each fix closes its class at a shared seam.",
+  "desiredOutcome": "The quick, decision-free lows left after P163 and P164 are closed: report link decode, side-nav highlight, bugs-table chip wrap, Sort-select coverage, panel arrow a11y, STACK_BUDGET wording, three drive lows, a symlink spelling in start, a test marker.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "eed7a78b63b36b1880edc94c54e1a617f078a714",
+  "branch": "audit/p165-quick-lows-before-3-9-0",
+  "mergedAt": "2026-11-17T14:54:34Z",
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "passed",
+    "findings": [
+      {
+        "id": "P165-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/ui/report/page-state.js:565-661",
+        "issue": "Link validation is not at one seam: each FILTER_AXES entry's decode re-implements it by hand - five near-identical bodies `if (!offeredBy(<bar>, 'data-<x>').includes(h.<x>)) return false; <state> = h.<x>; return true;` plus bespoke area and date variants - and each re-spells the chip attribute its own `attrs` already declares (a third copy beside `attrs` and `paint`). The registry therefore holds the rule as an enumeration: a new axis whose decode omits the offeredBy call restores any value, and nothing in the code refuses it; only the browser gate's hr1 catches it, through a regex over the source spelling (finding 3). The task asked for the fix 'at the shared seam rather than per instance'.",
+        "resolution": "fixed in P165.6-r5e (6e26bb8c35b0): Declare what each axis's control offers once, in the entry (e.g. `offers: () => offeredBy(bar, entry.attrs[0], sel)`; search and the date pair declare their own acceptor), and have the one restore loop (exports.js `FILTER_AXES.forEach((axis) => { if (axis.decode(HASH)) ... })`) hand each decode only the HASH values its acceptor admits, so an unoffered value never reaches a decode by construction and the per-axis decodes shrink back to plain assignments. Keep hr1 as the browser-side proof.",
+        "fixTask": "P165.6-r5e",
+        "commit": "6e26bb8c35b0",
+        "status": "fixed"
+      },
+      {
+        "id": "P165-R2",
+        "severity": "med",
+        "file": "tools/check-report-interactive.mjs:4555-4580 (sn1 `short` carve-out); plugins/audit/scripts/ui/report/page-state.js:296-300 (end-of-document rule)",
+        "issue": "contradicts task clause 'Add a browser-gate case that clicks each side-nav entry at more than one width and reads that the highlight names the clicked section': sn1 excuses any entry the document ends before reaching the line and prints it as a note instead of judging it. Re-run on the new acme render: `note side-nav jumps the document ends before: 1512px #bugs (document ends 161px short)` - clicking Bugs at 1512px lights Ready (the end-of-document rule lights the last section), so the highlight does not name the clicked section and sn1 is green over it. The executor flagged this as a design call; the behaviour predates the diff (same on eed7a78b), but the gate as written does not read what the clause asked.",
+        "resolution": "fixed in P165.6-r5e (6e26bb8c35b0): Recommended: at the end of the document, let the section the reader jumped to (location.hash's target, when its top is on screen) win over 'light the last section', then delete the `short` carve-out so sn1 judges every entry. If the owner prefers the end rule, record that as a decision/fault and keep the note - but then the clause is narrowed by decision, not by the gate.",
+        "fixTask": "P165.6-r5e",
+        "commit": "6e26bb8c35b0",
+        "status": "fixed"
+      },
+      {
+        "id": "P165-R3",
+        "severity": "low",
+        "file": "tools/check-report-interactive.mjs:4422-4425",
+        "issue": "hr0 derives the link keys by spelling: `/\\bkeys: \\[([^\\]]*)\\]/` and `'([a-z]+)'` over the page source. An axis written `keys:['x']`, with a double-quoted key, or a key holding a digit or capital is silently not exercised, and hr0 only asserts HR_KEYS.length > 0, so a dropped key stays green.",
+        "resolution": "fixed in P165.6-r5e (6e26bb8c35b0): Cross-check the derivation against the registry's own shape: e.g. count the `decode:` members of FILTER_AXES in the source and require one keys match per entry (the empty `keys: []` of task-status included), or tolerate whitespace/quote variants in the regex and fail when an entry yields no match.",
+        "fixTask": "P165.6-r5e",
+        "commit": "6e26bb8c35b0",
+        "status": "fixed"
+      },
+      {
+        "id": "P165-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/ui/report-css/shell.css:37-39",
+        "issue": "The room after the content is a fixed calc(100vh - var(--sticky-anchor)) on every report, whatever the last targets actually need, so scrolling to the end shows a viewport that is mostly blank: measured on the new renders (Playwright, file://, the gate's LAYOUT_SIZES), spacer / blank at bottom-of-scroll / room actually needed for the furthest nav target to reach the line = 390x844 784/896/282 px (93% of vh), 844x390 330/394/27 (85%), 834x1194 1012/1076/709 (85%), 1024x768 586/650/283 (76%), 1512x945 811/875/508 (86%), 1920x1080 946/1010/643 (88%) for acme; docs/demo-large.html gets the identical spacer and blank tail while its needed room is 0 px at every size (every target already reaches the line at HEAD). A reader pressing End on any report sees roughly a screenful of empty page below a few lines of content, and on demo-large it serves no purpose at all. Print is clean: under emulateMedia print the ::after computes content:none, and the A4 PDF page count equals HEAD's (acme 18/18, demo-large 148/148). sn0 pins the CSS string and sn1 only asserts the marker, so nothing bounds the tail.",
+        "resolution": "fixed in P165.5 (1d0e3673c9d7): Size the room by what the last targets need, not by a viewport: page-state.js already measures the sticky stack and reads the line back (landingLine); publish one custom property, e.g. max(0, innerHeight - line - (content end - furthest nav target's top)), on load and resize and let the screen-only ::after read it (still keyed to --sticky-anchor through the line, so it tracks it). A CSS-only alternative, min-height on the last section, needs the renderer to wrap that section, since .content is flat (H2#ready then DL.ready). Then add a browser-gate bound beside sn1: at every LAYOUT_SIZES size the blank tail at bottom-of-scroll is at most the needed room plus the content's own bottom padding (64 px at HEAD), so demo-large reads ~64 px and acme reads needed+64, and prove it red against this render.",
+        "fixTask": "P165.5",
+        "commit": "1d0e3673c9d7",
+        "status": "fixed"
+      },
+      {
+        "id": "P165-R5",
+        "severity": "med",
+        "file": "tools/check-report-interactive.mjs:3493-3524; tools/capture-screenshots.mjs:356-375",
+        "issue": "contradicts task clause \"a browser check ... that the summary's accessible name carries no arrow glyph, red-first on the current panel and report\": none of the browser cases the clause asks for (ax4, ax5, pa1) was ever seen red. Attempt 1's redFirst is could-not-prove (the helper refused a CSS file as an inline suite), and attempt 2's red-first covers only the sd5 pin. On the report side the unfixed tree already carried `content:\"\\25BE\" / \"\"` in report-css/controls.css, so ax4 passes on HEAD as it stands; its red can only come from a mutation, and none was recorded. pa1's red is the HEAD panel (usage-tab.css had `content:\"\\25BE\"` with no alternative), and no run against it was recorded either. As handed, ax4/pa1 are checks only ever seen green.",
+        "resolution": "Record a red for each in its own driven runtime, restoring in the same command: (a) panel — run `node tools/capture-screenshots.mjs --check` with shared/disclosure.css's `/ \"\"` alternatives removed (equivalent to HEAD's panel) and show `pa1 ... FAIL` plus a non-zero exit; (b) report — re-render acme with the same mutation and show `ax4` FAIL from check-report-interactive.mjs; (c) ax5 — drop the shared ::after rule and show ax5 FAIL. Assert that the anchor matched once before each mutation, check the file is cmp-equal afterwards, and put command, exit code and failing case id in redFirst.basis.",
+        "status": "accepted-open",
+        "acceptedReason": "not a code defect: missing red-first evidence; the orchestrator proved ax4, ax5 and pa1 red by mutation and recorded the lines on P165.4 (note 5)"
+      },
+      {
+        "id": "P165-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/shared/README.md:101",
+        "issue": "The new `disclosure.css` row says \"The one stylesheet part here\" — a present-tense count claim about the directory's contents that goes false the moment a second shared .css part joins, and nothing re-derives it. Comment/doc-only.",
+        "resolution": "Delete the count: e.g. \"A stylesheet part: it joins `_ui_theme.REPORT_CSS_PARTS` and `_ui_theme.PANEL_CSS_PARTS` rather than the two script tuples, ...\".",
+        "status": "accepted-open",
+        "acceptedReason": "doc-only count claim; recorded in the internal register for the 3.10.0 low batch"
+      }
+    ],
+    "outcome": "[findings: 6 - 0 high, 4 med, 2 low; 4 with a recorded fix commit]",
+    "readReturns": []
+  },
+  "summary": "P165 closes the quick lows of 3.9.0: link decode validated at the filter registry from each axis's attrs (hr1/hr2 red-first by mutation), side-nav jumps mark their section at every size with a derived end space bounded by sn3, chips and ids never split across lines in any table (lm5 widened, red on e5d659f5), demo-large pins a phase and the matrix refuses a missing Sort select, one shared decorative disclosure arrow (ax4/ax5/pa1 red-first), the drive's bound/doc/wait-wording lows, start's symlink spelling, a test marker. Phase review: 0 high, 0 med, 5 low (recorded for 3.10.0). Per-task reviewer answers continued over: P165.1 intent diverges: divergence is the two med findings; owner-approved fix task follows; P165.4 intent diverges, red-first not-proved: the divergence was missing red-first evidence for ax4/ax5/pa1; the orchestrator proved all three red by mutation and recorded it on the task",
+  "tasks": [
+    {
+      "id": "P165.1",
+      "title": "A report link restores only filters a control shows, and the side-nav highlights the section a jump lands on",
+      "status": "done",
+      "description": "Two report behaviour lows, one class each, fixed at the shared seam rather than per instance.\n\n1. A report link can restore a filter no control shows. Hash decode (the FILTER_AXES registry in plugins/audit/scripts/ui/report/page-state.js) accepts values no control offers and hides rows behind them with nothing pressed: `#!m=bogus`, `#!a=nosuch` (unknown model/area), `#!tev=constructor` (a prototype key), `#!from=notadate`, `#!au=nobody` (hides Usage rows). Separately `#!ps=done` is dropped without a word in the Active view. Fix: every axis's decode keeps only values its control offers (read off the control/DOM, own-property lookups only), and what it drops is not applied; the restored state is exactly what the controls show. Decide the ps-in-Active-view case so the user is not silently given a different filter than the link named (e.g. switch the View to one that shows it, or keep it as an honest no-op the counter states) - pick the least surprising, say why in the code comment. Add browser-gate cases in tools/check-report-interactive.mjs: per axis, a bogus value in the hash restores nothing hidden and nothing pressed; red-first them: the render committed at eed7a78b (git show eed7a78b:examples/acme-store/acme-store-audit.html) must fail the new cases; quote the failing lines.\n\n2. The side-nav highlights the section above after a nav jump, at every width: a section's scroll-margin is --sp-2 while markSpy (page-state.js) treats a section as current only past the layers' height + 4px, so a jump lands just short of that line. Fix: derive both from ONE value (one source the CSS scroll-margin and markSpy both read), not two constants kept equal by hand. Add a browser-gate case that clicks each side-nav entry at more than one width and reads that the highlight names the clicked section; red-first it on the current committed render.\n\nRefresh rendered followers (examples/report.sh, docs/demo-large.html via `python3 tools/check-rendered-artifacts.py --how`, `node tools/capture-screenshots.mjs`) so tests/test__refs.py and check-rendered-artifacts stay green. Read writing-javascript, refactoring-the-assembled-ui, no-silent-pass. No register ids in comments.",
+      "files": [
+        "plugins/audit/scripts/ui/report/page-state.js",
+        "plugins/audit/scripts/ui/report/filters.js",
+        "plugins/audit/scripts/ui/report/areas.js",
+        "plugins/audit/scripts/ui/report/README.md",
+        "plugins/audit/scripts/ui/report-css/shell.css",
+        "plugins/audit/scripts/ui/report-css/README.md",
+        "tools/check-report-interactive.mjs",
+        "tests/test_render_report.py",
+        "tests/test__report_html.py",
+        "tests/test__report_page.py",
+        "examples",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/scripts/ui/report-css/shell.css: .snav a interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py tests/test__report_page.py tests/test__refs.py",
+          "sh -c 'W=$(mktemp -d) && rc=0 && for f in examples/acme-store/acme-store-audit.html docs/demo-large.html; do node tools/check-report-interactive.mjs \"$f\" || rc=1; done && python3 tools/plan-window.py docs/audit/audit-plan.json \"$W/win\" && python3 plugins/audit/scripts/report/render-report.py \"$W/win/docs/audit/audit-plan.json\" --out-dir \"$W/lp\" --format html && node tools/check-report-interactive.mjs \"$W\"/lp/*.html || rc=1; rm -rf \"$W\"; exit $rc'"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "ad08e5bc8d8d",
+      "outcome": {
+        "technical": "1) Link decode (plugins/audit/scripts/ui/report/page-state.js): new offeredBy(bar, attr, sel) reads the values a control offers off its chips and select options (minus the synthetic multi option), array membership only so constructor/toString are never offered; dateFieldTakes(v) asks a detached clone of the page's date field whether it would hold the value (a date input empties itself on a non-date); every FILTER_AXES decode now keeps only offered values (ps, m, tev, tevf, au whole; a per tag, deduplicated, keeping real tags beside bogus ones; from/to per end). Search stays free text. Dropped values are never applied, and the first refresh rewrites the link without them. Status hidden by the view (#!ps=done in Active): viewForStatus switches viewMode and the View select to the first view VIEWS declares that holds the status's segment (done -> Archived). Reason is in the code comment: the link writer never emits that pairing, so the sender asked for those phases; dropping it gives a different filter than named, and keeping it presses a hidden chip over an empty table. Switching the visible View select is the only answer where every control agrees with the rows. 2) Side-nav: markSpy no longer computes its own fold (layers + 4px). New landingLine(el) reads each target's resolved scroll-margin-top (+1px rounding slack), the same [id] rule a jump uses (shell.css: calc(var(--sticky-2) + var(--sp-2))), so there is one source. shell.css only gains a comment naming the reader. 3) Browser gate (tools/check-report-interactive.mjs): hr0-hr4 (link keys read from the shipped script's own keys: [...] registry; each loaded alone with nosuch-value/constructor/toString, or notadate/2026-02-30/constructor for dates, must open exactly like no link: phases, usage rows, pressed chips, fields, More-filters count, Clear; hr2 is the allow half, an offered value comes back on, so a mis-derived key or a decode that drops everything is red; hr3: every status chip's link presses it and draws only its phases whatever the default view) and sn1/sn2 (every visible side-nav entry clicked at 1512, 1000 and 390px must light itself; an entry the document ends too early to land is reported as a note, not judged). 4) tests/test_render_report.py: two source pins that named the old fold constant were updated on purpose (shell marker pin now wants landingLine(el) and scrollMarginTop; st2 now wants no const fold). 5) README row for page-state.js updated. 6) Followers: sh examples/report.sh (acme html + md; the md change is only the generated timestamp), docs/index.html byte copy, docs/demo-large.html via the --how recipe, node tools/capture-screenshots.mjs (dark.png + captured-at.json changed; exit 0). Commands run: gate 1 exit 0 (821 cases: refs 292, report_html 181, report_page 33, render_report 315); gate 2 exit 0 (acme 856 checks, demo-large 861, live render 814, both font passes: page font and Verdana); python3 tools/check-rendered-artifacts.py --before-commit exit 0; npx vitest run 853 passed; sweep of dependant suites (test__report_ui, test__ui_theme_lints, test__ui_theme, test__output, test__surface_digest, test__config, test_run_test_gate, test_gen_demo_manifest, test__invariants, test__panel_page, test__live_copy) exit 0, 2050 cases; test__output_lints + test__deps exit 0; ruff on the edited test exit 0. Dependants: generated pages (docs/demo-large.html, docs/index.html, examples/acme-store html) re-rendered and checked; _report_ui.py unchanged (part order untouched, no part added); controls.css unchanged (its .fdetails scroll-margin is read by the More-filters code, which still reads it); heatmap.js still correct (setView/syncStatusChips unchanged; syncStatusChips no longer meets an offered status the view hides on restore, because viewForStatus runs first); test__report_ui, test__ui_theme_lints, _ui_theme_lints, test__surface_digest, test__ui_theme, test__output, test__config ran green; filters.js and areas.js were declared but needed no change (paintAreas and syncHash read the state the decodes now limit); redfirst.sh, ui-tests and gate-parity/affected/where reference the files by path and need nothing; docs/screenshots dependants (test__panel_page, test__invariants, test_gen_demo_manifest) ran green after re-capture. Not done, needs a decision: at 1512px in acme, clicking #bugs lights #ready, because the page ends before #bugs reaches the landing line and the end-of-document rule lights the last section. That was the same on the committed render (probe: lit #ready both before and after). Choosing whether a clicked entry beats the end-of-page rule is a design call, so sn1 reports this case as a note rather than a failure.",
+        "descriptive": "A report link now restores only filters a control shows (and widens the View for a status the view hides), and a side-nav jump lights the section it lands on, because the marker reads the same scroll-margin the jump uses."
+      },
+      "startedAt": "2026-11-17T05:25:05Z",
+      "completedAt": "2026-11-17T07:02:47Z",
+      "verifiedBy": [
+        "hr0-hr4 in tools/check-report-interactive.mjs: a bogus value on every link axis restores nothing; an offered value comes back on; a status link presses its chip and draws only its phases under a view that holds them; no page error",
+        "sn1-sn2 in tools/check-report-interactive.mjs: clicking each visible side-nav entry at 1512/1000/390px lights that entry; no page error"
+      ],
+      "notes": [
+        {
+          "at": "2026-11-17T05:24:58Z",
+          "text": "scans rendered artifacts for machine paths; this task changes report behaviour/CSS, not what paths a render carries",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-17T05:24:59Z",
+          "text": "names check-report-interactive.mjs as a step; the task keeps its command line and exit contract",
+          "waives": "tools/verify.sh"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T06:43:41Z.16dad4",
+        "status": "passed",
+        "at": "2026-11-17T06:43:41Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "ad08e5bc8d8d",
+        "at": "2026-11-17T07:02:47Z",
+        "return": "docs/audit/evidence/returns/P165.1/20261117T052505Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with expectRedFirst false, so no helper proof is owed; the browser gate is not a runner the helper reads a tally from. Reds were watched by hand instead. (1) New cases against the render committed at eed7a78b (git show eed7a78b:examples/acme-store/acme-store-audit.html): FAIL hr1 ... got ps=nosuch-value: phases '' (no link: 'P2 BF1 P3 P4 P5'); clear true ... a=nosuch-value ... m=constructor ... tev=toString ... from=notadate ... au=nosuch-value: usage '0/0' (no link: '3/3') ...; FAIL hr2 ... got ps=done: NOT restored ([]); FAIL hr3 ... got ps=done in view active: {pressed:false,drawn:5,other:5,view:active}; FAIL sn1 ... got 1512px #phases lit #gate (landed at 134px, line 134px) · 1512px #usage lit #phases ... · 1000px #phases lit #gate (landed at 182px, line 182px) ... · 390px #phases lit #gate (landed at 60px, line 60px) ...; REPORT IS INERT: 4 interaction(s). (2) Mutations of the fix, each rendered to a temp dir and restored by cmp in the same command: offeredBy keeping nothing -> FAIL hr2 (ps, a, m, tev, tevf, au NOT restored) and FAIL hr3, hr1 stays ok; landing line 8px above the margin -> FAIL sn1; date probe accepting anything -> FAIL hr1 from=notadate/2026-02-30/constructor; viewForStatus a no-op -> FAIL hr3 ps=done and FAIL hr2 ps=done. (3) Source pins in tests/test_render_report.py: reintroducing a separate fold constant in markSpy -> FAIL shell: the marker is decided by which heading last reached the line ... and FAIL st2 ...; restored -> 315 cases ok.",
+        "at": "2026-11-17, by hand in the P165.1 worktree; no helper run"
+      }
+    },
+    {
+      "id": "P165.2",
+      "title": "The drive's base-measure bound reads the red before asking, its documents say the bound, and a wait names a hand-out rather than a launch",
+      "status": "done",
+      "description": "Three drive lows in plugins/audit/scripts/governance/drive-phase.py and the documents that describe it.\n\n1. In base_reading_for, the due-branch bound check (around the `unmeasurable_bound` call in the due branch) runs before the red's own reading is read. A `not-knowable` reading already names a base run (base_behind), and the decided-mark branch sends such a red to the writer; so once a start holds UNMEASURED_BOUND moved-code bases, a later not-knowable red gets a spurious `gate-red-base-unknown` ask whose sentence claims the base \"could not be measured either\". Fix: in the due branch check `unmeasurable_bound(before) and not base_behind(reading)` (read the reading first). Add a twin of the bi16 case in tests/test_drive_phase.py that goes red without the fix (prove it).\n\n2. PLUGIN-BUILD-GUIDE.md (around the base-measure section, near \"goes to the writer every time, bounded by the writer rounds\") and the block comment above BASE_MEASURE_VERDICTS say an unrunnable red always goes to the writer. That stops being true once a start reaches UNMEASURED_BOUND moved-code bases (the due branch then stops every red of the start before it is measured). Add \"until the start reaches the bound\" (or equivalent) in both places, matching plugins/audit/reference/execute-task.md which already says it correctly.\n\n3. The `wait-gate` and the matching wait line for a phase gate say \"the gate launched %(since)s has recorded no run for it yet\", but the drive stamps that time when it HANDS OUT the run-test-gate step, not when a gate process starts - so the line asserts a launch it never observed. Fix the claim: word it as what the drive knows (\"handed out at %(since)s; no run recorded since\") everywhere this stamp is rendered, and keep the remedy rule. Update any test pins on the old wording.\n\nRead writing-python, before-you-claim, no-silent-pass. No register ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/execute-task.md",
+        "tests/test__affected_tests.py",
+        "tests/test__doctor_trail.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__affected_tests.py tests/test__doctor_trail.py"
+        ],
+        "gateBasis": "files"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "bdf4705c4dad",
+      "outcome": {
+        "technical": "drive-phase.py: (1) base_reading_for's due branch now reads the red's own reading before the bound stops it: past unmeasurable_bound, a reading that names a base run (base_behind) returns (None, reading, None) - decided by that reading, with nothing measured - and only a red with no base run gets bound_said's 'could not be measured either' stop. DEVIATION FROM THE BRIEF'S LITERAL FIX: the brief said `if unmeasurable_bound(before) and not base_behind(reading)`, which falls through and launches a measurement (inline or background) for that red past the bound, breaking the bound's own contract ('no base run is launched for a red after it' in execute-task.md, 'BEFORE any measurement is launched' in the block comment). The mutation probe proves the literal form launches (bi17 red under it). Behaviour difference is narrow: the red goes to the writer on its own base-run reading, exactly as the decided-mark branch already sends it. (2) Block comment above BASE_MEASURE_VERDICTS and PLUGIN-BUILD-GUIDE.md: 'goes to the writer every time' now carries 'until the start reaches the bound', and both say a red whose reading names a base run is decided by it past the bound; the guide's 'goes to the writer as before' for a moved-code red got the same qualifier (same claim, same class). base_reading_for's docstring says the same. execute-task.md already said it correctly ('no base run is launched for a red after it') and is unchanged. (3) wait-gate line now reads 'the gate was handed out at %(since)s; no run recorded for it since'; wait-base carried the same hand-out stamp (launch_base stamps `at` when it prints the dispatch) so it reads 'the base measurement was handed out at %(since)s; no reading left since'. gate_wait_said/base_wait_said docstrings say the stamp is the hand-out moment, never a process start. Both the task gate and the phase gate render through gate_wait_said, so one template covers both; rules (remedy lines) unchanged. No test pinned the old wording (grep for 'recorded no run', 'left no reading yet', 'measurement launched' over the tree: only the template itself). The guide's wait-gate sentence now says it prints the hand-out moment. Tests: bi17 (in _bi_bound_due_case, the bi16 twin: not-knowable reading with run 'r-base' past the bound -> (None, reading, None), nothing taken or launched, inline and background) and bg2h (in _background_gate_cases after bg2: the real wait block a `next` printed names the launch mark's `at` as 'handed out at <stamp>;' exactly once and has no 'launched'; base_wait_said likewise). Gate: sweep over the three gate files exit 0, '3/3 files ok, 1185 cases'. Dependants also swept: test_drive_without_model.py, test__deps.py, test__output_lints.py, test_stamp_verification.py exit 0, '4/4 files ok, 905 cases'. ruff clean on both .py files. Dependants: drive-without-model.py and the importing suites - still correct, the only public behaviour change is the past-bound branch for a base_behind red and two wait-line texts, neither pinned elsewhere (dm85/dm86 still green); PLUGIN-BUILD-GUIDE.md / execute-task.md / README / orchestrator.md prose naming gate-red-base-unknown, wait-gate, wait-base - still correct (guide edited, others make no launch claim and no 'every time' claim); test__affected_tests.py and test__doctor_trail.py - unchanged, green in the gate; .github/sweep-costs.json - no new block, untouched.",
+        "descriptive": "Past the moved-code bound a red that already has a base reading is decided by it instead of getting a false 'could not be measured' ask; docs say the bound; gate/base waits say 'handed out at', not 'launched'."
+      },
+      "startedAt": "2026-11-17T05:25:22Z",
+      "completedAt": "2026-11-17T06:48:42Z",
+      "verifiedBy": [
+        "bi17: past the moved-code bound, a not-knowable red whose reading names a base run is decided by that reading, nothing launched inline or in the background",
+        "bg2h: the gate wait a real next printed and the base wait both name the stamp as 'handed out at' and claim no launch"
+      ],
+      "notes": [
+        {
+          "at": "2026-11-17T05:24:24Z",
+          "text": "tdd by default (init.md's mode rule): no mode was named and the title leads with no refactor or config word, so it adds or changes observable behaviour"
+        },
+        {
+          "at": "2026-11-17T05:25:18Z",
+          "reader": "tests/test__affected_tests.py",
+          "reads": "PLUGIN-BUILD-GUIDE.md",
+          "text": "declared to answer a reading: tests/test__affected_tests.py reads PLUGIN-BUILD-GUIDE.md - quotes its text beside its path: 'related listing'"
+        },
+        {
+          "at": "2026-11-17T05:25:18Z",
+          "reader": "tests/test__doctor_trail.py",
+          "reads": "PLUGIN-BUILD-GUIDE.md",
+          "text": "declared to answer a reading: tests/test__doctor_trail.py reads PLUGIN-BUILD-GUIDE.md - quotes its text beside its path: \"**It grades each copy's own age\""
+        },
+        {
+          "at": "2026-11-17T05:25:19Z",
+          "text": "reads import layers; no import is added or moved",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-17T05:25:20Z",
+          "text": "reads lint tables; no lint is added or changed",
+          "waives": "tools/prove-gates.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T06:48:38Z.801dd5",
+        "status": "passed",
+        "at": "2026-11-17T06:48:38Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "bdf4705c4dad",
+        "at": "2026-11-17T06:48:42Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-17T05:34:15Z",
+        "basis": "`python3 tests/test_drive_phase.py --selftest --stage bi-block --stage bg-block` in a throwaway tree at HEAD exited 1 with 2 of 24 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bg2h (house FAIL), bi17 (house FAIL): SELFTEST FAILED: 22/24 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P165.3",
+      "title": "start compares the plan directory and the project directory on one path resolution; a test marker is restored",
+      "status": "done",
+      "description": "Two small manifest/test lows.\n\n1. `audit-task.py start` counts the plan's own evidence as undeclared readers when the project directory is spelled through a symlink: the plan-directory exclude is computed from os.path.abspath(mpath), which resolves through the cwd's real path (/private/tmp/...), then taken relative to a --project-dir spelled /tmp/..., so the exclude comes out empty and ~20 files under docs/audit/evidence count as readers and start refuses. Fix: compare both sides on one resolution (os.path.realpath on both, or the module's existing canonical-path helper if one exists - search before adding). Look for the same abspath-vs-realpath mix elsewhere in the start/scope reader path and fix the class with one helper, not per call site. Add a case in tests/test_audit_task.py that builds a project under a symlinked directory and runs start through the symlinked spelling; prove it red without the fix (macOS /tmp -> /private/tmp is one such link; build your own symlink under tempfile.mkdtemp() so it is portable, and skip with a printed reason on a platform without symlinks).\n\n2. tests/test_usage_ledger.py has a section marker `# --- rx:the re-export` with the space after the colon dropped by an earlier edit; restore `# --- rx: the re-export`.\n\nRead writing-python and no-silent-pass. No register ids in comments.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py",
+        "tests/test_usage_ledger.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test_usage_ledger.py"
+        ],
+        "gateBasis": "files"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "6a8605d4ae67",
+      "outcome": {
+        "technical": "audit-task.py: new private helper _project_rel(path, project) - posix_rel of `path` against `project` with the directories on both sides resolved through os.path.realpath (last component of `path` left unresolved so a tracked link is named, not its target). Used at both subtractions in the start/scope reader path: _owed_now's plan-directory exclude (the bug: abspath(mpath) resolved through the physical cwd vs a --project-dir spelled through a link climbed out of the project, so the exclude came out empty) and _unanswered_readers' remedy spelling (behaviour-neutral today: git_root is derived from project's own spelling; applied so the reader path has one subtraction). Searched for an existing helper first: hooks/_config has _resolved/_same_dir (comparators, not a relative path) and entry points have private ones (close-phase._same_path, stamp-verification._canonical_path) that the layer rule forbids importing; none answers 'relative to project on one resolution'. tests/test_audit_task.py: new block sym-block (_symlinked_project_cases, added to STAGES): a real git project, a symlink to it made under mkdtemp(), start run with cwd = the link (getcwd reports the resolved path), the manifest named relative, --project-dir the link; tracked readers of src/a.py at docs/audit/evidence/run.md (inside the plan dir) and docs/guide.md (outside). sym1: the refusal names docs/guide.md (proves the reader search ran - the first draft passed vacuously on a usage error, which is why) and not the evidence file. sym2 (second direction): still refused, task pending, outside reader named. Symlink refusal goes through _harness.skip with the exception text. tests/test_usage_ledger.py:1534 marker restored to `# --- rx: the re-export ...` (one trailing dash dropped to keep the width). Mutations, each restored in the same command with __pycache__ purged: fix reverted -> sym1 FAIL, 1/2; exclude widened to ['docs'] -> sym1 FAIL and sym2 FAIL (0, 'in_progress'), 0/2. Gate: 2/2 files ok, 1393 cases. Also green: test__output_lints.py + test__deps.py (2/2 files ok, 467 cases), ruff, vermin -t=3.8-. Dependants: full-gate.py, run-test-gate.py, test__doctor_trail, test__invariants, test__scoped_commit, test_audit_task, test_close_phase, test_commit_task_work import audit-task - still correct: no public or test-used name changed, the only new name is private and the two edited lines keep their return shapes. test__config uses _answered_readers - still correct, same signature and return shape. Prose naming verbs in verbs-in-full.md / PLUGIN-BUILD-GUIDE.md / manifest-conventions.md - still correct, no verb changed; PLUGIN-BUILD-GUIDE.md:3565/3614 say readers are searched with the plan's own directory left out, which is now true under a symlinked spelling too. test_audit_task.py dependants (test_commit_task_work, test__filed_returns import _attempt_cases/_held_cases/...; tools/affected.py, sweep-selftests.py, sweep-costs.json, CHANGELOG, research doc by path) - still correct: no existing helper renamed; .github/sweep-costs.json has no figure for sym-block, which the sweep weighs by the suite's figure over its blocks (the gate ran it, 1.1s). test_usage_ledger.py dependants - still correct: a comment-only change.",
+        "descriptive": "start no longer demands the plan's own files as readers when the project is spelled through a symlink; a stray section marker is restored."
+      },
+      "startedAt": "2026-11-17T05:25:38Z",
+      "completedAt": "2026-11-17T06:53:56Z",
+      "verifiedBy": [
+        "sym-block in tests/test_audit_task.py: start through a symlinked project spelling sets the plan directory aside (sym1) and still demands a reader outside it (sym2)"
+      ],
+      "notes": [
+        {
+          "at": "2026-11-17T05:24:25Z",
+          "text": "tdd by default (init.md's mode rule): no mode was named and the title leads with no refactor or config word, so it adds or changes observable behaviour"
+        },
+        {
+          "at": "2026-11-17T05:25:36Z",
+          "text": "describes audit-task.py's verbs; resolving both paths the same way changes no documented behaviour, and P165.2 owns the guide in this wave",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T06:53:52Z.f8e09d",
+        "status": "passed",
+        "at": "2026-11-17T06:53:52Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "6a8605d4ae67",
+        "at": "2026-11-17T06:53:56Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-17T05:31:36Z",
+        "basis": "`python3 tests/test_audit_task.py --selftest --stage sym-block` in a throwaway tree at HEAD exited 1 with 1 of 2 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests on HEAD's code failing only the unknown-stage check for `sym-block`, which the task's test files add - the stage is new at HEAD: its cases did not exist at HEAD, which is red for them), each passing with the working tree's implementation - sym1 (house FAIL): SELFTEST FAILED: 1/2 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P165.4",
+      "title": "The More-filters disclosure arrow is one shared rule, decorative on both surfaces",
+      "status": "done",
+      "description": "The panel's More-filters disclosure arrow is drawn as text content that screen readers announce (plugins/audit/scripts/ui/panel-css/usage-tab.css). The report's equivalent was fixed earlier (report-css/controls.css, .fdetails>summary). Fix it with ONE shared rule both surfaces use, not a second copy: put the disclosure-arrow rule in the shared layer the two surfaces already concatenate (see plugins/audit/scripts/ui/shared/ and the refactoring-the-assembled-ui skill on shared partials) and have both summaries use it; the glyph must not be exposed to assistive tech (e.g. a decorative pseudo-element with an empty alt in `content: \"x\" / \"\"`, or a background/border-drawn arrow - choose one that works in forced-colors, and say which and why). Remove the per-surface copies. Prove it: a browser check (panel via `node tools/capture-screenshots.mjs --check` is preconditions only, so add an assertion where the panel/report runtime is driven - e.g. in tools/check-report-interactive.mjs for the report and the panel's equivalent gate if one exists, else a computed-accessible-name check through Playwright's accessibility snapshot) that the summary's accessible name carries no arrow glyph, red-first on the current panel and report. Refresh followers (examples/report.sh, docs/demo-large.html via `python3 tools/check-rendered-artifacts.py --how`, `node tools/capture-screenshots.mjs`). Read writing-css and refactoring-the-assembled-ui. No register ids in comments.",
+      "files": [
+        "plugins/audit/scripts/ui/panel-css/usage-tab.css",
+        "plugins/audit/scripts/ui/panel-css/usage-narrow.css",
+        "plugins/audit/scripts/ui/report-css/controls.css",
+        "plugins/audit/scripts/ui/report-css/forced-colors.css",
+        "plugins/audit/scripts/ui/report-css/README.md",
+        "plugins/audit/scripts/ui/shared",
+        "plugins/audit/scripts/_ui_theme.py",
+        "plugins/audit/scripts/report/_report_page.py",
+        "tools/check-report-interactive.mjs",
+        "tests/test__report_ui.py",
+        "tests/test__ui_theme.py",
+        "tests/test__ui_theme_lints.py",
+        "tests/test_render_report.py",
+        "examples",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__report_page.py",
+        "plugins/audit/scripts/ui/panel-css/README.md",
+        "tests/test__panel_page.py",
+        "tools/lints/_ui_theme_lints.py",
+        "tools/capture-screenshots.mjs",
+        "tests/test__surface_digest.py"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/scripts/ui/panel-css/usage-tab.css: .fdetails>summary interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/panel-css/usage-tab.css: .lnk interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/panel-css/usage-tab.css: .uchip interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/panel-css/usage-tab.css: .ulegend b.pick interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/panel-css/usage-tab.css: .urow.pick interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: #audit-q interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .btn interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .btn-primary interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .fchip interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .fdetails>summary interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .frow input[type=date] interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .gfilters input[type=date] interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .gfilters select interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .tf-chip interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__report_ui.py tests/test__ui_theme.py tests/test__ui_theme_lints.py tests/test_render_report.py tests/test__refs.py",
+          "node tools/capture-screenshots.mjs --check",
+          "sh -c 'W=$(mktemp -d) && rc=0 && for f in examples/acme-store/acme-store-audit.html docs/demo-large.html; do node tools/check-report-interactive.mjs \"$f\" || rc=1; done && python3 tools/plan-window.py docs/audit/audit-plan.json \"$W/win\" && python3 plugins/audit/scripts/report/render-report.py \"$W/win/docs/audit/audit-plan.json\" --out-dir \"$W/lp\" --format html && node tools/check-report-interactive.mjs \"$W\"/lp/*.html || rc=1; rm -rf \"$W\"; exit $rc'"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P165.1",
+        "P165.6-r5e"
+      ],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": "e5d659f551f1",
+      "outcome": {
+        "technical": "RETRY (attempt 2): only tests/test__surface_digest.py changed. sd5 pinned the literal \"shell.css\" in the child's error when ui/ is hidden, i.e. whichever part the assembly happened to read first; with shared/disclosure.css now read first the error names that file (probed: FileNotFoundError ... plugin/scripts/ui/shared/disclosure.css). New helper _missing_ui_parts(error, sources) returns the ui/-relative tails of paths in the error that are parts ui_surface_sources() lists, and only when the error is a FileNotFoundError; it reads only the tail after a `ui` segment (the error is a 300-char traceback tail, a deep TMPDIR can cut the head) and treats any run of / or \\ as one separator (the text is a repr of a repr, which multiplies Windows backslashes). sd5 now requires len(named) > 0 and prints the named parts; it currently names ['shared/disclosure.css']. Part order was not touched. Red-first by mutation (see redFirst.basis): both mutations red, restored byte-equal. Class sweep: grep -rn 'shell\\.css|disclosure\\.css|tokens-and-reset\\.css' tests tools --include='*.py' (excluding the lints file that declares UI_ASSETS) -> test__output.py:535,538,557,559 (surface classification by name - left, not order-dependent); test__ui_theme.py:437,442 (read_asset of a named file - left); test__ui_theme.py:453,464,490 (cs1/cs4/cs9 pin the cascade order, which IS the contract - left); test__ui_theme_lints.py:211 (unreadable-asset fixture - left); test__config.py:133-134 (fs4 recursion by basename - left). No other pin depends on the first-read part. Gates, from the project dir: sweep of the gate's five suites plus test__surface_digest.py exit 0, 6/6 files ok, 768 cases (surface_digest 8/8); capture-screenshots --check exit 0 (pa1, ph1-ph5 printed); gate 3 exit 0: 858 checks acme, 864 demo-large, 817 the windowed live plan. Attempt 1's work (shared/disclosure.css, both surfaces wired, per-surface copies removed, ax4/ax5, da1, cs8/cs9, uf7, pa1, ph1-ph5, docs, followers) stands as filed in its outcome and was not redone. Its dependants answers stand; test__surface_digest.py is the one dependant that changed, as above.",
+        "descriptive": "sd5 now asserts the class it means - the error names a missing part of the removed ui/ tree - instead of whichever part the assembly reads first."
+      },
+      "startedAt": "2026-11-17T11:07:15Z",
+      "completedAt": "2026-11-17T12:16:28Z",
+      "verifiedBy": [
+        "sd5 (rewritten pin): the child's error names a missing part of the removed ui/ tree, via _missing_ui_parts",
+        "attempt 1: ph1-ph5 panel hover parity and pa1 accessible-name cases in tools/capture-screenshots.mjs; ax4/ax5 in check-report-interactive.mjs; da1, cs8, cs9, uf7"
+      ],
+      "notes": [
+        {
+          "at": "2026-11-17T05:25:00Z",
+          "text": "scans rendered artifacts for machine paths; this task changes report behaviour/CSS, not what paths a render carries",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-17T05:25:01Z",
+          "text": "names check-report-interactive.mjs as a step; the task keeps its command line and exit contract",
+          "waives": "tools/verify.sh"
+        },
+        {
+          "at": "2026-11-17T07:03:51Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/scripts/_ui_theme.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/_ui_theme.py - a section headed by its path"
+        },
+        {
+          "at": "2026-11-17T07:03:51Z",
+          "reader": "tests/test__report_page.py",
+          "reads": "plugins/audit/scripts/report/_report_page.py",
+          "text": "declared to answer a reading: tests/test__report_page.py reads plugins/audit/scripts/report/_report_page.py - its own suite"
+        },
+        {
+          "at": "2026-11-17T12:27:21Z",
+          "text": "Red-first of the browser cases, proved by the orchestrator after the review (mutations on scratch copies, never the shared tree): report acme render with the empty alt dropped -> 'FAIL ax4 the More-filters summary's accessible name carries no arrow glyph, shut or open (shut \"More filters ▾\", open \"More filters\")' rc=1; arrow content:none -> 'FAIL ax5 under forced colours the arrow is still generated, in a colour that paints (content none ...)' rc=1; panel, scratch worktree at e5d659f5 with shared/disclosure.css's empty alt dropped -> 'FAIL pa1 usage: the Filters summary is announced as shut \"Filters ▾\"' rc=1. The unmutated tree is green on all three (the task gate)."
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T12:13:44Z.c864ff",
+        "status": "passed",
+        "at": "2026-11-17T12:13:44Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "e5d659f551f1",
+        "at": "2026-11-17T12:16:28Z",
+        "return": "docs/audit/evidence/returns/P165.4/20261117T110715Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with tests.expectRedFirst false. The retry's one change is a test pin (sd5), not code: at HEAD the first part read is report-css/shell.css, which the new pin also accepts, so a HEAD-tree helper run could not turn it red. Its red was shown instead by mutating the error text sd5 reads, in place and restored in the same command, __pycache__ purged: (a) the ui path segment rewritten to /elsewhere/ -> sd5 FAIL, named parts [], suite exit 1; (b) disclosure.css renamed to notapart.css in the error -> sd5 FAIL, named parts [], suite exit 1; anchor count asserted == 1 before each mutation, file cmp-equal to the original after.",
+        "at": "2026-11-17"
+      }
+    },
+    {
+      "id": "P165.5",
+      "title": "Chips and ids never break inside a word in any table, the Sort select is always in the matrix, and the stack-budget basis says only what it measured",
+      "status": "done",
+      "description": "Three report layout lows, closed together because they share the layout matrix in tools/check-report-interactive.mjs.\n\n1. The bugs table's STATUS chip wraps inside the word at 1440x900 (\"Fixe / d\", \"Won' / t fix\") and the ID column breaks \"BUG- / 10\". Fix in report-css/tables.css: chips and ids do not break inside a word (white-space: nowrap on the chip and id cells, or a min width from the longest chip - whichever keeps the table inside the page at the phone size). Widen the matrix's \"no word split across lines\" assertion (lm5) from the chrome to EVERY table's chips and ids (phases, tasks, bugs, ready-now, usage), so a table added later is covered by default; red-first it on the current committed acme render and quote the failing lines.\n\n2. The Sort select in the phases table's head renders only when any phase is pinned (any_phase_pinned), and no committed fixture has a pinned phase, so the layout matrix never sees it. Add a pinned phase to the demo-large fixture's generator (tools/demo/gen-demo-manifest.py; re-render docs/demo-large.html via `python3 tools/check-rendered-artifacts.py --how`), and make the matrix FAIL by name on demo-large when no Sort select is present (a fixture that stops carrying it must not pass silently). Keep tests/test_gen_demo_manifest.py green and update its pins honestly.\n\n3. Two wording fixes beside STACK_BUDGET (change no share): (a) the sentence saying a phone whose filter bar wraps one more row fails lm4 - the cheapest row measured is 27.4px against 27px of headroom and lm4's stack is a whole-pixel scan that can sit up to 1.5px off, so only the 32px arm (a row holding the count) is shown to fail; say exactly that; (b) the rule's \"over the class's screen height\" must read \"over that size's height\" - a class holds sizes with different heights and lm4 applies the share per size.\n\nRefresh rendered followers (examples/report.sh, docs/demo-large.html, `node tools/capture-screenshots.mjs`) so tests/test__refs.py and check-rendered-artifacts stay green. Read writing-css, refactoring-the-assembled-ui, before-you-claim. No register ids in comments.",
+      "files": [
+        "plugins/audit/scripts/ui/report-css/tables.css",
+        "plugins/audit/scripts/ui/report-css/README.md",
+        "tools/check-report-interactive.mjs",
+        "tools/demo/gen-demo-manifest.py",
+        "tests/test_gen_demo_manifest.py",
+        "tests/test_render_report.py",
+        "tests/test__report_html.py",
+        "examples",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots",
+        "plugins/audit/scripts/ui/report-css/shell.css",
+        "plugins/audit/scripts/ui/report/page-state.js",
+        "plugins/audit/scripts/ui/report/README.md",
+        "tests/test__report_page.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/ui-tests/table-fit.test.mjs"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/scripts/ui/report-css/tables.css: .dtoggle interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/tables.css: .shacopy interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/tables.css: tr interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py tests/test__report_page.py tests/test__refs.py tests/test_gen_demo_manifest.py",
+          "sh -c 'W=$(mktemp -d) && rc=0 && for f in examples/acme-store/acme-store-audit.html docs/demo-large.html; do node tools/check-report-interactive.mjs \"$f\" || rc=1; done && python3 tools/plan-window.py docs/audit/audit-plan.json \"$W/win\" && python3 plugins/audit/scripts/report/render-report.py \"$W/win/docs/audit/audit-plan.json\" --out-dir \"$W/lp\" --format html && node tools/check-report-interactive.mjs \"$W\"/lp/*.html || rc=1; rm -rf \"$W\"; exit $rc'"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P165.4"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "1d0e3673c9d7",
+      "outcome": {
+        "technical": "1) shell.css: one rule over the column, `.content :is(.chip,.rchip,.bandpill,.dl,.heldby,.area-tag,.mono){white-space:nowrap}`, so a pill or id never breaks anywhere in the report. tables.css: the wrap-anywhere override now covers only the runs that may be sentences (.tevn,.tevf,.ptev); pills were removed from it. Comments in both files were rewritten to match. Gate: lm5 gains a second assertion per matrix cell. readAtoms() reads every ATOMS element in .content with a non-space token as the word, and a cell that read nothing is reported as such. The matrix opens every phase so task ids and chips are read, and shuts them again at the end. 2) gen-demo-manifest.py pins the in_progress phase at priority 1. That phase is already first among phases with ready work, so the ready list keeps its written order. The phase.priority SCHEMA_EXEMPTIONS row is removed and the docstring is updated. In the gate, SORT_REQUIRED={'docs/demo-large.html'} is keyed by documentKey, and an always-run `lm the Sort select ...` expect fails by name when that document draws no select. test_gen_demo_manifest gains pin1, pin2 and pin3 (the pin survives the sharded write onto the index stub). 3) Next to STACK_BUDGET the rule now reads \"over that size's height\" with the reason, and the phone sentence says only the 32px arm is shown to fail: 27.4 vs 27 is inside lm4's whole-pixel-scan error (up to 1.5px). No share changed. End room: the shell.css ::after height is var(--end-room,0px). page-state.js endRoom() computes, with the current room taken out, max(0, ceil(clientHeight - line - (body end - furthest drawn target's top))). placeEndRoom() writes the property only on change and removes it at 0. It runs synchronously at load, then once per frame from a ResizeObserver on the column, top bar, strip and filter bar and from window resize. sn3 computes the need independently: it hides the ::after with an injected style, measures, restores, scrolls to the end, and holds tail <= need + own tail + 1. It runs at every LAYOUT_SIZES size as loaded, again after resizing through all sizes without a reload (each resize also clicks the furthest entry into sn1's tally), and after expand-all and collapse-all. sn1 and sn3 both hold on acme, demo-large and the live render, so there is no conflict to report. Pins updated on purpose: test_render_report u14ktw and sn0. tools/ui-tests/table-fit.test.mjs (scope widened by the orchestrator): its coalescing case now asserts that a burst asks for no more frames than one event, because the page has two coalesced resize consumers. Followers: examples/report.sh (acme + docs/index.html byte copy), docs/demo-large.html via the --how recipe (40 ranked rows, one #audit-sort), and node tools/capture-screenshots.mjs (6 files changed; --check OK). Verification: full sweep `196/196 files ok, 18874 cases`; task gate sweep `5/5 files ok, 957 cases`; browser gate rc=0 over all three reports; npx vitest 853/853; check-rendered-artifacts --before-commit `OK: 3 committed artifact(s) match a fresh render`; ruff clean; vermin min 3.5. Dependants: _ui_theme.py and _ui_theme_lints.py: the new var has a fallback, and the sweep is green. disclosures.mjs: browser gate green. The rendered artifacts, index.html, screenshots, test__refs sc1/sc2 and check-rendered-artifacts were refreshed and are green. The demo generator's importers (test__demo_cast, test__manifest_vocab, test_audit_doctor, test_gen_demo_usage, bench-report, _deps) are green in the full sweep. The READMEs and PLUGIN-BUILD-GUIDE are updated. Left as is: the print-segments paper `overflow-wrap:anywhere` and the other prose containers. A pill or id inside them stays whole by nowrap, and the print checks passed.",
+        "descriptive": "No pill or id in any report table or list breaks inside a word, the scale demo pins a phase so the Sort select is always measured (and its absence fails by name), the STACK_BUDGET basis says only what was measured, and the room after the content is now only what the last nav target lacks."
+      },
+      "startedAt": "2026-11-17T12:27:42Z",
+      "completedAt": "2026-11-17T14:11:22Z",
+      "verifiedBy": [
+        "lm5 (pill/id half): every pill and id in .content, at every matrix cell, both fonts, phases expanded",
+        "lm the Sort select is in the matrix on every page whose fixture is built to carry it",
+        "sn3 blank tail after the end is within need + own padding: every size as loaded, after resize, after expand/collapse; the resize pass also adds furthest-entry clicks to sn1",
+        "pin1/pin2/pin3 in tests/test_gen_demo_manifest.py",
+        "table-fit.test.mjs coalescing case rewritten to compare a burst against one event",
+        "The three tests.add hover-parity cases already existed in the browser gate under exactly these labels, from an earlier task. They were not added here and still pass on all three reports."
+      ],
+      "notes": [
+        {
+          "at": "2026-11-17T05:25:02Z",
+          "text": "scans rendered artifacts for machine paths; this task changes report behaviour/CSS, not what paths a render carries",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-17T05:25:03Z",
+          "text": "names check-report-interactive.mjs as a step; the task keeps its command line and exit contract",
+          "waives": "tools/verify.sh"
+        },
+        {
+          "at": "2026-11-17T08:50:16Z",
+          "text": "Coordinator refinement of the end-space fix: derive it per page from what it needs, never a constant - the room is only what the furthest/last nav target lacks to reach the highlight line (viewport height minus the sticky stack minus the height from that target's top to the content end, floored at 0). Recompute on resize AND on phase expand/collapse (any change in content height). When it is 0, add nothing (no pseudo-element height, no padding). The browser check asserts both sides at every LAYOUT_SIZES size: sn1 still marks the clicked section, and the blank tail after End stays within the bound (needed room + the content's own bottom padding). If the bound and sn1 cannot both hold on some fixture, STOP and say so in the return - do not loosen either."
+        },
+        {
+          "at": "2026-11-17T12:27:40Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "tools/demo/gen-demo-manifest.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads tools/demo/gen-demo-manifest.py - a section headed by its path"
+        },
+        {
+          "at": "2026-11-17T13:15:12Z",
+          "text": "tools/ui-tests/table-fit.test.mjs added to scope: the end-space fix adds a second frame-batched resize listener, so the old case counting every frame per burst read 2; the case now asserts a burst requests no more frames than one resize, red-first both ways (executor's account)."
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T14:11:19Z.da526b",
+        "status": "passed",
+        "at": "2026-11-17T14:11:19Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "1d0e3673c9d7",
+        "at": "2026-11-17T14:11:22Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "status": "proved",
+        "basis": "Watched by hand, not through the submit helper: three of the new checks live in the browser gate, whose tally the helper cannot read. The widened gate was run over the e5d659f5 renders as committed, before any re-render. (1) WORD-SPLIT, acme: 47 lm5 cells red (49 on demo-large), e.g. `FAIL lm5 1024x768 View=active at rest: no pill or id in any table or list of the report breaks inside a word (177 word(s) read; split: table.phases span.chip \"progress\", table.phases span.chip \"Blocked\", table.phases span.chip \"Pending\", table.data.bugs td.mono \"BUG-1\", table.data.bugs td.mono \"BUG-2\", table.data.bugs td.mono \"BUG-3\", table.data.bugs span.chip \"progress\", table.data.bugs td.mono \"BUG-4\" (+1 more)): got split, want none`. (2) SORT-SELECT REFUSAL on a fixture with no pinned phase, demo-large: `FAIL lm the Sort select is in the matrix on every page whose fixture is built to carry it (docs/demo-large.html is one; 0 row(s) carry an execution rank; the select was drawn in 0 of 60 cells): got no Sort select on docs/demo-large.html, whose fixture pins a phase, want none`. (3) TAIL BOUND, acme: `FAIL sn3 scrolled to the end, the blank tail after the report's last content is no more than the room its furthest nav target lacks plus the content's own bottom padding, at every layout size, as loaded and after a resize, an expand and a collapse (14 reading(s)): got 390x844 as loaded: tail 901px against 377px = need 259 (#ready, line 60) + own 117 + 1 · 844x390 as loaded: tail 400px against 97px = need 27 (#ready, line 60) + own 70 + 1 · 834x1194 as loaded: tail 1046px against 743px = need 673 (#ready, line 218) + own 70 + 1 · 1024x768 as loaded: tail 656px against 353px = need 283 ...`. On demo-large every reading needed 0 and drew roughly a screen anyway (`390x844 as loaded: tail 901px against 118px = need 0 (#ready, line 60) + own 117 + 1`). On those runs nothing else failed, and sn1 was green on both. (4) TABLE-FIT coalescing case, npx vitest run tools/ui-tests/table-fit.test.mjs: making the table-fit resize re-measure on every event (its `if (tableFitQueued) return;` guard removed) -> `AssertionError: expected 3 to be 2 // Object.is equality` (plus `expected 2 to be 1` in the sibling observer case; `Tests  2 failed | 3 passed (5)`). Removing endRoomQueued from the end-room guard -> `AssertionError: expected 3 to be 2 // Object.is equality` (`Tests  1 failed | 4 passed (5)`). Restored with cmp -> 5/5. With the fixes in place the browser gate is green: acme 920 checks, demo-large 926, the live render 879, both font passes. Also watched: in test_gen_demo_manifest, removing the pin -> `FAIL pin1 exactly one phase is pinned, at tier 1, and it is the phase in progress - so the report draws its Sort select ([])` (132/134), and pinning the last phase instead -> pin1 and `FAIL pin2 ...and the pin moves no phase with work left: their execution order is their written order ((['P12', 'P5', 'P6', 'P7'], ['P5', 'P6', 'P7', 'P8']))` (132/134). Both restored with cmp.",
+        "at": "2026-11-17 13:39-13:52 local (browser gate on committed renders); 13:41 (vitest and pin mutations)"
+      }
+    },
+    {
+      "id": "P165.6-r5e",
+      "title": "Link validation is the registry's, derived from each axis's attrs; every side-nav jump marks its section at every size; hr0 reads the page's own keys",
+      "status": "done",
+      "description": "Fix the P165.1 review's findings on the unlanded diff (ad08e5bc), at the seam, not per axis.\n\n1. Link validation lives at the REGISTRY level in plugins/audit/scripts/ui/report/page-state.js. Today each FILTER_AXES entry's decode re-implements `if (!offeredBy(<bar>, 'data-<x>').includes(h.<x>)) return false` by hand and re-spells the chip attribute its own `attrs` already declares. Make the registry itself keep only values a control offers, derived from each axis's `attrs` (one helper the restore path calls for every axis), so an axis supplies only its genuine exceptions (area's select-backed vocabulary, the date fields' parse) as a declared hook. A new axis written with no hook is validated by default. Add a browser-gate case in tools/check-report-interactive.mjs that goes red when an axis restores an unoffered value: drive EVERY axis in the page's registry with a bogus value and assert nothing is hidden and nothing pressed. Prove it red-first by a mutation: drop the registry-level check on a scratch copy of the new render (or bypass it for one axis) and quote the failing line.\n\n2. Remove the sn1 exemption (\"side-nav jumps the document ends before\" printed as a note). Give the document enough end space (e.g. padding or a spacer after the last section, sized from the same one value the scroll line uses, so it tracks it) that every section can scroll to the line, so clicking Bugs at 1512x945 marks Bugs, not Ready. Assert, at EVERY size in the layout matrix, that each side-nav click marks the clicked entry - no carve-out. Red-first: the render committed at ad08e5bc must fail at 1512 on Bugs; quote it.\n\n3. hr0 derives link keys with a regex over the page source. Read the keys from the page's own registry at runtime instead (expose a read-only list of axis keys on the page, the same way the gate already reads other runtime state, or evaluate the registry in page context), and fail by name if the page exposes none.\n\nRefresh rendered followers (examples/report.sh, docs/demo-large.html via `python3 tools/check-rendered-artifacts.py --how`, `node tools/capture-screenshots.mjs`). Read writing-javascript, refactoring-the-assembled-ui, no-silent-pass. No register ids in comments.",
+      "files": [
+        "plugins/audit/scripts/ui/report/page-state.js",
+        "plugins/audit/scripts/ui/report/filters.js",
+        "plugins/audit/scripts/ui/report/areas.js",
+        "plugins/audit/scripts/ui/report/README.md",
+        "plugins/audit/scripts/ui/report-css/shell.css",
+        "plugins/audit/scripts/ui/report-css/README.md",
+        "tools/check-report-interactive.mjs",
+        "tests/test_render_report.py",
+        "tests/test__report_html.py",
+        "tests/test__report_page.py",
+        "examples",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/scripts/ui/report-css/shell.css: .snav a interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py tests/test__report_page.py tests/test__refs.py",
+          "sh -c 'W=$(mktemp -d) && rc=0 && for f in examples/acme-store/acme-store-audit.html docs/demo-large.html; do node tools/check-report-interactive.mjs \"$f\" || rc=1; done && python3 tools/plan-window.py docs/audit/audit-plan.json \"$W/win\" && python3 plugins/audit/scripts/report/render-report.py \"$W/win/docs/audit/audit-plan.json\" --out-dir \"$W/lp\" --format html && node tools/check-report-interactive.mjs \"$W\"/lp/*.html || rc=1; rm -rf \"$W\"; exit $rc'"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P165.1"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": "6e26bb8c35b0",
+      "outcome": {
+        "technical": "page-state.js: link validation moved to the registry. offeredBy(axis) derives the vocabulary from the toggles ([aria-pressed][attr]) carrying each axis's declared attrs plus an optional declared `twin` select; keptFromLink(axis, h) keeps per key what the axis's `takes` hook keeps, or with no hook the whole value when offered (takesOffered); FILTER_AXES is built as `[...].map((axis) => ({ ...axis, decode: (h) => axis.decode(keptFromLink(axis, h)) }))`, so every decode, including one added later with no hook, only sees checked values and no caller can bypass it. Entries' decodes went back to plain assignments; the exceptions are declared hooks: search takes free text, area takes tag-by-tag (twin areaSelect), dates take what a date field holds (dateFieldTakes); author declares twin auSelect. The registry publishes its keys as data-link-keys on the root. exports.js (not declared) is untouched; its restore loop still calls axis.decode(HASH), now the wrapped decode. markSpy's end-of-document clamp is removed. shell.css: :root{--sticky-anchor:calc(var(--sticky-2) + var(--sp-2))}, [id]{scroll-margin-top:var(--sticky-anchor)}, and @media screen{.snav ~ .content::after{...height:calc(100vh - var(--sticky-anchor))}}, so every target can reach the one line (named --sticky-* because the theme-symmetry lint treats that prefix as geometry; --anchor-line was flagged as a light-only colour token). Gate: hr0 reads data-link-keys at runtime, fails by name when it is absent, and fails if the free-text exemption ['q'] names a key the page no longer publishes; hr1 is red on an empty key set rather than passing vacuously; sn1 clicks every visible entry at every LAYOUT_SIZES size with the 'document ends before' note/carve-out removed; is11 hovers .snav a at 1000x800 (the strip presentation). Tests: _registry_text tolerates the .map close; new rx10 (check sits once on the registry, no decode reads controls, only area/dates/search declare takes) and sn0 (no end-of-document rule in markSpy, spacer and scroll-margin share --sticky-anchor, screen only); the anchor pin updated to the token. READMEs (report/, report-css/) updated. Followers: examples/report.sh (acme html+md, docs/index.html byte copy), docs/demo-large.html per check-rendered-artifacts --how, node tools/capture-screenshots.mjs (exit 0, 26 png/json rewritten). Runs: gate 1 4/4 files ok, 823 cases, exit 0; gate 2 exit 0 over acme, demo-large and the live render, each with both font passes ('layout matrix fonts: page's own font (.SF NS); wide font Verdana (Verdana)'); neighbour suites test__ui_theme, test__ui_theme_lints, test__report_ui, test__output, test__surface_digest, test__config, test__panel_page 7/7 ok, 1145 cases; npx vitest run 853/853 (a first version of keptFromLink used reduce(..., Object.create(null)), which duplicated the anchor of report-prototype-keys.test.mjs's 'goes red when the hash map gets a prototype back' proof, so it went red; rewritten as a loop, green); ruff clean; check-rendered-artifacts --before-commit OK. Dependants: renders/index/demo-large/screenshots refreshed in this task; _report_ui.py assembles parts by name (no parts added) so it still holds; heatmap.js/controls.css read page-state names (px, root, pinnedPx) that did not change; test__report_ui/test__output/test__config/test__surface_digest/test__panel_page/_ui_theme_lints re-run green; filters.js/areas.js unchanged (syncHash still encodes via keys, paintAreas still reads areaFilter); tools/redfirst.sh, ui-tests and affected.py name files whose paths did not change; .github/sweep-costs.json entries still name the same suites; examples/README/handbook dependants are prose or basename hits that this change does not touch.",
+        "descriptive": "A report link restores only what a control offers, checked once by the filter registry for every axis; every side-nav jump lights its own entry at every layout size because the page leaves room after the content; the browser gate reads the link keys from the running page."
+      },
+      "startedAt": "2026-11-17T07:04:26Z",
+      "completedAt": "2026-11-17T08:49:28Z",
+      "verifiedBy": [
+        "is11: .snav a hover at the strip width (1000x800) changes its own box's color and background",
+        "hr0 rewritten: link keys read from the page's data-link-keys at runtime, red by name when absent or when the free-text exemption is stale",
+        "hr1 now red on an empty key set",
+        "sn1 widened to every layout-matrix size, end-of-document carve-out removed",
+        "rx10: link check sits once on the registry, no decode reads controls, only area/dates/search declare takes",
+        "sn0: no end-of-document rule in markSpy; spacer and scroll-margin share --sticky-anchor, on screen only"
+      ],
+      "notes": [
+        {
+          "at": "2026-11-17T07:04:23Z",
+          "text": "scans rendered artifacts for machine paths; this task changes report behaviour, not what paths a render carries",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-17T07:04:24Z",
+          "text": "names check-report-interactive.mjs as a step; the task keeps its command line and exit contract",
+          "waives": "tools/verify.sh"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T08:40:42Z.46174a",
+        "status": "passed",
+        "at": "2026-11-17T08:40:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6e26bb8c35b0",
+        "at": "2026-11-17T08:49:28Z",
+        "return": "docs/audit/evidence/returns/P165.6-r5e/20261117T070426Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with tests.expectRedFirst false, so no helper red was owed; the reds the orchestrator asked for were watched by hand, each quoted. (2)+(3) the new gate over the render committed at ad08e5bc (examples/acme-store/acme-store-audit.html == HEAD, exit 1): 'FAIL sn1 clicking a side-nav entry lights that entry, at every layout size (390x844, 844x390, 834x1194, 1024x768, 1512x945, 1920x1080; 34 clicks): got 834x1194 #bugs lit #ready (landed at 420px, line 218px, the document ended first) · 1512x945 #bugs lit #ready (landed at 295px, line 134px, the document ended first) · 1920x1080 #usage-budget lit #ready ... · 1920x1080 #bugs lit #ready ...' and 'FAIL hr0 the running page publishes its registry's link keys (no data-link-keys on the root) ...: got the page publishes no link keys, want ok' (same hr0 FAIL on docs/demo-large.html at HEAD). (1) mutations on scratch copies of the NEW acme render, gate run over each (all exit 1): bypass (registry wrap -> decode: (h) => axis.decode(h)): 'FAIL hr1 a link naming a value no control offers restores nothing, on every key of every axis the registry declares (ps,a,m,tev,tevf,from,to,au) ...: got ps=nosuch-value: phases \"\" (no link: \"P2 BF1 P3 P4 P5\"); clear true ...'; default-open (takesOffered returns v, i.e. an axis with no hook unchecked): same hr1 FAIL listing ps, m, tev, tevf, au while the hooked area/dates stay held; keeps-nothing (over-fire): 'FAIL hr2 a link naming a value its control offers restores it on: got ps=done: NOT restored ([]) · a=storefront nosuch-value: NOT restored ([]) ...' plus hr3 FAIL. Each mutant was written by /tmp/p1656_mut/mutate.py, which refuses unless its anchor matches exactly once; the shared tree was never mutated.",
+        "at": "2026-11-17 (local runs, this session)"
+      }
+    }
+  ],
+  "reviewPerTask": "signals",
+  "startedAt": "2026-11-17T05:25:05Z",
+  "testEvidence": {
+    "runId": "2026-11-17T14:53:10Z.08616c",
+    "status": "passed",
+    "at": "2026-11-17T14:53:10Z"
+  },
+  "mergedHead": "5290b7e3824724bea25f9b5b68f00a966a4ca5c5"
+}

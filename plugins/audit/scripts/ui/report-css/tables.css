@@ -80,40 +80,52 @@ td.when,td.mono{font-variant-numeric:tabular-nums}
    mid-letter, which is the one thing `break-word` on tables exists to keep. */
 table.bugs td.tevcell,table.bugs td.tevcell *{white-space:normal}
 /* The rule above fixed one column by naming it; this is the invariant it was
-   standing in for. Any value atom a table may carry outside a title - a
-   status, a risk word, a cost band, a delta, the name of what holds a phase
-   shut - is still `nowrap` by default (`.chip` declares it, and the rest
-   inherit a container that never overrides it), so each one alone can set its
-   column's narrowest width to the atom's own length. A column's floor must
-   not depend on which words a plan happens to contain, or on how wide a
-   reader's fallback font draws them - so every one of these may wrap at its
-   own spaces and hyphens, and break even where it has neither. A title is
-   deliberately NOT in this list: its long tokens already get a renderer-placed
-   <wbr>, and breaking anywhere in an ordinary word is the regression the
-   comment above this one exists to keep out.
-   This has to OUTRANK the atom's own component rule (`.bandpill` and the rest
-   each declare their own `white-space:nowrap` where they are defined), not
-   merely coexist with it - a `:where()` around the table ancestor used to
-   leave this at the exact specificity of that base rule, so whichever file
-   happened to load later decided the column's floor by accident (`usage.css`,
-   loaded after this one, was winning). A real `table.phases`/`table.data`
-   ancestor is deliberately not zero-specificity here, so the override wins on
-   its own terms regardless of where a sibling rule for the same atom is
-   declared. */
-table.phases :is(.chip,.rchip,.bandpill,.dl,.heldby,.tevn,.tevf,.ptev),
-table.data :is(.chip,.rchip,.bandpill,.dl,.heldby,.tevn,.tevf,.ptev){
+   standing in for. A run of text a table carries outside a title - an
+   evidence count, an observation, a mark that may be a whole sentence - is
+   `nowrap` where it is defined, so one long run alone can set its column's
+   narrowest width to the run's own length. A column's floor must not depend
+   on which words a plan happens to contain, or on how wide a reader's
+   fallback font draws them - so every one of these may wrap at its own spaces
+   and hyphens, and break even where it has neither. A title is deliberately
+   NOT in this list: its long tokens already get a renderer-placed <wbr>, and
+   breaking anywhere in an ordinary word is the regression the comment above
+   this one exists to keep out.
+   A pill and an id are not in it either, and they used to be: broken inside a
+   word they read as two values, so they never break (shell.css says why, in
+   the rule that keeps them whole).
+   This has to OUTRANK each run's own component rule (`.ptev` and the rest
+   declare their own `white-space:nowrap` where they are defined), not merely
+   coexist with it - a `:where()` around the table ancestor used to leave this
+   at the exact specificity of that base rule, so whichever file happened to
+   load later decided the column's floor by accident. A real
+   `table.phases`/`table.data` ancestor is deliberately not zero-specificity
+   here, so the override wins on its own terms regardless of where a sibling
+   rule for the same run is declared. */
+table.phases :is(.tevn,.tevf,.ptev),
+table.data :is(.tevn,.tevf,.ptev){
   white-space:normal;overflow-wrap:anywhere}
 /* vw: the label and its select are one control and wrap as one — the toolbar
    is a flex row, and letting the words break away from the box they name is
    how a reader ends up reading "View:" over an unrelated line.
    pr: Sort: joins the selector rather than copying the rule. Two labelled
-   selects side by side in one toolbar that did not agree on their padding or
-   their border would read as two kinds of control, and the second copy is
-   where they would stop agreeing. */
+   selects on one table that did not agree on their padding or their border
+   would read as two kinds of control, and the second copy is where they would
+   stop agreeing.
+   Each select is as wide as the option it shows, not the longest option it
+   holds: sized to "Archived (done & cancelled)" in every view, the View select
+   alone pushed the filter bar onto a second line at a laptop width with nothing
+   filtering. A browser without field-sizing drops the declaration and keeps the
+   select's intrinsic width, so no @supports is needed around it. */
 .viewpick,.sortpick{display:inline-flex;align-items:center;gap:.4rem;flex:0 0 auto}
 .viewpick select,.sortpick select{font:inherit;font-size:.8rem;padding:.25rem .4rem;
   border:1px solid var(--field-border);border-radius:var(--radius);
-  background:var(--surface);color:var(--text)}
+  background:var(--surface);color:var(--text);field-sizing:content}
+/* The phases table's head: the controls that order the phases and open them,
+   which decide nothing about WHICH rows are shown and so are not in the filter
+   bar. They sit at the table's top edge on the side away from the ids, and do
+   not pin: the chrome that follows a reader down the rows is the filters. On
+   paper the head goes with every other .toolbar (segments.css). */
+.tablehead{justify-content:flex-end;margin:0 0 var(--sp-0)}
 /* bl: "something in here is stuck" and "some of this was dropped" —
    counts, in the row's own words, wearing the status ink of what they count.
    Not chips: the phase already carries one, and a row with three pills makes

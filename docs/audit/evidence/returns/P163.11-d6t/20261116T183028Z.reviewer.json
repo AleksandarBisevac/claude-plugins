@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: \"Either assert that the observe loop names toolbar, snav and .sectools and calls ro.observe(el), for example by pinning the loop's text exactly once, or narrow the label\". Diff (tests/test_render_report.py, the _ms_loops/_ms_observed block above st5) takes the first branch: a regex anchored on `const ro = new ResizeObserver(measureStack);` captures the array of the immediately following `for (const el of [...]) { if (el) ro.observe(el); }` loop, and st5 now requires `_ms_observed == [[\"toolbar\", \"snav\", \"document.querySelector('.sectools')\"]]`, i.e. exactly one such loop, with exactly those three elements and a body of that single observe call. Read against page-state.js:141-146 in the task tree, the regex matches the code as it stands. By reading: deleting the loop yields [] and dropping any element or changing the body yields a non-matching list, so each mutation the task names turns st5 red. Every existing conjunct is kept, including the single-constructor count. Claim: the executor's outcome says the same thing (\"extracts the loop's array and requires exactly one such loop, observing [toolbar, snav, document.querySelector('.sectools')] with `if (el) ro.observe(el);` as the body\"), and its claims block cites page-state.js:142-145, which is accurate. Its gate figure (exit 0, 313 cases) matches my one run of the declared test: `python3 tools/sweep-selftests.py tests/test_render_report.py` -> '1/1 files ok, 313 cases', exit 0. Dependants: only a test file changed and no defined name or basename moved, so the executor's 'still correct' answers for sweep-costs.json, render-report.py, affected.py, test__live_copy.py and ui/shared/README.md hold against the diff.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor: 'regression mode, expectRedFirst false: st5 locks the observe loop as HEAD already has it, so HEAD's code turns no case red', plus a reported mutation probe (/tmp/p16311probe/mut.py) in which loop deleted, .sectools dropped, snav dropped and ro.observe replaced each gave 'FAIL st5', 312/313, exit 1, restored. The basis holds for not-attempted: this task owes no red-first. I did not rerun the mutations (writes are outside a reviewer's remit), but reading the regex and the list equality confirms that each named mutation changes _ms_observed away from the pinned value.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate selects tests/test_render_report.py alone. I read the sticky-stack block the touched behaviour lives in (the cases from 'sticky: the column headers pin BELOW…' through 'sticky: the scrollbar's width is reserved…', around tests/test_render_report.py:755-812): st5 now covers the body, the load call, the resize listener, the constructor and the observe loop, so I found no case that stays green with the measure/observe behaviour deleted. I did not read the file's other cases, which are unrelated to this behaviour."
+ },
+ "verdict": "clean",
+ "tasks": []
+}
