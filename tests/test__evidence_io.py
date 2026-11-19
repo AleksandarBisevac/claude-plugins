@@ -5764,11 +5764,19 @@ def _unwritable_lock_cases(check):
         with io.open(spath, "rb") as fh:
             after = fh.read()
         if writable:
-            _harness.could_not_run(
+            # The precondition this case needs - a directory whose mode refuses
+            # this process a write - is MEASURED by the probe write above, the
+            # way the product meets it (a write that fails), and the skip is
+            # taken on that measurement alone, never on the platform's name: a
+            # machine whose probe is refused runs the case below. The Windows
+            # runner's probe write succeeded (its run printed this reason under
+            # COULD NOT RUN HERE), and so does a superuser's.
+            _harness.skip(
                 check, "uw1 an unwritable lock directory is refused with its "
-                "own sentence", "this process can write a directory whose "
-                "mode refuses it (a superuser, or a filesystem that ignores "
-                "the mode), so no claim can be made unwritable here")
+                "own sentence", "a write into a directory of mode 0500 "
+                "succeeded here (a superuser, or a filesystem that ignores the "
+                "mode, as Windows does), so no claim can be made unwritable",
+                writable)
         else:
             reason = got.get("reason") or ""
             check("uw1 A CLAIM THAT CANNOT BE WRITTEN HAS ITS OWN SENTENCE: the "
@@ -5981,12 +5989,19 @@ def _behind_lock_cases(check):
         root, mpath, spath = _pa_project(tmp, "stamp")
         got, wrote, kept = _pa_run(root, mpath, spath, "record", lambda: (
             cp.stamp_merged(mpath, "P1", project=root)))
+        # The written path is compared as a FILE, not as a spelling: close-phase
+        # joins the index's directory with the stub's `phases/P1.json`, and the
+        # fixture joins its path part by part. The two spellings differ on
+        # Windows - a Windows run printed the record writer's join of the same
+        # two parts as `...\docs\audit\phases/P1.json` (lr1) - so a string
+        # comparison was red there with the record kept.
         check("pa4 close-phase's merge stamp: a run record landed as it asks "
               "for the lock is kept, and `mergedAt` is written: %r"
-              % ((got[0] == spath, wrote, kept,
+              % ((_same_file(got[0], spath), wrote, kept,
                   _lr_shard(spath).get("mergedAt") is not None),),
-              got[0] == spath and wrote and kept
-              and _lr_shard(spath).get("mergedAt") is not None)
+              _same_file(got[0], spath) and wrote and kept
+              and _lr_shard(spath).get("mergedAt") is not None,
+              "written %r, the shard %r, on %s" % (got[0], spath, sys.platform))
         body = _lr_shard(spath)
         body["tasks"][0].pop("lastRun", None)
         body["tasks"][0].pop("testEvidence", None)
@@ -6086,6 +6101,15 @@ def _behind_lock_cases(check):
               % (type(exc).__name__, exc), False, traceback.format_exc()[-900:])
     finally:
         _harness.remove_tree(tmp)
+
+
+def _same_file(a, b):
+    """Whether two path spellings name one file - separators, case where the
+    platform folds it, and `..` normalized, never compared as strings."""
+    if not a or not b:
+        return False
+    return (os.path.normcase(os.path.normpath(os.path.abspath(a)))
+            == os.path.normcase(os.path.normpath(os.path.abspath(b))))
 
 
 def _mio_load(path):
@@ -7634,12 +7658,17 @@ def _guard_unreadable_cases(check):
             code, reason, out, err = _ug_run(root, _ug_payload(root))
             if code != 0 or reason is None or named not in reason \
                     or "Traceback" in err:
-                other_wrong.append((label, code, (reason or out)[-200:],
-                                    err[-200:]))
+                # The WHOLE deny and stderr, and the platform: a row that is red
+                # on one platform alone has to say which reader refused there.
+                other_wrong.append((label, code, named, reason or out,
+                                    err[-1500:]))
         check("ug5 A SHARD THAT IS NOT AN OBJECT, and one nested past what the "
               "parser takes, is a deny naming the plan file that would not "
               "read, exit 0: %r"
-              % (other_wrong,), other_wrong == [])
+              % ([row[:3] for row in other_wrong],), other_wrong == [],
+              "on %s (python %s, recursion limit %d): %r"
+              % (sys.platform, sys.version.split()[0], sys.getrecursionlimit(),
+                 other_wrong))
         _ug_write_shard(shards, pristine)
         ri_put_record(shards["P1"], "P1.1", dict(base, status="x" * 1000000))
         code, reason, _o, _e = _ug_run(root, _ug_payload(root))

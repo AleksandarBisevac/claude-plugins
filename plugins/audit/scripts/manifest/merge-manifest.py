@@ -105,13 +105,15 @@ def _read(path):
         return fh.read()
 
 
-def _write(path, text, newline=None):
+def _write(path, text, newline="\n"):
     """Replace `path` atomically - git reads %A back the moment this exits.
 
-    `newline=""` writes `text` byte for byte. The manifest keeps the platform's
-    text mode, as every other writer of it in this plugin does; `.gitattributes`
-    and the shim do not - the first keeps whatever endings it already had, and the
-    second is a shell script, which a CR would break on every line."""
+    A PLAN FILE IS LF ON EVERY PLATFORM, as `_manifest_io.atomic_write_text` writes
+    it: a text-mode handle's own default writes CRLF on Windows, so a resolved or
+    driver-merged plan would differ byte for byte from the same plan written by any
+    other writer, and read as a whole-file change in git. `newline=""` writes `text` byte for byte, for `.gitattributes` and the shim:
+    the first keeps whatever endings it already had, and the second is a shell
+    script, which a CR would break on every line."""
     d = os.path.dirname(os.path.abspath(path))
     fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
     try:
@@ -513,15 +515,37 @@ def resolve(path, side):
 # shard the merge left clean, which the evidence writer does because it reads only
 # that shard - would be replaced without a word. So each target is put in one of
 # three states under the index lock, every writer of the plan taking the same lock:
-#   - CONFLICTED, holding what does not read as JSON: the driver's marker block, or
-#     git's line merge. Each writer `_deps.PLAN_WRITERS` lists reads the file it
-#     writes as JSON first, so none can have written there since the merge stopped;
-#   - EQUAL to what git's merge left (stage 0, compared by git itself, so a
-#     clean/smudge or line-ending filter is applied as git applies it), or to the
-#     text resolve is about to write - which is what lets a resolve stopped part
-#     way be run again rather than refused for ever by its own first write;
+#   - CONFLICTED in the merge's own result, holding what does not read as JSON: the
+#     driver's marker block, or git's line merge. Each writer `_deps.PLAN_WRITERS`
+#     lists reads the file it writes as JSON first, so none can have written there
+#     since the merge stopped;
+#   - EQUAL to the merge's own result for that path, or to the text resolve is
+#     about to write - which is what lets a resolve stopped part way be run again
+#     rather than refused for ever by its own first write;
 #   - anything else: a STRAY, and one stray refuses the whole write.
-# A target missing from the work tree holds nothing to lose.
+# A target the merge's result does not hold, and the work tree does not either,
+# holds nothing to lose.
+#
+# THE REFERENCE IS THE MERGE RECOMPUTED FROM ITS TWO COMMITS, never the index.
+# `git merge-tree --write-tree HEAD MERGE_HEAD` merges the same two commits over
+# the same base with the same attributes, so the driver runs as it ran for the
+# merge; each path's blob is then asked as checkout would write it (`cat-file
+# --filters`, the clean/smudge and line-ending conversion applied) and compared as
+# text read with universal newlines, as `_held_text` reads the work tree. The index
+# was the reference before, and ordinary commands move it while a conflict is open:
+# a stray write staged by `git add`, `git add -u` or an editor's stage-all, or a
+# hand resolution staged, passed as "what the merge left" and was overwritten.
+# Nothing in the index or the work tree is read to make it, so `git add`, `git add
+# -u`, `git restore --staged`, `git checkout -- <path>`, `git update-index` and a
+# second resolve cannot move it; the index is read only to choose which command a
+# refusal names (`_put_back`). Measured with git 2.53.0 on 2026-11-19 in throwaway
+# repositories: the recomputed result equals the work tree byte for byte for every
+# file a stopped merge left; `git stash` is refused while a path is unmerged, and
+# once everything is staged it ends the merge (MERGE_HEAD gone, so resolve refuses
+# for want of one). What it cannot know is an option the merge was run with (`-X
+# ours`, another strategy): the recomputed result then differs and each such file
+# is refused as a stray, which writes nothing. `--write-tree` needs git 2.38+, and
+# on an older git nothing is written.
 _UNREADABLE = object()
 
 
@@ -552,48 +576,100 @@ def _reads_as_json(text):
     return True
 
 
-def _git_paths(top, *args):
-    """(exit code, [path]) of a `-z` git listing."""
-    code, out = _mi.git(top, *args)
-    return code, [p for p in out.split("\0") if p]
+def _git_bytes(top, *args):
+    """(exit code, stdout bytes, stderr text) of one git command - unstripped, since
+    a blob's last newline is part of what is compared."""
+    try:
+        r = subprocess.run(["git", "-C", top] + list(args), stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE)
+    except OSError as exc:
+        return 127, b"", "%s" % (exc,)
+    return r.returncode, r.stdout, r.stderr.decode("utf-8", "replace").strip()
+
+
+def _as_text(raw):
+    """Bytes as text with every line ending read as `\\n` - how `_held_text` reads
+    the work tree, so a CRLF checkout and an LF blob compare equal."""
+    return raw.decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _merge_result(top):
+    """(tree id, {rel conflicted in it}, problem) - the merge of HEAD and
+    MERGE_HEAD recomputed by git from the two commits alone (see above)."""
+    code, out, err = _git_bytes(top, "merge-tree", "--write-tree", "--name-only",
+                                "--no-messages", "-z", "HEAD", "MERGE_HEAD")
+    if code not in (0, 1):
+        _c, version = _mi.git(top, "--version")
+        return None, set(), (
+            "git could not recompute this merge's own result to compare the plan "
+            "files with (`git merge-tree --write-tree` exited %d: %s)%s"
+            % (code, err or "no message",
+               "" if _mi.git_version_ok(version) else
+               "; it needs git 2.38+ and this is %s" % (version or "unknown",)))
+    parts = out.decode("utf-8", "replace").split("\0")
+    tree = parts[0].strip()
+    return tree, set(p for p in parts[1:] if p), None
+
+
+def _reference_text(top, tree, rel):
+    """(text the merge's result holds at `rel` as checkout would write it, or None
+    when the result holds no such path, problem)."""
+    code, _out, _err = _git_bytes(top, "cat-file", "-e", "%s:%s" % (tree, rel))
+    if code != 0:
+        return None, None
+    code, raw, err = _git_bytes(top, "cat-file", "--filters", "%s:%s" % (tree, rel))
+    if code != 0:
+        return None, ("git could not show the merge's result for %s (`git cat-file "
+                      "--filters` exited %d: %s)" % (rel, code, err or "no message"))
+    return _as_text(raw), None
+
+
+def _put_back(top, tree, rel):
+    """The command that puts `rel` back as the merge left it. Read off the index,
+    which is why it chooses words only and decides nothing: still unmerged there,
+    `checkout -m` re-creates the conflict; staged as the merge's own blob, a plain
+    checkout is that blob; staged as anything else, only the recomputed result
+    holds the merge's bytes, so the file is restored from it, index and work tree."""
+    code, out = _mi.git(top, "ls-files", "-s", "--", rel)
+    stages = [ln.split()[:3] for ln in out.splitlines() if ln.strip()] if code == 0 else []
+    if any(len(s) == 3 and s[2] != "0" for s in stages):
+        return "git checkout -m -- %s" % (rel,)
+    _c, merged = _mi.git(top, "rev-parse", "-q", "--verify", "%s:%s" % (tree, rel))
+    if stages and len(stages[0]) == 3 and merged and stages[0][1] == merged:
+        return "git checkout -- %s" % (rel,)
+    return "git restore --source=%s --staged --worktree -- %s" % (tree, rel)
 
 
 def _stray_targets(top, files):
     """([(rel, what it holds, the command that puts it back)], problem) - the
     targets holding bytes resolve cannot account for. `problem` is a sentence
     when git could not be asked, and then nothing may be written."""
-    rels = [_tree_rel(top, t) for t, _x in files]
-    asked = {}
-    for name, argv in (("unmerged", ("ls-files", "-u", "-z", "--")),
-                       ("tracked", ("ls-files", "-z", "--")),
-                       ("changed", ("diff", "--name-only", "-z", "--no-ext-diff",
-                                    "--no-textconv", "--"))):
-        code, paths = _git_paths(top, *(argv + tuple(rels)))
-        if code != 0:
-            return [], ("git could not say which plan files the merge left as they "
-                        "are (`git %s` exited %d)" % (" ".join(argv[:-1]), code))
-        asked[name] = paths
-    unmerged = set(p.split("\t", 1)[1] for p in asked["unmerged"] if "\t" in p)
-    tracked, changed = set(asked["tracked"]), set(asked["changed"])
+    tree, conflicted, problem = _merge_result(top)
+    if problem:
+        return [], problem
     strays = []
-    for (target, text), rel in zip(files, rels):
+    for target, text in files:
+        rel = _tree_rel(top, target)
         held = _held_text(target)
         if held is None or held == text:
             continue
-        if rel in unmerged:
+        if rel in conflicted:
             if not _reads_as_json(held):
                 continue
             strays.append((rel, "conflicted, but holds JSON where the merge left its "
-                                "conflict markers", "git checkout -m -- %s" % (rel,)))
-        elif rel in tracked:
-            if rel not in changed:
-                continue
+                                "conflict markers", _put_back(top, tree, rel)))
+            continue
+        merged, problem = _reference_text(top, tree, rel)
+        if problem:
+            return [], problem
+        if merged is None:
+            strays.append((rel, "not in git's merge result, and not what resolve "
+                                "writes there",
+                           "move %s out of the work tree - the merge did not leave "
+                           "it, so nothing puts it back" % (rel,)))
+        elif held != merged:
             strays.append((rel, "changed since git's merge left it clean",
-                           "git checkout -- %s" % (rel,)))
-        else:
-            strays.append((rel, "not tracked by git, and not what resolve writes there",
-                           "move %s out of the work tree - git does not track it, so "
-                           "nothing puts it back" % (rel,)))
+                           _put_back(top, tree, rel)))
     return strays, None
 
 

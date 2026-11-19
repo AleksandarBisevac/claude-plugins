@@ -1990,10 +1990,11 @@ GIT_PATH_BASE_EXEMPT = (
     ("close-phase.py", "_link_texts",
      "the symbolic-link entries of one scratch work tree, asked by the paths "
      "that same tree was checked out with"),
-    ("merge-manifest.py", "_stray_targets",
-     "the plan files resolve is about to write, each made relative to the git "
+    ("merge-manifest.py", "_put_back",
+     "one plan file resolve is about to write, made relative to the git "
      "toplevel through its realpath and asked of git run at that toplevel; the "
-     "listing is compared only with those same paths, never with a plan entry"),
+     "listing's stage and blob decide which command a refusal names for that "
+     "same path, and no path git prints is compared with a plan entry"),
     ("close-phase.py", "_tip_paths",
      "lists a checkout-relative pathspec its callers built - _write_tip through "
      "plan_to_git, tip_texts from an absolute record directory - and hands "
