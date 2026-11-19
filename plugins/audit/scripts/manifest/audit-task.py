@@ -13723,6 +13723,21 @@ def _group_index_note(written, mpath, project, ids):
                              mpath, project, ids[-1])
 
 
+def _group_record(project, mpath, config, carrier, pointer, row):
+    """The record a group's members take with `pointer`, or None with no
+    pointer. THE RECORD TRAVELS WITH THE POINTER: the carrier's own when it
+    names the same run, else the one that run's row gives - with the run a
+    repeat copied looked up among the recorded runs, so a copy never says it
+    could not carry a run the ledger or the plan holds."""
+    if not pointer:
+        return None
+    held = carrier.get(_evidence_io.RECORD_KEY)
+    if isinstance(held, dict) and held.get("runId") == pointer.get("runId"):
+        return held
+    return _evidence_io.record_carrying(project, row, manifest_path=mpath,
+                                        config=config)
+
+
 def _group_binding(project, mpath, assembled, carrier, plan, ids, gate):
     """`(refusal, row)` - whether the carrier's newest run binds every member's
     work: the one binding rule over the union of their files, and, for a group,
@@ -13809,7 +13824,7 @@ def _locked_group(args, project, config, mpath, ids, summary, out):
         return E_USAGE
     reason = (args.no_evidence_reason or "").strip()
     carrier = [ph for ph in plan["members"] if ph.get("id") == plan["gate"]][0]
-    pointer = None
+    pointer, row = None, None
     if args.verdict == "passed" and not reason:
         why, row = _group_binding(project, mpath, assembled, carrier, plan, ids,
                                   gate_command(mrel, plan, ids))
@@ -13820,14 +13835,7 @@ def _locked_group(args, project, config, mpath, ids, summary, out):
                 "verdict>\", which is recorded on every member's review")
             return E_USAGE
         pointer = _evidence_io.pointer_for(row) if row else None
-    # THE RECORD TRAVELS WITH THE POINTER: the carrier's own when it names the
-    # same run, else the one that run's row gives.
-    record = None
-    if pointer:
-        held = carrier.get(_evidence_io.RECORD_KEY)
-        record = (held if isinstance(held, dict)
-                  and held.get("runId") == pointer.get("runId")
-                  else _evidence_io.run_record(row))
+    record = _group_record(project, mpath, config, carrier, pointer, row)
     settled, refusal = finding_dispositions(args, assembled, plan["members"])
     if refusal:
         out(refusal)

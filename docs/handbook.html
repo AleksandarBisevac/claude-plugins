@@ -865,13 +865,14 @@ python3 "$CLAUDE_PLUGIN_ROOT/scripts/governance/run-test-gate.py" \
       observed; never a runner's output.</p>
 
     <div class="note">
-      <div class="label">A refused pointer is a designed state, not an error</div>
+      <div class="label">A refused pointer is a designed state, and a loud one</div>
       <p>The ledger row is written first and the plan is pointed at it second, so the only reachable
         partial state is the harmless one: a run that happened with nothing yet naming it. When
-        another live session holds the phase lock, the second line reads
-        <code>pointer:&nbsp; NOT updated - the phase lock is held by another live run (&hellip;)</code>.
-        <strong>Do not re-run the gate to chase it</strong> &mdash; the repair reads the ledger
-        against the plan and runs no tests at all:</p>
+        another live writer holds the plan's index lock past the record's wait, the second line reads
+        <code>pointer:&nbsp; NOT updated - the index lock was not free within &hellip;</code>,
+        the run exits 3, and its last line says to re-run the gate once the lock is free &mdash;
+        which is the line to follow. When the run's ledger row was written, a second repair
+        catches the plan up from it, pointer and record, and runs no tests at all:</p>
 <pre><code>python3 "$CLAUDE_PLUGIN_ROOT/scripts/governance/run-test-gate.py" \
     docs/audit/audit-plan.json P2 --reconcile
 

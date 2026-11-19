@@ -207,8 +207,9 @@ def data_fingerprint(project, config):
     THE EVIDENCE DIRECTORY IS STAMPED FOR THE SAME REASON AS THE LEDGER, and it
     is the half a live panel is actually for: a gate that finishes mid-phase
     appends a row there and moves a pointer in the manifest, and the pointer's
-    shard is already watched — but a `--reconcile` pass, or a run recorded while
-    another session held the phase lock, writes the row and NOT the shard. Watch
+    shard is already watched — but a `--reconcile` pass, or a run whose record
+    another writer's hold on the plan's index lock refused, writes the row and
+    NOT the shard. Watch
     the manifest alone and that badge waits for a manual reload.
 
     SSE was weighed and rejected for this: through the stdlib server it would

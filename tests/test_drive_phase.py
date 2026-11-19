@@ -1452,8 +1452,8 @@ def _play_gate(root, argv, timeout=120):
     if len(argv) < 2 or os.path.basename(argv[1]) != "run-test-gate.py":
         return None, "not a gate command, so not run: %r" % (argv[:2],)
     # UNDER THE DRIVE'S SESSION, as that Bash is: it is the orchestrator's own
-    # tool call, so the phase lock the drive holds for its run is this run's to
-    # write the gate's record under (`_locks.held_by_us`).
+    # tool call, so a plan-file lock its session holds is this run's to write
+    # the gate's record under (`_locks.held_by_us`).
     with _Env(root):
         done = subprocess.run([sys.executable] + list(argv[1:]), cwd=root,
                               capture_output=True, text=True, encoding="utf-8",
@@ -2113,11 +2113,36 @@ def _handout_wait_case(check, M, root, wait_block):
           and not [ln for ln in said if "launched" in ln])
 
 
+def _sans_launch(argv):
+    """`argv` without its `--launch <token>` pair: the command a relaunch must
+    repeat, everything but the token it is handed afresh."""
+    argv = list(argv or [])
+    if "--launch" in argv[:-1]:
+        at = argv.index("--launch")
+        return argv[:at] + argv[at + 2:]
+    return argv
+
+
 def _background_kill_case(check, M):
     """A gate stopped by SIGTERM while its step runs - the signal the CLI sends
-    a call past its bound - leaves no verdict, and the next call says so with
-    a wait or the dispatch again, never a measurement of its own."""
-    root, mpath, calls = _bg_writer_exited(M, "bggate-kill", (_BG_SLOW,))
+    a call past its bound - leaves no verdict: the run it recorded as cancelled
+    is read back and the gate dispatched again, the same command under a NEW
+    launch token, never a measurement of the call's own.
+
+    NO `wait` ARM ANY MORE, because it cannot be reached here: the killed run
+    writes its record under the plan-file lock the verbs take, which the drive
+    does not hold across a background run, so the next call always reads that
+    record back. A `wait` came only from the drive's own phase lock keeping the
+    record out for its whole wait, which no writer of the plan takes now.
+
+    The kill is sent once the step has STARTED - the step drops a file first,
+    and the case waits for that file - so the run is cut mid-step on any
+    machine, never by a sleep that has to line up with the gate's start."""
+    flags = os.path.realpath(_harness.fixture_root("drive-bgkill-flag-"))
+    started_flag = os.path.join(flags, "gate-started")
+    step = ('"%s" -c "open(%r, \'w\').close(); import time; time.sleep(20)"'
+            % (sys.executable, started_flag))
+    root, mpath, calls = _bg_writer_exited(M, "bggate-kill", (step,))
     _signal_raw(M, root, mpath)
     _c, block = _explain_of(M, root, mpath, "P1.1")
     argv = _run_argv(block) or []
@@ -2125,26 +2150,202 @@ def _background_kill_case(check, M):
         check("bg4 a gate killed mid-run: the step printed no gate command to "
               "launch: %r" % ((argv[:2], block),), False)
         return
-    proc = subprocess.Popen([sys.executable] + argv[1:], cwd=root,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    with _Env(root):
+        proc = subprocess.Popen([sys.executable] + argv[1:], cwd=root,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     try:
-        time.sleep(3)
+        deadline = time.time() + 60
+        while not os.path.exists(started_flag) and time.time() < deadline \
+                and proc.poll() is None:
+            time.sleep(0.05)
+        began = os.path.exists(started_flag)
         proc.send_signal(signal.SIGTERM)
         killed = proc.communicate(timeout=60)[0].decode("utf-8", "replace")
     finally:
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+        _harness.remove_tree(flags)
     started = time.time()
     code, line = _signal_raw(M, root, mpath)
     took = time.time() - started
     _c, after = _explain_of(M, root, mpath, "P1.1")
-    check("bg4 a gate killed mid-run by SIGTERM leaves the next call a wait or the "
-          "gate dispatch again, with the same run: line, and no gate measured "
-          "inside it: %r" % ((proc.returncode, killed[-300:], code, line, calls,
-                              round(took, 1)),),
-          code == 0 and _signal_head(line) in (("wait", "P1.1"), ("dispatch", "P1.1"))
-          and not calls and _run_argv(after) == argv and took < 15)
+    again = _run_argv(after) or []
+    key = getattr(M, "CANCELLED_BEFORE", "cancelledBefore")
+    check("bg4 a gate killed mid-run by SIGTERM, its step started, is dispatched "
+          "again: the same command under a NEW launch token, the mark counting "
+          "one cancelled run, no attempt spent and no gate measured inside the "
+          "call: %r" % ((began, proc.returncode, killed[-300:], code, line,
+                         calls, round(took, 1), _lt_mark(M, root).get(key)),),
+          began and code == 0 and _signal_head(line) == ("dispatch", "P1.1")
+          and not calls and took < 15
+          and _sans_launch(again) == _sans_launch(argv)
+          and _flag(again, "--launch") not in (None, _flag(argv, "--launch"))
+          and _lt_mark(M, root).get(key) == 1)
+    _cancel_bound_case(check, M, root, mpath, calls)
+
+
+def _cb_cancel(M, root, mpath, tag):
+    """A cancelled run of P1.1's gate, recorded as `--record --launch` writes
+    one - its ledger row, and its record carrying the token of the launch the
+    drive holds now - so the next call reads THAT launch back as cancelled.
+    Returns the launch mark it answered."""
+    mark = _lt_mark(M, root)
+    project, config = _evio.project_config_for(mpath, root)
+    row = {"runId": tag, "ts": _now_stamp(), "scope": "task",
+           "taskId": "P1.1", "phaseId": PHASE, "status": "cancelled",
+           "steps": []}
+    _evio.append_row(project, row, writer="cb-rows", config=config)
+    _put_phase_record(mpath, _evio.run_record(row, launch=mark.get("launch")),
+                      task_id="P1.1")
+    return mark
+
+
+def _now_stamp():
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _cancel_bound_case(check, M, root, mpath, calls):
+    """(cb) Cancelled runs in a row are bounded: below `CANCELLED_BOUND` the
+    gate is dispatched again, at it the drive asks, and the ask stays until
+    `rerun` (once more, from zero) or `block` answers it."""
+    key = getattr(M, "CANCELLED_BEFORE", "cancelledBefore")
+    bound = getattr(M, "CANCELLED_BOUND", 2)
+    relaunched = []
+    for n in range(_lt_mark(M, root).get(key) or 0, bound - 1):
+        _cb_cancel(M, root, mpath, "cb-below-%d" % (n,))
+        _c, below = _signal_raw(M, root, mpath)
+        relaunched.append(_signal_head(below))
+    before = _cb_cancel(M, root, mpath, "cb-at-bound")
+    code, line = _signal_raw(M, root, mpath)
+    _c, shown = _explain_of(M, root, mpath, "P1.1")
+    pending = _drive_state(root).get("pending") or {}
+    check("cb1 AT THE BOUND THE NEXT CALL ASKS and does not dispatch: the ask "
+          "names gate-cancelled and the count the state holds, the explain "
+          "prints no run: line, and the launch mark is the one the cancelled "
+          "run answered: %r" % ((relaunched, code, line, pending, shown[-400:]),),
+          all(h == ("dispatch", "P1.1") for h in relaunched)
+          and code == 0 and _signal_head(line) == ("ask", "P1.1")
+          and "gate-cancelled" in line
+          and pending.get("decision") == "gate-cancelled"
+          and pending.get(key) == bound
+          and ("%d in a row" % (pending.get(key) or -1,)) in line
+          and _run_argv(shown) is None
+          and _lt_mark(M, root).get("launch") == before.get("launch")
+          and not calls)
+    code2, line2 = _signal_raw(M, root, mpath)
+    check("cb2 ...and asks again when called again, launching nothing while the "
+          "ask is open: %r" % ((code2, line2, _lt_mark(M, root)),),
+          code2 == 0 and _signal_head(line2) == ("ask", "P1.1")
+          and _lt_mark(M, root).get("launch") == before.get("launch"))
+    code3, line3 = _signal_raw(M, root, mpath, "--answer", "rerun")
+    rerun_mark = _lt_mark(M, root)
+    check("cb3 `rerun` launches the gate once more with the count started again "
+          "- a new token, a mark counting none - and no attempt spent: %r"
+          % ((code3, line3, rerun_mark, _attempts_of(mpath, "P1.1")),),
+          code3 == 0 and _signal_head(line3) == ("dispatch", "P1.1")
+          and rerun_mark.get(key) == 0
+          and rerun_mark.get("launch") not in (None, before.get("launch"))
+          and not (_drive_state(root).get("pending") or {})
+          and _attempts_of(mpath, "P1.1") == 1)
+    _cb_cancel(M, root, mpath, "cb-after-rerun")
+    code4, line4 = _signal_raw(M, root, mpath)
+    check("cb4 ...so the next cancelled run is below the bound again and is "
+          "dispatched, counting one: %r" % ((code4, line4, _lt_mark(M, root)),),
+          (bound > 1 and _signal_head(line4) == ("dispatch", "P1.1")
+           and _lt_mark(M, root).get(key) == 1)
+          or (bound == 1 and _signal_head(line4) == ("ask", "P1.1")))
+    for n in range(_lt_mark(M, root).get(key) or 0, bound - 1):
+        _cb_cancel(M, root, mpath, "cb-again-%d" % (n,))
+        _signal_raw(M, root, mpath)
+    _cb_cancel(M, root, mpath, "cb-to-block")
+    _signal_raw(M, root, mpath)
+    code5, line5 = _signal_raw(M, root, mpath, "--answer", "block", "--reason",
+                               "the runner kills the gate every time")
+    task = [t for t in _mio.load_manifest(mpath)["phases"][0]["tasks"]
+            if t.get("id") == "P1.1"][0]
+    check("cb5 `block` blocks the task with the reason beside the status: %r"
+          % ((code5, line5, task.get("status"), task.get("blockedReason")),),
+          task.get("status") == "blocked"
+          and "kills the gate" in (task.get("blockedReason") or ""))
+    _cancel_reset_case(check, M)
+    _cancel_phase_case(check, M)
+
+
+def _attempts_of(mpath, task_id):
+    task = [t for t in _mio.load_manifest(mpath)["phases"][0]["tasks"]
+            if t.get("id") == task_id][0]
+    return task.get("attempts")
+
+
+def _cancel_reset_case(check, M):
+    """A verdict between two cancels resets the count: the run that reached a
+    verdict spends the launch mark, and the count goes with it."""
+    key = getattr(M, "CANCELLED_BEFORE", "cancelledBefore")
+    root, mpath, _calls = _bg_writer_exited(M, "bggate-reset", ("true",))
+    _signal_raw(M, root, mpath)
+    _cb_cancel(M, root, mpath, "cb-reset-1")
+    _c, relaunch = _signal_raw(M, root, mpath)
+    counted = _lt_mark(M, root).get(key)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    ran, said = _play_gate(root, _run_argv(block) or [])
+    code, line = _signal_raw(M, root, mpath)
+    check("cb6 A VERDICT BETWEEN TWO CANCELS RESETS THE COUNT: after one "
+          "cancel the relaunch counts one; its run ends green, and the next call "
+          "leaves no launch mark and so no count: %r"
+          % ((relaunch, counted, ran, said[-200:], code, line,
+              _lt_mark(M, root)),),
+          _signal_head(relaunch) == ("dispatch", "P1.1") and counted == 1
+          and ran == 0 and code == 0 and _lt_mark(M, root).get(key) is None)
+
+
+def _cancel_phase_case(check, M):
+    """The phase's gate takes the same path: one decision, the same count on its
+    own launch mark, its own ask at the bound, and `rerun` dropping the mark."""
+    key = getattr(M, "CANCELLED_BEFORE", "cancelledBefore")
+    bound = getattr(M, "CANCELLED_BOUND", 2)
+    root, mpath = _repo("cb-phase", task_ids=TASKS[:1],
+                        phase_gate=(_GC_PHASE_GATE,))
+    ns = argparse.Namespace(project_dir=root, manifest=mpath, verbose=False,
+                            phase=PHASE, task_only=False)
+    seen = []
+    with _Env(root):
+        ctx = M.context(ns)
+        head = _head_of(root)
+        state = {M.PHASE_GATE_LAUNCH_KEY: {
+            "head": head, "at": "2026-11-05T12:00:00Z",
+            "argv": ["python3", "run-test-gate.py", PHASE], "launch": "cb-launch"}}
+        for n in range(bound):
+            launch = state[M.PHASE_GATE_LAUNCH_KEY]["launch"]
+            row = {"runId": "cb-phase-%d" % (n,), "ts": _now_stamp(),
+                   "scope": "phase", "phaseId": PHASE, "status": "cancelled",
+                   "steps": []}
+            _evio.append_row(ctx["project"], row, writer="cb-rows",
+                             config=ctx["config"])
+            _put_phase_record(mpath, _evio.run_record(row, launch=launch))
+            said, measured = _caught(M.chosen_phase_gate, ctx, state,
+                                     _mio.load_manifest(mpath)["phases"][0], head)
+            seen.append(((said or {}).get("kind"),
+                         (state.get(M.PHASE_GATE_LAUNCH_KEY) or {}).get(key),
+                         (state.get(M.PHASE_GATE_LAUNCH_KEY) or {}).get("launch")
+                         != launch, measured))
+        pending = dict(state.get("pending") or {})
+        manifest = _mio.load_manifest(mpath)
+        answered = _caught(M.apply_answer, ctx, state, manifest,
+                           manifest["phases"][0], pending, "rerun", "", ())
+    check("cb7 THE PHASE GATE TAKES THE SAME PATH: below the bound a cancelled "
+          "run relaunches under a new token counting one more, at it the drive "
+          "asks phase-gate-cancelled with the count, keeping the launch it "
+          "answered; `rerun` drops the mark so it is launched once more from "
+          "zero: %r" % ((seen, pending, answered, state.get(M.PHASE_GATE_LAUNCH_KEY)),),
+          [s[0] for s in seen[:-1]] == ["dispatch"] * (bound - 1)
+          and [s[1] for s in seen[:-1]] == list(range(1, bound))
+          and all(s[2] for s in seen[:-1])
+          and seen[-1][0] == "decide" and not seen[-1][2]
+          and pending.get("decision") == "phase-gate-cancelled"
+          and pending.get(key) == bound
+          and answered is None
+          and M.PHASE_GATE_LAUNCH_KEY not in state)
 
 
 def _background_doc_case(check, M):

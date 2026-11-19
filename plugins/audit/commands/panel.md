@@ -183,10 +183,10 @@ otherwise `python3 "$PANEL" --project "$(pwd)"`.
   draws these lines on every plan — this is the live view, and *nothing has run yet* is the
   answer an operator opened it for. It is also why the refresh fingerprint stamps the
   **evidence directory** and not only the shards: a gate finishing mid-phase normally moves a
-  pointer in its shard, which is watched already — but a run recorded while another session
-  holds the phase lock writes the row and has its pointer refused, so nothing in the plan
-  moves at all, and watching the plan alone would leave that badge waiting for a manual
-  reload.
+  pointer in its shard, which is watched already — but a run whose record another writer's
+  hold on the plan's index lock refused writes the row and has its pointer refused, so
+  nothing in the plan moves at all, and watching the plan alone would leave that badge
+  waiting for a manual reload.
 - **Usage** — what the plan cost, recomputed in the browser on every filter change. KPI tiles
   carry a sparkline and a trend against the window before (all-time compares the ledger's last
   30 days with the 30 before them — anchored on the data, so a finished project still shows a

@@ -4065,30 +4065,62 @@ either has findings.
 `write_pointer()` puts three keys — `runId`, `status`, `at` — on the task or the phase, **in the
 shard and never the index**: a phase run that touched the index is what makes two parallel phases
 conflict on merge. Every `written: False` is a designed outcome carrying a sentence, not an error
-path. `pointer_lock_state()` answers `free` / `ours` / `held` / `stale` / `unlockable`, and **`ours`
-exists because `_locks.acquire` is not re-entrant** — a gate recorded from inside its own phase run
-meets the lock that run already holds, so the holder's session is *compared* rather than the lock
-re-taken. A stale lock is not taken over here; that is a decision a human makes with
-`audit-lock --takeover`. A refused pointer leaves the ledger row standing and names `--reconcile`,
-which is the only reachable partial state and the harmless one.
+path. A refused pointer leaves the ledger row standing and names `--reconcile`, which is the only
+reachable partial state and the harmless one.
+
+**Every write of a plan file here goes through `write_plan_file()`, under the lock the verbs
+take.** It takes `SHARD_LOCK` — `index`, the lock every `audit-task.py` verb (`_under_lock`), the
+panel (`_panel_write.LOCK_NAME`) and close-phase (`under_index_lock`) take for their own
+read-modify-write — reads the file only once the lock is held, hands that read to the caller's
+change, and saves what comes back; the pointer, the record, `reconcile()` and the evidence
+boundary all write through it, and `tests/test__evidence_io.py`'s `lk1` reads the module's AST and
+fails a save or an acquire anywhere else. The writers used to take `phase-<id>` instead, which no
+verb takes for a write, so a record and a verb's write of one shard excluded nothing and the
+later one wrote its stale read back over the other (`lr4`/`lr5` drive a real verb against it, in
+both orders). The phase lock is not taken as well: it is a claim on a phase's *run* — `start`'s
+hand-off claim, the drive's phase run — and guards no write, so it would only refuse a record
+because another session holds the phase; and one lock leaves no order to keep (`start` takes
+`phase-<id>` while it holds `index`). A gate the drive launches meets `index` alone, which the
+drive holds only for a verb's write. **The lock is one per plan, not one per shard**, because the
+verbs' and the panel's lock already is: every plan-file write, of any shard and of the index,
+excludes every other. What that costs is a queue — a wave's members recording at one moment
+wait behind each other, each record holding the lock for one read and one write of its shard —
+and a member still waiting past `RECORD_WAIT_SECONDS` exits 3 with its ledger row written and
+the line saying to re-run it. The queue's length is measured, not written here: time
+`write_record` on a copy of the plan, alone and with members started together. `shard_lock_state()` answers `free` / `ours` / `held` /
+`stale` / `unlockable`, and **`ours` exists because `_locks.acquire` is not re-entrant** — a gate
+a verb launched under its own hold meets the lock that hold already has, so the holder is
+*compared* rather than the lock re-taken. A live holder is waited out (`wait`, `_locks`'
+`WAIT_SECONDS` unless the writer passes its own) and then refused with the file untouched; a dead
+holder is not taken over here — that is a human's decision — and the refusal says what happened,
+then what to run: release it (`audit-lock.py release index --force`), then the writer's own
+repair.
 
 **The record is the run, and its write is not allowed to fail quietly.** `write_record()` puts
 `lastRun` (`RECORD_KEY`) on the subject — the run whole, built by `run_record()` from the row
 `record()` just appended, the machine and attribution lines printed beside it, and a `--launch`
 token — with the pointer derived from it (`pointer_from_record()`) beside it, and, for a task
 run, the gate and selection stages `record_stages()` builds appended to the task's `timing`
-(`_task_timing.append_run_stages`), all in **one read and one write of the shard under the
-phase lock**. Unlike the pointer, the lock is **waited for** (`RECORD_WAIT_SECONDS`) rather
-than skipped, and the shard is read under it, so a verb that wrote while the record waited
-keeps what it wrote; a lock still held past the wait is refused with the shard untouched, and
-`run-test-gate.py` makes that exit 3. Replaced, never appended, so a record's size is the
-gate's width — `MAX_STEPS` steps of at most `MAX_FAILING` failing lines at the journal's value
-bound — and a repeated verdict carries its source's steps forward, each naming the run it came
-from. `subject_records()` reads every record a plan's files hold.
+(`_task_timing.append_run_stages`), all in **one read and one write of the shard through
+`write_plan_file()`**. Unlike the pointer, the lock is **waited for** for `RECORD_WAIT_SECONDS`,
+so a verb that wrote while the record waited keeps what it wrote; a lock still held past the
+wait is refused with the shard untouched, and `run-test-gate.py` makes that exit 3. Replaced,
+never appended, so a record's size is the gate's width — `MAX_STEPS` steps of at most
+`MAX_FAILING` failing lines at the journal's value bound. **A repeated verdict carries the run it
+repeated** (`repeat_carried()`): that run whole under `repeatedRun` (`REPEATED_RUN_KEY`) and, for
+a whole repeat, its steps, each naming the run it came from — read from the run's ledger row, or,
+under the lock, from the record the write replaces when that is the run (by the reuse rule it is
+the subject's newest). When neither holds it, `repeatedRunUnread` (`REPEAT_UNREAD_KEY`) names the
+run and says its steps are not carried; a reader asks `repeatedRun` first and this only when it is
+absent. A whole repeat's `startedAt` is absent and its `durationMs` is its own lookup's; the run it
+repeated keeps its own under `repeatedRun`. `subject_records()` reads every record a plan's files
+hold.
 
 **`reconcile()` is that repair**, and it is why the refusal is affordable: it re-derives every
 pointer from the ledger and from each subject's record, the newer of the two — a pointer
-deleted from a plan whose ledger holds no row is restored from the record — newest run per
+deleted from a plan whose ledger holds no row is restored from the record, and a ledger row
+newer than the record (a record write that was refused) rewrites the record from that row in
+the same write, so the pointer and `lastRun` name one run — newest run per
 subject **by `ts` and never by file position** (rows land in
 one file per writer per month, so two worktrees concatenate in no meaningful order). Running it
 over an already-correct plan moves nothing and says so — a repair that rewrote a correct pointer
@@ -5222,7 +5254,12 @@ token, from a drive that handed out none, is never read back - a task's gate is 
 and a phase gate's launch is forgotten and its gate chosen again. A `next`
 before the launched run exists is `wait-gate`,
 printing the same `run:` line and the moment the dispatch was handed out - which is all the drive
-saw, since it never sees the gate process start; a new `cancelled` row - a gate stopped mid-run - launches it again;
+saw, since it never sees the gate process start; a new `cancelled` row - a gate stopped mid-run - launches it again
+under a new token, with no attempt spent, until `CANCELLED_BOUND` cancelled runs of that gate in a row: then
+`cancelled_gate`, the one decision the task's gate and the phase's share, asks instead (`gate-cancelled`, offering
+`rerun` and `block`; `phase-gate-cancelled`, offering `rerun` and `decline`), and the ask stays open until it is
+answered. The count is the launch mark's (`cancelledBefore`), carried onto the mark that replaces it; any verdict
+spends the mark and the count with it, and `rerun` drops the mark, so the gate is launched once more from zero;
 a `failed` row is the verdict acted on as the row holds it, with no gate asked again
 (`recorded_red`: its failed steps on a `GATE RED` line and its run on the `evidence: recorded`
 line, so it reaches the base measurement and the decision - or the phase gate's stop - as an

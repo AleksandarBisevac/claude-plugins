@@ -23806,6 +23806,72 @@ def _stale_wide_gate_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _group_record_cases(check):
+    """(grc) The record a group's members take with the carrier's pointer: the
+    carrier's own when it names the run, else built from the run's row - and a
+    repeat built that way carries the run it copied when the ledger holds it,
+    rather than a marker saying it could not."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    try:
+        def project(name, rows):
+            proj = os.path.join(tmp, name)
+            os.makedirs(os.path.join(proj, "docs", "audit"))
+            _harness.git(None, "init", "-q", "-b", "main", proj,
+                         prefix=("git",))
+            mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+            with open(mpath, "w", encoding="utf-8") as fh:
+                json.dump({"meta": {"version": 1}, "phases": []}, fh)
+            for row in rows:
+                _evidence_io.append_row(proj, row)
+            return proj, mpath
+        source = {"v": 1, "runId": "RS", "ts": "2026-11-18T04:04:10Z",
+                  "scope": "phase", "phaseId": "P1", "status": "passed",
+                  "durationMs": 8125, "startedAt": "2026-11-18T04:04:02Z",
+                  "failed": [], "steps": [{"name": "sweep", "exit": 0,
+                                           "ran": 3, "durationMs": 8000,
+                                           "outcome": "passed"}]}
+        repeat = {"v": 1, "runId": "RR", "ts": "2026-11-18T05:00:00Z",
+                  "scope": "phase", "phaseId": "P1", "status": "passed",
+                  "durationMs": 40, "failed": [], "steps": [],
+                  "verdictSource": "reused",
+                  "reusedFrom": {"runId": "RS", "ts": "2026-11-18T04:04:10Z",
+                                 "status": "passed"}}
+        pointer = _evidence_io.pointer_for(repeat)
+        unread = getattr(_evidence_io, "REPEAT_UNREAD_KEY", "repeatedRunUnread")
+        proj, mpath = project("held", [source])
+        got = M._group_record(proj, mpath, None, {"id": "P1"}, pointer, repeat)
+        carried = (got or {}).get(_evidence_io.REPEATED_RUN_KEY) or {}
+        check("grc1 A REPEAT COPIED FROM ITS ROW, the run it repeated in the "
+              "ledger: the copy carries that run under `repeatedRun` and its "
+              "steps, each naming it, and no unread marker - the source was one "
+              "lookup away: %r" % (got,),
+              carried.get("runId") == "RS"
+              and [(s.get("name"), (s.get("reusedFrom") or {}).get("runId"))
+                   for s in (got or {}).get("steps") or []] == [("sweep", "RS")]
+              and unread not in (got or {}))
+        bare_proj, bare_mpath = project("bare", [])
+        none = M._group_record(bare_proj, bare_mpath, None, {"id": "P1"},
+                               pointer, repeat)
+        check("grc2 SECOND DIRECTION: with no copy of the run anywhere, the copy "
+              "says so - the marker names RS and `repeatedRun` is absent - "
+              "rather than inventing one: %r" % (none,),
+              (none.get(unread) or {}).get("runId") == "RS"
+              and _evidence_io.REPEATED_RUN_KEY not in none
+              and none.get("steps") == [])
+        held = {"runId": "RR", "status": "passed", "at": "2026-11-18T05:00:00Z",
+                "steps": [], "marker": "the carrier's own"}
+        own = M._group_record(proj, mpath, None,
+                              {"id": "P1", _evidence_io.RECORD_KEY: held},
+                              pointer, repeat)
+        check("grc3 the carrier's own record of the same run travels as it is, "
+              "and no pointer means no record: %r" % (own,),
+              own is held
+              and M._group_record(proj, mpath, None, {"id": "P1"}, None,
+                                  repeat) is None)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _record_run_cases(check):
     """(rr) `--failing-from` and `couple --basis-run` resolve a run the plan
     holds only as a record - no evidence directory at all - and refuse an
@@ -23919,6 +23985,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("grt-block", "_gate_reach_cases"),
           ("tmg-block", "_timing_cases"),
           ("rr-block", "_record_run_cases"),
+          ("grc-block", "_group_record_cases"),
           ("wg-block", "_stale_wide_gate_cases"))
 
 

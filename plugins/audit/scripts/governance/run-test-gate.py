@@ -172,10 +172,11 @@ import _config_rules  # noqa: E402  (phase_gate_only_split: the one reading of
 #                                    executor.phaseGateOnly, the writer's too)
 
 E_OK, E_FAIL, E_ASK = 0, 1, 2
-# A `--record` run that measured and stored nothing. Its own code because it is
-# neither the work's failure (1) nor a usage error (2): the gate is green and the
-# record the caller asked for does not exist, and a pre-push or CI step reading
-# the exit code must not read that as a pass. Without `--record` nothing changes.
+# A `--record` run (green or red) whose row or whose record in the plan could not
+# be stored. Its own code because it is neither the work's failure (1) nor a
+# usage error (2): the gate measured, and the record the caller asked for does
+# not exist - so a pre-push or CI step reading the exit code must not read 0 as
+# a pass, nor 1 as a recorded red. Without `--record` nothing changes.
 E_UNRECORDED = 3
 
 # --- what did not finish ------------------------------------------------------
@@ -3502,7 +3503,8 @@ def unrecorded_line(res):
                    E_FAIL if _ev.row_is_red(res) else E_OK))
     return ("GATE NOT RECORDED: the gate itself %s and its evidence row is in "
             "%s, but the plan holds no record of the run (see the `record:` "
-            "line). Exit %d, not %d - re-run once the phase lock is free."
+            "line). Exit %d, not %d - re-run this gate with --record once the "
+            "plan's index lock is free."
             % ("failed" if _ev.row_is_red(res) else "passed",
                recorded.get("log") or "the ledger", E_UNRECORDED,
                E_FAIL if _ev.row_is_red(res) else E_OK))
@@ -5594,11 +5596,13 @@ def _say_who_else_was_running(project, res, row, out=print):
 def _record_run(project, args, res, source, commands, manifest, out=print):
     """Record the run, point the plan at it, and date the plan's first recording.
 
-    THE POINTER IS ALLOWED TO FAIL AND THE ROW IS NOT. The ledger is the source of
-    truth; the manifest block is a cache, so a pointer refused by another live
-    session leaves the record standing and names the repair. That asymmetry is
-    printed rather than folded into one word, because "your run was not recorded"
-    and "your plan has not caught up yet" are different problems.
+    NEITHER THE ROW NOR THE RECORD IS ALLOWED TO FAIL QUIETLY. The record in
+    the plan (`lastRun`, its pointer beside it) is written under the plan-file
+    lock every writer of the shard takes, after waiting out a live holder; one
+    that still could not be written is exit 3 on either verdict, and the line
+    names the ledger file the run's row went to. A missing row and a missing
+    record are printed apart, because "your run was not recorded" and "your
+    plan holds no record of it" are different problems.
 
     THE BOUNDARY IS ALLOWED TO FAIL AND OWES NO REPAIR AT ALL, which is the third
     outcome and not a variation on the second. It is written once in a plan's life
@@ -5703,21 +5707,13 @@ def _run_record_of(project, args, ids, row, lines):
     the drive that launched the run does not queue it a second time.
 
     A run that repeated another's verdict, in whole or in part, carries that
-    run forward (`_evidence_io.run_record`), read from the ledger row or the
-    record that holds it (`_evidence_io.read_rows`)."""
-    source_row = None
-    if row.get(_ev.VERDICT_SOURCE) in (_ev.REUSED, _ev.PART_REUSED):
-        try:
-            # The read the repeat was found by (`reusable_run` over
-            # `read_rows(project)`), so the run carried is the one it copied.
-            source_row = _ev.row_by_run(
-                _ev.read_rows(project)["rows"],
-                (row.get("reusedFrom") or {}).get("runId"))
-        except Exception:                                      # noqa: BLE001
-            source_row = None
-    record = _ev.run_record(row, lines=lines,
-                            launch=getattr(args, "launch", None),
-                            source=source_row)
+    run forward (`_evidence_io.record_carrying`), read from the ledger row or
+    the record that holds it - the read the repeat was found by, so the run
+    carried is the one it copied; when neither is read here, `write_record`
+    looks again, under its lock, in the record it replaces, and a record that
+    still has no copy says so (`REPEAT_UNREAD_KEY`)."""
+    record = _ev.record_carrying(project, row, lines=lines,
+                                 launch=getattr(args, "launch", None))
     stages = []
     if ids.get("taskId") is not None:
         stages, _gaps = _ev.record_stages(
@@ -6499,9 +6495,11 @@ def main(argv, out=print):
     # that instruction exists, a flag nothing sets is better than a default that
     # writes into every repository the gate has ever been run in.
     p.add_argument("--record", dest="record", action="store_true",
-                   help="store the run as an evidence row and point the plan at "
-                        "it; a green run whose row could not be stored exits 3 "
-                        "(0 passed, 1 failed, 2 usage, 3 passed but unrecorded)")
+                   help="store the run as an evidence row and as its record in "
+                        "the plan; a run (green or red) whose row or whose "
+                        "record in the plan could not be stored exits 3 (0 "
+                        "passed, 1 failed, 2 usage, 3 not recorded on either "
+                        "verdict)")
     # THE OPERATOR'S WAY BACK TO A MEASUREMENT, and the reason a repeat is
     # allowed to be the default at all: a cache with no override is a cache that
     # gets deleted by hand. It suppresses the LOOKUP and not the identity - the

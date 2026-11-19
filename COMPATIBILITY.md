@@ -212,7 +212,16 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   opinion beside them. What is promised is the key's name, that `runId`, `status` and `at`
   in it are the values `testEvidence` caches, and that it is replaced rather than appended
   to. Its other fields are not promised yet - they follow the evidence row's, which this
-  document leaves out - and a reader of them needs a default arm.
+  document leaves out - and a reader of them needs a default arm; `repeatedRunUnread`, which
+  says a repeat's source run could not be carried, is one of them and is additive.
+  **Which lock the write takes changed, and a user can see it.** The record, the pointer,
+  `--reconcile` and the evidence boundary now take the plan-file lock every verb takes
+  (`index`) instead of the phase lock: a phase another session holds no longer refuses a
+  gate's record (it used to wait, then exit 3), a lock held by hand on `index` by another
+  session now does, after the same wait, and a verb that reaches the plan while a record is
+  being written waits for that one write inside its own lock wait. `--reconcile` now also
+  rewrites `lastRun` from a ledger row newer than it, so after it the pointer and the record
+  name one run - which is what the promise above says.
 - **A stored terminal phase status keeps winning, and `done` is also DERIVED.** A phase
   carrying `status: done` or `status: cancelled` reads exactly that. Otherwise it reads
   `done` once every task is terminal, `review.status` holds a sign-off verdict (`passed` or
@@ -657,7 +666,8 @@ depending on an implementation:
   so a pre-push or CI step that read the exit code passed with no evidence behind it. A green
   run whose row was not stored now prints `GATE NOT RECORDED` in place of `GATE GREEN` and
   **exits 3** — a code of its own, apart from 1 (the work failed) and 2 (usage); `--help`
-  names it. A red run keeps exit 1, and a run without `--record` is unchanged. It is recorded
+  names it. A red run whose row or whose record in the plan was not stored exits 3 as well,
+  not 1, and a run without `--record` is unchanged. It is recorded
   here rather than passed over because an exit code moved from 0 to 3 on a shipped command,
   and a pipeline that read the unrecorded green as success is a pipeline that now stops,
 - **a `passed` sign-off with no gate run behind it — and it changed.** `audit-task.py

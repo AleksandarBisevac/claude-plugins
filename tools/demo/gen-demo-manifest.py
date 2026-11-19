@@ -1396,6 +1396,9 @@ SCHEMA_EXEMPTIONS = {
     "lastRun.repeatedRun":
         "the run a repeated verdict copied, carried whole; for "
         "lastRun.reusedFrom's reason, no demo run repeats another run's verdict.",
+    "lastRun.repeatedRunUnread":
+        "says a repeated verdict's source run could not be carried; for "
+        "lastRun.reusedFrom's reason, no demo run repeats another run's verdict.",
     "review.preExistingNotCharged":
         "defined by the schema and by nothing else - no reader, no writer, and not "
         "even a `_manifest_vocab` entry. A fixture value would demonstrate nothing.",

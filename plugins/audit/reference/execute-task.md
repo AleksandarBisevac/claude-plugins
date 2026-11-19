@@ -265,7 +265,13 @@ verb writes and refuses, and what the run commands leave behind, is
      3. **The recorded gate.** A gate step whose recorded mean outlives the Bash
         tool's foreground bound, or that no run has measured, is dispatched to the
         background (`dispatch-gate`, then `wait-gate`) and decided from its recorded
-        row; a measured-fast one runs inline. A red with no comparable base run has
+        row; a measured-fast one runs inline. A run recorded as cancelled (stopped
+        mid-run, no verdict) is dispatched again under a new launch token with no
+        attempt spent; once `CANCELLED_BOUND` cancelled runs of that gate come in
+        a row (`drive-phase.py`), it stops as
+        `gate-cancelled` (`phase-gate-cancelled` for the phase's gate), an `ask`
+        that stays open until answered: `rerun` launches it once more, `block`
+        (`decline` for the phase) stops it with the reason. A red with no comparable base run has
         its base measured once per start, chosen the same way over its red steps:
         past the bound, unmeasured, or under `auto` it is `dispatch-base` (a
         `drive-phase.py base-run` in the background, which writes only a record of
@@ -440,9 +446,10 @@ verb writes and refuses, and what the run commands leave behind, is
 
      **Read the two lines it prints ABOVE the verdict block.** `evidence: recorded <runId>` is the row;
      `pointer:` is whether the plan now names it. A pointer can be **refused** — another live
-     session may hold the phase lock — and that is a designed state, not an error: the run is
-     recorded either way, and `--reconcile` catches the plan up later. Do not retry the gate to
-     chase a refused pointer.
+     writer may hold the plan's index lock past the record's wait — and then the gate exits 3
+     and says to re-run it once the lock is free: do what that line says. When the run's
+     ledger row was written, `--reconcile` also catches the plan up from it without running a
+     test.
 
      **A gate expected to outlast the Bash tool's foreground bound runs under
      `run_in_background`, and its verdict is read from the ledger, never from a truncated

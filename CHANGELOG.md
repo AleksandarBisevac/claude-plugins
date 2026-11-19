@@ -121,10 +121,39 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   newest run it had not seen - a sibling's run of the same task is not its own; a launch marked
   by an earlier drive, with no token, is not read back but launched or chosen again.
 - **A recorded run the plan holds no record of exits 3, red or green.** The record write
-  waits for the phase lock behind another verb's write rather than skipping it, and a record
-  it still cannot write is exit 3 with a `record:` line naming the ledger file the run's row
-  went to - where a red run used to exit 1 and a green one 0 with the pointer left behind. A
-  run without `--record` is unchanged.
+  waits behind another writer of the plan file rather than skipping it, and a record it still
+  cannot write is exit 3 with a `record:` line naming the ledger file the run's row went to
+  and saying to re-run the gate once the plan's index lock is free - where a red run used to
+  exit 1 and a green one 0 with the pointer left behind. A run without `--record` is
+  unchanged; `--help` says green or red.
+- **A gate's record and a verb's write of the same plan file no longer lose each other.**
+  The record, the evidence pointer, `--reconcile` and the evidence boundary used to take the
+  phase lock, which no verb takes for its own write, so a `note`, `scope` or `done` landing
+  while a gate recorded wrote its stale read back over the record, or the record over the
+  note. All four now write through one helper under the lock every verb and the panel take
+  (`index`), reading the file only once they hold it. What you see: a phase another session
+  holds no longer refuses a gate's record; a verb that reaches the plan while a record is
+  being written waits for that one write inside its own lock wait; a dead holder of the lock
+  is not taken over, and the refusal says so before naming `audit-lock.py release index
+  --force` and the re-run.
+- **A gate that keeps being killed no longer loops the drive.** A background gate whose run
+  was cancelled (SIGTERM, a Bash bound, a session cut off) used to be launched again on
+  every `next`, without end. It is still launched again, under a new launch token and with
+  no attempt spent, but once `CANCELLED_BOUND` runs of that gate in a row were cancelled
+  the drive asks instead: `gate-cancelled` (`rerun` launches it once more with the count
+  started again, `block` blocks the task with the reason), or `phase-gate-cancelled` for
+  the phase's gate (`rerun`, or `decline`). The ask stays open, and launches nothing, until
+  it is answered; a run that reaches any verdict clears the count. A gate the drive
+  launched records its cancelled run under the plan's index lock, which the drive does not
+  hold across a background run, so the first `next` after a killed run reads it back.
+- **A group sign-off's copy of a repeated run carries the run it repeated** when the ledger
+  or the plan holds it, rather than saying it could not.
+- **A repeated verdict's record says where its steps came from.** A whole repeat carries the
+  run it repeated under `repeatedRun` and that run's steps, each naming it, read from the run's
+  ledger row or, when the ledger has none, from the record it replaces; when neither holds the
+  run, `repeatedRunUnread` names it and says the steps are not carried. A repeat has no
+  `startedAt` and its own `durationMs`. `--reconcile` now rewrites `lastRun` from a ledger run
+  newer than it, so the pointer and the record name one run afterwards.
 - **`executor.phaseGateOnly` now reaches a task's recorded gate, not only the writer's prompt.**
   A command the key names is left out of a task's recorded run (`run-test-gate.py --task`)
   when the phase's own `testGate` runs it, whichever arm proposed it - a declared entry or a

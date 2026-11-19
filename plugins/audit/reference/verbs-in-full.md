@@ -95,9 +95,10 @@ Execute exactly `<taskId>`, with status guards:
 subagent's own run is what it develops against, and the recorded one has to be the
 wrapper's — the bracket, the check count, the coverage answer and the tree comparison are
 only true of a run the wrapper made. `--record` prints two lines: one says the row was
-written, the other whether the plan now names it. Read both. A **refused pointer is not a
-failure** — another live session may hold the phase lock — so do not retry the gate to
-chase one; the row stands either way and `--reconcile` catches the plan up later.
+written, the other whether the plan now names it. Read both. A **refused pointer** means
+another live writer held the plan's index lock past the record's wait: the gate exits 3 and
+says to re-run it once the lock is free, and that is the line to follow. When the run's
+ledger row was written, `--reconcile` also catches the plan up from it without running a test.
 
 A step that outruns `--timeout` (the script's own default when nothing passes one) is torn
 down and recorded as having timed out, and the tree comparison is then **refused rather than

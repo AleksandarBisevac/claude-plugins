@@ -13847,7 +13847,8 @@ def _lr_without(body, keys):
 
 def _last_run_record_cases(check):
     """(lr) A recorded run's newest record is one `lastRun` in its subject's
-    shard, written under the phase lock, and never an exit 0 or 1 without it."""
+    shard, written under the plan-file lock every writer of the shard takes,
+    and never an exit 0 or 1 without it."""
     root, mp, shard = _lr_repo()
     evdir = os.path.join(root, "docs", "audit", "evidence")
 
@@ -13964,12 +13965,12 @@ def _last_run_record_cases(check):
     was_wait = getattr(_ev_io, "RECORD_WAIT_SECONDS", None)
     os.environ["CLAUDE_CODE_SESSION_ID"] = "lr-gate-run"
     _ev_io.RECORD_WAIT_SECONDS = 0.3
-    _locks.acquire(root, "phase-P1", session="lr-holder", out=lambda *_a: None)
+    _locks.acquire(root, "index", session="lr-holder", out=lambda *_a: None)
     try:
         h_code, h_text, h_id = _run("--task", "P1.1")
         hr_code, hr_text, _hr_id = _run("--task", "P1.2")
     finally:
-        _locks.release(root, "phase-P1", session="lr-holder", out=lambda *_a: None)
+        _locks.release(root, "index", session="lr-holder", out=lambda *_a: None)
         if was_session is None:
             os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
         else:
@@ -13981,15 +13982,116 @@ def _last_run_record_cases(check):
     held_after, _a = _lr_read(shard)
     logs = sorted(os.listdir(evdir))
     named = [n for n in logs if n in h_text]
-    check("lr6 A LOCK HELD PAST THE WAIT is exit 3 on a green run AND on a red "
-          "one - never 0 or 1 without the record - the output names the ledger "
-          "file the run's row went to, and the shard is byte for byte what it "
-          "was: %r"
+    check("lr6 THE PLAN-FILE LOCK (`index`, the one every verb takes) HELD "
+          "PAST THE WAIT is exit 3 on a green run AND on a red one - never 0 or "
+          "1 without the record - the output names the ledger file the run's "
+          "row went to and the repair (re-run this gate once the index lock is "
+          "free), and the shard is byte for byte what it was: %r"
           % ((h_code, hr_code, h_id, named, h_text[-500:]),),
           h_code == M.E_UNRECORDED and hr_code == M.E_UNRECORDED
           and h_id is not None and named
           and held_after == held_before
-          and "GATE GREEN" not in h_text)
+          and "GATE GREEN" not in h_text
+          and "index lock" in h_text and "phase lock" not in h_text
+          and "re-run this gate" in hr_text)
+
+
+def _record_repeat_gate_cases(check):
+    """(rpt) A WHOLE repeat at gate level - reuse on, a second run - carries the
+    steps of the run it repeated on its record, with a ledger to read and with
+    none: once the evidence directory is gone, the plan's record is the only
+    copy of the run repeated."""
+    root, mp, shard = _lr_repo()
+    evdir = os.path.join(root, "docs", "audit", "evidence")
+    unread = getattr(_ev_io, "REPEAT_UNREAD_KEY", "repeatedRunUnread")
+
+    def ask(*extra):
+        lines = []
+        code = M.main([mp, "P1", "--project-dir", root, "--record",
+                       "--task", "P1.1"] + list(extra), out=lines.append)
+        _raw, body = _lr_read(shard)
+        return code, "\n".join(lines), _lr_subject(body, "P1.1").get(
+            "lastRun") or {}
+
+    def steps(record):
+        return [(s.get("name"), (s.get("reusedFrom") or {}).get("runId"),
+                 "durationMs" in s) for s in record.get("steps") or []]
+    try:
+        c1, _t1, first = ask("--no-reuse")
+        c2, t2, second = ask()
+        carried = second.get(_ev_io.REPEATED_RUN_KEY) or {}
+        check("rpt1 REUSE ON, SECOND RUN: the record is a whole repeat of the "
+              "first run, and it carries that run's steps - each naming it, "
+              "none with a duration of its own - and that run whole under "
+              "`repeatedRun`; no `startedAt` (it measured nothing), its own "
+              "`durationMs`, and no unread marker: %r"
+              % ((c1, c2, first.get("runId"), second.get("verdictSource"),
+                  steps(second), carried.get("runId"), sorted(second),
+                  t2[-300:]),),
+              c1 == M.E_OK and c2 == M.E_OK
+              and second.get("verdictSource") == "reused"
+              and (second.get("reusedFrom") or {}).get("runId")
+              == first.get("runId")
+              and steps(second) == [(n, first.get("runId"), False)
+                                    for n, _r, _d in steps(first)]
+              and bool(steps(first))
+              and carried.get("runId") == first.get("runId")
+              and carried.get("durationMs") == first.get("durationMs")
+              and "startedAt" not in second
+              and isinstance(second.get("durationMs"), int)
+              and unread not in second)
+        _harness.remove_tree(evdir)
+        c3, t3, third = ask()
+        check("rpt2 ...AND WITH NO LEDGER AT ALL: the evidence directory is "
+              "removed, so the run repeated is read from the plan's record "
+              "alone, and the third record still carries the measured run's "
+              "steps under its name: %r"
+              % ((c3, third.get("verdictSource"), steps(third),
+                  (third.get(_ev_io.REPEATED_RUN_KEY) or {}).get("runId"),
+                  t3[-300:]),),
+              c3 == M.E_OK and third.get("verdictSource") == "reused"
+              and steps(third) == [(n, first.get("runId"), False)
+                                   for n, _r, _d in steps(first)]
+              and bool(steps(first))
+              and bool((third.get(_ev_io.REPEATED_RUN_KEY) or {}).get("runId"))
+              and unread not in third)
+    finally:
+        _harness.remove_tree(root)
+
+
+def _record_wording_cases(check):
+    """(rw) What `--record` promises, said where a reader meets it: exit 3 is a
+    run (green or red) whose row or record in the plan was not stored."""
+    with _io.open(M.__file__, encoding="utf-8") as fh:
+        source = fh.read()
+    helps = [ast.literal_eval(kw.value) for node in ast.walk(ast.parse(source))
+             if isinstance(node, ast.Call)
+             and getattr(node.func, "attr", None) == "add_argument"
+             and node.args and isinstance(node.args[0], ast.Constant)
+             and node.args[0].value == "--record"
+             for kw in node.keywords if kw.arg == "help"]
+    lines = source.splitlines()
+    at = [i for i, ln in enumerate(lines) if ln.startswith("E_UNRECORDED = ")]
+    comment = []
+    for ln in reversed(lines[:at[0]] if at else []):
+        if not ln.startswith("#"):
+            break
+        comment.insert(0, ln)
+    said = " ".join(c.lstrip("# ") for c in comment)
+    red = M.unrecorded_line({"status": "failed", "failed": ["red"],
+                             "recorded": {"recorded": True, "record": False,
+                                          "log": "2026-11.w.jsonl"}})
+    check("rw1 the `--record` help and the comment beside E_UNRECORDED both "
+          "say a run GREEN OR RED whose row or record could not be stored "
+          "exits 3 - neither says a green run alone - and the line a red "
+          "unrecorded run prints says exit 3 not 1 and names the index lock "
+          "it is to wait for: %r" % ((helps, said, red),),
+          len(helps) == 1 and "green or red" in helps[0]
+          and "record in the plan" in helps[0]
+          and "passed but unrecorded" not in helps[0]
+          and "green or red" in said and "the gate is green" not in said
+          and "Exit 3, not 1" in red and "index lock" in red
+          and "phase lock" not in red)
 
 
 def _record_part_reuse_cases(check):
@@ -14097,6 +14199,8 @@ def _record_part_reuse_cases(check):
 def _selftest():
     def body(check):
         _harness.stage(check, "lr-block", _last_run_record_cases)
+        _harness.stage(check, "rpt-block", _record_repeat_gate_cases)
+        _record_wording_cases(check)
         _harness.stage(check, "rpr-block", _record_part_reuse_cases)
         _harness.stage(check, "gte-block", _gate_task_env_cases)
         _harness.stage(check, "gtf-block", _foreign_status_cases)

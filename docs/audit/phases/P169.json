@@ -57,32 +57,40 @@
         "severity": "med",
         "file": ".github/actions/browser-install/action.yml:112-154 and .github/workflows/ci.yml:404-414",
         "issue": "The new behaviour, a verified push to main running the browser jobs with seed true, was executed by no real run. All four logs read 'seed: false' and show seen-browser and seen-sysdeps as outcome=skipped (run2-browserpanel lines 250-253); the plan step took its 'SEED != true' early exit. So actions/cache/restore@v6 with lookup-only, the cache-hit output read by the plan step, the 'entry exists for both keys, nothing installed' branch, the 'one key missing' branch and the workflow's `seed: needs.verified.outputs.run != ''` wiring have been shown only on the uncommitted stub harness. The task's acceptance 1 asked for 'a run on the default-branch path that saves the entries'; the probes were workflow_dispatch runs on a ci/ branch, which exercise the install and the save but not the seed decision. The first real execution of the seed path will be a push to main.",
-        "resolution": "Before landing, push one more probe commit to a ci/ branch with `seed: true` hard-wired and the slice step skipped, and read two runs: the first must print 'seed: no entry exists for the browser key and the system packages' key' then save; the second must print 'seed: an entry exists for every key this image needs, so nothing is installed and nothing is saved' and show every later step skipped. Add a third look at a run with only one of the two keys present if a cheap way exists (a changed BROWSER_CACHE_VERSION on one key is not possible, so state that this half stays stub-only).",
-        "fixTask": "P169.14-6l3"
+        "resolution": "fixed in P169.14-6l3 (2efb8e367eb6): Before landing, push one more probe commit to a ci/ branch with `seed: true` hard-wired and the slice step skipped, and read two runs: the first must print 'seed: no entry exists for the browser key and the system packages' key' then save; the second must print 'seed: an entry exists for every key this image needs, so nothing is installed and nothing is saved' and show every later step skipped. Add a third look at a run with only one of the two keys present if a cheap way exists (a changed BROWSER_CACHE_VERSION on one key is not possible, so state that this half stays stub-only).",
+        "fixTask": "P169.14-6l3",
+        "commit": "2efb8e367eb6",
+        "status": "fixed"
       },
       {
         "id": "P169-R6",
         "severity": "med",
         "file": ".github/actions/browser-install/action.yml:186-261",
         "issue": "Nothing in the repository guards the action's shell besides a real CI run. I searched tracked files: no test, lint or checker names .github/actions or action.yml (git grep for 'action.yml|.github/actions|actionlint|shellcheck' over tools/tests/.claude/plugins finds nothing), gate-parity.py reads only ci.yml, and the 20-case stub harness the proofs rest on (scratchpad stubs/harness.py) is not committed. The first real run found three defects the stubs could not see (Permission denied from cp -a, the image version in the key, jc0). The failure shape is also quiet: any bug that makes the hit path throw lands in `why`, the fallback fetches from the archive, and the job stays GREEN with one ::warning:: and a cache that never helps. No gate reads that warning, so the regression the whole task exists to remove (a first run paying the archive) can return with every check green. A later change (apt flags, BROWSER_CACHE_VERSION, a new package) has only a 13-minute hosted run as feedback and nothing that notices a hit turning into a fallback.",
-        "resolution": "Commit the harness as tests/test_browser_install.py with the `N/M cases passed` contract: extract the `run:` bodies from action.yml by step id, run them under the stub PATH, and keep si1-si10 and the sk/sp cases (full hit asks nothing, miss, partial, dependency missing, unreadable .deb falls back once, fallback failing is red). Add one case that fails when the hit path prints the ::warning:: (the hit must not fall back). If a suite is out of scope for this task, file it as the next task and name it in the outcome; the claim that the install is guarded cannot rest on an uncommitted harness.",
-        "fixTask": "P169.14-6l3"
+        "resolution": "fixed in P169.14-6l3 (2efb8e367eb6): Commit the harness as tests/test_browser_install.py with the `N/M cases passed` contract: extract the `run:` bodies from action.yml by step id, run them under the stub PATH, and keep si1-si10 and the sk/sp cases (full hit asks nothing, miss, partial, dependency missing, unreadable .deb falls back once, fallback failing is red). Add one case that fails when the hit path prints the ::warning:: (the hit must not fall back). If a suite is out of scope for this task, file it as the next task and name it in the outcome; the claim that the install is guarded cannot rest on an uncommitted harness.",
+        "fixTask": "P169.14-6l3",
+        "commit": "2efb8e367eb6",
+        "status": "fixed"
       },
       {
         "id": "P169-R7",
         "severity": "med",
         "file": "PLUGIN-BUILD-GUIDE.md:7699",
         "issue": "An untouched sentence this diff makes false, which the return's claim 3 dismisses as 'pre-existing inexactness about verified unchanged by this task'. PLUGIN-BUILD-GUIDE.md:7699 reads 'a push to main whose commit a run already verified runs only tools/ci-verified.py'. Before this change that was exact (every other job was skipped by `needs.verified.outputs.run == ''`); after it the two browser jobs run their checkout, setup, npm ci, lookups and install on that push. The task named 'the push-to-default-branch path that skips work for a verified commit' as a dependant to answer for by name, and this document is the one that describes that path outside CONTRIBUTING.md.",
-        "resolution": "Change the sentence to say that such a push runs `verified` and, in the two browser jobs, the install only (seeding the caches), and correct claim 3 so it lists this line as made false by the task rather than left. The same pass should re-read tools/check-rendered-artifacts.py:1429, tools/lints/_refs.py:1915 and CLAUDE.md:314 ('every job is setup plus one verify.sh call'), which stay inexact only about `verified` and are unchanged by this diff.",
-        "fixTask": "P169.14-6l3"
+        "resolution": "fixed in P169.14-6l3 (2efb8e367eb6): Change the sentence to say that such a push runs `verified` and, in the two browser jobs, the install only (seeding the caches), and correct claim 3 so it lists this line as made false by the task rather than left. The same pass should re-read tools/check-rendered-artifacts.py:1429, tools/lints/_refs.py:1915 and CLAUDE.md:314 ('every job is setup plus one verify.sh call'), which stay inexact only about `verified` and are unchanged by this diff.",
+        "fixTask": "P169.14-6l3",
+        "commit": "2efb8e367eb6",
+        "status": "fixed"
       },
       {
         "id": "P169-R8",
         "severity": "low",
         "file": ".github/workflows/ci.yml:398-414 (browser-panel, browser-report)",
         "issue": "On a push to main whose commit is verified, the browser jobs now do work that can fail: npm ci and `playwright install-deps --dry-run` run before the seed decision even when both entries exist (they are needed only to name the keys), and a miss runs apt and the Chromium download. A transient npm, apt or network failure turns that main run red for a cache it did not need. That is the failure class the `verified` job exists to remove (its own comment: re-running the same bytes 'could only add a ... intermittent the first draw did not have'). It does not skip any slice, and no gate reads main's run, so the cost is a red check on an already-verified commit, not a lost verdict.",
-        "resolution": "Give the two jobs `continue-on-error: ${{ needs.verified.outputs.run != '' }}` so a failed seed is visible but not red, or compute the playwright pin and image name without npm ci on the seed path. Say in ci.yml which is chosen.",
-        "fixTask": "P169.14-6l3"
+        "resolution": "fixed in P169.14-6l3 (2efb8e367eb6): Give the two jobs `continue-on-error: ${{ needs.verified.outputs.run != '' }}` so a failed seed is visible but not red, or compute the playwright pin and image name without npm ci on the seed path. Say in ci.yml which is chosen.",
+        "fixTask": "P169.14-6l3",
+        "commit": "2efb8e367eb6",
+        "status": "fixed"
       },
       {
         "id": "P169-R9",
@@ -205,45 +213,98 @@
         "severity": "med",
         "file": "tools/check-browser-install.py:529-536,573-593",
         "issue": "A command the action calls that has no stub runs for REAL. The `sudo` stub is `STUB_USER=root exec \"$@\"`, so `sudo <anything not stubbed>` executes the host's own tool, as the invoking user, on any path; PATH is the fixture bin plus /usr/bin:/bin:/usr/sbin:/sbin, and only apt-get, apt-config, mkdir, cp, chown and sudo are stubbed (rm is not). Measured in a scratch copy: appending `sudo rm -rf <scratch>/outside/victim` and `sudo touch <scratch>/outside/made` to the `sysdeps-install` script left the check at '22 of 22 cases held', the victim deleted and `made` created outside the fixture. Today the real `sudo rm -rf \"$d\"` is HOME-bound only because `d` is spelled from the fixture HOME; an edit to the action that names an absolute path (`sudo rm -rf /var/lib/apt/lists/*`, `sudo tee`, `sudo sh -c`) would run on a developer's machine in the lint slice and under the sweep, and the docstring says only that real sudo, apt and dpkg are never reached. Also `/usr/bin/sudo` by absolute path reaches the real sudo (stdin is inherited, so it can prompt).",
-        "resolution": "Make the fixture bin the whole of PATH: symlink only the real tools the steps need (sed, ls, printf, tr, cut, sha256sum, id, wc, dirname, bash utilities) next to the stubs, give `rm` a stub that refuses a path outside the fixture root, and make the `sudo` stub exec only a name found in the fixture bin, otherwise print 'unstubbed command under sudo: NAME' and exit 99. Add a selftest row that appends `sudo touch <outside>` to a copy of the action and requires the check red with the file absent. Pass stdin=DEVNULL in run_script."
+        "resolution": "Make the fixture bin the whole of PATH: symlink only the real tools the steps need (sed, ls, printf, tr, cut, sha256sum, id, wc, dirname, bash utilities) next to the stubs, give `rm` a stub that refuses a path outside the fixture root, and make the `sudo` stub exec only a name found in the fixture bin, otherwise print 'unstubbed command under sudo: NAME' and exit 99. Add a selftest row that appends `sudo touch <outside>` to a copy of the action and requires the check red with the file absent. Pass stdin=DEVNULL in run_script.",
+        "fixTask": "P169.17-6l3"
       },
       {
         "id": "P169-R25",
         "severity": "med",
         "file": ".github/workflows/ci.yml:121 (and the comment at 94-108)",
         "issue": "`longest browser-panel: 7m46s (run 44385960921)` is not the longest recorded run: run 44424245100 (a dispatch, in the diff's own evidence for the report line) has browser (panel) 2026-11-18T23:51:27Z to 2026-11-19T00:02:56Z, 11m29s, success (install 5m59s on a miss, slice 5m00s), per `gh run view 44424245100 --json jobs`. The panel bound stays 18, which is 1.57 times that run, under the two-times rule `job_bound_evidence` states (it passes only because the stale line is still the one it reads). The diff rewrote the report's line from the same family of runs and left the panel's.",
-        "resolution": "Set `longest browser-panel` to 11m29s (run 44424245100, 23:51:27 to 00:02:56), raise the panel's timeout-minutes to at least 23, and say so in the comment above browser-panel; or state in the comment why that run is not a measurement of this job."
+        "resolution": "Set `longest browser-panel` to 11m29s (run 44424245100, 23:51:27 to 00:02:56), raise the panel's timeout-minutes to at least 23, and say so in the comment above browser-panel; or state in the comment why that run is not a measurement of this job.",
+        "fixTask": "P169.17-6l3"
       },
       {
         "id": "P169-R26",
         "severity": "low",
         "file": "tools/check-browser-install.py:710-788,793-865",
         "issue": "Several plainly broken actions are green. Measured in a scratch copy, each gives '22 of 22 cases held': the `npx playwright install chromium` step deleted; the `npm ci` step deleted; the `sysdeps` step's `key=` line replaced by `key=constant` (the hash and the version gone from the cache key); the `sysdeps-install` step's `missing != ''` guard dropped; `seed` defaulting to \"true\"; and the system packages' key expression changed to the same other value in both the lookup and its restore (sd1 only compares them with each other). The docstring discloses that npm ci, Chromium and the dry run are not run, but not that the sysdeps step's key output and the restore steps' key expressions are unread, nor that deleting a step passes (sd3 judges only the steps that exist).",
-        "resolution": "Add to sd: the restore steps' `key:` must equal `${{ steps.pins.outputs.browser-key }}` and `${{ steps.sysdeps.outputs.key }}`; the Chromium install step and the npm ci step must exist and the Chromium one be guarded by the plan; the `seed` input's default must be \"false\"; run the sysdeps step's key lines against a stub dpkg-query/npx so the key's parts are read. Add a bm row per property, or state each as unread in the docstring."
+        "resolution": "Add to sd: the restore steps' `key:` must equal `${{ steps.pins.outputs.browser-key }}` and `${{ steps.sysdeps.outputs.key }}`; the Chromium install step and the npm ci step must exist and the Chromium one be guarded by the plan; the `seed` input's default must be \"false\"; run the sysdeps step's key lines against a stub dpkg-query/npx so the key's parts are read. Add a bm row per property, or state each as unread in the docstring.",
+        "fixTask": "P169.17-6l3"
       },
       {
         "id": "P169-R27",
         "severity": "low",
         "file": "tools/gate-parity.py:_step_runs / _job_runs (new rule in job_slices ~999)",
         "issue": "The new rule never sees a flow-style step. `- { name: a, continue-on-error: true, run: sh tools/verify.sh --only lint }` gives job_slices zero runs and no problem (measured: problems [] and runs [0]), so a slice allowed to fail by that spelling is neither a finding nor counted as run. The other shapes I tried read correctly: `- continue-on-error:` on the opening line, quoted \"true\", True, a trailing comment, the key after a `run: |` block, an expression, a job-level key, and `continue-on-error: true` text inside a run block (not read, correctly); the seed's install step beside a guarded verify step is allowed. The step-keys reader does not own this blindness (`_key_line` and `_job_runs` already ignore `- {`) but the new rule's claim is that a slice can never be the thing allowed to fail.",
-        "resolution": "In `_step_runs`/job_slices, report a `problems` row for any `steps:` item that opens with `{` (or `[`), 'a flow-style step this reader cannot read', and add a case beside sv25."
+        "resolution": "In `_step_runs`/job_slices, report a `problems` row for any `steps:` item that opens with `{` (or `[`), 'a flow-style step this reader cannot read', and add a case beside sv25.",
+        "fixTask": "P169.17-6l3"
       },
       {
         "id": "P169-R28",
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md (seed paragraph), CONTRIBUTING.md:219-231, ci.yml:153-162",
         "issue": "The documents state the failed-seed behaviour as fact ('A seed never reddens the verified push', 'A failed seed is a warning on the run, not a red job', 'the next step writes a warning annotation'), but no run exercised it. In the runs they cite the seed-true install step succeeded and the warning step was skipped (run 44426388905: `seed: say that the install failed` skipped in both browser jobs; run 44428930205 likewise). The return's unobserved list names only a seed on main and the cross-branch restore, and every place that says 'Not yet seen in a run' omits this path.",
-        "resolution": "Add 'a seed whose install fails: the conclusion staying green and the warning being written' to the not-yet-seen sentences in ci.yml, CONTRIBUTING.md and the guide, or observe it once on the probe branch with a forced install failure and cite that run."
+        "resolution": "Add 'a seed whose install fails: the conclusion staying green and the warning being written' to the not-yet-seen sentences in ci.yml, CONTRIBUTING.md and the guide, or observe it once on the probe branch with a forced install failure and cite that run.",
+        "fixTask": "P169.17-6l3"
       },
       {
         "id": "P169-R29",
         "severity": "low",
         "file": "tools/check-browser-install.py:516-520,625-641",
         "issue": "A failure path leaves a directory behind: `build_fixture` makes `tempfile.mkdtemp` and then does the makedirs and writes, and `_install_case` calls it BEFORE its `try/finally`, so an exception inside build_fixture (full disk, a write refused) leaks the scratch directory into the sweep's watched TMPDIR. All other cases (run_pins, _plan_case, a stub timeout) are cleaned in finally. Separately, on a non-POSIX host the gate is red 'could not run here' for 17 cases, so a local `sh tools/verify.sh` lint slice on Windows fails on a check the CI lint job (ubuntu) never runs there; the verify.sh comment says only that it 'says it could not run'.",
-        "resolution": "Wrap the body of build_fixture in try/except that rmtree()s root and re-raises, or create root in the caller and rmtree it in the same finally. For the host case either exit 0 with a printed 'skipped: <reason>' from the gate (the selftest already records a skip) or say in verify.sh that the slice is red on a host without POSIX."
+        "resolution": "Wrap the body of build_fixture in try/except that rmtree()s root and re-raises, or create root in the caller and rmtree it in the same finally. For the host case either exit 0 with a printed 'skipped: <reason>' from the gate (the selftest already records a skip) or say in verify.sh that the slice is red on a host without POSIX.",
+        "fixTask": "P169.17-6l3"
+      },
+      {
+        "id": "P169-R30",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py (background_gate, launch_gate, launch_phase_gate)",
+        "issue": "A gate the drive launched and that ends cancelled is launched again with nothing bounding it: background_gate reads a cancelled run back and calls launch_gate, which mints a new token, replaces the launch mark and spends nothing; the phase gate path does the same through launch_phase_gate. No attempt is spent, no count is kept and nobody is asked, so a gate that is killed every time (by the shell's own time bound, for one) is dispatched for ever, each round a main-loop turn and a gate run. Not introduced by the lock change: with the drive's own session the cancelled record already landed and this branch already ran; the suite's fixture only read 'wait' because its child had no session and waited out the phase lock. Found by the executor of the lock task when the record began to land in that fixture (case bg4).",
+        "resolution": "Count cancelled relaunches on the launch mark, carried when the mark is replaced, for the task gate and the phase gate through one function; past a bound the drive stops with an ask instead of dispatching. A case that kills the gate past the bound and expects the ask, and bg4 pins the relaunch under a new token below it."
+      },
+      {
+        "id": "P169-R31",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py (reconcile, _reconcile_subject, _reconciled)",
+        "issue": "Reconcile can delete the only copy of the run a repeat copied. When run A exists only as the subject's record (a clone or worktree whose ledger never held it: the record travels with the plan), run B repeats A, B's row reaches the ledger and its record write is refused, the documented repair --reconcile looks for B's source among the ledger rows only and has no fallback to the record it is about to replace, so A's record is overwritten by B's carrying the unread marker, A is readable nowhere, and the commit binding then refuses B's verdict as a repeat whose source is gone. The record writer keeps A on the same inputs. Established by a probe (write path: carried RA; reconcile path: carried None, unread True, A no longer readable).",
+        "resolution": "One helper finds a repeat's source for every writer of a record (the union of ledger rows and records, then the record being replaced), used by the record writer and by reconcile; a case that reconciles a repeat whose source is held only as the record.",
+        "fixTask": "P169.18-6l3"
+      },
+      {
+        "id": "P169-R32",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/repair-commits.py (main, apply_repair, _clear_under_lock) and plugins/audit/scripts/manifest/repair-tests-add.py (main, apply path)",
+        "issue": "Both repair commands read the whole plan before taking the index lock (git lookups run between the read and the acquire) and then save every shard and the index from that earlier read under the lock, so a gate's record or pointer, or any verb's write, made in that window is written back out of existence. Established by a probe for repair-commits (a record R9 present before the repair is None after it) and by reading for repair-tests-add. It predates the lock change, but the change's module comment says the repair commands read-modify-write under the lock, and the cases that hold the one-writer rule read one module's syntax tree only, so a writer outside that module bypasses the rule unseen.",
+        "resolution": "Both repairs re-read the plan inside the locked section and recompute what they write from that read. The rule is held over every module under scripts/ and hooks/: every caller of a plan save is found by reading the tree, and one that is not in a table of writers shown to read behind the lock (each row with its reason) is red by name.",
+        "fixTask": "P169.18-6l3"
+      },
+      {
+        "id": "P169-R33",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py (gate_step, relay_refusal)",
+        "issue": "When the gate runner exits 3 because the index lock was busy past the record's wait, the drive stops with the generic stop instead of the wait-and-run-next-again rule it already has for a verb's exit 3. A background gate mostly recovers (the ledger row is written first and the read-back asks again in the foreground); only if that ask also meets a busy lock does the drive stop on the wrong rule. The one long holder in normal use is the commit verb, which holds the lock across git commit, so a project's pre-commit hook longer than the record's wait refuses the records of wave siblings finishing meanwhile.",
+        "resolution": "The runner's exit 3 on a busy index lock is read as the same wait rule as a verb's; a case. Say in the guide that the commit verb holds the lock across the commit and what a slow pre-commit hook costs.",
+        "fixTask": "P169.18-6l3"
+      },
+      {
+        "id": "P169-R34",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py (write_plan_file)",
+        "issue": "When the lock claim cannot be written at all (the lock directory is not writable), the refusal says the index lock was not free within the wait, while the lock module's own line says this is not a report that the lock is held; and the work is refused, where the lock module documents an unwritable claim as refusing the lock and not the work, as the panel's writer and the repairs treat it.",
+        "resolution": "An unwritable claim has its own sentence, and whether a record is written without the lock in that state is decided explicitly, the same way for every writer through the helper.",
+        "fixTask": "P169.18-6l3"
+      },
+      {
+        "id": "P169-R35",
+        "severity": "low",
+        "file": "plugins/audit/commands/migrate.md, plugins/audit/scripts/manifest/migrate-manifest.py; plugins/audit/scripts/git/close-phase.py, integrate-task.py",
+        "issue": "Two questions the review could not establish. A converter run under a hand-taken index lock takes no lock itself: is a gate of the same session answered as the holder by session match, so that it writes a shard in the middle of the conversion and the converter's earlier read drops it? And git itself writes plan files with no plugin lock (the merge into the parent checkout, a member tree's records refresh, the merge driver's result): these sit outside the every-writer-takes-the-lock claim, and the documents should say so or the paths should take it.",
+        "resolution": "Establish each by a probe; fix or state it.",
+        "fixTask": "P169.18-6l3"
       }
     ],
-    "outcome": "[findings: 29 - 0 high, 11 med, 18 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 35 - 0 high, 14 med, 21 low; 4 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1390,7 +1451,8 @@
         "P169.6",
         "P169.7",
         "P169.15-6l3",
-        "P169.16-6l3"
+        "P169.16-6l3",
+        "P169.18-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -2362,7 +2424,7 @@
     {
       "id": "P169.14-6l3",
       "title": "The browser install's shell is guarded in the repository, its seed path is seen on a real runner, and a seed cannot redden a verified push",
-      "status": "in_progress",
+      "status": "done",
       "description": "The browser install now lives in one composite action (.github/actions/browser-install/action.yml) that both browser jobs call, and on a push to the default branch whose commit is already verified those jobs run it with `seed` true and skip their slice. The review of that change left three things that must not ship as they are, and two smaller ones that belong with them.\n\n1. Nothing in the repository guards the action's shell. It was developed against a stub harness (fake sudo with an ownership ledger, fake apt, dpkg, cache directories; twenty cases, seven mutations) that was never committed, so the only check of the shell is a real CI run, and a bug on the hit path falls into the fallback and leaves the job green with one warning: the regression the change removed can come back with every gate green. Commit the harness as a check this repository runs: its cases execute the action's own `run:` blocks, read out of the committed action.yml (never a copy of the shell), against the stubs. Choose its home by this repository's rules rather than by habit: a `tests/test_<name>.py` must name a module that exists (the coverage classifier reports an orphan), tools under tools/ carry their own cases and are swept, and the gate set is what `sh tools/verify.sh --list` prints, held to the workflow by tools/gate-parity.py. It must include the case that fails when a full hit falls back (a hit that fetches is red, not a warning), the ownership case that reproduces the runner's \"Permission denied\" on the first version of the action, and one case per seed decision. It must run on macOS and Linux and under the sweep's isolation (scratch cwd, HOME and TMPDIR; no network; no real sudo, apt or dpkg). State in its docstring what class of runner behaviour the stubs cannot see.\n\n2. The seed path ran on no real runner: every probe was a dispatch, where `seed` is false and the lookup steps are skipped. Before filing, hand back READY-FOR-RUN with a probe-only patch (a separate diff from the task's own, clearly marked, that hard-wires `seed` true for the two browser jobs on a dispatch) and the lines to read; the orchestrator commits the task's diff plus that patch to a probe branch and dispatches twice: the first run must look both keys up, find none, install and save; the second must find both, install nothing and save nothing. The probe-only patch is never part of the task's diff.\n\n3. PLUGIN-BUILD-GUIDE.md says a verified push to the default branch runs only tools/ci-verified.py. That was exact before the change and is false now: say what runs (two browser jobs that look the cache up and, on a miss, install and save) and what it costs.\n\n4. A seed must not turn a verified push red for a cache it did not need, and must not fail silently either. Today npm ci, the dry run and (on a miss) apt run before and after the seed decision, and any of them failing fails the job on the default branch. Decide and state the rule: on the seed path a failure is an annotation a reader of the run sees, the job's conclusion does not redden the run, and the slice path is untouched (a failure there is red as before). If that needs `continue-on-error`, tools/gate-parity.py does not read a step's `continue-on-error` today: extend the reader so a step that carries the slice can never be the one that is allowed to fail, with a red case and an allow case.\n\n5. The parity reader's new step-condition cases write the `- if:`-first form; the workflow uses `- name:` first with a following `if:`. Add the pin for the form the workflow uses.\n\nACCEPTANCE.\n1. The committed check is red on the action as it stood at the first probe (the ownership defect) and on a hit that falls back, each proven by mutation of a scratch copy of the action, restored in the same command; green on the action as it is.\n2. The two probe runs show the seed path's two branches on a real runner, and the outcome quotes the lines.\n3. `python3 tools/gate-parity.py` and the sweep over the tools this task touches are green; `sh tools/verify.sh --list` shows the new check in a slice a per-run CI job runs, and the job's bound still has its `longest` basis.\n4. On a dispatch and on a pull request the browser slices run exactly as before (the reviewer checked this for the current tree; say what in your diff could change it and why it does not).\n5. The guide's sentence is exact.\n\nDEPENDANTS to answer for by name: tools/gate-parity.py's slice, bound and step-condition rules; tools/verify.sh's slices and CONTRIBUTING.md/CLAUDE.md where they list gates (CLAUDE.md is outside the files: say what sentence there, if any, is no longer exact); the sweep's isolation rules for a tool under tools/; tools/lints/_deps.py's layer and enumeration lints if the new file needs a row (hand back the exact row BEFORE filing if a file you need is outside your list).",
       "files": [
         ".github/actions/browser-install/action.yml",
@@ -2393,14 +2455,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2efb8e367eb6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "New tools/check-browser-install.py (stdlib, 3.8 floor): reads the committed .github/actions/browser-install/action.yml with a subset reader (any other shape is a named problem), executes its pins, plan and sysdeps-install run: blocks under bash --noprofile --norc -eo pipefail against stubs (sudo, apt-get, apt-config, mkdir, cp, chown, ownership ledger; each stub a sh wrapper re-entering this file with --stub NAME). Cases bi1-bi10 (system packages' step; bi1 red on a hit that fetches anything, bi10 ownership), sp1-sp6 (one per seed decision), sk1-sk3 (keys), sd1-sd3 (lookup/restore/plan wiring read off step keys). Docstring states what the stubs cannot see. Selftest: parser cases bp1-bp5, every case over the committed action, mutation rows bm1-bm16 (anchor must occur exactly once, named cases must go red and be green on the committed action); on a non-POSIX host the gate is red 'could not run here' and the selftest records a _harness.skip. Added to verify.sh's lint slice (ubuntu lint job, per-run). ci.yml: both browser jobs' install step gets id install and continue-on-error: ${{ needs.verified.outputs.run != '' }}, plus a 'seed: say that the install failed' step writing ::warning:: when steps.install.outcome == 'failure' on the seed path; on dispatch/PR run is '' so continue-on-error is false, the warning step skipped, seed false and the slice step unchanged (acceptance 4). longest browser-report: 18m23s (run 44426388905, 00:07:12 to 00:25:35), bound 28 -> 37 (gate-parity job_bound_evidence green). gate-parity.py: _step_runs returns each step's if: and continue-on-error: at item depth whichever key opens the item; new _may_fail(): a step or job running verify.sh with continue-on-error other than literal false is a job finding; cases sv24 (the '- name:' first form, both directions), sv25 (red: step true, step expression, job), sv26 (allow: the seed's shape, a literal false). gate-parity mutations in memory: G1 never-fires -> sv25 red; G3 false-read-as-may-fail -> sv26 red; G4 keys off opening line only -> sv24,sv25 red; G5 job key unread -> sv25 red; G6 key read anywhere in the job's text -> sv7,sv25,sv26 red. PLUGIN-BUILD-GUIDE section 4: the false 'runs only tools/ci-verified.py' sentence replaced by what a verified push runs and what a seed costs. CONTRIBUTING: seed failure rule, the new check, _may_fail in gate-parity's list. action.yml: header note only, no shell changed. SEED PATH ON A RUNNER (probe branch ci/P169-seed-probe3, commit 4580b756 = d31ba046 + this diff + a probe-only seed: \"true\" line not in this tree): run 44426388905 (dispatch 1) both jobs 'Cache not found for input keys: playwright-browsers-Linux-X64-1.56.0-v1' and '...chromium-sysdeps-ubuntu24-X64-13eb79dcfbc2ac23-v1', plan 'seed: no entry exists for the browser key and the system packages' key, so the install runs and this job saves what it fetched', 'no restored set: ...', panel post 'Cache saved with key: chromium-sysdeps-...' and '... playwright-browsers-...', report post 'Failed to save: Unable to reserve cache with key ...'; run 44428930205 (dispatch 2) both jobs 'Cache found and can be restored from key: ...' for both keys, plan 'seed: an entry exists for every key this image needs, so nothing is installed and nothing is saved', no restore/fetch/save, action about 4s (panel 00:26:07.05-00:26:10.81, report 00:26:13.74-00:26:17.01); both jobs red only because the probe's slice step ran with no browser installed (Playwright precondition, 'panel + report preconditions: FAILED'), which a real seed never does since its slice step is skipped. Both runs also red on selftests (windows, plain 3) test__commit_trail vt8, fixed on the branch after d31ba046. Report job walls, each a fact with its run: 13m35s (44385960921), 16m09s (44397426313), 17m54s (44424245100), 18m23s (44426388905); the wall is dominated by the slice (11m38s in 44426388905) plus a mirror-dependent install (about 36s in the panel job and 6m21s in the report job for the same 21.1 MB in one run); neither is this task's to shorten, and only the one longest line is in a document. Still unobserved: a seed on main from a real verified push, and another branch restoring main's entry; a job past timeout-minutes is still cancelled (continue-on-error does not cover it). Commands, exit codes: python3 tools/gate-parity.py exit 0 (14 slices, 7 jobs); python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py tests/test__refs.py tools/_suite.py tools/gate-parity.py tools/check-browser-install.py exit 0 ('6/6 files ok, 973 cases'; check-browser-install 43, gate-parity 134); --encoding cp1252 --spaced over the check exit 0 (43 cases, stage 1); python3 tools/check-browser-install.py exit 0 (22 of 22); ruff exit 0; vermin -t=3.8- exit 0. Dependants: gate-parity slice/step/bound rules extended and green (sv7 live claim green); verify.sh one step added to lint, no slice renamed; sweep isolation held (plain, cp1252, spaced; fixtures under mkdtemp, removed in finally; no network, no real sudo/apt); _deps needs no row for tools/*.py (test__deps green); _suite rules green; tools/affected.py (outside files) treats the action as UNRECOGNISED and selects the full set; CLAUDE.md (outside files) no longer exact in 'every CI job is setup plus one tools/verify.sh --only <slices> call' (browser jobs carry an install and a warning step; verified runs none) and its enumeration of what gate-parity checks about slices lacks the never-allowed-to-fail rule; .github/sweep-costs.json has no figure for the new file (floor timeout).",
+        "descriptive": "The browser install's shell is now executed against stubs in the lint slice (red on a hit that falls back and on the first probe's ownership defect), its seed path was seen miss-then-save and hit-skip on a runner, and a seed can no longer redden a verified push while a slice can never be the step allowed to fail."
       },
       "startedAt": "2026-11-18T23:43:09Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-19T00:58:29Z",
+      "verifiedBy": [
+        "tools/check-browser-install.py: cases bi1-bi10, sp1-sp6, sk1-sk3, sd1-sd3 over the committed action, parser cases bp1-bp5, mutation rows bm1-bm16",
+        "tools/gate-parity.py: sv24 (the '- name:' first step form), sv25 (continue-on-error on a slice step or job is a finding), sv26 (allow case: the seed's tolerated install step, a literal false)"
+      ],
       "notes": [
         {
           "at": "2026-11-18T20:51:00Z",
@@ -2478,6 +2543,30 @@
             "ms": 373357,
             "basis": "durationMs in run 2026-11-19T00:46:33Z.6e4fe1's record (run-test-gate --record)",
             "runId": "2026-11-19T00:46:33Z.6e4fe1"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-19T00:39:52Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 3400000,
+            "startedAt": "2026-11-18T23:43:12Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-19T00:46:33Z.6e4fe1",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-19T00:40:06Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-19T00:58:05Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 676000,
+            "startedAt": "2026-11-19T00:46:49Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 2efb8e367eb6",
+            "kind": "commit",
+            "ms": 1736,
+            "startedAt": "2026-11-19T00:58:26Z"
           }
         ],
         "firstStartedAt": "2026-11-18T23:43:09Z"
@@ -2570,12 +2659,24 @@
         "runId": "2026-11-19T00:46:47Z.8543cb",
         "status": "passed",
         "at": "2026-11-19T00:46:47Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2efb8e367eb6",
+        "at": "2026-11-19T00:58:29Z",
+        "return": "docs/audit/evidence/returns/P169.14-6l3/20261118T234309Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "could-not-prove",
+        "at": "2026-11-19T00:39:51Z",
+        "basis": "P169.14-6l3 declares no test file in `files` or `tests.add`, so no red could be run; the helper said: ERROR: task P169.14-6l3 declares no test file, so a throwaway at HEAD would prove nothing about this task's test",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P169.15-6l3",
       "title": "A shard has one lock every writer takes and reads behind: the run record, the pointer and reconcile go through one helper, and a repeated verdict's record says where its steps came from",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The run record (`lastRun` in a task's or phase's shard, with `testEvidence` derived from it) is written by the gate under the phase lock. Its review showed that this is not the lock that serialises writers of a shard: every audit-task.py verb writes the shard under the `index` lock, and the phase lock is held only by `start`'s claim and the drive's phase run. A probe held the index lock as a verb does; the record was written after 0.02 s without waiting, and the verb's later write from its earlier read left neither `lastRun` nor `testEvidence`; in the other order the verb's write is lost. The case meant to hold this (lr4) passes because its stand-in verb takes the phase lock, which no real verb does, and lr5 asserts what the test's own read-modify-write does. CHANGELOG.md, manifest-conventions.md and PLUGIN-BUILD-GUIDE.md state \"neither write loses the other's key\", which is false today. Everything later in this phase reads the record, so this is fixed before any reader moves.\n\nTHE INVARIANT, to hold by mechanism and not by a list of call sites: a shard has one lock that every writer of it takes, and every writer reads the shard AFTER taking it. Find which lock that is by reading what the verbs do (`_under_lock`, `acquire_index_lock`), not by what the record's first design said, and make the record's write, the pointer's write (`write_pointer` still reads the shard before it takes its lock) and reconcile obey it through ONE helper that takes the lock, reads, lets the caller change the node, and saves; no function in _evidence_io.py saves a shard outside that helper. Whether the phase lock is still taken as well is yours to decide and to state with its reason and with the one fixed order in which two locks are taken (a second order anywhere is a deadlock); say what a gate launched by the drive, which runs while the drive's own phase run holds the phase lock, does under your rule. The bounded wait stays: a live holder is waited for up to the bound, and a record that still cannot be written exits 3 as now.\n\nThen the rest of the review:\n1. A repeated verdict's record. When the gate repeats an earlier run's verdict instead of measuring, the record's steps are copied from the ledger row of the source run; with no such row the record is `steps: []` under `verdictSource: reused` with nothing saying the steps are missing, and no case covers the arm at all (replacing the copy with an empty list left both suites green, because every record case runs with --no-reuse). A later task of this phase stops writing ledger rows, so the ledger cannot be the source. The run being repeated is, by the reuse rule, the subject's newest run, which is the record this write replaces: take the steps from the record being replaced when it is that run, from the ledger row otherwise, and when neither holds them say so in the record in a field a reader cannot mistake for an empty run. Settle with the schema what `startedAt` and `durationMs` mean on a repeated run (the schema says `startedAt` is absent there; the code keeps the read-back's own) and make code, schema and documents say one thing. Cases: the repeated arm with the source in the replaced record, with the source only in the ledger, and with neither.\n2. Two writers of one key. When a ledger row is stamped after the record (a record write that was refused), reconcile moves only the pointer, so `testEvidence` and `lastRun` name different runs, against \"the two always name one run\" in manifest-conventions.md and COMPATIBILITY.md's sentence about the values `testEvidence` caches. Decide which is true: reconcile rewrites the record from the row it trusts, or the documents say when the two may differ and what a reader does then. One of them changes.\n3. Text: the `--record` help and the comment beside the unrecorded exit say a green run; a red run exits 3 as well. The refusal printed for a dead lock holder reads \"...use audit-lock --takeover, then nothing was written to the plan\" and names no repair in an order a reader can follow: say what happened, then what to run.\n\nACCEPTANCE.\n1. A case drives a REAL verb of audit-task.py (not a stand-in that takes a lock by name) against a record write, in both orders, with the verb held inside its locked section by the test: both writes land, and the record's write waited. It is red at HEAD.\n2. A case fails if any function in _evidence_io.py saves a shard outside the one helper (read the module's AST or prove it by mutation; say which).\n3. The three repeated-verdict cases above; the mutation that empties the copied steps is red.\n4. Mutations, each in a scratch copy outside every checkout, restored in the same command, __pycache__ purged, the mutation confirmed landed: the lock replaced by the phase lock alone; the read moved before the lock in each of the three writers; the wait set to 0; the lock order swapped if two are taken.\n5. The documents say what the code does: search every place that states the lock or \"neither write loses\" (CHANGELOG.md, manifest-conventions.md, PLUGIN-BUILD-GUIDE.md, COMPATIBILITY.md, the schema's descriptions, help text) and list in the outcome each place changed.\n6. Timing: the gate's own run must not get slower by a wait it does not need. Measure `run-test-gate.py --record` on a small fixture plan before and after, twice each with a gap, and report the four figures.\n\nDEPENDANTS to answer for by name: the drive's read-back of a background gate and its timing queue; `audit-task.py` verbs that write a task node while a gate of that task runs (`note`, `scope`, `done`, group sign-off's copy of the record); reconcile and the doctor's evidence checks; the panel's writes through `_panel_write` (same lock?); the sweep's isolation (a suite that takes the index lock in a scratch project); Windows, where a lock file's rename and a held handle behave differently (say what your change does there and which existing case covers it).\n\nIf a file you need is outside your list, stop BEFORE filing and hand back the exact change.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -2592,7 +2693,20 @@
         "plugins/audit/scripts/governance/run-test-gate.py",
         "plugins/audit/schema/audit-plan.schema.json",
         "plugins/audit/reference/manifest-conventions.md",
-        "tests/test_run_test_gate.py"
+        "tests/test_run_test_gate.py",
+        "tools/demo/gen-demo-manifest.py",
+        "tests/test_drive_phase.py",
+        "plugins/audit/commands/doctor.md",
+        "plugins/audit/commands/panel.md",
+        "plugins/audit/README.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "docs/handbook.html",
+        "plugins/audit/scripts/panel/_panel_runstate.py",
+        "tests/test_gen_demo_manifest.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -2614,14 +2728,14 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-19T00:58:37Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2712,6 +2826,15 @@
         {
           "at": "2026-11-18T21:47:34Z",
           "text": "The readers task that ran before this one changed run_record: a reused or part-reused record now carries its source run whole under repeatedRun (see the commit of the task 'one reader over records' and its return). Read that before deciding where a repeated verdict's steps come from: the field this task asks for (where the steps came from, and an explicit marker when nothing holds them) must be one design with repeatedRun, not a second one beside it; say which of the two a reader asks, and remove what is then redundant. The schema's lastRun definition does not yet describe repeatedRun, muted, groupWith, the base-red key or the wider testedState keys (it accepts them only because additional properties are allowed): describe what the record really carries."
+        },
+        {
+          "at": "2026-11-19T01:45:23Z",
+          "text": "the suite of _panel_runstate.py; this task changes one comment in that module (which lock a refused record met) and no behaviour, so no case moves. The executor runs the suite and says so",
+          "waives": "tests/test__panel_runstate.py"
+        },
+        {
+          "at": "2026-11-19T02:28:09Z",
+          "text": "Scope widened to audit-task.py and its suite on the orchestrator's instruction: the group sign-off's copy of a record now carries the repeated run's source through _evidence_io.record_carrying instead of writing the unread marker when the source is one lookup away (cases grc1-grc3); the orchestrator had wrongly told the executor the file was already in the task."
         }
       ],
       "fixes": [
@@ -2720,7 +2843,93 @@
         "P169-R13",
         "P169-R14",
         "P169-R15"
-      ]
+      ],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-19T02:33:43Z",
+            "ms": 23277,
+            "basis": "selectionMs in run 2026-11-19T02:40:17Z.e1b2b2's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-19T02:40:17Z.e1b2b2"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-19T02:34:07Z",
+            "ms": 369844,
+            "basis": "durationMs in run 2026-11-19T02:40:17Z.e1b2b2's record (run-test-gate --record)",
+            "runId": "2026-11-19T02:40:17Z.e1b2b2"
+          }
+        ],
+        "firstStartedAt": "2026-11-19T00:58:37Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-19T02:40:34Z.a57c7f",
+        "durationMs": 190,
+        "selectionMs": 15461,
+        "status": "passed",
+        "failed": [],
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-19T02:40:17Z.e1b2b2",
+          "ts": "2026-11-19T02:40:17Z",
+          "status": "passed"
+        },
+        "reuseKey": "1:sha256:62418aaba15a9cd2ce7402765b2de538eb9e2b9f9422c3e8ec732f7b8380dfc8",
+        "gateDigest": "sha256:f263d54a969de545c189f92532a21b9001cf3575aeb8c7e7998dc3a61557ebd7",
+        "gateSource": "task",
+        "banners": [],
+        "at": "2026-11-19T02:40:34Z",
+        "steps": [
+          {
+            "name": "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test_audit_task.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+            "exit": 0,
+            "ran": null,
+            "measured": "not-knowable",
+            "suiteReader": "none",
+            "reusedFrom": {
+              "runId": "2026-11-19T02:40:17Z.e1b2b2",
+              "ts": "2026-11-19T02:40:17Z"
+            }
+          }
+        ],
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "runId": "2026-11-19T02:40:17Z.e1b2b2",
+          "startedAt": "2026-11-19T02:34:07Z",
+          "durationMs": 369844,
+          "selectionMs": 23277,
+          "status": "passed",
+          "failed": [],
+          "reuseKey": "1:sha256:62418aaba15a9cd2ce7402765b2de538eb9e2b9f9422c3e8ec732f7b8380dfc8",
+          "gateDigest": "sha256:f263d54a969de545c189f92532a21b9001cf3575aeb8c7e7998dc3a61557ebd7",
+          "gateSource": "task",
+          "banners": [],
+          "at": "2026-11-19T02:40:17Z",
+          "testedState": {
+            "head": "2efb8e36",
+            "dirtyDigest": "sha256:f9a67072f2535fa4328fffb5b65b2d8b6a6b107ff0b492fb4062fe27e0bc60c9",
+            "scopeDigest": "sha256:ced3eef677ac0f27278979e51d7ae2409205c57734a54dc50ce70a7b455408e6",
+            "scopeListDigest": "sha256:2613995e7c9a9a877c0d26ea584ddefe2cd8fe7559de9af8fdbca0d92dd46b9d"
+          },
+          "steps": [
+            {
+              "name": "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test_audit_task.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "suiteReader": "none",
+              "durationMs": 369787
+            }
+          ]
+        }
+      },
+      "testEvidence": {
+        "runId": "2026-11-19T02:40:34Z.a57c7f",
+        "status": "passed",
+        "at": "2026-11-19T02:40:34Z"
+      }
     },
     {
       "id": "P169.16-6l3",
@@ -2886,6 +3095,252 @@
         "P169-R19",
         "P169-R20",
         "P169-R21"
+      ]
+    },
+    {
+      "id": "P169.17-6l3",
+      "title": "The browser install check cannot run a real command, a job's bound rests on its longest run, and a seed's failure is described as it was seen",
+      "status": "pending",
+      "description": "The check that runs the browser install's shell against stubs (`tools/check-browser-install.py`) landed with a review that found two mediums and four lows. The phase's findings carry each in full (read them with the brief); this is what they amount to.\n\n1. THE CHECK CAN RUN A REAL COMMAND (medium). Its `sudo` stub execs whatever follows, PATH still ends in the host's directories, and `rm` has no stub, so a line added to the action later (`sudo rm -rf /var/lib/apt/lists/*`, `sudo tee`, `sudo sh -c`, a tool by absolute path) would run on a developer's machine in the lint slice and under the sweep. The reviewer showed it: an appended `sudo rm -rf <outside>` deleted a file outside the fixture while the check stayed green. The property to hold is an invariant, not a longer list of stubs: NOTHING the action's shell starts may be anything but a stub or a tool on an explicit allow-list of read-only utilities, and nothing may write outside the fixture root. So: PATH is the fixture's bin directory and nothing else (the allowed real tools are linked into it by name, the list is one table in the check with a reason per entry), the `sudo` stub starts only a name it finds in that directory and otherwise prints what was refused and exits non-zero, `rm` and every other writer is a stub confined to the fixture root, stdin is closed, and a command the shell cannot find FAILS the case (an unknown command must be red, never skipped). Say in the docstring what remains outside this (a tool invoked by an absolute path in the action is not stopped by PATH: add a static case that the action's `run:` blocks name no absolute path to an executable, or state plainly that this is unguarded and why). Selftest rows, each proven red: an appended `sudo touch <outside>` and `sudo rm -rf <outside>` leave the outside untouched and turn the check red; a new unstubbed command in a step turns it red; and the allow direction: the committed action is green.\n\n2. THE PANEL JOB'S BOUND RESTS ON A STALE FIGURE (medium). `longest browser-panel` names 7m46s while run 44424245100 has that job at 11m29s (success; `gh run view 44424245100 --json jobs`), so the bound of 18 is under the two-times rule and passes only because the stale line is the one read. Set the line from the longest green run with its id and timestamps, and the bound by the rule. Then close the class rather than the instance: the line is hand-maintained and has now been stale twice in one phase. Either the parity tool can be asked which recorded figure is the longest among runs named in the workflow's own comments and fails when a line is not the maximum of the figures beside it, or the comment keeps exactly ONE figure per job and the rule for replacing it is stated where it is written. Choose, say why, and do not add a network call to a per-run gate.\n\n3. Lows, in the same files. (a) Actions that are plainly broken stay green (the Chromium step deleted, `npm ci` deleted, the system packages' key replaced by a constant, the `missing != ''` guard dropped, `seed` defaulting to true, the restore key changed identically in lookup and restore): assert the wiring those break, each with a mutation row, or list as unread in the docstring what you decide not to read, with the reason. (b) `gate-parity.py`'s step reader gives no runs and no problem for a flow-style step (`- { name: a, continue-on-error: true, run: ... }`), so the never-allowed-to-fail rule is bypassed by that spelling: a flow-style step item is a named problem, with a case beside the existing red case and the allow case re-proven. (c) `build_fixture` runs before the try/finally, so an exception leaks its directory into the sweep's watched TMPDIR; and on a host without POSIX sh the gate is red for a check CI never runs there: decide between a skip that says so with exit 0 and a statement in verify.sh, by what the other POSIX-only checks in verify.sh already do. (d) The documents state the failed-seed behaviour (the job stays green and a warning is written) as fact, and no run has shown it.\n\n4. For (d), observe it rather than reword it. This is a TWO-STAGE task: hand back READY-FOR-RUN with a probe-only patch (never in your tree) that makes a dispatch on a disposable branch behave as a verified push whose install fails (hard-wire the two expressions and force the install step to fail; say exactly which lines), and what the run must show: the install step failed, the warning step ran and printed its line, the slice step did not run, the job concluded success. The orchestrator dispatches it and sends back the log lines; then the documents say what was seen, with the run id.\n\nACCEPTANCE.\n1. Each of 1, 3a, 3b has a mutation row or case that is red when the property is broken and green on the committed tree; mutations run on scratch copies outside every checkout, restored in the same command, each confirmed landed.\n2. `python3 tools/gate-parity.py`, `python3 tools/check-browser-install.py` and both selftests exit 0; the check's wall time before and after, measured twice (it runs in the per-run lint slice).\n3. No document sentence describes as behaviour something no run has shown; every figure carries its run.\n\nDEPENDANTS to answer for by name: the lint slice in tools/verify.sh and the CI job that runs it (ubuntu), the sweep's isolation rules for a file under tools/ (watched cwd, HOME, TMPDIR; PATH's refusing `gh`/`az`/`claude` shims come first in the sweep, so say how a PATH you replace inside your child interacts with them), `.github/sweep-costs.json` (no figure for the new file: say whether one is owed and hand back the command), gate-parity's other rules that read steps (the slice and `if` rules), CONTRIBUTING.md and the guide's paragraphs about the seed.\n\nIf a file you need is outside your list, STOP BEFORE FILING and hand back the exact change.",
+      "files": [
+        "tools/check-browser-install.py",
+        "tools/gate-parity.py",
+        "tools/verify.sh",
+        ".github/workflows/ci.yml",
+        ".github/actions/browser-install/action.yml",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CONTRIBUTING.md",
+        "tools/check-browser-install.py",
+        ".github/workflows/ci.yml",
+        "tools/gate-parity.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/gate-parity.py",
+          "python3 tools/sweep-selftests.py tools/gate-parity.py tools/check-browser-install.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-19T00:59:41Z",
+          "text": "scope: tools/check-browser-install.py, .github/workflows/ci.yml, tools/gate-parity.py, PLUGIN-BUILD-GUIDE.md, CONTRIBUTING.md, every path the finding(s) P169-R24, P169-R25, P169-R26, P169-R27, P169-R28, P169-R29 name"
+        },
+        {
+          "at": "2026-11-19T00:59:41Z",
+          "text": "no suite: tools/check-browser-install.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-19T00:59:41Z",
+          "text": "no suite: tools/gate-parity.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-19T00:59:41Z",
+          "text": "no suite: .github/workflows/ci.yml - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/config/_config_rules.py, plugins/audit/scripts/panel/_panel_settings.py, tests/_harness.py, tests/test__doctor_setup.py and 13 more"
+        },
+        {
+          "at": "2026-11-19T00:59:41Z",
+          "text": "no suite: PLUGIN-BUILD-GUIDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__affected_tests.py, tests/test__config.py, tests/test__deps.py, tests/test__doctor_trail.py, tests/test__output.py, tests/test__refs.py and 7 more"
+        },
+        {
+          "at": "2026-11-19T00:59:41Z",
+          "text": "no suite: CONTRIBUTING.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test_derive_phase_gate.py, tools/affected.py, tools/check-committed-pii.py, tools/lints/_deps.py, tools/lints/_refs.py, tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-11-19T00:59:41Z",
+          "text": "no tests.add clause for P169-R24, P169-R25, P169-R26, P169-R27, P169-R28, P169-R29: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        },
+        {
+          "at": "2026-11-19T01:00:03Z",
+          "text": "it quotes the release-tier slice name from gate-parity.py; this task adds a problem row for a flow-style step and reads the longest-run lines, and leaves the slice names as they are. A new rule that owes a proving row is handed back before filing",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-19T01:00:03Z",
+          "text": "it quotes 'related listing' from the guide's section on the test selector; this task edits the guide's paragraphs about the browser install and its seed only",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-19T01:00:03Z",
+          "text": "it quotes a sentence of the guide's doctor section; this task edits the guide's paragraphs about the browser install and its seed only",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-19T01:00:03Z",
+          "text": "it quotes a section marker of the drive from the guide; this task edits the guide's paragraphs about the browser install and its seed only",
+          "waives": "tests/test_drive_phase.py"
+        },
+        {
+          "at": "2026-11-19T01:00:03Z",
+          "text": "it reads the guide's generated module map; this task adds no module under hooks/ or scripts/, so the map does not move",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-19T01:00:03Z",
+          "text": "it quotes 'refuses to start' from CONTRIBUTING.md's isolation section; this task edits CONTRIBUTING.md's paragraphs about the seed and the install check only",
+          "waives": "tools/sweep-selftests.py"
+        }
+      ],
+      "fixes": [
+        "P169-R24",
+        "P169-R25",
+        "P169-R26",
+        "P169-R27",
+        "P169-R28",
+        "P169-R29"
+      ]
+    },
+    {
+      "id": "P169.18-6l3",
+      "title": "Every writer of a plan file reads behind the index lock and a lint holds the list: the two repairs re-read under it, reconcile keeps a repeat's source, and a busy or unwritable lock is said as what it is",
+      "status": "pending",
+      "description": "The lock change made every plan-file write of the evidence layer go through one helper under the index lock, reading behind it. An independent review of that change found the rule holds inside that one module and is neither complete nor checked outside it. The phase's findings carry each point in full (read them with the brief); this is what they amount to.\n\n1. RECONCILE CAN DESTROY A REPEAT'S SOURCE (medium). When run A is held only as the subject's record (a clone or worktree whose ledger never had it), run B repeats A, B's row is in the ledger and its record write was refused, `--reconcile` looks for B's source among ledger rows only and overwrites A's record with B's carrying the unread marker; A is then readable nowhere and the commit binding refuses B. The record writer keeps A on the same inputs because it also looks in the record it replaces. ONE helper finds a repeat's source for every writer of a record (union of ledger rows and records, then the record being replaced), and both writers use it. Case: reconcile a repeat whose source is held only as the record; red at the branch head, green after.\n\n2. A WRITER OUTSIDE THE HELPER BYPASSES THE RULE UNSEEN (medium). `repair-commits.py` and `repair-tests-add.py` read the whole plan before taking the lock and save every shard and the index from that earlier read under it; a record, pointer or verb's write made in between is written back out of existence (shown by a probe for the first, read for the second). Fix both: re-read inside the locked section and recompute what is written from that read. Then hold the CLASS, because this is the second time in one phase that a writer was found holding the wrong lock or reading before it: every caller of a plan save anywhere under plugins/audit/scripts/ and plugins/audit/hooks/ is found by reading the tree (the save functions are few: find them all, including the layout savers and any `json.dump` to a plan path), and each calling function must be in a table of writers shown to read behind the lock, each row with the reason and the case that proves it; a caller not in the table is red by name, and a row naming no caller is red too. Put that check where this repository keeps its tree-walking lints (read CLAUDE.md on tools/lints/ and tools/prove-gates.py: a new lint owes a row in the proving table, in both directions, and a section or line where the lints are enumerated; if any of those files is outside your list STOP BEFORE FILING and hand back the exact change). Go through every writer the table will hold and verify its row is TRUE rather than copying the review's list: the review read these as sound (the verbs under `_under_lock`, the panel's writes, close-phase's locked sections, set-priority, proposals, migrate-json-encoding, commit-task-work --state, the evidence helper); a row you cannot prove is a finding to hand back.\n\n3. Lows. (a) The gate runner's exit 3 on a busy index lock stops the drive on its generic stop rather than the wait-and-run-next-again rule it has for a verb's exit 3: read it as the same rule, with a case; and say in the guide that the commit verb holds the lock across `git commit`, so a project's slow pre-commit hook is the one realistic way a wave sibling's record waits out its bound. (b) When the lock claim cannot be WRITTEN (unwritable lock directory) the helper says the lock was not free and refuses the work, while the lock module calls that state \"not a report that the lock is held\" and documents it as refusing the lock, not the work: give it its own sentence and decide the behaviour once for every writer through the helper, the same way the panel's writer and the repairs treat it; say what you chose and why (a record written with no lock is a risk; a gate that cannot record on a read-only state directory is a different one). (c) Two questions to settle by probe and then fix or state: a converter run under a hand-taken index lock (commands/migrate.md around migrate-manifest.py, which takes no lock itself): is a gate of the same session answered as the holder and able to write a shard mid-conversion, which the converter's earlier read then drops? And git writes plan files with no plugin lock (the merge into the parent checkout, a member tree's records refresh, the merge driver): say in the guide's section on the rule exactly which writes are outside it and why that is safe or not.\n\nACCEPTANCE.\n1. Points 1 and 2 each have a case red at the branch head and green after; the lint has its red case (a new unlisted caller) and its allow case (the committed tree), and its proving rows; mutations on scratch copies outside every checkout, restored in the same command, each confirmed landed.\n2. The interleaving cases are deterministic (a pause the fixture controls, never a sleep that has to line up), as the lock task's cases are.\n3. The full sweep is green; `python3 tools/prove-gates.py --list` shows the new rows; the lint's wall time, measured twice.\n\nDEPENDANTS to answer for by name: both repair commands' other behaviour (dry run, refusal texts, exit codes, revalidation after the write), the drive's handling of each exit code of the runner, the wave path, `/audit:doctor`'s evidence checks that suggest `--reconcile`, the documents the lock task rewrote (they say reconcile catches the plan up when the ledger row was written: still true after point 1, and now also when the source is only a record), the layout converter and migrate command, and the lints' enumeration in the guide and CONTRIBUTING.\n\nIf a file you need is outside your list, STOP BEFORE FILING and hand back the exact change: a return is filed once per start.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/manifest/repair-commits.py",
+        "plugins/audit/scripts/manifest/repair-tests-add.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/manifest/migrate-manifest.py",
+        "plugins/audit/commands/migrate.md",
+        "tools/lints/_deps.py",
+        "tools/prove-gates.py",
+        "tests/test__evidence_io.py",
+        "tests/test_repair_commits.py",
+        "tests/test_repair_tests_add.py",
+        "tests/test_drive_phase.py",
+        "tests/test_migrate_manifest.py",
+        "tests/test__deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CONTRIBUTING.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/manifest/repair-commits.py",
+        "plugins/audit/scripts/manifest/repair-tests-add.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/commands/migrate.md",
+        "plugins/audit/scripts/manifest/migrate-manifest.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/git/integrate-task.py",
+        "tests/test__evidence_io.py",
+        "tests/test_repair_commits.py",
+        "tests/test_repair_tests_add.py",
+        "tests/test_drive_phase.py",
+        "tests/test_migrate_manifest.py",
+        "tests/test_close_phase.py",
+        "tests/test_integrate_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__evidence_io.py: One helper finds a repeat's source for every writer of a record (the union of ledger rows and records, then the record being replaced), used by the record ...",
+          "tests/test_repair_commits.py: Both repairs re-read the plan inside the locked section and recompute what they write from that read",
+          "tests/test_drive_phase.py: The runner's exit 3 on a busy index lock is read as the same wait rule as a verb's",
+          "tests/test__evidence_io.py: An unwritable claim has its own sentence, and whether a record is written without the lock in that state is decided explicitly, the same way for every writer ...",
+          "tests/test_migrate_manifest.py: Establish each by a probe"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_repair_commits.py tests/test_repair_tests_add.py tests/test_drive_phase.py tests/test_migrate_manifest.py tests/test__deps.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.15-6l3",
+        "P169.16-6l3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-19T02:50:39Z",
+          "text": "scope: plugins/audit/scripts/governance/_evidence_io.py, plugins/audit/scripts/manifest/repair-commits.py, plugins/audit/scripts/manifest/repair-tests-add.py, plugins/audit/scripts/governance/drive-phase.py, plugins/audit/commands/migrate.md, plugins/audit/scripts/manifest/migrate-manifest.py, plugins/audit/scripts/git/close-phase.py, plugins/audit/scripts/git/integrate-task.py, every path the finding(s) P169-R31, P169-R32, P169-R33, P169-R34, P169-R35 name"
+        },
+        {
+          "at": "2026-11-19T02:50:39Z",
+          "text": "scope: tests/test__evidence_io.py, the suite that tests plugins/audit/scripts/governance/_evidence_io.py (python: its import closure reaches plugins/audit/scripts/governance/_evidence_io.py)"
+        },
+        {
+          "at": "2026-11-19T02:50:39Z",
+          "text": "scope: tests/test_repair_commits.py, the suite that tests plugins/audit/scripts/manifest/repair-commits.py (python: its import closure reaches plugins/audit/scripts/manifest/repair-commits.py)"
+        },
+        {
+          "at": "2026-11-19T02:50:39Z",
+          "text": "scope: tests/test_repair_tests_add.py, the suite that tests plugins/audit/scripts/manifest/repair-tests-add.py (python: its import closure reaches plugins/audit/scripts/manifest/repair-tests-add.py)"
+        },
+        {
+          "at": "2026-11-19T02:50:39Z",
+          "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: it hands drive-phase.py to a loader through a module constant)"
+        },
+        {
+          "at": "2026-11-19T02:50:39Z",
+          "text": "scope: tests/test_migrate_manifest.py, the suite that tests plugins/audit/scripts/manifest/migrate-manifest.py (python: its import closure reaches plugins/audit/scripts/manifest/migrate-manifest.py)"
+        },
+        {
+          "at": "2026-11-19T02:50:39Z",
+          "text": "scope: tests/test_close_phase.py, the suite that tests plugins/audit/scripts/git/close-phase.py (python: its import closure reaches plugins/audit/scripts/git/close-phase.py)"
+        },
+        {
+          "at": "2026-11-19T02:50:39Z",
+          "text": "scope: tests/test_integrate_task.py, the suite that tests plugins/audit/scripts/git/integrate-task.py (python: its import closure reaches plugins/audit/scripts/git/integrate-task.py)"
+        },
+        {
+          "at": "2026-11-19T02:50:39Z",
+          "text": "no suite: plugins/audit/commands/migrate.md - a document, so no test of it is inferred; nothing names it as a file name in any test, tool or script"
+        },
+        {
+          "at": "2026-11-19T02:51:07Z",
+          "text": "it quotes the proving table's 'RED, WRONG CASE' verdict text; this task adds rows to the table and leaves its verdict words as they are",
+          "waives": "tests/_harness.py"
+        },
+        {
+          "at": "2026-11-19T02:51:07Z",
+          "text": "it quotes 'refuses to start' from CONTRIBUTING.md's isolation section; this task edits CONTRIBUTING.md's list of lints only",
+          "waives": "tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-11-19T02:51:07Z",
+          "text": "it quotes the '## [Unreleased]' heading; this task edits entries under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        }
+      ],
+      "fixes": [
+        "P169-R31",
+        "P169-R32",
+        "P169-R33",
+        "P169-R34",
+        "P169-R35"
       ]
     }
   ],

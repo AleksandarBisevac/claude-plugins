@@ -183,11 +183,22 @@ the task (or of the phase's gate), whole - its moments, its verdict and where th
 from, the identity and gate it was measured under, the state it tested, the lines it printed
 beside the verdict, and each step - written by `run-test-gate.py --record` and by nothing else
 (`_evidence_io.write_record`). `testEvidence` is the pointer derived from it, written in the
-same write, so the two always name one run; `--reconcile` restores a deleted pointer from it.
-It is **replaced, never appended**: a subject holds one. The write takes the phase lock, waiting
-behind another verb's structural write, and reads the shard under it, so neither write loses
-the other's key; a record the recorder still cannot write is the run's exit 3, and the shard is
-left as it was. A task run also appends its gate and selection stages to the task's `timing` in
+same write, so the two name one run; `--reconcile` restores a deleted pointer from it, and
+when the ledger holds a newer run of the subject than its record (a record write that was
+refused) it rewrites the record from that run's row in the same write as the pointer, so the
+two still name one run. It is **replaced, never appended**: a subject holds one. The write
+takes the plan-file lock every verb takes for its own read-modify-write (`index`, not the
+phase lock, which is a claim on the phase's run and guards no write), waits behind another
+writer for up to `_evidence_io.RECORD_WAIT_SECONDS`, and reads the shard only once it holds the
+lock, so neither write loses the other's key - a verb that comes second waits up to its own
+lock wait for the record, which holds the lock for one read and one write. A record the
+recorder still cannot write is the run's exit 3, and the shard is left as it was; a dead
+holder is not taken over, and the refusal says to release it (`audit-lock.py release index
+--force`, once a human has confirmed the holder is gone) and then re-run the gate. A run that
+repeated an earlier verdict carries that run whole under `repeatedRun` and its steps, each
+naming it - taken from the record it replaces when that is the run, else from the run's ledger
+row; when neither holds it, `repeatedRunUnread` names the run and says the steps are not
+carried, so its empty `steps` is never read as a run that ran nothing. A task run also appends its gate and selection stages to the task's `timing` in
 that write - the timing keeps every run's stages, the record only the newest run. A verb that
 rewrites a task treats `lastRun` as it treats `testEvidence`: `move` carries both with the task,
 `reopen` keeps both, and a group sign-off copies the carrier's record to each member beside the

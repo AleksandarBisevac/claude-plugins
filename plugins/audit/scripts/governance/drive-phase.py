@@ -614,6 +614,18 @@ STEPS = {
                  "never be measured and a red known to be the task's own, and "
                  "are never recommended: nothing is sent until one is "
                  "answered.")},
+    "decide-gate-cancelled": {
+        "line": "decide gate-cancelled %(task)s: the gate's %(why)s",
+        "rule": ("No verdict was reached and no attempt is spent: something "
+                 "outside the work stops the gate. rerun launches it once more "
+                 "with the count started again; block stops the task with the "
+                 "reason. Find what kills the run first.",)},
+    "decide-phase-gate-cancelled": {
+        "line": "decide phase-gate-cancelled %(phase)s: the phase gate's %(why)s",
+        "rule": ("No verdict was reached: something outside the work stops the "
+                 "gate. rerun launches it once more with the count started "
+                 "again; decline keeps the human's no for the summary and signs "
+                 "nothing off. Find what kills the run first.",)},
     "decide-gate-red": {
         "line": "decide gate-red %(task)s: recorded gate red (%(why)s)%(run)s",
         "rule": ("rerun spends no attempt (GATE COULD NOT RUN); retry spends "
@@ -811,6 +823,15 @@ DECISIONS = {
     # it to the human; nothing here checks who answers.
     "gate-red-base-unknown": (("rerun", "measure-base", "block", "resume",
                                "retry"), ("block",)),
+    # A task's gate whose runs came back cancelled `CANCELLED_BOUND` times in a
+    # row (`cancelled_gate`): `rerun` launches it once more with the count
+    # started again, `block` stops the task with the reason. No attempt is
+    # spent either way: a cancel is not the work's fault.
+    "gate-cancelled": (("rerun", "block"), ("block",)),
+    # The same count reached by the phase's gate: `rerun` launches it once
+    # more, `decline` is the human's no to signing the phase off over a gate
+    # that never reached a verdict, as for sign-off's other decisions.
+    "phase-gate-cancelled": (("rerun", "decline"), ("decline",)),
     "no-executor-return": (("resume", "retry", "block"), ("block",)),
     # A writer session that committed the task's files past its dispatch:
     # nothing is filed until a human takes the commit out (`recheck`).
@@ -884,7 +905,7 @@ DECISIONS = {
 # The decisions sign-off owns, answered by `apply_phase_answer`.
 PHASE_DECISIONS = ("triage", "round-cap", "no-phase-review-return",
                    "invariant-breach", "gate-coverage", "runtime-boot",
-                   "not-fast-forward")
+                   "not-fast-forward", "phase-gate-cancelled")
 # A decision's own answer line, printed under it: not a step, since it is never
 # printed alone.
 ANSWER_LINE = "answer: next %(phase)s --answer %(options)s%(reason)s"
@@ -908,6 +929,7 @@ SIGNAL_VERBS = {
     "resume-executor": "dispatch", "dispatch-writer": "dispatch",
     "resume-writer": "dispatch", "decide-gate-red-writer": "judge",
     "decide-gate-red-base": "ask", "decide-gate-red-base-unknown": "ask",
+    "decide-gate-cancelled": "ask", "decide-phase-gate-cancelled": "ask",
     "wait-writer": "wait", "decide-writer-committed": "ask",
     "dispatch-gate": "dispatch", "wait-gate": "wait",
     "dispatch-base": "dispatch", "wait-base": "wait",
@@ -6443,6 +6465,17 @@ GATE_REPEATABLE = _evio.MEASURED_STATUSES
 GATE_PASSED = _evio.RUN_PASSED
 GATE_EMPTY = "empty-gate"
 GATE_CANCELLED = "cancelled"
+# A gate's launch mark counts the cancelled runs of that gate in a row before
+# it; a mark built with no count (a first launch, or one after a verdict, which
+# spends the mark) starts at zero.
+CANCELLED_BEFORE = "cancelledBefore"
+# How many cancelled runs in a row one gate takes before the drive asks instead
+# of launching it again: `UNMEASURED_BOUND`'s count, for its reason - the first
+# cancel is relaunched, since a session cut off once or a Bash bound met once
+# says nothing about the work, and a second in a row is a cause outside it that
+# another launch would only meet again. No attempt is spent below it, since a
+# cancel is not the work's fault.
+CANCELLED_BOUND = 2
 
 
 def runnable_entries(manifest, entries):
@@ -6832,12 +6865,14 @@ def read_back(ctx, run_id, status, repeat, label):
     return code, out, err
 
 
-def launch_gate(ctx, state, phase, task, tree, argv=None, why=None):
+def launch_gate(ctx, state, phase, task, tree, argv=None, why=None,
+                cancelled=0):
     """Mark the launch of `task`'s gate - the moment, the command and the
     launch token the command carries (`LAUNCH_FLAG`) - and print its dispatch
     with `why` it goes to the background. `argv` is a launch printed again,
     under a token of its own; a first one spends a `rerun` mark into
-    `--no-reuse`."""
+    `--no-reuse`. `cancelled` is the count of cancelled runs in a row the
+    launch it replaces carried forward (`cancelled_gate`)."""
     if argv is None:
         argv = ["python3", _loader.script_path("run-test-gate.py")] + gate_args(
             ctx, phase, task, tree, no_reuse=bool(_spend(state, "rerun", task)),
@@ -6845,9 +6880,34 @@ def launch_gate(ctx, state, phase, task, tree, argv=None, why=None):
     token = launch_token()
     argv = with_launch(argv, token)
     _mark(state, GATE_LAUNCH_KEY, task, {
-        "at": _utc_stamp(), "argv": list(argv), "launch": token})
+        "at": _utc_stamp(), "argv": list(argv), "launch": token,
+        CANCELLED_BEFORE: int(cancelled)})
     write_state(ctx, state)
     return gate_said(ctx, task["id"], argv, why=why)
+
+
+def cancelled_gate(ctx, state, task, launched, run_id, relaunch):
+    """The step after a gate's launch came back as a cancelled run `run_id` -
+    a task's gate, or the phase's with `task` None. THE ONE DECISION for both:
+    the cancelled runs in a row are the launch mark's count plus this one;
+    below `CANCELLED_BOUND` the gate is launched again through `relaunch(n)`,
+    which carries `n` onto the new mark, and no attempt is spent; at the bound
+    the drive asks instead (`gate-cancelled`, `phase-gate-cancelled`), and the
+    ask stays open - every later `next` prints it again - until it is answered.
+    A run of the gate that ends in any verdict spends the mark, and its count
+    with it."""
+    count = int((launched or {}).get(CANCELLED_BEFORE) or 0) + 1
+    subject = task["id"] if task else "the phase"
+    if count < CANCELLED_BOUND:
+        warn(ctx, "gate of %s: run %s was cancelled before a verdict (%d in a "
+                  "row, asked at %d); launched again"
+                  % (subject, run_id, count, CANCELLED_BOUND))
+        return relaunch(count)
+    name = "gate-cancelled" if task else "phase-gate-cancelled"
+    return decision(ctx, state, name, task,
+                    "run %s was cancelled before a verdict, %d in a row (asked "
+                    "at %d)" % (run_id, count, CANCELLED_BOUND),
+                    {CANCELLED_BEFORE: count, "runId": run_id})
 
 
 def background_gate(ctx, state, phase, task, tree):
@@ -6876,10 +6936,11 @@ def background_gate(ctx, state, phase, task, tree):
                               launched.get("argv") or []), None
     run_id, status = found
     if status == GATE_CANCELLED:
-        warn(ctx, "gate %s run %s was cancelled before a verdict; "
-                  "launched again" % (task["id"], run_id))
-        return launch_gate(ctx, state, phase, task, tree,
-                           launched.get("argv")), None
+        return cancelled_gate(
+            ctx, state, task, launched, run_id,
+            lambda count: launch_gate(ctx, state, phase, task, tree,
+                                      launched.get("argv"),
+                                      cancelled=count)), None
     _spend(state, GATE_LAUNCH_KEY, task)
     write_state(ctx, state)
     queue_row(ctx, state, task, ledger_row(ctx, run_id), since=launched.get("at"))
@@ -9567,6 +9628,20 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
     task = _mio.tasks_by_id(manifest).get(pending.get("task")) if pending.get("task") else None
     state.pop("pending", None)
     write_state(ctx, state)
+    if pending["decision"] in ("gate-cancelled", "phase-gate-cancelled") \
+            and answer == "rerun":
+        # The launch mark goes, and its count of cancelled runs with it: the
+        # next `next` launches the gate once more, counting from zero. No
+        # attempt is spent and no `--no-reuse` is asked - a cancelled run left
+        # no verdict a repeat could copy.
+        if task is not None:
+            _spend(state, GATE_LAUNCH_KEY, task)
+        else:
+            state.pop(PHASE_GATE_LAUNCH_KEY, None)
+        write_state(ctx, state)
+        ctx["did"].append("gate of %s to be launched once more"
+                          % (task["id"] if task else phase["id"],))
+        return None
     if pending["decision"] in PHASE_DECISIONS:
         return apply_phase_answer(ctx, state, manifest, phase, pending, answer,
                                   reason, fixes)
@@ -11427,16 +11502,19 @@ def phase_gate(ctx, phase, verbose=False):
     return run_phase_gate(ctx, phase, verbose)
 
 
-def launch_phase_gate(ctx, state, phase, head, argv=None, why=None):
+def launch_phase_gate(ctx, state, phase, head, argv=None, why=None,
+                      cancelled=0):
     """Mark the launch of the phase's gate at `head` - the moment, the command
-    and the launch token it carries (`LAUNCH_FLAG`) - and print its dispatch."""
+    and the launch token it carries (`LAUNCH_FLAG`) - and print its dispatch.
+    `cancelled` is `launch_gate`'s: the cancelled runs in a row carried."""
     if argv is None:
         argv = ["python3", _loader.script_path("run-test-gate.py")] + \
             phase_gate_args(ctx, phase, absolute=True)
     token = launch_token()
     argv = with_launch(argv, token)
     state[PHASE_GATE_LAUNCH_KEY] = {"head": head, "at": _utc_stamp(),
-                                    "argv": list(argv), "launch": token}
+                                    "argv": list(argv), "launch": token,
+                                    CANCELLED_BEFORE: int(cancelled)}
     write_state(ctx, state)
     return gate_said(ctx, phase["id"], argv, phase_gate=True, why=why)
 
@@ -11471,10 +11549,11 @@ def chosen_phase_gate(ctx, state, phase, head):
                               launched.get("argv") or []), None
     run_id, status = found
     if status == GATE_CANCELLED:
-        warn(ctx, "phase gate run %s was cancelled before a verdict; "
-                  "launched again" % (run_id,))
-        return launch_phase_gate(ctx, state, phase, head,
-                                 launched.get("argv")), None
+        return cancelled_gate(
+            ctx, state, None, launched, run_id,
+            lambda count: launch_phase_gate(ctx, state, phase, head,
+                                            launched.get("argv"),
+                                            cancelled=count)), None
     state.pop(PHASE_GATE_LAUNCH_KEY, None)
     write_state(ctx, state)
     return None, read_back(ctx, run_id, status,

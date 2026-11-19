@@ -1,0 +1,65 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test_audit_task.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-19T02:32:40Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py` in a throwaway tree at HEAD exited 1 with 21 of 704 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ed5 (house FAIL), ed6 (house FAIL), ed7 (house FAIL), ed8 (house FAIL), lr4 (house FAIL), lr5 (house FAIL), lr4p (house FAIL), lr4r (house FAIL) and 13 more: SELFTEST FAILED: 702/704 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "ONE LOCK, ONE HELPER: every plan-file write in _evidence_io (pointer, record, reconcile, evidence boundary) goes through write_plan_file(project, path, change, note, session_id, wait, outcome, repair, config) under SHARD_LOCK='index' - the lock every audit-task verb (_under_lock), the panel (_panel_write.LOCK_NAME) and close-phase take - reading the file only after the acquire; lk1/lk2/lk3 hold it by AST. The phase lock is NOT taken: it claims a phase's run and guards no write, and one lock leaves no order to keep. It is one lock per PLAN, not per shard: every plan-file write excludes every other; measured on a copy of this repo's plan (373 KB index, 336 KB P169 shard), two rounds 50 s apart: solo hold 99-121 ms; a wave of three started together 122-431 ms per member, of six at most 845/824 ms; every record landed, so a wave of three cannot reach RECORD_WAIT_SECONDS (30 s) on this machine; a member waiting past it exits 3 with its ledger row written. Lock behaviour: a record waits RECORD_WAIT_SECONDS for a live holder, then exits 3 green or red; pointer/reconcile/boundary wait WAIT_SECONDS; a verb behind a record waits its own WAIT_SECONDS (unchanged); a dead holder is never taken over and the refusal says what happened, then audit-lock.py release index --force, then the re-run; a held phase lock refuses nothing any more. REPEATS: repeat_carried/record_carrying carry repeatedRun and the steps from the ledger row, else from the replaced record under the lock, else repeatedRunUnread {runId, basis}; a reader asks repeatedRun first; a whole repeat has no startedAt and its own durationMs/selectionMs (schema, guide, conventions say the same). reconcile rewrites lastRun from a newer ledger row in the pointer's write. Text: --record help and E_UNRECORDED comment say green or red; the unrecorded line names the index lock. Group sign-off (audit-task.py _group_record) now carries the repeated run when the ledger or plan holds it (grc1-grc3). DRIVE BOUND (finding P169-R30): cancelled_gate in drive-phase.py is the one decision for the task gate and the phase gate; the count is the launch mark's cancelledBefore, carried when a relaunch replaces the mark, gone when a verdict spends it; CANCELLED_BOUND = 2 (UNMEASURED_BOUND's count, for its reason); below it the gate is relaunched under a new token with no attempt spent, at it the drive asks gate-cancelled (rerun|block) or phase-gate-cancelled (rerun|decline), and the ask stays open; rerun drops the mark (count from zero), block blocks with the reason. bg4 now pins dispatch-again under a new token (its wait arm deleted: the killed run's record now lands, so wait cannot be reached), cb1-cb7 the bound. Dependants: wait-gate read-back reads the cancelled record; each cancelled run's stages are appended once by its own record write (record_stages excludes only repeats), which is right since each ran; a resumed session whose gate was SIGTERMed counts one on the first next, a SIGKILLed gate leaves no record and stays wait-gate as before; a wave member's mark and parked ask are its own, so the bound is per member (not tested in a wave fixture); --explain prints the decide text with no run: line (cb1); a loop on next --signal sees `audit P1 ask P1.1 | gate-cancelled: ... | next: next P1 --signal --answer rerun|block ...` with no run: line, the same on every call, so it ends only if it stops on a non-dispatch verb; auto ends at the ask instead of relaunching (the relaunch's new token had defeated AUTO_REPEAT_BOUND). orchestrator.md names one sibling ask in a pointer sentence to execute-task.md (which now carries gate-cancelled); it is not an enumeration and has 13 bytes left under measure-context's ceiling, so no row was added; measure-context --gate unchanged from HEAD (GATE OK, every figure identical). Docs: CHANGELOG, COMPATIBILITY, guide, manifest-conventions, schema, README (an invariant row and the refused-record paragraph), doctor.md, panel.md, execute-task.md, verbs-in-full.md, handbook.html, _panel_runstate.py comment; gen-demo-manifest exemption row. One rewrite of write_evidence_since in _evidence_io.py was made through a Bash python script rather than the Edit tool. Mutations (scratch export, landing confirmed, pycache purged, restored, cmp clean): 18 rows all killed - lock is phase lock alone; read before lock in helper/record/pointer/reconcile; wait=0; copied steps emptied; reconcile writes no record; save outside helper; group copy without source; record_carrying ignores ledger; help says green only; cancel count never carried (task, phase); bound never reached; bound reached at once (allow); count survives a verdict; rerun keeps the mark. Runs: task gate 3/3 files ok 2366 cases; test_drive_phase alone 1039 ok; extra suites 6/6 ok 1005; test__panel_runstate 44 ok; check-rendered-artifacts --before-commit 0, check-example-ledgers 0, check-git-pipeline 0; measure-context --gate OK; full sweep 198/198 files ok, 19367 cases. Gate timing --record before/after: 472/263 ms vs 215/222 ms (round one before was a cold start).",
+    "descriptive": "A gate's record and a verb's write of one plan file no longer lose each other, a repeated verdict's record says where its steps came from, and a gate that keeps being killed stops the drive with an ask instead of looping."
+  },
+  "testsAdded": [
+    "real audit-task note vs record/pointer/reconcile, both orders, deterministic pause (lr4, lr5, lr4p, lr4r)",
+    "AST: one save and one acquire, in write_plan_file, read after lock, lock is index (lk1-lk3)",
+    "repeat sources: replaced record / ledger only / neither, and gate-level reuse with and without a ledger (rv1-rv3c, rpt1, rpt2)",
+    "group sign-off copy carries the repeated run (grc1-grc3)",
+    "reconcile rewrites the record from a newer ledger row and is idempotent (rv4, rv4b)",
+    "help/comment/unrecorded line say green or red and name the index lock (rw1)",
+    "held index lock refuses with ordered sentence; held phase lock does not; dead holder not taken over (lr6, lr6b, lr6c)",
+    "killed gate relaunched under a new token, bounded by an ask that rerun restarts and block ends, reset by a verdict, same on the phase gate (bg4, cb1-cb7)"
+  ],
+  "casesAdded": [
+    [
+      "lr4",
+      "lr5",
+      "lr4p",
+      "lr4r",
+      "lk1",
+      "lk2",
+      "lk3"
+    ],
+    [
+      "rv1",
+      "rv1b",
+      "rv2",
+      "rv3",
+      "rv3b",
+      "rv3c",
+      "rpt1",
+      "rpt2",
+      "grc1",
+      "grc2",
+      "grc3"
+    ],
+    [
+      "rv4",
+      "rv4b"
+    ],
+    [
+      "rw1"
+    ],
+    [
+      "lr6",
+      "lr6b",
+      "lr6c"
+    ]
+  ],
+  "claims": "claims:\n1 write_plan_file holds the module's only acquire and save (lk1 reads the AST), its read after the acquire (lk2); record_carrying follows run_record in _evidence_io.py; _group_record sits above _group_binding in audit-task.py; cancelled_gate follows launch_gate in drive-phase.py and both cancelled branches call it\n2 eighteen mutations in a scratch export, all killed (listed in the outcome); allow directions: lr6b/eb16 (phase lock refuses nothing), grc2 (no invented source), bound-reached-at-once turns bg4/cb4/cb7 red\n3 grep -E 'phase lock is held|(holds|hold|held) the phase lock|pointer_lock_state' and the sibling ask names across plugins, tools, tests, docs and root docs: every place in this task's files fixed; orchestrator.md left (a pointer sentence, not an enumeration, 13 bytes under its ceiling); released CHANGELOG sections left as history\n4 the one-helper rule is enforced by lk1-lk3 and the guide sentence names lk1; the relaunch bound is CANCELLED_BOUND in cancelled_gate, held by cb1-cb7\n5 lock hold and wave measured in two rounds 50 s apart (spread in the outcome); gate timing two rounds 30 s apart; interleavings deterministic (barrier files, a started-flag before SIGTERM)\n6 n/a - no guard reads command text\n7 prose names CANCELLED_BOUND and RECORD_WAIT_SECONDS, not their values; the figures in the outcome are measurements with their method beside them",
+  "stamp": "audit-stamp: {\"content\":\"sha256:cefd615049a7afa2ae75f6efb8804a22b9983ba3f79a7e15103579c176d00ea9\",\"dirtyDigest\":\"sha256:ec2714745b615b014108648021206c05848628bd2d4ef260e1a5f5e3dab228d1\",\"dirtyPaths\":{\"CHANGELOG.md\":\"e8468df2cf13ae41\",\"COMPATIBILITY.md\":\"4051b0d24b9e0f98\",\"PLUGIN-BUILD-GUIDE.md\":\"808c3055d371d533\",\"docs/handbook.html\":\"41c59753539d51fe\",\"plugins/audit/README.md\":\"c8316c701f4719be\",\"plugins/audit/commands/doctor.md\":\"efc276d342c96145\",\"plugins/audit/commands/panel.md\":\"1b37af7eb91b1b33\",\"plugins/audit/reference/execute-task.md\":\"703f8bde9670fcb4\",\"plugins/audit/reference/manifest-conventions.md\":\"e419638e19b2617d\",\"plugins/audit/reference/verbs-in-full.md\":\"f25a5f42e0acb5d8\",\"plugins/audit/schema/audit-plan.schema.json\":\"b8e5bd9f995d128b\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"586536ece08cbf21\",\"plugins/audit/scripts/governance/drive-phase.py\":\"ff58477e0655767f\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"a7575f3d22e74760\",\"plugins/audit/scripts/manifest/audit-task.py\":\"c8f65429482b96ea\",\"plugins/audit/scripts/panel/_panel_runstate.py\":\"d0ff96d05a958229\",\"tests/test__evidence_io.py\":\"12152ab62b10be07\",\"tests/test_audit_task.py\":\"9af5a427bf211dfb\",\"tests/test_drive_phase.py\":\"b473f36fb5f7e945\",\"tests/test_run_test_gate.py\":\"cb2dc5fb5386a5ca\",\"tools/demo/gen-demo-manifest.py\":\"b272bcaa5c0815a5\"},\"head\":\"2efb8e36\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"COMPATIBILITY.md\",\"PLUGIN-BUILD-GUIDE.md\",\"docs/handbook.html\",\"plugins/audit/README.md\",\"plugins/audit/commands/doctor.md\",\"plugins/audit/commands/panel.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/reference/manifest-conventions.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/scripts/panel/_panel_runstate.py\",\"tests/test__evidence_io.py\",\"tests/test_audit_task.py\",\"tests/test_drive_phase.py\",\"tests/test_gen_demo_manifest.py\",\"tests/test_run_test_gate.py\",\"tools/demo/gen-demo-manifest.py\"],\"scopeDigest\":\"sha256:ced3eef677ac0f27278979e51d7ae2409205c57734a54dc50ce70a7b455408e6\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

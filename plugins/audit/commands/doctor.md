@@ -77,9 +77,12 @@ both and never folds them together:
   that is not here`. A clone that received the plan without the evidence directory, a file
   that was removed, or a block written by hand. The plan is claiming a record it cannot show.
 - **A recorded run whose subject's pointer does not name it** — `the record is ahead of the
-  plan`. This is not damage: it is exactly what a **refused pointer** leaves behind when
-  another live session held the phase lock while the gate was recorded. The repair is one
-  pass over the ledger, and the warning names it:
+  plan`. This is not damage: it is what a **refused record** leaves behind - another live
+  writer held the plan's index lock past the record's wait, so the run's ledger row was
+  written and the plan was not, and the gate exited 3 saying to re-run it once the lock is
+  free. Re-running the gate is what that line asks; because the run's ledger row was
+  written, one pass over the ledger also catches the plan up from it, and the warning names
+  that pass:
 
   ```
   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/run-test-gate.py" \
@@ -87,7 +90,8 @@ both and never folds them together:
   ```
 
   The phase id is required by the parser and **not read by this pass** — reconcile re-derives
-  the pointer of every subject the ledger names, whatever phase it was handed, and runs no
+  the pointer of every subject the ledger names, and rewrites the record beside it from a
+  ledger row newer than that record, whatever phase it was handed, and runs no
   gate and no subprocess. It exits non-zero only when a pointer was refused again, naming
   which subjects it left behind. It also **writes**: it edits the phase shard, which is why
   it is a command to hand the user rather than something this read-only command does for

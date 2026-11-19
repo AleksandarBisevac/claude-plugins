@@ -1620,7 +1620,15 @@ def _cases(check):
               missing["written"] is False and "P9.9" in (missing.get("reason") or ""))
 
         # --- the lock states ----------------------------------------------
-        state, _detail = M.pointer_lock_state(proj, "P1", session_id="me")
+        # The plan-file lock (`SHARD_LOCK`) asked with the pointer's own
+        # sentence, as `write_pointer` asks it through `write_plan_file`.
+        def pointer_lock_state(project, session_id):
+            ask = getattr(M, "shard_lock_state", None)
+            if ask is None:
+                return "absent", "no shard_lock_state in this build"
+            return ask(project, session_id=session_id,
+                       outcome=M.RECONCILE_OUTCOME, repair=M.RECONCILE_REPAIR)
+        state, _detail = pointer_lock_state(proj, session_id="me")
         check("ed5 with no lock scheme at all the write proceeds under the "
               "weaker guarantee and SAYS which - the panel's documented "
               "fallback, and the same reason: refusing every non-git project "
@@ -1630,13 +1638,13 @@ def _cases(check):
         gitproj = os.path.join(tmp, "gitptr")
         os.makedirs(gitproj)
         _harness.git(None, "init", "-q", gitproj, prefix=("git",))
-        free, _d = M.pointer_lock_state(gitproj, "P1", session_id="me")
+        free, _d = pointer_lock_state(gitproj, session_id="me")
         check("ed6 an unheld lock reads FREE - the state a normal standalone run "
               "meets, and the one that must not be confused with the two below",
               free == "free")
 
-        _locks.acquire(gitproj, "phase-P1", session="me", out=lambda *_a: None)
-        mine, _d = M.pointer_lock_state(gitproj, "P1", session_id="me")
+        _locks.acquire(gitproj, "index", session="me", out=lambda *_a: None)
+        mine, _d = pointer_lock_state(gitproj, session_id="me")
         check("ed7 THE RE-ENTRANCY CASE: a lock held by OUR OWN session reads "
               "`ours`, not `held`. `_locks.acquire` is not re-entrant, so a run "
               "inside its own phase would otherwise be refused by the lock it "
@@ -1644,7 +1652,7 @@ def _cases(check):
               % (mine,),
               mine == "ours")
 
-        theirs, detail = M.pointer_lock_state(gitproj, "P1", session_id="someone-else")
+        theirs, detail = pointer_lock_state(gitproj, session_id="someone-else")
         check("ed8 ...and the SAME lock read by a different session is `held`, "
               "with a sentence naming the repair. The pair is the point: either "
               "half alone passes with the identity check deleted: %r"
@@ -1653,7 +1661,7 @@ def _cases(check):
 
         blocked = M.write_pointer(gitproj, mpath, "task",
                                   {"taskId": "P1.1", "phaseId": "P1"}, prow,
-                                  session_id="someone-else")
+                                  session_id="someone-else", wait=0.2)
         check("ed9 THE DESIGNED PARTIAL STATE: a pointer refused by another live "
               "session leaves the LEDGER ROW standing and says so. That is the "
               "only reachable partial write, and it is the harmless one - a run "
@@ -1662,22 +1670,22 @@ def _cases(check):
               % (blocked.get("reason"),),
               blocked["written"] is False
               and "reconcile" in (blocked.get("reason") or ""))
-        _locks.release(gitproj, "phase-P1", session="me", out=lambda *_a: None)
+        _locks.release(gitproj, "index", session="me", out=lambda *_a: None)
 
         # ONE RULE FOR "IS THIS LOCK OURS", the lock's own. A claim another live
         # process of this session took for its own write is that process's; a
         # pointer written under it with no lock of its own is the lost write the
         # lock serialises every other caller against.
         import platform as _pf
-        _pl_path = os.path.join(_locks.lock_dir(gitproj), "phase-P1.lock")
+        _pl_path = os.path.join(_locks.lock_dir(gitproj), "index.lock")
         _pl_claim = {"sessionId": "me", "pid": os.getppid(), "hostname": _pf.node(),
                      "note": "another process's write", "token": "tok-elsewhere",
                      "handedOff": False,
                      "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
         _locks._write_lock(_pl_path, _pl_claim)
-        _pl_other, _pl_why = M.pointer_lock_state(gitproj, "P1", session_id="me")
+        _pl_other, _pl_why = pointer_lock_state(gitproj, session_id="me")
         _locks._write_lock(_pl_path, dict(_pl_claim, handedOff=True))
-        _pl_hand, _d = M.pointer_lock_state(gitproj, "P1", session_id="me")
+        _pl_hand, _d = pointer_lock_state(gitproj, session_id="me")
         os.unlink(_pl_path)
         check("ed8b RED-FIRST: a claim ANOTHER live process of this session took "
               "for its own write reads `held`, as `_locks.acquire` answers it - "
@@ -1705,12 +1713,12 @@ def _cases(check):
               and jr[0]["details"]["field"] == "testEvidence")
 
         held_proj, held_path = _manifest_project("c4held", git=True)
-        _locks.acquire(held_proj, "phase-P1", session="other", out=lambda *_a: None)
+        _locks.acquire(held_proj, "index", session="other", out=lambda *_a: None)
         refused = M.write_pointer(held_proj, held_path,
                                   "task", {"taskId": "P1.1", "phaseId": "P1"},
                                   {"runId": "R9", "status": "failed",
                                    "ts": "2026-08-26T12:00:00Z"},
-                                  session_id="me")
+                                  session_id="me", wait=0.2)
         jr2 = [r for r in _journal_io.read_all(held_proj)
                if r.get("action") == "task.testEvidence"]
         check("ed11 THE C4 RULE: a pointer that was REFUSED writes NO "
@@ -1719,7 +1727,7 @@ def _cases(check):
               "here, so this is the ordinary path and not an error one: "
               "written=%r rows=%r" % (refused["written"], len(jr2)),
               refused["written"] is False and jr2 == [])
-        _locks.release(held_proj, "phase-P1", session="other", out=lambda *_a: None)
+        _locks.release(held_proj, "index", session="other", out=lambda *_a: None)
 
         # A DECLINED RELEASE IS THE ONLY NEWS OF A TAKEOVER THE LOSER GETS, and
         # it used to go into a printer that discards beside a code nothing read.
@@ -1737,7 +1745,7 @@ def _cases(check):
                                        session_id="me")
         finally:
             _locks.release = _dr_real
-            _locks.release(dr_proj, "phase-P1", session="me",
+            _locks.release(dr_proj, "index", session="me",
                            out=lambda *_a: None)
         check("ed11b a lock that REFUSED to be given back is carried to the "
               "caller, and the write is still `written` - the pointer landed, "
@@ -1847,9 +1855,9 @@ def _cases(check):
         M.append_row(held2, {"v": 1, "runId": "RH", "ts": "2026-08-26T09:00:00Z",
                              "scope": "task", "taskId": "P1.1", "phaseId": "P1",
                              "status": "failed", "steps": []})
-        _locks.acquire(held2, "phase-P1", session="other", out=lambda *_a: None)
-        blocked_rep = M.reconcile(held2, held2_path, session_id="me")
-        _locks.release(held2, "phase-P1", session="other", out=lambda *_a: None)
+        _locks.acquire(held2, "index", session="other", out=lambda *_a: None)
+        blocked_rep = M.reconcile(held2, held2_path, session_id="me", wait=0.2)
+        _locks.release(held2, "index", session="other", out=lambda *_a: None)
         check("ed15 a reconcile that could not finish REPORTS the subjects it "
               "left behind rather than returning a smaller number - a count of "
               "what moved, read alone, would say the plan is caught up: %r"
@@ -2089,7 +2097,7 @@ def _cases(check):
                                 "phaseId": "P1", "status": "passed", "steps": []})
         _locks.acquire(lockproj, "index", session="other", out=lambda *_a: None)
         idx_held = M.write_evidence_since(lockproj, lockpath, "P1",
-                                          session_id="me")
+                                          session_id="me", wait=0.2)
         _locks.release(lockproj, "index", session="other", out=lambda *_a: None)
         check("eb15 the INDEX lock is what guards this write, because `meta` is "
               "the index's - a stamp taken while another live session holds it "
@@ -2103,56 +2111,65 @@ def _cases(check):
               and M.SINCE_KEY not in _json.loads(
                   io.open(lockpath, encoding="utf-8").read())["meta"])
 
-        _locks.acquire(lockproj, "phase-P1", session="other", out=lambda *_a: None)
-        ph_held = M.write_evidence_since(lockproj, lockpath, "P1", session_id="me")
-        _locks.release(lockproj, "phase-P1", session="other", out=lambda *_a: None)
-        check("eb16 ...and the PHASE lock refuses it too, which is not "
-              "belt-and-braces: in the SINGLE-FILE layout the index and the "
-              "phase body are the same bytes, and `write_pointer` rewrites that "
-              "whole file under this very lock - so a stamp ignoring it would be "
-              "the second writer of one file. A refusal costs nothing here; a "
-              "lost update costs somebody's pointer: %r" % (ph_held.get("reason"),),
-              ph_held["written"] is False
-              and "phase lock is held" in ph_held["reason"]
-              and M.SINCE_KEY not in _json.loads(
-                  io.open(lockpath, encoding="utf-8").read())["meta"])
+        # THE PHASE LOCK GUARDS NO WRITE, so it refuses nothing: in the
+        # one-file layout the index and the phase body are the same bytes, and
+        # every writer of them - the pointer, the record, this stamp, every
+        # verb - now takes `index`, which eb15 holds.
+        ph_proj, ph_path = _manifest_project("since-phase-held", git=True)
+        M.append_row(ph_proj, {"v": 1, "runId": "RL", "ts": "2026-06-02T15:38:00Z",
+                               "scope": "task", "taskId": "P1.1",
+                               "phaseId": "P1", "status": "passed", "steps": []})
+        _locks.acquire(ph_proj, "phase-P1", session="other", out=lambda *_a: None)
+        ph_held = M.write_evidence_since(ph_proj, ph_path, "P1", session_id="me",
+                                         wait=0.2)
+        _locks.release(ph_proj, "phase-P1", session="other", out=lambda *_a: None)
+        check("eb16 SECOND DIRECTION: a PHASE lock another session holds does "
+              "not refuse the stamp - it is a claim on the phase's run, and the "
+              "writer of this file that it once excluded (the pointer) takes "
+              "`index` now, as this stamp does: %r"
+              % ((ph_held["written"], ph_held.get("reason")),),
+              ph_held["written"] is True
+              and ph_held["at"] == "2026-06-02T15:38:00Z")
 
         # THE SECOND DIRECTION, and it is the case that fails when the lock
         # check is tightened until it refuses everything: a lock held by OUR OWN
-        # session is the ordinary state of an in-phase recording, and refusing
-        # it would refuse every gate run inside a phase.
-        _locks.acquire(lockproj, "phase-P1", session="me", out=lambda *_a: None)
-        ours = M.write_evidence_since(lockproj, lockpath, "P1", session_id="me")
-        _locks.release(lockproj, "phase-P1", session="me", out=lambda *_a: None)
+        # session is the ordinary state of a run a verb launched, and refusing
+        # it would refuse every recording made under a verb's hold.
+        _locks.acquire(lockproj, "index", session="me", out=lambda *_a: None)
+        ours = M.write_evidence_since(lockproj, lockpath, "P1", session_id="me",
+                                      wait=0.2)
+        _locks.release(lockproj, "index", session="me", out=lambda *_a: None)
         check("eb17 a lock held by THIS session does not refuse the stamp - "
-              "`_locks.acquire` is not re-entrant and an in-phase run already "
-              "holds its phase lock, so the holder is compared rather than the "
+              "`_locks.acquire` is not re-entrant and a run under its own hold "
+              "already has the lock, so the holder is compared rather than the "
               "lock re-taken: %r" % ((ours["written"], ours["at"]),),
               ours["written"] is True
               and ours["at"] == "2026-06-02T15:38:00Z")
 
         _locks.acquire(lockproj, "index", session="other", out=lambda *_a: None)
-        _locks.acquire(lockproj, "phase-P1", session="other", out=lambda *_a: None)
         _istate, _idetail = M.lock_state(lockproj, "index", "index",
-                                         session_id="me", hint="HINT-SENTINEL")
-        _pstate, _pdetail = M.pointer_lock_state(lockproj, "P1", session_id="me")
+                                         session_id="me",
+                                         outcome="OUTCOME-SENTINEL",
+                                         repair="REPAIR-SENTINEL")
+        _pstate, _pdetail = M.shard_lock_state(
+            lockproj, session_id="me", outcome=M.RECONCILE_OUTCOME,
+            repair=M.RECONCILE_REPAIR)
         _locks.release(lockproj, "index", session="other", out=lambda *_a: None)
-        _locks.release(lockproj, "phase-P1", session="other", out=lambda *_a: None)
         check("eb18 `lock_state` names the lock it was ASKED about and carries "
-              "the CALLER's repair, while `pointer_lock_state` still produces "
-              "the phase's own sentence through it. Two writers with two "
-              "repairs: a shared hint would send half of them to a command that "
-              "cannot help them, and a shared label would name the wrong lock: "
-              "%r / %r" % (_idetail, _pdetail),
+              "the CALLER's outcome and repair, in that order, while "
+              "`shard_lock_state` produces the pointer's own sentence through "
+              "it. Two writers with two repairs: a shared hint would send half "
+              "of them to a command that cannot help them: %r / %r"
+              % (_idetail, _pdetail),
               _istate == "held" and _pstate == "held"
               and "the index lock is held" in _idetail
-              and _idetail.endswith("HINT-SENTINEL")
-              and "the phase lock is held" in _pdetail
+              and _idetail.endswith("OUTCOME-SENTINEL; REPAIR-SENTINEL")
+              and "the index lock is held" in _pdetail
               and _pdetail.endswith(M.RECONCILE_HINT))
 
         # `write_pointer`'s rule, one writer over, and with the half that writer
-        # cannot show: this block takes more than one lock and can leave by a
-        # refusal, so the sentence has to survive a path that returns before the
+        # cannot show: this block can leave by a refusal made under the lock,
+        # so the sentence has to survive a path that returns without the
         # stamp. The lock is made to decline rather than raced into declining -
         # the property is that the code is read, not that a race can be won.
         db_proj, db_path = _manifest_project("since-declined", git=True)
@@ -2182,17 +2199,23 @@ def _cases(check):
         M.append_row(dh_proj, {"v": 1, "runId": "RE", "ts": "2026-06-02T15:38:00Z",
                                "scope": "task", "taskId": "P1.1",
                                "phaseId": "P1", "status": "passed", "steps": []})
-        _locks.acquire(dh_proj, "phase-P1", session="other", out=lambda *_a: None)
+        # The refusal made under the lock is a save that failed: the write is
+        # made to raise rather than a filesystem made read-only, which a
+        # platform may not honour.
         _dh_real = _locks.release
+        _dh_save = M._mio.save_plan_json
         _locks.release = lambda *_a, **_k: _locks.E_LIVE
+
+        def _dh_refuse(*_a, **_k):
+            raise OSError("this write is refused by the case")
+        M._mio.save_plan_json = _dh_refuse
         try:
             db_no = M.write_evidence_since(dh_proj, dh_path, "P1",
                                            session_id="me")
         finally:
             _locks.release = _dh_real
+            M._mio.save_plan_json = _dh_save
             _locks.release(dh_proj, "index", session="me", out=lambda *_a: None)
-            _locks.release(dh_proj, "phase-P1", session="other",
-                           out=lambda *_a: None)
         check("eb18c ...and on the REFUSING path too, which is the one this "
               "block can leave by. A run displaced while it held the index was "
               "displaced whether or not its own stamp went in, and those "
@@ -4857,6 +4880,202 @@ def _lr_shard(spath):
         return json.load(fh)
 
 
+# The real `audit-task.py`, run in a process of its own, with two seams the
+# test reads and one it drives - never a stand-in that takes a lock by name:
+# a file is dropped when the verb ASKS for the index lock and another when the
+# lock answered, and with LR_PAUSE set its first write of the shard (made after
+# its read, inside its locked section) waits for a `go` file. Patching the
+# module attributes reaches every caller, because `_panel_write` and
+# `_manifest_io` look both names up on the module at call time.
+_LR_VERB_WRAPPER = r'''
+import os, runpy, sys, time
+sys.path.insert(0, os.environ["LR_SCRIPTS"])
+import _output
+_output.install_path()
+import _locks, _manifest_io
+SIG = os.environ["LR_SIGNAL_DIR"]
+SHARD = os.path.realpath(os.environ["LR_SHARD"])
+PAUSE = os.environ.get("LR_PAUSE") == "1"
+def mark(name):
+    open(os.path.join(SIG, name), "w").close()
+real_acquire = _locks.acquire
+def acquire(project, name, *a, **k):
+    if name == "index":
+        mark("asking")
+    code = real_acquire(project, name, *a, **k)
+    if name == "index":
+        mark("acquired-%s" % (code,))
+    return code
+_locks.acquire = acquire
+real_write = _manifest_io.atomic_write_text
+held = []
+def write(path, text):
+    if PAUSE and not held and os.path.realpath(path) == SHARD:
+        held.append(path)
+        mark("reached")
+        bound = time.time() + 60
+        while not os.path.exists(os.path.join(SIG, "go")):
+            if time.time() > bound:
+                raise SystemExit("the test never let the verb go")
+            time.sleep(0.01)
+    return real_write(path, text)
+_manifest_io.atomic_write_text = write
+script = os.environ["LR_AUDIT_TASK"]
+sys.argv = [script] + sys.argv[1:]
+runpy.run_path(script, run_name="__main__")
+'''
+
+# How long a side that must NOT get through is watched for getting through.
+# It bounds the observation, not the fix: under the fix the waiting side is
+# blocked on the lock and cannot pass however long this is, and it stays well
+# inside the lock's own wait so the blocked verb is not refused meanwhile.
+_LR_WATCH_SECONDS = 1.5
+
+
+def _lr_signal(sig, name, seconds=30):
+    """Wait for the wrapper's `name` file -> True, or False past the bound."""
+    bound = time.monotonic() + seconds
+    while time.monotonic() < bound:
+        if os.path.exists(os.path.join(sig, name)):
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def _lr_acquired(sig):
+    return [n for n in os.listdir(sig) if n.startswith("acquired-")]
+
+
+def _lr_verb(tmp, root, spath, sig, pause):
+    """Start the real `note` verb on P1.1 -> the Popen. The lock tokens this
+    test process carries are dropped from the child's environment: a token
+    is what re-enters a claim, and a child holding the recorder's token
+    would be let in rather than excluded."""
+    wrapper = os.path.join(tmp, "lr-verb-wrapper.py")
+    with io.open(wrapper, "w", encoding="utf-8") as fh:
+        fh.write(_LR_VERB_WRAPPER)
+    env = dict((k, v) for k, v in os.environ.items() if k != _locks.TOKEN_ENV)
+    env.update({"LR_SCRIPTS": _output.SCRIPTS_DIR, "LR_SIGNAL_DIR": sig,
+                "LR_SHARD": spath, "LR_PAUSE": "1" if pause else "0",
+                "LR_AUDIT_TASK": os.path.join(_output.SCRIPTS_DIR, "manifest",
+                                              "audit-task.py")})
+    return subprocess.Popen(
+        [sys.executable, wrapper, "note", "P1.1", "--text", "the verb's write",
+         "--project-dir", root], env=env, stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT)
+
+
+def _lr_dead_pid():
+    """A pid that was this machine's a moment ago and is not now: a child
+    started and reaped, so `_locks.judge` reads its claim as gone."""
+    child = subprocess.Popen([sys.executable, "-c", "pass"])
+    child.wait()
+    return child.pid
+
+
+def _lr_outcome(proc, spath, landed, waited, out=b""):
+    task = _lr_shard(spath)["tasks"][0]
+    return {"verb": proc.returncode, "waited": waited,
+            "landed": landed[0] if landed else None,
+            "runId": (task.get("lastRun") or {}).get("runId"),
+            "pointer": (task.get("testEvidence") or {}).get("runId"),
+            "notes": [n.get("text") for n in task.get("notes") or []],
+            "verbSaid": out.decode("utf-8", "replace")[-600:]}
+
+
+def _lr_interleave_verb_first(tmp, name, writer, prepare=None):
+    """The verb holds its lock, read done and write not made; `writer(root,
+    manifest, shard)` is started then, on a thread. `waited` is that the
+    writer had neither returned nor touched the shard by the time the verb was
+    let go. `prepare(root, manifest, shard)` runs before the verb starts."""
+    import threading
+    root, mpath, spath = _lr_project(tmp, name)
+    if prepare is not None:
+        prepare(root, mpath, spath)
+    sig = os.path.join(tmp, name + "-sig")
+    os.makedirs(sig)
+    proc = _lr_verb(tmp, root, spath, sig, pause=True)
+    landed = []
+    try:
+        if not _lr_signal(sig, "reached"):
+            proc.kill()
+            out = proc.communicate()[0]
+            return _lr_outcome(proc, spath, landed, None, out)
+        with io.open(spath, "rb") as fh:
+            before = fh.read()
+        worker = threading.Thread(target=lambda: landed.append(
+            _harness.attempt(lambda: writer(root, mpath, spath))))
+        worker.start()
+        worker.join(_LR_WATCH_SECONDS)
+        with io.open(spath, "rb") as fh:
+            untouched = fh.read() == before
+        waited = worker.is_alive() and untouched
+        open(os.path.join(sig, "go"), "w").close()
+        out = proc.communicate(timeout=60)[0]
+        worker.join(60)
+        return _lr_outcome(proc, spath, landed, waited, out)
+    finally:
+        open(os.path.join(sig, "go"), "w").close()
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate()
+
+
+def _lr_interleave_record_first(tmp, write, ids, rec):
+    """The record write holds whatever it takes, read done and write not made;
+    the real verb is started then. `waited` is that the verb asked for the
+    index lock and had no answer from it while the record was held."""
+    import threading
+    import _manifest_io
+    root, mpath, spath = _lr_project(tmp, "record-first")
+    sig = os.path.join(tmp, "record-first-sig")
+    os.makedirs(sig)
+    target = os.path.realpath(spath)
+    reached, go = threading.Event(), threading.Event()
+    real_write = _manifest_io.atomic_write_text
+
+    def paused(path, text):
+        if (threading.current_thread().name == "lr-recorder"
+                and os.path.realpath(path) == target and not reached.is_set()):
+            reached.set()
+            go.wait(60)
+        return real_write(path, text)
+    landed = []
+    proc = None
+    _manifest_io.atomic_write_text = paused
+    try:
+        worker = threading.Thread(name="lr-recorder", target=lambda: landed.append(
+            _harness.attempt(lambda: write(root, mpath, "task", ids, rec,
+                                           session_id="recorder", wait=30))))
+        worker.start()
+        if not reached.wait(30):
+            go.set()
+            worker.join(60)
+            return {"verb": None, "waited": None, "landed": landed[0]
+                    if landed else None, "runId": None, "notes": None,
+                    "verbSaid": "the record write never reached its write"}
+        proc = _lr_verb(tmp, root, spath, sig, pause=False)
+        asked = _lr_signal(sig, "asking")
+        bound = time.monotonic() + _LR_WATCH_SECONDS
+        while time.monotonic() < bound and not _lr_acquired(sig):
+            time.sleep(0.01)
+        waited = asked and not _lr_acquired(sig)
+        if not waited:
+            # Whatever the verb got, it is let finish before the record is
+            # released, so the order the case is about is the order that ran.
+            proc.wait(60)
+        go.set()
+        worker.join(60)
+        out = proc.communicate(timeout=60)[0]
+        return _lr_outcome(proc, spath, landed, waited, out)
+    finally:
+        go.set()
+        _manifest_io.atomic_write_text = real_write
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+            proc.communicate()
+
+
 # A path of the shape the plan writer's scrubber reads as a home directory
 # wherever the suite runs: the sweep points HOME at a scratch directory, so a
 # fixture built from the live home would test a different detector arm.
@@ -4868,8 +5087,6 @@ def _last_run_cases(check):
 
     Every function is reached through `getattr`, so on a build that has none
     of them each case fails as itself rather than the block raising once."""
-    import threading
-    import _manifest_io
     tmp = _harness.fixture_root("audit-evidence-lastrun-")
     record_of = getattr(M, "run_record", None)
     write = getattr(M, "write_record", None)
@@ -4917,62 +5134,138 @@ def _last_run_cases(check):
               again.get("moved") == [] and "task P1.1" in (again.get("already")
                                                            or []))
 
-        # --- a verb's write and a record write, interleaved ---------------
-        iroot, impath, ispath = _lr_project(tmp, "interleave")
-        _locks.acquire(iroot, "phase-P1", session="verb", out=lambda *_a: None)
-        landed = []
+        # --- a REAL verb's write and a record write, interleaved ----------
+        # Both orders, each made deterministic by a barrier rather than a
+        # sleep: the side that goes first is stopped between its read and its
+        # write until the test says go (`_lr_interleave_verb_first`,
+        # `_lr_interleave_record_first`).
         rec2 = dict(rec or {}, runId="R2")
+        a = _lr_interleave_verb_first(
+            tmp, "verb-first", lambda r, m, _s: write(
+                r, m, "task", ids, rec2, session_id="recorder", wait=30))
+        check("lr4 A REAL VERB HOLDS ITS LOCKED SECTION, STOPPED BETWEEN ITS "
+              "READ AND ITS WRITE, WHILE THE RECORD IS WRITTEN: the record "
+              "write is still waiting when the verb is let go (it neither "
+              "returned nor touched the shard), and afterwards both writes "
+              "are in the shard - the verb's note once and the record: %r"
+              % (a,),
+              a["verb"] == 0 and a["waited"] is True
+              and a["landed"] and a["landed"][0]
+              and a["landed"][1].get("written") is True
+              and a["runId"] == "R2" and a["notes"] == ["the verb's write"])
+        b = _lr_interleave_record_first(tmp, write, ids, dict(rec or {},
+                                                              runId="R3"))
+        check("lr5 ...AND THE OTHER ORDER: the record write is stopped between "
+              "its read and its write while the real verb is started; the verb "
+              "asks for the shard's lock and does not get it until the record "
+              "is written, and both land - the note is not written back over "
+              "by the record's earlier read: %r" % (b,),
+              b["verb"] == 0 and b["waited"] is True
+              and b["landed"] and b["landed"][0]
+              and b["landed"][1].get("written") is True
+              and b["runId"] == "R3" and b["notes"] == ["the verb's write"])
+        # The pointer and reconcile are the module's other two writers of the
+        # shard, met the same way: the verb stopped after its read, the writer
+        # started then. A writer that read the shard before its lock writes
+        # that read back over the note.
+        p = _lr_interleave_verb_first(
+            tmp, "pointer-first", lambda r, m, _s: M.write_pointer(
+                r, m, "task", ids, _lr_row("R4", "2026-11-18T05:00:00Z"),
+                session_id="recorder", wait=30))
+        check("lr4p ...THE POINTER'S WRITE, the same way: it waits for the "
+              "verb, and both the note and the pointer are in the shard: %r"
+              % (p,),
+              p["verb"] == 0 and p["waited"] is True
+              and p["landed"] and p["landed"][0]
+              and p["landed"][1].get("written") is True
+              and p["pointer"] == "R4" and p["notes"] == ["the verb's write"])
 
-        def _recorder():
-            landed.append(_harness.attempt(lambda: write(
-                iroot, impath, "task", ids, rec2, session_id="recorder",
-                wait=20)))
-        worker = threading.Thread(target=_recorder)
-        worker.start()
-        # The recorder is now waiting on the lock the verb holds. The verb's
-        # write is a read-modify-write of the same shard, made under its lock.
-        time.sleep(0.5)
-        vbody = _lr_shard(ispath)
-        vbody["tasks"][0]["notes"] = [{"at": "2026-11-18T04:05:00Z",
-                                       "text": "the verb's write"}]
-        _manifest_io.save_plan_json(ispath, vbody)
-        _locks.release(iroot, "phase-P1", session="verb", out=lambda *_a: None)
-        worker.join(30)
-        both = _lr_shard(ispath)["tasks"][0]
-        check("lr4 A VERB WRITES WHILE THE RECORDER WAITS: the verb's write and "
-              "the record both land - the recorder read the shard under the lock "
-              "rather than before it, so the note the verb added is not lost "
-              "under the record: %r" % ((landed, sorted(both)),),
-              landed and landed[0][0] and landed[0][1].get("written") is True
-              and (both.get("lastRun") or {}).get("runId") == "R2"
-              and both.get("notes") == [{"at": "2026-11-18T04:05:00Z",
-                                         "text": "the verb's write"}])
-        vbody = _lr_shard(ispath)
-        vbody["tasks"][0].setdefault("notes", []).append(
-            {"at": "2026-11-18T04:06:00Z", "text": "a second write"})
-        _manifest_io.save_plan_json(ispath, vbody)
-        after = _lr_shard(ispath)["tasks"][0]
-        check("lr5 ...and the other order: a verb's read-modify-write AFTER the "
-              "record keeps it, since the record is an ordinary key of the "
-              "shard the verb read: %r" % (sorted(after),),
-              (after.get("lastRun") or {}).get("runId") == "R2"
-              and len(after.get("notes") or []) == 2)
+        def _reconcile_after_record(r, m, s):
+            # The record lands first and its pointer is taken off, so the
+            # reconcile has a pointer to restore while the verb holds the lock.
+            return M.reconcile(r, m, session_id="recorder", wait=30)
+
+        def _prepared(r, m, s):
+            write(r, m, "task", ids, dict(rec or {}, runId="R5"))
+            body = _lr_shard(s)
+            body["tasks"][0].pop("testEvidence", None)
+            with io.open(s, "w", encoding="utf-8") as fh:
+                json.dump(body, fh)
+        c = _lr_interleave_verb_first(tmp, "reconcile-first",
+                                      _reconcile_after_record, prepare=_prepared)
+        check("lr4r ...AND RECONCILE'S, the same way: the reconcile waits for "
+              "the verb, restores the pointer from the record, and the note "
+              "stays: %r" % (c,),
+              c["verb"] == 0 and c["waited"] is True
+              and c["landed"] and c["landed"][0]
+              and c["landed"][1].get("moved") == ["task P1.1 -> R5"]
+              and c["pointer"] == "R5" and c["runId"] == "R5"
+              and c["notes"] == ["the verb's write"])
 
         # --- a lock held past the wait -----------------------------------
         hroot, hmpath, hspath = _lr_project(tmp, "held")
-        _locks.acquire(hroot, "phase-P1", session="other", out=lambda *_a: None)
+        _locks.acquire(hroot, "index", session="other", out=lambda *_a: None)
         with io.open(hspath, "rb") as fh:
             held_before = fh.read()
         refused = _harness.attempt(lambda: write(
             hroot, hmpath, "task", ids, rec, session_id="me", wait=0.3))
         with io.open(hspath, "rb") as fh:
             held_after = fh.read()
-        _locks.release(hroot, "phase-P1", session="other", out=lambda *_a: None)
-        check("lr6 a lock another live run holds past the wait refuses the "
-              "record with a sentence, and the shard is byte for byte what it "
-              "was: %r" % (refused,),
+        _locks.release(hroot, "index", session="other", out=lambda *_a: None)
+        why = refused[1].get("reason") or "" if refused[0] else ""
+        check("lr6 the plan-file lock (`index`) another live run holds past "
+              "the wait refuses the record with a sentence saying what happened "
+              "before what to run, and the shard is byte for byte what it was: "
+              "%r" % (refused,),
               refused[0] and refused[1].get("written") is False
-              and bool(refused[1].get("reason")) and held_after == held_before)
+              and "index lock" in why
+              and 0 <= why.find("nothing was written to the plan")
+              < why.find("re-run this gate")
+              and held_after == held_before)
+        proot, pmpath, pspath = _lr_project(tmp, "phase-held")
+        _locks.acquire(proot, "phase-P1", session="other", out=lambda *_a: None)
+        try:
+            through = _harness.attempt(lambda: write(
+                proot, pmpath, "task", ids, rec, session_id="me", wait=0.3))
+        finally:
+            _locks.release(proot, "phase-P1", session="other",
+                           out=lambda *_a: None)
+        check("lr6b SECOND DIRECTION: a PHASE lock another session holds - a "
+              "claim on the phase's run, which no writer of the shard takes "
+              "for a write - does not refuse the record: %r" % (through,),
+              through[0] and through[1].get("written") is True
+              and (_lr_shard(pspath)["tasks"][0].get("lastRun")
+                   or {}).get("runId") == "R1")
+
+        # --- a dead holder: what happened, then what to run ---------------
+        droot, dmpath, dspath = _lr_project(tmp, "dead-holder")
+        import platform as _pf
+        dead = _lr_dead_pid()
+        os.makedirs(_locks.lock_dir(droot), exist_ok=True)
+        _locks._write_lock(os.path.join(_locks.lock_dir(droot), "index.lock"), {
+            "sessionId": "gone", "pid": dead, "hostname": _pf.node(),
+            "note": "a verb that died", "token": "tok-dead", "handedOff": False,
+            "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+        with io.open(dspath, "rb") as fh:
+            dead_before = fh.read()
+        stale = _harness.attempt(lambda: write(
+            droot, dmpath, "task", ids, rec, session_id="me", wait=0.3))
+        with io.open(dspath, "rb") as fh:
+            dead_after = fh.read()
+        said = stale[1].get("reason") or "" if stale[0] else ""
+        order = [said.find(s) for s in (
+            "looks abandoned", "nothing was written to the plan",
+            "audit-lock.py release index --force", "re-run this gate")]
+        check("lr6c A DEAD HOLDER of the plan-file lock is not taken over: the "
+              "record is refused with the shard untouched, and the sentence says "
+              "what happened and then what to run, in that order - abandoned, "
+              "nothing written, release it, re-run this gate (pid %s): %r"
+              % (dead, (order, said)),
+              stale[0] and stale[1].get("written") is False
+              and dead_after == dead_before
+              and all(i >= 0 for i in order) and order == sorted(order)
+              and os.path.exists(os.path.join(_locks.lock_dir(droot),
+                                              "index.lock")))
 
         # --- what the record may hold, and how big it may get ------------
         wide = [{"name": "step-%02d" % (i,), "exit": 1, "ran": 1,
@@ -5072,6 +5365,202 @@ def _last_run_cases(check):
               and bool(bad[0]))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+# --- a repeated verdict's record, and reconcile's pair -------------------------
+# Read through `getattr` so a build without the key fails the cases that ask
+# for it as themselves, rather than the block raising once.
+_RV_UNREAD = getattr(M, "REPEAT_UNREAD_KEY", "repeatedRunUnread")
+
+
+def _rv_repeat_row(run_id, ts, source_id, source_ts):
+    """The ledger row of a WHOLE repeat of `source_id`, as `reused_result` and
+    `row_for` shape one: no step ran, no start was measured, `durationMs` is
+    the repeat's own (the identity and the lookup)."""
+    row = _lr_row(run_id, ts, steps=[])
+    row.pop("startedAt", None)
+    row.update({"durationMs": 40, "verdictSource": "reused",
+                "reusedFrom": {"runId": source_id, "ts": source_ts,
+                               "status": "failed"}})
+    return row
+
+
+def _rv_task(spath):
+    return _lr_shard(spath)["tasks"][0]
+
+
+def _rv_steps(record):
+    return [(s.get("name"), (s.get("reusedFrom") or {}).get("runId"),
+             "durationMs" in s) for s in (record or {}).get("steps") or []]
+
+
+def _repeat_record_cases(check):
+    """(rv) A repeat's record carries the run it repeated - from the record it
+    replaces when that is the run, from the ledger row otherwise - or says it
+    could not; and reconcile leaves the pointer and the record on one run."""
+    tmp = _harness.fixture_root("audit-evidence-repeat-")
+    ids = {"taskId": "P1.1", "phaseId": "P1"}
+    measured = _lr_row("RM", "2026-11-18T04:04:19Z")
+    repeat = _rv_repeat_row("RR", "2026-11-18T05:00:00Z", "RM",
+                            "2026-11-18T04:04:19Z")
+    other = _lr_row("RX", "2026-11-18T03:00:00Z", steps=[
+        {"name": "lint", "exit": 0, "ran": 1, "outcome": "passed",
+         "durationMs": 10}], status="passed")
+    try:
+        # rv1: the run repeated IS the record this write replaces.
+        root, mpath, spath = _lr_project(tmp, "in-record")
+        M.write_record(root, mpath, "task", ids, M.run_record(measured))
+        bare = M.run_record(repeat)
+        got = M.write_record(root, mpath, "task", ids, bare)
+        rec = _rv_task(spath).get("lastRun") or {}
+        check("rv1 SOURCE IN THE REPLACED RECORD: a whole repeat built with no "
+              "source carries the steps of the record it replaces - each "
+              "naming RM, none keeping a duration of its own - and RM whole "
+              "under `repeatedRun`, with the unread marker the bare record "
+              "held gone: built=%r stored=%r"
+              % (sorted(bare), (_rv_steps(rec), sorted(rec))),
+              got.get("written") is True
+              and _RV_UNREAD in bare and bare.get("steps") == []
+              and _rv_steps(rec) == [("sweep", "RM", False)]
+              and rec["steps"][0].get("failing") == ["FAIL x1 the case"]
+              and (rec.get(M.REPEATED_RUN_KEY) or {}).get("runId") == "RM"
+              and _RV_UNREAD not in rec)
+        check("rv1b ...and its moments are the REPEAT's: no `startedAt` (it "
+              "measured nothing), `durationMs` its own lookup's, while the run "
+              "it repeated keeps its own start and length under "
+              "`repeatedRun`: %r"
+              % ((rec.get("startedAt"), rec.get("durationMs"),
+                  (rec.get(M.REPEATED_RUN_KEY) or {}).get("startedAt"),
+                  (rec.get(M.REPEATED_RUN_KEY) or {}).get("durationMs")),),
+              "startedAt" not in rec and rec.get("durationMs") == 40
+              and (rec.get(M.REPEATED_RUN_KEY) or {}).get("startedAt")
+              == "2026-11-18T04:04:10Z"
+              and (rec.get(M.REPEATED_RUN_KEY) or {}).get("durationMs") == 8125)
+
+        # rv2: the record replaced is ANOTHER run; the ledger row is the source.
+        root2, mpath2, spath2 = _lr_project(tmp, "in-ledger")
+        M.write_record(root2, mpath2, "task", ids, M.run_record(other))
+        M.write_record(root2, mpath2, "task", ids,
+                       M.run_record(repeat, source=measured))
+        rec2 = _rv_task(spath2).get("lastRun") or {}
+        check("rv2 SOURCE ONLY IN THE LEDGER: the record replaced is another "
+              "run (RX), so the steps come from RM's ledger row handed as the "
+              "source - RM's step, naming RM, and RM under `repeatedRun`, "
+              "never RX's: %r" % ((_rv_steps(rec2), sorted(rec2)),),
+              _rv_steps(rec2) == [("sweep", "RM", False)]
+              and (rec2.get(M.REPEATED_RUN_KEY) or {}).get("runId") == "RM"
+              and _RV_UNREAD not in rec2)
+
+        # rv3: neither holds it.
+        root3, mpath3, spath3 = _lr_project(tmp, "neither")
+        M.write_record(root3, mpath3, "task", ids, M.run_record(other))
+        M.write_record(root3, mpath3, "task", ids, M.run_record(repeat))
+        rec3 = _rv_task(spath3).get("lastRun") or {}
+        unread = rec3.get(_RV_UNREAD) or {}
+        check("rv3 NEITHER HOLDS IT: no source and a replaced record of another "
+              "run - the record keeps `steps: []` and SAYS so, naming RM and why, "
+              "with no `repeatedRun` and none of RX's steps: %r" % (rec3,),
+              rec3.get("steps") == [] and unread.get("runId") == "RM"
+              and "RM" in (unread.get("basis") or "")
+              and M.REPEATED_RUN_KEY not in rec3
+              and rec3.get("verdictSource") == "reused")
+        row3 = M.record_row(rec3, "task", "P1.1", "P1")
+        check("rv3b ...and the reader of records meets the marker too: the run "
+              "read back as its row carries it, so an empty `steps` there is not "
+              "a run that ran no step: %r" % (sorted(row3),),
+              (row3.get(_RV_UNREAD) or {}).get("runId") == "RM")
+        measured_only = M.run_record(measured)
+        check("rv3c SECOND DIRECTION: a MEASURED run carries neither key - the "
+              "marker is a repeat's alone, and a writer that stamped it on every "
+              "record would fail here: %r" % (sorted(measured_only),),
+              _RV_UNREAD not in measured_only
+              and M.REPEATED_RUN_KEY not in measured_only
+              and _rv_steps(measured_only) == [("sweep", None, True)])
+
+        # rv4: reconcile, when the ledger row is the newer run.
+        root4, mpath4, spath4 = _lr_project(tmp, "reconcile-row")
+        M.write_record(root4, mpath4, "task", ids, M.run_record(other))
+        newer = _lr_row("RN", "2026-11-18T06:00:00Z")
+        M.append_row(root4, newer)
+        rep4 = M.reconcile(root4, mpath4)
+        task4 = _rv_task(spath4)
+        check("rv4 A LEDGER ROW NEWER THAN THE RECORD (a record write that was "
+              "refused): reconcile moves the pointer AND rewrites the record "
+              "from that row in one write, so `testEvidence` and `lastRun` "
+              "name one run: %r"
+              % ((rep4.get("moved"), task4.get("testEvidence"),
+                  (task4.get("lastRun") or {}).get("runId")),),
+              rep4.get("moved") == ["task P1.1 -> RN"]
+              and (task4.get("testEvidence") or {}).get("runId") == "RN"
+              and (task4.get("lastRun") or {}).get("runId") == "RN"
+              and _rv_steps(task4.get("lastRun")) == [("sweep", None, True)])
+        again4 = M.reconcile(root4, mpath4)
+        check("rv4b ...and a second reconcile moves nothing: %r"
+              % ((again4.get("moved"), again4.get("already")),),
+              again4.get("moved") == []
+              and again4.get("already") == ["task P1.1"])
+    finally:
+        _harness.remove_tree(tmp)
+
+
+# The names a call writes a plan file through - `_manifest_io`'s writers.
+_LK_SAVES = ("save_plan_json", "save_sharded", "save_single_file",
+             "atomic_write_json", "raw_atomic_write_json", "atomic_write_text")
+
+
+def _lk_calls(tree, names):
+    """`[(enclosing top-level function, line, called name, first argument
+    source)]` for every call of one of `names` in the module `tree`."""
+    import ast
+    found = []
+    for top in tree.body:
+        if not isinstance(top, (ast.FunctionDef, ast.ClassDef)):
+            continue
+        for node in ast.walk(top):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            called = fn.attr if isinstance(fn, ast.Attribute) else (
+                fn.id if isinstance(fn, ast.Name) else None)
+            if called in names:
+                first = ast.dump(node.args[1]) if len(node.args) > 1 else None
+                found.append((top.name, node.lineno, called, first))
+    return found
+
+
+def _shard_lock_ast_cases(check):
+    """(lk) The one-helper rule, read off `_evidence_io`'s own AST: every save
+    of a plan file and every lock taken is in `write_plan_file`, the read there
+    comes after the lock, and the lock is the verbs' `index`."""
+    import ast
+    import _panel_write
+    with io.open(M.__file__, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    saves = _lk_calls(tree, _LK_SAVES)
+    takes = _lk_calls(tree, ("acquire",))
+    reads = [c for c in _lk_calls(tree, ("read_json",))
+             if c[0] == "write_plan_file"]
+    check("lk1 NO FUNCTION IN _evidence_io SAVES A PLAN FILE OUTSIDE "
+          "`write_plan_file`, and none takes a lock outside it: every save call "
+          "and every acquire in the module's AST sits in that one function - a "
+          "writer added beside it fails here by name: saves=%r acquires=%r"
+          % (saves, takes),
+          len(saves) == 1 and saves[0][0] == "write_plan_file"
+          and len(takes) == 1 and takes[0][0] == "write_plan_file")
+    check("lk2 ...and inside it the shard is READ after the lock is TAKEN - a "
+          "read moved above the acquire is the lost update again: acquire at "
+          "line %r, reads at %r"
+          % ([t[1] for t in takes], [r[1] for r in reads]),
+          len(takes) == 1 and len(reads) == 1 and reads[0][1] > takes[0][1])
+    check("lk3 THE LOCK IS THE VERBS': `SHARD_LOCK` is the name every "
+          "`audit-task.py` verb and the panel take for their writes "
+          "(`_panel_write.LOCK_NAME`), and the acquire names it - not "
+          "`phase-<id>`: %r"
+          % ((getattr(M, "SHARD_LOCK", None), _panel_write.LOCK_NAME, takes),),
+          getattr(M, "SHARD_LOCK", None) == _panel_write.LOCK_NAME == "index"
+          and len(takes) == 1
+          and takes[0][3] == ast.dump(ast.Name(id="SHARD_LOCK",
+                                               ctx=ast.Load())))
 
 
 # --- one reader over the shard records and the older rows ---------------------
@@ -5393,8 +5882,10 @@ def _one_reader_cases(check):
 
 def _selftest():
     def body(check):
-        _cases(check)
+        _harness.stage(check, "ev-block", _cases)
         _harness.stage(check, "lr-block", _last_run_cases)
+        _harness.stage(check, "rv-block", _repeat_record_cases)
+        _harness.stage(check, "lk-block", _shard_lock_ast_cases)
         _harness.stage(check, "ri-block", _one_reader_cases)
         _foreground_bound_cases(check)
         _part_repeat_cases(check)

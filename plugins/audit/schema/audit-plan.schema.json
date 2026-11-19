@@ -2017,7 +2017,7 @@
         "steps"
       ],
       "additionalProperties": true,
-      "description": "THE NEWEST RECORDED RUN of this task (or of this phase's gate), whole: written by `run-test-gate.py --record` in the same locked write as `testEvidence`, which is the pointer derived from it (`_evidence_io.pointer_from_record`). REPLACED, NEVER APPENDED - one record per subject, so a shard holds at most one per task and per phase, and a record's size is bounded by the gate's width (`_evidence_io.MAX_STEPS` steps, each with at most `MAX_FAILING` failing lines of at most the journal's value bound). The evidence ledger row of the same run is still written beside it, unchanged, under the same `runId`. Optional and additive: a plan written before this key existed validates exactly as it did, and ABSENT reads as `testEvidence`'s absence does - no record, never a failure. Every string in it passes the plan writer's machine-path scrub, as the rest of the shard does. additionalProperties stays permissive, this document's policy at every object level.",
+      "description": "THE NEWEST RECORDED RUN of this task (or of this phase's gate), whole: written by `run-test-gate.py --record` in the same write as `testEvidence`, which is the pointer derived from it (`_evidence_io.pointer_from_record`), under the plan-file lock every verb takes (`index`, through `_evidence_io.write_plan_file`), with the shard read only once that lock is held; `--reconcile` rewrites it from a newer ledger row in the same write as the pointer. REPLACED, NEVER APPENDED - one record per subject, so a shard holds at most one per task and per phase, and a record's size is bounded by the gate's width (`_evidence_io.MAX_STEPS` steps, each with at most `MAX_FAILING` failing lines of at most the journal's value bound). The evidence ledger row of the same run is still written beside it, unchanged, under the same `runId`. Optional and additive: a plan written before this key existed validates exactly as it did, and ABSENT reads as `testEvidence`'s absence does - no record, never a failure. Every string in it passes the plan writer's machine-path scrub, as the rest of the shard does. additionalProperties stays permissive, this document's policy at every object level.",
       "properties": {
         "runId": {
           "type": "string",
@@ -2030,17 +2030,17 @@
         },
         "startedAt": {
           "type": "string",
-          "description": "When the run's first step began; absent on a run that repeated another's verdict, which measured nothing."
+          "description": "When the run's first step began; absent on a run that repeated another's verdict in whole, which ran no step - the run it repeated keeps its own under `repeatedRun`."
         },
         "durationMs": {
           "type": "integer",
           "minimum": 0,
-          "description": "The run's own length."
+          "description": "The run's own length: on a measured run, from its first step to its last; on a whole repeat, the time it took to compute the identity and find the run it repeats - never that run's length, which `repeatedRun.durationMs` keeps."
         },
         "selectionMs": {
           "type": "integer",
           "minimum": 0,
-          "description": "The time the run spent choosing what to run, ending at `startedAt`; absent when it measured none."
+          "description": "The time the run spent choosing what to run: on a measured run, ending at `startedAt`; on a whole repeat, the gathering up to the identity, so it and `durationMs` add up to the repeat's whole window and neither holds any of the other. Absent when it measured none."
         },
         "status": {
           "$ref": "#/$defs/testEvidence/properties/status"
@@ -2133,7 +2133,19 @@
           "description": "On a red run, its reading against the base - whether the red predates the task - as its ledger row's `baseRed` (`_evidence_io.BASE_RED_KEY`); the step driver reads it back when it decides the red (`base_red_why`)."
         },
         "repeatedRun": {
-          "description": "On a run whose verdict was repeated in whole or in part (`verdictSource` `reused` or `part-reused`), the record of the run it repeated, whole and in this same shape but carrying no `repeatedRun` of its own (`_evidence_io.REPEATED_RUN_KEY`). The subject's record is replaced by every run, so this is where the measured run a repeat stands on is still held: the verdict binding grades a repeat by that run's gate and declared-work digests, and a later run copies a step only from a run that measured it. Absent on a measured run, and on a repeat whose source the recorder could not read."
+          "description": "On a run whose verdict was repeated in whole or in part (`verdictSource` `reused` or `part-reused`), the record of the run it repeated, whole and in this same shape but carrying no `repeatedRun` of its own (`_evidence_io.REPEATED_RUN_KEY`). The subject's record is replaced by every run, so this is where the measured run a repeat stands on is still held: the verdict binding grades a repeat by that run's gate and declared-work digests, and a later run copies a step only from a run that measured it. A whole repeat also carries this run's steps in its own `steps`, each naming it in `reusedFrom`. Read from the run's ledger row, or, when the ledger holds none, from the record the write replaces when that is the run. Absent on a measured run, and on a repeat whose source neither held - which then carries `repeatedRunUnread` instead. A reader asks this key first."
+        },
+        "repeatedRunUnread": {
+          "type": "object",
+          "description": "On a repeat whose source run neither the ledger nor the record it replaced held, so `repeatedRun` is absent and the run's steps are not carried (`_evidence_io.REPEAT_UNREAD_KEY`): `runId` names the run repeated and `basis` says why, so an empty `steps` is never read as a run that ran no step. Absent whenever `repeatedRun` is present, and on a measured run; a reader asks it only when `repeatedRun` is absent.",
+          "properties": {
+            "runId": {
+              "type": "string"
+            },
+            "basis": {
+              "type": "string"
+            }
+          }
         },
         "steps": {
           "type": "array",
