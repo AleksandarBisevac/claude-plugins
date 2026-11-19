@@ -1721,7 +1721,7 @@
     {
       "id": "P169.10-6l3",
       "title": "A case that compares two gate runs' printed lines says which line differed, and its Windows-only red has a named cause",
-      "status": "in_progress",
+      "status": "done",
       "description": "One case of tests/test_run_test_gate.py, pgo7, failed once on a Windows CI runner (run 44363694425, job \"selftests (windows, plain 2)\") over product code that passed it on the same runner image in two other runs the same day. The case runs a task's gate once with executor.phaseGateOnly absent and once with it empty and asserts that the two print the same lines once ids and times are masked. In the failing run both exited 0 with the same steps and the same row keys, so the difference is in the printed lines, and the failure message does not show them. A case that reddens a green tree once in three runs is how a CI verdict stops being read.\n\nDo this in order. First, make the case's failure say what differed: when the masked line lists are unequal, the message carries the first differing pair of lines (and the lengths if they differ), so the next red of this case names its own cause. Second, read the failing job's log (gh run view --job with the job's id from that run, read-only) for anything the run printed around the case, and read the case's mask against every line the gate prints: a duration that changes unit between two runs (ms to s), a count of workers or slots, a path under a temp directory with a random part, a line that appears only when a step crosses a time threshold, the order of two lines written by different streams. Third, fix the cause where it is: if a line legitimately varies with time, the mask must cover its whole varying part; if a line appears or not depending on timing, the two runs are not comparable on that line and the case must say so rather than compare it; if the product prints something nondeterministic that a user would also see vary, that is a product fix and belongs in run-test-gate.py.\n\nACCEPTANCE.\n1. With the two line lists made to differ in one line (a mutation in a scratch copy, restored in the same command), the failure message names that line pair.\n2. The cause is named in the outcome with the evidence that it is the cause (the log line, or the unmasked form found by reading), or stated as not established with what was ruled out; a mask widened without a named cause is not accepted.\n3. The case still fails when executor.phaseGateOnly set to an empty list changes what a task's run prints: prove it by mutation.\n4. The suite is green under the sweep and under the cp1252 leg locally (python3 tools/sweep-selftests.py tests/test_run_test_gate.py, and the same with --encoding cp1252).\n\nDEPENDANTS: the suite's other cases that share pgo7's masking helper, if it is shared.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -1743,13 +1743,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "74a5faf6138c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_run_test_gate.py only; run-test-gate.py is unchanged. (1) New _first_line_difference(left, right, width=160): returns None when the two texts have the same lines, otherwise 'line K differs: <left> / <right>' with each side cut to width, plus both line counts when they differ. pgo7's label now ends with 'printed lines, absent / empty: <that, or the same>'. (2) CAUSE, reproduced: the step line is '  %-12s exit %-3d %10s  %s' (run-test-gate.py:5047), so the duration is right-aligned in a 10-wide column. _pgo_masked collapsed each digit run to N but kept the padding, which still encodes the digit count. A step at 111 ms in one fixture and 73 ms in the other masks to '      N ms' against '       N ms'. Raw diff seen locally under load: 'sweep exit 0       111 ms' / 'sweep exit 0        73 ms'. Unloaded, steps here take about 30 ms and never cross 100 ms, so the case passes; on CI, trivial steps sit near 100 ms (pr3 in the failing Windows run 44363694425 printed row=156 for a row of one trivial measured step). pgo7 was red in 44363694425 (windows plain 2), 44366022835 and 44388480667 (linux stress 1). Runs 44385960921 and 44397426313, named in the hand-off, carry only vt8, not pgo7. The CI log prints no text for pgo7, so the CI instance itself is not observed line by line; the mechanism is reproduced, and the next red will name its own line pair. (3) FIX in the mask, not the product: the duration field (the spaces before it, the number and the unit, in every form _fmt.human_duration renders, _fmt.py:187-193: N ms, N.N s, N m NN s) becomes one ' <duration>' token, applied before the digit collapse. The column is intended product behaviour (run-test-gate.py:5039-5045 states why it is right-aligned), so no product change is owed. A check over 13 durations from 0 ms to one hour gave a single masked line. Ruled out by reading: the 'machine:' line reads only the fixture project's own rows and journal (run-test-gate.py:5548-5579, _evidence_io.py merge_seams/shared_the_machine), and each fixture is its own git project, so no concurrent sibling reaches it; the reach-reading clocks are 30 s and 120 s (_affected_tests.py:1305-1306); the root path is not printed on this path. ACCEPTANCE 1: a scratch copy of the suite rewrites one line of the empty-setting text, and pgo7 fails with: line 11 differs: 'GATE GREEN: sweep, browser, tree unchanged' / 'GATE GREEN: sweep, browser, tree CHANGED'. ACCEPTANCE 3: scratch tree copies (nothing written in the tree) whose runner prints differently only when executor.phaseGateOnly is present: (a) an extra line, giving FAIL pgo7 'line 1 differs: ... / [run-test-gate] executor.phaseGateOnly is set and names nothing (12 line(s) against 13)'; (b) the green banner reworded in place, giving FAIL pgo7 'line 11 differs: GATE GREEN: ... / GATE GREEN (setting empty): ...'. The first attempt at (a) and (b) keyed on the parsed names and SURVIVED, because phase_gate_only_setting returns ((), None) for absent and for empty alike (_config_rules.py:319-328), so it fired in both arms. Re-keyed on the config key, both went red. ACCEPTANCE 4: every gate command listed exits 0 (701 cases each for the suite; 1497 cases across the orchestrator's 5-file list); ruff and vermin also pass on the file. DEPENDANTS: _pgo_masked has one caller, pgo7 (grep over tests/ and tools/); no other case shares it, and no other suite imports it or _first_line_difference. run-test-gate.py is unchanged, so its importers and prose mentions (PLUGIN-BUILD-GUIDE.md, _evidence_io.py, audit-lookup.py, test_audit_lookup.py) still hold. Importers of tests/test_run_test_gate.py (test_commit_task_work, test_drive_phase, test_drive_without_model) and its path readers (.github/sweep-costs.json, tools/affected.py, tools/verify.sh, COMPATIBILITY.md) still hold: no name they use was renamed or changed, and _derived_base_repo, _excluded_cases, _follower_cases and _full_repo are untouched. PLUGIN-BUILD-GUIDE.md needs no change: nothing the runner prints or does changed.",
+        "descriptive": "pgo7 now names the line pair that differs, and its intermittent red is fixed at the cause: a masked duration kept the column padding that encodes its digit count."
       },
       "startedAt": "2026-11-18T23:43:00Z",
-      "completedAt": null,
+      "completedAt": "2026-11-19T00:09:37Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -1788,6 +1788,30 @@
             "ms": 396178,
             "basis": "durationMs in run 2026-11-19T00:04:46Z.b2d8ee's record (run-test-gate --record)",
             "runId": "2026-11-19T00:04:46Z.b2d8ee"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T23:57:13Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 849000,
+            "startedAt": "2026-11-18T23:43:04Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-19T00:04:46Z.b2d8ee",
+            "kind": "wait",
+            "ms": 1000,
+            "startedAt": "2026-11-18T23:57:41Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-19T00:09:14Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 249000,
+            "startedAt": "2026-11-19T00:05:05Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 74a5faf6138c",
+            "kind": "commit",
+            "ms": 2318,
+            "startedAt": "2026-11-19T00:09:33Z"
           }
         ],
         "firstStartedAt": "2026-11-18T23:43:00Z"
@@ -1859,6 +1883,17 @@
         "runId": "2026-11-19T00:05:03Z.392bbb",
         "status": "passed",
         "at": "2026-11-19T00:05:03Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "74a5faf6138c",
+        "at": "2026-11-19T00:09:37Z",
+        "return": "docs/audit/evidence/returns/P169.10-6l3/20261118T234300Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with tests.expectRedFirst false and no tests.add entry, so no helper proof is owed. The red this fixes depends on load, so a HEAD-against-fix helper run on a quiet tree would not show it. It was reproduced under load instead: 16 concurrent copies of the pgo block x 4 runs with the old mask gave pgo7 red in 18 of 64 runs; the same load with the fix gave 0 of 64, and 24 copies x 6 runs gave 0 of 144.",
+        "at": "not run; load reproductions 2026-11-18 23:47-23:51 UTC"
       }
     },
     {
@@ -2161,10 +2196,92 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-19T00:11:38Z",
+            "ms": 22946,
+            "basis": "selectionMs in run 2026-11-19T00:17:32Z.6f7dd1's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-19T00:17:32Z.6f7dd1"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-19T00:12:01Z",
+            "ms": 331025,
+            "basis": "durationMs in run 2026-11-19T00:17:32Z.6f7dd1's record (run-test-gate --record)",
+            "runId": "2026-11-19T00:17:32Z.6f7dd1"
+          }
+        ],
         "firstStartedAt": "2026-11-18T23:43:05Z"
       },
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-19T00:17:49Z.8f2d7e",
+        "durationMs": 158,
+        "selectionMs": 14783,
+        "status": "passed",
+        "failed": [],
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-19T00:17:32Z.6f7dd1",
+          "ts": "2026-11-19T00:17:32Z",
+          "status": "passed"
+        },
+        "reuseKey": "1:sha256:0e75ed3907c251b4b9fbab091f1ea9868a41f69e62d631c18ce40d89206d2eac",
+        "gateDigest": "sha256:7a1bb0f7ab6e567a8754370c032d80530e7d3363cf913db6ca28c7a439c127f3",
+        "gateSource": "task",
+        "banners": [],
+        "at": "2026-11-19T00:17:49Z",
+        "steps": [
+          {
+            "name": "python3 tools/sweep-selftests.py tests/test__commit_trail.py tests/test_commit_task_work.py tests/test__status_facts.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_io.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_run_test_gate.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+            "exit": 0,
+            "ran": null,
+            "measured": "not-knowable",
+            "suiteReader": "none",
+            "reusedFrom": {
+              "runId": "2026-11-19T00:17:32Z.6f7dd1",
+              "ts": "2026-11-19T00:17:32Z"
+            }
+          }
+        ],
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "runId": "2026-11-19T00:17:32Z.6f7dd1",
+          "startedAt": "2026-11-19T00:12:01Z",
+          "durationMs": 331025,
+          "selectionMs": 22946,
+          "status": "passed",
+          "failed": [],
+          "reuseKey": "1:sha256:0e75ed3907c251b4b9fbab091f1ea9868a41f69e62d631c18ce40d89206d2eac",
+          "gateDigest": "sha256:7a1bb0f7ab6e567a8754370c032d80530e7d3363cf913db6ca28c7a439c127f3",
+          "gateSource": "task",
+          "banners": [],
+          "at": "2026-11-19T00:17:32Z",
+          "testedState": {
+            "head": "74a5faf6",
+            "dirtyDigest": "sha256:ef90640e21825e8c21998d1d651b16d94fec1c66247eef56470a27b9ae1d129f",
+            "scopeDigest": "sha256:56496ce8429383508c1cf28a2a36de643de04dc426c1bbee820f4af2edb956a8",
+            "scopeListDigest": "sha256:f750a7cf6720951321ac19382ed7919041c32e6519b8666762175ed5b8f1df08",
+            "treeKey": "6688a4f18dd9"
+          },
+          "steps": [
+            {
+              "name": "python3 tools/sweep-selftests.py tests/test__commit_trail.py tests/test_commit_task_work.py tests/test__status_facts.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_io.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_run_test_gate.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "suiteReader": "none",
+              "durationMs": 330955
+            }
+          ]
+        }
+      },
+      "testEvidence": {
+        "runId": "2026-11-19T00:17:49Z.8f2d7e",
+        "status": "passed",
+        "at": "2026-11-19T00:17:49Z"
+      }
     },
     {
       "id": "P169.14-6l3",

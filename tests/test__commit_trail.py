@@ -328,17 +328,25 @@ def _cases(check):
 #     as nothing recorded for that key, with the defect named;
 #   * a status word this build does not know is returned as itself;
 #   * keys compare case-insensitively, as git's own trailer matching does;
+#   * a message with `\r\n` line ends reads as the same message with `\n`, for
+#     every key, and no `\r` reaches a value - held here on every platform, not
+#     only on the one whose text-mode writes produce that shape;
 #   * of two commits naming one task, the first `git log --topo-order` shows
 #     wins (no other carrier descends from it), and the others are named.
 SCHEMA = os.path.join(_output.PLUGIN_ROOT, "schema", "audit-plan.schema.json")
 
 
 def _commit(repo, name, message):
-    """Commit one new file under `message`, given whole through `-F`."""
+    """Commit one new file under `message`, given whole through `-F`.
+
+    The message file holds `message`'s bytes AS WRITTEN (`newline=""`): a
+    text-mode write turns each `\\n` into `\\r\\n` on Windows, so the same case
+    would commit a different message there than everywhere else. A case that
+    wants `\\r\\n` line ends writes them itself."""
     with open(os.path.join(repo, name), "w", encoding="utf-8") as fh:
         fh.write(name)
     msg = os.path.join(repo, ".git", "msg-%s" % (name,))
-    with open(msg, "w", encoding="utf-8") as fh:
+    with open(msg, "w", encoding="utf-8", newline="") as fh:
         fh.write(message)
     _git(repo, "add", "--", name)
     _git(repo, "commit", "-q", "--cleanup=verbatim", "-F", msg)
@@ -347,13 +355,14 @@ def _commit(repo, name, message):
 
 def _parsed(repo, sha):
     """`git interpret-trailers --parse` over the commit's message: git's own
-    reading, as `(key, value)` lines."""
+    reading, as `(key, value)` lines - split at `\\n` alone, as git ends them,
+    since `splitlines()` would also cut a value at a `\\r` git left inside it."""
     body = _git(repo, "log", "-1", "--format=%B", sha).stdout
     out = subprocess.run(["git", "-C", repo, "interpret-trailers", "--parse"],
                          input=body, stdout=subprocess.PIPE,
                          stderr=subprocess.DEVNULL).stdout.decode()
     return [tuple(part.strip() for part in ln.split(":", 1))
-            for ln in out.splitlines() if ":" in ln]
+            for ln in out.split("\n") if ":" in ln]
 
 
 def _gate_enum():
@@ -536,6 +545,68 @@ def _verdict_cases(check):
               "pathspec - the history of that directory alone would come back "
               "as if it were the walk asked for: %r" % ((dir_tv, dir_why),),
               dir_tv is None and isinstance(dir_why, str) and "nested" in dir_why)
+
+        # --- a message with Windows line ends ----------------------------------
+        # Git ends lines at `\n` alone, so a `\r\n` message keeps a `\r` before
+        # each fold after unfolding (`a\r\n  b` prints as `a\r b`), and trims it
+        # at a value's end. These shapes are fed here, on every platform, so the
+        # reading does not need a Windows runner to go red.
+        lf_pairs = [("Audit-Task", "P1.9"), ("Audit-Gate", "failed sha256:i"),
+                    ("Audit-Run", "run-9"),
+                    ("Audit-Override", "first half second  half")]
+        shapes = {
+            "as git prints a crlf message": "Audit-Task: P1.9\n"
+            "Audit-Gate: failed sha256:i\nAudit-Run: run-9\n"
+            "Audit-Override: first half\r second  half\n",
+            "every line still ending crlf": "Audit-Task: P1.9\r\n"
+            "Audit-Gate: failed sha256:i\r\nAudit-Run: run-9\r\n"
+            "Audit-Override: first half\r second  half\r\n",
+            "a lone carriage return": "Audit-Task: P1.9\n"
+            "Audit-Gate: failed sha256:i\nAudit-Run: run-9\n"
+            "Audit-Override: first half\rsecond  half\n"}
+        read = dict((name, M.trailer_pairs(text)) for name, text in shapes.items())
+        stray = [(name, kv) for name, pairs in sorted(read.items())
+                 for kv in pairs if "\r" in kv[0] or "\r" in kv[1]]
+        check("vt21 the READER given the shapes a carriage return leaves in git's "
+              "output - a crlf message as git prints it, every line still ending "
+              "crlf, and a lone carriage return - reads every key the way the "
+              "plain message reads, the folded value whole, and no carriage "
+              "return reaches a key or value: %r" % (read,),
+              M.trailer_pairs("Audit-Task: P1.9\nAudit-Gate: failed sha256:i\n"
+                              "Audit-Run: run-9\n"
+                              "Audit-Override: first half second  half\n") == lf_pairs
+              and all(pairs == lf_pairs for pairs in read.values())
+              and len(read) == 3 and stray == [])
+        lf_msg = ("feat(P3.1): audit - x\n\nAudit-Task: P3.1\n"
+                  "Audit-Gate: failed sha256:n\nAudit-Run: run-31\n"
+                  "Audit-Override: first half\n  second  half\n")
+        lf_sha = _commit(repo, "lf-msg", lf_msg)
+        crlf_sha = _commit(repo, "crlf-msg", lf_msg.replace("\n", "\r\n"))
+        both, both_why = M.verdicts_at(repo, [lf_sha, crlf_sha])
+        lf_v, crlf_v = (both or {}).get(lf_sha), (both or {}).get(crlf_sha)
+        check("vt22 the SAME message committed with crlf line ends - the bytes a "
+              "Windows text-mode write produces - reads the same verdict as with "
+              "lf, for every trailer name (task, gate status and digest, run and "
+              "the FOLDED override), and no value carries a carriage return: "
+              "%r / %r" % (lf_v, crlf_v),
+              both_why == "" and lf_v is not None and lf_v == crlf_v
+              and [lf_v.get(k) for k in ("task", "status", "digest", "run",
+                                         "override", "recorded")]
+              == ["P3.1", "failed", "sha256:n", "run-31",
+                  "first half second  half", True]
+              and not any("\r" in str(val) for val in crlf_v.values()))
+        lone_sha = _commit(repo, "lone-cr", "x\n\nAudit-Task: P3.2\n"
+                           "Audit-Gate: passed sha256:o\nAudit-Override: one\rtwo\n")
+        fold_sha = _commit(repo, "lone-fold", "x\n\nAudit-Task: P3.2\n"
+                           "Audit-Gate: passed sha256:o\nAudit-Override: one\n two\n")
+        lone, lone_why = M.verdicts_at(repo, [lone_sha, fold_sha])
+        lone_v, fold_v = (lone or {}).get(lone_sha), (lone or {}).get(fold_sha)
+        check("vt23 a LONE carriage return inside a value - which git does not "
+              "break a line at - reads as a line break folded by git's rule, the "
+              "same as the value folded with lf, never cut at it nor carried in "
+              "the value: %r / %r" % (lone_v, fold_v),
+              lone_why == "" and lone_v is not None and lone_v == fold_v
+              and lone_v.get("override") == "one two")
 
         # --- a clone with no evidence directory --------------------------------
         ev_dir = os.path.join(repo, "docs", "audit", "evidence")
