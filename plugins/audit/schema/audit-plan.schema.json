@@ -2114,7 +2114,7 @@
         "status",
         "at"
       ],
-      "anyOf": [
+      "oneOf": [
         {
           "type": "object",
           "required": [
@@ -2123,10 +2123,12 @@
         },
         {
           "required": [
-            "sharedWithRepeated"
+            "sharedWithRepeated",
+            "repeatedRun"
           ],
           "properties": {
             "sharedWithRepeated": {
+              "type": "array",
               "contains": {
                 "const": "steps"
               }

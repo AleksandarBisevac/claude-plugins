@@ -435,6 +435,12 @@ def _cases(check):
                    # KNOWN_LAYER_DEBT comment refuses one file over.
                    "_deps.py": "a third walk - the meta vocabulary, by property "
                                "name, for the two-modules-one-key rule",
+                   # NO WALK: one $def read by `$ref`, so a run record is
+                   # read against the published `lastRun` through the schema
+                   # reader validate-manifest uses.
+                   "governance/_evidence_io.py": "no walk - one $def read by "
+                                                 "$ref, a run record checked "
+                                                 "against `lastRun`",
                    "manifest/_manifest_vocab.py": "no walk - prose that names the "
                                                   "keyword: the SCHEMA_ANCHORS "
                                                   "comment, and the pointer at "

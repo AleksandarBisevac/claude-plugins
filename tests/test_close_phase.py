@@ -2735,6 +2735,73 @@ def _record_landing_cases(check):
                 _harness.remove_tree(root)
 
 
+def _malformed_record_landing_cases(check):
+    """(mr) A landing whose branch's newest record of the phase is not the
+    record's shape refuses naming the plan file and the field, and never binds
+    the older green the branch's ledger still holds in its place; the way on
+    is the gate recorded again, whose fresh record replaces the malformed one
+    and lands bound to it."""
+    import _evidence_io as E
+    root = None
+    try:
+        root, mpath, git = _record_landing_fixture(
+            "closephase-malformed", [(0, "passed"), (1, "passed")],
+            files=("src.txt",), sharded=True)
+        shard = os.path.join(root, "docs", "audit", "phases", "P1.json")
+        with open(shard) as fh:
+            body = json.load(fh)
+        older = dict(E.record_row(body[E.RECORD_KEY], "phase", "P1", "P1"),
+                     runId="cr-0", ts="2026-09-01T00:00:00Z", v=E.ROW_VERSION)
+        E.append_row(root, older, writer="mr-fixture")
+        body[E.RECORD_KEY] = dict(body[E.RECORD_KEY], steps=5)
+        with open(shard, "w") as fh:
+            json.dump(body, fh)
+        # The index row the declared file owes, which the landing's stamp
+        # commit refuses a plan without.
+        with open(mpath) as fh:
+            index = json.load(fh)
+        index["fileIndex"] = {"src.txt": ["P1.1"]}
+        with open(mpath, "w") as fh:
+            json.dump(index, fh)
+        git("add", "-A")
+        git("commit", "-q", "-m", "a malformed newest record")
+        git("checkout", "-q", "main")
+        try:
+            code, text = _close(mpath, root, "--keep-branch")
+        except Exception as exc:                               # noqa: BLE001
+            code, text = "raised", "%s: %s" % (type(exc).__name__, exc)
+        check("mr1 RED-FIRST: the branch's newest record of the phase "
+              "malformed, an older green row of it in the branch's ledger: "
+              "the landing refuses naming the plan file and the field, binds "
+              "neither run, and lands nothing: exit %r, landed %r, %r"
+              % (code, _landed(git), text[:600]),
+              code == 1 and not _landed(git)
+              and "docs/audit/phases/P1.json" in text
+              and "%s.steps" % (E.RECORD_KEY,) in text
+              and "bound to run cr-0" not in text)
+        git("checkout", "-q", "audit/p1-demo")
+        fresh = E.run_record({
+            "runId": "cr-2", "ts": "2026-09-01T02:00:00Z", "scope": "phase",
+            "phaseId": "P1", "status": "passed", "gateSource": "phase",
+            "steps": [{"name": "test"}],
+            "testedState": {"scopeDigest": older["testedState"].get(
+                "scopeDigest")}})
+        wrote = E.write_record(root, mpath, "phase", {"phaseId": "P1"}, fresh)
+        git("add", "-A")
+        git("commit", "-q", "-m", "the gate recorded again")
+        git("checkout", "-q", "main")
+        code, text = _close(mpath, root, "--keep-branch")
+        check("mr2 THE WAY ON: the gate's record written again replaces the "
+              "malformed one through the record writer, and the landing then "
+              "binds to the fresh run: written %r, exit %r, %r"
+              % (wrote.get("written"), code, text[-900:]),
+              wrote.get("written") is True and code == 0 and _landed(git)
+              and "gate: bound to run cr-2" in text)
+    finally:
+        if root:
+            _harness.remove_tree(root)
+
+
 def _ci_signoff_cases(check):
     """(cci) The phase's CI run, recorded on the branch by the one verb that
     writes it (`full-gate.py --ci-run`, its seam to GitHub answered here), is in
@@ -5481,6 +5548,7 @@ STAGES = (("tk-block", "_takeover_cases"), ("lk-block", "_lock_cases"),
           ("rs-block", "_read_set_reach_cases"), ("ov-block", "_override_cases"),
           ("la-block", "_landing_cases"),
           ("lr-block", "_record_landing_cases"),
+          ("mr-block", "_malformed_record_landing_cases"),
           ("cci-block", "_ci_signoff_cases"),
           ("pw-block", "_plan_walker_cases"),
           ("co-block", "_checked_out_cases"),

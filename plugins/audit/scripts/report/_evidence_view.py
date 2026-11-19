@@ -345,7 +345,7 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None,
         if full_row is not None:
             entry["fullRun"] = full_row
         phase_views[str(pid)] = entry
-    return {
+    out = {
         "tasks": task_views,
         "phases": phase_views,
         "keys": _ordered(set(v["key"] for v in task_views.values()),
@@ -363,6 +363,13 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None,
         # read or there was none to read; every view then reads the ledger.
         "trailError": trail_error,
     }
+    # A PLAN FILE OR RUN RECORD THE READ COULD NOT READ gave no run to any view
+    # above: the reader's one sentence, present only then, so a report whose
+    # records all read keeps its views byte for byte.
+    said = _evidence_io.plan_read_sentence(read)
+    if said:
+        out["planReadError"] = said
+    return out
 
 
 def _trail_of(manifest, project):

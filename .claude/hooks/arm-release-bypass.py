@@ -85,6 +85,14 @@ GUARD_UNLOADED = ("the release guard could not be loaded from "
                   "here")
 
 
+def _unread(exc):
+    """The problem for a guard reading that raised `exc` - the guard refuses
+    the same release as UNKNOWN, so the list travels as unread, with what was
+    raised, its text cut short."""
+    return ("the release guard's reading raised (%s: %s), so this list "
+            "cannot be read here" % (type(exc).__name__, str(exc)[:400]))
+
+
 def open_bugs(project):
     """`([(id, severity, title)], problem)` - every bug the plan still calls
     open, or why that list could not be read.
@@ -104,7 +112,10 @@ def open_bugs(project):
     guard = _load_guard()
     if guard is None:
         return ([], GUARD_UNLOADED)
-    return guard.read_bugs(project)
+    try:
+        return guard.read_bugs(project)
+    except Exception as exc:                    # noqa: BLE001
+        return ([], _unread(exc))
 
 
 def held_phases(project):
@@ -116,7 +127,10 @@ def held_phases(project):
     guard = _load_guard()
     if guard is None:
         return ([], GUARD_UNLOADED)
-    return guard.read_held_phases(project)
+    try:
+        return guard.read_held_phases(project)
+    except Exception as exc:                    # noqa: BLE001
+        return ([], _unread(exc))
 
 
 def arm(project, session_id):
@@ -413,6 +427,29 @@ def _selftest():
               "summarised tail: %r" % (msg_all,),
               all(("Q%02d" % (i,)) in msg_all for i in range(1, 13))
               and "more -" not in msg_all)
+
+        # THE GUARD'S READING RAISING. The guard refuses whatever it cannot
+        # decide; this file must say the same lists UNKNOWN, with what was
+        # raised, rather than crash before the message - a crash here arms
+        # nothing and says nothing at the moment the maintainer asked.
+        import types
+
+        def raising(_project):
+            raise RuntimeError("the reader fell over")
+        own["_load_guard"] = lambda: types.SimpleNamespace(
+            read_bugs=raising, read_held_phases=raising, BASIS_CAP=240)
+        try:
+            bug_read, held_read = open_bugs(tmp), held_phases(tmp)
+        finally:
+            own["_load_guard"] = saved
+        msg_r = message(bug_read, held_read, path)
+        check("rb20 RED-FIRST: the guard's own reading raising is named as an "
+              "UNKNOWN list carrying what was raised, for each list, and the "
+              "arming message says so rather than crashing: %r / %r / %r"
+              % (bug_read, held_read, msg_r),
+              bug_read[0] == [] and "RuntimeError" in str(bug_read[1])
+              and held_read[0] == [] and "RuntimeError" in str(held_read[1])
+              and "UNKNOWN" in msg_r and "authorises nothing" not in msg_r)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

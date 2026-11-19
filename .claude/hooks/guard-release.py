@@ -814,8 +814,9 @@ def read_held_phases(project):
 
     ASKED OF THE PLUGIN'S OWN VOCABULARY rather than a rule invented here:
     `full_status` already answers whole, provisional, unknown or not-declared
-    from the ledger alone, and `merged_phase` already says which phases it is
-    asked about. A second reading of either in this file would be the defect
+    from the recorded full runs - the ledger's rows and the runs the plan
+    holds, both read through `read_rows` - and `merged_phase` already says
+    which phases it is asked about. A second reading of either in this file would be the defect
     `read_bugs`'s docstring warns about - two answers to one question, with
     this file at risk of being the one that lies.
 
@@ -831,9 +832,10 @@ def read_held_phases(project):
     git can answer.
 
     UNREADABLE IS A REFUSAL, NEVER "NOTHING HELD". A manifest that will not
-    parse, or a ledger carrying a file that could not be read or verified,
-    means the caller cannot know whether any phase holds, so it says so
-    rather than let a release through on a file nobody could read.
+    parse, a ledger carrying a file that could not be read or verified, or a
+    plan file or run record that would not read, means the caller cannot know
+    whether any phase holds, so it says so rather than let a release through
+    on a file nobody could read.
 
     No runnable `meta.fullGate` entry - none declared, or only review-only
     ones - means nothing is held and this returns `([], None)`; the guard
@@ -867,6 +869,11 @@ def read_held_phases(project):
         return ([], "the evidence ledger carries file(s) that could not be "
                     "read or verified: %s"
                     % (", ".join(ledger.get("unreadableFiles") or []),))
+    if ledger.get("unreadablePlanFiles"):
+        # A plan file or a record that would not read may hold the very run
+        # that answers for a merged phase; the reader's own bounded sentence
+        # names each file and record.
+        return ([], evidence_io.plan_read_sentence(ledger))
     rows = ledger.get("rows") or []
     phases = data.get("phases")
     phases = phases if isinstance(phases, list) else []
@@ -1073,6 +1080,63 @@ def decide(command, project, session_id, now=None, payload=None):
     return None
 
 
+def _decided(payload):
+    """The refusal `decide` gives for the tool call `payload`, or None when
+    there is nothing to judge."""
+    tool = payload.get("tool_name") or payload.get("toolName") or ""
+    if tool != "Bash":
+        return None
+    command = (payload.get("tool_input") or {}).get("command", "")
+    return decide(command, project_dir(),
+                  str(payload.get("session_id") or ""),
+                  payload=payload)
+
+
+# The most of a raised error's text an undecided refusal carries.
+UNDECIDED_TEXT_CAP = 400
+
+
+def undecided(exc):
+    """The refusal for a decision that raised `exc`: what was raised, its text
+    cut at `UNDECIDED_TEXT_CAP`, and that the command is refused because no
+    answer was reached. A fixed sentence when the error cannot be said."""
+    try:
+        text = str(exc)
+        if len(text) > UNDECIDED_TEXT_CAP:
+            text = text[:UNDECIDED_TEXT_CAP] + "..."
+        said = "%s: %s" % (type(exc).__name__, text)
+    except BaseException:                       # noqa: BLE001
+        said = "an error whose text could not be read"
+    return ("Release decision UNKNOWN: this guard could not finish deciding "
+            "(%s), so the command is refused rather than let through on a "
+            "question nobody answered - repair what it names and retry."
+            % (said,))
+
+
+def _deny(reason):
+    """Write the PreToolUse deny for `reason` on stdout -> the exit code: 0
+    once it is written; 2, with the reason on stderr, when stdout cannot take
+    it - the exit that blocks a PreToolUse call."""
+    text = json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": "[guard-release] " + reason}})
+    try:
+        sys.stdout.write(text)
+        sys.stdout.flush()
+        return 0
+    except (OSError, ValueError):
+        sys.stderr.write("[guard-release] %s\n" % (reason,))
+        sys.stderr.flush()
+        # What stdout still buffers would be flushed again at exit and fail
+        # again, which turns the exit into 120; it goes to the null device.
+        try:
+            os.dup2(os.open(os.devnull, os.O_WRONLY), 1)
+        except OSError:
+            pass
+        return 2
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
@@ -1080,18 +1144,22 @@ def main():
         # Nothing to judge. This is the one fail-open branch: a payload this hook
         # cannot parse is not evidence about a release.
         return 0
-    tool = payload.get("tool_name") or payload.get("toolName") or ""
-    if tool != "Bash":
+    if not isinstance(payload, dict):
+        # The same branch: JSON that is not an object is not a tool call.
         return 0
-    command = (payload.get("tool_input") or {}).get("command", "")
-    reason = decide(command, project_dir(),
-                    str(payload.get("session_id") or ""),
-                    payload=payload)
+    # ANY ERROR WHILE DECIDING IS A REFUSAL, never a command let through. Every
+    # kind is caught, KeyboardInterrupt and SystemExit included on purpose: an
+    # interrupt reaching the hook mid-decision has decided nothing either. The
+    # cost is that an error in the command reader itself refuses EVERY Bash
+    # call, not only a release, until it is repaired; the refusal names what
+    # was raised, and the person repairs that - or, when the hook is the thing
+    # broken, edits it from outside the session - and retries.
+    try:
+        reason = _decided(payload)
+    except BaseException as exc:                # noqa: BLE001
+        reason = undecided(exc)
     if reason:
-        sys.stdout.write(json.dumps({"hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": "[guard-release] " + reason}}))
+        return _deny(reason)
     return 0
 
 

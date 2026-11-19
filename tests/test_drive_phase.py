@@ -1775,6 +1775,131 @@ def _launch_replaced_cases(check):
           and _flag(again, "--launch") not in (None, gtoken))
 
 
+def _rpl_world(M, prefix):
+    """`(root, ctx, head, mpath, mark)` - a one-task repo whose phase gate is
+    launched, and `mark(token, cancelled, replaced)` building its launch mark
+    as `launch_phase_gate` writes one."""
+    root, mpath = _repo(prefix, task_ids=TASKS[:1],
+                        phase_gate=(_GC_PHASE_GATE,))
+    ns = argparse.Namespace(project_dir=root, manifest=mpath, verbose=False,
+                            phase=PHASE, task_only=False)
+    with _Env(root):
+        ctx = M.context(ns)
+    head = _head_of(root)
+    replaced_key = getattr(M, "REPLACED_BEFORE", "replacedBefore")
+
+    def mark(token, cancelled=0, replaced=0):
+        return {"head": head, "at": "2026-11-05T12:00:00Z",
+                "argv": ["python3", "run-test-gate.py", PHASE],
+                "launch": token, M.CANCELLED_BEFORE: cancelled,
+                replaced_key: replaced}
+    return root, ctx, head, mpath, mark
+
+
+def _rpl_replace(mpath, entries, n):
+    """Phase P1's record: another run, naming `entries` as the launched runs
+    its record replaced - what `write_record` leaves after a sibling's run."""
+    row = {"runId": "rpl-other-%d" % (n,), "ts": "2026-11-05T12:30:%02dZ" % (n,),
+           "scope": "phase", "phaseId": PHASE, "status": "passed", "steps": []}
+    record = dict(_evio.run_record(row, launch="rpl-other-tok-%d" % (n,)),
+                  **{_evio.REPLACED_KEY: entries})
+    _put_phase_record(mpath, record)
+
+
+def _rpl_entry(token, status, n, at="2026-11-05T12:10:00Z"):
+    return {"runId": "rpl-own-%d" % (n,), "launch": token, "status": status,
+            "at": at}
+
+
+def _rpl_step(M, ctx, state, mpath, head):
+    said, _measured = _caught(M.chosen_phase_gate, ctx, state,
+                              _mio.load_manifest(mpath)["phases"][0], head)
+    return said, dict(state.get(M.PHASE_GATE_LAUNCH_KEY) or {})
+
+
+def _replaced_count_cases(check):
+    """(rpl) A launched gate whose run another run's record replaced is
+    launched again COUNTED: the cancelled count carried across the relaunch,
+    raised when the replaced run was itself cancelled; the replacement counted
+    on the mark and asked at the bound the cancelled runs are; and a launch cut
+    from the bounded list of replaced launches said as cut, never waited on."""
+    M, why = _load("drive_phase_replaced_count", real_gate_choice=True)
+    if M is None:
+        check("rpl1 the driver loads", False, why)
+        return
+    key = M.CANCELLED_BEFORE
+    rkey = getattr(M, "REPLACED_BEFORE", "replacedBefore")
+    bound = M.CANCELLED_BOUND
+    root, ctx, head, mpath, mark = _rpl_world(M, "rpl-count")
+    with _Env(root):
+        state = {M.PHASE_GATE_LAUNCH_KEY: mark("rpl-a", cancelled=0)}
+        _rpl_replace(mpath, [_rpl_entry("rpl-a", "cancelled", 0)], 0)
+        said1, after1 = _rpl_step(M, ctx, state, mpath, head)
+        _rpl_replace(mpath, [_rpl_entry(after1.get("launch"), "passed", 1)], 1)
+        said2, after2 = _rpl_step(M, ctx, state, mpath, head)
+        pending = dict(state.get("pending") or {})
+    check("rpl1 RED-FIRST: A REPLACED CANCELLED RUN IS COUNTED ACROSS THE "
+          "RELAUNCH: the relaunch's mark carries the cancelled count raised by "
+          "one and the replacement counted, under a new token; the next "
+          "replacement in a row reaches the bound and the drive asks "
+          "phase-gate-cancelled naming the replacement, keeping the launch it "
+          "answered: %r" % ((said1 if not isinstance(said1, dict) else
+                             said1.get("kind"), after1, said2 if not
+                             isinstance(said2, dict) else said2.get("kind"),
+                             pending),),
+          isinstance(said1, dict) and said1.get("kind") == "dispatch"
+          and after1.get(key) == 1 and after1.get(rkey) == 1
+          and after1.get("launch") not in (None, "rpl-a")
+          and bound == 2 and isinstance(said2, dict)
+          and said2.get("kind") == "decide"
+          and pending.get("decision") == "phase-gate-cancelled"
+          and pending.get(rkey) == 2 and pending.get(key) == 1
+          and "replaced" in str(pending.get("why"))
+          and after2.get("launch") == after1.get("launch"))
+    root, ctx, head, mpath, mark = _rpl_world(M, "rpl-green")
+    with _Env(root):
+        state = {M.PHASE_GATE_LAUNCH_KEY: mark("rpl-b", cancelled=1)}
+        _rpl_replace(mpath, [_rpl_entry("rpl-b", "passed", 0)], 0)
+        said, after = _rpl_step(M, ctx, state, mpath, head)
+    check("rpl2 ...a replaced run that was NOT cancelled carries the count it "
+          "had, unraised, and counts the replacement: %r"
+          % ((said if not isinstance(said, dict) else said.get("kind"),
+              after),),
+          isinstance(said, dict) and said.get("kind") == "dispatch"
+          and after.get(key) == 1 and after.get(rkey) == 1)
+    root, ctx, head, mpath, mark = _rpl_world(M, "rpl-cut")
+    keep = getattr(_evio, "REPLACED_KEEP", 8)
+    with _Env(root):
+        state = {M.PHASE_GATE_LAUNCH_KEY: mark("rpl-c")}
+        _rpl_replace(mpath, [_rpl_entry("rpl-x%d" % (i,), "passed", 10 + i)
+                             for i in range(keep)], 0)
+        said, after = _rpl_step(M, ctx, state, mpath, head)
+        shown = list(ctx.get("did") or [])
+    check("rpl3 RED-FIRST: A LAUNCH CUT FROM THE BOUNDED LIST - the list full, "
+          "every run it names ended after this launch, and none of them this "
+          "launch - is said as cut and launched again, counted, never waited "
+          "on: %r" % ((said if not isinstance(said, dict) else
+                       said.get("kind"), after, shown),),
+          isinstance(said, dict) and said.get("kind") == "dispatch"
+          and after.get(rkey) == 1
+          and after.get("launch") not in (None, "rpl-c")
+          and any("cut" in line and "rpl-c" in line for line in shown))
+    root, ctx, head, mpath, mark = _rpl_world(M, "rpl-wait")
+    with _Env(root):
+        state = {M.PHASE_GATE_LAUNCH_KEY: mark("rpl-d")}
+        _rpl_replace(mpath, [_rpl_entry("rpl-y%d" % (i,), "passed", 20 + i,
+                                        at="2026-11-05T11:00:00Z")
+                             for i in range(keep)], 0)
+        said, after = _rpl_step(M, ctx, state, mpath, head)
+    check("rpl4 ALLOW: the list full but holding a run that ended BEFORE this "
+          "launch - so this launch, replaced, would still be in it - is a wait "
+          "on the run, not a cut: %r"
+          % ((said if not isinstance(said, dict) else said.get("kind"),
+              after),),
+          isinstance(said, dict) and said.get("kind") == "wait"
+          and after.get("launch") == "rpl-d")
+
+
 # --- a background gate read back, with a step that grades the plan ------------------
 # The other gate fixtures here are `true` and `false`, which name no path, so the
 # drive never met a gate whose read-back measures part of it again. These gates
@@ -20933,6 +21058,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("bg-block", "_background_gate_cases"),
           ("lt-block", "_launch_token_cases"),
           ("lrp-block", "_launch_replaced_cases"),
+          ("rpl-block", "_replaced_count_cases"),
           ("gc-block", "_gate_choice_cases"),
           ("gc6-block", "_gate_choice_follow_cases"),
           ("gc8-block", "_gate_choice_signoff_cases"),

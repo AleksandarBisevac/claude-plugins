@@ -183,11 +183,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   only as a record answers the drive, the gate's repeat, the panel and the report as its row
   would; a record over its byte bound drops the coverage paths first and says so. A repeat's
   record holds each field equal to the run it carries once, in that run, and a whole repeat's
-  steps are derived from it rather than copied, so a repeat no longer weighs twice its source -
-  and the published schema accepts that stored form: `steps` may be absent exactly when
-  `sharedWithRepeated` names them, which `validate-manifest` checks with the `contains` keyword
-  its schema reader now reads, where it used to warn that every such record broke the schema;
-  and the step names a count's basis samples are cut to the sample budget like every name
+  steps are derived from it rather than copied, so a repeat does not weigh twice its source -
+  and the published schema accepts that stored form and no other: a record holds its `steps`,
+  or names them in `sharedWithRepeated` (a list) beside the `repeatedRun` they are given back
+  from, never both, which `validate-manifest` checks with the `oneOf` and `contains` keywords
+  its schema reader reads. A record that is not that shape - written by hand, or by another
+  build - is said by every reader rather than raised on: its run is not read, and the plan file,
+  the subject and the first field that is wrong are named by `/audit:status` (and its `--json`,
+  under `unreadableRecords`), the report's warning line, the panel's state payload and
+  `/audit:doctor`; a task commit or a
+  landing whose subject's newest record is one is refused rather than bound to an older run,
+  and so is one whose record stores a field in the run it carries that the run no longer
+  gives back. Where a record sits is its identity: a scope, a task id, a phase id or a moment
+  written into it by hand never names another subject. Recording the gate again replaces such
+  a record; and the step names a count's basis samples are cut to the sample budget like every name
   after them, so a gate whose step is a long command no longer copies that command into the
   sentence whole. A missing
   evidence directory is said in a sentence naming it, never as a count of zero files, and every
@@ -198,7 +207,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   record, and reads back the run carrying it, never the newest run it had not seen - a
   sibling's run of the same task is not its own; when another run's record replaced the
   launched run's and no ledger row of it is left, the driver says which run replaced it and
-  launches the gate again rather than waiting; a launch marked by an earlier drive, with no
+  launches the gate again rather than waiting - counted as a cancelled run is, the cancelled
+  count carried across the relaunch, and asked at the same bound when the replacements in a row
+  reach it - and a launch cut from the bounded list of replaced launches is said as cut and
+  launched again the same way; a launch marked by an earlier drive, with no
   token, is not read back but launched or chosen again.
 - **A recorded run the plan holds no record of exits 3, red or green.** The record write
   waits behind another writer of the plan file rather than skipping it, and a record it still

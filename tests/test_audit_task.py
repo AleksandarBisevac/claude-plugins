@@ -8843,17 +8843,49 @@ def _group_cases(check):
                                          and '"reusedFrom"' not in ln)))
         # ...and from the plan's record of the repeat, which carries the run it
         # repeated whole: gone means gone from both places the reader looks.
-        _v2m = _mio.load_manifest(v2_mp)
-        for _v2p in _v2m["phases"]:
-            (_v2p.get(_ve_evidence.RECORD_KEY) or {}).pop(
-                _ve_evidence.REPEATED_RUN_KEY, None)
-        _panel_write._atomic_write_json(v2_mp, _v2m)
+        # `by_hand` removes the run alone, leaving the record naming its steps
+        # shared with a run it no longer carries - the hand edit the schema
+        # refuses; otherwise the record is left in the shape a writer leaves
+        # when it carries no run: its own steps, and nothing named shared.
+        def ve_drop_source(mp, by_hand):
+            _vm = _mio.load_manifest(mp)
+            for _vp in _vm["phases"]:
+                _vr = _vp.get(_ve_evidence.RECORD_KEY) or {}
+                _vr.pop(_ve_evidence.REPEATED_RUN_KEY, None)
+                if not by_hand and "steps" in (
+                        _vr.pop(_ve_evidence.SHARED_KEY, None) or []):
+                    _vr["steps"] = []
+            _panel_write._atomic_write_json(mp, _vm)
+        ve_drop_source(v2_mp, False)
         code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
                          "--project-dir", v2_proj])
         check("ve2 SECOND DIRECTION: a repeated verdict whose source run is gone from "
               "the ledger is refused - the tree it was measured on is not "
               "established: origin %r, exit %r, %s" % (_v2_origin, code, txt),
               bool(_v2_origin) and code == 2 and "not in the ledger" in txt)
+        # ...AND THE SAME SOURCE REMOVED BY HAND: the record is not the
+        # `lastRun` shape, so the sign-off is refused on the unreadable arm,
+        # naming the file, the subject and the field.
+        v2h_proj, v2h_mp, _v2h = gs_fixture("ve-orphan-hand")
+        gs_gate(v2h_proj, v2h_mp, "P1")
+        gs_gate(v2h_proj, v2h_mp, "P1", reuse=True)
+        ve_drop_source(v2h_mp, True)
+        code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
+                         "--project-dir", v2h_proj])
+        _v2h_review = (_mio.load_manifest(v2h_mp)["phases"][0].get("review")
+                       or {}).get("status")
+        # The file the phase lives in, the subject, and the field the schema
+        # reader stops at - the steps a record that shares them does not hold.
+        _v2h_said = ("docs/audit/audit-plan.json: phase P1's lastRun.steps is "
+                     "required by the schema")
+        check("ve2h ...and the same source removed BY HAND, the record still "
+              "naming its steps shared with the run it no longer carries, is "
+              "refused as a record that could not be read - its file, its "
+              "subject and its field named: exit %r, review %r, %s"
+              % (code, _v2h_review, txt),
+              code == 2 and _v2h_review != "passed"
+              and "run record(s) the plan holds could not be read" in txt
+              and _v2h_said in txt)
         v3_proj, v3_mp, _v3 = gs_fixture("ve-manifest")
         _v3m = _mio.load_manifest(v3_mp)
         _v3m["phases"][0]["tasks"][0]["files"] = ["src/p1.py",

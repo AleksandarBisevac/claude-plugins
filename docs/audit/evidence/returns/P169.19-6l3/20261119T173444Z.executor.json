@@ -1,0 +1,63 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py .claude/hooks/guard-release.py tests/test__evidence_io.py tests/test__verdict_binding.py tests/test_drive_phase.py tests/test_audit_lookup.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-19T19:09:17Z",
+    "basis": "`python3 tests/test__evidence_io.py --selftest` in a throwaway tree at HEAD exited 1 with 19 of 477 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - id1 (house FAIL), id3 (house FAIL), ug2 (house FAIL), ug7 (house FAIL): SELFTEST FAILED: 458/477 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Release guard: main() runs the decision inside try/except BaseException (KeyboardInterrupt kept, said in the comment); any error is a deny 'Release decision UNKNOWN: this guard could not finish deciding (<Type>: <text, cut at 400>), so the command is refused rather than let through on a question nobody answered - repair what it names and retry.'; a payload that does not parse or is not an object stays fail-open (ug8); a closed stdout gives exit 2 with the reason on stderr (ug9); approved second hunk refuses on unreadablePlanFiles through plan_read_sentence; docstring sentence reworded off 'from the ledger alone'. arm-release-bypass says a raising guard reading as unreadable (rb20). _evidence_io: record_problem checks a record (and its repeatedRun and baseRed.baseRuns) against the published lastRun through _json_schema; read_rows adds unreadableRecords and labels them in unreadablePlanFiles; one sentence unreadable_records_sentence/plan_read_sentence used by status (header line + --json unreadableRecords [{file,scope,subject,key,field,why}], present only when non-empty), render-report (stderr WARNING) and _evidence_view (planReadError), the panel state payload (unreadableRecords, unreadablePlanSaid), the doctor ('run records' row), the binding and close-phase (refused, way on: re-recording replaces the record, mr2). Neither the report page nor the panel UI displays the sentence: the report says it on stderr and in the evidence view's data, the panel carries it in the state payload. record_row's identity comes from placement; RECORD_ONLY_KEYS is one table read in both directions (record_row drops, _record_of excludes; RECORD_ONLY_READ re-admitted). Drive 2c: replaced launches counted (replacedBefore), cancelled count carried, asked at CANCELLED_BOUND, a cut launch said as cut; base wait untouched. Binding refuses naming sharedUnresolved paths; gate_banners says a cut tree-changed list as cut. R56 oneOf + share arm requires repeatedRun and type array; R57 rk walks per-table conjuncts, one composed record per status, group copy composed (rk1/rk2/rk7/rk8); R58 the clause the finding names removed. Out-of-scope suites brought into the files by the coordinator: test__manifest_vocab names _evidence_io as a $defs reader (mv36); ve2 and ctw64 fixtures now leave the writer's no-run shape, and twins ve2h (audit-task signoff) and ctw64h (commit-task-work) keep the hand-edited fixture and assert the unreadable arm naming file, subject and field. Brief gate exit 0: 5/5 files ok, 1927 cases (bq4 green this run). Three suites + dependants exit 0: 14/14 files ok, 3692 cases. Full sweep exit 0: 198/198 files ok, 19614 cases. ruff, vermin, gate-parity, check-rendered-artifacts --before-commit, check-example-ledgers, measure-context --gate, check-git-pipeline, bench-hooks --gate (3.14.7 only) all exit 0; count-ui-pins --json identical before/after (cmp 0).",
+    "descriptive": "A malformed or hand-edited run record no longer crashes a reader or passes a release: the guard refuses on what it cannot read, every reader names the file, subject and field, and a record's identity is where it sits."
+  },
+  "testsAdded": [
+    "ug1-ug9: the release guard refuses, naming what could not be read, when the recorded runs or its own reading fail; allow and fail-open directions kept",
+    "id1-id2: record_row takes scope, subject and moment from where the record sits, not from fields written into it",
+    "id3-id4: the record-only keys are one table, dropped by record_row and excluded by _record_of",
+    "rpl1-rpl4: the drive counts replaced launches, carries the cancelled count across them, asks at the bound, and says a cut launch as cut",
+    "vb45-vb47: the binding refuses naming unresolved shared paths and a subject's own malformed record, and binds past another subject's",
+    "ur1-ur5, us1-us2, gb1-gb2, mr1-mr2, rb20, rk7, rk8: unreadable-record reading, its sentence, the cut banner, the landing and its way on, the bypass reading, composed shapes and schema twins",
+    "ve2h, ctw64h: the hand-edited no-run share is refused at audit-task signoff and at commit-task-work on the unreadable arm, naming file, subject and field"
+  ],
+  "casesAdded": [
+    [
+      "ug1",
+      "ug2",
+      "ug3",
+      "ug4",
+      "ug5",
+      "ug6",
+      "ug7",
+      "ug8",
+      "ug9"
+    ],
+    [
+      "id1",
+      "id2"
+    ],
+    [
+      "id3",
+      "id4"
+    ],
+    [
+      "rpl1",
+      "rpl2",
+      "rpl3",
+      "rpl4"
+    ],
+    [
+      "vb45",
+      "vb46",
+      "vb47"
+    ]
+  ],
+  "claims": "claims:\n1 pointers: .claude/hooks/guard-release.py main/_decided/undecided/_deny; _evidence_io.record_problem, unreadable_records, read_rows, unreadable_records_sentence, plan_read_sentence, record_row, RECORD_ONLY_KEYS, launch_cut; drive-phase replaced_gate/REPLACED_BEFORE; _verdict_binding.subject_record_lost and the sharedUnresolved refusal; audit-lookup gate_banners; audit-status unreadable_records_block; render-report main; _evidence_view planReadError; _panel_composition evidence payload; _doctor_trail.check_run_records; close-phase branch_records; schema lastRun oneOf; tests ve2h (test_audit_task.py) and ctw64h (test_commit_task_work.py)\n2 red: first red at HEAD before the fix (ur, id, ug2/4-9, us, rk0, vb45-47, rpl1-3, mr1/2, gb1, rb20; rk8 before the schema change; ve2h and ctw64h observed failing with the placeholder before the words were fixed, and the old wording at HEAD is 'not in the ledger'); mutations in a scratch copy, each restored by cmp with __pycache__ purged: except Exception -> ug7 red; second hunk off -> ug2/4/5/6/9 red; record_row keeps NOT_CARRIED -> id1/2 red; _record_of keeps the table keys -> id3/4 red; record_problem always a problem -> allow cases ur1/ug1/rk7 red; binding matches any subject -> vb47 red\n3 class: every reader of read_rows/plan_bodies/the record keys walked; five rows-only readers left with reasons; validate-manifest's suite gap settled by a scratch probe - a finding handed back (it says 'runs no suite as far as the ledger shows' over a record its own schema check does not refuse)\n4 n/a - no rule addressed to an agent added\n5 guard time measured twice with a gap of about forty minutes, spread handed back; the full sweep and the brief gate each run after the last edit\n6 the guard's decision is unchanged; the new denies read the reader's structured answer and the exception object, not command text; allow cases ug1/ug3/ug8 green\n7 no number written into prose; counts in output are computed",
+  "stamp": "audit-stamp: {\"content\":\"sha256:681f2d751671155948998598b74f690f8a6446f096baeeabede0046d23dd9a6d\",\"dirtyDigest\":\"sha256:6ae61c92f822d361d2b50f5003f4fd48545815a9ba3025807115a7a6755af803\",\"dirtyPaths\":{\".claude/hooks/arm-release-bypass.py\":\"cac16b8828480274\",\".claude/hooks/guard-release.py\":\"5459963b78f8b48b\",\"CHANGELOG.md\":\"02a02c06ae8cef99\",\"PLUGIN-BUILD-GUIDE.md\":\"ea7eb91d5300fc59\",\"plugins/audit/schema/audit-plan.schema.json\":\"45e7a334ddbd9249\",\"plugins/audit/scripts/git/close-phase.py\":\"c3f9c401cafbdd9f\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"bd4feab3dd8dec5d\",\"plugins/audit/scripts/governance/_verdict_binding.py\":\"44b899b744548f99\",\"plugins/audit/scripts/governance/drive-phase.py\":\"0cced47f457cc794\",\"plugins/audit/scripts/panel/_panel_composition.py\":\"b0d244b6520cf061\",\"plugins/audit/scripts/report/_evidence_view.py\":\"8e5a15a352e648e6\",\"plugins/audit/scripts/report/render-report.py\":\"e8fa42940798ba06\",\"plugins/audit/scripts/status/_doctor_trail.py\":\"6322edc3abba9caa\",\"plugins/audit/scripts/status/audit-lookup.py\":\"70b45aeb06841386\",\"plugins/audit/scripts/status/audit-status.py\":\"202657e87de42fba\",\"tests/test__evidence_io.py\":\"b7436df602da8e9f\",\"tests/test__manifest_vocab.py\":\"2b751b6f7a0d9252\",\"tests/test__verdict_binding.py\":\"e9f8febbbce24b1c\",\"tests/test_audit_lookup.py\":\"fbc35cd62397134f\",\"tests/test_audit_task.py\":\"a9b31a0acbbe0b70\",\"tests/test_close_phase.py\":\"ab673977040f5f1f\",\"tests/test_commit_task_work.py\":\"cbe225de9ef439fc\",\"tests/test_drive_phase.py\":\"26df8c8ec3904288\"},\"head\":\"eba49be5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/hooks/arm-release-bypass.py\",\".claude/hooks/guard-release.py\",\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/scripts/git/close-phase.py\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/_verdict_binding.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/panel/_panel_composition.py\",\"plugins/audit/scripts/panel/_panel_state.py\",\"plugins/audit/scripts/report/_evidence_view.py\",\"plugins/audit/scripts/report/render-report.py\",\"plugins/audit/scripts/status/_doctor_trail.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/scripts/status/audit-status.py\",\"tests/test__doctor_trail.py\",\"tests/test__evidence_io.py\",\"tests/test__evidence_view.py\",\"tests/test__manifest_vocab.py\",\"tests/test__panel_composition.py\",\"tests/test__panel_state.py\",\"tests/test__verdict_binding.py\",\"tests/test_audit_doctor.py\",\"tests/test_audit_lookup.py\",\"tests/test_audit_status.py\",\"tests/test_audit_task.py\",\"tests/test_close_phase.py\",\"tests/test_commit_task_work.py\",\"tests/test_drive_phase.py\",\"tests/test_render_report.py\"],\"scopeDigest\":\"sha256:ed983e032437a2a828988ea47889025a27ac2ce1c1fd043d0c4b616e69f3c6f4\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": [
+    "tests/test_drive_phase.py: The count is carried across a replacement relaunch (and raised when the replaced run was cancelled), replacement relaunches are counted on the mark and bounded ... - not checked: the submit's command did not run `tests/test_drive_phase.py`, so the ids bound to it were not compared with any printed label",
+    "tests/test__verdict_binding.py: The binding refuses naming the unresolved paths - not checked: the submit's command did not run `tests/test__verdict_binding.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

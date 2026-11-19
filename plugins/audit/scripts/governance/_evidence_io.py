@@ -94,6 +94,7 @@ import _manifest_vocab  # noqa: E402  (the FULL_STATUS words, one vocabulary)
 import _worktrees  # noqa: E402  (git ancestry: merged_into, the three answers)
 import _usage_core  # noqa: E402  (parse_ts: a full run's ts read as a moment)
 import _task_timing as _timing  # noqa: E402  (a recorded run's stages, appended once)
+import _json_schema  # noqa: E402  (a record read against the published `lastRun`)
 from _journal_io import (command_facts, redacted_paths,  # noqa: E402
                          redacted_text, repo_relative_or_token)
 from _machine_paths import OUTSIDE_TOKEN  # noqa: E402
@@ -1240,10 +1241,9 @@ def kept_base(row):
 def kept_bases(reading):
     """The base runs a reading keeps, each a dict naming its run; [] for a
     reading that keeps none or is not one."""
-    if not isinstance(reading, dict):
-        return []
-    return [r for r in reading.get(BASE_RUNS_KEY) or []
-            if isinstance(r, dict) and r.get("runId")]
+    runs = reading.get(BASE_RUNS_KEY) if isinstance(reading, dict) else None
+    return [r for r in runs if isinstance(r, dict) and r.get("runId")] \
+        if isinstance(runs, list) else []
 
 
 def with_kept_bases(reading, bases):
@@ -1253,8 +1253,9 @@ def with_kept_bases(reading, bases):
     head = reading.get("head")
     by_run = {}
     for base in bases or []:
-        if isinstance(base, dict) and base.get("runId") and same_head(
-                (base.get("testedState") or {}).get("head"), head):
+        state = base.get("testedState") if isinstance(base, dict) else None
+        if isinstance(state, dict) and base.get("runId") and same_head(
+                state.get("head"), head):
             by_run.pop(str(base["runId"]), None)
             by_run[str(base["runId"])] = base
     out = dict((k, v) for k, v in reading.items() if k != BASE_RUNS_KEY)
@@ -1312,7 +1313,7 @@ def keep_base(project, manifest_path, red, base, session_id=None, wait=None,
         subject, _task, problem = _holders(body, "task", ids, sharded)
         if problem is not None:
             return None, problem, None
-        record = resolved_shared(subject.get(RECORD_KEY))
+        record = resolved_shared(readable_record(subject.get(RECORD_KEY)))
         reading = (record or {}).get(BASE_RED_KEY)
         if not isinstance(reading, dict) or not same_head(reading.get("head"),
                                                            at):
@@ -2220,8 +2221,8 @@ def ledger_decode(raw):
 
 def read_rows(project, config=None, *, manifest_path):
     """`{"rows", "rowFiles", "rowSources", "files", "records", "unreadable",
-    "unreadableFiles", "unreadablePlanFiles", "ledgerAbsent"}` - every
-    recorded run, and what was lost.
+    "unreadableFiles", "unreadablePlanFiles", "unreadableRecords",
+    "ledgerAbsent"}` - every recorded run, and what was lost.
 
     A TORN LINE IS COUNTED, not merely skipped. `usage_ledger.read_ledger` drops
     one in silence, which is right for telemetry and wrong here: silence about a
@@ -2262,7 +2263,11 @@ def read_rows(project, config=None, *, manifest_path):
     plan file holding it, relative to `project`, where for a row it is the
     ledger file's basename. `files`, `unreadable` and `unreadableFiles` stay
     the LEDGER's; `records` counts the entries a record gave and
-    `unreadablePlanFiles` names a plan file that would not read.
+    `unreadablePlanFiles` names a plan file that would not read - and a
+    record in one that is not the record's shape, whose run is then not read:
+    `unreadableRecords` holds each such record as `unreadable_records` names
+    it (file, scope, subject, key, field, why), and `plan_read_sentence` is
+    the one sentence a reader prints for both.
 
     `manifest_path` IS REQUIRED, and None is refused (`ValueError`): it is the
     plan whose records are read, and it is the caller's to say. A project may
@@ -2313,14 +2318,17 @@ def read_rows(project, config=None, *, manifest_path):
         "here are the records the plan holds" % (
             repo_relative_or_token(project, directory),))
     bodies, lost_plan = plan_bodies(manifest_path, project)
+    doc, schema_lost = record_schema()
     sources = [ROW_FROM_LEDGER] * len(rows)
-    rows, added = with_records(rows, records_of_bodies(bodies))
+    rows, added = with_records(rows, records_of_bodies(bodies, doc))
     row_files.extend(label for _row, label in added)
     sources.extend(ROW_FROM_RECORD for _pair in added)
+    lost_plan, malformed = _plan_lost(bodies, lost_plan, doc, schema_lost)
     return {"rows": rows, "rowFiles": row_files, "files": files,
             "unreadable": unreadable, "unreadableFiles": unreadable_files,
             "rowSources": sources, "records": len(added),
-            "unreadablePlanFiles": lost_plan, "ledgerAbsent": absent}
+            "unreadablePlanFiles": lost_plan, "unreadableRecords": malformed,
+            "ledgerAbsent": absent}
 
 
 # --- folding history into a tally, never into a verdict ------------------------
@@ -3212,7 +3220,8 @@ def _cut_observations(record, observations):
     cut (`RECORD_CUT_KEY`) present as None beside the basis saying it was cut,
     so a reader never reads a cut list as no comparison made."""
     out = dict(observations) if isinstance(observations, dict) else {}
-    for dotted in record.get(RECORD_CUT_KEY) or []:
+    cut = record.get(RECORD_CUT_KEY)
+    for dotted in cut if isinstance(cut, list) else []:
         path = str(dotted).split(".")
         if len(path) == 2 and path[0] == "observations":
             out[path[1]] = None
@@ -3268,20 +3277,19 @@ def repeat_source(row, rows=(), replaced=None, scope=None, ids=None):
 
 
 # The keys `_record_of` shapes itself rather than copying: the moment, the
-# tested state, the steps and their cut - and the keys only a record holds,
-# which a run read back from a record (`record_row`) may still carry and which
-# never cross into the record of another run.
-_RECORD_SHAPED = ("at", "testedState", "steps", "stepsDropped",
-                  "repeatedRun", "recordCut", "sharedWithRepeated")
+# tested state, the steps and their cut.
+_RECORD_SHAPED = ("at", "testedState", "steps", "stepsDropped")
 
 
 def _record_of(row, lines=None, launch=None):
     """`run_record` with nothing carried from another run: every field of the
-    row but `RECORD_NOT_CARRIED`, its tested state and its steps."""
+    row but `RECORD_NOT_CARRIED` and `RECORD_ONLY_KEYS`, its tested state and
+    its steps."""
     row = row if isinstance(row, dict) else {}
     record = dict((key, value) for key, value in row.items()
                   if key not in RECORD_NOT_CARRIED
-                  and key not in _RECORD_SHAPED and value is not None)
+                  and key not in _RECORD_SHAPED
+                  and key not in RECORD_ONLY_KEYS and value is not None)
     record["at"] = row.get("ts")
     state = row.get("testedState") if isinstance(row.get("testedState"),
                                                  dict) else {}
@@ -3307,12 +3315,15 @@ def _record_of(row, lines=None, launch=None):
 def _record_steps(steps, dropped=None, copied=None):
     """`{"steps"[, "stepsDropped"]}` - `steps` as a record keeps them, cut at
     `MAX_STEPS` with the cut counted on top of any the row already counted."""
-    steps = [s for s in (steps or []) if isinstance(s, dict)]
+    steps = [s for s in (steps if isinstance(steps, list) else [])
+             if isinstance(s, dict)]
     out = {"steps": [_record_step(s, copied) for s in steps[:MAX_STEPS]]}
     # The row's own count is carried even when the record cuts nothing more:
     # a row already cut at `MAX_STEPS` holds exactly that many steps, and a
     # record that dropped its count would read as a run that had no more.
-    total = int(dropped or 0) + max(0, len(steps) - MAX_STEPS)
+    dropped = dropped if isinstance(dropped, int) \
+        and not isinstance(dropped, bool) else 0
+    total = dropped + max(0, len(steps) - MAX_STEPS)
     if total:
         out["stepsDropped"] = total
     return out
@@ -3445,14 +3456,17 @@ def resolved_shared(record):
     names given back from the run it carries, as `shared_with_repeated`
     found it there; a record naming none is returned as it is. A path the
     carried run no longer holds is given back as nothing and named under
-    `SHARED_UNRESOLVED_KEY`, never read as a run that held no such field."""
+    `SHARED_UNRESOLVED_KEY`, never read as a run that held no such field - and
+    so is one that runs through a field of the record that is not an object,
+    which is left as the record holds it."""
     if not isinstance(record, dict) or not record.get(SHARED_KEY):
         return record
     source = record.get(REPEATED_RUN_KEY)
     source = source if isinstance(source, dict) else {}
     out = dict((k, v) for k, v in record.items() if k != SHARED_KEY)
     lost = []
-    for path in record.get(SHARED_KEY) or []:
+    paths = record.get(SHARED_KEY)
+    for path in paths if isinstance(paths, list) else [paths]:
         if path == "steps":
             if isinstance(source.get("steps"), list):
                 out.update(_copied_steps(source))
@@ -3463,7 +3477,7 @@ def resolved_shared(record):
         value = source
         for part in parts:
             value = value.get(part) if isinstance(value, dict) else None
-        if value is None:
+        if value is None or not _settable(out, parts):
             lost.append(str(path))
             continue
         holder = out
@@ -3474,6 +3488,19 @@ def resolved_shared(record):
     if lost:
         out[SHARED_UNRESOLVED_KEY] = lost
     return out
+
+
+def _settable(record, parts):
+    """Whether the dotted path `parts` can be written into `record` without
+    writing over a field that holds something other than an object."""
+    holder = record
+    for part in parts[:-1]:
+        holder = holder.get(part)
+        if holder is None:
+            return True
+        if not isinstance(holder, dict):
+            return False
+    return True
 
 
 def finished_record(record, bound):
@@ -3577,7 +3604,7 @@ def _put_record(body, scope, ids, sharded, record, stages=()):
     subject, task, problem = _holders(body, scope, ids, sharded)
     if problem is not None:
         return None, problem, None
-    replaced = subject.get(RECORD_KEY)
+    replaced = readable_record(subject.get(RECORD_KEY))
     source = repeat_source(record, replaced=replaced, scope=scope, ids=ids) \
         if record.get(REPEAT_UNREAD_KEY) else None
     if source is not None:
@@ -3603,19 +3630,29 @@ def subject_records(manifest_path, project=None):
     """`({(scope, subject id): (record, phase id)}, unreadable)` - every record
     the plan's files hold, read off the raw files so a shard is read as it is
     written, and the label of each plan file that would not read
-    (`plan_bodies`, the one walk and its one rule)."""
+    (`plan_bodies`, the one walk and its one rule). A record that is not the
+    record's shape is left out; `read_rows` names it (`unreadableRecords`)."""
     found = {}
     bodies, lost = plan_bodies(manifest_path, project)
+    doc = record_schema()[0]
     for _label, phase in bodies:
         if not isinstance(phase, dict):
             continue
         pid = str(phase.get("id"))
-        if isinstance(phase.get(RECORD_KEY), dict):
-            found[("phase", pid)] = (phase[RECORD_KEY], pid)
-        for task in phase.get("tasks") or []:
-            if isinstance(task, dict) and isinstance(task.get(RECORD_KEY), dict):
-                found[("task", str(task.get("id")))] = (task[RECORD_KEY], pid)
+        for scope, subject, record in _plan_records(phase):
+            if record_problem(record, doc) is None:
+                found[(scope, subject)] = (record, pid)
     return found, lost
+
+
+def readable_record(record):
+    """`record` when it is the record's shape (`record_problem`), else None -
+    how a writer reads the record it is about to replace: one that is not the
+    shape is replaced as no record, rather than carried from or raised on."""
+    if record is None:
+        return None
+    return record if record_problem(record, record_schema()[0]) is None \
+        else None
 
 
 # --- one reader: the plan's records beside the older rows -----------------------
@@ -3640,11 +3677,20 @@ def record_row(record, scope, subject, phase_id):
     (`RECORD_CUT_KEY`) is None beside a basis saying so. What the record does
     not keep (`RECORD_NOT_CARRIED`, the chain) is absent, as it is on a row
     written before the field existed. A field the record stored once, in the
-    run it carries (`SHARED_KEY`), is read from there (`resolved_shared`)."""
+    run it carries (`SHARED_KEY`), is read from there (`resolved_shared`).
+
+    IDENTITY IS WHERE THE RECORD SITS. Every key a record is defined not to
+    carry (`RECORD_NOT_CARRIED`) and every key only a record holds
+    (`RECORD_ONLY_KEYS`) is dropped before the placement is applied, so a
+    scope, a task id, a phase id or a moment written into a record by hand
+    never names another subject or another moment; of the record's own keys,
+    only `RECORD_ONLY_READ` is given back."""
     record = resolved_shared(record if isinstance(record, dict) else {})
     row = dict((key, value) for key, value in record.items()
-               if key not in _RECORD_SHAPED and key != "gradedBy"
-               and value is not None)
+               if key not in RECORD_NOT_CARRIED and key not in _RECORD_SHAPED
+               and key not in RECORD_ONLY_KEYS and value is not None)
+    row.update((key, record[key]) for key in RECORD_ONLY_READ
+               if record.get(key) is not None)
     row["runId"] = str(record.get("runId") or "")
     row["ts"] = record.get("at")
     row["scope"] = str(scope)
@@ -3659,7 +3705,8 @@ def record_row(record, scope, subject, phase_id):
     if state.get(RECORD_TREE_KEY):
         tested["tree"] = {"key": state[RECORD_TREE_KEY]}
     row["testedState"] = tested
-    row["steps"] = [dict(s) for s in record.get("steps") or []
+    steps = record.get("steps")
+    row["steps"] = [dict(s) for s in (steps if isinstance(steps, list) else [])
                     if isinstance(s, dict)]
     if isinstance(record.get("observations"), dict) \
             or record.get(RECORD_CUT_KEY):
@@ -3670,29 +3717,209 @@ def record_row(record, scope, subject, phase_id):
     return row
 
 
-def records_of_bodies(bodies):
+# --- a record that is not the record's shape ------------------------------------
+# A RECORD WRITTEN BY HAND, OR BY A BUILD THAT WROTE ANOTHER SHAPE, IS SAID, NEVER
+# READ AND NEVER RAISED ON. Its shape is the published schema's `lastRun` - read
+# by the reader validate-manifest uses, so the two never disagree about what a
+# record is - and the run a repeat carries and each base run a red's reading
+# keeps are read against it too, since a reader walks them as runs. A record that
+# is not that shape gives no run: it is named, with its plan file, its subject and
+# the first field that is wrong, under `read_rows`' `unreadableRecords`, and its
+# label joins `unreadablePlanFiles`, so every reader that already refuses over a
+# plan file it could not read refuses over it the same way.
+PLAN_SCHEMA_PATH = os.path.join(_output.PLUGIN_ROOT, "schema",
+                                "audit-plan.schema.json")
+_LAST_RUN_REF = {"$ref": "#/$defs/lastRun"}
+
+
+def record_schema():
+    """`(document, problem)` - the published plan schema, parsed, or None and
+    the sentence saying why it could not be read."""
+    try:
+        return _json_schema.load_document(PLAN_SCHEMA_PATH), None
+    except Exception as exc:                                   # noqa: BLE001
+        return None, ("the plan schema (%s) could not be read (%s: %s), so no "
+                      "run record could be checked against `lastRun`"
+                      % (PLAN_SCHEMA_PATH, type(exc).__name__, exc))
+
+
+def _first_finding(node, value, doc, where):
+    found = _json_schema.check_findings(node, value, doc, where)[0]
+    return str(found[0]) if found else None
+
+
+def record_problem(record, doc, where=RECORD_KEY):
+    """`{"field", "why"}` - the first way `record` is not the shape the
+    published `lastRun` gives, or None when it is. `doc` is the schema
+    (`record_schema`); `where` names the record in what is said. The run a
+    repeat carries (`REPEATED_RUN_KEY`) and each base run its red's reading
+    keeps (`BASE_RUNS_KEY`) are records too, read the same way."""
+    if doc is None:
+        return {"field": where, "why": "%s could not be checked: no plan "
+                "schema was read" % (where,)}
+    why = (_first_finding({"type": "object"}, record, doc, where)
+           or _first_finding(_LAST_RUN_REF, record, doc, where))
+    if why is None:
+        carried = record.get(REPEATED_RUN_KEY)
+        if carried is not None:
+            why = _first_finding(_LAST_RUN_REF, carried, doc, "%s.%s" % (
+                where, REPEATED_RUN_KEY))
+    if why is None:
+        why = _base_runs_problem(record.get(BASE_RED_KEY), doc,
+                                 "%s.%s" % (where, BASE_RED_KEY))
+    if why is None:
+        return None
+    why = _journal_io._clip(why)
+    return {"field": why.split(" ", 1)[0], "why": why}
+
+
+def _base_runs_problem(reading, doc, where):
+    """The first way a red's reading `reading` - or a base run it keeps - is
+    not the shape its writer writes, or None."""
+    if reading is None:
+        return None
+    why = _first_finding({"type": "object"}, reading, doc, where)
+    runs = reading.get(BASE_RUNS_KEY) if why is None else None
+    if why is None and runs is not None:
+        where = "%s.%s" % (where, BASE_RUNS_KEY)
+        why = _first_finding({"type": "array"}, runs, doc, where)
+        for i, run in enumerate(runs if why is None else []):
+            why = _first_finding(_LAST_RUN_REF, run, doc,
+                                 "%s[%d]" % (where, i))
+            if why is not None:
+                break
+    return why
+
+
+def _plan_records(phase):
+    """`[(scope, subject, record)]` - the records phase body `phase` holds:
+    its own, then each task's; a subject holding none is left out."""
+    pid = str(phase.get("id"))
+    tasks = phase.get("tasks")
+    held = [("phase", pid, phase.get(RECORD_KEY))] + [
+        ("task", str(t.get("id")), t.get(RECORD_KEY))
+        for t in (tasks if isinstance(tasks, list) else [])
+        if isinstance(t, dict)]
+    return [(s, i, r) for s, i, r in held if r is not None]
+
+
+def unreadable_records(bodies, doc):
+    """`[{"file", "scope", "subject", "key", "field", "why"}]` - every record
+    the phase bodies `bodies` (`[(label, phase body)]`) hold that is not the
+    record's shape (`record_problem`), and every full run a phase holds that is
+    not the held run's (`held_runs_problems`), each named by the file holding
+    it, its subject and the field."""
+    out = []
+    for label, phase in bodies or []:
+        if not isinstance(phase, dict):
+            continue
+        for scope, subject, record in _plan_records(phase):
+            found = record_problem(record, doc)
+            if found is not None:
+                out.append({"file": label, "scope": scope, "subject": subject,
+                            "key": RECORD_KEY, "field": found["field"],
+                            "why": found["why"]})
+        for why in held_runs_problems(phase.get(FULL_GATE_RUNS_KEY)):
+            why = _journal_io._clip(why)
+            out.append({"file": label, "scope": "phase",
+                        "subject": str(phase.get("id")),
+                        "key": FULL_GATE_RUNS_KEY,
+                        "field": why.split(" ", 1)[0], "why": why})
+    return out
+
+
+def unreadable_record_label(entry):
+    """One unreadable record (`unreadable_records`' entry) as the string
+    channel names it: its file, its subject and what is wrong."""
+    return "%s: %s %s's %s" % (entry.get("file"), entry.get("scope"),
+                               entry.get("subject"), entry.get("why"))
+
+
+# What a sentence naming unreadable records may spend on naming them.
+UNREADABLE_SAY_BUDGET = 1600
+
+
+def unreadable_records_sentence(entries):
+    """THE ONE SENTENCE every reader prints for the unreadable records
+    `entries` (`unreadable_records`' shape), bounded however many there are or
+    however long a value is, or None for none."""
+    entries = list(entries or [])
+    if not entries:
+        return None
+    return ("%d run record(s) the plan holds could not be read, so the run "
+            "each holds is not counted - %s; re-record the subject's gate "
+            "(run-test-gate.py --record), or repair the field by hand and "
+            "check the plan with validate-manifest.py"
+            % (len(entries), _output.some_of(
+                entries, UNREADABLE_SAY_BUDGET, "; ",
+                lambda e: _journal_io._clip(unreadable_record_label(e),
+                                            limit=300))))
+
+
+def plan_unreadable(manifest_path, project=None):
+    """`{"unreadablePlanFiles", "unreadableRecords"}` - `read_rows`' two
+    plan-side answers for the plan at `manifest_path`, read off its files
+    alone, for a reader that reads no ledger: each plan file that would not
+    read, and each record in one that is not the record's shape."""
+    bodies, lost = plan_bodies(manifest_path, project)
+    lost, malformed = _plan_lost(bodies, lost, *record_schema())
+    return {"unreadablePlanFiles": lost, "unreadableRecords": malformed}
+
+
+def _plan_lost(bodies, lost, doc, schema_lost):
+    """`(unreadablePlanFiles, unreadableRecords)` for the plan read as `bodies`
+    with the files `lost` that would not read: those files, then each record
+    that is not the record's shape, as `unreadable_record_label` names it -
+    and why no record could be checked, when that is why they are named."""
+    malformed = unreadable_records(bodies, doc)
+    lost = list(lost) + [unreadable_record_label(e) for e in malformed]
+    if schema_lost and malformed:
+        lost.append(schema_lost)
+    return lost, malformed
+
+
+def plan_read_sentence(read):
+    """The sentence for what the plan's side of `read` (`read_rows`' answer)
+    could not read - each plan file that would not read, then the records
+    that would not (`unreadable_records_sentence`) - or None for nothing."""
+    read = read if isinstance(read, dict) else {}
+    entries = list(read.get("unreadableRecords") or [])
+    labels = set(unreadable_record_label(e) for e in entries)
+    files = [str(f) for f in read.get("unreadablePlanFiles") or []
+             if str(f) not in labels]
+    said = []
+    if files:
+        said.append("the plan file(s) %s could not be read, so no run they "
+                    "hold is counted" % (_output.some_of(
+                        files, UNREADABLE_SAY_BUDGET // 2, ", "),))
+    if entries:
+        said.append(unreadable_records_sentence(entries))
+    return "; and ".join(said) if said else None
+
+
+def records_of_bodies(bodies, doc=None):
     """`[(row, label)]` - every record the phase bodies `bodies` (`[(label,
     phase body)]`, a body as its file holds it) carry, each as `record_row`
     reads it, with the run it repeated (`REPEATED_RUN_KEY`) beside it and the
     base runs its red's reading keeps (`BASE_RUNS_KEY`) as base-scope rows,
     and every full run a phase holds (`FULL_GATE_RUNS_KEY`) as the scope-full
-    row `held_run_row` gives - once per run.
+    row `held_run_row` gives - once per run. A record that is not the
+    record's shape (`record_problem`, against `doc` - the published schema
+    when None) gives no run: `unreadable_records` names it.
 
     A GROUP MEMBER'S COPY IS ITS CARRIER'S RUN. Group sign-off copies the
     carrier's record onto each member naming the carrier in `gradedBy`; the
     ledger holds that run once, under the carrier, so the copy is read under
     the carrier too, and only where the carrier's own record no longer holds
     it."""
+    doc = record_schema()[0] if doc is None else doc
     carried, copies = [], []
     for label, phase in bodies or []:
         if not isinstance(phase, dict):
             continue
         pid = str(phase.get("id"))
-        held = [("phase", pid, phase.get(RECORD_KEY))] + [
-            ("task", str(t.get("id")), t.get(RECORD_KEY))
-            for t in phase.get("tasks") or [] if isinstance(t, dict)]
-        for scope, subject, record in held:
-            if not isinstance(record, dict) or not record.get("runId"):
+        for scope, subject, record in _plan_records(phase):
+            if record_problem(record, doc) is not None:
                 continue
             graded = record.get("gradedBy") if scope == "phase" else None
             owner = str(graded) if graded else subject
@@ -3878,6 +4105,16 @@ def run_by_launch(rows, token):
 # run was replaced, and by which run (`replaced_by`).
 REPLACED_KEY = "replacedLaunches"
 REPLACED_KEEP = 8
+# THE KEYS ONLY A RECORD HOLDS - what it carried from another run, what it
+# shares with that run, what it cut, what it replaced, which carrier graded it -
+# one table both directions leave out: `_record_of` never copies one from a row
+# into the record of a run, so a row read back from a record cannot carry
+# another record's markers into a new one, and `record_row` gives back only the
+# ones a reader of runs asks by name (`RECORD_ONLY_READ`), each from the record
+# itself rather than from what a hand put beside it.
+RECORD_ONLY_KEYS = (REPEATED_RUN_KEY, REPEAT_UNREAD_KEY, RECORD_CUT_KEY,
+                    SHARED_KEY, SHARED_UNRESOLVED_KEY, REPLACED_KEY, "gradedBy")
+RECORD_ONLY_READ = (REPLACED_KEY, SHARED_UNRESOLVED_KEY, REPEAT_UNREAD_KEY)
 
 
 def replaced_launches(replaced, record):
@@ -3892,9 +4129,43 @@ def replaced_launches(replaced, record):
         out.append(dict((k, str(replaced[k]))
                         for k in ("runId", LAUNCH_KEY, "status", "at")
                         if replaced.get(k) is not None))
-    out.extend(e for e in replaced.get(REPLACED_KEY) or []
-               if isinstance(e, dict))
+    out.extend(_replaced_entries(replaced))
     return out[:REPLACED_KEEP]
+
+
+def _replaced_entries(holder):
+    """The entries of `holder`'s `REPLACED_KEY` list that are objects; [] when
+    it holds none, or a value that is not a list."""
+    entries = holder.get(REPLACED_KEY) if isinstance(holder, dict) else None
+    return [e for e in entries if isinstance(e, dict)] \
+        if isinstance(entries, list) else []
+
+
+def launch_cut(rows, token, since):
+    """The newest row of `rows` (one subject's) whose replaced launches
+    (`REPLACED_KEY`) are cut at `REPLACED_KEEP` and could have cut the launch
+    `token` began at `since`: the list is full, names no such launch, and its
+    oldest entry ended no earlier than that launch began - so a run of that
+    launch, replaced, would have been the oldest and the one cut. None when no
+    row says so, and when `since` names no moment.
+
+    A RUN STILL RUNNING READS THE SAME WAY: a list filled by runs that all
+    ended after this launch began holds no word on whether this one has
+    ended, so a caller saying the launch was cut says what the list shows,
+    not that its run is over."""
+    start = stamp_moment(since)
+    if not token or start is None:
+        return None
+    full = []
+    for row in rows or []:
+        entries = _replaced_entries(row)
+        if len(entries) < REPLACED_KEEP or any(
+                str(e.get(LAUNCH_KEY)) == str(token) for e in entries):
+            continue
+        oldest = stamp_moment(entries[-1].get("at"))
+        if oldest is not None and oldest >= start:
+            full.append(row)
+    return newest_row(full) if full else None
 
 
 def replaced_by(rows, token):
@@ -3905,8 +4176,8 @@ def replaced_by(rows, token):
     if not token:
         return None
     hits = [(e, r) for r in rows or [] if isinstance(r, dict)
-            for e in r.get(REPLACED_KEY) or []
-            if isinstance(e, dict) and str(e.get(LAUNCH_KEY)) == str(token)]
+            for e in _replaced_entries(r)
+            if str(e.get(LAUNCH_KEY)) == str(token)]
     newest = newest_row([r for _e, r in hits])
     return ([(e, r) for e, r in hits if r is newest] or [None])[0]
 
@@ -4713,7 +4984,7 @@ def _reconciled(body, scope, ids, sharded, target, record):
     subject, _task, problem = _holders(body, scope, ids, sharded)
     if problem is not None:
         return None, problem, None
-    held = subject.get(RECORD_KEY)
+    held = readable_record(subject.get(RECORD_KEY))
     # A repeat whose source was read nowhere before the lock looks once more,
     # in the record it is about to replace - `_put_record`'s look, through the
     # same helper, so the two writers of a record carry the same run.

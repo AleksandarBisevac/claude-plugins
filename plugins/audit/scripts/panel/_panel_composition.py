@@ -897,6 +897,14 @@ def evidence_view(project, composition, config=None, read=None,
     out["runs"] = dict((k, _evidence_facts(v)) for k, v in newest.items())
     out["files"] = read["files"]
     out["unreadable"] = read["unreadable"]
+    # A RUN RECORD THE PLAN HOLDS THAT IS NOT THE RECORD'S SHAPE gave no run
+    # above; the payload names each (the reader's own entries) and carries the
+    # reader's one sentence. Absent when there is none, so a plan whose
+    # records all read keeps its payload byte for byte.
+    said = _ev.plan_read_sentence(read)
+    if said:
+        out["unreadableRecords"] = list(read.get("unreadableRecords") or [])
+        out["unreadablePlanSaid"] = said
     return out
 
 

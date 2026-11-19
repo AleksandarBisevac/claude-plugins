@@ -828,7 +828,8 @@ DECISIONS = {
     "gate-red-base-unknown": (("rerun", "measure-base", "block", "resume",
                                "retry"), ("block",)),
     # A task's gate whose runs came back cancelled `CANCELLED_BOUND` times in a
-    # row (`cancelled_gate`): `rerun` launches it once more with the count
+    # row (`cancelled_gate`), or were replaced by another run's record that many
+    # times (`replaced_gate`): `rerun` launches it once more with the counts
     # started again, `block` stops the task with the reason. No attempt is
     # spent either way: a cancel is not the work's fault.
     "gate-cancelled": (("rerun", "block"), ("block",)),
@@ -7163,6 +7164,12 @@ CANCELLED_BEFORE = "cancelledBefore"
 # another launch would only meet again. No attempt is spent below it, since a
 # cancel is not the work's fault.
 CANCELLED_BOUND = 2
+# ...and the launches of that gate in a row whose run another run's record
+# replaced before its verdict was read back (`replaced_gate`), counted on the
+# mark the same way and asked at the same bound: a gate whose every run is
+# replaced by a sibling's is a cause outside the work that another launch
+# would only meet again.
+REPLACED_BEFORE = "replacedBefore"
 
 
 def runnable_entries(manifest, entries):
@@ -7372,6 +7379,9 @@ def new_gate_row(ctx, launched, key):
     replaced = _evio.replaced_by(mine, token)
     if replaced is not None:
         return (None, REPLACED), replaced
+    cut = _evio.launch_cut(mine, token, launched.get("at"))
+    if cut is not None:
+        return (None, REPLACED), (None, cut)
     return None, None
 
 
@@ -7380,21 +7390,50 @@ def new_gate_row(ctx, launched, key):
 REPLACED = "replaced"
 
 
-def replaced_gate(ctx, subject, replacement, relaunch):
-    """The step after a launched gate's run was replaced: say the run the
-    launch started was recorded and then replaced on the plan, by which run,
-    and that no ledger row of it is left to read its verdict back from -
-    then launch the gate again through `relaunch()`, the only way to a
-    verdict of this launch's own. No attempt is spent: the run ended, and
-    what it found is not lost work of the task's."""
+def replaced_gate(ctx, state, task, launched, replacement, relaunch):
+    """The step after a launched gate's run was replaced - a task's gate, or
+    the phase's with `task` None: say the run the launch started was
+    recorded and then replaced on the plan, by which run, and that no ledger
+    row of it is left to read its verdict back from - or, with no entry in
+    `replacement`, that the launch was cut from the bounded list of replaced
+    launches the record names (`_evidence_io.launch_cut`) - then launch the
+    gate again through `relaunch(cancelled, replaced)`, the only way to a
+    verdict of this launch's own.
+
+    COUNTED, as a cancelled run is (`cancelled_gate`): the mark's cancelled
+    count is carried across the relaunch, raised by one when the replaced run
+    was itself cancelled, and the replacements in a row are counted beside
+    it; at `CANCELLED_BOUND` of either the drive asks instead, under the same
+    decision. No attempt is spent: the run ended, and what it found is not
+    lost work of the task's."""
     entry, row = replacement
-    warn(ctx, "gate of %s: the run it launched (%s, %s at %s) was replaced on "
-              "the plan by run %s (%s, launch %s) before its verdict was read "
-              "back, and no ledger row of it is left to read - launched again"
-              % (subject, entry.get("runId"), entry.get("status"),
-                 entry.get("at"), row.get("runId"), row.get("status"),
-                 row.get(_evio.LAUNCH_KEY) or "none"))
-    return relaunch()
+    subject = task["id"] if task else "the phase"
+    cancelled = int((launched or {}).get(CANCELLED_BEFORE) or 0) + (
+        1 if (entry or {}).get("status") == GATE_CANCELLED else 0)
+    replaced = int((launched or {}).get(REPLACED_BEFORE) or 0) + 1
+    if entry is None:
+        said = ("the run launch %s started is not among the launched runs run "
+                "%s's record names as replaced - that list is full, and every "
+                "run it names ended after this launch - so it was cut from the "
+                "list and its verdict cannot be read back"
+                % ((launched or {}).get("launch"), row.get("runId")))
+    else:
+        said = ("the run it launched (%s, %s at %s) was replaced on the plan "
+                "by run %s (%s, launch %s) before its verdict was read back, "
+                "and no ledger row of it is left to read"
+                % (entry.get("runId"), entry.get("status"), entry.get("at"),
+                   row.get("runId"), row.get("status"),
+                   row.get(_evio.LAUNCH_KEY) or "none"))
+    counts = ("%d replaced and %d cancelled in a row, asked at %d of either"
+              % (replaced, cancelled, CANCELLED_BOUND))
+    if replaced < CANCELLED_BOUND and cancelled < CANCELLED_BOUND:
+        warn(ctx, "gate of %s: %s (%s) - launched again"
+             % (subject, said, counts))
+        return relaunch(cancelled, replaced)
+    name = "gate-cancelled" if task else "phase-gate-cancelled"
+    return decision(ctx, state, name, task, "%s (%s)" % (said, counts),
+                    {CANCELLED_BEFORE: cancelled, REPLACED_BEFORE: replaced,
+                     "runId": (entry or {}).get("runId")})
 
 
 def unrepeatable_red(run_id, status):
@@ -7589,13 +7628,14 @@ def read_back(ctx, run_id, status, repeat, label):
 
 
 def launch_gate(ctx, state, phase, task, tree, argv=None, why=None,
-                cancelled=0):
+                cancelled=0, replaced=0):
     """Mark the launch of `task`'s gate - the moment, the command and the
     launch token the command carries (`LAUNCH_FLAG`) - and print its dispatch
     with `why` it goes to the background. `argv` is a launch printed again,
     under a token of its own; a first one spends a `rerun` mark into
     `--no-reuse`. `cancelled` is the count of cancelled runs in a row the
-    launch it replaces carried forward (`cancelled_gate`)."""
+    launch it replaces carried forward (`cancelled_gate`), and `replaced` the
+    count of replaced runs in a row (`replaced_gate`)."""
     if argv is None:
         argv = ["python3", _loader.script_path("run-test-gate.py")] + gate_args(
             ctx, phase, task, tree, no_reuse=bool(_spend(state, "rerun", task)),
@@ -7604,7 +7644,7 @@ def launch_gate(ctx, state, phase, task, tree, argv=None, why=None,
     argv = with_launch(argv, token)
     _mark(state, GATE_LAUNCH_KEY, task, {
         "at": _utc_stamp(), "argv": list(argv), "launch": token,
-        CANCELLED_BEFORE: int(cancelled)})
+        CANCELLED_BEFORE: int(cancelled), REPLACED_BEFORE: int(replaced)})
     write_state(ctx, state)
     return gate_said(ctx, task["id"], argv, why=why)
 
@@ -7654,9 +7694,10 @@ def background_gate(ctx, state, phase, task, tree):
     found, why = new_gate_row(ctx, launched, ("task", task["id"]))
     if found is not None and found[1] == REPLACED:
         return replaced_gate(
-            ctx, task["id"], why,
-            lambda: launch_gate(ctx, state, phase, task, tree,
-                                launched.get("argv"))), None
+            ctx, state, task, launched, why,
+            lambda cancelled, replaced: launch_gate(
+                ctx, state, phase, task, tree, launched.get("argv"),
+                cancelled=cancelled, replaced=replaced)), None
     if why is not None:
         return _stopped(ctx, why), None
     if found is None:
@@ -12241,10 +12282,11 @@ def phase_gate(ctx, phase, verbose=False):
 
 
 def launch_phase_gate(ctx, state, phase, head, argv=None, why=None,
-                      cancelled=0):
+                      cancelled=0, replaced=0):
     """Mark the launch of the phase's gate at `head` - the moment, the command
     and the launch token it carries (`LAUNCH_FLAG`) - and print its dispatch.
-    `cancelled` is `launch_gate`'s: the cancelled runs in a row carried."""
+    `cancelled` and `replaced` are `launch_gate`'s: the cancelled and the
+    replaced runs in a row carried."""
     if argv is None:
         argv = ["python3", _loader.script_path("run-test-gate.py")] + \
             phase_gate_args(ctx, phase, absolute=True)
@@ -12252,7 +12294,8 @@ def launch_phase_gate(ctx, state, phase, head, argv=None, why=None,
     argv = with_launch(argv, token)
     state[PHASE_GATE_LAUNCH_KEY] = {"head": head, "at": _utc_stamp(),
                                     "argv": list(argv), "launch": token,
-                                    CANCELLED_BEFORE: int(cancelled)}
+                                    CANCELLED_BEFORE: int(cancelled),
+                                    REPLACED_BEFORE: int(replaced)}
     write_state(ctx, state)
     return gate_said(ctx, phase["id"], argv, phase_gate=True, why=why)
 
@@ -12282,9 +12325,10 @@ def chosen_phase_gate(ctx, state, phase, head):
     found, why = new_gate_row(ctx, launched, ("phase", phase["id"]))
     if found is not None and found[1] == REPLACED:
         return replaced_gate(
-            ctx, "the phase", why,
-            lambda: launch_phase_gate(ctx, state, phase, head,
-                                      launched.get("argv"))), None
+            ctx, state, None, launched, why,
+            lambda cancelled, replaced: launch_phase_gate(
+                ctx, state, phase, head, launched.get("argv"),
+                cancelled=cancelled, replaced=replaced)), None
     if why is not None:
         return _stopped(ctx, why), None
     if found is None:

@@ -449,6 +449,23 @@ def full_run_block(manifest, manifest_path, project):
     return out
 
 
+def unreadable_records_block(manifest_path, project):
+    """`[{"file", "scope", "subject", "key", "field", "why"}]` - each run
+    record the plan's files hold that is not the record's shape, as
+    `_evidence_io.plan_unreadable` names it; one entry saying the plan's
+    files could not be walked when even that read raised."""
+    try:
+        project_root, _config = _evidence_io.project_config_for(
+            manifest_path, project)
+        return _evidence_io.plan_unreadable(
+            manifest_path, project_root)["unreadableRecords"]
+    except Exception as exc:                       # noqa: BLE001
+        return [{"file": str(manifest_path), "scope": "plan",
+                 "subject": "every record", "key": None, "field": None,
+                 "why": "the plan's run records could not be read (%s: %s)"
+                        % (type(exc).__name__, exc)}]
+
+
 def _full_run_unknown(manifest, basis):
     """Every MERGED phase answering UNKNOWN for `basis` - `full_status`'s own
     keys, so a reader of the block cannot tell a failed read from an ancestry
@@ -1169,6 +1186,11 @@ def _header_lines(manifest, summary, width=18, pt=None, manifest_path=None):
         out.append(pt.paint(
             "  INVALID MANIFEST: %d validator finding(s) - fix before "
             "running a phase" % summary["findings"], "finding"))
+    unread = summary.get("unreadableRecords")
+    if unread:
+        out.append(pt.paint("  RUN RECORDS UNREADABLE: %s"
+                            % (_evidence_io.unreadable_records_sentence(
+                                unread),), "finding"))
     # A park-all /audit:init leaves a valid plan with zero phases. Without this
     # line that plan reads as "nothing to do" on the one surface everyone
     # checks first, when the actual state is "everything is waiting for you".
@@ -2594,6 +2616,13 @@ def main(argv):
                            for c in _status_facts.FULL_RUN_CONDITIONS))
             or not (want_json or want_gate)):
         summary["fullRun"] = full_run_block(manifest, manifest_path, project)
+    # A RUN RECORD THE PLAN HOLDS THAT IS NOT THE RECORD'S SHAPE gives no run
+    # to any reader, so every mode says which: `--json` as the reader's own
+    # entries, the human render as its one sentence. Present only then, so a
+    # plan whose records all read keeps its payload byte for byte.
+    unread = unreadable_records_block(manifest_path, project)
+    if unread:
+        summary["unreadableRecords"] = unread
 
     # Every mode carries it, but only when an approval was ever armed or revoked,
     # so a plan whose trail never held one keeps its payload byte for byte.

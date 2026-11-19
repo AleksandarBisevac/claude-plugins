@@ -691,11 +691,108 @@ def _record_binding_cases(check):
         _harness.remove_tree(root)
 
 
+def _put_shard(root, phase):
+    """`phase` as P1's shard of the plan `_project` points at."""
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"), exist_ok=True)
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+              "w") as fh:
+        json.dump(phase, fh)
+    with open(os.path.join(root, "docs", "audit", "audit-plan.json"),
+              "w") as fh:
+        json.dump({"meta": {"version": 3}, "phases": [
+            {"id": "P1", "title": "one", "shard": "phases/P1.json"}]}, fh)
+
+
+def _unread_binding_cases(check):
+    """(vb45) A record the reader cannot read in full refuses the binding of
+    its own subject naming what was not read - the unresolved paths of a
+    share, or the field of a record that is not the record's shape - and never
+    binds an older green row in its place; another subject's record read
+    wrong refuses nothing here."""
+    root = _harness.fixture_root("verdict-binding-unread")
+    try:
+        probe = os.path.join(root, "probe")
+        os.makedirs(probe)
+        mpath = _project(probe, [])
+        green = _measured(probe, "R1", "2026-09-01T00:00:00Z")
+        record = _evidence_io.run_record(green)
+        shared = dict(record, **{
+            _evidence_io.SHARED_KEY: ["testedState"],
+            _evidence_io.VERDICT_SOURCE: _evidence_io.PART_REUSED,
+            "reusedFrom": {"runId": "R0"},
+            _evidence_io.REPEATED_RUN_KEY: dict(record, runId="R0")})
+        shared.pop("testedState", None)
+        shared[_evidence_io.REPEATED_RUN_KEY].pop("testedState", None)
+        _put_shard(probe, {"id": "P1", "title": "one", "status": "in_progress",
+                           "testGate": ["test"], "tasks": [],
+                           _evidence_io.RECORD_KEY: shared})
+        os.remove(os.path.join(_evidence_io.evidence_dir(probe),
+                               "2026-09.t.jsonl"))
+        got = _bind(probe, mpath)
+        said = got.get("sentence") or ""
+        check("vb45 RED-FIRST: a record whose shared path cannot be given back "
+              "from the run it carries refuses on the unreadable arm NAMING "
+              "the unresolved path and the share, not a missing digest: %r"
+              % ((_said(got), said[-300:]),),
+              got.get("state") == "refused"
+              and got.get("arm") == M.ARM_UNREADABLE
+              and "testedState" in said and _evidence_io.SHARED_KEY in said
+              and "scopeDigest" not in said)
+        older = os.path.join(root, "older")
+        os.makedirs(older)
+        mpath = _project(older, [_measured(older, "R1",
+                                            "2026-09-01T00:00:00Z")])
+        bad = dict(_evidence_io.run_record(
+            _measured(older, "R2", "2026-09-02T00:00:00Z")), steps=5)
+        _put_shard(older, {"id": "P1", "title": "one", "status": "in_progress",
+                           "testGate": ["test"], "tasks": [],
+                           _evidence_io.RECORD_KEY: bad})
+        try:
+            got = _bind(older, mpath)
+        except Exception as exc:                               # noqa: BLE001
+            got = {"state": "raised", "sentence": "%s: %s"
+                   % (type(exc).__name__, exc)}
+        said = got.get("sentence") or ""
+        check("vb46 RED-FIRST: the subject's newest record malformed, an older "
+              "green row of it in the ledger: the binding refuses on the "
+              "unreadable arm naming the plan file and the field, and binds "
+              "neither run: %r" % ((_said(got), said[-300:]),),
+              got.get("state") == "refused"
+              and got.get("arm") == M.ARM_UNREADABLE
+              and "docs/audit/phases/P1.json" in said
+              and "%s.steps" % (_evidence_io.RECORD_KEY,) in said)
+        other = os.path.join(root, "other")
+        os.makedirs(other)
+        # The tree first, so the green row's digest is taken over the file.
+        _project(other, [])
+        mpath = _project(other, [_measured(other, "R1",
+                                            "2026-09-01T00:00:00Z")])
+        _put_shard(other, {"id": "P1", "title": "one", "status": "in_progress",
+                           "testGate": ["test"],
+                           "tasks": [{"id": "P1.1", "title": "t",
+                                      "status": "in_progress",
+                                      _evidence_io.RECORD_KEY: bad}]})
+        try:
+            got = _bind(other, mpath)
+        except Exception as exc:                               # noqa: BLE001
+            got = {"state": "raised", "sentence": "%s: %s"
+                   % (type(exc).__name__, exc)}
+        check("vb47 ALLOW: a malformed record of ANOTHER subject in the same "
+              "file refuses nothing here - the phase's green binds - the case "
+              "that goes red if every subject of the file were refused: %r"
+              % (_said(got),),
+              got.get("state") == "bound" and (got.get("row") or {}).get(
+                  "runId") == "R1")
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _harness.stage(check, "vb-tree-block", _tree_binding_cases)
         _harness.stage(check, "vb-record-block", _record_binding_cases)
+        _harness.stage(check, "vb-unread-block", _unread_binding_cases)
     return _harness.run(body)
 
 

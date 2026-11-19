@@ -389,9 +389,25 @@ def red_after_green(rows):
 def plan_records(project, manifest_path):
     """`(records, unreadable)` - the records the plan at `manifest_path`
     holds, each in its run's row shape (`_evidence_io.records_of_bodies`),
-    and the label of each plan file that would not read (`plan_bodies`)."""
+    and what that read lost: the label of each plan file that would not read
+    (`plan_bodies`), then each record that is not the record's shape, as
+    `_evidence_io.unreadable_records` names it."""
     bodies, lost = _evidence_io.plan_bodies(manifest_path, project)
-    return _evidence_io.records_of_bodies(bodies), lost
+    doc = _evidence_io.record_schema()[0]
+    return (_evidence_io.records_of_bodies(bodies, doc),
+            list(lost) + _evidence_io.unreadable_records(bodies, doc))
+
+
+def subject_record_lost(lost, ids):
+    """The unreadable records among `lost` (`plan_records`' second half:
+    labels, and `unreadable_records`' entries) that are the subject `ids`'
+    own run record - the one its newest run may be."""
+    scope, subject = (("task", ids.get("taskId")) if ids.get("taskId")
+                      else ("phase", ids.get("phaseId")))
+    return [e for e in lost or [] if isinstance(e, dict)
+            and e.get("key") == _evidence_io.RECORD_KEY
+            and e.get("scope") == scope
+            and str(e.get("subject")) == str(subject)]
 
 
 def subject_file_lost(lost, manifest_path, phase_id):
@@ -402,6 +418,7 @@ def subject_file_lost(lost, manifest_path, phase_id):
     a branch tip (`branch:path`) are matched alike; every lost label when
     the index itself names no such file, since the index is then what was
     lost."""
+    lost = [label for label in lost or [] if not isinstance(label, dict)]
     if not lost:
         return []
     try:
@@ -482,6 +499,17 @@ def binding(project, ids, entries, source, owns, manifest_path, record,
             "it) and %s" % (", ".join(lost_here), who, who, record))
         out["arm"] = ARM_UNREADABLE
         return out
+    # THE SUBJECT'S OWN RECORD NOT THE RECORD'S SHAPE BLOCKS THE SAME WAY: it
+    # gave no run, and it may be the newest one.
+    malformed = subject_record_lost(records_lost, ids)
+    if malformed:
+        out["sentence"] = (
+            "%s - %s's own among them, so its newest run is not established "
+            "and no older verdict can stand for it; %s"
+            % (_evidence_io.unreadable_records_sentence(malformed), who,
+               record))
+        out["arm"] = ARM_UNREADABLE
+        return out
     ledger = {"rows": subject_runs(texts, records)}
     rows = [r for r in ledger["rows"]
             if isinstance(r, dict) and _evidence_io._same_subject(r, ids)]
@@ -555,6 +583,27 @@ def binding(project, ids, entries, source, owns, manifest_path, record,
                                "established - %s" % (who, run, origin, record))
             out["arm"] = ARM_REPEAT_GONE
             return out
+    # A FIELD THE RECORD STORED ONCE, IN THE RUN IT CARRIES, AND THAT RUN NO
+    # LONGER GIVES BACK (`SHARED_UNRESOLVED_KEY`) is a field of the verdict
+    # nobody can read - the tested state the digest is checked against among
+    # them - so it refuses naming the paths, never as the field missing.
+    unresolved = [(r.get("runId"), list(r.get(
+        _evidence_io.SHARED_UNRESOLVED_KEY) or []))
+        for r in ([last] + ([measured] if measured is not last else []))
+        if r.get(_evidence_io.SHARED_UNRESOLVED_KEY)]
+    if unresolved:
+        out["measured"] = measured
+        out["sentence"] = (
+            "%s's newest verdict (%s) stores %s once, in the run its record "
+            "carries (`%s`), and that run does not give %s back, so the "
+            "verdict's own fields are not established; %s"
+            % (who, run, "; ".join("run %s's %s" % (r, ", ".join(
+                str(p) for p in paths)) for r, paths in unresolved),
+               _evidence_io.SHARED_KEY,
+               "it" if sum(len(p) for _r, p in unresolved) == 1 else "them",
+               record))
+        out["arm"] = ARM_UNREADABLE
+        return out
     out["measured"] = measured
     mismatch = gate_mismatch(measured, entries, source, build)
     if mismatch:

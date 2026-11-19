@@ -1926,7 +1926,10 @@ def branch_records(git_root, project, branch, phase_tree, manifest_path):
     branch tip, unioned with the worktree holding the branch when there is
     one - `branch_texts`' rule for the ledger, asked of the plan's shards -
     and every plan file either read could not read, each named in `notes`
-    too: a shard that will not read is never skipped in silence."""
+    too: a shard that will not read is never skipped in silence. So is a
+    record that is not the record's shape: it gives no run, and it joins
+    `unreadable` as `_evidence_io.unreadable_records` names it, so the
+    binding refuses the landing of the subject it belongs to."""
     bodies, why, lost = tip_bodies(git_root, branch, manifest_path)
     tree = _phase_project(git_root, project, phase_tree)
     if tree:
@@ -1938,7 +1941,12 @@ def branch_records(git_root, project, branch, phase_tree, manifest_path):
               % (why,)] if why and not tree else [])
     notes += ["the plan file %s could not be read, so no record it holds was "
               "read" % (label,) for label in lost]
-    return _evidence_io.records_of_bodies(bodies), notes, lost
+    doc = _evidence_io.record_schema()[0]
+    malformed = _evidence_io.unreadable_records(bodies, doc)
+    if malformed:
+        notes.append(_evidence_io.unreadable_records_sentence(malformed))
+    return (_evidence_io.records_of_bodies(bodies, doc), notes,
+            list(lost) + malformed)
 
 
 def _phase_project(git_root, project, phase_tree):

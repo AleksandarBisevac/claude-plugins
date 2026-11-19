@@ -488,6 +488,17 @@ def main(argv):
     _port = stranded_marks(_proj, manifest, _cfg)
     if _tinfo.get("error"):
         sys.stderr.write("WARNING: theme not applied - %s\n" % _tinfo["error"])
+    # A run record the plan holds that is not the record's shape gives the
+    # report no run for its subject; the reader's one sentence says which.
+    try:
+        _unread = _evidence_io.plan_unreadable(manifest_path, _proj)
+    except Exception as exc:                       # noqa: BLE001
+        _unread = {"unreadablePlanFiles": [
+            "%s (its run records could not be walked: %s: %s)"
+            % (manifest_path, type(exc).__name__, exc)]}
+    _said = _evidence_io.plan_read_sentence(_unread)
+    if _said:
+        sys.stderr.write("WARNING: %s\n" % (_said,))
 
     basename = _report_basename(manifest.get("meta"), cli_basename)
     out_dir = out_dir or (os.path.dirname(os.path.abspath(manifest_path)) or ".")

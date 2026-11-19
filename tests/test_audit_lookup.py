@@ -3370,7 +3370,33 @@ def _selftest():
         _harness.stage(check, "co-block", _conventions_order_cases)
         _harness.stage(check, "hd-block", _unborn_head_entry_cases)
         _harness.stage(check, "rk-block", _review_skill_brief_cases)
+        _harness.stage(check, "gb-block", _cut_banner_cases)
     return _harness.run(body)
+
+
+def _cut_banner_cases(check):
+    """(gb) A tree-changed observation the record cut past its bound is said
+    as cut, with the record's own basis - never read as a run that changed
+    nothing - and a run that changed nothing still prints no banner."""
+    record = _evio.run_record({
+        "runId": "GB1", "ts": "2026-11-18T11:00:00Z", "scope": "task",
+        "taskId": "P1.1", "phaseId": "P1", "status": "passed", "steps": [],
+        "observations": {"coverage": ["src/a.py"],
+                         "treeMutated": [" M src/%s.py" % ("m" * 60,)]}})
+    cut = dict(record, **{_evio.RECORD_CUT_KEY: ["observations.treeMutated"]})
+    cut["observations"] = dict(cut["observations"])
+    cut["observations"].pop("treeMutated", None)
+    row = _evio.record_row(cut, "task", "P1.1", "P1")
+    said = M.gate_banners(row)
+    check("gb1 RED-FIRST: the tree-changed observation cut from the record "
+          "is said as cut, with the record's basis: %r" % (said,),
+          any("TREE CHANGED" in s and "cut" in s
+              and "RECORD_MAX_BYTES" in s for s in said))
+    clean = _evio.record_row(dict(record, observations={
+        "coverage": ["src/a.py"], "treeMutated": []}), "task", "P1.1", "P1")
+    check("gb2 ALLOW: a run whose tree did not change prints no banner - the "
+          "case that goes red if a missing list were said as cut: %r"
+          % (M.gate_banners(clean),), M.gate_banners(clean) == [])
 
 
 def _unborn_head_entry_cases(check):

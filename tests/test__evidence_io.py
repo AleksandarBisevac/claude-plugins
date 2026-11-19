@@ -6976,18 +6976,92 @@ def _record_schema_cases(check):
         cuts = _rk_cut_walk(rows)
         stored.extend(("a record cut through %s" % (", ".join(names),), record)
                       for names, record in cuts)
+        # ONE RECORD PER STATUS THE RUNNER CAN RECORD, the words read off the
+        # published status table rather than listed here, each composed
+        # through the writer as a run of that word.
+        statuses = list(_ur_node(doc, ((_ur_node(doc, (doc.get("$defs") or {})
+                                                .get("lastRun")).get("properties")
+                                        or {}).get("status"))).get("enum") or [])
+        composed_statuses = []
+        for i, status in enumerate(statuses):
+            row = M.row_for(rows_root, dict(_rk_measured(), status=status),
+                            "task", _RK_TASK,
+                            {"runId": "RW%d" % (i,), "ts": "2026-11-18T11:%02d:00Z"
+                             % (i,)})
+            record, _pointer, said = _rk_compose(
+                tmp, 100 + i, "task", [M.run_record(row)])
+            if said or not isinstance(record, dict):
+                refused.append(("status %s" % (status,), said))
+                continue
+            stored.append(("a %s run" % (status,), record))
+            composed_statuses.append(record.get("status"))
+        # THE GROUP COPY, as group sign-off composes it: the carrier's record
+        # (`_group_record`, the verb's own) taken onto a member naming the
+        # carrier in `gradedBy` - the one expression the verb writes it with.
+        verb = _loader.load_script("audit-task.py", "rk_audit_task")
+        carrier = {"id": "P1", M.RECORD_KEY: M.run_record(rows["phase"])}
+        carried = verb._group_record(rows_root, os.path.join(
+            rows_root, "docs", "audit", "audit-plan.json"), None, carrier,
+            M.pointer_from_record(carrier[M.RECORD_KEY]), rows["phase"])
+        group_copy = dict(carried, gradedBy="P1") \
+            if isinstance(carried, dict) else None
+        if group_copy is None:
+            refused.append(("the group copy", carried))
+        else:
+            stored.append(("a group member's copy", group_copy))
         refusals = dict((shape, lines) for shape, lines in (
             (shape, _rk_said(doc, "#/$defs/lastRun", record, M.RECORD_KEY))
             for shape, record in stored) if lines)
         check("rk1 THE INVARIANT: every record shape the recorder composes - "
               "measured, part and whole repeats, a record sharing each subtree "
               "it can share, one cut at every position of the cut order, kept "
-              "base runs, replaced launches, a phase's - is "
+              "base runs, replaced launches, a phase's, one run of each status "
+              "the runner records, a group member's copy - is "
               "stored and is accepted by the published `lastRun`, read by the "
               "reader validate-manifest uses, with no keyword left unread: "
-              "refused by the writer %r / refused by the schema %r"
-              % (refused, refusals),
-              refused == [] and refusals == {} and len(stored) > len(cuts))
+              "refused by the writer %r / refused by the schema %r / statuses "
+              "%r of %r" % (refused, refusals, composed_statuses, statuses),
+              refused == [] and refusals == {} and len(stored) > len(cuts)
+              and len(statuses) >= 2 and composed_statuses == statuses
+              and len(cuts) >= 1 and group_copy is not None)
+        # THE TWO ARMS ARE EXCLUSIVE AND EACH WHOLE: a record holds its steps,
+        # or names them shared with the run it carries - never both, never a
+        # share with no run to give them back, never a share that is not a
+        # list of paths. Each twin beside the shape the writer writes.
+        shared = [r for _s, r in stored
+                  if "steps" in (r.get(M.SHARED_KEY) or [])]
+        own = [r for _s, r in stored if r.get("steps") is not None
+               and M.SHARED_KEY not in r]
+        arms = []
+        if shared and own:
+            whole, plain = shared[0], own[0]
+            arms = [
+                ("steps held AND shared", dict(whole, steps=[]), False),
+                ("a share of steps with no run carried", dict(
+                    (k, v) for k, v in whole.items()
+                    if k != M.REPEATED_RUN_KEY), False),
+                ("a share that is not a list", dict(dict(
+                    (k, v) for k, v in plain.items() if k != "steps"),
+                    **{M.SHARED_KEY: "steps"}), False),
+                ("the writer's shared record", whole, True),
+                ("the writer's own-steps record", plain, True)]
+        verdicts = [(label, not _json_schema.check_findings(
+            {"$ref": "#/$defs/lastRun"}, record, doc, M.RECORD_KEY)[0], want)
+            for label, record, want in arms]
+        check("rk8 RED-FIRST: `lastRun`'s two arms are exclusive (oneOf) and "
+              "each whole - the share arm requires the run it is given back "
+              "from and a list of paths: %r" % (verdicts,),
+              len(verdicts) == 5
+              and all(got == want for _l, got, want in verdicts))
+        problems = [(shape, M.record_problem(record, doc))
+                    for shape, record in stored]
+        check("rk7 THE WRITER'S SHAPES ARE THE READER'S: every record the "
+              "recorder composes above reads with no record problem, through "
+              "the same check that names a malformed record unreadable - so "
+              "\"the writer writes it\" implies \"the reader reads it\": %r"
+              % ([p for p in problems if p[1] is not None],),
+              len(problems) == len(stored) and len(problems) > len(cuts)
+              and all(p is None for _s, p in problems))
 
         cut_last = set(n for names, _r in cuts if len(names) == 1 for n in names)
         # What a repeat may share: a key of a measured record outside
@@ -7006,21 +7080,29 @@ def _record_schema_cases(check):
         for _s, r in stored:
             shaped |= set(r) | set(r.get(M.REPEATED_RUN_KEY) or {})
             shaped |= set((r.get(M.BASE_RED_KEY) or {}))
+        # A key only a record holds that no writer writes - the reader's own
+        # marker for a share it could not give back - is the one left out.
         owed = (list(M._RECORD_SHAPED) + list(M.RECORD_LINE_KEYS)
-                + [M.REPEAT_UNREAD_KEY, M.REPLACED_KEY, M.LAUNCH_KEY,
-                   M.BASE_RUNS_KEY])
-        uncomposed = {
-            "RECORD_CUT_ORDER": [c for c in M.RECORD_CUT_ORDER
-                                 if c not in cut_last],
-            "shareable paths": [p for p in shareable if p not in shared],
-            "record-shaped keys": [k for k in owed if k not in shaped]}
+                + [k for k in M.RECORD_ONLY_KEYS
+                   if k != M.SHARED_UNRESOLVED_KEY]
+                + [M.LAUNCH_KEY, M.BASE_RUNS_KEY])
+        # EACH TABLE'S WALK IS ITS OWN CONJUNCT: what it reached must be the
+        # whole table, in the table's order, so a walk emptied - or a table
+        # emptied - fails here rather than passing as "nothing uncomposed".
+        tables = {"RECORD_CUT_ORDER": (list(M.RECORD_CUT_ORDER), cut_last),
+                  "shareable paths": (shareable, shared),
+                  "record-shaped keys": (owed, shaped)}
+        reached = dict((name, [e for e in table if e in seen])
+                       for name, (table, seen) in tables.items())
         check("rk2 THE TABLES ARE COMPOSED: each entry of the cut order is the "
               "one field some bound newly cut, each path a repeat may share (a record's "
               "keys outside `_NEVER_SHARED`, and the steps) is shared by some "
               "record, and each key only a record holds is held by some record "
-              "- an entry no shape reached is named: %r" % (uncomposed,),
-              all(v == [] for v in uncomposed.values())
-              and len(M.RECORD_CUT_ORDER) > 0 and len(shareable) > 1)
+              "- each table against what its walk reached: %r"
+              % (dict((n, [e for e in t if e not in reached[n]])
+                      for n, (t, _s) in tables.items()),),
+              all(len(table) > 1 and reached[name] == table
+                  for name, (table, _seen) in tables.items()))
 
         ptr_said = [(shape, _rk_said(doc, "#/$defs/testEvidence", pointer,
                                      M.POINTER_KEY), pointer == derived)
@@ -7080,6 +7162,627 @@ def _record_schema_cases(check):
               in M.RECORD_CUT_ORDER)
     except Exception as exc:                                   # noqa: BLE001
         check("rk0 the record-schema block ran to its end (%s: %s)"
+              % (type(exc).__name__, exc), False)
+    finally:
+        _harness.remove_tree(tmp)
+
+
+# --- a record no reader can read: said, never raised, never read as absent ----
+# THE MALFORMED SHAPES ARE THE SCHEMA'S OWN. Every field `$defs/lastRun` types -
+# and every field of what a well-formed record holds under it, one level of
+# objects and the first step down - is given each JSON value the schema reader
+# refuses there, in turn, and each required field is taken out: the walk is
+# derived, so a field the schema gains is a shape here with nothing to add.
+_UR_VALUES = (None, True, 7, 1.5, "a string", ["a"], {"k": "v"})
+_UR_GONE = object()
+_UR_FILE = "docs/audit/phases/P1.json"
+_UR_RUN = "UR1"
+
+
+def _ur_base():
+    """A record as the writer writes it, of a passed run of P1.1."""
+    return M.run_record(_lr_row(_UR_RUN, "2026-11-18T11:00:00Z",
+                                status="passed"))
+
+
+def _ur_node(doc, node):
+    """`node` with its `$ref` chain followed, `{}` for anything not a schema."""
+    for _hop in range(8):
+        if not (isinstance(node, dict) and "$ref" in node):
+            break
+        node = _json_schema.resolve(node["$ref"], doc)
+    return node if isinstance(node, dict) else {}
+
+
+def _ur_put(base, path, value):
+    """A NEW copy of `base` with `value` at `path` - or the key taken out."""
+    rec = json.loads(json.dumps(base))
+    holder = rec
+    for part in path[:-1]:
+        holder = holder[part]
+    if value is _UR_GONE:
+        holder.pop(path[-1], None)
+    else:
+        holder[path[-1]] = value
+    return rec
+
+
+def _ur_held(base, path):
+    value = base
+    for part in path:
+        if isinstance(value, dict) and part in value:
+            value = value[part]
+        elif isinstance(value, list) and isinstance(part, int) \
+                and part < len(value):
+            value = value[part]
+        else:
+            return _UR_GONE
+    return value
+
+
+def _ur_shapes(doc, base):
+    """`[(field, record)]` - `base` with each field the schema types given each
+    value its node refuses, and each required field the record holds taken
+    out, `field` the dotted path the reader is expected to name."""
+    out = []
+
+    def walk(node, path, label):
+        node = _ur_node(doc, node)
+        for key, child in sorted((node.get("properties") or {}).items()):
+            cpath, clabel = path + [key], "%s.%s" % (label, key)
+            for value in _UR_VALUES:
+                if _json_schema.check_findings(child, value, doc, clabel)[0]:
+                    out.append((clabel, _ur_put(base, cpath, value)))
+            held, cnode = _ur_held(base, cpath), _ur_node(doc, child)
+            if isinstance(held, dict) and cnode.get("properties"):
+                walk(cnode, cpath, clabel)
+            items = _ur_node(doc, cnode.get("items"))
+            if isinstance(held, list) and held and isinstance(held[0], dict) \
+                    and items.get("properties"):
+                walk(items, cpath + [0], "%s[0]" % (clabel,))
+        for key in node.get("required") or []:
+            if _ur_held(base, path + [key]) is not _UR_GONE:
+                out.append(("%s.%s" % (label, key),
+                            _ur_put(base, path + [key], _UR_GONE)))
+    walk((doc.get("$defs") or {}).get("lastRun"), [], M.RECORD_KEY)
+    return out
+
+
+def _ur_walked_shapes(base):
+    """The shapes the schema leaves untyped and a reader walks all the same:
+    the run a repeat carries, and a kept base run, each holding a record that
+    is not the record's shape; `(field, record)` as `_ur_shapes` gives."""
+    bad_run = dict(base, runId="UR0", steps=5)
+    repeat = dict(base, **{M.VERDICT_SOURCE: M.PART_REUSED,
+                           "reusedFrom": {"runId": "UR0"},
+                           M.REPEATED_RUN_KEY: bad_run})
+    based = dict(base, **{M.BASE_RED_KEY: {"head": "abc123", M.BASE_RUNS_KEY: [
+        dict(base, runId="UR9", steps=5)]}})
+    return [("%s.%s.steps" % (M.RECORD_KEY, M.REPEATED_RUN_KEY), repeat),
+            ("%s.%s.%s[0].steps" % (M.RECORD_KEY, M.BASE_RED_KEY,
+                                    M.BASE_RUNS_KEY), based)]
+
+
+def _ur_said(read, field, scope="task", subject="P1.1"):
+    """Whether `read` (`read_rows`' answer) names exactly one unreadable record,
+    of `subject` in `_UR_FILE`, at `field`, and says it in the string channel."""
+    found = read.get("unreadableRecords") or []
+    strings = read.get("unreadablePlanFiles") or []
+    return (len(found) == 1 and found[0].get("file") == _UR_FILE
+            and found[0].get("scope") == scope
+            and found[0].get("subject") == subject
+            and str(found[0].get("field") or "").startswith(field)
+            and any(_UR_FILE in s and field in s for s in strings))
+
+
+def _ur_read(root, mpath):
+    try:
+        return M.read_rows(root, manifest_path=mpath), None
+    except Exception as exc:                                   # noqa: BLE001
+        return {}, "%s: %s" % (type(exc).__name__, exc)
+
+
+def _ur_runs(read):
+    return [str(r.get("runId")) for r in read.get("rows") or []]
+
+
+def _unreadable_record_cases(check):
+    """(ur) A record that is not the shape the published schema gives is said
+    as unreadable - its plan file, its subject and the field - and its run is
+    not read, while every other run is; no reader raises on it."""
+    tmp = _harness.fixture_root("audit-evidence-unreadable-")
+    try:
+        doc = _json_schema.load_document(_RK_SCHEMA)
+        root = os.path.join(tmp, "ur")
+        mpath, shards = ri_plan(root)
+        base = _ur_base()
+        ri_put_record(shards["P1"], "P1.2", dict(base, runId="UR-OTHER"))
+        ri_put_record(shards["P1"], "P1.1", base)
+        clean, raised = _ur_read(root, mpath)
+        check("ur1 ALLOW: the record the writer writes reads, with nothing "
+              "named unreadable and its run among the rows: %r"
+              % ((raised, clean.get("unreadableRecords"),
+                  clean.get("unreadablePlanFiles"), _ur_runs(clean)),),
+              raised is None and not clean.get("unreadableRecords")
+              and not clean.get("unreadablePlanFiles")
+              and _UR_RUN in _ur_runs(clean))
+        shapes = _ur_shapes(doc, base)
+        walked = _ur_walked_shapes(base)
+        wrong = []
+        for field, record in shapes + walked:
+            ri_put_record(shards["P1"], "P1.1", record)
+            read, raised = _ur_read(root, mpath)
+            if raised or _UR_RUN in _ur_runs(read) \
+                    or "UR-OTHER" not in _ur_runs(read) \
+                    or not _ur_said(read, field):
+                wrong.append((field, raised, read.get("unreadableRecords"),
+                              read.get("unreadablePlanFiles")))
+        fields = sorted(set(f for f, _r in shapes))
+        check("ur2 EVERY FIELD THE SCHEMA TYPES, GIVEN EACH VALUE IT REFUSES, "
+              "and each required field taken out, and the carried run and a "
+              "kept base run each malformed: the read does not raise, the run "
+              "is not read, the other task's run still is, and the record is "
+              "named once - file, subject and field - in `unreadableRecords` "
+              "and in the string channel. %d shape(s) over %d field(s); wrong: "
+              "%r" % (len(shapes) + len(walked), len(fields), wrong[:6]),
+              wrong == [] and len(fields) >= 20
+              and all(any(f.startswith("%s.%s" % (M.RECORD_KEY, k))
+                          for f in fields)
+                      for k in ("runId", "status", "steps", "testedState",
+                                "recordCut", "sharedWithRepeated")))
+        ri_put_record(shards["P1"], None, dict(base, runId="UR-PHASE",
+                                               steps=5))
+        ri_put_record(shards["P1"], "P1.1", base)
+        read, raised = _ur_read(root, mpath)
+        check("ur3 A PHASE'S RECORD is named by its own place - scope phase, "
+              "subject the phase - and the task's well-formed record beside it "
+              "still reads: %r" % ((raised, read.get("unreadableRecords")),),
+              raised is None and _ur_said(read, "%s.steps" % (M.RECORD_KEY,),
+                                          scope="phase", subject="P1")
+              and _UR_RUN in _ur_runs(read)
+              and "UR-PHASE" not in _ur_runs(read))
+        ri_put_record(shards["P1"], None, dict(base, runId="UR-PHASE"))
+        listed = dict(base, **{M.SHARED_KEY: ["%s.inner" % (M.GATE_REACH_KEY,)],
+                               M.GATE_REACH_KEY: ["a", "list"],
+                               M.VERDICT_SOURCE: M.PART_REUSED,
+                               "reusedFrom": {"runId": "UR0"},
+                               M.REPEATED_RUN_KEY: dict(
+                                   base, runId="UR0",
+                                   **{M.GATE_REACH_KEY: {"inner": {"x": 1}}})})
+        ri_put_record(shards["P1"], "P1.1", listed)
+        read, raised = _ur_read(root, mpath)
+        row = M.row_by_run(read.get("rows") or [], _UR_RUN) or {}
+        check("ur4 A SHARED PATH THROUGH A FIELD THAT IS NOT AN OBJECT is not "
+              "given back and is named unresolved on the run read back, never "
+              "raised and never written over the field: %r"
+              % ((raised, row.get(M.SHARED_UNRESOLVED_KEY),
+                  row.get(M.GATE_REACH_KEY)),),
+              raised is None
+              and row.get(M.SHARED_UNRESOLVED_KEY)
+              == ["%s.inner" % (M.GATE_REACH_KEY,)]
+              and row.get(M.GATE_REACH_KEY) == ["a", "list"])
+        said = M.unreadable_records_sentence(
+            [{"file": _UR_FILE, "scope": "task", "subject": "P1.%d" % (i,),
+              "key": M.RECORD_KEY, "field": "lastRun.status",
+              "why": "lastRun.status %r is not one of the words" % ("x" * 5000,)}
+             for i in range(400)])
+        check("ur5 THE ONE SENTENCE is bounded whatever the plan holds - four "
+              "hundred records each naming a five-thousand-character value - "
+              "and still names the first record's file, subject and field: "
+              "%r" % (said,),
+              len(said) < 4000 and _UR_FILE in said and "P1.1" in said
+              and "lastRun.status" in said and "more" in said)
+    except Exception as exc:                                   # noqa: BLE001
+        check("ur0 the unreadable-record block ran to its end (%s: %s)"
+              % (type(exc).__name__, exc), False)
+    finally:
+        _harness.remove_tree(tmp)
+
+
+# --- a record's identity is where it sits, and one table keeps record keys out -
+def _record_identity_cases(check):
+    """(ri-id) `record_row` drops every key a record is defined not to carry
+    before placement is applied, and the keys only a record holds are one
+    table that the writer's copy of a row and the reader's copy of a record
+    both leave out."""
+    base = _ur_base()
+    planted = dict(base, taskId="P1.2", scope="task", phaseId="PX",
+                   ts="2001-01-01T00:00:00Z", v=9, prev="sha256:x",
+                   hash="sha256:y")
+    phase_row = M.record_row(planted, "phase", "P1", "P1")
+    task_row = M.record_row(dict(planted, taskId="P9.9"), "task", "P1.1", "P1")
+    check("id1 IDENTITY IS WHERE THE RECORD SITS: a phase's record carrying a "
+          "task id, a scope, a phase id, a ts and the chain's keys reads as "
+          "the phase's run with none of them, and a task's record naming "
+          "another task reads as its own task's: %r / %r"
+          % (dict((k, phase_row.get(k, "-")) for k in
+                  ("scope", "taskId", "phaseId", "ts", "v", "prev", "hash")),
+             dict((k, task_row.get(k, "-")) for k in
+                  ("scope", "taskId", "phaseId"))),
+          phase_row.get("scope") == "phase" and "taskId" not in phase_row
+          and phase_row.get("phaseId") == "P1"
+          and phase_row.get("ts") == base.get("at")
+          and not any(k in phase_row for k in ("v", "prev", "hash"))
+          and task_row.get("taskId") == "P1.1"
+          and task_row.get("scope") == "task"
+          and task_row.get("phaseId") == "P1")
+    tmp = _harness.fixture_root("audit-evidence-identity-")
+    try:
+        root = os.path.join(tmp, "id")
+        mpath, shards = ri_plan(root)
+        ri_put_record(shards["P1"], None, planted)
+        read = M.read_rows(root, manifest_path=mpath)
+        bound = [r.get("runId") for r in read["rows"]
+                 if M._same_subject(r, {"taskId": "P1.2", "phaseId": "P1"})]
+        check("id2 ...so a task with no record of its own is bound to no "
+              "run, with no ledger at all and the phase's record planting the "
+              "task's id: %r" % (bound,),
+              bound == [] and _UR_RUN in _ur_runs(read))
+    finally:
+        _harness.remove_tree(tmp)
+    table = list(getattr(M, "RECORD_ONLY_KEYS", ()))
+    given = list(getattr(M, "RECORD_ONLY_READ", ()))
+    row = dict(_lr_row("ID1", "2026-11-18T11:00:00Z", status="passed"),
+               **dict((k, ["planted"]) for k in table))
+    written = M.run_record(row)
+    held = dict(base, **dict((k, ["planted"]) for k in table))
+    read_back = M.record_row(held, "task", "P1.1", "P1")
+    check("id3 ONE TABLE OF THE KEYS ONLY A RECORD HOLDS, both directions: a "
+          "row carrying each of them writes a record holding none, and a "
+          "record holding each reads back as a row holding only the ones the "
+          "reader gives back by name: table %r, given %r, written %r, read %r"
+          % (table, given, [k for k in table if k in written],
+             [k for k in table if k in read_back]),
+          len(table) >= 6 and set(given) <= set(table)
+          and [k for k in table if k in written] == []
+          and sorted(k for k in table if k in read_back) == sorted(given))
+    source_record = dict(M.run_record(_lr_row("ID0", "2026-11-18T10:00:00Z",
+                                              status="passed"),
+                                      launch="tok-src"),
+                         **{M.REPLACED_KEY: [{"runId": "IDX", "launch": "tok-x",
+                                              "status": "passed",
+                                              "at": "2026-11-18T09:00:00Z"}],
+                            M.SHARED_UNRESOLVED_KEY: ["gateReach"],
+                            M.REPEAT_UNREAD_KEY: {"runId": "IDY",
+                                                  "basis": "stale"}})
+    source = M.record_row(source_record, "task", "P1.1", "P1")
+    repeat = dict(_lr_row("ID2", "2026-11-18T11:00:00Z", status="passed"),
+                  steps=[], **{M.VERDICT_SOURCE: M.REUSED,
+                               "reusedFrom": {"runId": "ID0",
+                                              "ts": "2026-11-18T10:00:00Z",
+                                              "status": "passed"}})
+    carried = M.resolved_shared(M.run_record(repeat, source=source)).get(
+        M.REPEATED_RUN_KEY) or {}
+    check("id4 A SOURCE READ BACK FROM A RECORD carries none of the keys only "
+          "a record holds into the run a repeat carries - its replaced "
+          "launches, its unresolved marker, its unread marker: %r"
+          % ([k for k in table if k in carried],),
+          carried.get("runId") == "ID0" and table
+          and [k for k in table if k in carried] == [])
+
+
+# --- the release guard refuses what its reader could not read ------------------
+# THE REAL HOOK, AS A PROCESS, on a tag command it only reads: the payload is the
+# one Claude Code hands a PreToolUse hook, and the deny is read off its stdout.
+_UG_HOOK = os.path.join(_output.REPO_ROOT, ".claude", "hooks",
+                        "guard-release.py")
+_UG_INJECT = r'''
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("ug_guard", sys.argv[1])
+guard = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(guard)
+kind = sys.argv[2]
+def boom(*_a, **_k):
+    if kind == "SystemExit":
+        raise SystemExit(0)
+    if kind == "KeyboardInterrupt":
+        raise KeyboardInterrupt()
+    if kind == "RecursionError":
+        raise RecursionError("injected recursion")
+    if kind == "MemoryError":
+        raise MemoryError()
+    raise RuntimeError("injected where no record is read")
+guard.read_bugs = boom
+raise SystemExit(guard.main())
+'''
+_UG_KINDS = ("RuntimeError", "SystemExit", "KeyboardInterrupt",
+             "RecursionError", "MemoryError")
+
+
+def _ug_project(tmp, name):
+    """A git project whose plan names a full gate and holds no merged phase and
+    no bug, so nothing holds a release: `(root, manifest, shards)`."""
+    root = os.path.join(tmp, name)
+    mpath, shards = ri_plan(root)
+    with io.open(mpath, encoding="utf-8") as fh:
+        index = json.load(fh)
+    index["meta"].update({"fullGate": ["full"],
+                          "buildCommands": {"full": "true"}})
+    index["bugs"] = []
+    with io.open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(index, fh)
+    _harness.git(None, "init", "-q", root, prefix=("git",))
+    return root, mpath, shards
+
+
+def _ug_payload(root, command="git tag v9.9.9"):
+    return json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                       "session_id": "ug", "cwd": root,
+                       "tool_input": {"command": command}})
+
+
+def _ug_env(root):
+    env = dict(os.environ)
+    env["CLAUDE_PROJECT_DIR"] = root
+    return env
+
+
+def _ug_run(root, stdin, argv=None):
+    """`(exit, deny reason or None, stdout, stderr)` of the hook on `stdin`."""
+    done = subprocess.run(argv or [sys.executable, _UG_HOOK], cwd=root,
+                          env=_ug_env(root), input=stdin, capture_output=True,
+                          text=True, encoding="utf-8", timeout=120)
+    reason = None
+    try:
+        said = json.loads(done.stdout or "null") or {}
+        out = said.get("hookSpecificOutput") or {}
+        if out.get("permissionDecision") == "deny":
+            reason = str(out.get("permissionDecisionReason") or "")
+    except ValueError:
+        reason = None
+    return done.returncode, reason, done.stdout, done.stderr
+
+
+def _ug_closed_stdout(root, stdin):
+    """`(exit, stderr)` of the hook with the read end of its stdout closed
+    before it writes - a deny that cannot be written on stdout."""
+    proc = subprocess.Popen([sys.executable, _UG_HOOK], cwd=root,
+                            env=_ug_env(root), stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        proc.stdout.close()
+        proc.stdin.write(stdin.encode("utf-8"))
+        proc.stdin.close()
+        err = proc.stderr.read().decode("utf-8", "replace")
+        proc.wait(timeout=120)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+    return proc.returncode, err
+
+
+def _ug_write_shard(shards, body_text):
+    with io.open(shards["P1"], "w", encoding="utf-8") as fh:
+        fh.write(body_text)
+
+
+def _guard_unreadable_cases(check):
+    """(ug) The release guard refuses when its reader could not read what the
+    plan holds - each malformed record, a malformed held run, a shard that is
+    not an object, a value too deep to parse - naming the file and the field;
+    it refuses when its decision raises at all, whatever is raised; and it
+    lets a well-formed plan with nothing held through."""
+    tmp = _harness.fixture_root("audit-evidence-guard-unread-")
+    try:
+        doc = _json_schema.load_document(_RK_SCHEMA)
+        root, _mpath, shards = _ug_project(tmp, "ug")
+        base = _ur_base()
+        with io.open(shards["P1"], encoding="utf-8") as fh:
+            pristine = fh.read()
+        ri_put_record(shards["P1"], "P1.1", base)
+        code, reason, out, err = _ug_run(root, _ug_payload(root))
+        check("ug1 ALLOW: a well-formed plan holding a well-formed record and "
+              "nothing that holds a release lets the tag command through - no "
+              "deny, exit 0 - the case that goes red on a guard that refuses "
+              "everything: %r" % ((code, reason, out[-300:], err[-300:]),),
+              code == 0 and reason is None and out.strip() == "")
+        shapes = _ur_shapes(doc, base) + _ur_walked_shapes(base)
+        missed = []
+        for field, record in shapes:
+            ri_put_record(shards["P1"], "P1.1", record)
+            code, reason, out, err = _ug_run(root, _ug_payload(root))
+            if code != 0 or reason is None or _UR_FILE not in reason \
+                    or field not in reason or "Traceback" in err:
+                missed.append((field, code, (reason or out)[-200:],
+                               err[-200:]))
+        check("ug2 RED-FIRST: EACH MALFORMED RECORD the schema's own fields "
+              "derive, fed through the real hook on a tag command, is a DENY "
+              "naming the plan file and the field, exit 0 and no traceback - "
+              "%d shape(s); not denied as said: %r" % (len(shapes), missed[:4]),
+              len(shapes) >= 40 and missed == [])
+        ri_put_record(shards["P1"], "P1.1", base)
+        code, reason, _o, _e = _ug_run(root, _ug_payload(root, "ls -la"))
+        check("ug3 ALLOW: an ordinary command is never judged - over the same "
+              "plan it is no deny: %r" % ((code, reason),),
+              code == 0 and reason is None)
+        held_shapes = [
+            ("%s is not a list" % (M.FULL_GATE_RUNS_KEY,), 5,
+             M.FULL_GATE_RUNS_KEY),
+            ("a held run naming no run id", [{"runId": 5}],
+             "%s[0].runId" % (M.FULL_GATE_RUNS_KEY,))]
+        held_wrong = []
+        for label, value, field in held_shapes:
+            with io.open(shards["P1"], encoding="utf-8") as fh:
+                body = json.load(fh)
+            body[M.FULL_GATE_RUNS_KEY] = value
+            _ug_write_shard(shards, json.dumps(body))
+            code, reason, out, err = _ug_run(root, _ug_payload(root))
+            if reason is None or field not in reason or _UR_FILE not in reason:
+                held_wrong.append((label, code, (reason or out)[-200:]))
+        check("ug4 A MALFORMED HELD FULL RUN - the value not a list, an entry "
+              "naming no run id - is a deny naming the file and the key as "
+              "the held-run reader names it: %r" % (held_wrong,),
+              held_wrong == [])
+        # A shard too deep to parse fails the plan's own assembly, which the
+        # bug reader asks first and names by the index it assembled from.
+        others = [("a shard that is valid JSON but not an object", "[1, 2]",
+                   _UR_FILE),
+                  ("a value nested too deep to parse",
+                   '{"id": "P1", "tasks": [], "muted": %s1%s}'
+                   % ("[" * 200000, "]" * 200000),
+                   "docs/audit/audit-plan.json could not be read")]
+        other_wrong = []
+        for label, text, named in others:
+            _ug_write_shard(shards, text)
+            code, reason, out, err = _ug_run(root, _ug_payload(root))
+            if code != 0 or reason is None or named not in reason \
+                    or "Traceback" in err:
+                other_wrong.append((label, code, (reason or out)[-200:],
+                                    err[-200:]))
+        check("ug5 A SHARD THAT IS NOT AN OBJECT, and one nested past what the "
+              "parser takes, is a deny naming the plan file that would not "
+              "read, exit 0: %r"
+              % (other_wrong,), other_wrong == [])
+        _ug_write_shard(shards, pristine)
+        ri_put_record(shards["P1"], "P1.1", dict(base, status="x" * 1000000))
+        code, reason, _o, _e = _ug_run(root, _ug_payload(root))
+        check("ug6 A HUGE VALUE in a malformed record is a deny that stays "
+              "bounded - a million-character status - naming the field: "
+              "%r chars" % (len(reason or ""),),
+              code == 0 and reason is not None and len(reason) < 8000
+              and "%s.status" % (M.RECORD_KEY,) in reason)
+        ri_put_record(shards["P1"], "P1.1", base)
+        injected = []
+        for kind in _UG_KINDS:
+            code, reason, out, err = _ug_run(
+                root, _ug_payload(root),
+                argv=[sys.executable, "-c", _UG_INJECT, _UG_HOOK, kind])
+            injected.append((kind, code, reason is not None
+                             and kind in (reason or ""), (reason or out)[-160:],
+                             err[-160:]))
+        check("ug7 RED-FIRST: AN ERROR WHERE NO RECORD IS READ - the bug read "
+              "raising - is a deny naming what was raised, for every kind a "
+              "decision can end in: an ordinary error, SystemExit, "
+              "KeyboardInterrupt, RecursionError, MemoryError, each exit 0: %r"
+              % (injected,),
+              all(code == 0 and named for _k, code, named, _r, _e in injected))
+        odd = []
+        for text in ("[1, 2]", '"a string"', "7", "null"):
+            code, reason, out, err = _ug_run(root, text)
+            odd.append((text, code, reason, out.strip()[:80], err[-120:]))
+        check("ug8 A PAYLOAD THAT IS NOT A TOOL CALL - JSON that is not an "
+              "object - stays on the one fail-open branch it had: nothing to "
+              "judge, exit 0, no output: %r" % (odd,),
+              all(code == 0 and reason is None and said == ""
+                  for _t, code, reason, said, _e in odd))
+        ri_put_record(shards["P1"], "P1.1", dict(base, steps=5))
+        code, err = _ug_closed_stdout(root, _ug_payload(root))
+        check("ug9 A DENY THAT CANNOT BE WRITTEN ON STDOUT is written on stderr "
+              "with exit 2, the code that blocks a PreToolUse call - never an "
+              "exit that lets the command through: %r" % ((code, err[-300:]),),
+              code == 2 and "[guard-release]" in err
+              and "%s.steps" % (M.RECORD_KEY,) in err)
+    except Exception as exc:                                   # noqa: BLE001
+        check("ug0 the release-guard block ran to its end (%s: %s)"
+              % (type(exc).__name__, exc), False)
+    finally:
+        _harness.remove_tree(tmp)
+
+
+# --- every surface that reads runs says the unreadable record -----------------
+# Five real commands, and the binding through its reader: each, over a plan
+# carrying a malformed record, exits with no traceback and names the plan file,
+# the subject and the field. EVERY SHAPE goes through the reader in-process
+# (`ur2`); the commands take a SAMPLE derived from the same walk - the first,
+# middle and last shape - because a full table of processes per shape is a
+# minute of wall clock for one answer the reader already gave.
+def _us_commands(root, mpath, out_dir):
+    scripts = _output.SCRIPTS_DIR
+    py = sys.executable
+    return [
+        ("status", [py, os.path.join(scripts, "status", "audit-status.py"),
+                    mpath]),
+        ("status --json", [py, os.path.join(scripts, "status",
+                                            "audit-status.py"), mpath,
+                           "--json"]),
+        ("report", [py, os.path.join(scripts, "report", "render-report.py"),
+                    mpath, "--out-dir", out_dir, "--format", "md"]),
+        ("doctor", [py, os.path.join(scripts, "status", "audit-doctor.py"),
+                    "--project", root]),
+        ("panel state", [py, "-c",
+                         "import sys,json;sys.path.insert(0,%r);"
+                         "import _output;_output.install_path();"
+                         "import _panel_state;"
+                         "print(json.dumps(_panel_state.build_state(%r),"
+                         "default=str))" % (scripts, root)]),
+    ]
+
+
+def _us_text(out_dir):
+    said = []
+    for name in sorted(os.listdir(out_dir)) if os.path.isdir(out_dir) else []:
+        with io.open(os.path.join(out_dir, name), encoding="utf-8",
+                     errors="replace") as fh:
+            said.append(fh.read())
+    return "\n".join(said)
+
+
+def _surface_unreadable_cases(check):
+    """(us) Status, its --json, the report, the doctor, the panel's state
+    payload and the binding, each over a plan carrying a malformed record,
+    exit with no traceback and name the file, the subject and the field."""
+    import _verdict_binding
+    tmp = _harness.fixture_root("audit-evidence-surfaces-")
+    try:
+        doc = _json_schema.load_document(_RK_SCHEMA)
+        base = _ur_base()
+        shapes = _ur_shapes(doc, base)
+        sample = [shapes[i] for i in sorted(set(
+            [0, len(shapes) // 2, len(shapes) - 1]))] if shapes else []
+        table, wrong, keyed = [], [], []
+        for n, (field, record) in enumerate(sample):
+            root, mpath, shards = _ug_project(tmp, "us%d" % (n,))
+            ri_put_record(shards["P1"], "P1.1", record)
+            out_dir = os.path.join(root, "out")
+            for name, argv in _us_commands(root, mpath, out_dir):
+                done = subprocess.run(argv, cwd=root, env=_ug_env(root),
+                                      capture_output=True, text=True,
+                                      encoding="utf-8", errors="replace",
+                                      timeout=300)
+                text = done.stdout + done.stderr + (
+                    _us_text(out_dir) if name == "report" else "")
+                named = (_UR_FILE in text and "P1.1" in text
+                         and field in text)
+                table.append((field, name, done.returncode,
+                              "Traceback" in text, named))
+                if "Traceback" in text or not named:
+                    wrong.append((field, name, done.returncode, text[-300:]))
+                if name == "status --json":
+                    try:
+                        keyed.append(json.loads(done.stdout).get(
+                            "unreadableRecords"))
+                    except ValueError:
+                        keyed.append("unparsable: %r" % (done.stdout[-200:],))
+            got = _verdict_binding.binding(
+                root, {"taskId": "P1.1", "phaseId": "P1"}, ["sweep"], "task",
+                [], mpath, "run the gate", "no gate here")
+            said = got.get("sentence") or ""
+            table.append((field, "binding", got.get("arm"), False,
+                          _UR_FILE in said and field in said))
+            if got.get("arm") != _verdict_binding.ARM_UNREADABLE \
+                    or _UR_FILE not in said or field not in said:
+                wrong.append((field, "binding", got.get("arm"), said[-300:]))
+        check("us1 RED-FIRST: OVER A PLAN CARRYING A MALFORMED RECORD every "
+              "surface exits with no traceback and names the plan file, the "
+              "subject and the field - status, status --json, the report, "
+              "the doctor, the panel's state payload - and the binding "
+              "refuses on the unreadable arm saying the same: %d run(s) over "
+              "%d sampled shape(s) of %d; wrong: %r"
+              % (len(table), len(sample), len(shapes), wrong[:4]),
+              len(sample) == 3 and len(table) == 18 and wrong == [])
+        check("us2 ...and status --json carries them under "
+              "`unreadableRecords`, one entry per record naming its file, "
+              "scope, subject, key and field: %r" % (keyed,),
+              len(keyed) == 3
+              and all(isinstance(k, list) and len(k) == 1
+                      and k[0].get("file") == _UR_FILE
+                      and k[0].get("scope") == "task"
+                      and k[0].get("subject") == "P1.1"
+                      and k[0].get("key") == M.RECORD_KEY
+                      and k[0].get("field") for k in keyed))
+    except Exception as exc:                                   # noqa: BLE001
+        check("us0 the surfaces block ran to its end (%s: %s)"
               % (type(exc).__name__, exc), False)
     finally:
         _harness.remove_tree(tmp)
@@ -7740,6 +8443,10 @@ def _types_namespace(**kw):
 
 def _selftest():
     def body(check):
+        _harness.stage(check, "ur-block", _unreadable_record_cases)
+        _harness.stage(check, "id-block", _record_identity_cases)
+        _harness.stage(check, "ug-block", _guard_unreadable_cases)
+        _harness.stage(check, "us-block", _surface_unreadable_cases)
         _harness.stage(check, "fh-block", _full_held_cases)
         _harness.stage(check, "ev-block", _cases)
         _harness.stage(check, "rs-block", _record_sufficiency_cases)

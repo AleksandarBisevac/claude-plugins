@@ -361,7 +361,7 @@ L4:
   _ado_drift -> _manifest_io, _manifest_vocab, _output, _usage_core
   _config_rules -> _loader, _output, _policy
   _doctor_report -> _loader, _output
-  _evidence_io -> _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_vocab, _output, _task_timing, _usage_core, _utc_stamp, _worktrees
+  _evidence_io -> _journal_io, _json_schema, _loader, _locks, _machine_paths, _manifest_io, _manifest_vocab, _output, _task_timing, _usage_core, _utc_stamp, _worktrees
   _gate_feed -> _journal_io, _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _output, _policy, _ui_theme
   _id_shape -> _branch, _loader, _manifest_io, _manifest_vocab, _output
@@ -4062,7 +4062,19 @@ after every row; `rowSources[i]` says which place answered (`ROW_FROM_LEDGER` or
 `ROW_FROM_RECORD`), and for a record `rowFiles[i]` is the plan file that holds it, relative to
 the project — so a caller naming where a run lives names that file. `files`, `unreadable` and
 `unreadableFiles` stay the ledger's; `records` counts the entries the plan added and
-`unreadablePlanFiles` names a plan file that would not read. An absent evidence directory is
+`unreadablePlanFiles` names a plan file that would not read. **A record that is not the
+record's shape is said, never read and never raised on**: `record_problem()` reads it - and the
+run it carries, and each base run its red's reading keeps - against the published
+`$defs/lastRun` through `_json_schema`, the reader `validate-manifest` uses; such a record gives
+no run, `unreadable_records()` names it with its file, scope, subject and first wrong field under
+`unreadableRecords`, its label joins `unreadablePlanFiles`, and `plan_read_sentence()` is the one
+bounded sentence every surface prints for both (`plan_unreadable()` gives the two plan-side
+answers to a reader that reads no ledger). A writer replacing such a record reads it as no record
+(`readable_record()`). **Where a record sits is its identity**: `record_row()` drops every key
+`RECORD_NOT_CARRIED` and `RECORD_ONLY_KEYS` name before it applies the placement, giving back of
+the record's own keys only `RECORD_ONLY_READ`, and `_record_of()` leaves `RECORD_ONLY_KEYS` out of
+the record of a run, so a row read back from a record cannot carry another record's markers into a
+new one (`id1`-`id4`). An absent evidence directory is
 said, never counted: `ledgerAbsent` carries the sentence naming the directory and that the runs
 read are the records, and is None when the directory exists. A repeat's record carries the run
 it repeated whole (`REPEATED_RUN_KEY`, written by `run_record()` from its `source`), so a reader
@@ -4203,10 +4215,13 @@ absent. A whole repeat's `startedAt` is absent and its `durationMs` is its own l
 repeated keeps its own under `repeatedRun`. A subtree equal to the carried run's, and a whole
 repeat's steps, are stored once, in `repeatedRun`, and named under `sharedWithRepeated`
 (`shared_with_repeated()`); `record_row()` gives them back through `resolved_shared()`, and the
-schema lets `steps` be absent exactly when that list names it. `rk1` in
-`tests/test__evidence_io.py` validates every shape the writer composes against the schema, and
-`rk2` names any entry of `RECORD_CUT_ORDER`, of what `_NEVER_SHARED` leaves shareable, or of
-`_RECORD_SHAPED` that no composed shape reached.
+schema's two arms are exclusive (`oneOf`): a record holds `steps`, or names them in that list
+beside the `repeatedRun` they are given back from (`rk8`). `rk1` in
+`tests/test__evidence_io.py` validates every shape the writer composes - one run per status the
+runner records, read off the schema's status table, and a group member's copy composed through
+the verb's `_group_record` - against the schema, `rk7` reads each through `record_problem()`, and
+`rk2` holds each table - `RECORD_CUT_ORDER`, what `_NEVER_SHARED` leaves shareable, the keys only
+a record holds - to what its walk reached, each its own conjunct, so an emptied walk fails.
 `subject_records()` reads every record a plan's files hold.
 
 **`reconcile()` is that repair**, and it is why the refusal is affordable: it re-derives every
@@ -5402,7 +5417,12 @@ ledger's rows, both carrying the token - never "a run the drive had not seen bef
 sibling's run of the same subject also is. When no run carries it because another run's record
 replaced the launched one and no ledger row of it is left, the record that replaced it lists it
 (`replacedLaunches`, read by `_evidence_io.replaced_by`) and the drive says which run replaced
-it and launches the gate again (`replaced_gate`) rather than waiting; a relaunch prints the command again under a new token, and a mark holding no
+it and launches the gate again (`replaced_gate`) rather than waiting - counted: the mark's
+`cancelledBefore` is carried across, raised by one when the replaced run was cancelled, and
+`replacedBefore` counts the replacements in a row, asked at `CANCELLED_BOUND` under the same
+decision a cancelled run reaches; a launch cut from that bounded list (`_evidence_io.launch_cut`:
+the list full, and every run it names ended after the launch) is said as cut and relaunched the
+same way; a relaunch prints the command again under a new token, and a mark holding no
 token, from a drive that handed out none, is never read back - a task's gate is launched again
 and a phase gate's launch is forgotten and its gate chosen again. A `next`
 before the launched run exists is `wait-gate`,

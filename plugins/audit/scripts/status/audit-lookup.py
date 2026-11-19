@@ -2142,16 +2142,22 @@ def gate_banners(row):
     NO OVERLAP when the run named none of the task's files (`coverage` empty -
     None is a run that could not be asked, which is not this), TREE CHANGED
     when files changed while it ran. Both say the gate did not measure the work
-    the way its exit code reads."""
-    obs = (row or {}).get("observations") or {}
+    the way its exit code reads. A tree-changed list the run's record cut past
+    its bound is said as cut, with the record's own basis (`treeBasis`), since
+    whether files changed is then not known - never read as none changing."""
+    obs = (row or {}).get("observations")
+    obs = obs if isinstance(obs, dict) else {}
     out = []
     if obs.get("coverage") == []:
         out.append("NO OVERLAP - the gate named none of this task's files, so "
                    "it did not measure this work")
-    mutated = obs.get("treeMutated") or []
-    if mutated:
+    mutated = obs.get("treeMutated")
+    if isinstance(mutated, list) and mutated:
         out.append("TREE CHANGED - files changed while it ran: %s"
                    % (", ".join(str(m) for m in mutated),))
+    elif "treeMutated" in obs and mutated is None and obs.get("treeBasis"):
+        out.append("TREE CHANGED not known - the list of files that changed "
+                   "while it ran was cut: %s" % (obs["treeBasis"],))
     return out
 
 

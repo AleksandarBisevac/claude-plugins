@@ -1897,11 +1897,28 @@ def _repeated_run_row(fx, tid=TASK):
     return _evidence_io.record_row(carried, "task", tid, PHASE)
 
 
-def _drop_repeated_run(fx, tid=TASK):
-    """Remove the run the task's record carries as the one it repeated."""
+def _drop_repeated_run(fx, tid=TASK, by_hand=False):
+    """Remove the run the task's record carries as the one it repeated.
+
+    By default the record is left in the shape a writer leaves when it carries
+    no run: its own steps, and nothing named shared with a run it does not
+    hold. `by_hand` removes the run alone, so the record still names its steps
+    shared with a run it no longer carries - the hand edit the schema refuses."""
     shard = _mio.read_json(fx["shard"])
-    _task_record(shard, tid).pop(_evidence_io.REPEATED_RUN_KEY, None)
+    record = _task_record(shard, tid)
+    record.pop(_evidence_io.REPEATED_RUN_KEY, None)
+    if not by_hand and "steps" in (record.pop(_evidence_io.SHARED_KEY, None)
+                                   or []):
+        record["steps"] = []
     TI._write_json(fx["shard"], shard)
+
+
+# What the unreadable arm names for the record `_drop_repeated_run(by_hand=
+# True)` leaves: the shard the task's phase lives in, and the field the schema
+# reader stops at - the steps the record no longer holds, since the record
+# that shares them carries no run to hold them.
+CTW64H_FILE = "docs/audit/phases/P1.json"
+CTW64H_FIELD = "lastRun.steps is required by the schema"
 
 
 def _compared_fields(row):
@@ -2176,6 +2193,27 @@ def _branch_cases(check, repos):
           "nor the repeat's record is refused - there is no tree state left to "
           "grade it against: %r / %r" % (code, text),
           code == 1 and "not in the ledger nor in any record" in text)
+    # ...AND THE SAME SOURCE REMOVED BY HAND, leaving the record naming its
+    # steps shared with a run it no longer carries: the record is not the
+    # `lastRun` shape, so the commit is refused on the unreadable arm, naming
+    # the file, the subject and the field.
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    measured = _newest_row(fx)
+    _gate(fx, reuse=True)
+    _rewrite_row(fx, measured.get("runId"), lambda row: None)
+    _drop_repeated_run(fx, by_hand=True)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw64h ...and the same source removed BY HAND, the record still "
+          "naming its steps shared with the run it no longer carries, is "
+          "refused as a record that could not be read - its file, its subject "
+          "and its field named: %r / %r" % (code, text),
+          code == 1 and _head(fx) == before
+          and "run record(s) the plan holds could not be read" in text
+          and "%s: task %s's lastRun" % (CTW64H_FILE, TASK) in text
+          and CTW64H_FIELD in text)
     # ...AND THE SAME REPEAT WHOSE RECORD STILL CARRIES IT binds from the record
     # alone, because the record holds every field the binding compares on the
     # measured run - the same values the ledger row held.

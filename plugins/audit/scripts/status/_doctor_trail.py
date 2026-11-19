@@ -1466,6 +1466,10 @@ def check_gate_patterns(rep, project, manifest_rel, config=None):
     here either - a gate that has run fewer times than the floor a verdict
     needs is NOT ESTABLISHED, named as such, and never folded into either the
     clean OK or the never-failed warning."""
+    # The records every recorded run is read from beside the ledger, asked
+    # first of the checks that read runs: a record no reader can read is a run
+    # missing from each tally below and from every other surface.
+    check_run_records(rep, project, manifest_rel)
     eproject, econfig, rows, failure, _unreadable = _read_gate_rows(
         project, manifest_rel)
     if failure is not None:
@@ -1774,6 +1778,32 @@ def check_shadow_recall(rep, project, manifest_rel, manifest, config=None):
 
 # --- checks: the third place -----------------------------------------------------
 FULL_RUN_CHECK = "full run"
+RUN_RECORDS_CHECK = "run records"
+
+
+def check_run_records(rep, project, manifest_rel):
+    """Does every run record the plan holds read as the record's shape? A
+    record that does not gives no run to any reader - the binding, the gate's
+    repeat, the release guard - so it is a WARNING naming each one, in the
+    reader's own sentence (`_evidence_io.plan_read_sentence`), and a plan file
+    that would not read is named the same way; an OK row says none was
+    found."""
+    manifest_path = os.path.join(project, manifest_rel or
+                                 "docs/audit/audit-plan.json")
+    try:
+        eproject, _econfig = _evidence_io.project_config_for(
+            manifest_path, project_dir=project)
+        read = _evidence_io.plan_unreadable(manifest_path, eproject)
+    except Exception as exc:                       # noqa: BLE001
+        rep.warn(RUN_RECORDS_CHECK, "the plan's run records could not be "
+                 "read (%s: %s)" % (type(exc).__name__, exc))
+        return
+    said = _evidence_io.plan_read_sentence(read)
+    if said:
+        rep.warn(RUN_RECORDS_CHECK, said)
+        return
+    rep.ok(RUN_RECORDS_CHECK, "every run record the plan holds reads as the "
+           "published `lastRun` shape")
 
 
 def _run_age(ts):
