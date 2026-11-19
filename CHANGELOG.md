@@ -262,6 +262,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   compared. A check whose label gains a value was said to be a finding naming its label's values:
   the literal text is what names a check, so the check is reported gone, and the new label is
   listed as new - the basis of an answer with findings now lists the new units too.
+- **The floor guard knows a skip or a mark by one table, reads a class with its same-file bases
+  and a namespace handed to a same-file helper, and every binding form carries the example that
+  holds it.** A class decorated with a skip or a mark spelled bare - `skipIf` imported from
+  `unittest` by name, `mark` imported from `pytest` - and given an honest new test read not
+  compared, with the false reason that the class binds names by computation: the reading of a
+  skip's reason knew the bare spellings and the reading of a marking decorator knew only the
+  dotted ones. Both now ask one table, `SKIP_FORMS`, through the copy's imports, so the bare
+  spellings read clean again, and a function of the file that is merely called `skip` stays a
+  decorator that binds. A bare new test under a name generated into a same-file base or mixin -
+  by a store into its `locals()`, by `setattr` on it from the module, through further bases - or
+  stored by a helper of the file handed `globals()` or `locals()` read clean while the base copy
+  ran a failing test the tree copy no longer runs; it is now not compared, by two new class forms
+  (a base class of the copy binding names by computation, a base class the copy binds more than
+  once) and one new form (a namespace handed to a callee the copy defines). Handed to a runner of
+  another module, a namespace is still no binding. Every row of the two binding tables now
+  carries its own examples, and one case runs each with the row and with the row taken out, so a
+  reading cannot stand in the module unheld: a store into a module's attribute looked up in
+  `sys.modules` was such a row - its attribute always spells the name, which is read already - and
+  is removed, and a base with a metaclass or a hook reached through a further base is read by the
+  base row rather than by a separate one. The README and the build guide name every form by its
+  row's own words, a case holding them to the tables, and what is knowingly not read is listed
+  once, in the build guide's section on the module.
 - **An Acceptance list the clause reader could not number is now read, never silently dropped.**
   The items after a task description's last `Acceptance:` were read only when numbered
   `(1) ... (2) ...`; a Markdown numbered list and unnumbered prose read as no clause, so on the

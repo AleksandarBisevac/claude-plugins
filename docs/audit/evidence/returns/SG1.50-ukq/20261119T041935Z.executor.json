@@ -1,0 +1,88 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__floor_guard.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-19T05:27:34Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__floor_guard.py` in a throwaway tree at HEAD exited 1 with 6 of 166 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fa57 (house FAIL), fa58 (house FAIL), fm81 (house FAIL), fx10 (house FAIL), fx11 (house FAIL), fx12 (house FAIL): SELFTEST FAILED: 160/166 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) ONE TABLE. plugins/audit/scripts/governance/_floor_guard.py: _REASONS and _MARKING_DECORATORS are gone; SKIP_FORMS holds each skip, expected failure and mark as (name in its module, the module or * for any receiver, whether it is a decorator that only marks, reason position, reason keywords). _reason_of(call, imported) and _marks_only(decorator, imported) both ask it through _skip_form, which reads the spelling through the copy's imports (_imported, _spelling): a dotted name has its first name replaced by what the copy imports under it, or is read as written when the copy imports nothing under it. A bare name is a row's only when the copy imports it by name from the row's module, an alias included. A name the copy imports from two places, or also defines as a function or class, belongs to nobody. _reason_aside builds the import map once per parse. (2) SAME-FILE BASES. Two new rows in _CLASS_COMPUTED: 'a base class of the copy binding names by computation' (_bound_base) and 'a base class the copy binds more than once' (_rebound_base, which declines rather than guesses). _bases accepts only a bare-name base that the copy defines once as a class and binds no other way; a base spelled through an attribute (mod.Base) is read as another module's. Classes are asked in source order after the own forms and the setattr-pointed classes are noted. A base can be named only once it is bound, and a class nested in a function holds no bare unit, so each class is asked once and the cost is linear in classes plus bases. A base-first DFS (_bases_first) was written and then removed: on any input that can run it gave the same answers as source order, and the probe's ordering row could not tell them apart. The transitive closure of subclass hooks is gone too: a metaclass on a base and a hook reached through a further base are now read by the base row. (3) HANDED NAMESPACE. New _COMPUTED row 'a namespace handed to a callee the copy defines' (_namespace_handed, _file_callee). The copy defines the callee when the name is a function, class, method or lambda assigned to a name at any depth (_copy_facts callees). A method reached through a name the copy imports is not the copy's. The callee's body is not read: handing it the namespace is the binding. (4) ROWS CARRY EXAMPLES. Every row of _COMPUTED and _CLASS_COMPUTED is (what, function, examples), each example a base copy plus a bare test appended to it. BINDINGS is the pair. Every form now takes (node, facts). find_moves takes a trailing bindings=None, passed down through _one_file, _collect, _python_test, _new_test_aside and _computed_scopes; drive-phase.py calls it with five positional arguments and is unchanged. fx10 runs each example through find_moves twice: with BINDINGS, where it must be partly-read with one notRead naming '(<row>, at line'; and with a tuple missing that row, where it must be clean. A row with no example, or whose example reads the same without it, fails by name. The equivalent row _module_attribute_store is removed (an attribute store always spells the name, which _identifiers already reads). fx10 found no other equivalent row and no row without an example. (5) ORACLE. tests/test__floor_guard.py: before, _inv_binds counted a namespace handed to ANY call as binding, and _inv_bound read dotted marks only, with no bases and no pointed setattr. Now the oracle has its own import reading (_inv_imports, _inv_resolve); INV_REASONS holds only canonical names (INV_MARKS, INV_MARK_FAMILY). A namespace counts only when handed to a callee the copy defines; module-wide globals()/sys.modules forms bind the module from anywhere; setattr points at a named class; a class is bound through same-file bases (memoised), a hook base, a metaclass, a non-marking decorator, or a base bound twice. _InvAside now takes the copy's imports. It imports none of the module's tables. fx11 checks it against every row example (bound) and against the allow twins of fa57 and fa59 (set aside); fx4 and fx9 are unchanged and green. (6) DOCS. plugins/audit/README.md (floorGuard.mode row) and PLUGIN-BUILD-GUIDE.md (_floor_guard.py section) name every row by its own words. The list of what is knowingly not read is one paragraph, in the guide alone; README, CHANGELOG and the module docstring point to it. fx12 checks that README and guide name every row (backticks stripped, whitespace folded) and that the not-read marker phrase appears in the guide only. CHANGELOG.md has a new Unreleased bullet. tools/gate-parity.py is not touched: SKIP_FORMS is not a reason-carrying exemption table. NEW CASES: fa57, fa58, fm80, fm81, fm82, fa59, fx10, fx11, fx12. EXISTING CASES CHANGED ON PURPOSE: none of their assertions; only the oracle helpers they call (_inv_reason_spec, _inv_binds, _inv_bound, _InvAside, _inv_own, _inv_dump, _inv_copy) and one import line (REPO_ROOT, os). RUNS: python3 tools/sweep-selftests.py --jobs 4 over tests/test__floor_guard.py, tests/test_drive_phase.py, tests/test__filed_returns.py, tests/test_audit_lookup.py, tests/test__status_facts.py exited 0 with 5/5 files ok (166, 1008 in 93 blocks, 146, 207, 199 cases). bq4 was not red. sweep over tests/test__deps.py, tests/test__output_lints.py, tests/test__refs.py, tests/test__floor_guard.py exited 0 (284, 188, 320, 166). tools/gate-parity.py exited 0, tools/prove-gates.py --list exited 0, ruff exited 0, vermin found no violations. The unrecorded run-test-gate.py for SG1 --task SG1.50-ukq printed GATE GREEN, exit 0. RED PREVIEW: HEAD's module (the export of 68c5879) with this test file gave SELFTEST FAILED 160/166; fa57, fa58, fm81, fx10, fx11 and fx12 failed as assertions, one line each. fm80, fa59 and fm82 pass on HEAD: they are twins, or readings HEAD already had. MUTATION PROBE: scratchpad sg1.50/mutations.py, run from the worktree root, finished 50 rows, every row caught, exit 0. dead-<row> (each row's reading replaced by one binding nothing, its examples kept) went red in fx10 for all twelve rows. gone-<row> (each row deleted whole, examples and all) went red in fm78, fm81 or fm82. ex-none and ex-equiv went red in fx10. r1-mark-own, r1-reason-own and r1-dotted-only (the two skip readings given separate tables again) went red in fa57/fa58. r1-any-deco, r1-bare-anyway and r1-defined-wins-not went red in fa57/fa58/fm80. r2-no-bases and r2-no-further went red in fm81 and fx10; r2-any-base and r2-other-module in fa59. r3-not-read went red in fm81 and fx10; r3-any-callee in fa59 and fa55; r3-imported-head and r3-anything-handed in fa59. med4-eval, -varsmod, -deco-call, -scope-outer and -written-one went red in fx10 and fm82. or-any-callee, or-no-bases and or-dotted-marks went red in fx11. doc-row and doc-copy went red in fx12. An earlier run of the probe found three survivors; each led to a fix before the final run: a twin in fm80 (a name both imported from unittest and defined by the file), a twin in fa59 (a runner of an imported module that the file also names), and the removal of _bases_first.",
+    "descriptive": "The floor guard reads a skip or a mark through one table and the file's imports, so bare-spelled skips and marks read clean again. It reads a class with its same-file bases and reads a namespace handed to a same-file helper. Every binding-table row now carries examples that one case runs with the row and without it."
+  },
+  "testsAdded": [
+    "fa57: a class decorated with a skip or mark (dotted, bare-imported, aliased) plus a bare new test reads clean, and the same spelling's reason edited on a method is set aside",
+    "fa58: every spelling of every decorator row of SKIP_FORMS (dotted and bare, name and call) as a class decorator reads clean",
+    "fm80: a class decorated by a function of the file called skip (imported from unittest too, or not), or by skipIf/mark imported from another module, or by another module's dotted name, is not compared",
+    "fm81: a bare new test under a name generated into a same-file mixin or base (locals store, module setattr, a further base), under a base bound twice, or stored by a same-file helper handed globals() or locals() is not compared",
+    "fa59: a subclass of a same-file base that binds nothing, a subclass of another module's base, a namespace handed to an imported runner (one the file also names included), and a same-file helper handed something else all read clean",
+    "fx10: every row of _COMPUTED and _CLASS_COMPUTED carries examples; each is not compared with the row and clean with the row removed from the tables handed to find_moves",
+    "fx11: the case's own oracle binds every row example's landing scope and none of the allow twins'",
+    "fm82: the review's seven unheld readings as the suite's own deny inputs (update, setdefault, eval, vars of sys.modules, metaclass base, hook through a further base, decorator call, nested class)",
+    "fx12: README and build guide name every binding row by its own words; the not-read list stands in the build guide alone"
+  ],
+  "casesAdded": [
+    [
+      "fa57",
+      "fa58",
+      "fm80"
+    ],
+    [
+      "fm81",
+      "fa59"
+    ],
+    [
+      "fx10",
+      "fx11",
+      "fm82"
+    ]
+  ],
+  "claims": "claims:\n1 SKIP_FORMS and _skip_form in _floor_guard.py are what _reason_of and _marks_only read; _bound_base, _rebound_base and _namespace_handed are rows of _CLASS_COMPUTED and _COMPUTED; _computed_scopes walks the classes in source order (comment above that loop); the guide's 'not read' paragraph lists the forms U7 (helper alias) and the others leave unread\n2 mutations.py: 50 rows, every one KILLED, exit 0. The first full run had three SURVIVED (r1-defined-wins-not, r2-no-further, r3-imported-head); each was fixed (two twins added, an equivalent reading removed) and then KILLED. Allow rows r1-any-deco, r2-any-base, r2-other-module, r3-any-callee, r3-anything-handed and r3-imported-head each turned a twin red\n3 class sweep: the n2_shapes, n3_skipdeco, u1_unsafe and n1_noise probes, plus a measurement over every task commit (0 moved); the review's seven MED4 readings each have a test-owned deny input in fm82 and module examples in fx10\n4 the no-unheld-row rule is enforced by fx10 (named in the module's section comment, the guide and the changelog); the docs list is enforced by fx12\n5 timing measured three rounds with gaps (before 3.07-3.34, 2.82-3.02, 3.47-4.26 s; after 3.47-3.79, 3.24-3.41, 3.73-4.23 s); recorded here only, nothing in the documents\n6 the decision reads the AST forms of the base copy, never its text; allow twins fa59/fa57 were green before the deny widened\n7 no number written into the documents",
+  "stamp": "audit-stamp: {\"content\":\"sha256:d53a169cec0922ca1a39a5a5bf7e98ffdca5cbe82beca68edb0b7982adf20e0d\",\"dirtyDigest\":\"sha256:9d0eda43d1c903ee91989973dbb63c922e053f46cd9f256c47ce480ab27ab164\",\"dirtyPaths\":{\"CHANGELOG.md\":\"c0129c3534073720\",\"PLUGIN-BUILD-GUIDE.md\":\"0b8ff43e6b1ee57f\",\"plugins/audit/README.md\":\"6076d4460af4236f\",\"plugins/audit/scripts/governance/_floor_guard.py\":\"7d81756afdbc1d7e\",\"tests/test__floor_guard.py\":\"f440303250594b55\"},\"head\":\"68c58797\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/README.md\",\"plugins/audit/scripts/governance/_floor_guard.py\",\"tests/test__floor_guard.py\",\"tools/gate-parity.py\"],\"scopeDigest\":\"sha256:bcd0da1a9ff15343bfa1165eab20bbbdc315885a435196a8ae4f2338d1bab15f\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 1 of the diff's 5 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 3 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md; 1 file(s) that could hold a move not compared: tests/test__floor_guard.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__floor_guard.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 30 (`from _output import safe_stdio, some_of           # noqa: E402`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "68c587978d40dc80a29d129df79a9ae2c926eb6a"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-19T05:27:37Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -22,12 +22,13 @@ import collections
 import copy
 import difflib
 import json
+import os
 import re
 import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
-from _output import safe_stdio, some_of           # noqa: E402
+from _output import REPO_ROOT, safe_stdio, some_of  # noqa: E402
 import _filed_returns                              # noqa: E402
 import _floor_guard as M                           # noqa: E402
 
@@ -1745,18 +1746,53 @@ INV_HOLE_DUMP = ast.dump(ast.parse(INV_HOLE).body[0])
 
 INV_PROMPT = re.compile(r"^[ \t]*>>>", re.M)
 
-# Each skip this route knows, by its dotted spelling - the spellings the module's
-# documented table names, `*.skipTest` under any receiver and every other one
-# exactly as written: the position its own signature gives the reason (None for
-# a keyword-only one) and the reason's keywords. A mark's condition comes first.
-INV_REASONS = {"unittest.skip": (0, ("reason",)), "skip": (0, ("reason",)),
-               "unittest.skipIf": (1, ("reason",)), "skipIf": (1, ("reason",)),
-               "unittest.skipUnless": (1, ("reason",)), "skipUnless": (1, ("reason",)),
-               "pytest.mark.skip": (0, ("reason",)), "mark.skip": (0, ("reason",)),
-               "pytest.mark.skipif": (None, ("reason",)), "mark.skipif": (None, ("reason",)),
-               "pytest.mark.xfail": (None, ("reason",)), "mark.xfail": (None, ("reason",)),
+# Each skip this route knows, by the dotted name it stands for once the copy's
+# imports are read (`_inv_resolve`) - a bare `skipIf` is `unittest.skipIf` only
+# where the copy imports it from there - `*.skipTest` under any receiver and
+# every other one exactly as written: the position its own signature gives the
+# reason (None for a keyword-only one) and the reason's keywords. A mark's
+# condition comes first.
+INV_REASONS = {"unittest.skip": (0, ("reason",)), "unittest.skipIf": (1, ("reason",)),
+               "unittest.skipUnless": (1, ("reason",)), "pytest.mark.skip": (0, ("reason",)),
+               "pytest.mark.skipif": (None, ("reason",)),
+               "pytest.mark.xfail": (None, ("reason",)),
                "pytest.skip": (0, ("reason", "msg")), "pytest.xfail": (0, ("reason",))}
 INV_ANY_RECEIVER = {"skipTest": (0, ("reason",))}
+# The class decorators this route reads as marking only, by the same names: the
+# skips and expected failure of unittest, and every pytest mark.
+INV_MARKS = ("unittest.skip", "unittest.skipIf", "unittest.skipUnless",
+             "unittest.expectedFailure")
+INV_MARK_FAMILY = "pytest.mark."
+
+
+def _inv_imports(tree):
+    """{name: what it stands for} for each name the copy imports from one place
+    and defines as no function or class; None for any other imported name."""
+    to, defined = {}, set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            defined.add(node.name)
+        for a in getattr(node, "names", None) or () if isinstance(
+                node, (ast.Import, ast.ImportFrom)) else ():
+            if isinstance(node, ast.Import):
+                name, target = a.asname or a.name.split(".")[0], a.name if a.asname \
+                    else a.name.split(".")[0]
+            else:
+                name, target = a.asname or a.name, "%s%s.%s" % (
+                    "." * node.level, node.module or "", a.name)
+            to.setdefault(name, set()).add(target)
+    return dict((n, t.pop() if len(t) == 1 and n not in defined else None)
+                for n, t in to.items())
+
+
+def _inv_resolve(node, imports):
+    spelled = _inv_dotted(node)
+    if spelled is None:
+        return None
+    head, dot, rest = spelled.partition(".")
+    if head not in imports:
+        return spelled
+    return imports[head] and imports[head] + dot + rest
 
 
 def _inv_dotted(node):
@@ -1767,9 +1803,9 @@ def _inv_dotted(node):
     return ".".join([node.id] + parts[::-1]) if isinstance(node, ast.Name) else None
 
 
-def _inv_reason_spec(call):
+def _inv_reason_spec(call, imports):
     """(position, keywords) of the reason of the skip `call` spells, or None."""
-    spelled = _inv_dotted(call.func)
+    spelled = _inv_resolve(call.func, imports)
     if spelled is None:
         return None
     if spelled in INV_REASONS:
@@ -1783,31 +1819,80 @@ def _inv_called(node, names):
         and node.func.id in names
 
 
-def _inv_binds(node):
-    """Whether one node, standing in a scope's own statement, binds names there by
-    computation: a store into, or a write through, what globals(), locals() or
-    vars() hands out, or that handed to a call; setattr; type of three arguments;
-    exec or eval; a star import."""
-    spaces = ("globals", "locals", "vars")
+def _inv_space(node):
+    """"module" when `node` hands out the module's own names - globals(), or
+    vars() of a module looked up in a modules table - "here" for locals() or a
+    bare vars(), None for anything else."""
+    if _inv_called(node, ("globals",)):
+        return "module"
+    if _inv_called(node, ("locals",)) or _inv_called(node, ("vars",)) and not node.args:
+        return "here"
+    if _inv_called(node, ("vars",)) and isinstance(node.args[0], ast.Subscript) \
+            and isinstance(node.args[0].value, ast.Attribute) \
+            and node.args[0].value.attr == "modules":
+        return "module"
+    return None
+
+
+def _inv_binds(node, callees, imports):
+    """Where one node binds names by computation - "here", the scope its
+    statement stands in; "module"; ("class", name) - as the rule states it: a
+    store into, or a write through, a namespace; that namespace handed to a
+    function, class, lambda or method the copy defines, and to nothing else;
+    setattr; type of three arguments; exec or eval, the module too when handed
+    it; a star import."""
     if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Store):
-        return _inv_called(node.value, spaces)
+        return set([_inv_space(node.value)]) - set([None])
     if isinstance(node, ast.ImportFrom):
-        return any(a.name == "*" for a in node.names)
+        return set(["here"]) if any(a.name == "*" for a in node.names) else set()
     if not isinstance(node, ast.Call):
-        return False
+        return set()
+    handed = node.args + [k.value for k in node.keywords]
     if isinstance(node.func, ast.Attribute) and node.func.attr in ("update", "setdefault",
                                                                    "__setitem__"):
-        return _inv_called(node.func.value, spaces)
-    return (_inv_called(node, ("setattr", "exec", "eval"))
-            or _inv_called(node, ("type",)) and len(node.args) == 3
-            or any(_inv_called(a, spaces) for a in node.args + [k.value for k in node.keywords]))
+        return set([_inv_space(node.func.value)]) - set([None])
+    if _inv_called(node, ("setattr",)) and node.args:
+        first = node.args[0]
+        if isinstance(first, ast.Name):
+            return set(["here", ("class", first.id)])
+        return set(["here", "module"]) if isinstance(first, ast.Subscript) \
+            and isinstance(first.value, ast.Attribute) and first.value.attr == "modules" \
+            else set(["here"])
+    if _inv_called(node, ("exec", "eval")):
+        return set(["here"]) | (set(["module"]) if any(_inv_space(a) == "module"
+                                                         for a in handed[1:]) else set())
+    if _inv_called(node, ("type",)) and len(node.args) == 3:
+        return set(["here"])
+    head = node.func
+    while isinstance(head, ast.Attribute):
+        head = head.value
+    name = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)
+    ours = name in callees and (isinstance(node.func, ast.Name) or not (
+        isinstance(head, ast.Name) and head.id in imports))
+    return set(_inv_space(a) for a in handed) - set([None]) if ours else set()
 
 
 def _inv_bound(tree):
-    """The scopes - "" the module, `Class.` a class - whose own statements, blocks
-    included and nested functions and classes not, bind names by computation;
-    and each class carrying a decorator that is no skip or mark, or a metaclass."""
-    out = set()
+    """The scopes - "" the module, `Class.` a class - bound by computation: by a
+    form in their own statements, blocks included and nested functions and
+    classes not; the module by a form handing it out from anywhere; a class by
+    a setattr naming it, a decorator that is no skip or mark, a metaclass, a
+    base of the copy defining `__init_subclass__`, a base of the copy bound, or
+    a base whose name the copy binds twice."""
+    imports = _inv_imports(tree)
+    callees, other = set(), set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            callees.add(node.name)
+            if not isinstance(node, ast.ClassDef):
+                other.add(node.name)
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Lambda):
+            callees.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            other.add(node.id)
+        if isinstance(node, ast.alias):
+            other.add(node.asname or node.name.split(".")[0])
+    out, pointed, classes = set(), set(), []
 
     def own(stmt):
         todo, seen = [stmt], []
@@ -1819,15 +1904,15 @@ def _inv_bound(tree):
 
     def visit(body, scope):
         for stmt in body:
-            if scope is not None and any(_inv_binds(n) for n in own(stmt)):
+            where = set(t for n in own(stmt) for t in _inv_binds(n, callees, imports))
+            if "here" in where and scope is not None:
                 out.add(scope)
+            if "module" in where:
+                out.add("")
+            pointed.update(t[1] for t in where if isinstance(t, tuple))
             if isinstance(stmt, ast.ClassDef):
                 inner = (scope or "") + stmt.name + "."
-                marks = [d for d in stmt.decorator_list if not (_inv_dotted(
-                    d.func if isinstance(d, ast.Call) else d) or "").startswith(
-                        ("unittest.skip", "unittest.expectedFailure", "pytest.mark."))]
-                if marks or any(k.arg == "metaclass" for k in stmt.keywords):
-                    out.add(inner)
+                classes.append((inner, stmt))
                 visit(stmt.body, inner)
                 continue
             fn = isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -1836,6 +1921,33 @@ def _inv_bound(tree):
             for handler in getattr(stmt, "handlers", None) or []:
                 visit(handler.body, scope)
     visit(tree.body, "")
+    by_name, nodes = {}, dict(classes)
+    for key, node in classes:
+        by_name.setdefault(node.name, []).append(key)
+    out.update(key for key, node in classes if node.name in pointed)
+
+    def marks_only(d):
+        spelled = _inv_resolve(d.func if isinstance(d, ast.Call) else d, imports) or ""
+        return spelled in INV_MARKS or spelled.startswith(INV_MARK_FAMILY)
+
+    def bases(node):
+        names = [b.id for b in node.bases if isinstance(b, ast.Name) and b.id in by_name]
+        return ([by_name[n][0] for n in names if len(by_name[n]) == 1 and n not in other],
+                any(len(by_name[n]) > 1 or n in other for n in names))
+    memo = {}
+
+    def bound(key, path):
+        if key not in memo and key not in path:
+            node = nodes[key]
+            own_bases, twice = bases(node)
+            memo[key] = (key in out or twice or not all(marks_only(d) for d in node.decorator_list)
+                         or any(k.arg == "metaclass" for k in node.keywords)
+                         or any(isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))
+                                and s.name == "__init_subclass__"
+                                for b in own_bases for s in nodes[b].body)
+                         or any(bound(b, path + (key,)) for b in own_bases))
+        return memo.get(key, False)
+    out.update(key for key, _node in classes if bound(key, ()))
     return out
 
 
@@ -1918,7 +2030,12 @@ def _inv_walk(tree, rows, base=None):
 
 class _InvAside(ast.NodeTransformer):
     """Deletes each docstring holding no prompt and blanks each known skip's
-    reason - two of the table's rows, done here without the module."""
+    reason - two of the table's rows, done here without the module. `imports` is
+    the whole copy's (`_inv_imports`), since a unit alone holds none."""
+
+    def __init__(self, imports):
+        ast.NodeTransformer.__init__(self)
+        self.imports = imports
 
     def _doc(self, node):
         self.generic_visit(node)
@@ -1933,7 +2050,7 @@ class _InvAside(ast.NodeTransformer):
 
     def visit_Call(self, node):
         self.generic_visit(node)
-        spelled = _inv_reason_spec(node)
+        spelled = _inv_reason_spec(node, self.imports)
         if spelled is not None:
             at, words = spelled
             if at is not None and len(node.args) > at:
@@ -1961,9 +2078,9 @@ def _inv_text(node):
     return node
 
 
-def _inv_own(node, rows):
+def _inv_own(node, rows, imports):
     """A unit's own dump, the table's rows set aside."""
-    node = _InvAside().visit(copy.deepcopy(node))
+    node = _InvAside(imports).visit(copy.deepcopy(node))
     if rows:
         node.value.args[0] = _inv_text(node.value.args[0])
     return ast.dump(node)
@@ -1987,7 +2104,8 @@ def _inv_fill(lines, spans, word):
 
 
 def _inv_dump(lines):
-    dump = ast.dump(_InvAside().visit(ast.parse("".join(lines))))
+    tree = ast.parse("".join(lines))
+    dump = ast.dump(_InvAside(_inv_imports(tree)).visit(tree))
     return dump.replace(INV_HOLE_DUMP + ", ", "").replace(", " + INV_HOLE_DUMP, "").replace(
         INV_HOLE_DUMP, "")
 
@@ -2000,10 +2118,10 @@ def _inv_copy(text, rows, base=None):
     walked = _inv_walk(tree, rows, base)
     units = [(node, name) for node, name, _b in walked if name is not None]
     holed = _inv_fill(lines, [_inv_span(n) for n, _nm in units], INV_HOLE)
-    found = {}
+    found, imports = {}, _inv_imports(tree)
     for node, name in units:
         marked = _inv_fill(holed, [_inv_span(node)], INV_ME)
-        found[name] = (_inv_own(node, rows), _inv_dump(marked), node.lineno)
+        found[name] = (_inv_own(node, rows, imports), _inv_dump(marked), node.lineno)
     return {"lines": lines, "units": found, "holed": holed, "rest": _inv_dump(holed),
             "rows": rows, "spans": dict((name, _inv_span(node)) for node, name in units),
             "ids": _inv_ids(tree),
@@ -3323,6 +3441,494 @@ def _bound_allow(check):
           [s[1] for s in seen] == [(M.CLEAN, [], [])] * len(seen))
 
 
+# --- a skip or a mark is one table, a class is read with its bases ---------------
+# A class decorator that is a skip or a mark binds nothing; any other may add a
+# test under a computed name. The spellings below are the ones a reader meets: the
+# dotted name, and the bare one imported by name from the module that defines it.
+# Each also carries the reason a function's own skip would hold, so the reading
+# of a reason and the reading of a marking decorator are asked the same spelling
+# in the same file - a spelling one of them knows and the other does not reads
+# one of the two halves as not set aside.
+
+SPELLED_CLASS = '''import sys
+import unittest
+%s
+
+
+%s
+class TestX(unittest.TestCase):
+    def test_a(self):
+        self.assertTrue(True)
+'''
+
+SPELLED_METHOD = '''import sys
+import unittest
+%s
+
+
+class TestX(unittest.TestCase):
+    %s
+    def test_a(self):
+        self.assertTrue(True)
+'''
+
+# (import line, the decorator, the reason it carries or None)
+SPELLINGS = (
+    ("from unittest import skipIf", '@skipIf(sys.platform == "win32", "%s")', "posix only"),
+    ("from unittest import skipUnless", '@skipUnless(sys.platform != "win32", "%s")',
+     "posix only"),
+    ("from unittest import skip", '@skip("%s")', "not yet"),
+    ("from unittest import expectedFailure", "@expectedFailure", None),
+    ("from unittest import skipIf as only_if", '@only_if(sys.platform == "win32", "%s")',
+     "posix only"),
+    ("from pytest import mark", '@mark.skipif(sys.platform == "win32", reason="%s")',
+     "posix only"),
+    ("from pytest import mark", '@mark.xfail(reason="%s")', "flaky on ci"),
+    ("from pytest import mark", '@mark.usefixtures("db")', None),
+    ("", '@unittest.skipIf(sys.platform == "win32", "%s")', "posix only"),
+    ("", '@unittest.skip("%s")', "not yet"),
+    ("import pytest", '@pytest.mark.skipif(sys.platform == "win32", reason="%s")',
+     "posix only"),
+    ("import pytest", '@pytest.mark.usefixtures("db")', None))
+
+
+def _spelled(template, imports, deco, reason):
+    return template % (imports, deco % reason if reason is not None else deco)
+
+
+def _spellings_clean(check):
+    path = "tests/test_spelled.py"
+    method = "\n    def test_zz_new(self):\n        self.assertTrue(1)\n"
+    classes, reasons = [], []
+    for imports, deco, reason in SPELLINGS:
+        base = _spelled(SPELLED_CLASS, imports, deco, reason)
+        got = _run([(path, base, base + method)])
+        classes.append((imports, deco, (got["answer"], got["findings"], got["notRead"])))
+        if reason is None:
+            continue
+        base = _spelled(SPELLED_METHOD, imports, deco, reason)
+        tree = _spelled(SPELLED_METHOD, imports, deco, reason + " for now")
+        got = _run([(path, base, tree)])
+        reasons.append((imports, deco, (got["answer"], got["findings"], got["notRead"])))
+    check("fa57 a class decorated with a skip or a mark - spelled dotted, or bare and "
+          "imported by name from unittest or pytest, aliased too - given a bare new test "
+          "reads clean, and the same spelling on a method with its reason changed has "
+          "the reason set aside, so the reading of a reason and the reading of a marking "
+          "decorator know the same spellings: classes %r reasons %r" % (classes, reasons),
+          [c[2] for c in classes] == [(M.CLEAN, [], [])] * len(SPELLINGS)
+          and [r[2] for r in reasons] == [(M.CLEAN, [], [])] * len(
+              [s for s in SPELLINGS if s[2] is not None]))
+
+    forms = [row for row in getattr(M, "SKIP_FORMS", None) or () if row[2]]
+    seen, bad = [], []
+    for form in forms:
+        for imports, deco in _form_spellings(form):
+            base = SPELLED_CLASS % (imports, deco)
+            got = _run([(path, base, base + method)])
+            seen.append((imports, deco))
+            if (got["answer"], got["findings"], got["notRead"]) != (M.CLEAN, [], []):
+                bad.append((imports, deco, _show(got), got["notRead"]))
+    check("fa58 every spelling of every decorator row of the module's one table of "
+          "skips and marks, dotted and bare with its import, read as a class decorator "
+          "over a bare new test, reads clean: %d spellings of %d rows, %r"
+          % (len(seen), len(forms), bad),
+          forms != [] and len(seen) == 4 * len(forms) and bad == [])
+
+
+def _form_spellings(form):
+    """(import line, decorator) for each spelling of one row of the module's table -
+    (name, module, ...): the dotted one under `import <module>`, the bare one
+    under `from <module> import <head>`, each as a name and as a call. A row
+    ending in `.*` is a family; one member of it stands for it."""
+    name, module = form[0], form[1]
+    if name.endswith(".*"):
+        name = name[:-2] + ".usefixtures"
+    head = name.split(".")[0]
+    return tuple((imports, "@%s%s" % (spelled, args)) for args in ("", '("x")')
+                 for imports, spelled in (("import %s" % module, "%s.%s" % (module, name)),
+                                          ("from %s import %s" % (module, head), name)))
+
+
+def _spellings_deny(check):
+    path = "tests/test_spelled.py"
+    method = "\n    def test_late(self):\n        self.assertTrue(1)\n"
+    local = ("def skip(cls):\n    setattr(cls, \"test_\" + \"late\", lambda self: self.fail())\n"
+             "    return cls\n")
+    seen = []
+    for label, imports, deco in (
+            ("a function of the file called skip", local, "@skip"),
+            ("skip imported from unittest and also defined by the file",
+             "from unittest import skip\n\n\n" + local, "@skip"),
+            ("skipIf imported from a module that is not unittest",
+             "from helpers import skipIf", '@skipIf(sys.platform == "win32", "posix only")'),
+            ("mark imported from a module that is not pytest", "from helpers import mark",
+             '@mark.usefixtures("db")'),
+            ("a dotted name under an alias the table does not hold", "import helpers",
+             '@helpers.skipIf(sys.platform == "win32", "posix only")')):
+        base = SPELLED_CLASS % (imports, deco)
+        got = _run([(path, base, base + method)])
+        seen.append((label, _not_unit(got, path, base + method, base, "test_late",
+                                      "class decorator"), got["notRead"]))
+    check("fm80 THE TWIN of fa57: a class decorated by a name only spelled like a skip "
+          "or a mark - a function of the file called skip, imported from unittest as well "
+          "or not, skipIf or mark imported from "
+          "another module, a dotted name under another module - is a class decorator "
+          "that is no skip or mark, and a bare new test in it is not compared: %r" % (seen,),
+          [s[1] for s in seen] == [(PARTLY_READ, [], True, True)] * len(seen))
+
+
+# The same-file base and the same-file helper. In each deny input the base copy,
+# executed, runs a failing test under the new definition's name in the class or
+# module the new definition lands in, so the tree copy's bare one replaces it.
+BASE_MIXIN = '''import unittest
+
+
+class _Checks(object):
+    for _n in (1, 2):
+        locals()["test_%d" % _n] = lambda self, n=_n: self.assertEqual(n, 0)
+
+
+class TestA(_Checks, unittest.TestCase):
+    def test_plain(self):
+        self.assertTrue(True)
+'''
+
+BASE_SETATTR = '''import unittest
+
+
+class _Base(unittest.TestCase):
+    pass
+
+
+for _n in (1, 2):
+    setattr(_Base, "test_%d" % _n, lambda self, n=_n: self.assertEqual(n, 0))
+
+
+class TestA(_Base):
+    def test_plain(self):
+        self.assertTrue(True)
+'''
+
+BASE_FURTHER = '''import unittest
+
+
+class _Root(unittest.TestCase):
+    for _n in (1, 2):
+        locals()["test_%d" % _n] = lambda self, n=_n: self.assertEqual(n, 0)
+
+
+class _Middle(_Root):
+    pass
+
+
+class TestA(_Middle):
+    def test_plain(self):
+        self.assertTrue(True)
+'''
+
+BASE_TWICE = '''import unittest
+
+
+class _Base(unittest.TestCase):
+    pass
+
+
+class _Base(unittest.TestCase):
+    pass
+
+
+class TestA(_Base):
+    def test_plain(self):
+        self.assertTrue(True)
+'''
+
+HANDED_GLOBALS = '''CASES = {"one": (1, 2), "two": (2, 5)}
+
+
+def _make(a, b):
+    def t():
+        assert a * 2 == b
+    return t
+
+
+def _install(ns):
+    for n, (a, b) in CASES.items():
+        ns["test_case_" + n] = _make(a, b)
+
+
+_install(globals())
+
+
+def test_plain():
+    assert True
+'''
+
+HANDED_LOCALS = '''import unittest
+
+
+class TestA(unittest.TestCase):
+    def _gen(ns):
+        for n in (1, 2):
+            ns["test_g%d" % n] = lambda self, n=n: self.assertEqual(n, 0)
+    _gen(locals())
+    del _gen
+
+    def test_plain(self):
+        self.assertTrue(True)
+'''
+
+
+def _bases_deny(check):
+    path = "tests/test_bases.py"
+    method = "\n    def %s(self):\n        pass\n"
+    function = "\n\ndef %s():\n    pass\n"
+    seen = []
+    for label, base, tree, name in (
+            ("a same-file mixin storing into locals() in its body", BASE_MIXIN,
+             BASE_MIXIN + method % "test_1", "test_1"),
+            ("a setattr on a same-file base from the module", BASE_SETATTR,
+             BASE_SETATTR + method % "test_1", "test_1"),
+            ("a same-file base's own base storing into locals()", BASE_FURTHER,
+             BASE_FURTHER + method % "test_1", "test_1"),
+            ("a base whose name the file binds twice", BASE_TWICE,
+             BASE_TWICE + method % "test_1", "test_1"),
+            ("a helper of the file handed globals() by the module", HANDED_GLOBALS,
+             HANDED_GLOBALS + function % "test_case_two", "test_case_two"),
+            ("a helper of the class handed locals() by the class body", HANDED_LOCALS,
+             HANDED_LOCALS + method % "test_g1", "test_g1")):
+        assert tree != base, label
+        got = _run([(path, base, tree)])
+        seen.append((label, _not_unit(got, path, tree, base, name, "by computation"),
+                     got["notRead"]))
+    check("fm81 a bare new test under a name generated into a same-file base or mixin - "
+          "by a store into its locals(), by setattr on it from the module, through a "
+          "further same-file base - or under a base the file binds twice, or stored by a "
+          "helper of the file handed globals() or locals(), is not compared, only added, "
+          "saying the base copy binds names by computation: %r" % (seen,),
+          [s[1] for s in seen] == [(PARTLY_READ, [], True, True)] * len(seen))
+
+
+def _readings_deny(check):
+    """The readings a review found held by no case, each by an input of this file's
+    own - the module's row examples hold them too, but a row deleted together with
+    its examples is seen only here."""
+    path = "tests/test_bases.py"
+    fail = "def _fail():\n    assert False\n\n\n"
+    plain = "\n\ndef test_plain():\n    assert True\n"
+    unit = "import unittest\n\n\n"
+    tail = "class TestA(_Base):\n    def test_plain(self):\n        self.assertTrue(True)\n"
+    seen = []
+    for label, base, name in (
+            ("a write through globals() by update", fail + 'globals().update(("test_" + n, '
+             '_fail) for n in ("a", "b"))\n' + plain, "test_a"),
+            ("a write through globals() by setdefault", fail + 'for _n in ("a", "b"):\n'
+             '    globals().setdefault("test_" + _n, _fail)\n' + plain, "test_a"),
+            ("an eval of compiled code", 'for _n in ("a", "b"):\n    eval(compile("def '
+             'test_%s():\\n    assert False\\n" % _n, "g", "exec"))\n' + plain, "test_a"),
+            ("vars() of the module taken through sys.modules", "import sys\n\n\n" + fail
+             + 'for _n in ("a", "b"):\n    vars(sys.modules[__name__])["test_" + _n] = _fail\n'
+             + plain, "test_a"),
+            ("a same-file base given a metaclass", unit + "class _Gen(type):\n"
+             "    def __new__(m, name, bases, ns):\n        ns[\"test_\" + \"gen\"] = lambda "
+             "self: self.fail()\n        return type.__new__(m, name, bases, ns)\n\n\n"
+             "class _Base(unittest.TestCase, metaclass=_Gen):\n    pass\n\n\n" + tail,
+             "test_gen"),
+            ("a subclass hook reached through a further base", unit
+             + "class _Root(unittest.TestCase):\n    def __init_subclass__(cls, **kw):\n"
+             "        super().__init_subclass__(**kw)\n        setattr(cls, \"test_\" + \"sub\", "
+             "lambda self: self.fail())\n\n\nclass _Base(_Root):\n    pass\n\n\n" + tail,
+             "test_sub"),
+            ("a class decorator that is a call", unit + "def add_cases(*names):\n"
+             "    def deco(cls):\n        for n in names:\n            setattr(cls, \"test_\" + n, "
+             "lambda self: self.fail())\n        return cls\n    return deco\n\n\n"
+             "@add_cases(\"x\", \"y\")\n" + tail.replace("(_Base)", "(unittest.TestCase)"),
+             "test_x"),
+            ("a nested class storing into locals()", unit + "class TestOuter(object):\n"
+             "    class TestInner(unittest.TestCase):\n        for _n in (\"a\", \"b\"):\n"
+             "            locals()[\"test_\" + _n] = lambda self: self.fail()\n", "test_a")):
+        nested = "TestInner" in base
+        tree = base + ("\n        def %s(self):\n            pass\n" % name if nested
+                       else "\n    def %s(self):\n        pass\n" % name if "class TestA" in base
+                       else "\n\ndef %s():\n    pass\n" % name)
+        got = _run([(path, base, tree)])
+        seen.append((label, _not_unit(got, path, tree, base, name, "by computation"),
+                     got["notRead"]))
+    check("fm82 a bare new test is not compared where the base copy binds its name by a "
+          "write through globals() by update or setdefault, an eval, vars() of the module "
+          "through sys.modules, a same-file base given a metaclass, a subclass hook reached "
+          "through a further base, a class decorator that is a call, or a store into "
+          "locals() in a nested class: %r" % (seen,),
+          [s[1] for s in seen] == [(PARTLY_READ, [], True, True)] * len(seen))
+
+
+def _bases_allow(check):
+    path = "tests/test_bases.py"
+    method = "\n    def test_fresh(self):\n        self.assertTrue(1)\n"
+    function = "\n\ndef test_fresh():\n    assert 1\n"
+    plain_base = BASE_SETATTR.replace(
+        "for _n in (1, 2):\n    setattr(_Base, \"test_%d\" % _n, lambda self, n=_n: "
+        "self.assertEqual(n, 0))\n\n\n", "")
+    other_module = BASE_SETATTR.replace("class TestA(_Base):", "class TestA(helpers.Base):"
+                                        ).replace("import unittest\n",
+                                                  "import unittest\n\nimport helpers\n")
+    runner = HANDED_GLOBALS.replace("_install(globals())",
+                                    "from _harness import run_blocks\n\nrun_blocks(globals())")
+    runner_attr = HANDED_GLOBALS.replace("_install(globals())",
+                                         "import _harness\n\n_harness.run_blocks(globals())")
+    other_arg = HANDED_GLOBALS.replace("_install(globals())", "_install(dict(CASES))")
+    # A function of the file under the runner's name: what it reaches through an
+    # imported module is still that module's.
+    same_name = runner_attr.replace("def _install(ns):", "def run_blocks(ns):")
+    seen = []
+    for label, base, tree in (
+            ("a subclass of a same-file base that binds nothing by computation",
+             plain_base, plain_base + method),
+            ("a subclass of a base from another module", other_module, other_module + method),
+            ("a namespace handed to a runner imported by name", runner, runner + function),
+            ("a namespace handed to a runner of an imported module", runner_attr,
+             runner_attr + function),
+            ("a helper of the file handed something else than a namespace", other_arg,
+             other_arg + function),
+            ("a namespace handed to an imported module's runner the file also names",
+             same_name, same_name + function)):
+        assert tree != base, label
+        got = _run([(path, base, tree)])
+        seen.append((label, (got["answer"], got["findings"], got["notRead"]), _show(got)))
+    check("fa59 THE TWIN of fm81: a bare new test in a subclass of a same-file base that "
+          "binds nothing by computation, in a subclass of another module's base, beside a "
+          "namespace handed to an imported runner - one the file also names included - "
+          "or beside a helper of the file handed "
+          "something else than a namespace, reads clean: %r" % (seen,),
+          [s[1] for s in seen] == [(M.CLEAN, [], [])] * len(seen))
+
+
+# --- every row of the binding tables is held by its own examples ------------------
+# A reading the module holds and no case does is one a later edit can drop with
+# every case green. So each row of the two binding tables carries its examples -
+# a base copy and the bare test added at its end - and this case runs each one
+# twice: against the tables as they stand, where it must be not compared with a
+# reason naming the row, and against the same tables with that row taken out,
+# handed to `find_moves` in memory, where it must read clean. A row with no
+# example fails by name, and so does one whose example reads the same without
+# it - an equivalent row, which is removed rather than kept.
+
+def _run_bound(files, bindings):
+    """`_run` with the binding tables handed in; a module that refuses them
+    answers a result no case reads as clean or as not compared."""
+    rows = [tuple(f) + (None,) * (4 - len(f)) for f in files]
+    diff = "".join(_file_diff(r[0], r[1], r[2], r[3]) for r in rows)
+    read_base, read_tree = _readers(rows)
+    try:
+        return M.find_moves(diff, read_base, read_tree, bindings=bindings)
+    except TypeError as exc:
+        return {"answer": "refused: %s" % exc, "basis": "", "findings": None,
+                "couldNotTell": [], "notRead": []}
+
+
+def _binding_tables():
+    """(table name, rows) for each binding table the module reads by; empty when
+    it names none."""
+    tables = getattr(M, "BINDINGS", None)
+    return list(zip(("_COMPUTED", "_CLASS_COMPUTED"), tables)) if tables else []
+
+
+def _landing(base, tree):
+    """The scope - "" the module, `Class.` under its classes - of the definition
+    the tree copy adds past the base copy's last line, or None."""
+    last = len(base.splitlines())
+
+    def visit(body, scope):
+        for node in body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.lineno > last:
+                return scope
+            if isinstance(node, ast.ClassDef):
+                got = visit(node.body, scope + node.name + ".")
+                if got is not None:
+                    return got
+        return None
+    return visit(ast.parse(tree).body, "")
+
+
+def _binding_rows(check):
+    path = "tests/test_rows_bound.py"
+    tables = _binding_tables()
+    bindings = tuple(rows for _name, rows in tables)
+    no_example, unheld, examples = [], [], 0
+    for t, (table, rows) in enumerate(tables):
+        for k, row in enumerate(rows):
+            what, held = row[0], row[2] if len(row) > 2 else ()
+            if not held:
+                no_example.append("%s: %s" % (table, what))
+                continue
+            without = tuple(r if u != t else r[:k] + r[k + 1:] for u, r in enumerate(bindings))
+            for base, added in held:
+                examples += 1
+                tree = base + added
+                got = _run_bound([(path, base, tree)], bindings)
+                bare = _run_bound([(path, base, tree)], without)
+                said = [n["reason"] for n in got["notRead"]]
+                if not ((got["answer"], got["findings"], len(said)) == (PARTLY_READ, [], 1)
+                        and "(%s, at line" % what in said[0]) \
+                        or (bare["answer"], bare["findings"], bare["notRead"]) != (M.CLEAN, [], []):
+                    unheld.append(("%s: %s" % (table, what), base, _show(got), said, _show(bare)))
+    check("fx10 every row of the binding tables (%s) carries examples, and each example - "
+          "a base copy and a bare test added to it - is not compared, naming the row, with "
+          "the tables as they stand, and reads clean with that row taken out: %d rows, %d "
+          "examples; rows with none: %r; examples not held by their row: %s"
+          % (", ".join(name for name, _r in tables), sum(len(r) for _n, r in tables),
+             examples, no_example, some_of(unheld, render=repr)),
+          len(tables) == 2 and all(rows for _n, rows in tables) and no_example == []
+          and unheld == [] and examples > sum(len(r) for _n, r in tables))
+
+    wrong = []
+    for table, rows in tables:
+        for row in rows:
+            for base, added in (row[2] if len(row) > 2 else ()):
+                scope = _landing(base, base + added)
+                if scope is None or scope not in _inv_bound(ast.parse(base)):
+                    wrong.append(("bound", table, row[0], scope, base))
+    method = "\n    def test_zz_new(self):\n        self.assertTrue(1)\n"
+    twins = [(_spelled(SPELLED_CLASS, i, d, r), method) for i, d, r in SPELLINGS]
+    plain_base = BASE_SETATTR.replace(
+        "for _n in (1, 2):\n    setattr(_Base, \"test_%d\" % _n, lambda self, n=_n: "
+        "self.assertEqual(n, 0))\n\n\n", "")
+    twins += [(plain_base, method), (BOUND_PLAIN, method),
+              (HANDED_GLOBALS.replace("_install(globals())", "from _harness import run_blocks"
+                                      "\n\nrun_blocks(globals())"),
+               "\n\ndef test_fresh():\n    assert 1\n"),
+              (HANDED_GLOBALS.replace("_install(globals())", "_install(dict(CASES))"),
+               "\n\ndef test_fresh():\n    assert 1\n")]
+    for base, added in twins:
+        scope = _landing(base, base + added)
+        if scope is None or scope in _inv_bound(ast.parse(base)):
+            wrong.append(("set aside", scope, base))
+    check("fx11 the case's own route for the bare-new-test row (`_inv_bound`, which reads "
+          "no table of the module) binds the scope every row's example lands in, and binds "
+          "none an allow twin of fa57 and fa59 lands in: %d disagreements %s"
+          % (len(wrong), some_of(wrong, render=repr)),
+          tables != [] and wrong == [])
+
+
+def _forms_documented(check):
+    """The documents name every row of the binding tables by its own words, and
+    what is knowingly not read stands in one of them alone."""
+    def flat(rel):
+        with open(os.path.join(REPO_ROOT, rel), encoding="utf-8") as fh:
+            return " ".join(fh.read().replace("`", "").split())
+    docs = dict((rel, flat(rel)) for rel in ("plugins/audit/README.md",
+                                             "PLUGIN-BUILD-GUIDE.md", "CHANGELOG.md"))
+    names = [row[0] for _t, rows in _binding_tables() for row in rows]
+    missing = [(rel, n) for rel in ("plugins/audit/README.md", "PLUGIN-BUILD-GUIDE.md")
+               for n in names if n not in docs[rel]]
+    marker = "a descriptor's naming hook"
+    places = [rel for rel, text in docs.items() if marker in text]
+    check("fx12 the README and the build guide name every row of the binding tables by "
+          "the row's own words, and the list of what the reading does not read stands in "
+          "the build guide alone, the others pointing at it: rows %d, missing %r, the "
+          "list found in %r" % (len(names), missing, places),
+          names != [] and missing == [] and places == ["PLUGIN-BUILD-GUIDE.md"])
+
+
 # The child is killed at DEADLINE; CEILING is what the reading may take inside it.
 # A per-unit recomputation of the pairing turns the reading cubic in a part's
 # length, which is the difference these two numbers are there to show.
@@ -3506,6 +4112,13 @@ def _cases(check):
     _aside_allow(check)
     _bound_deny(check)
     _bound_allow(check)
+    _spellings_clean(check)
+    _spellings_deny(check)
+    _bases_deny(check)
+    _readings_deny(check)
+    _bases_allow(check)
+    _binding_rows(check)
+    _forms_documented(check)
     _time(check)
     _untold(check)
     _shape(check)

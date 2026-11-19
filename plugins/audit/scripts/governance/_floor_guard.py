@@ -129,7 +129,10 @@ why it cannot change what runs:
     nested in no function, and under a name the base copy cannot have bound:
     no identifier of it spells the name, none of its strings holds it as a
     word, and it binds nothing by computation in the scope the test lands in
-    (`_computed_scopes`); only then is it set aside, with what it runs. Any
+    (`_computed_scopes`, by the forms of the tables in `BINDINGS`, a class read
+    with its bases of the same file; what is knowingly not read is listed in
+    one place, the build guide's section on this module); only then is it set
+    aside, with what it runs. Any
     other new test is no unit: it stays in the rest, so its file is not
     compared, only added, naming it - and, held by a string or by computation,
     how the base copy can bind it - unless it is the rename of a base test gone
@@ -139,11 +142,13 @@ why it cannot change what runs:
     copy's text of it holds a doctest prompt; one that does is syntax of the
     statement holding it, a unit's (`part` "body") or the rest's.
   * A REASON, WHERE THE SKIP'S OWN SIGNATURE CALLS IT ONE. For each skip and
-    expected-failure decorator or call `_REASONS` knows, the literal text of
+    expected-failure decorator or call `SKIP_FORMS` knows, the literal text of
     the argument its signature documents as the reason, by position or by
     keyword; every other argument is compared, and an expected-failure mark's
-    first positional argument is its condition. A skip `_REASONS` does not
-    know has nothing set aside.
+    first positional argument is its condition. A skip `SKIP_FORMS` does not
+    know has nothing set aside. The same table says which class decorator only
+    marks a class, and a bare name is a row's only where the copy imports it
+    by name from the row's module.
 
 WHAT THE READING DOES NOT CLAIM. It is a comparison of structure that never
 evaluates code, so a new test or a new check can do anything when it runs - the
@@ -907,31 +912,95 @@ def _is_docstring(node):
 # optional indentation.
 _PROMPT = re.compile(r"^[ \t]*>>>", re.M)
 
-# Each skip and expected-failure decorator or call this reading knows, by the
-# dotted name it is called through (`*.` any receiver): the position its own
-# signature gives the reason, or None for a keyword-only one, and the reason's
-# keywords. An expected-failure MARK takes its condition first.
-_REASONS = (
-    ("unittest.skip", 0, ("reason",)), ("skip", 0, ("reason",)),
-    ("unittest.skipIf", 1, ("reason",)), ("skipIf", 1, ("reason",)),
-    ("unittest.skipUnless", 1, ("reason",)), ("skipUnless", 1, ("reason",)),
-    ("*.skipTest", 0, ("reason",)),
-    ("pytest.mark.skip", 0, ("reason",)), ("mark.skip", 0, ("reason",)),
-    ("pytest.mark.skipif", None, ("reason",)), ("mark.skipif", None, ("reason",)),
-    ("pytest.mark.xfail", None, ("reason",)), ("mark.xfail", None, ("reason",)),
-    ("pytest.skip", 0, ("reason", "msg")), ("pytest.xfail", 0, ("reason",)),
+# Each skip, expected failure and mark this module knows, one row each: (its name
+# in the module that defines it - `.*` a family -, that module - "*" a method of
+# any receiver -, whether it is a decorator, which marks what it decorates and
+# adds no name to it, the position its own signature gives the reason - None for
+# a keyword-only one or for none - and the reason's keywords). An
+# expected-failure MARK takes its condition first. Two readings ask it and no
+# other list: the reason set aside (`_reason_aside`) and the class decorator that
+# binds nothing (`_marks_only`), each through `_skip_form`, so a spelling one of
+# them knows the other knows too.
+SKIP_FORMS = (
+    ("skip", "unittest", True, 0, ("reason",)),
+    ("skipIf", "unittest", True, 1, ("reason",)),
+    ("skipUnless", "unittest", True, 1, ("reason",)),
+    ("expectedFailure", "unittest", True, None, ()),
+    ("skipTest", "*", False, 0, ("reason",)),
+    ("mark.skip", "pytest", True, 0, ("reason",)),
+    ("mark.skipif", "pytest", True, None, ("reason",)),
+    ("mark.xfail", "pytest", True, None, ("reason",)),
+    ("mark.*", "pytest", True, None, ()),
+    ("skip", "pytest", False, 0, ("reason", "msg")),
+    ("xfail", "pytest", False, 0, ("reason",)),
 )
 
 
-def _reason_of(call):
-    """(position, keywords) of `call`'s reason by `_REASONS`, or None."""
-    spelled = _dotted(call.func)
+def _imported(tree):
+    """{name: the dotted name it stands for} for each name the copy binds by an
+    import - `import a.b` binds `a` to `a`, `from a import b as c` binds `c` to
+    `a.b` - with None for one imported from two places, or that the copy also
+    defines as a function or class, whose spelling is then nobody's."""
+    found, defined = collections.defaultdict(set), set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                found[a.asname or a.name.split(".")[0]].add(a.asname and a.name
+                                                            or a.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for a in node.names:
+                found[a.asname or a.name].add("%s%s.%s" % ("." * node.level,
+                                                           node.module or "", a.name))
+        elif isinstance(node, _FUNCTIONS + (ast.ClassDef,)):
+            defined.add(node.name)
+    return dict((name, next(iter(to)) if len(to) == 1 and name not in defined else None)
+                for name, to in found.items())
+
+
+def _spelling(func, imported):
+    """The dotted name `func` stands for, read through the copy's imports: its
+    first name replaced by what the copy imports under it, as written where the
+    copy imports nothing under it, None where that is nobody's (`_imported`) or
+    `func` is no chain of names."""
+    spelled = _dotted(func)
     if spelled is None:
         return None
-    for name, at, words in _REASONS:
-        if spelled == name or name.startswith("*.") and spelled.endswith(name[1:]):
-            return at, words
+    head, dot, rest = spelled.partition(".")
+    if head not in imported:
+        return spelled
+    return None if imported[head] is None else imported[head] + dot + rest
+
+
+def _skip_form(func, imported):
+    """The row of `SKIP_FORMS` the callable `func` is, read through the copy's
+    imports (`_imported`), or None. A bare name is a row's only where the copy
+    imports it by name from the row's module, so a function of the file that is
+    called `skip` is none."""
+    spelled = _spelling(func, imported)
+    if spelled is None:
+        return None
+    for row in SKIP_FORMS:
+        name, module = row[0], row[1]
+        if module == "*" and spelled.endswith("." + name) \
+                or name.endswith(".*") and spelled.startswith("%s.%s" % (module, name[:-1])) \
+                or spelled == "%s.%s" % (module, name):
+            return row
     return None
+
+
+def _reason_of(call, imported=None):
+    """(position, keywords) of `call`'s reason by `SKIP_FORMS`, or None. With no
+    `imported`, every name is read as written, so a bare one is no skip."""
+    row = _skip_form(call.func, imported or {})
+    return None if row is None or not (row[3] is not None or row[4]) else (row[3], row[4])
+
+
+def _marks_only(decorator, imported=None):
+    """Whether a class decorator is a row of `SKIP_FORMS` that decorates, so it
+    marks the class and adds no name to it."""
+    row = _skip_form(decorator.func if isinstance(decorator, ast.Call) else decorator,
+                     imported or {})
+    return row is not None and row[2]
 
 
 def _literal_text_aside(node):
@@ -949,12 +1018,13 @@ def _literal_text_aside(node):
 
 
 def _reason_aside(tree):
-    """Blanks, in place, the literal text of every reason `_REASONS` names in
+    """Blanks, in place, the literal text of every reason `SKIP_FORMS` names in
     `tree` - done on the tree `_parse_test` has just parsed, never on one a
     caller holds: a copy of each definition would cost a deep recursion per
     node, which a long expression in a test turns into a crash."""
+    imported = _imported(tree)
     for sub in ast.walk(tree):
-        spec = _reason_of(sub) if isinstance(sub, ast.Call) else None
+        spec = _reason_of(sub, imported) if isinstance(sub, ast.Call) else None
         if spec is None:
             continue
         at, words = spec
@@ -986,7 +1056,7 @@ def _bare(node, lazy):
                 or not lazy and any(n is not None for n in notes))
 
 
-def _new_test_aside(base_ast, tree_ast, base_records, base_text):
+def _new_test_aside(base_ast, tree_ast, base_records, base_text, bindings=None):
     """The tree copy's records of a file read by its definitions, with each
     test new to the tree a unit - its body set aside, nothing of it judged -
     only when it is bare, nested in no function, and under a name the base copy
@@ -1001,7 +1071,8 @@ def _new_test_aside(base_ast, tree_ast, base_records, base_text):
     the rest, so its file is not compared, only added, naming it - and the copy
     is walked again, since a definition put back may hold another. A record
     held by the base copy's strings or computation carries `bound`: (its key,
-    how the base copy can bind it)."""
+    how the base copy can bind it). `bindings` is the tables the computation is
+    read by (`_computed_scopes`)."""
     base_defs, names = _test_units(base_records), _identifiers(base_ast)
     lazy, held, bound, readings = _lazy_annotations(tree_ast), set(), {}, []
 
@@ -1010,7 +1081,7 @@ def _new_test_aside(base_ast, tree_ast, base_records, base_text):
 
     def bindable(qual, node):
         if not readings:
-            readings.extend((_string_words(base_text), _computed_scopes(base_ast)))
+            readings.extend((_string_words(base_text), _computed_scopes(base_ast, bindings)))
         said = _bound_by(qual, node.name, readings)
         if said is not None:
             bound[id(node)] = (qual, said)
@@ -1084,8 +1155,13 @@ def _identifiers(tree):
 # (`_computed_scopes`): one of the forms of `_COMPUTED` in a statement of that
 # scope's own body, at any depth of its blocks but in no function or class nested
 # in it, or one that points at the scope from anywhere in the copy, or a class
-# form of `_CLASS_COMPUTED`. A name bound by an import-time side effect of another
-# module is not read.
+# form of `_CLASS_COMPUTED` - a base class of the same file binding by either
+# among them. `BINDINGS` is the two tables. The reading is of these forms and no
+# other: a test bound in a way no row holds is not seen, and what is knowingly
+# not read is listed in one place, the build guide's section on this module.
+# Every row carries its own examples - a base copy and the bare test added to it
+# - which read not compared with the row and clean without it; the suite runs
+# each against the tables with that row taken out, so no row stands unheld.
 
 _WORD = re.compile(r"\w+")
 _HERE, _MODULE = "here", "module"
@@ -1133,19 +1209,42 @@ def _is_module_entry(node):
         and node.value.attr == "modules"
 
 
-def _namespace_store(node):
+def _copy_facts(tree):
+    """What the forms ask of a copy besides one node: `imported` (`_imported`);
+    `callees`, the names it defines as a function, a class, a method or a
+    lambda assigned to a name, at any depth; `other`, every name it binds but by
+    a class statement. `classes` - {name: [class keys]} - and `defs` - {class
+    key: its node} - are filled by `_computed_scopes` as it walks, and `found`
+    is its reading so far."""
+    callees, other = set(), set()
+    for node in ast.walk(tree):
+        if isinstance(node, _FUNCTIONS + (ast.ClassDef,)):
+            callees.add(node.name)
+            if not isinstance(node, ast.ClassDef):
+                other.add(node.name)
+        elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Lambda):
+            callees.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            other.add(node.id)
+        elif isinstance(node, ast.alias):
+            other.add(node.asname or node.name.split(".")[0])
+    return {"imported": _imported(tree), "callees": callees, "other": other,
+            "classes": {}, "defs": {}, "found": {}}
+
+
+def _namespace_store(node, _facts):
     where = _namespace(node.value) if isinstance(node, ast.Subscript) \
         and isinstance(node.ctx, ast.Store) else None
     return (where,) if where else ()
 
 
-def _namespace_written(node):
+def _namespace_written(node, _facts):
     where = _namespace(node.func.value) if isinstance(node, ast.Call) \
         and isinstance(node.func, ast.Attribute) and node.func.attr in _NAMESPACE_WRITES else None
     return (where,) if where else ()
 
 
-def _setattr_call(node):
+def _setattr_call(node, _facts):
     if not (_called(node, "setattr") and node.args):
         return ()
     first = node.args[0]
@@ -1154,16 +1253,11 @@ def _setattr_call(node):
     return (_HERE, _MODULE) if _is_module_entry(first) else (_HERE,)
 
 
-def _module_attribute_store(node):
-    return (_MODULE,) if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Store) \
-        and _is_module_entry(node.value) else ()
-
-
-def _type_call(node):
+def _type_call(node, _facts):
     return (_HERE,) if _called(node, "type") and len(node.args) == 3 else ()
 
 
-def _exec_call(node):
+def _exec_call(node, _facts):
     """Where an exec or eval call binds: the scope it stands in, and the module
     from anywhere when it is handed what globals() hands out."""
     if not _called(node, "exec", "eval"):
@@ -1172,73 +1266,176 @@ def _exec_call(node):
     return (_HERE, _MODULE) if _MODULE in handed else (_HERE,)
 
 
-def _star_import(node):
+def _star_import(node, _facts):
     return (_HERE,) if isinstance(node, ast.ImportFrom) \
         and any(a.name == "*" for a in node.names) else ()
 
 
+def _file_callee(func, facts):
+    """Whether a call's callable is one the copy defines (`_copy_facts`'
+    `callees`): a name it defines, or a method of that name reached through
+    anything but a name the copy binds by an import."""
+    if isinstance(func, ast.Name):
+        return func.id in facts["callees"]
+    head = func
+    while isinstance(head, ast.Attribute):
+        head = head.value
+    return isinstance(func, ast.Attribute) and func.attr in facts["callees"] \
+        and not (isinstance(head, ast.Name) and head.id in facts["imported"])
+
+
+def _namespace_handed(node, facts):
+    """Where a namespace handed to a callee the copy defines binds: handing it
+    IS the binding, since the callee's body may store into it, and that body is
+    not read. A callee of another module may only read it - as this tree's
+    staged suites hand globals() to the runner that looks their blocks up - so
+    one handed there is no form."""
+    if not (isinstance(node, ast.Call) and _file_callee(node.func, facts)):
+        return ()
+    handed = set(_namespace(a) for a in node.args + [k.value for k in node.keywords])
+    return tuple(sorted(w for w in handed if w))
+
+
+# The examples the rows carry: a base copy each, and the bare test that is then
+# added to it, at its end. `_FAIL` is a failing test function the copies bind.
+_FAIL = "def _fail():\n    assert False\n\n\n"
+_UNIT = "import unittest\n\n\n"
+_ADD_FN = "\n\ndef test_a():\n    pass\n"
+_ADD_METHOD = "\n    def test_a(self):\n        pass\n"
+_PLAIN_CLASS = "class TestA(unittest.TestCase):\n    def test_plain(self):\n        " \
+               "self.assertTrue(True)\n"
+
 # Each form that binds names by computation: (what it is, the function giving
 # where it binds - `_HERE`, the scope whose statement holds it; `_MODULE`; or a
-# class by its name - for one node). A namespace merely handed to a call other
-# than exec or eval is no form: the callee may only read it, as this tree's
-# staged suites hand globals() to the runner that looks their blocks up.
+# class by its name - for one node and the copy's `_copy_facts`, its examples).
 _COMPUTED = (
-    ("a store into the names globals(), locals() or vars() hands out", _namespace_store),
+    ("a store into the names globals(), locals() or vars() hands out", _namespace_store, (
+        (_FAIL + 'for _n in ("a", "b"):\n    globals()["test_" + _n] = _fail\n', _ADD_FN),
+        (_FAIL + 'for _n in ("a", "b"):\n    vars()["test_" + _n] = _fail\n', _ADD_FN),
+        ("import sys\n\n\n" + _FAIL + 'def _load():\n    for n in ("a", "b"):\n'
+         '        vars(sys.modules[__name__])["test_" + n] = _fail\n\n\n_load()\n', _ADD_FN),
+        (_UNIT + "class TestOuter(object):\n    class TestInner(unittest.TestCase):\n"
+         '        for _n in ("a", "b"):\n            locals()["test_" + _n] = '
+         "lambda self: self.fail()\n", "\n        def test_a(self):\n            pass\n"))),
     ("a call writing into the names globals(), locals() or vars() hands out",
-     _namespace_written),
-    ("a setattr call", _setattr_call),
-    ("a store into a module's attribute looked up in sys.modules", _module_attribute_store),
-    ("a class made by a call to type", _type_call),
-    ("an exec or eval call", _exec_call),
-    ("a star import", _star_import),
+     _namespace_written, (
+         (_FAIL + 'globals().update(("test_" + n, _fail) for n in ("a", "b"))\n', _ADD_FN),
+         (_FAIL + 'for _n in ("a", "b"):\n    globals().setdefault("test_" + _n, _fail)\n',
+          _ADD_FN),
+         (_FAIL + 'for _n in ("a", "b"):\n    globals().__setitem__("test_" + _n, _fail)\n',
+          _ADD_FN))),
+    ("a setattr call", _setattr_call, (
+        (_UNIT + 'def _add():\n    for n in ("a", "b"):\n        setattr(TestA, "test_" + n, '
+         "lambda self: self.fail())\n\n\n" + _PLAIN_CLASS, _ADD_METHOD),
+        ("import sys\n\n\n" + _FAIL + 'def _load():\n    for n in ("a", "b"):\n'
+         '        setattr(sys.modules[__name__], "test_" + n, _fail)\n\n\n_load()\n', _ADD_FN),
+        ("import sys\n\n_target = sys.modules[__name__]\n\n\n" + _FAIL
+         + 'for _n in ("a", "b"):\n    setattr(_target, "test_" + _n, _fail)\n', _ADD_FN))),
+    ("a class made by a call to type", _type_call, (
+        (_UNIT + 'TestG = type("TestG", (unittest.TestCase,), {"test_" + "a": '
+         "lambda self: self.fail()})\n", _ADD_FN),)),
+    ("an exec or eval call", _exec_call, (
+        ('exec("def test_%s():\\n    assert False\\n" % "a")\n', _ADD_FN),
+        ('for _n in ("a", "b"):\n    eval(compile("def test_%s():\\n    assert False\\n" '
+         '% _n, "g", "exec"))\n', _ADD_FN),
+        ('def _load():\n    exec("def test_%s():\\n    assert False\\n" % "a", '
+         "globals())\n\n\n_load()\n", _ADD_FN))),
+    ("a star import", _star_import, (("from _generated_cases import *\n", _ADD_FN),)),
+    ("a namespace handed to a callee the copy defines", _namespace_handed, (
+        (_FAIL + 'def _install(ns):\n    for n in ("a", "b"):\n        ns["test_" + n] = '
+         "_fail\n\n\n_install(globals())\n", _ADD_FN),
+        (_UNIT + "class TestA(unittest.TestCase):\n    def _gen(ns):\n"
+         '        for n in ("a", "b"):\n            ns["test_" + n] = lambda self: '
+         "self.fail()\n    _gen(locals())\n    del _gen\n", _ADD_METHOD))),
 )
 
 
-def _has_metaclass(node, _hooks=()):
+def _has_metaclass(node, _facts):
     return any(k.arg == "metaclass" for k in node.keywords)
 
 
-# The class decorators that only mark a class - a runner's skip, or a pytest mark,
-# by the dotted name it is called through (`.*` any mark) - and add no name to it.
-_MARKING_DECORATORS = ("unittest.skip", "unittest.skipIf", "unittest.skipUnless",
-                       "unittest.expectedFailure", "pytest.mark.*")
+def _decorated_class(node, facts):
+    return any(not _marks_only(d, facts["imported"]) for d in node.decorator_list)
 
 
-def _marks_only(decorator):
-    spelled = _dotted(decorator.func if isinstance(decorator, ast.Call) else decorator) or ""
-    return any(spelled == name or name.endswith(".*") and spelled.startswith(name[:-1])
-               for name in _MARKING_DECORATORS)
+def _bases(node, facts):
+    """The class keys of `node`'s bases defined once in the copy under a name
+    the copy binds in no other way; a base spelled through an attribute is read
+    as another module's."""
+    keys = [facts["classes"].get(b.id, ()) for b in node.bases if isinstance(b, ast.Name)
+            and b.id not in facts["other"]]
+    return [k[0] for k in keys if len(k) == 1]
 
 
-def _decorated_class(node, _hooks=()):
-    return any(not _marks_only(d) for d in node.decorator_list)
+def _hooked_base(node, facts):
+    return any(isinstance(s, _FUNCTIONS) and s.name == "__init_subclass__"
+               for key in _bases(node, facts) for s in facts["defs"][key].body)
 
 
-def _hooked_base(node, hooks):
-    return any(isinstance(b, ast.Name) and b.id in hooks for b in node.bases)
+def _bound_base(node, facts):
+    return any(key in facts["found"] for key in _bases(node, facts))
+
+
+def _rebound_base(node, facts):
+    return any(isinstance(b, ast.Name) and b.id in facts["classes"]
+               and (len(facts["classes"][b.id]) > 1 or b.id in facts["other"])
+               for b in node.bases)
 
 
 # Each form by which a class's own names are bound by code run when it is made:
-# (what it is, the function asking it of a class and the copy's `_subclass_hooks`).
+# (what it is, the function asking it of a class and the copy's `_copy_facts`,
+# its examples). A class is read with its bases of the same file, through further
+# bases: they are asked first, so one binding by any form binds for every class
+# deriving from it, and a base whose name the file binds twice is not guessed at.
 _CLASS_COMPUTED = (
-    ("a class decorator", _decorated_class),
-    ("a metaclass", _has_metaclass),
-    ("a base class of the copy running code for each subclass", _hooked_base),
+    ("a class decorator", _decorated_class, (
+        (_UNIT + "def _register(cls):\n    setattr(cls, \"test_\" + \"a\", lambda self: "
+         "self.fail())\n    return cls\n\n\n@_register\n" + _PLAIN_CLASS, _ADD_METHOD),
+        (_UNIT + "def add_cases(*names):\n    def deco(cls):\n        for n in names:\n"
+         '            setattr(cls, "test_" + n, lambda self: self.fail())\n        return cls\n'
+         '    return deco\n\n\n@add_cases("a", "b")\n' + _PLAIN_CLASS, _ADD_METHOD))),
+    ("a metaclass", _has_metaclass, (
+        (_UNIT + "class _Adds(type):\n    pass\n\n\n"
+         + _PLAIN_CLASS.replace("(unittest.TestCase)", "(unittest.TestCase, metaclass=_Adds)"),
+         _ADD_METHOD),)),
+    ("a base class of the copy running code for each subclass", _hooked_base, (
+        (_UNIT + "class _Base(unittest.TestCase):\n    def __init_subclass__(cls, **kw):\n"
+         "        super().__init_subclass__(**kw)\n"
+         '        setattr(cls, "test_" + "a", lambda self: self.fail())\n\n\n'
+         + _PLAIN_CLASS.replace("(unittest.TestCase)", "(_Base)"), _ADD_METHOD),)),
+    ("a base class of the copy binding names by computation", _bound_base, (
+        (_UNIT + "class _Checks(object):\n    for _n in (\"a\", \"b\"):\n"
+         '        locals()["test_" + _n] = lambda self: self.fail()\n\n\n'
+         + _PLAIN_CLASS.replace("(unittest.TestCase)", "(_Checks, unittest.TestCase)"),
+         _ADD_METHOD),
+        (_UNIT + "class _Base(unittest.TestCase):\n    pass\n\n\n"
+         'for _n in ("a", "b"):\n    setattr(_Base, "test_" + _n, lambda self: self.fail())\n\n\n'
+         + _PLAIN_CLASS.replace("(unittest.TestCase)", "(_Base)"), _ADD_METHOD),
+        (_UNIT + "class _Root(unittest.TestCase):\n    for _n in (\"a\", \"b\"):\n"
+         '        locals()["test_" + _n] = lambda self: self.fail()\n\n\n'
+         "class _Middle(_Root):\n    pass\n\n\n"
+         + _PLAIN_CLASS.replace("(unittest.TestCase)", "(_Middle)"), _ADD_METHOD),
+        (_UNIT + "class _Gen(type):\n    def __new__(m, name, bases, ns):\n"
+         '        ns["test_" + "a"] = lambda self: self.fail()\n'
+         "        return type.__new__(m, name, bases, ns)\n\n\n"
+         "class _Base(unittest.TestCase, metaclass=_Gen):\n    pass\n\n\n"
+         + _PLAIN_CLASS.replace("(unittest.TestCase)", "(_Base)"), _ADD_METHOD),
+        (_UNIT + "class _Base(unittest.TestCase):\n    def __init_subclass__(cls, **kw):\n"
+         "        super().__init_subclass__(**kw)\n"
+         '        setattr(cls, "test_" + "a", lambda self: self.fail())\n\n\n'
+         "class _Mid(_Base):\n    pass\n\n\n"
+         + _PLAIN_CLASS.replace("(unittest.TestCase)", "(_Mid)"), _ADD_METHOD))),
+    ("a base class the copy binds more than once", _rebound_base, (
+        (_UNIT + "class _Base(unittest.TestCase):\n    pass\n\n\n"
+         "class _Base(unittest.TestCase):\n    pass\n\n\n"
+         + _PLAIN_CLASS.replace("(unittest.TestCase)", "(_Base)"), _ADD_METHOD),
+        (_UNIT + "def _keep(cls):\n    return cls\n\n\n"
+         "class _Base(unittest.TestCase):\n    pass\n\n\n_Base = _keep(_Base)\n\n\n"
+         + _PLAIN_CLASS.replace("(unittest.TestCase)", "(_Base)"), _ADD_METHOD))),
 )
 
-
-def _subclass_hooks(tree):
-    """The names of the copy's classes that run code for each subclass: one
-    defining `__init_subclass__` or given a metaclass, and one deriving from such
-    a class of the copy."""
-    defs = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
-    hooks = set(n.name for n in defs if _has_metaclass(n) or any(
-        isinstance(s, _FUNCTIONS) and s.name == "__init_subclass__" for s in n.body))
-    while True:
-        more = set(n.name for n in defs if n.name not in hooks and _hooked_base(n, hooks))
-        if not more:
-            return hooks
-        hooks |= more
+# The two tables the reading asks, in the order `find_moves`' `bindings` takes them.
+BINDINGS = (_COMPUTED, _CLASS_COMPUTED)
 
 
 def _own_nodes(stmt):
@@ -1255,12 +1452,14 @@ def _own_nodes(stmt):
     return out
 
 
-def _computed_scopes(tree):
+def _computed_scopes(tree, bindings=None):
     """{scope: (line, what)} for each scope of a copy that binds names by
     computation - the module as "", a class by its dotted name under its
-    classes, the keys `_test_key` gives - with the first form found there."""
-    found, pointed, classes = {}, [], {}
-    hooks = _subclass_hooks(tree)
+    classes, the keys `_test_key` gives - with the first form found there.
+    `bindings` is the pair of tables to ask, `BINDINGS` unless given."""
+    own_forms, class_forms = BINDINGS if bindings is None else bindings
+    facts = _copy_facts(tree)
+    found, pointed, classes = facts["found"], [], []
 
     def note(scope, line, what):
         if scope not in found or line < found[scope][0]:
@@ -1268,8 +1467,8 @@ def _computed_scopes(tree):
 
     def visit(stmt, scope, prefix):
         for node in _own_nodes(stmt):
-            for what, form in _COMPUTED:
-                for target in form(node):
+            for what, form, _examples in own_forms:
+                for target in form(node, facts):
                     if target == _HERE and scope is not None:
                         note(scope, node.lineno, what)
                     elif target == _MODULE:
@@ -1279,10 +1478,9 @@ def _computed_scopes(tree):
         inner = (scope, prefix)
         if isinstance(stmt, ast.ClassDef):
             key = prefix + stmt.name
-            classes.setdefault(stmt.name, []).append(key)
-            for what, form in _CLASS_COMPUTED:
-                if form(stmt, hooks):
-                    note(key, stmt.lineno, what)
+            facts["classes"].setdefault(stmt.name, []).append(key)
+            facts["defs"][key] = stmt
+            classes.append((key, stmt))
             inner = (key, key + ".")
         elif isinstance(stmt, _FUNCTIONS):
             inner = (None, prefix)
@@ -1292,8 +1490,16 @@ def _computed_scopes(tree):
     for stmt in tree.body:
         visit(stmt, "", "")
     for name, line, what in pointed:
-        for key in classes.get(name, ()):
+        for key in facts["classes"].get(name, ()):
             note(key, line, what)
+    # In the copy's order, which puts every base a class can name before it: the
+    # base must be bound when the class statement runs, and a class nested in a
+    # function - the one place a later statement runs first - holds no bare new
+    # test. So each class is asked once, after its bases' readings are final.
+    for key, node in classes:
+        for what, form, _examples in class_forms:
+            if form(node, facts):
+                note(key, node.lineno, what)
     return found
 
 
@@ -2153,7 +2359,7 @@ def _unread(path, move, reason, could=None):
             "kind": COULD_HOLD if could else CANNOT_HOLD}
 
 
-def _one_file(rec, read_base, read_tree, index, accepted):
+def _one_file(rec, read_base, read_tree, index, accepted, bindings=None):
     """{findings, declared, renamed, gone, fresh, units, problem, notRead} for one
     file of the diff. `notRead` is one entry or None; its `move` is None when no
     move was read, and names the move left uncompared otherwise. `gone` pairs
@@ -2194,7 +2400,7 @@ def _one_file(rec, read_base, read_tree, index, accepted):
     if problem is None:
         try:
             got = _collect(rec, (base, base_ast), (tree, tree_ast), fam, test,
-                           (index, accepted))
+                           (index, accepted, bindings))
             got["findings"] = out["findings"] + got["findings"]
             out.update(got)
         except (tokenize.TokenError, SyntaxError) as exc:
@@ -2206,8 +2412,8 @@ def _one_file(rec, read_base, read_tree, index, accepted):
 def _collect(rec, base, tree, fam, test, ask):
     """{findings, declared, renamed, gone, fresh, units, notRead} for one file
     whose copies were read; `base` and `tree` are each (text, Python AST or None)
-    and `ask` is (declared index, accepted suppression keys)."""
-    index, accepted = ask
+    and `ask` is (declared index, accepted suppression keys, binding tables)."""
+    index, accepted, bindings = ask
     path = rec["new"]
     base_marks = _side_marks(base[0], base[1], fam, test) if base[0] is not None else []
     tree_marks = _side_marks(tree[0], tree[1], fam, test)
@@ -2230,7 +2436,7 @@ def _collect(rec, base, tree, fam, test, ask):
                                     "suppression added (%s, new to the file): %s"
                                     % (_key_text(new), mark[4])) for mark, new in fresh)
     if fam == PY and test:
-        _python_test(out, rec, base, tree, index)
+        _python_test(out, rec, base, tree, index, bindings)
     elif test and base[0] is not None and not path.lower().endswith(DATA_EXTENSIONS) \
             and not any(m[0] == "assertion" for m in base_marks + tree_marks):
         out["notRead"] = _unread(path, DEFINITION_CHANGED, (
@@ -2239,7 +2445,7 @@ def _collect(rec, base, tree, fam, test, ask):
     return out
 
 
-def _python_test(out, rec, base, tree, index):
+def _python_test(out, rec, base, tree, index, bindings=None):
     """Fill `out` with what comparing a Python test file's two copies found:
     its test definitions, or - a file that defines none - its labelled checks
     (U), then whether the rest is the same (S); `units` is set only when it is.
@@ -2253,7 +2459,8 @@ def _python_test(out, rec, base, tree, index):
                  _check_callables([base_ast]) or _check_callables([tree_ast]))
     unit_key = _test_key if has_tests else _check_key(callables)
     base_records = _statements(base_ast, unit_key)
-    tree_records = (_new_test_aside(base_ast, tree_ast, base_records, base_text) if has_tests
+    tree_records = (_new_test_aside(base_ast, tree_ast, base_records, base_text, bindings)
+                    if has_tests
                     else _statements(tree_ast, unit_key))
     changed, out["renamed"], out["fresh"] = (
         _compare_definitions(base_records, tree_records, path) if has_tests
@@ -2437,7 +2644,7 @@ def _accepted_keys(accepted):
     return keys, None
 
 
-def find_moves(diff, read_base, read_tree, declared=(), accepted=()):
+def find_moves(diff, read_base, read_tree, declared=(), accepted=(), bindings=None):
     """The moves in `diff` that lower the bar.
 
     `diff` is the task's unified diff against its base (git's form); `read_base`
@@ -2449,6 +2656,9 @@ def find_moves(diff, read_base, read_tree, declared=(), accepted=()):
     `accepted` holds suppression codes never reported, each written as its
     comment would be (`noqa: E402`); `_accepted_keys` says how one matches, and
     an entry it cannot read makes the answer could-not-tell before any file is.
+    `bindings` is the pair of tables a bare new test's name is read against
+    (`BINDINGS` unless given): the suite hands a copy with one row taken out to
+    see that row's examples read clean, which is what holds each row.
 
     Returns {"answer": FINDINGS | COULD_NOT_TELL | PARTLY_READ | CLEAN,
              "basis": the sentence that makes the answer true,
@@ -2478,7 +2688,7 @@ def find_moves(diff, read_base, read_tree, declared=(), accepted=()):
     findings, owned, renamed, cannot, not_read, gone, fresh = [], [], [], [], [], [], []
     units = []
     for rec in records:
-        got = _one_file(rec, read_base, read_tree, index, keys)
+        got = _one_file(rec, read_base, read_tree, index, keys, bindings)
         if got["units"] is not None:
             units.append((rec["new"],) + got["units"])
         findings.extend(got["findings"])
