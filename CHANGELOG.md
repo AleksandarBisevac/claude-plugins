@@ -103,6 +103,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   reads as before.
 
 ### Changed
+- **A red's base is measured only when the red could predate the task, once per commit and step
+  set, and the writer is not held for it.** No base run starts for a red whose every failing
+  suite is a file the task's `tests.add` created (absent at the base commit), nor for one whose
+  red steps a clean-tree run of that commit already measured; the decision says which. A base run
+  is kept on the red task's `lastRun` record, beside its reading (`baseRed.baseRuns`), so a later
+  red at that commit reads it from the plan - `run-test-gate.py --base-of` answers from it with
+  nothing run, and `--kept-only` asks for that answer alone. A base measured in the background no
+  longer holds the red: `dispatch-base` is followed by the red's decision at the next `next`, the
+  base named as still running, and a red the base then shows it shares stops as `gate-red-base`
+  with no further resume, naming the writer rounds resumed beside the base before its verdict. A base measured inside `next`, under the foreground bound, still
+  decides before any round.
 - **Every reader of recorded runs reads the plan's records beside the ledger, and answers the
   same from either.** The run a task's or a phase's `lastRun` record holds is read as its ledger
   row would be, one entry per run, the ledger's row winning where both hold it: the verdict a

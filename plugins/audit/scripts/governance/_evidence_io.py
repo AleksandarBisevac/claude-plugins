@@ -1090,6 +1090,77 @@ def base_run(rows, head, exclude_tasks=(), names=None, suites=None):
             for st in row.get("steps") or []))])
 
 
+def base_step(base_steps, step):
+    """The base run's step answering for `step`: the same name and, where both
+    carry the command verbatim, the same command - a renamed command is another
+    check, whatever its key."""
+    for st in base_steps or []:
+        if not isinstance(st, dict) or st.get("name") != step.get("name"):
+            continue
+        if st.get("command") and step.get("command") \
+                and str(st["command"]) != str(step["command"]):
+            continue
+        return st
+    return None
+
+
+def base_row_for(red, head, task_id, rows):
+    """The run `base_run` reads the red steps `red` against at commit `head`:
+    asked for by every red step's name and, for a joined step, by its declared
+    entry's name and the suites its affected parts named failing, as a derived
+    step's suites find a base. The one selection the base reading
+    (`run-test-gate.base_red`) and `base_unmeasured` both make."""
+    suites = [suite for st in red if step_parts(st.get("name"))[1]
+              for suite in named_failing_suites([st])]
+    names = [st.get("name") for st in red]
+    names += [head_of for head_of, parts in
+              (step_parts(st.get("name")) for st in red)
+              if head_of is not None and parts and head_of not in names]
+    return base_run(rows, head, [task_id], names, suites=suites)
+
+
+def base_unmeasured(steps, head, task_id, rows):
+    """The red steps of `steps` - a step's name, or `<name>: <suite>` for a
+    suite of a derived or joined step - that no clean-tree run at commit
+    `head` measured, read off the one run the base reading reads
+    (`base_row_for`), the way it reads them: a step it has under the same
+    name (`base_step`) is measured; a derived or joined step's suite is
+    measured where a step of that run is known to have run it
+    (`step_runs_suite`). Every red step when no such run is recorded, `[]`
+    when every one is measured, None when nothing in `steps` is red.
+
+    THE QUESTION A BASE RUN ANSWERS, asked before one is started: a commit
+    and step set measured once is not measured again, since a second run of
+    the same steps on the same commit's clean tree measures the same thing."""
+    red = [st for st in steps or [] if isinstance(st, dict)
+           and _counts_as_failed(st)]
+    if not red:
+        return None
+    base = base_row_for(red, head, task_id, rows) if head else None
+    if base is None:
+        return [str(st.get("name")) for st in red]
+    base_steps = [st for st in base.get("steps") or [] if isinstance(st, dict)]
+    out = []
+    for step in red:
+        if base_step(base_steps, step) is not None:
+            continue
+        declared, derived = step_parts(step.get("name"))
+        named = named_failing_suites([step])
+        if not ((is_derived_step(step.get("name")) or derived) and named):
+            out.append(str(step.get("name")))
+            continue
+        listed = derived_step_suites(step.get("name"))
+        for suite in named:
+            if derived and declared is not None \
+                    and resolve_named(suite, listed)[0] is None:
+                answered = base_step(base_steps, {"name": declared}) is not None
+            else:
+                answered = any(step_runs_suite(st, suite) for st in base_steps)
+            if not answered:
+                out.append("%s: %s" % (step.get("name"), suite))
+    return out
+
+
 def step_runs_suite(step, suite):
     """Whether a recorded step is known to have run `suite`: its runner named
     the suite as failing, or a derived step's name lists it - the step's own,
@@ -1116,6 +1187,136 @@ def _base_red(project, found):
     if found.get("basis") is not None:
         out["basis"] = redacted_text(project, str(found["basis"]))
     return out
+
+
+# --- a base run, kept with the reading of the red it measured ------------------
+# THE BASE RUN LIVES WHERE THE RED'S READING LIVES. A red task run's reading
+# against its base (`BASE_RED_KEY`) is on that run's record in the plan, and it
+# names the base commit (`head`); the clean-tree runs of that commit a base
+# measurement took for it are kept beside the reading, under `BASE_RUNS_KEY`, so
+# they survive wherever the plan does - a ledger row is only another copy. The
+# one reader (`read_rows`, through `records_of_bodies`) gives each back as the
+# `BASE_SCOPE` row it was recorded as, so `base_run` finds it exactly as it
+# found that row, and a later red of the subject at the same commit is read
+# against it with nothing measured again. The record that replaces a red's
+# carries the runs while its own reading names the same commit
+# (`carry_kept_bases`), and drops them once the subject's run is at another
+# commit or green - neither has a red those runs could answer for.
+BASE_RUNS_KEY = "baseRuns"
+# How many base runs one reading keeps, the newest: one per step set a red at
+# that commit was measured for, and a red of a new step set evicts the oldest,
+# whose steps are then measured again if a red asks for them.
+MAX_KEPT_BASE_RUNS = 2
+# What a kept base run holds - every field `base_run`, the base reading and the
+# time record's base stage read off a base row - and nothing a record of a
+# subject's own run holds for other readers.
+_KEPT_BASE_KEYS = ("runId", "at", "status", "durationMs", STARTED_KEY,
+                   BASE_OF_KEY, "testedState", "steps", "stepsDropped")
+
+
+def kept_base(row):
+    """The base run `row` (a `BASE_SCOPE` row, `row_for`'s shape) as a reading
+    keeps it: its record (`_record_of`) cut to `_KEPT_BASE_KEYS`."""
+    record = _record_of(row)
+    return dict((k, record[k]) for k in _KEPT_BASE_KEYS
+                if record.get(k) is not None)
+
+
+def kept_bases(reading):
+    """The base runs a reading keeps, each a dict naming its run; [] for a
+    reading that keeps none or is not one."""
+    if not isinstance(reading, dict):
+        return []
+    return [r for r in reading.get(BASE_RUNS_KEY) or []
+            if isinstance(r, dict) and r.get("runId")]
+
+
+def with_kept_bases(reading, bases):
+    """`reading`, a NEW dict, keeping the runs of `bases` that measured its own
+    base commit - one per run, a later copy winning, the newest
+    `MAX_KEPT_BASE_RUNS` - and no `BASE_RUNS_KEY` when none did."""
+    head = reading.get("head")
+    by_run = {}
+    for base in bases or []:
+        if isinstance(base, dict) and base.get("runId") and same_head(
+                (base.get("testedState") or {}).get("head"), head):
+            by_run.pop(str(base["runId"]), None)
+            by_run[str(base["runId"])] = base
+    out = dict((k, v) for k, v in reading.items() if k != BASE_RUNS_KEY)
+    keep = list(by_run.values())[-MAX_KEPT_BASE_RUNS:]
+    if keep:
+        out[BASE_RUNS_KEY] = keep
+    return out
+
+
+def carry_kept_bases(record, replaced):
+    """`record`, the record about to replace `replaced`, carrying the base runs
+    `replaced`'s reading keeps that measured `record`'s own base commit
+    (`with_kept_bases`) - a NEW dict, cut and shared again as a plan holds a
+    record (`finished_record`). `record` as it is when it reads no red against
+    a base, or nothing is carried."""
+    old = kept_bases((resolved_shared(replaced) or {}).get(BASE_RED_KEY)
+                     if isinstance(replaced, dict) else None)
+    mine = resolved_shared(record) if isinstance(record, dict) else None
+    reading = (mine or {}).get(BASE_RED_KEY)
+    if not old or not isinstance(reading, dict) or not reading.get("head"):
+        return record
+    carried = with_kept_bases(reading, old + kept_bases(reading))
+    if carried == reading:
+        return record
+    return finished_record(dict(mine, **{BASE_RED_KEY: carried}),
+                           RECORD_MAX_BYTES)
+
+
+def keep_base(project, manifest_path, red, base, session_id=None, wait=None,
+              config=None):
+    """Keep the base run `base` (its `BASE_SCOPE` row) on the record of the
+    red task run `red` measured it for - the subject's newest record, whose
+    reading names the same base commit, under `BASE_RUNS_KEY` - in one write
+    of the shard under the plan-file lock (`write_plan_file`).
+    `{"written", "reason", "path"}`: `reason` says why nothing was kept - the
+    red names no task, the subject's newest run reads no red against that
+    commit (it moved on, or went green), or the lock was not free.
+
+    Waited for as a record write is (`RECORD_WAIT_SECONDS`): the base run is
+    the only measurement of its commit a plan with no ledger holds."""
+    ids = {"taskId": (red or {}).get("taskId"),
+           "phaseId": (red or {}).get("phaseId")}
+    if not ids["taskId"] or not ids["phaseId"]:
+        return {"written": False, "path": None,
+                "reason": "the red run %s names no task and phase, so no record "
+                          "holds its reading" % ((red or {}).get("runId"),)}
+    path, sharded = _phase_file(manifest_path, ids["phaseId"])
+    if not path or not os.path.exists(path):
+        return {"written": False, "path": None,
+                "reason": "no phase %r in this manifest" % (ids["phaseId"],)}
+    kept = kept_base(base)
+    at = (kept.get("testedState") or {}).get("head")
+
+    def change(body):
+        subject, _task, problem = _holders(body, "task", ids, sharded)
+        if problem is not None:
+            return None, problem, None
+        record = resolved_shared(subject.get(RECORD_KEY))
+        reading = (record or {}).get(BASE_RED_KEY)
+        if not isinstance(reading, dict) or not same_head(reading.get("head"),
+                                                           at):
+            return None, ("%s's newest run (%s) reads no red against base %s, "
+                          "so the base run %s is kept on no record"
+                          % (ids["taskId"], (record or {}).get("runId"), at,
+                             kept.get("runId"))), None
+        subject[RECORD_KEY] = finished_record(dict(record, **{
+            BASE_RED_KEY: with_kept_bases(reading, kept_bases(reading)
+                                          + [kept])}), RECORD_MAX_BYTES)
+        return body, None, subject[RECORD_KEY]
+    got = write_plan_file(
+        project, path, change, "keeping a base run", session_id=session_id,
+        wait=RECORD_WAIT_SECONDS if wait is None else wait,
+        outcome="the base run was kept on no record",
+        repair="the next red at that commit measures its base again",
+        config=config)
+    return {"written": got["written"], "reason": got["reason"],
+            "path": got["path"]}
 
 
 def follower_line(path, recipe, owner, needs_browser=False):
@@ -2810,14 +3011,17 @@ RECORD_TREE_KEY = "treeKey"
 # bounded here once. What goes is what decides nothing: the paths the runner
 # named beside the work (`coverage` - reported, never enforced), first of the
 # run a repeat carries and then of the run itself, then the paths a run moved
-# (`treeMutated`), whose verdict word the run's `status` already carries. Each
+# (`treeMutated`), whose verdict word the run's `status` already carries, and
+# last the base runs a red's reading keeps (`BASE_RUNS_KEY`), whose loss costs
+# a base run measured again and never a verdict read wrong. Each
 # field cut is named under `RECORD_CUT_KEY`, and `record_row` gives it back as
 # None beside a basis naming this bound - never as a run that compared nothing.
 RECORD_MAX_BYTES = 49152
 RECORD_CUT_ORDER = ("repeatedRun.observations.coverage",
                     "observations.coverage",
                     "repeatedRun.observations.treeMutated",
-                    "observations.treeMutated")
+                    "observations.treeMutated",
+                    "baseRed.baseRuns")
 RECORD_CUT_KEY = "recordCut"
 # THE PATHS A REPEAT'S RECORD STORES ONCE, in the run it carries
 # (`shared_with_repeated` writes them, `resolved_shared` - which `record_row`
@@ -3072,7 +3276,14 @@ def repeat_carried(record, source):
         out.update(_record_steps(
             source.get("steps"), source.get("stepsDropped"),
             {"runId": wanted, "ts": str(source.get("ts") or source.get("at"))}))
-    out[REPEATED_RUN_KEY] = _record_of(source)
+    carried = _record_of(source)
+    # The base runs the source's reading kept are the subject's to carry, on
+    # its own reading (`carry_kept_bases`), never a second copy here.
+    if isinstance(carried.get(BASE_RED_KEY), dict):
+        carried[BASE_RED_KEY] = dict(
+            (k, v) for k, v in carried[BASE_RED_KEY].items()
+            if k != BASE_RUNS_KEY)
+    out[REPEATED_RUN_KEY] = carried
     return out
 
 
@@ -3291,6 +3502,9 @@ def _put_record(body, scope, ids, sharded, record, stages=()):
             record_row(replaced, scope, ids.get("taskId") if scope == "task"
                        else ids.get("phaseId"), ids.get("phaseId"))),
             RECORD_MAX_BYTES)
+    # The base runs the replaced red kept, while this run reads its red
+    # against the same commit (`carry_kept_bases`).
+    record = carry_kept_bases(record, replaced)
     gone = replaced_launches(replaced, record)
     if gone:
         record = dict(record)
@@ -3377,8 +3591,9 @@ def record_row(record, scope, subject, phase_id):
 def records_of_bodies(bodies):
     """`[(row, label)]` - every record the phase bodies `bodies` (`[(label,
     phase body)]`, a body as its file holds it) carry, each as `record_row`
-    reads it, with the run it repeated (`REPEATED_RUN_KEY`) beside it, once per
-    run.
+    reads it, with the run it repeated (`REPEATED_RUN_KEY`) beside it and the
+    base runs its red's reading keeps (`BASE_RUNS_KEY`) as base-scope rows,
+    once per run.
 
     A GROUP MEMBER'S COPY IS ITS CARRIER'S RUN. Group sign-off copies the
     carrier's record onto each member naming the carrier in `gradedBy`; the
@@ -3408,6 +3623,11 @@ def records_of_bodies(bodies):
             if isinstance(repeated, dict) and repeated.get("runId"):
                 runs.append(record_row(repeated, scope, owner, owner_phase))
             runs.append(record_row(record, scope, owner, owner_phase))
+            # A base run kept with a red's reading is read as the base-scope
+            # row it was recorded as: a run of no subject (`keep_base`).
+            reading = resolved_shared(record).get(BASE_RED_KEY)
+            runs.extend(record_row(base, BASE_SCOPE, None, pid)
+                        for base in kept_bases(reading))
             (copies if graded else carried).extend((r, label) for r in runs)
     seen, out = set(), []
     for row, label in carried + copies:

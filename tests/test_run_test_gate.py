@@ -11726,6 +11726,56 @@ def _base_of_answer(root, mpath, run_id):
     return code, answer if isinstance(answer, dict) else {}, lines
 
 
+def _kept_base_gate_cases(check):
+    """`--base-of` measures a commit and step set once: the run is kept on the
+    red task's record in the plan, and a second `--base-of` of the same red at
+    the same commit is answered from it - nothing run, nothing recorded - with
+    the same verdict, the ledger gone between the two so the plan is all it
+    can read."""
+    fails = {"tests/test_other.py": ("FAIL c1 a case the base fails too",)}
+    red = sweep_red(fails)
+    root, mpath, _plan, row = _derived_base_repo("rtg-kept-base-", red, red,
+                                                 gate=_LONE_GATE)
+    evidence = os.path.join(root, "docs", "audit", "evidence")
+    try:
+        code1, first, _l1 = _base_of_answer(root, mpath, row.get("runId"))
+        shard = os.path.join(root, "docs", "audit", "phases", "P1.json")
+        with open(shard, encoding="utf-8") as fh:
+            task = json.load(fh)["tasks"][0]
+        kept = ((task.get("lastRun") or {}).get(_ev_io.BASE_RED_KEY) or {}).get(
+            getattr(_ev_io, "BASE_RUNS_KEY", "baseRuns")) or []
+        _harness.remove_tree(evidence)
+        code2, second, lines2 = _base_of_answer(root, mpath, row.get("runId"))
+        after = [r for r in (_recorded_rows(evidence)
+                             if os.path.isdir(evidence) else [])
+                 if r.get("scope") == _ev_io.BASE_SCOPE]
+    finally:
+        _harness.remove_tree(root)
+    one, two = (first.get(_ev_io.BASE_RED_KEY) or {},
+                second.get(_ev_io.BASE_RED_KEY) or {})
+    same = dict((k, one.get(k)) for k in ("run", "verdict", "atBase",
+                                          "introduced", "unknown"))
+    check("kbg1 THE BASE OF A COMMIT AND STEP SET IS MEASURED ONCE: the first "
+          "--base-of runs the red step and keeps the run on the red task's "
+          "record; the second, with no ledger left, runs nothing and records "
+          "nothing, answers from the kept run, and its verdict is the first's: "
+          "first %r / kept %r / second %r / base rows after %r / %r"
+          % ((code1, first.get("runId"), first.get("steps")),
+             [r.get("runId") for r in kept],
+             (code2, second.get("runId"), second.get("kept"),
+              second.get("steps"), second.get("recorded")),
+             len(after), lines2[-1:]),
+          code1 == M.E_OK and first.get("recorded") is True
+          and len(first.get("steps") or []) == 1
+          and [r.get("runId") for r in kept] == [first.get("runId")]
+          and code2 == M.E_OK and second.get("steps") == []
+          and second.get("recorded") is False
+          and second.get("kept") == first.get("runId")
+          and second.get("notRun") == [] and after == []
+          and one.get("verdict") == "base-only"
+          and dict((k, two.get(k)) for k in same) == same)
+
+
 def _base_of_derived_cases(check):
     """`--base-of` measures a red DERIVED step at its base: the step's row
     keeps only a digest of its command, so the command is spelled again for
@@ -14669,6 +14719,7 @@ def _selftest():
         _harness.stage(check, "ag-block", _affected_cases)
         _harness.stage(check, "as-block", _affected_scope_cases)
         _harness.stage(check, "bod-block", _base_of_derived_cases)
+        _harness.stage(check, "kbg-block", _kept_base_gate_cases)
         _harness.stage(check, "jn-block", _joined_run_cases)
         _joined_repeat_cases(check)
         _harness.stage(check, "jnb-block", _joined_base_cases)

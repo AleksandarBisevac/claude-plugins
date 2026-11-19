@@ -20669,6 +20669,8 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("np-block", "_nested_project_cases"),
           ("bb-block", "_base_red_drive_cases"),
           ("bm-block", "_base_measure_cases"),
+          ("bn-block", "_base_need_cases"),
+          ("nh-block", "_base_beside_cases"),
           ("bdr-block", "_base_derived_cases"),
           ("bt-block", "_base_bound_cases"),
           ("bq-block", "_base_background_cases"),
@@ -22091,7 +22093,7 @@ raise SystemExit(1 if "\nFAIL  " in "\n" + text else 0)
 
 
 def _base_measure_repo(M, prefix, base_text, task_text, sleep=None,
-                       play_gate=True, seed_ms=None):
+                       play_gate=True, seed_ms=None, tests_add=None, extra=()):
     """A one-task writer fixture whose gate prints `task_text` over the writer's
     work and `base_text` at HEAD - after sleeping `sleep` seconds there, when
     given - played up to the gate run after the writer's session: `(root,
@@ -22099,15 +22101,21 @@ def _base_measure_repo(M, prefix, base_text, task_text, sleep=None,
     the explain of the task after it; both None when `play_gate` is False and
     the fixture stops before that `next`. `seed_ms` records one run of the
     gate's step that long (`_seed_gate_ms`), the mean a real gate choice
-    reads for the task gate and for its base alike."""
+    reads for the task gate and for its base alike. `tests_add` is P1.1's
+    `tests.add`, and `extra` more `(path, text)` committed with the outputs."""
     gate = '"%s" gate_k02.py' % (sys.executable.replace("\\", "/"),)
     root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=(gate,),
                         executor=WRITER_EXECUTOR)
     if seed_ms is not None:
         _seed_gate_ms(root, mpath, [gate], seed_ms)
+    if tests_add is not None:
+        with open(mpath, encoding="utf-8") as fh:
+            plan = json.load(fh)
+        plan["phases"][0]["tasks"][0]["tests"]["add"] = list(tests_add)
+        _write_lf(mpath, json.dumps(plan, indent=2))
     planted = (("gate_k02.py", _BASE_GATE_SCRIPT),
                ("gate-out/base.txt", base_text),
-               ("gate-out/task.txt", task_text))
+               ("gate-out/task.txt", task_text)) + tuple(extra)
     if sleep is not None:
         planted += (("gate-out/sleep.txt", "%s" % (sleep,)),)
     for rel, text in planted:
@@ -22240,6 +22248,182 @@ def _base_measure_cases(check):
           and "red the task introduced: %s" % (suites[0],) in some_block
           and len(some_base) == 1
           and _base_mark(some_root).get("verdict") == "introduced")
+
+
+# The red a task's own new test file carries: its one case cannot predate the
+# task where the file is absent at the base commit.
+_BN_NEW = "tests/test_new_case.py"
+
+
+def _bn_settle(M, root, mpath, line, limit=6):
+    """Play every gate the drive hands to the background until it prints a
+    step that is not one: `(code, line)` of that step. A base measurement or
+    a session is never started here."""
+    code = 0
+    for _n in range(limit):
+        _c, block = _explain_of(M, root, mpath, "P1.1")
+        argv = _run_argv(block) or []
+        if " dispatch " not in (line or "") or len(argv) < 2 \
+                or os.path.basename(argv[1]) != "run-test-gate.py":
+            return code, line
+        _play_gate(root, argv)
+        code, line = _signal_next(M, root, mpath)
+    return code, line
+
+
+def _base_need_cases(check):
+    """A base run is started only when a red could predate the task: never
+    for a red whose every failing suite is a file the task's tests.add
+    created (absent at the base commit), never twice for one commit and step
+    set - the run is kept in the plan and a later red there reads it - and,
+    once launched to the background, it runs beside the red's decision
+    rather than ahead of it."""
+    M, why = _load("drive_phase_base_need")
+    if M is None:
+        check("bn1 the driver loads", False, why)
+        return
+    import test_run_test_gate as _rtg_cases
+    own = _rtg_cases.sweep_red({_BN_NEW: ("FAIL nw1 the case the task added",)})
+    add = ["%s: the case the task added" % (_BN_NEW,)]
+    root, mpath, log, line, block = _base_measure_repo(
+        M, "base-own", own, own, tests_add=add)
+    _t, base_rows = _ledger_of(root)
+    check("bn1 A RED WHOSE EVERY FAILING SUITE IS A FILE THE TASK'S tests.add "
+          "CREATED starts no base run - nothing recorded, no mark - and goes to "
+          "the writer as the task's own, the decision saying why no base was "
+          "measured: %r" % ((line, block, base_rows, _base_mark(root)),),
+          "gate-red-writer" in (line or "") and base_rows == []
+          and _base_mark(root) == {}
+          and "tests.add" in (block or "") and _BN_NEW in (block or "")
+          and "absent at" in (block or ""))
+
+    there_root, _tm, _tl, there, there_block = _base_measure_repo(
+        M, "base-own-there", own, own, tests_add=add,
+        extra=((_BN_NEW, "# already here\n"),))
+    _t, there_rows = _ledger_of(there_root)
+    check("bn2 THE TWIN: the same red, the file already present at the base "
+          "commit, may predate the task - its base is measured once and the "
+          "red read against it, so the decision is gate-red-base: %r"
+          % ((there, there_block, len(there_rows)),),
+          "gate-red-base" in (there or "") and len(there_rows) == 1
+          # No round was resumed beside this base: the decision says none was.
+          and "worked on a red the base commit" not in (there_block or ""))
+
+    fails = _rtg_cases.K03R_FAILS
+    k02 = _rtg_cases.sweep_red(fails)
+    k_root, k_mpath, k_log, k_line, _kb = _base_measure_repo(M, "base-kept",
+                                                             k02, k02)
+    _t, k_first = _ledger_of(k_root)
+    # The ledger goes: the base the first red measured is in the plan alone.
+    _harness.remove_tree(os.path.join(k_root, "docs", "audit", "evidence"))
+    k_code, k_again = _signal_next(M, k_root, k_mpath, "--answer", "rerun")
+    k_code, k_again = _bn_settle(M, k_root, k_mpath, k_again)
+    k_rows, k_after = _ledger_of(k_root)
+    k_reading = ((k_rows[-1] if k_rows else {}).get(_evio.BASE_RED_KEY) or {})
+    check("bn3 A SECOND RED AT THE SAME BASE COMMIT AND STEP SET starts no base "
+          "run: with the ledger gone, the rerun's red reads the base kept on "
+          "the task's record in the plan, its verdict the first's, and the "
+          "decision is gate-red-base again: %r"
+          % ((k_line, k_again, len(k_first), k_after, k_reading),),
+          "gate-red-base" in (k_line or "") and len(k_first) == 1
+          and "gate-red-base" in (k_again or "")
+          and "gate-red-base-unknown" not in (k_again or "")
+          and [r.get("runId") for r in k_after] == [k_first[0].get("runId")]
+          and k_reading.get("verdict") == "base-only"
+          and k_reading.get("run") == k_first[0].get("runId")
+          and len(_stub_runs(k_log)) == 1)
+
+
+def _base_beside_cases(check):
+    """A base launched to the background runs BESIDE the red's decision: with
+    a writer session to resume, the failing lines go to it before the base
+    verdict exists; once the base shows the same red, the next red is the
+    base decision and no further resume; and a base run killed while the
+    decision waits leaves no tree and no claim after the next call."""
+    M, why = _load("drive_phase_base_beside", real_gate_choice=True)
+    if M is None:
+        check("nh1 the driver loads", False, why)
+        return
+    import test_run_test_gate as _rtg_cases
+    k02 = _rtg_cases.sweep_red(_rtg_cases.K03R_FAILS)
+    slow_ms = 10 * 60 * 1000
+    root, mpath, log, line, _block = _base_measure_repo(
+        M, "base-beside", k02, k02, seed_ms=slow_ms)
+    bindir = os.path.join(os.path.dirname(log), "bin")
+    argv = _base_run_argv(M, root, mpath)
+    d_code, decided = _signal_next(M, root, mpath)
+    _c, d_block = _explain_of(M, root, mpath, "P1.1")
+    _t, before = _ledger_of(root)
+    check("nh1 NOT HELD: the base dispatched to the background, the next call "
+          "decides the red at once - gate-red-writer, its resume recommended - "
+          "with the base named as still running and no base verdict yet: %r"
+          % ((line, argv[1:4], decided, d_block, before),),
+          bool(argv) and " dispatch P1.1" in (line or "")
+          and d_code == 0 and "gate-red-writer" in (decided or "")
+          and " wait P1.1" not in (decided or "")
+          and "still running" in (d_block or "") and before == []
+          and _writer_resumes(root) == 0)
+
+    # The resume is answered while the base still runs - the failing lines go
+    # out before any base verdict exists - and the base ends after it.
+    att0 = _attempts(mpath, "P1.1")
+    _a, sent = _signal_next(M, root, mpath, "--answer", "resume")
+    _t, unmeasured = _ledger_of(root)
+    played = _play_base(root, argv) if argv else (None, "no base run printed")
+    code, after = _writer_round(M, root, mpath, bindir, log, WRITER_COSTS[0],
+                                edit={})
+    code, after = _bn_settle(M, root, mpath, after)
+    _t, base_rows = _ledger_of(root)
+    _c, a_block = _explain_of(M, root, mpath, "P1.1")
+    check("nh2 THE BASE THEN SHOWS THE SAME RED: the resume is sent before the "
+          "base has a verdict, the resumed session's gate is red on the same "
+          "cases, read against the base kept beside it, so the decision is "
+          "gate-red-base and the writer is not resumed over it again - one "
+          "round spent, no attempt, one base run - and the decision tells the "
+          "orchestrator that round worked on a red the base already had: %r"
+          % ((sent, unmeasured, played, after, a_block, _writer_resumes(root),
+              att0, _attempts(mpath, "P1.1"), len(base_rows)),),
+          "--resume" in (sent or "") and unmeasured == []
+          and "1 writer round(s) were resumed beside this base" in (a_block or "")
+          and "worked on a red the base commit already had" in (a_block or "")
+          and att0 is not None and _attempts(mpath, "P1.1") == att0
+          and played[0] == 0 and "gate-red-base" in (after or "")
+          and "gate-red-writer" not in (after or "")
+          and _writer_resumes(root) == 1 and len(base_rows) == 1)
+
+    if not hasattr(os, "killpg"):
+        _harness.skip(check, "nh3", "os.killpg, to stop a base run's whole "
+                      "process group", True)
+        return
+    k_root, k_mpath, _kl, _kline, _kb = _base_measure_repo(
+        M, "base-beside-killed", k02, k02, sleep=20, seed_ms=slow_ms)
+    k_argv = _base_run_argv(M, k_root, k_mpath)
+    _c, k_decided = _signal_next(M, k_root, k_mpath)
+    proc = _base_popen(k_root, k_argv) if k_argv else None
+    mark, deadline = {}, time.monotonic() + 30
+    while proc is not None and time.monotonic() < deadline:
+        mark = _base_mark(k_root, M)
+        if mark.get("tree") and len(mark.get("pids") or []) >= 2:
+            break
+        time.sleep(0.1)
+    holder = mark.get("tree") or ""
+    for pid in list(mark.get("pids") or []) + ([proc.pid] if proc else []):
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
+        except OSError:
+            pass
+    if proc is not None:
+        proc.wait()
+    _signal_next(M, k_root, k_mpath)
+    claims = [r["name"] for r in M._locks.collect(k_root)
+              if r["name"].startswith(M._locks.BASE_PREFIX)]
+    check("nh3 A BASE RUN KILLED WHILE THE DECISION WAITS leaves no tree and no "
+          "claim behind after the next call: %r"
+          % ((k_decided, holder, os.path.exists(holder) if holder else None,
+              _base_trees(k_root), claims),),
+          "gate-red-writer" in (k_decided or "") and bool(holder)
+          and not os.path.exists(holder) and _base_trees(k_root) == []
+          and claims == [])
 
 
 # The gate a derived step runs: base or task by what `src/f1.txt` holds, the
@@ -22693,18 +22877,21 @@ def _base_background_cases(check):
     measured = _base_mark(root)
     check("bq1 THE k15n SHAPE: a red task gate whose base run is past the "
           "foreground bound by its recorded mean dispatches the base to the "
-          "background - no inline base run, no base row yet - waits on it, "
-          "and once its run ends reads the reading it left on the start's "
-          "mark: every failing case red at base, so gate-red-base, no writer "
-          "session sent, no resume round spent, and no base tree left: %r"
+          "background - no inline base run, no base row yet - and is not held "
+          "by it: the red is decided beside it, and that decision, unanswered "
+          "when its run ends, is taken again over the reading it left on the "
+          "start's mark: every failing case red at base, so gate-red-base, no "
+          "writer session sent, no resume round spent, and no base tree "
+          "left: %r"
           % ((line, argv[1:4], launched, waiting, played, after, measured,
               len(inline), len(before), len(base_rows),
               len(_stub_runs(log)), _writer_resumes(root), _base_trees(root)),),
           bool(argv) and " dispatch P1.1" in line
-          and "gate-red-writer" not in line + waiting + after
+          and "gate-red-writer" not in line + after
           and inline == [] and before == []
           and launched.get("background") is True and not launched.get("done")
-          and wait_code == 0 and " wait P1.1" in waiting
+          and wait_code == 0 and " wait P1.1" not in waiting
+          and "gate-red-writer" in waiting
           and played[0] == 0
           and after_code == 0 and "gate-red-base" in after
           and "gate-red-base-unknown" not in after

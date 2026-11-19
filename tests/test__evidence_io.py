@@ -4654,6 +4654,117 @@ def _base_scope_cases(check):
           isinstance(found, dict) and found.get("runId") == "r-lists")
 
 
+# A red task run at `_KB_HEAD` whose one red step names one failing case, and
+# the clean-tree run of that step at the same commit a base measurement records.
+_KB_HEAD = "c0ffee12ab34"
+_KB_SUITE = "tests/test_x.py"
+
+
+def _kb_step(lines):
+    return {"name": "sweep", "exit": 1, "failing": list(lines),
+            "failingBasis": "the cases the house harness %s" % (M.NAMED_FAILING,),
+            "failingSuites": [_KB_SUITE],
+            "failingSuitesBasis": "the 1 suite file(s) the sweep %s"
+                                  % (M.NAMED_FAILING,)}
+
+
+def _kb_red(run_id, ts, head=_KB_HEAD, reading=None):
+    row = _lr_row(run_id, ts, steps=[_kb_step(
+        ["%s: FAIL x1 the case" % (_KB_SUITE,)])])
+    row["testedState"] = dict(row["testedState"], head=head)
+    row[M.BASE_RED_KEY] = reading or {"run": None, "head": head,
+                                      "verdict": "no-base", "atBase": [],
+                                      "introduced": [], "unknown": [],
+                                      "basis": "no run recorded at base"}
+    return row
+
+
+def _kb_base(run_id, of, head=_KB_HEAD):
+    return {"v": 1, "runId": run_id, "ts": "2026-11-18T04:30:00Z",
+            "scope": M.BASE_SCOPE, "status": "failed", "durationMs": 5000,
+            "startedAt": "2026-11-18T04:29:55Z", M.BASE_OF_KEY: of,
+            "testedState": {"head": head, "dirtyDigest": M.CLEAN_DIRTY_DIGEST},
+            "steps": [_kb_step(["%s: FAIL x1 the case" % (_KB_SUITE,)])]}
+
+
+def _kept_base_cases(check):
+    """(kb) A base measurement is kept in the plan, on the red task's record
+    under the reading's own base commit, and read through the one reader as
+    its ledger row was - so a later red at the same commit reads it with no
+    ledger at all; it is carried while the subject's runs stay at that
+    commit and dropped when they move."""
+    rtg = _loader.load_script("run-test-gate.py", "rtg_kb")
+    tmp = _harness.fixture_root("audit-evidence-kept-base-")
+    ids = {"taskId": "P1.1", "phaseId": "P1"}
+    keep = getattr(M, "keep_base", None)
+    try:
+        root, mpath, spath = _lr_project(tmp, "kept")
+        red = _kb_red("R1", "2026-11-18T04:04:19Z")
+        base = _kb_base("RB", "R1")
+        M.write_record(root, mpath, "task", ids, M.run_record(red))
+        got = keep(root, mpath, red, base) if keep else {"written": False,
+                                                         "reason": "no keep_base"}
+        read = M.read_rows(root, manifest_path=mpath)
+        found = M.base_run(read["rows"], _KB_HEAD, ["P1.1"], ["sweep"])
+        from_plan = rtg.base_red(red["steps"], _KB_HEAD, "P1.1", read["rows"])
+        from_row = rtg.base_red(red["steps"], _KB_HEAD, "P1.1", [base])
+        sources = [read["rowSources"][i] for i, r in enumerate(read["rows"])
+                   if r.get("runId") == "RB"]
+        check("kb1 A BASE KEPT ON THE RED'S RECORD IS READ AS ITS ROW WAS: with no "
+              "ledger at all, the one reader gives the base run back as a "
+              "base-scope row of no subject, and the base reading over it equals "
+              "the reading over the ledger row - base-only, naming RB: write %r / "
+              "sources %r / plan %r / row %r"
+              % (got, sources, from_plan, from_row),
+              got.get("written") is True and read.get("ledgerAbsent")
+              and sources == [M.ROW_FROM_RECORD]
+              and isinstance(found, dict) and found.get("runId") == "RB"
+              and found.get("scope") == M.BASE_SCOPE
+              and M.subject_key(found) is None
+              and found.get(M.BASE_OF_KEY) == "R1"
+              and from_plan == from_row and from_row.get("verdict") == "base-only"
+              and from_plan.get("run") == "RB")
+
+        # The subject's next red at the same commit replaces the record and
+        # keeps the base; one at another commit drops it, as does a green.
+        M.write_record(root, mpath, "task", ids, M.run_record(
+            _kb_red("R2", "2026-11-18T05:00:00Z")))
+        same = [r.get("runId") for r in M.read_rows(
+            root, manifest_path=mpath)["rows"] if r.get("scope") == M.BASE_SCOPE]
+        M.write_record(root, mpath, "task", ids, M.run_record(
+            _kb_red("R3", "2026-11-18T06:00:00Z", head="beefbeef9999")))
+        moved = [r.get("runId") for r in M.read_rows(
+            root, manifest_path=mpath)["rows"] if r.get("scope") == M.BASE_SCOPE]
+        check("kb2 THE KEPT BASE IS CARRIED BY THE COMMIT IT MEASURED: a newer red "
+              "of the subject at the same base commit still reads RB, once; a "
+              "red at another commit no longer carries it: same %r / moved %r"
+              % (same, moved), same == ["RB"] and moved == [])
+
+        red_steps = _kb_red("R4", "2026-11-18T07:00:00Z")["steps"]
+        other = dict(red_steps[0], name="lint")
+        measured = M.base_unmeasured(red_steps, _KB_HEAD, "P1.1", [base])
+        unmeasured = M.base_unmeasured(red_steps + [other], _KB_HEAD, "P1.1",
+                                       [base])
+        nothing = M.base_unmeasured(red_steps, _KB_HEAD, "P1.1", [])
+        own = M.base_unmeasured(red_steps, _KB_HEAD, "P1.1",
+                                [dict(base, taskId="P1.1")])
+        green = M.base_unmeasured([dict(red_steps[0], exit=0)], _KB_HEAD,
+                                  "P1.1", [base])
+        check("kb3 WHETHER A RED'S BASE IS MEASURED is read step by step off the "
+              "run the base reading reads: none left when the kept run measured "
+              "every red step; a red step it never ran is named (the twin); "
+              "every red step with no run at that commit, or only the task's "
+              "own; and None for a run with nothing red: %r"
+              % ((measured, unmeasured, nothing, own, green),),
+              measured == [] and unmeasured == ["lint"]
+              and nothing == ["sweep"] and own == ["sweep"] and green is None)
+    except Exception as exc:                                   # noqa: BLE001
+        check("kb0 the kept-base block ran to its end (%s: %s)"
+              % (type(exc).__name__, exc), False)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _foreground_bound_cases(check):
     """(fb, gm) the Bash tool's foreground bound is one constant, here, and
     every reader of it reads this one; and a gate's recorded mean - what the
@@ -6186,6 +6297,7 @@ def _selftest():
         _harness.stage(check, "rv-block", _repeat_record_cases)
         _harness.stage(check, "lk-block", _shard_lock_ast_cases)
         _harness.stage(check, "ri-block", _one_reader_cases)
+        _harness.stage(check, "kb-block", _kept_base_cases)
         _foreground_bound_cases(check)
         _part_repeat_cases(check)
         _left_to_phase_gate_cases(check)

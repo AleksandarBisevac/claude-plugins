@@ -275,9 +275,18 @@ verb writes and refuses, and what the run commands leave behind, is
         its base measured once per start, chosen the same way over its red steps:
         past the bound, unmeasured, or under `auto` it is `dispatch-base` (a
         `drive-phase.py base-run` in the background, which writes only a record of
-        its own that `next` folds into the start's mark), then `wait-base`, and the
-        red's verdict is read back from its recorded row as a background gate's is;
-        one measured fast runs inline. Of two `base-run`s started for one launch,
+        its own that `next` folds into the start's mark): run its `run:` line in the
+        background and call `next` at once, since the red is decided beside it -
+        read back from its recorded row as a background gate's is, and named as
+        having its base still running. A later red of the start waits on it
+        (`wait-base`); a decision still unanswered when it ends is taken again over
+        what it measured, and a red then found red at base too says how many writer
+        rounds were resumed beside it (no attempt is spent on them). One measured
+        fast runs inline. No base run starts for a red whose every failing suite is
+        a file the task's `tests.add` created, absent at the base commit, nor for
+        one whose red steps a clean-tree run of that commit already measured (kept
+        on the red task's record, `lastRun.baseRed.baseRuns`); the decision says
+        which. Of two `base-run`s started for one launch,
         the second refuses, measuring nothing: each claims the launch's record by an
         exclusive create first. A derived step's red is measured too: its failing
         suites are run again at the base, spelled as the gate spelled them, by the

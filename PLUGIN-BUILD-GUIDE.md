@@ -4221,7 +4221,16 @@ given names or - since a derived step's name carries its suite list (`derived_st
 step known to have run one of the given suites (`step_runs_suite()`). A row filed under
 `BASE_SCOPE` is a run of a task run's red steps at its base (`run-test-gate.py --base-of`), naming
 that run under `BASE_OF_KEY`; `subject_key()` gives it no subject, so no pointer is written or
-reconciled onto it.
+reconciled onto it. `base_row_for()` is the one selection of that run for a set of red steps, and
+`base_unmeasured()` names the red steps it did not measure (`[]` when it measured every one) -
+the question a base run answers, asked before one starts. A base run is also KEPT where the red's
+reading lives: `keep_base()` puts it on the red task's record, under the reading's own
+`BASE_RUNS_KEY` (`baseRed.baseRuns`, keyed by the reading's base commit, the newest
+`MAX_KEPT_BASE_RUNS`); `carry_kept_bases()` carries it to the record that replaces it while that
+run's reading names the same commit; `records_of_bodies()` gives each back as the base-scope row it
+was, so the one reader finds it with no ledger. It is last in `RECORD_CUT_ORDER`: a record over its
+bound loses it before anything a reader decides on, and a lost one is a base measured again. The
+`kb` cases drive it.
 
 **A joined step.** A task's declared entry and the affected steps run as one call are recorded as
 one step named `joined_step_name()` of the entry and each affected step's name, separated by
@@ -5016,6 +5025,11 @@ the setting leaves out is weighed step by step as each arm proposed it, and the 
 taken over the steps before the join, so the same two lists are one identity whichever way they
 ran; `repeat_plan` measures a joined step when any entry it carries grades a left-out path. The
 `jn` cases drive the run, the repeat and the base.
+A recorded base run is kept on the red task's record (`_evidence_io.keep_base`, its outcome in
+the answer's `keptOn`), and a red whose every red step a recorded or kept run of its commit already
+measured (`_evidence_io.base_unmeasured`) is answered from that run with nothing run or recorded,
+the run named under `kept` (`kept_base_answer`); **`--kept-only`** asks for that answer alone and
+needs no `--tree`, refusing where nothing is kept. `kbg1` drives it.
 `bc1`-`bc4` and `be1`-`be5` drive the comparison; the `bod` cases the derived step's base; the
 drive's `bm`, `bdr` and `bt` cases drive `--base-of`.
 
@@ -5398,8 +5412,14 @@ inherits that red until it lands. That run is `_evidence_io.base_run`'s: its tes
 clean (`tested_tree_clean`), so a task gate red on its own uncommitted work is not one, and it is
 no ready task's own run (`red_at_base`); with none recorded nothing is reordered. It is a run of
 the ready tasks' own gates, and only those steps' suites are read (`gate_step_names`) - the filter
-`run-test-gate.base_red` puts on the same question. `bb3` and `bb5` drive it. A red task gate
-whose reading has no comparable base run (`no-base`, `not-knowable`) has its base measured once
+`run-test-gate.base_red` puts on the same question. `bb3` and `bb5` drive it. A base run is
+needed only when a red could predate the task (`base_need`, the table above `OWN_RED_WHY`): none is
+started for a red whose every failing suite is a file the task's `tests.add` created, absent at
+the base commit (`own_red`), nor for one whose every red step a recorded or kept run of that
+commit measured (`_evidence_io.base_unmeasured`) - a reading taken before that run is read again
+through `run-test-gate.py --base-of --kept-only` (`kept_reading`) - and the decision names which
+(`NOT_MEASURED_KEY`). `bn1`-`bn3` drive it. A red task gate
+whose reading has no comparable base run (`no-base`, `not-knowable`) otherwise has its base measured once
 per start (`base_reading_for`, `measure_base`): `run-test-gate.py --base-of` over the red run, in a
 detached tree at the red run's own recorded head - never at the current HEAD - built outside the
 repository and removed after (`remove_base_tree`, through `_worktrees.tree_unsettled`). The identity
@@ -5410,7 +5430,18 @@ is measured, and a HEAD that moved anything else, or that git cannot compare, is
 (`brc1`, `brc2`, `brc5`). Where it runs is `gate_in_background`'s answer over the red steps:
 past the foreground bound, unmeasured, or under `auto` it is `dispatch-base`, run in the background
 by `drive-phase.py base-run` with no bound, which writes only its launch's own record, and read
-back off the start's mark that record is folded into (`base_mark`, `base_gate`, `wait-base`). The
+back off the start's mark that record is folded into (`base_mark`, `base_gate`). It is NOT
+WAITED FOR: its rule (`BASE_BESIDE_RULE`) has the next `next` called at once, which reads the red
+back and decides it beside the running base - `gate-red-writer` where a session can be resumed,
+else `gate-red` - naming the base as still running (`BESIDE_WHY`), and marks the mark `beside` so
+`base_gate` never reads that red back again; a later red of the start waits on it (`wait-base`),
+and is read against it once it is kept. A decision taken beside it and still unanswered when it
+ends is dropped and taken again over what it measured (`beside_ended`, `rejoin_base`); one
+answered is applied: a `resume` sends the writer, which is not interrupted when the base ends,
+and the red its round leaves is read against the kept base - found red at base too it is
+`gate-red-base`, whose reason counts the rounds resumed beside the base (`resumed_beside`,
+`RESUMED_BESIDE_WHY`); a resume spends no attempt. `nh1`-`nh3` and `bq1` drive it. A base measured under the bound still runs
+inside `next` and decides before any round. The
 drive's state file has one writer, `next`, and every write of it or of a run's record replaces the
 file whole (`write_json_atomic`), so neither a `next` running beside the base run nor a write cut
 half-way loses the reading; measured under the bound it runs inside `next`, held to `BASE_MEASURE_SECONDS`, and a

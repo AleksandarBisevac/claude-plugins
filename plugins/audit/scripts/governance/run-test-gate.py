@@ -582,17 +582,9 @@ CASES_CUT = "the rest are not carried"
 
 
 def _base_step(base_steps, step):
-    """The base run's step answering for `step`: the same name and, where both
-    carry the command verbatim, the same command - a renamed command is another
-    check, whatever its key."""
-    for st in base_steps or []:
-        if not isinstance(st, dict) or st.get("name") != step.get("name"):
-            continue
-        if st.get("command") and step.get("command") \
-                and str(st["command"]) != str(step["command"]):
-            continue
-        return st
-    return None
+    """`_evidence_io.base_step`: the base run's step answering for `step`,
+    the one rule `base_unmeasured` reads a measured step by too."""
+    return _ev.base_step(base_steps, step)
 
 
 def _case_key(line):
@@ -800,13 +792,7 @@ def base_red(steps, head, task_id, rows):
         return out
     # A joined step's affected suites find a base the way a derived step's do,
     # and its declared entry is asked for by the entry's own name.
-    suites = [suite for st in red if _ev.step_parts(st.get("name"))[1]
-              for suite in _ev.named_failing_suites([st])]
-    names = [st.get("name") for st in red]
-    names += [head_of for head_of, parts in
-              (_ev.step_parts(st.get("name")) for st in red)
-              if head_of is not None and parts and head_of not in names]
-    base = _ev.base_run(rows, head, [task_id], names, suites=suites)
+    base = _ev.base_row_for(red, head, task_id, rows)
     if base is None:
         out["basis"] = ("no run of this gate is recorded at base %s on a clean "
                         "tree, so whether the base is red too is not known"
@@ -5828,7 +5814,11 @@ def _write_own_log(manifest_path, project_dir, step_text):
 # which no pointer is written for and no subject's evidence is read from. What it
 # answers is the run read against its base again (`base_reading`), which a later
 # run of the same task at that head finds too; a red step that cannot be run
-# again is named in the answer's `notRun` with its reason.
+# again is named in the answer's `notRun` with its reason. A recorded base run
+# is also kept on the red task's record in the plan (`_evidence_io.keep_base`),
+# and a red whose every red step a kept or recorded run of its commit already
+# measured is answered from that run with nothing run (`kept_base_answer`) -
+# `--kept-only` asks for that answer alone, and needs no tree.
 def base_of_refusal(args, tree):
     """Why `--base-of` refuses these arguments, or None."""
     if args.task is not None:
@@ -5839,7 +5829,7 @@ def base_of_refusal(args, tree):
                         ("--also", args.also), ("--reconcile", args.reconcile)):
         if given:
             return "--base-of is refused with %s" % (flag,)
-    if tree is None:
+    if tree is None and not getattr(args, "kept_only", False):
         return ("--base-of needs --tree, a checkout of the base commit: the "
                 "project's own tree holds the task's work, so a run there is "
                 "not a run of the base")
@@ -6025,6 +6015,16 @@ def _run_base_of(project, args, manifest, tree, out=print):
         out("[run-test-gate] --base-of: %s" % (_ev.run_not_found(
             project, read, args.manifest, args.base_of),))
         return E_ASK
+    kept, unmeasured = kept_base_answer(args.base_of, row, read["rows"])
+    if kept is not None:
+        return _say_base_answer(kept, args, [], "read from the base run kept "
+                                "for this commit and step set", out)
+    if args.kept_only:
+        out("[run-test-gate] --base-of %s --kept-only: no base run is kept for "
+            "its commit and step set (%s), so nothing is answered and nothing "
+            "is run" % (args.base_of, "; ".join(unmeasured or [])
+                        or "nothing in it is red"))
+        return E_ASK
     commands, published, left = base_commands(
         row, manifest, row.get("phaseId") or args.phase, tree)
     if not commands:
@@ -6065,23 +6065,69 @@ def _run_base_of(project, args, manifest, tree, out=print):
                            lambda: read["rows"] + [measured])
     answer = {"baseOf": args.base_of, "recorded": base_row is not None,
               "runId": base_row.get("runId") if base_row else None,
+              "kept": None,
               "head": (res.get("testedState") or {}).get("head"),
               "status": res.get("status"), "notRun": left,
               "steps": [{"name": st.get("name"), "exit": st.get("exit")}
                         for st in res.get("steps") or []],
               _ev.BASE_RED_KEY: reading}
+    if base_row is not None:
+        # KEPT WHERE THE RED'S READING LIVES, so the next red at this commit
+        # reads it from the plan with nothing measured again (`keep_base`).
+        kept_on = _ev.keep_base(
+            project, args.manifest, row, base_row,
+            session_id=os.environ.get("CLAUDE_CODE_SESSION_ID") or None)
+        answer["keptOn"] = {"written": kept_on["written"],
+                            "reason": kept_on["reason"]}
     code = E_UNRECORDED if args.record and base_row is None else E_OK
+    _say_base_answer(answer, args, left, "%d red step(s) measured in %s"
+                     % (len(commands), tree), out)
+    return code
+
+
+def kept_base_answer(run_id, row, rows):
+    """`(answer, unmeasured)` - `--base-of`'s answer for the recorded red run
+    `row` when the runs `rows` already hold a clean-tree run of every red step
+    at its commit (`_evidence_io.base_unmeasured`), read against it with
+    nothing run and nothing recorded; else `(None, the red steps no run
+    measured)`, None for those when nothing in `row` is red.
+
+    ONE MEASUREMENT PER COMMIT AND STEP SET: the base of a red is the same
+    clean tree whichever red of that commit asks, so a run of the same steps
+    there measures nothing new. A red step set the kept runs do not cover is
+    measured, all of it, as a first red is."""
+    head = (row.get("testedState") or {}).get("head")
+    missing = _ev.base_unmeasured(row.get("steps"), head, row.get("taskId"),
+                                  rows)
+    if missing is None or missing:
+        return None, missing
+    reading = base_reading(row, row.get("taskId"), lambda: rows)
+    base = (reading or {}).get("run")
+    return {"baseOf": run_id, "recorded": False, "runId": base, "kept": base,
+            "head": head, "status": (_ev.row_by_run(rows, base) or {}).get(
+                "status"),
+            "notRun": [], "steps": [], _ev.BASE_RED_KEY: reading}, []
+
+
+def _say_base_answer(answer, args, left, how, out):
+    """Print `--base-of`'s answer: whole under `--json`, else its lines -
+    `how` it was reached, each red step not run, the reading. E_OK; a caller
+    whose exit says more returns its own."""
     if args.as_json:
         out(json.dumps(answer, indent=2, sort_keys=True))
-        return code
-    out("[run-test-gate] base of %s: %d red step(s) measured at %s in %s"
-        % (args.base_of, len(commands), answer["head"], tree))
+        return E_OK
+    reading = answer.get(_ev.BASE_RED_KEY)
+    out("[run-test-gate] base of %s at %s: %s" % (args.base_of, answer["head"],
+                                                 how))
     for name in left:
         out("  not run: %s (%s)" % (name["name"], name["reason"]))
     for line in base_red_lines(reading):
         out(line)
+    kept_on = answer.get("keptOn")
+    if isinstance(kept_on, dict) and not kept_on.get("written"):
+        out("  kept on no record: %s" % (kept_on.get("reason"),))
     out("  verdict: %s" % ((reading or {}).get("verdict"),))
-    return code
+    return E_OK
 
 
 # --- the third place: --full, against the whole product -----------------------
@@ -6562,6 +6608,10 @@ def main(argv, out=print):
     p.add_argument("--tree", dest="tree", default=None, metavar="DIR")
     # THE BASE OF A RECORDED TASK RUN, measured in `--tree` (`_run_base_of`).
     p.add_argument("--base-of", dest="base_of", default=None, metavar="RUN_ID")
+    p.add_argument("--kept-only", dest="kept_only", action="store_true",
+                   help="with --base-of: answer only from a base run already "
+                        "kept for that commit and step set, and run nothing "
+                        "(no --tree needed); refused when none is kept")
     _claude_home.attach_usage_hint(p)
     try:
         args = p.parse_args(argv)
@@ -6623,6 +6673,10 @@ def main(argv, out=print):
         manifest = _mio.load_manifest(args.manifest)
     except Exception as exc:
         out("[run-test-gate] cannot read the manifest: %s" % exc)
+        return E_ASK
+    if args.kept_only and args.base_of is None:
+        out("[run-test-gate] --kept-only answers a --base-of question and "
+            "is refused without one")
         return E_ASK
     if args.base_of is not None:
         return _run_base_of(project, args, manifest, tree, out=out)
