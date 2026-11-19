@@ -5608,12 +5608,23 @@ def drive_without_model_enabled(cfg):
 # inventing a window.
 CALL_START_FILE = "call-start-%s.json"
 # The key a per-call record keeps the call's `tool_use_id` under: the
-# call-start record here, and journal-writes.py's edit-lane slot.
+# call-start record here, a call's reading below, and journal-writes.py's
+# edit-lane slot.
 CALL_ID_KEY = "toolUseId"
-# The key the call-start record keeps the journal switch under, as the Pre
-# pass that wrote the record read it: the one reading of "the switch before
-# this call" journal-writes.py trusts, because the record names its call.
+# The key a call's reading keeps the journal switch under, as the Pre pass
+# that wrote it read it: the one reading of "the switch before this call"
+# journal-writes.py trusts, because the reading is kept under the call's id.
 CALL_JOURNAL_KEY = "journalOn"
+# A call's reading: one file per call, named from the writer key and a digest
+# of the call's `tool_use_id`. Per call and not per writer, because a writer's
+# second call in flight would replace a per-writer record and the first call's
+# Post would find another call's reading. It is a pre-image the journal hook
+# writes before a call and its Post removes, so it carries the pre-image
+# slots' prefix - which is what puts a reading whose Post never ran under
+# detect-plan-skip.py's state sweep (its `_GC_PREFIXES`) - and a digest of
+# `CALL_READING_HEX` characters, which no slot's (12) can equal.
+CALL_READING_FILE = "journal-preimage-%s.%s.json"
+CALL_READING_HEX = 20
 WINDOW_SLACK_SECONDS = 2
 _SAFE_KEY = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -5637,7 +5648,7 @@ def _call_start_path(root, cfg, data):
                         CALL_START_FILE % writer_key(data))
 
 
-def record_call_start(root, cfg, data, now=None, call=None, journal_on=None):
+def record_call_start(root, cfg, data, now=None, call=None):
     """PreToolUse: note when this writer's call began. Returns the file path, or
     None when it could not be written - never raises, because a hook that
     cannot note a start has lost only the window, not the tool call.
@@ -5645,17 +5656,48 @@ def record_call_start(root, cfg, data, now=None, call=None, journal_on=None):
     `call` is the call's `tool_use_id`, kept under `CALL_ID_KEY` in the same
     record and the same write, so `call_start(..., call=)` can tell this
     call's start from one an earlier call's Pre left. A record written in two
-    steps would, between them, be a start naming no call. `journal_on`, when
-    given, is the journal switch as this Pre read it, kept under
-    `CALL_JOURNAL_KEY` in that same write and read back by `call_journal_on`."""
+    steps would, between them, be a start naming no call. The record is one
+    per writer and is guard-bash-writes' as well; the journal switch as the
+    call read it is not kept here but per call (`record_call_reading`)."""
     try:
         path = _call_start_path(root, cfg, data)
         ensure_local_dir(os.path.dirname(path))
         held = {"at": time.time() if now is None else now}
         if call is not None:
             held[CALL_ID_KEY] = call
-        if journal_on is not None:
-            held[CALL_JOURNAL_KEY] = bool(journal_on)
+        atomic_write_text(path, json.dumps(held))
+        return path
+    except Exception:
+        return None
+
+
+def _call_reading_path(root, cfg, data, call):
+    """Where the call `call` of this writer keeps its reading. The id comes
+    from a payload, so it reaches the name only through a digest: no id can
+    name a path outside the state directory, or another call's file."""
+    import hashlib
+    digest = hashlib.sha256(("%s" % (call,)).encode("utf-8")).hexdigest()
+    return os.path.join(str(root), str(cfg.get("stateDir") or DEFAULTS["stateDir"]),
+                        CALL_READING_FILE % (writer_key(data),
+                                             digest[:CALL_READING_HEX]))
+
+
+def record_call_reading(root, cfg, data, call, on, preimage=None):
+    """PreToolUse: keep this call's reading of the journal switch - with
+    `preimage`, the file the switch lives in as this pass read it - under the
+    call's own id. Stored only when `on` is true and the payload names a call:
+    with the switch off, no reading is the reading. One file per call, so a
+    second call of the same writer, or two passes before at the same moment,
+    replace nothing. Returns the path, or None when nothing was written;
+    never raises."""
+    if call is None or not on:
+        return None
+    try:
+        path = _call_reading_path(root, cfg, data, call)
+        ensure_local_dir(os.path.dirname(path))
+        held = dict(preimage or {})
+        held[CALL_ID_KEY] = call
+        held[CALL_JOURNAL_KEY] = True
         atomic_write_text(path, json.dumps(held))
         return path
     except Exception:
@@ -5677,16 +5719,42 @@ def _call_record(root, cfg, data, call=None):
     return held
 
 
-def call_journal_on(root, cfg, data, call):
-    """Did the Pre pass of the call `call` - this writer's, by its
-    `tool_use_id` - read the journal switch as on? True only when the record
-    names that call and holds the reading as True. A `call` of None, no
-    record, another call's record, or one written without the reading are
-    all False: a reading no Pre of this call took is not this call's."""
+def call_reading(root, cfg, data, call):
+    """The reading the Pre pass of the call `call` - this writer's, by its
+    `tool_use_id` - kept, as an object, or None: no id, no reading (the
+    switch read off, or no Pre ran), or a file that is not an object naming
+    that call with the switch on. Never raises."""
     if call is None:
-        return False
-    held = _call_record(root, cfg, data, call=call)
-    return held is not None and held.get(CALL_JOURNAL_KEY) is True
+        return None
+    try:
+        with open(_call_reading_path(root, cfg, data, call), "r",
+                  encoding="utf-8") as fh:
+            held = json.load(fh)
+    except Exception:
+        return None
+    if (not isinstance(held, dict) or held.get(CALL_ID_KEY) != call
+            or held.get(CALL_JOURNAL_KEY) is not True):
+        return None
+    return held
+
+
+def call_journal_on(root, cfg, data, call):
+    """Did the Pre pass of the call `call` read the journal switch as on?
+    True only when that call's own reading says so; a reading no Pre of this
+    call took is not this call's."""
+    return call_reading(root, cfg, data, call) is not None
+
+
+def drop_call_reading(root, cfg, data, call):
+    """PostToolUse: remove this call's reading - its own, by its id, and no
+    other call's. A missing one is nothing to do; never raises. A reading
+    whose Post never runs is left to detect-plan-skip.py's state sweep."""
+    if call is None:
+        return
+    try:
+        os.remove(_call_reading_path(root, cfg, data, call))
+    except OSError:
+        pass
 
 
 def call_start(root, cfg, data, call=None):

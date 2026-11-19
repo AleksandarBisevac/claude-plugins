@@ -1422,7 +1422,8 @@
       "SG1.48-ukq",
       "SG1.49-ukq",
       "SG1.50-ukq",
-      "SG1.51-ukq"
+      "SG1.51-ukq",
+      "SG1.52-ukq"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2107,7 +2108,8 @@
       "SG1.48-ukq",
       "SG1.49-ukq",
       "SG1.50-ukq",
-      "SG1.51-ukq"
+      "SG1.51-ukq",
+      "SG1.52-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2224,7 +2226,8 @@
       "SG1.47-ukq",
       "SG1.48-ukq",
       "SG1.49-ukq",
-      "SG1.51-ukq"
+      "SG1.51-ukq",
+      "SG1.52-ukq"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -2631,7 +2634,8 @@
       "SG1.48-ukq",
       "SG1.49-ukq",
       "SG1.50-ukq",
-      "SG1.51-ukq"
+      "SG1.51-ukq",
+      "SG1.52-ukq"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -3272,7 +3276,8 @@
       "SG1.46-ukq",
       "SG1.48-ukq",
       "SG1.49-ukq",
-      "SG1.51-ukq"
+      "SG1.51-ukq",
+      "SG1.52-ukq"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -12587,7 +12592,8 @@
       "SG1.46-ukq",
       "SG1.48-ukq",
       "SG1.49-ukq",
-      "SG1.51-ukq"
+      "SG1.51-ukq",
+      "SG1.52-ukq"
     ],
     "tests/test__config_rules.py": [
       "P131.1",
@@ -13475,7 +13481,8 @@
       "SG1.34-ukq",
       "SG1.43-ukq",
       "SG1.46-ukq",
-      "SG1.48-ukq"
+      "SG1.48-ukq",
+      "SG1.52-ukq"
     ],
     "tests/test_guard_history_rewrite.py": [
       "P131.1",
@@ -13537,7 +13544,8 @@
       "SG1.47-ukq",
       "SG1.48-ukq",
       "SG1.49-ukq",
-      "SG1.51-ukq"
+      "SG1.51-ukq",
+      "SG1.52-ukq"
     ],
     "tests/test_manage_worktrees.py": [
       "P131.1",

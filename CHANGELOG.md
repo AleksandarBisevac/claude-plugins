@@ -483,8 +483,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   reading, so after the owner switches the journal off by hand or in the panel, another session
   switches it off, or a config is created switched off by hand, a later command, MCP read or
   edit-tool write - by the session or a subagent - leaves no row, and the trail check still
-  warns about a hand edit an edit tool later rewrote. Two calls in flight across the flip each
-  leave theirs. A payload naming no call id marks nothing.
+  warns about a hand edit an edit tool later rewrote. Each call in whose window the switch went
+  off leaves its row, two calls of one writer included: the reading, with the config as the
+  call's pass before found it, is kept per call under its tool call id, so a second call of the
+  same writer in flight replaces neither, and the flipping call's row stands
+  whatever the order of the other call's passes, by a command, an MCP tool or an edit tool
+  (`sn16`, `sn17`, `sn21`); each call open across the flip leaves one (`sn18`). A reading whose
+  pass after never runs is removed by the state directory's existing sweep. A payload naming no
+  call id marks nothing. Whose row it is when no tool call made the switch-off: by hand or in the
+  panel between calls there is no row and the trail check does not see it; one that lands while
+  a call is open is recorded under that call - the row says in whose window the switch went
+  off, not whose hand did it (`sn20`); and a switch-off by a call whose pass after never runs
+  leaves no row (`sn22`).
 
 ## [3.8.0]
 

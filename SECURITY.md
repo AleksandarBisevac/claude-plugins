@@ -1662,11 +1662,25 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    (`sn14`) - and a payload naming no call id, or a call whose pass before never
    ran, marks nothing (`sn10`). So a call
    that did not switch it off leaves no row after the owner, the panel, another
-   session or a config created switched off by hand did, and the trail check
-   still warns about the hand edit (`sn1`-`sn7`); a write made with the journal
-   already off leaves none (`cq5`); and two calls in flight across the flip each
-   leave theirs, the one that cannot tell whose write it was naming no session
-   (`sn9`). The row is appended into the project's own trail with that switch,
+   session or a config created switched off by hand did (`sn1`-`sn7`), and the
+   trail check still warns about a hand edit an edit tool later rewrote
+   (`sn3`); a write made with the journal already off leaves none (`cq5`).
+   Every call in whose window the switch went off leaves its row, two calls of
+   one writer included: each keeps its reading, and the config as its pass
+   before found it, under its own tool call id, so the other call replaces
+   neither. The flipping call's row stands whatever the order of the other
+   call's passes, by a command, an MCP tool or an edit tool (`sn16`, `sn17`,
+   `sn21`); each call open across the flip leaves one (`sn18`, `sn21`); a call
+   of that writer that began after the flip, or whose window closed before the
+   flipping call began, leaves none (`sn19`); and of two writers' calls the one
+   that cannot tell whose write it was names no session (`sn9`). Whose row it
+   is when no tool call made the switch-off: by hand or in the panel between
+   calls, there is no row and the trail check does not see it (`sn20` by
+   hand, the trail check included; `sn4` in the panel);
+   one that lands while a call is open is recorded under that call, as any
+   write the sweep sees in a call's window is - the row says in whose window
+   the switch went off, not whose hand did it (`sn20`); and a switch-off by a
+   call whose pass after never runs leaves no row (`sn22`). The row is appended into the project's own trail with that switch,
    and only for that trail's own config: a linked worktree's config switched off
    by the same command leaves nothing in that worktree's trail (`sn13`), an
    edit-tool write of a nested worktree's config owes the project's trail no

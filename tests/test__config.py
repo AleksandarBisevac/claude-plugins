@@ -2833,38 +2833,137 @@ def _cases(check):
               "is a boolean, reads as no start for the guard and for a call, "
               "and never raises: %r" % (cw_bad,),
               cw_bad == [(True, None)] * 10)
-        # The journal switch as the call's own Pre read it rides in the same
-        # one write, and answers only for that call: another call's record, a
-        # record written without the reading, or no call id at all is no
-        # reading of this call's. The guard's reading of the start is the
-        # moment, as before, whatever else the record carries.
-        cw_writes[:] = []
-        M.atomic_write_text = cw_counting
-        try:
-            M.record_call_start(cw_root, cw_cfg, cw_sub, now=6000.0,
-                                call="toolu_on", journal_on=True)
-        finally:
-            M.atomic_write_text = cw_real_write
-        cw_on = (M.call_journal_on(cw_root, cw_cfg, cw_sub, "toolu_on"),
-                 M.call_journal_on(cw_root, cw_cfg, cw_sub, "toolu_other"),
-                 M.call_journal_on(cw_root, cw_cfg, cw_sub, None),
-                 M.call_journal_on(cw_root, cw_cfg, cw_main, "toolu_on"),
-                 M.call_start(cw_root, cw_cfg, cw_sub),
-                 M.call_start(cw_root, cw_cfg, cw_sub, call="toolu_on"))
-        M.record_call_start(cw_root, cw_cfg, cw_sub, now=6001.0,
-                            call="toolu_off", journal_on=False)
-        M.record_call_start(cw_root, cw_cfg, cw_main, now=6002.0,
-                            call="toolu_bare")
-        cw_off = (M.call_journal_on(cw_root, cw_cfg, cw_sub, "toolu_off"),
-                  M.call_journal_on(cw_root, cw_cfg, cw_main, "toolu_bare"))
-        check("cw7 the switch the call's own Pre read rides in its one start "
-              "write and is read back as on only for that call: (one write, "
-              "on for its call, other call, no call, other writer, the "
-              "moment twice) %r, (read off, recorded without a reading) %r"
-              % ((len(cw_writes),) + cw_on, cw_off),
-              len(cw_writes) == 1
-              and cw_on == (True, False, False, False, 6000.0, 6000.0)
-              and cw_off == (False, False))
+        # The per-call reading's functions are asked through `attempt`, so a
+        # missing one is the failure of the case that asks, not an escape
+        # that takes the rest of the suite with it.
+        def cr(name, *args):
+            ok, got = _harness.attempt(lambda: getattr(M, name)(*args))
+            return got if ok else "raised %s" % (got,)
+
+        def cr_sha(reading):
+            return reading.get("sha256") if isinstance(reading, dict) else reading
+
+        # The start record is the guard's, and holds the moment and the id
+        # only: a call's reading of the journal switch is not kept in it (it
+        # is kept per call, `record_call_reading`), so a record naming the
+        # call answers no switch question, and a reading answers whatever
+        # start record this writer's later calls leave.
+        M.record_call_start(cw_root, cw_cfg, cw_sub, now=6000.0, call="toolu_on")
+        with open(M._call_start_path(cw_root, cw_cfg, cw_sub), "r",
+                  encoding="utf-8") as fh:
+            cw_rec = json.load(fh)
+        cw_bare = cr("call_journal_on", cw_root, cw_cfg, cw_sub, "toolu_on")
+        cr("record_call_reading", cw_root, cw_cfg, cw_sub, "toolu_on", True)
+        M.record_call_start(cw_root, cw_cfg, cw_sub, now=6001.0, call="toolu_2")
+        cw_kept = (cr("call_journal_on", cw_root, cw_cfg, cw_sub, "toolu_on"),
+                   M.call_start(cw_root, cw_cfg, cw_sub),
+                   M.call_start(cw_root, cw_cfg, cw_sub, call="toolu_on"))
+        cr("drop_call_reading", cw_root, cw_cfg, cw_sub, "toolu_on")
+        check("cw7 the start record holds the moment and the call's id and no "
+              "reading of the journal switch, which is read from the call's own "
+              "reading alone and outlives a later start record: (record, read "
+              "with no reading, read after the next call's start, the moment "
+              "twice) %r" % ((cw_rec, cw_bare) + cw_kept,),
+              cw_rec == {"at": 6000.0, M.CALL_ID_KEY: "toolu_on"}
+              and cw_bare is False and cw_kept == (True, 6001.0, None))
+
+        # (cr) a call's reading of the switch, kept per call. Two calls of one
+        # writer; the pre-images differ, so a reading replaced by the other
+        # call's - or read under the other's id - tells itself apart.
+        cr_state = os.path.join(cw_root, str(cw_cfg["stateDir"]))
+        cr_a = {"path": M.CONFIG_REL, "sha256": "sha256:aaa", "content": "{}"}
+        cr_b = {"path": M.CONFIG_REL, "sha256": "sha256:bbb", "content": "{ }"}
+        cr_pa = cr("record_call_reading", cw_root, cw_cfg, cw_main, "toolu_A",
+                   True, cr_a)
+        cr_pb = cr("record_call_reading", cw_root, cw_cfg, cw_main, "toolu_B",
+                   True, cr_b)
+        cr_ra = cr("call_reading", cw_root, cw_cfg, cw_main, "toolu_A")
+        cr_rb = cr("call_reading", cw_root, cw_cfg, cw_main, "toolu_B")
+        cr_on = (cr("call_journal_on", cw_root, cw_cfg, cw_main, "toolu_A"),
+                 cr("call_journal_on", cw_root, cw_cfg, cw_main, "toolu_B"),
+                 cr("call_journal_on", cw_root, cw_cfg, cw_main, "toolu_C"),
+                 cr("call_journal_on", cw_root, cw_cfg, cw_main, None),
+                 cr("call_journal_on", cw_root, cw_cfg, cw_sub, "toolu_A"))
+        check("cr1 two calls of one writer each keep their own reading: neither "
+              "replaces the other, each is read back under its own id with its "
+              "own pre-image, and no other id, no id, or another writer's same "
+              "id reads as on - (paths apart, A, B, on for A/B/C/None/other "
+              "writer) %r"
+              % ((cr_pa != cr_pb, cr_sha(cr_ra), cr_sha(cr_rb)) + cr_on,),
+              cr_pa and cr_pb and cr_pa != cr_pb
+              and cr_sha(cr_ra) == "sha256:aaa" and cr_sha(cr_rb) == "sha256:bbb"
+              and cr_on == (True, True, False, False, False))
+        cr_before = sorted(os.listdir(cr_state))
+        cr_off = cr("record_call_reading", cw_root, cw_cfg, cw_main,
+                    "toolu_off", False, cr_a)
+        cr_after = sorted(os.listdir(cr_state))
+        check("cr2 with the switch read off no reading is stored - no file is "
+              "added to the state directory and the call reads as off: "
+              "(returned, files added, on) %r"
+              % ((cr_off, sorted(set(cr_after) - set(cr_before)),
+                  cr("call_journal_on", cw_root, cw_cfg, cw_main, "toolu_off")),),
+              cr_off is None and cr_after == cr_before
+              and cr("call_journal_on", cw_root, cw_cfg, cw_main, "toolu_off")
+              is False)
+        cr("drop_call_reading", cw_root, cw_cfg, cw_main, "toolu_A")
+        cr_dropped = (os.path.exists(cr_pa),
+                      cr("call_journal_on", cw_root, cw_cfg, cw_main, "toolu_A"),
+                      cr("call_journal_on", cw_root, cw_cfg, cw_main, "toolu_B"))
+        check("cr3 a reading is removed by its own call's pass after and by no "
+              "other: (A's file left, A on, B on) %r" % (cr_dropped,),
+              cr_dropped == (False, False, True))
+        # Passes before of one writer at the same moment: every reading is
+        # kept. A read-modify-write of one shared file loses some of them.
+        import threading
+        cr_ids = ["toolu_t%02d" % n for n in range(24)]
+        cr_threads = [threading.Thread(
+            target=cr,
+            args=("record_call_reading", cw_root, cw_cfg, cw_sub, cid, True,
+                  {"path": M.CONFIG_REL, "sha256": "sha256:" + cid}))
+            for cid in cr_ids]
+        for t in cr_threads:
+            t.start()
+        for t in cr_threads:
+            t.join()
+        cr_lost = [cid for cid in cr_ids
+                   if cr_sha(cr("call_reading", cw_root, cw_cfg, cw_sub, cid))
+                   != "sha256:" + cid]
+        check("cr4 passes before of one writer recording at the same moment "
+              "lose no reading: lost %r of %d" % (cr_lost, len(cr_ids)),
+              cr_lost == [])
+        # The name is made from the call id through a digest, so an id from a
+        # payload cannot choose a path; and it is a name the state
+        # directory's existing sweep removes once it is older than that
+        # sweep's bound - the bounded rule for a reading whose call never
+        # had its pass after - and keeps while it is younger.
+        import importlib.util
+        cr_spec = importlib.util.spec_from_file_location(
+            "cr_detect_plan_skip",
+            os.path.join(_output.HOOKS_DIR, "detect-plan-skip.py"))
+        cr_dps = importlib.util.module_from_spec(cr_spec)
+        cr_spec.loader.exec_module(cr_dps)
+        cr_evil = cr("record_call_reading", cw_root, cw_cfg, cw_main,
+                     "../../escape", True, cr_a)
+        cr_left = cr("record_call_reading", cw_root, cw_cfg, cw_main,
+                     "toolu_left", True, cr_a)
+        cr_name = os.path.basename(cr_left)
+        cr_now = time.time()
+        cr_dps._gc_state(Path(cr_state), now=cr_now + 3600)
+        cr_young = os.path.exists(cr_left)
+        cr_dps._gc_state(Path(cr_state), now=cr_now + cr_dps._GC_MAX_AGE + 60)
+        cr_old = os.path.exists(cr_left)
+        check("cr5 a reading's name is a digest of its call id under the "
+              "state directory - an id spelling a path stays inside it - and "
+              "the state sweep's prefix covers it: a leftover is kept while "
+              "younger than that sweep's bound and removed once older - "
+              "(name, inside, swept prefix, kept young, left old) %r"
+              % ((cr_name, os.path.dirname(cr_evil) == cr_state,
+                  cr_name.startswith(cr_dps._GC_PREFIXES), cr_young, cr_old),),
+              os.path.dirname(cr_evil) == cr_state
+              and "escape" not in os.path.basename(cr_evil)
+              and "toolu" not in cr_name
+              and cr_name.startswith(cr_dps._GC_PREFIXES)
+              and cr_young is True and cr_old is False)
         cw_file = os.path.join(cw_root, "f.txt")
         with open(cw_file, "w", encoding="utf-8") as fh:
             fh.write("x")

@@ -1076,31 +1076,52 @@ any move, so a verb's own row for that state is not repeated (`cq4`).
 **The last will reaches the trail.** `_journal_io._append` refuses every row while the config
 it is handed says the journal is off, and the hook hands it the config loaded after the call,
 so the row for the write that switched the journal off was computed and refused. The Post pass
-marks that row (`_ON_BEFORE`) only when THIS call's own Pre read the switch as on — on the
-sweep lane, the reading the Pre keeps beside the call's `tool_use_id` in the call-start record
-(`_config.record_call_start(..., journal_on=)`, read back by `_config.call_journal_on`); on
-the edit lane, a slot naming the call (`_own_slot`), which that Pre writes only with the switch
-on — and the Post reads it off. A slot is not that reading: the Pre writes none while the switch
-is off, so a writer's slot is whatever its last call while on left, and reading it as "the
-switch before the call" credited the next call of every writer — the session's, a subagent's,
-another session's, an MCP read — with a flip the owner, the panel or a peer had made, and gave
-the trail check a row that silenced its warning about the hand edit (`sn1`-`sn7`); a slot a
-denied call's Pre left names that call, not this one (`sn14`). With the
-switch off after the call and no such reading, the sweep reads no slot and writes none and the
-edit lane returns before its refresh; a payload naming no call id, or a call whose Pre never
-ran, marks nothing (`sn10`). While the switch is off the Pre writes only the call-start record
-it writes for every swept call whatever the switch says, since `guard-bash-writes` reads its
-moment, and the reading `off` rides in that same write: no file is read, no slot written, and
-the Post pass that follows reads less than before. `_append_rows` hands a marked row over with
+marks that row (`_ON_BEFORE`) only when THIS call's own Pre read the switch as on, and the Post
+reads it off. That reading is kept PER CALL: a Pre that reads the switch on — a swept call's,
+or an edit tool's write of the config — keeps it with the config as it found it
+(`_keep_reading` → `_config.record_call_reading`), in a file of its own named from the writer
+key and a digest of the call's `tool_use_id`, so no payload's id chooses a path; the Post reads
+its own (`_own_reading` → `_config.call_reading`) and removes it (`_config.drop_call_reading`)
+whatever it found. Per call and not per writer, because a writer's second call in flight would
+replace a per-writer record — the call-start record, or the slot, which is one per path — and
+the first call's Post would find another call's reading and mark nothing (`sn16`, `sn17`,
+`sn21`), or a pre-image another Post had already moved past the flip and leave one row where
+two calls were open across it (`sn18`); `cr1`-`cr4` in `tests/test__config.py` hold the
+storage. With the switch
+off now, the config is judged against that pre-image rather than the writer's slot. A slot is
+not the reading either: the Pre writes none while the switch is off, so a writer's slot is
+whatever its last call while on left, and reading it as "the switch before the call" credited
+the next call of every writer — the session's, a subagent's, another session's, an MCP read —
+with a flip the owner, the panel or a peer had made, and gave the trail check a row that
+silenced its warning about the hand edit (`sn1`-`sn7`); a denied call's Pre left its reading
+under its own id, which no later call reads (`sn14`). With the switch off after the call and no
+such reading, the sweep reads no slot and writes none and the edit lane returns before its
+refresh; a payload naming no call id, or a call whose Pre never ran, marks nothing (`sn10`).
+While the switch is off the Pre writes only the call-start record it writes for every swept
+call whatever the switch says, since `guard-bash-writes` reads its moment — that record holds
+the moment and the call's id and no reading (`cw7`) — and keeps no reading: no file is read
+and no slot written. A reading whose Post never runs is left behind under its call's id, which
+no other call asks for; it carries the pre-image slots' `journal-preimage-` prefix, so
+`detect-plan-skip.py`'s state sweep (`_gc_state`, at each prompt) removes it once it is older
+than `_GC_MAX_AGE` (`cr5`), and an ordinary call pays nothing for that: no listing of the
+state directory on a tool call. What an ordinary call does pay, with the switch on: the swept
+Pre reads the config once more and writes one small file, and the Post removes it. Whose row it
+is when no tool call made the switch-off: by hand or in the panel between calls there is no
+row and the trail check does not see it (`sn20` by hand, the trail check included; `sn4` in
+the panel); one that lands while a call is open is
+that call's row, as any write the sweep sees in its window is — it says in whose window the
+switch went off, not whose hand did it (`sn20`); and a switch-off by a call whose Post never
+runs leaves no row (`sn22`). `_append_rows` hands a marked row over with
 `journal.enabled` as it stood then, only into the project's own trail and only for the trail
 tree's own config — a linked worktree's config switched off by the same command is not that
 switch (`sn13` reaches that check on the sweep lane), nor is a nested worktree's config an edit
 tool wrote while the project's switch went off (`sn15`, the edit lane's return above), nor
 another tree's config written while the project's journal is off (`sn11`, `cq7`) — and drops
 the mark. Two calls in flight
-across the flip each read the switch on before and owe their row, the one that cannot tell
-whose write it was naming no session (`sn9`). The slot follows the row, so the writer's next
-call does not owe it again (`cf5`, `cq6`, `sn8`); a write made with the switch already off
+across the flip, of two writers or of one, each read the switch on before and owe their row
+(`sn9`, `sn18`), the one that cannot tell whose write it was naming no session (`sn9`). The
+slot follows the row and the reading goes with its Post, so the writer's next call does not
+owe it again (`cf5`, `cq6`, `sn8`); a write made with the switch already off
 leaves none (`cq5`). The edit lane's rows keep their wording:
 an edit tool creating the config is recorded as `Write wrote …`, as it always has, or as the
 flip when it creates the config switched off.

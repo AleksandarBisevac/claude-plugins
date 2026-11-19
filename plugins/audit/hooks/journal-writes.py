@@ -452,7 +452,11 @@ def _write_slot(root, cfg, data, rel, call=None):
 # the Post's own id: a Pre that never ran - a hook timeout, a crash - leaves the
 # record of an earlier call, whose start says nothing about when this one began.
 # The sweep lane's record is `_config.record_call_start`'s, read back through
-# `_config.call_start`; the edit lane's is the slot its Pre wrote.
+# `_config.call_start`; the edit lane's is the slot its Pre wrote. Both of those
+# are one per writer (and the slot one per path), so a second call of the same
+# writer in flight replaces them. The journal switch as the call's Pre read it
+# is therefore kept per call, under its id (`_keep_reading`), and its Post reads
+# that and removes it.
 
 
 def _tool_use_id(data):
@@ -474,10 +478,10 @@ def _own_call_start(root, cfg, data):
 
 def _own_slot(pre, data):
     """Did this call's own edit-lane Pre write the slot `pre`? True only when
-    the slot names the Post's `tool_use_id`. That Pre writes a slot only with
-    the journal on, so a slot naming the call is also that call's reading of
-    the switch as on; a slot an earlier call, a Post's refresh or the sweep
-    lane left names no call or another one."""
+    the slot names the Post's `tool_use_id`; a slot an earlier call, a Post's
+    refresh or the sweep lane left names no call or another one. It dates the
+    call's start (`_slot_start`); it is not the call's reading of the switch,
+    which a second call of the same writer on the same path would replace."""
     call = _tool_use_id(data)
     return (call is not None and isinstance(pre, dict)
             and pre.get(_config.CALL_ID_KEY) == call)
@@ -492,12 +496,30 @@ def _slot_start(pre, data):
     return _config.ts_epoch(pre.get("ts"))
 
 
-def _own_switch_on(project, cfg, data):
-    """Did this call's own sweep-lane Pre read the journal switch as on? The
-    reading `_config.record_call_start` kept beside the call's id, asked by
-    that id: a payload naming none, a Pre that never ran and a record another
-    call left all answer False."""
-    return _config.call_journal_on(project, cfg, data, _tool_use_id(data))
+def _keep_reading(root, cfg, data, rel=_config.CONFIG_REL):
+    """Pre, with the switch read on: keep this call's reading of it, with the
+    config `rel` of the tree `root` as this pass found it - the pre-image the
+    call's own Post judges a switch-off against when the switch is off by
+    then. Kept per call (`_config.record_call_reading`), so a second call of
+    this writer in flight replaces neither the reading nor that pre-image,
+    where it would replace the writer's slot. Returns the path, or None."""
+    sha, text = _snapshot(os.path.join(str(root), rel))
+    return _config.record_call_reading(
+        root, cfg, data, _tool_use_id(data), True,
+        {"path": rel, "ts": _config.utc_stamp(), "sha256": sha, "content": text})
+
+
+def _own_reading(root, cfg, data):
+    """This call's own reading of the journal switch as on - the pre-image its
+    Pre kept under its id - or None: a payload naming no call, a Pre that read
+    the switch off or never ran, and a reading another call kept all answer
+    None."""
+    return _config.call_reading(root, cfg, data, _tool_use_id(data))
+
+
+def _drop_reading(root, cfg, data):
+    """Post: remove this call's own reading, whatever the pass found."""
+    _config.drop_call_reading(root, cfg, data, _tool_use_id(data))
 
 
 def pre_cache(data, *, cfg=None, root=None):
@@ -515,25 +537,29 @@ def pre_cache(data, *, cfg=None, root=None):
         if _swept_tool(data.get("tool_name")):
             # Noted whatever the switch says: the window it opens is read by
             # guard-bash-writes too, which does not care whether the journal
-            # is on. One small write, no read; the call's id rides in it, and
-            # so does the switch as this pass read it - the one reading the
-            # Post pass takes as the switch before THIS call.
-            _config.record_call_start(root, cfg, data,
-                                      call=_tool_use_id(data), journal_on=on)
+            # is on. One small write, no read; the call's id rides in it.
+            _config.record_call_start(root, cfg, data, call=_tool_use_id(data))
         if not on:
-            # Nothing more while the switch is off. The edit lane's reading
-            # is the slot below, which names its call; no slot written here
-            # is the reading "off", whatever slot an earlier call left.
+            # Nothing more while the switch is off: no reading kept is this
+            # call's reading "off", whatever an earlier call left.
             return None
         if _swept_tool(data.get("tool_name")):
             last = None
             for troot in _sweep_roots(data, cfg, root):
                 last = _pre_seed_sweep(troot, cfg, data) or last
+            # The switch as this call read it - the project's, the one the
+            # append reads - kept under the call's id.
+            _keep_reading(root, cfg, data)
             return last
         action, rel, _tool, _ti, troot = _classify_placed(data, cfg, root)
         if action is None:
             return None
-        return _write_slot(troot, cfg, data, rel, call=_tool_use_id(data))
+        slot = _write_slot(troot, cfg, data, rel, call=_tool_use_id(data))
+        if rel == _config.CONFIG_REL:
+            # The one target a switch-off can be owed for: its reading is
+            # kept beside the slot, in the tree the slot is in.
+            _keep_reading(troot, cfg, data)
+        return slot
     except Exception:
         return None
 
@@ -1270,7 +1296,8 @@ def _swept_rows(data, *, cfg=None, root=None):
     The user's switch still wins, with the same exception the edit lane has: when
     the CONFIG itself moved, `journal.enabled` is judged against the pre-image, so
     a shell that flips the switch off is journalled by its own last row - when
-    this call's own Pre read the switch as on (`_own_switch_on`), and only then.
+    this call's own Pre read the switch as on (`_own_reading`), and only then,
+    judged against the pre-image that reading holds.
 
     -> [(tree root, entry), ...]"""
     home = _config.tree_for(data, _config.PROJECT_ONLY, cfg, project=root)
@@ -1283,22 +1310,29 @@ def _swept_rows(data, *, cfg=None, root=None):
     tool = str(data.get("tool_name") or "Bash")
     rows = [(root, e) for e in unsandboxed_entries(data, cfg=cfg, root=root)]
     enabled = _config.journal_enabled(cfg)
-    if not enabled and not _own_switch_on(root, cfg, data):
+    own = None if enabled else _own_reading(root, cfg, data)
+    _drop_reading(root, cfg, data)
+    if not enabled and own is None:
         # Off now, and not on as this call's own Pre read it: no flip of this
         # call's to record, so no slot is read and none is written. A slot is
         # not that reading - it is whatever this writer's last call while on
         # left behind, from before the switch went off some other way.
         return rows
     for troot in _sweep_roots(data, cfg, root):
-        rows.extend(_swept_tree(data, cfg, troot, tool, enabled, project=root))
+        rows.extend(_swept_tree(data, cfg, troot, tool, enabled, project=root,
+                                own=own))
     return rows
 
 
-def _swept_tree(data, cfg, root, tool, enabled, project=None):
+def _swept_tree(data, cfg, root, tool, enabled, project=None, own=None):
     """The rows ONE tree's recorded paths owe for this call - `root` is that
     tree, whose slots, trail and manifest are all read from it. `project` is
     where the call's start was noted (the project's state directory, whichever
-    tree `root` is); it defaults to `root`."""
+    tree `root` is); it defaults to `root`. `own` is this call's reading of
+    the project's switch when the switch is off now (`_own_reading`): the
+    project's config is judged against the pre-image it holds rather than the
+    writer's slot, which another call of this writer whose window the
+    switch-off also fell in has already moved past it."""
     project = project if project is not None else root
     rows = []
     # With the switch off the ONLY path that can still owe a row is the config, and
@@ -1323,7 +1357,9 @@ def _swept_tree(data, cfg, root, tool, enabled, project=None):
         # otherwise hold by luck.
         if _config.in_journal(root, cfg, rel):
             continue
-        pre = _read_preimage(root, cfg, data, rel)
+        pre = (own if own is not None and root == project
+               and rel == _config.CONFIG_REL
+               else _read_preimage(root, cfg, data, rel))
         if pre is None and shard_dir is not None:
             if "listing" not in held:
                 held["listing"] = _noted_listing(root, cfg, data, shard_dir)
@@ -1494,7 +1530,15 @@ def post_rows(data, *, cfg=None, root=None):
         if action is None:
             return []
         root = troot
-        pre = _read_preimage(root, cfg, data, rel)
+        now_on = _config.journal_enabled(cfg)
+        own = None
+        if rel == _config.CONFIG_REL:
+            own = None if now_on else _own_reading(root, cfg, data)
+            _drop_reading(root, cfg, data)
+        # With the switch off now, the config is judged against this call's
+        # own reading: the writer's slot is per path, and another call of this
+        # writer on the same path may have rewritten it since this call began.
+        pre = own if own is not None else _read_preimage(root, cfg, data, rel)
         old_obj = _parse_preimage(pre)
         # REFRESHED, NOT CONSUMED, and here rather than after the row is
         # built so that every path out of this function leaves the same baseline
@@ -1503,13 +1547,11 @@ def post_rows(data, *, cfg=None, root=None):
         # current config gates it, not the pre-image judgement below: once the
         # switch is off the one row left to serve is the last will, which
         # refreshes the slot itself.
-        now_on = _config.journal_enabled(cfg)
-        if not now_on and not (rel == _config.CONFIG_REL
-                               and _own_slot(pre, data)):
+        if not now_on and own is None:
             # Off now, and no flip of this call's to record: only the trail
             # tree's own config can owe the last will, and only when this
-            # call's own Pre - the slot naming its id - read the switch as
-            # on. A slot an earlier call left is not that reading.
+            # call's own Pre - the reading kept under its id - read the switch
+            # as on. A slot or a reading an earlier call left is not that.
             return []
         if now_on:
             _write_slot(root, cfg, data, rel)

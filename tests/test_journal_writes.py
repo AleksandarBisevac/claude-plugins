@@ -3353,6 +3353,137 @@ def _switch_reading_cases(check):
               "project %r, worktree %r"
               % ([(r.get("target"), r.get("summary")) for r in got], own),
               got == [] and own == [], repr((got, own)))
+
+    # (sn16-sn20) two calls of ONE writer in flight. F switches the journal
+    # off, L is the same session's other call; an order is the passes and the
+    # flip as they land. Every call in whose window the flip landed owes its
+    # row, so the count is the case: one where only F was open across it, two
+    # where both were. seed: the session's command while on.
+    fl_seq = [0]
+    fl_cmd = {"command": "sh ./flip.sh"}
+    fl_mcp_w = {"path": conf, "content": _CF_OFF}
+    fl_mcp_r = {"path": conf}
+
+    def flight(order, f=("Bash", fl_cmd), lc=("Bash", {"command": "ls"})):
+        fresh()
+        call("sess-a")
+        since = _sn_hashes(proj)
+        fl_seq[0] += 1
+        ids = {"F": "sn-fl-%d-F" % fl_seq[0], "L": "sn-fl-%d-L" % fl_seq[0]}
+        calls = {"F": f, "L": lc}
+        for step in order.split():
+            if step == "flip":
+                hand(_CF_OFF)()
+                continue
+            event = "PreToolUse" if step.startswith("Pre") else "PostToolUse"
+            tool, tin = calls[step[-1]]
+            codes.append(_sn_hook(event, proj, "sess-a", tool, tin, ids[step[-1]]))
+        return _sn_rows(proj, since)
+
+    def flips_of(rows, n):
+        return (len(rows) == n
+                and all(r[0] == "sess-a" and "journal.enabled true->false" in r[2]
+                        for r in rows))
+
+    def orders(table, n, **kw):
+        seen = [(o, flight(o, **kw)) for o in table]
+        return seen, all(flips_of(r, n) for _, r in seen)
+
+    seen, ok = orders(("PreF PreL PostL flip PostF", "PreL PreF PostL flip PostF"), 1)
+    check("sn16 two commands of one session in flight, the other's window closed "
+          "before the flip whatever the order of its passes: the flipping "
+          "command leaves its one row - %r" % (seen,), ok, repr(seen))
+    seen, ok = orders(("PreF PreL PostL flip PostF", "PreL PreF PostL flip PostF"), 1,
+                      f=(_CF_MCP, fl_mcp_w), lc=(_SN_READ, fl_mcp_r))
+    check("sn17 an MCP write switching the journal off with an MCP read of the "
+          "same session in flight, closed before the flip: the write leaves its "
+          "one row - %r" % (seen,), ok, repr(seen))
+    seen, ok = orders(("PreF PreL flip PostF PostL", "PreF PreL flip PostL PostF",
+                       "PreL PreF flip PostL PostF"), 2)
+    seen_m, ok_m = orders(("PreF PreL flip PostL PostF",), 2,
+                          f=(_CF_MCP, fl_mcp_w), lc=(_SN_READ, fl_mcp_r))
+    check("sn18 two calls of one session both open across the flip - commands, "
+          "or an MCP write and an MCP read - each leave their row: %r"
+          % (seen + seen_m,), ok and ok_m, repr(seen + seen_m))
+    # The allow twins: a call of the same session that began after the flip,
+    # or whose window closed before the flipping call began, owes nothing.
+    seen = [(o, flight(o)) for o in ("PreF flip PreL PostL PostF",
+                                     "PreF flip PreL PostF PostL",
+                                     "PreL PostL PreF flip PostF")]
+    check("sn19 a call of the same session that began after the flip, or whose "
+          "window closed before the flipping call began, adds no row to the "
+          "flipping call's one: %r" % (seen,),
+          all(flips_of(r, 1) for _, r in seen), repr(seen))
+
+    # (sn21) the edit lane: two Writes of the config by one session, F's
+    # content switching it off. The writer's slot is one per path, so W's
+    # passes rewrite it while F is open; F's reading is its own. W's Post
+    # while the switch is still on leaves W's own write row, never a flip.
+    fl_w = ("Write", {"file_path": conf, "content": _CF_OFF})
+    fl_w2 = ("Write", {"file_path": conf, "content": _SN_ON2})
+    seen = []
+    for order, owed in (("PreF PreL PostL flip PostF", 1),
+                        ("PreL PreF PostL flip PostF", 1),
+                        ("PreF PreL flip PostF PostL", 2),
+                        ("PreF flip PreL PostL PostF", 1)):
+        got = flight(order, f=fl_w, lc=fl_w2)
+        seen.append((order, owed, flips_of([r for r in got
+                                            if "true->false" in r[2]], owed), got))
+    check("sn21 two edit-tool writes of the config by one session in flight: the "
+          "one switching the journal off leaves its row whatever the order of "
+          "the other's passes, and each open across the flip leaves one: %r"
+          % ([s for s in seen if not s[2]],), all(s[2] for s in seen), repr(seen))
+
+    # (sn20) a hand flip with no tool call of its own: between calls it leaves
+    # no row and the trail check sees nothing; while one call is open - the
+    # session's command, a subagent's MCP read - the row is that call's, under
+    # its writer: it says in whose window the switch went off, not whose hand.
+    def trail_quiet():
+        v = _journal_io.verify(proj)
+        return (not v.get("findings")
+                and not [w for w in v.get("warnings") or []
+                         if _config.CONFIG_REL in w])
+
+    fresh()
+    call("sess-a")
+    hand(_CF_OFF)()
+    call("sess-a")
+    between = (_sn_rows(proj), trail_quiet())
+    fresh()
+    call("sess-a")
+    since = _sn_hashes(proj)
+    call("sess-a", act=hand(_CF_OFF), tin={"command": "npm test"})
+    in_cmd = _sn_rows(proj, since)
+    fresh()
+    call("sess-a", agent="agent0007")
+    since = _sn_hashes(proj)
+    call("sess-a", act=hand(_CF_OFF), tool=_SN_READ, tin=read, agent="agent0007")
+    in_mcp = _sn_rows(proj, since)
+    check("sn20 a switch-off by hand between calls leaves no row and the trail "
+          "check says nothing; by hand while a command or a subagent's MCP read "
+          "is open it leaves one row, under that call's writer - (between, "
+          "trail quiet) %r, command %r, subagent's read %r"
+          % (between, in_cmd, in_mcp),
+          between == ([], True)
+          and len(in_cmd) == 1 and in_cmd[0][0] == "sess-a"
+          and "journal.enabled true->false" in in_cmd[0][2]
+          and len(in_mcp) == 1 and in_mcp[0][1] == "agent0007"
+          and "journal.enabled true->false" in in_mcp[0][2],
+          repr((between, in_cmd, in_mcp)))
+
+    # (sn22) a switch-off by a call whose pass after never runs - by a command
+    # or an edit tool - then the writer's next command: no row. The reading
+    # that call kept is under its own id, so no later call reads it.
+    seen = []
+    for tool, tin in (("Bash", fl_cmd), fl_w):
+        fresh()
+        call("sess-a")
+        call("sess-a", act=hand(_CF_OFF), tool=tool, tin=tin, post=False)
+        call("sess-a")
+        seen.append((tool, _sn_rows(proj)))
+    check("sn22 a switch-off by a call whose pass after never runs - a command or "
+          "an edit tool - leaves no row, and the writer's next command adds none: "
+          "%r" % (seen,), all(s[1] == [] for s in seen), repr(seen))
     check("sn12 every pass of the cases above exited 0: %r"
           % (sorted(set(codes)),), codes and set(codes) == {0}, repr(codes))
 

@@ -1385,10 +1385,15 @@ are refused by `guard-edits.py`;
 a shell write into it cannot be refused, so `guard-bash-writes.py` reports it after the fact.
 Turn it off with `journal.enabled: false` — the flip itself is journalled as a final
 `config.edit` row (the last will), whatever tool made it and also when the write creates the
-config switched off. That row belongs to the call that switched the journal off, by its own
-reading of the switch before and after the call; a later call, by this session, a subagent or
-another session, adds none, and a switch turned off by hand or in the panel leaves no row at
-all. `/audit:doctor` will say the trail was running and has been turned off. For extra friction, `journal.strictManifestState: "ask"` surfaces a
+config switched off. That row belongs to each call in whose window the switch went off, by that
+call's own reading of the switch before and after it - two calls of one writer included, each
+keeping its reading under its own tool call id; a call that began after the switch-off, by
+this session, a subagent or another session, adds none. Whose row it is when no tool call made
+the switch-off: by hand or in the panel between calls, there is no row and the trail check does
+not see it (`sn20` in `tests/test_journal_writes.py`); one that lands while a call is open is
+recorded under that call, as any write the sweep sees in a call's window is - the row says in
+whose window the switch went off, not whose hand did it (`sn20`); and a switch-off by a call
+whose pass after never runs leaves no row (`sn22`). `/audit:doctor` will say the trail was running and has been turned off. For extra friction, `journal.strictManifestState: "ask"` surfaces a
 confirmation prompt on any edit that changes manifest state.
 
 **Growth.** The journal grows one file per writer (session) per month, and only for sessions
