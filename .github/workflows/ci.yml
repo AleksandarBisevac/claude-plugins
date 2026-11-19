@@ -94,13 +94,18 @@ concurrency:
 #   browser-panel, browser-report - measured on the shared install
 #              (.github/actions/browser-install, head fc7abaf3): run 44385960921
 #              missed both caches and run 44388480667 hit them, and each job's
-#              longer one is its line - the miss, both times. In the miss the
+#              longer one was the miss. In the miss the
 #              panel job met a slow mirror, measured once: 21.1 MB fetched at
 #              232 kB/s, about 2m20s of install, against about 20s for the same
-#              job's hit, which asked the archive for nothing. The report's bound
-#              moved from 26 to 28 to stay over twice its line, and the panel's
-#              from 16 to 18 to hold its slowest measured miss (the comment above
-#              browser-panel). Before the cache
+#              job's hit, which asked the archive for nothing. The panel's bound
+#              moved from 16 to 18 to hold its slowest measured miss (the comment
+#              above browser-panel). The report's line is a later miss, run
+#              44397426313 (head 1638013d, branch ci/P169-mid): its report job
+#              found no entry for either key - the entries run 44388480667 had
+#              restored were saved on another branch - and its system packages'
+#              step took about 4m10s (the index in 29s, then "Fetched 21.1 MB in
+#              3min 12s (110 kB/s)"); the job took 16m09s, so its bound moved
+#              from 28 to 33, over twice that. Before the cache
 #              the longest finished jobs over runs 41281241772 to 44356971266 were
 #              14m49s (panel, run 42283005055) and 17m57s (report, run
 #              44270291891), install-bound both: 9m43s and 6m27s of install,
@@ -116,7 +121,7 @@ concurrency:
 #   longest e2e: 1m41s (estimate, run 38902667892)
 #   longest lint: 3m14s (run 41112221437, 19:04:54 to 19:08:08)
 #   longest browser-panel: 7m46s (run 44385960921, 19:58:01 to 20:05:47)
-#   longest browser-report: 13m35s (run 44385960921, 19:58:01 to 20:11:36)
+#   longest browser-report: 16m09s (run 44397426313, 21:03:19 to 21:19:28)
 #   longest verified: 0m30s (estimate, no run yet)
 #   longest resample: 22m00s (run 40715565769, windows-2025)
 # EVERY JOB PINS ITS RUNNER IMAGE, and so does every `os` value a matrix crosses. A
@@ -374,18 +379,34 @@ jobs:
   # over (apt: "Need to get 21.1 MB of archives", then "Fetched 19.1 MB in 9min 22s
   # (34.0 kB/s)").
   #
-  # A HIT IS THE ORDINARY CASE BECAUSE MAIN HOLDS THE ENTRIES. GitHub's cache is
-  # scoped by branch: a run restores what its own branch saved, or what the default
-  # branch saved, and nothing another branch saved (docs.github.com, "Restrictions
-  # for accessing a cache"). So these two jobs are NOT skipped on a push to main
-  # whose commit was already verified - only their slice is. On that push they
-  # SEED: the action computes both keys, installs nothing when an entry exists for
-  # both, and otherwise installs and saves, under main's scope, what the next
-  # ci/ branch's first run restores. Their bounds sit above the slowest miss
-  # measured, which is a seed's worst case: 14m49s for the panel (run
+  # MAIN IS MEANT TO HOLD THE ENTRIES, so that a hit is the ordinary case. GitHub's
+  # cache is scoped by branch: a run restores what its own branch saved, or what the
+  # default branch saved, and nothing another branch saved (docs.github.com,
+  # "Restrictions for accessing a cache"). The last half is seen here: run
+  # 44388480667 on ci/P169-seed-probe2 hit both keys, and run 44397426313 on
+  # ci/P169-mid, an hour later, missed the same two keys. So these two jobs are NOT
+  # skipped on a push to main whose commit was already verified - only their slice
+  # is. On that push they SEED: the action computes both keys, installs nothing when
+  # an entry exists for both, and otherwise installs and saves, under main's scope,
+  # what a ci/ branch's first run is meant to restore. A seed on main, and a ci/
+  # branch restoring what one saved, are not yet seen in a run, and neither is the
+  # seed path on any runner: tools/check-browser-install.py runs its shell against
+  # stubs, and its docstring says what they cannot see. Their bounds sit above the slowest
+  # miss measured, which is a seed's worst case: 14m49s for the panel (run
   # 42283005055, 34.0 kB/s), under its 18, and 17m57s for the report (run
-  # 44270291891), under its 28. The slice step carries the guard the job used to,
+  # 44270291891), under its 33. The slice step carries the guard the job used to,
   # so gate-parity reads it (`job_slices` reads a step's `if:` as it reads a job's).
+  #
+  # A SEED NEVER REDDENS A VERIFIED PUSH, AND NEVER FAILS IN SILENCE. On the seed
+  # path the install step carries `continue-on-error`, so a failure in it - npm ci,
+  # the dry run, the browser download, apt - leaves the job's conclusion green, and the next
+  # step writes a warning annotation saying so; the step's own `::error::` lines and
+  # log say where. On every other run the expression is false and a failed install
+  # is red as before. gate-parity.py (`_may_fail`) fails the build on a
+  # `continue-on-error` that is not `false` on a step or job running verify.sh, so
+  # the slice can never be the thing allowed to fail. A job past its bound is
+  # cancelled whatever this says: `continue-on-error` does not cover the job's
+  # `timeout-minutes`.
   browser-panel:
     name: browser (panel)
     needs: verified
@@ -401,9 +422,15 @@ jobs:
         with:
           node-version: 20
       - name: "install: Chromium and the system packages it needs (.github/actions/browser-install)"
+        id: install
+        continue-on-error: ${{ needs.verified.outputs.run != '' }}
         uses: ./.github/actions/browser-install
         with:
-          seed: ${{ needs.verified.outputs.run != '' }}
+          seed: "true"   # PROBE ONLY - never merge
+      - name: "seed: say that the install failed"
+        if: ${{ needs.verified.outputs.run != '' && steps.install.outcome == 'failure' }}
+        shell: bash
+        run: echo "::warning::the seed's install failed (the step above says where); the commit was already verified by run ${{ needs.verified.outputs.run }}, so this job's conclusion is not red, and a key this seed did not save is looked up again by the next one"
       - name: verify slice
         if: ${{ needs.verified.outputs.run == '' }}
         shell: bash
@@ -413,7 +440,7 @@ jobs:
     name: browser (report)
     needs: verified
     if: ${{ !cancelled() }}
-    timeout-minutes: 28
+    timeout-minutes: 33
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -424,9 +451,15 @@ jobs:
         with:
           node-version: 20
       - name: "install: Chromium and the system packages it needs (.github/actions/browser-install)"
+        id: install
+        continue-on-error: ${{ needs.verified.outputs.run != '' }}
         uses: ./.github/actions/browser-install
         with:
-          seed: ${{ needs.verified.outputs.run != '' }}
+          seed: "true"   # PROBE ONLY - never merge
+      - name: "seed: say that the install failed"
+        if: ${{ needs.verified.outputs.run != '' && steps.install.outcome == 'failure' }}
+        shell: bash
+        run: echo "::warning::the seed's install failed (the step above says where); the commit was already verified by run ${{ needs.verified.outputs.run }}, so this job's conclusion is not red, and a key this seed did not save is looked up again by the next one"
       - name: verify slice
         if: ${{ needs.verified.outputs.run == '' }}
         shell: bash

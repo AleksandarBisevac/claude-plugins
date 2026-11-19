@@ -7784,9 +7784,18 @@ collapsible, filterable Composition tab (v0.14.0).
 `tools/verify.sh` is the one description of the gate set, grouped into named slices, and
 `sh tools/verify.sh --list` prints every slice and the steps it runs. CI
 (`.github/workflows/ci.yml`) is that runner and nothing else: every job is setup plus one
-`tools/verify.sh --only <slices>` call, on ubuntu and windows, for every push/PR - and a push
-to main whose commit a run already verified runs only `tools/ci-verified.py`.
-`CONTRIBUTING.md`'s *Tests* section says why each slice holds what it holds. Locally:
+`tools/verify.sh --only <slices>` call, on ubuntu and windows, for every push/PR. A push to
+main whose commit a run already verified runs no slice: `tools/ci-verified.py` names the run
+that verified it, and the browser jobs (`browser-panel`, `browser-report`) run without their
+slice to seed GitHub's cache. Each looks both of the install's cache keys up, installs nothing
+when both have an entry, and otherwise installs Chromium and the system packages the image
+lacks and saves them under `main`'s scope. A seed that finds both entries pays the job's
+setup, `npm ci`, the dry run and the lookups; that cost is not yet timed on a runner. A seed
+that misses pays what any miss pays: in run 44397426313's report job the install took about
+4m24s (21:03:37 to 21:08:01), about 4m10s of it the system packages' step on a 110 kB/s
+mirror. A failed seed is a warning on the run, not a red job (the comment above
+`browser-panel` in `ci.yml`). `CONTRIBUTING.md`'s *Tests* section says why each slice holds
+what it holds. Locally:
 
 ```bash
 # 1. Every gate CI runs, and the list of what that is today
