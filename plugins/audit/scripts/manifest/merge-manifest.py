@@ -53,6 +53,7 @@ This script carries no `--selftest` of its own; its cases live in
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -105,13 +106,15 @@ def _read(path):
         return fh.read()
 
 
-def _write(path, text, newline=None):
+def _write(path, text, newline="\n"):
     """Replace `path` atomically - git reads %A back the moment this exits.
 
-    `newline=""` writes `text` byte for byte. The manifest keeps the platform's
-    text mode, as every other writer of it in this plugin does; `.gitattributes`
-    and the shim do not - the first keeps whatever endings it already had, and the
-    second is a shell script, which a CR would break on every line."""
+    A PLAN FILE IS LF ON EVERY PLATFORM, as `_manifest_io.atomic_write_text` writes
+    it: a text-mode handle's own default writes CRLF on Windows, so a resolved or
+    driver-merged plan would differ byte for byte from the same plan written by any
+    other writer, and read as a whole-file change in git. `newline=""` writes `text` byte for byte, for `.gitattributes` and the shim:
+    the first keeps whatever endings it already had, and the second is a shell
+    script, which a CR would break on every line."""
     d = os.path.dirname(os.path.abspath(path))
     fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
     try:
@@ -450,7 +453,8 @@ def resolve(path, side):
     if ours is None or theirs is None:
         return 1, ("%s refused: %s is not a plan on both sides of this merge"
                    % (_TAG, rel))
-    base = (_plan_at(top, base_c, rel) if code == 0 and base_c else None) or {}
+    base_rev = base_c if code == 0 and base_c else None
+    base = (_plan_at(top, base_rev, rel) if base_rev else None) or {}
     ids = _collisions(base, ours, theirs)
     if not ids:
         return 1, ("%s refused: no id in %s was minted on both sides; what conflicts "
@@ -474,7 +478,7 @@ def resolve(path, side):
         # Decided for every target before the first is written: a refusal that
         # came after some files were already replaced would leave the plan half
         # merged and the stray write gone anyway.
-        strays, problem = _stray_targets(top, files)
+        strays, problem = _stray_targets(top, files, base_rev)
         if problem:
             return 1, "%s refused: nothing was written - %s" % (_TAG, problem)
         if strays:
@@ -513,15 +517,41 @@ def resolve(path, side):
 # shard the merge left clean, which the evidence writer does because it reads only
 # that shard - would be replaced without a word. So each target is put in one of
 # three states under the index lock, every writer of the plan taking the same lock:
-#   - CONFLICTED, holding what does not read as JSON: the driver's marker block, or
-#     git's line merge. Each writer `_deps.PLAN_WRITERS` lists reads the file it
-#     writes as JSON first, so none can have written there since the merge stopped;
-#   - EQUAL to what git's merge left (stage 0, compared by git itself, so a
-#     clean/smudge or line-ending filter is applied as git applies it), or to the
-#     text resolve is about to write - which is what lets a resolve stopped part
-#     way be run again rather than refused for ever by its own first write;
+#   - CONFLICTED in the merge's own result, holding what does not read as JSON: the
+#     driver's marker block, or git's line merge. Each writer `_deps.PLAN_WRITERS`
+#     lists reads the file it writes as JSON first, so none can have written there
+#     since the merge stopped;
+#   - EQUAL to the merge's own result for that path, or to the text resolve is
+#     about to write - which is what lets a resolve stopped part way be run again
+#     rather than refused for ever by its own first write;
 #   - anything else: a STRAY, and one stray refuses the whole write.
-# A target missing from the work tree holds nothing to lose.
+# A target the merge's result does not hold, and the work tree does not either,
+# holds nothing to lose.
+#
+# THE REFERENCE IS THE MERGE RECOMPUTED FROM ITS COMMITS, never the index. For each
+# target `_reference` reads the path at the merge base, HEAD and MERGE_HEAD and
+# decides it as git's three-way merge does: one blob when the sides agree or only
+# one side changed it, and otherwise the content merge git ran for the path - this
+# driver, when the path's `merge` attribute names it and the clone configures it,
+# else git's own line merge (`git merge-file`). A blob is read as checkout would
+# write it (`cat-file --filters`), and everything is compared as text read with
+# universal newlines, as `_held_text` reads the work tree, so a CRLF checkout of an
+# LF blob is the same text. The index was the reference before, and ordinary
+# commands move it while a conflict is open: a stray write staged by `git add`,
+# `git add -u` or an editor's stage-all, or a hand resolution staged, passed as
+# "what the merge left" and was overwritten. Nothing in the index or the work tree
+# is read to make it, so `git add`, `git add -u`, `git restore --staged`, `git
+# checkout -- <path>`, `git update-index` and a second resolve cannot move it; the
+# index is read only to choose which command a refusal names (`_put_back`). It asks
+# only `rev-parse`, `cat-file`, `check-attr`, `config` and `merge-file`, so it needs
+# no newer git than the merge did.
+#
+# What it cannot know is an option the merge was run with (`-X ours`, another
+# strategy, a merge base git built from several): the recomputed text then differs
+# and each such file is refused as a stray, which writes nothing. Measured with git
+# 2.53.0 on 2026-11-19 in throwaway repositories: `git stash` is refused while a
+# path is unmerged, and once everything is staged it ends the merge (MERGE_HEAD
+# gone, so resolve refuses for want of one).
 _UNREADABLE = object()
 
 
@@ -552,48 +582,190 @@ def _reads_as_json(text):
     return True
 
 
-def _git_paths(top, *args):
-    """(exit code, [path]) of a `-z` git listing."""
-    code, out = _mi.git(top, *args)
-    return code, [p for p in out.split("\0") if p]
+def _git_bytes(top, *args):
+    """(exit code, stdout bytes, stderr text) of one git command - unstripped, since
+    a blob's last newline is part of what is compared."""
+    try:
+        r = subprocess.run(["git", "-C", top] + list(args), stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE)
+    except OSError as exc:
+        return 127, b"", "%s" % (exc,)
+    return r.returncode, r.stdout, r.stderr.decode("utf-8", "replace").strip()
 
 
-def _stray_targets(top, files):
-    """([(rel, what it holds, the command that puts it back)], problem) - the
+def _as_text(raw):
+    """Bytes as text with every line ending read as `\\n` - how `_held_text` reads
+    the work tree, so a CRLF checkout and an LF blob compare equal."""
+    return raw.decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _blob_of(top, rev, rel):
+    """The blob id `rev` holds at `rel`, or None when it holds no such path."""
+    if not rev:
+        return None
+    code, oid = _mi.git(top, "rev-parse", "-q", "--verify", "%s:%s" % (rev, rel))
+    return oid if code == 0 and oid else None
+
+
+def _blob_text(top, oid, rel, filtered):
+    """(the blob's text, problem) - as checkout would write it at `rel` when
+    `filtered`, else as git stores it, which is what a merge is run over."""
+    argv = (("cat-file", "--filters", "--path=%s" % (rel,), oid) if filtered
+            else ("cat-file", "blob", oid))
+    code, raw, err = _git_bytes(top, *argv)
+    if code != 0:
+        return None, ("git could not show %s's blob %s (`git %s` exited %d: %s)"
+                      % (rel, oid, " ".join(argv[:2]), code, err or "no message"))
+    return raw.decode("utf-8", "replace"), None
+
+
+def _content_merge(top, rel, sides):
+    """(merged text, conflicted, problem) - the content merge git runs for `rel`
+    when both sides changed it, rerun over the stored blobs `sides` (base, ours,
+    theirs; '' for a base that lacks the path), in a scratch directory outside
+    the work tree."""
+    _c, attr = _mi.git(top, "check-attr", "merge", "--", rel)
+    value = attr.rsplit(": ", 1)[-1].strip() if attr else "unspecified"
+    _c, configured = _mi.git(top, "config", "--get", "merge.%s.driver" % (value,))
+    if value in ("unset", "binary"):
+        return sides[1], True, None
+    if configured and value != DRIVER_NAME:
+        return None, False, ("%s is merged by the driver `%s`, which resolve cannot "
+                             "rerun to know what the merge left" % (rel, value))
+    scratch = tempfile.mkdtemp(prefix="audit-resolve-reference-")
+    try:
+        paths = []
+        for tag, text in zip(("O", "A", "B"), sides):
+            p = os.path.join(scratch, tag)
+            _write(p, text, newline="")
+            paths.append(p)
+        if configured:
+            try:
+                code, _lines = run_driver(paths[0], paths[1], paths[2], rel)
+            except Exception:                                   # noqa: BLE001
+                # What `driver_main` writes when the record merge raises.
+                _write(paths[1], _line_merge(*paths))
+                code = 1
+            return _read(paths[1]), code != 0, None
+        try:
+            r = subprocess.run(["git", "merge-file", "-p", paths[1], paths[0],
+                                paths[2]], stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE)
+        except OSError as exc:
+            return None, False, "git merge-file could not be run (%s)" % (exc,)
+        if not 0 <= r.returncode < 128:
+            return None, False, ("git merge-file exited %d over %s's sides"
+                                 % (r.returncode, rel))
+        return r.stdout.decode("utf-8", "replace"), r.returncode != 0, None
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _reference(top, base_c, rel):
+    """{text, conflicted, oid} of what the merge left at `rel`, recomputed from the
+    commits (see above), or None when the merge left no such path -> (that,
+    problem). `oid` is the blob a one-blob answer names, None for a content merge."""
+    b, o, t = (_blob_of(top, rev, rel) for rev in (base_c, "HEAD", "MERGE_HEAD"))
+    if o == t:
+        chosen = o
+    elif b == o:
+        chosen = t
+    elif b == t:
+        chosen = o
+    elif o is None or t is None:
+        # Changed on one side and deleted on the other: git stops, leaving the
+        # changed side in the work tree.
+        chosen = o or t
+        text, problem = _blob_text(top, chosen, rel, True)
+        return {"text": _as_text((text or "").encode("utf-8")), "conflicted": True,
+                "oid": chosen}, problem
+    else:
+        sides = []
+        for oid in (b, o, t):
+            if oid is None:
+                sides.append("")
+                continue
+            text, problem = _blob_text(top, oid, rel, False)
+            if problem:
+                return None, problem
+            sides.append(text)
+        text, conflicted, problem = _content_merge(top, rel, sides)
+        if problem:
+            return None, problem
+        return {"text": _as_text(text.encode("utf-8")), "conflicted": conflicted,
+                "oid": None}, None
+    if chosen is None:
+        return None, None
+    text, problem = _blob_text(top, chosen, rel, True)
+    if problem:
+        return None, problem
+    return {"text": _as_text(text.encode("utf-8")), "conflicted": False,
+            "oid": chosen}, None
+
+
+def _put_back(top, rel, merged):
+    """The commands that put `rel` back as the merge left it. Read off the index,
+    which is why they choose words only and decide nothing: still unmerged there,
+    `checkout -m` re-creates the conflict; staged as the merge's own text, a plain
+    checkout is that text; staged as anything else, the merge's blob - the one its
+    side holds, or the content merge's text written to git's object store (`git
+    hash-object -w`, an object, never a file of the tree) - is staged first and
+    then checked out."""
+    code, out = _mi.git(top, "ls-files", "-s", "--", rel)
+    stages = [ln.split()[:3] for ln in out.splitlines() if ln.strip()] if code == 0 else []
+    if any(len(s) == 3 and s[2] != "0" for s in stages):
+        return ("git checkout -m -- %s" % (rel,),)
+    staged = stages[0][1] if stages and len(stages[0]) == 3 else None
+    if staged and staged == merged["oid"]:
+        return ("git checkout -- %s" % (rel,),)
+    if staged and merged["oid"] is None:
+        text, _p = _blob_text(top, staged, rel, True)
+        if text is not None and _as_text(text.encode("utf-8")) == merged["text"]:
+            return ("git checkout -- %s" % (rel,),)
+    oid = merged["oid"]
+    if oid is None:
+        r = subprocess.run(["git", "-C", top, "hash-object", "-w", "--no-filters",
+                            "--stdin"], input=merged["text"].encode("utf-8"),
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        oid = r.stdout.decode("utf-8", "replace").strip() if r.returncode == 0 else ""
+    if not oid:
+        return ("copy the file out of the work tree, then put back the text the "
+                "merge left at %s by hand - git could not store it to restore from"
+                % (rel,),)
+    mode = (stages[0][0] if stages and len(stages[0]) == 3 else "100644")
+    return ("git update-index --cacheinfo %s,%s,%s" % (mode, oid, rel),
+            "git checkout -- %s" % (rel,))
+
+
+def _stray_targets(top, files, base_c):
+    """([(rel, what it holds, (the commands that put it back))], problem) - the
     targets holding bytes resolve cannot account for. `problem` is a sentence
     when git could not be asked, and then nothing may be written."""
-    rels = [_tree_rel(top, t) for t, _x in files]
-    asked = {}
-    for name, argv in (("unmerged", ("ls-files", "-u", "-z", "--")),
-                       ("tracked", ("ls-files", "-z", "--")),
-                       ("changed", ("diff", "--name-only", "-z", "--no-ext-diff",
-                                    "--no-textconv", "--"))):
-        code, paths = _git_paths(top, *(argv + tuple(rels)))
-        if code != 0:
-            return [], ("git could not say which plan files the merge left as they "
-                        "are (`git %s` exited %d)" % (" ".join(argv[:-1]), code))
-        asked[name] = paths
-    unmerged = set(p.split("\t", 1)[1] for p in asked["unmerged"] if "\t" in p)
-    tracked, changed = set(asked["tracked"]), set(asked["changed"])
     strays = []
-    for (target, text), rel in zip(files, rels):
+    for target, text in files:
+        rel = _tree_rel(top, target)
         held = _held_text(target)
         if held is None or held == text:
             continue
-        if rel in unmerged:
+        merged, problem = _reference(top, base_c, rel)
+        if problem:
+            return [], ("git could not say what the merge left at %s - %s"
+                        % (rel, problem))
+        if merged is None:
+            strays.append((rel, "not in git's merge result, and not what resolve "
+                                "writes there",
+                           ("move %s out of the work tree - the merge did not leave "
+                            "it, so nothing puts it back" % (rel,),)))
+        elif held == merged["text"]:
+            continue
+        elif merged["conflicted"]:
             if not _reads_as_json(held):
                 continue
             strays.append((rel, "conflicted, but holds JSON where the merge left its "
-                                "conflict markers", "git checkout -m -- %s" % (rel,)))
-        elif rel in tracked:
-            if rel not in changed:
-                continue
-            strays.append((rel, "changed since git's merge left it clean",
-                           "git checkout -- %s" % (rel,)))
+                                "conflict markers", _put_back(top, rel, merged)))
         else:
-            strays.append((rel, "not tracked by git, and not what resolve writes there",
-                           "move %s out of the work tree - git does not track it, so "
-                           "nothing puts it back" % (rel,)))
+            strays.append((rel, "changed since git's merge left it clean",
+                           _put_back(top, rel, merged)))
     return strays, None
 
 
@@ -608,7 +780,7 @@ def _stray_refusal(strays):
                  "it, and no command here carries it into the merged plan. To go on, "
                  "put each file back, which DISCARDS what it holds, then run resolve "
                  "again:")
-    lines += ["      %s" % (fix,) for _rel, _held, fix in strays]
+    lines += ["      %s" % (step,) for _rel, _held, fix in strays for step in fix]
     lines.append("    what a discarded write held: a run record comes back through "
                  "`run-test-gate.py <manifestPath> <phaseId> --reconcile` once the "
                  "merge is committed, which points each subject at the newest run its "

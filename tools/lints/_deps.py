@@ -1990,10 +1990,11 @@ GIT_PATH_BASE_EXEMPT = (
     ("close-phase.py", "_link_texts",
      "the symbolic-link entries of one scratch work tree, asked by the paths "
      "that same tree was checked out with"),
-    ("merge-manifest.py", "_stray_targets",
-     "the plan files resolve is about to write, each made relative to the git "
+    ("merge-manifest.py", "_put_back",
+     "one plan file resolve is about to write, made relative to the git "
      "toplevel through its realpath and asked of git run at that toplevel; the "
-     "listing is compared only with those same paths, never with a plan entry"),
+     "listing's stage and blob decide which command a refusal names for that "
+     "same path, and no path git prints is compared with a plan entry"),
     ("close-phase.py", "_tip_paths",
      "lists a checkout-relative pathspec its callers built - _write_tip through "
      "plan_to_git, tip_texts from an absolute record directory - and hands "
@@ -2725,12 +2726,23 @@ def state_write_violations(script_dir=None, hooks_dir=None, table=None):
 
 # --- every writer of a path, classified ----------------------------------------
 # The calls that put bytes at a path, each with the argument naming the path:
-# `open` (and `io.open`/`codecs.open`) with a mode that writes, the destination
-# of an os move or a shutil copy, and a path object's `write_text`/`write_bytes`.
+# `open` (and `io.open`/`codecs.open`) with a mode that writes, `os.open` with a
+# flag that writes, the destination of an os move or link or a shutil copy, and a
+# path object's `open` with a writing mode, `write_text` or `write_bytes`. A
+# primitive imported by bare name (`from os import replace`, aliased or through a
+# star import) is the same primitive.
 _PW_OPEN_MODULES = ("io", "codecs")
-_PW_MOVE_CALLS = ("replace", "rename")
-_PW_COPY_CALLS = ("copy", "copy2", "copyfile", "move")
+_PW_MOVE_CALLS = ("replace", "rename", "link", "symlink")
+_PW_COPY_CALLS = ("copy", "copy2", "copyfile", "move", "copytree")
 _PW_WRITING_MODE = re.compile(r"[wxa+]")
+_PW_PRIMITIVES = {"os": _PW_MOVE_CALLS + ("open",), "shutil": _PW_COPY_CALLS,
+                  "io": ("open",), "codecs": ("open",)}
+_PW_MODE_LITERAL = re.compile(r"^[rwxabt+U]+$")
+_PW_WRITING_FLAGS = frozenset(("O_WRONLY", "O_RDWR", "O_CREAT", "O_APPEND",
+                               "O_TRUNC"))
+# How a call's path argument that cannot be located is said: the reason is part
+# of the site's `via`, so a row covers an unlocated site only by naming it.
+_PW_UNLOCATED = "%s (path not located: %s)"
 # The words that make a written path LOOK like a plan file. A hint printed
 # beside an unclassified writer and never the verdict: the verdict is that the
 # writer is in no table.
@@ -2743,11 +2755,13 @@ _MIN_WRITER_REASON = 60
 _PW_HELPER = (
     "writes the plan only through `_evidence_io.write_plan_file`, which takes "
     "the index lock and reads the file it changes after the lock is held - the "
-    "one save in that module (lk1) and its order (lk2)")
+    "one save in that module (lk1) and its order (lk2); the row's case runs "
+    "this caller with another writer's change landed as it asks for the lock")
 _PW_VERB = (
     "a verb's door: its `_locked_*` body runs inside `_under_lock`, which takes "
-    "the index lock before the body reads the plan (pa0 holds that for every "
-    "body; pa1, pa2 and pa10 run verbs through it with a change in the window)")
+    "the index lock before the body runs (pa0 holds that call position for "
+    "every body and no more; pa1, pa2, pa10 and pm1-pm3 run the write "
+    "mechanisms the bodies share with a change in the window)")
 _PW_CLOSE = (
     "close-phase writes the plan inside `under_index_lock`, whose `write` "
     "re-reads the file it changes with the lock held - the stamp, the head and "
@@ -2773,19 +2787,20 @@ _PW_EV = "scripts/governance/_evidence_io.py"
 _PW_AT = "scripts/manifest/audit-task.py"
 _PW_HELPER_VIA = "_evidence_io.write_plan_file"
 _PW_VERB_VIA = "audit-task._locked_*"
-_PW_HELPER_CASE = "tests/test__evidence_io.py lk2"
-_PW_DOOR_CASE = "tests/test__evidence_io.py pa0"
+_PW_CASE = "tests/test__evidence_io.py %s"
+_PW_DOOR_CASE = _PW_CASE % ("pa0",)
 PLAN_WRITERS = (
-    (_PW_EV, "_reconcile_subject", _PW_HELPER_VIA, _PW_HELPER_CASE, _PW_HELPER),
-    (_PW_EV, "hold_full_run", _PW_HELPER_VIA, _PW_HELPER_CASE, _PW_HELPER),
-    (_PW_EV, "keep_base", _PW_HELPER_VIA, _PW_HELPER_CASE, _PW_HELPER),
-    (_PW_EV, "write_pointer", _PW_HELPER_VIA, _PW_HELPER_CASE, _PW_HELPER),
-    (_PW_EV, "write_record", _PW_HELPER_VIA, _PW_HELPER_CASE, _PW_HELPER),
+    (_PW_EV, "_reconcile_subject", _PW_HELPER_VIA, _PW_CASE % ("pf4",),
+     _PW_HELPER),
+    (_PW_EV, "hold_full_run", _PW_HELPER_VIA, _PW_CASE % ("pf6",), _PW_HELPER),
+    (_PW_EV, "keep_base", _PW_HELPER_VIA, _PW_CASE % ("pf3",), _PW_HELPER),
+    (_PW_EV, "write_pointer", _PW_HELPER_VIA, _PW_CASE % ("pf2",), _PW_HELPER),
+    (_PW_EV, "write_record", _PW_HELPER_VIA, _PW_CASE % ("pf1",), _PW_HELPER),
     ("scripts/governance/full-gate.py", "write_ci", _PW_HELPER_VIA,
-     _PW_HELPER_CASE, _PW_HELPER),
+     _PW_CASE % ("pf5",), _PW_HELPER),
     ("scripts/governance/run-test-gate.py", "_record_run",
-     "_evidence_io.write_evidence_since", _PW_HELPER_CASE, _PW_HELPER),
-    (_PW_AT, "_cmd_batch_add", _PW_VERB_VIA, _PW_DOOR_CASE, _PW_VERB),
+     "_evidence_io.write_evidence_since", _PW_CASE % ("pf7",), _PW_HELPER),
+    (_PW_AT, "_cmd_batch_add", _PW_VERB_VIA, _PW_CASE % ("pm3",), _PW_VERB),
     (_PW_AT, "_group_door", _PW_VERB_VIA, _PW_DOOR_CASE, _PW_VERB),
     (_PW_AT, "cmd_add", _PW_VERB_VIA, "tests/test__evidence_io.py pa10",
      _PW_VERB),
@@ -2800,11 +2815,11 @@ PLAN_WRITERS = (
     (_PW_AT, "cmd_default_skills", _PW_VERB_VIA, _PW_DOOR_CASE, _PW_VERB),
     (_PW_AT, "cmd_done", _PW_VERB_VIA, _PW_DOOR_CASE, _PW_VERB),
     (_PW_AT, "cmd_finding", _PW_VERB_VIA, _PW_DOOR_CASE, _PW_VERB),
-    (_PW_AT, "cmd_move", _PW_VERB_VIA, _PW_DOOR_CASE, _PW_VERB),
+    (_PW_AT, "cmd_move", _PW_VERB_VIA, _PW_CASE % ("pm1",), _PW_VERB),
     (_PW_AT, "cmd_mute", _PW_VERB_VIA, _PW_DOOR_CASE, _PW_VERB),
     (_PW_AT, "cmd_note", _PW_VERB_VIA, "tests/test__evidence_io.py pa1",
      _PW_VERB),
-    (_PW_AT, "cmd_phase_add", _PW_VERB_VIA, _PW_DOOR_CASE, _PW_VERB),
+    (_PW_AT, "cmd_phase_add", _PW_VERB_VIA, _PW_CASE % ("pm2",), _PW_VERB),
     (_PW_AT, "cmd_record_listing", _PW_VERB_VIA, _PW_DOOR_CASE, _PW_VERB),
     (_PW_AT, "cmd_reindex", _PW_VERB_VIA, _PW_DOOR_CASE, _PW_VERB),
     (_PW_AT, "cmd_reopen", _PW_VERB_VIA, _PW_DOOR_CASE, _PW_VERB),
@@ -2827,8 +2842,6 @@ PLAN_WRITERS = (
         "tests/test__evidence_io.py pa4", _PW_CLOSE),
        ("scripts/git/close-phase.py", "_head_locked", "close-phase._revalidated_write",
         "tests/test__evidence_io.py pa5", _PW_CLOSE),
-       ("scripts/git/close-phase.py", "main", "close-phase.mirror_stub",
-        "tests/test__evidence_io.py pa6", _PW_CLOSE),
        ("scripts/git/close-phase.py", "main._stamp", "close-phase.mirror_stub",
         "tests/test__evidence_io.py pa6", _PW_CLOSE),
        ("scripts/governance/derive-phase-gate.py", "cmd_derive",
@@ -2876,12 +2889,12 @@ PLAN_WRITERS = (
         "is read again there, under the index lock, and the rows found earlier "
         "are matched to it by text as well as index"),
        ("scripts/manifest/migrate-manifest.py", "migrate",
-        ("<write>", "_manifest_io.save_sharded", "_manifest_io.save_single_file"),
+        ("_manifest_io.save_sharded", "_manifest_io.save_single_file"),
         "tests/test_migrate_manifest.py ml1",
-        "the layout converter: the command takes the index lock by hand around "
-        "it, and a write of the same session landed after its read is refused "
-        "by name before the save (`_changed_since`); its own primitive is the "
-        "restore point copied aside first"),
+        "the layout converter: /audit:layout's own document takes the index "
+        "lock by hand around the script, and a write of the same session landed "
+        "after its read is refused by name just before the save "
+        "(`_changed_since`); the restore point is `_keep_restore_point`'s"),
        ("scripts/manifest/migrate-manifest.py", "main", "migrate-manifest.migrate",
         "tests/test_migrate_manifest.py ml1",
         "the converter's command line, which hands `migrate` the path and "
@@ -2890,9 +2903,10 @@ PLAN_WRITERS = (
         "tests/test_merge_manifest.py rw1",
         "builds every plan file from git's commits rather than the work tree, so "
         "under the index lock and before its first write it asks each target "
-        "against what git's merge left and what it is about to write "
-        "(`_stray_targets`), and one target holding anything else refuses the "
-        "whole write"),
+        "against git's merge of that file recomputed from the merge's own "
+        "commits - never the index, which `git add` moves - and against what it "
+        "is about to write (`_stray_targets`); one target holding anything else "
+        "refuses the whole write"),
        ("scripts/manifest/_manifest_io.py", "save_sharded",
         "_manifest_io._atomic_write_json", "tests/test_migrate_manifest.py ml1",
         "the layout saver decides only the shard names under the index its "
@@ -2901,156 +2915,244 @@ PLAN_WRITERS = (
 )
 
 # Every other function that decides a path some write lands on, as (file,
-# function, WHAT it writes). A row here is a claim that the file is not the
-# plan the index lock guards - a document, a ledger, a scratch copy, a lock or
-# state file, or a member tree's files put back by that tree's own move - and
-# the reason is where a reader checks that claim.
+# function, the callee each of its writes goes through - a pattern or a tuple
+# of them, as a plan row names it - WHAT it writes). A row here is a claim that
+# the file is not the plan the index lock guards - a document, a ledger, a
+# scratch copy, a lock or state file, or a member tree's files put back by that
+# tree's own move - and the reason is where a reader checks that claim. The
+# callee is held to the code as a plan row's is, so a write the function gains
+# through any other callee is red by name rather than covered by the reason.
+_PW_LOCK_FILE = (
+    "a lock's own claim, breaker or mutex file under the lock directory, which "
+    "no plan reader opens and no plan path names")
 OTHER_WRITERS = (
-    ("hooks/_config.py", "append_gate_event", _PW_HOOK_FILE),
-    ("hooks/_config.py", "ensure_local_dir", _PW_HOOK_FILE),
-    ("hooks/_config.py", "mark_session_ended", _PW_HOOK_FILE),
-    ("hooks/_config.py", "stamp_running_plugin", _PW_HOOK_FILE),
-    ("hooks/detect-plan-skip.py", "_arm_bypass", _PW_HOOK_FILE),
-    ("hooks/detect-plan-skip.py", "_observed_message", _PW_HOOK_FILE),
-    ("hooks/detect-plan-skip.py", "main", _PW_HOOK_FILE),
-    ("hooks/guard-bash-writes.py", "_save_state", _PW_HOOK_FILE),
-    ("hooks/journal-writes.py", "_write_slot", _PW_HOOK_FILE),
-    ("hooks/journal-writes.py", "record_plugin_write", _PW_HOOK_FILE),
-    ("hooks/remind-tdd.py", "_save_state", _PW_HOOK_FILE),
-    ("hooks/require-plan.py", "_append_log", _PW_HOOK_FILE),
-    ("hooks/require-plan.py", "_owner_note", _PW_HOOK_FILE),
-    ("hooks/require-plan.py", "_record_observed", _PW_HOOK_FILE),
-    ("hooks/require-plan.py", "_record_warned", _PW_HOOK_FILE),
+    ("hooks/_config.py", "_take_slot_exclusive", "<write>", _PW_HOOK_FILE),
+    ("hooks/_config.py", "append_gate_event", "<write>", _PW_HOOK_FILE),
+    ("hooks/_config.py", "ensure_local_dir", "<write>", _PW_HOOK_FILE),
+    ("hooks/_config.py", "mark_session_ended", "<write>", _PW_HOOK_FILE),
+    ("hooks/_config.py", "stamp_running_plugin", "<write>", _PW_HOOK_FILE),
+    ("hooks/_config.py", "take_trivial_slot", "<write>", _PW_HOOK_FILE),
+    ("hooks/detect-plan-skip.py", "_arm_bypass", "<write>", _PW_HOOK_FILE),
+    ("hooks/detect-plan-skip.py", "_observed_message", "<write>", _PW_HOOK_FILE),
+    ("hooks/detect-plan-skip.py", "main", "<write>", _PW_HOOK_FILE),
+    ("hooks/guard-bash-writes.py", "_save_state", "<write>", _PW_HOOK_FILE),
+    ("hooks/journal-writes.py", "_write_slot", "<write>", _PW_HOOK_FILE),
+    ("hooks/journal-writes.py", "record_plugin_write", "<write>", _PW_HOOK_FILE),
+    ("hooks/remind-tdd.py", "_save_state", "<write>", _PW_HOOK_FILE),
+    ("hooks/require-plan.py", "_append_log", "<write>", _PW_HOOK_FILE),
+    ("hooks/require-plan.py", "_owner_note", "<write>", _PW_HOOK_FILE),
+    ("hooks/require-plan.py", "_record_observed", "<write>", _PW_HOOK_FILE),
+    ("hooks/require-plan.py", "_record_warned", "<write>", _PW_HOOK_FILE),
     ("lints/_deps.py", "write_map",
+     "<write>",
      "the import map document this module renders, at the path `--write-map` "
      "names - a document about the code, not a plan file"),
+    ("scripts/git/_worktrees.py", "_advance",
+     "_worktrees._undo (path not located: starred)",
+     "a task tree's files put back by the undo of a move step that failed - "
+     "`_undo` handed the step's own (path, kept bytes) pairs starred - inside "
+     "that tree, a member tree's plan files among them, with no index lock "
+     "(the guide's rule section names it)"),
     ("scripts/git/_worktrees.py", "_keep_copy",
+     ("_worktrees._write_aside", "_worktrees._write_synced"),
      "a task tree's kept copy - its files, its marker and its git index - in "
      "a copy directory of the tree's own"),
     ("scripts/git/_worktrees.py", "_put",
+     "<write>",
      "one file of a task tree put back from its kept copy, inside that tree - "
      "which can be that member tree's own plan file, written by the tree's "
      "move with no index lock (the guide's rule section names it)"),
     ("scripts/git/_worktrees.py", "_resume",
+     "_worktrees._undo",
      "a task tree's files and git index put back by an interrupted move's "
      "undo, inside that tree - a member tree's plan files among them, with no "
      "index lock (the guide's rule section names it)"),
     ("scripts/git/_worktrees.py", "restore_copy",
+     "_worktrees._undo",
      "a task tree's files and git index put back from its kept copy, inside "
      "that tree - a member tree's plan files among them, with no index lock "
      "(the guide's rule section names it)"),
     ("scripts/git/_worktrees.py", "write_record",
+     "_worktrees._write_aside",
      "a task tree's marker record, in the tree's own git directory"),
     ("scripts/git/close-phase.py", "_write_tip",
+     "<write>",
      "the declared files at a branch's tip, checked out into a scratch work "
      "tree the digest is taken over - never the checkout"),
     ("scripts/git/integrate-task.py", "_integrate",
+     "integrate-task._save_state",
      "the wave's integration state file, in the phase tree's git directory "
      "(never the working tree, never tracked)"),
     ("scripts/git/integrate-task.py", "_place",
+     "<write>",
      "a task tree's own changed files, placed in the phase tree's working "
      "tree; record paths - the plan, the journal, the evidence - are left out "
      "by `is_record_path` before anything is placed"),
     ("scripts/git/integrate-task.py", "merge_bytes",
+     "<write>",
      "the scratch files `git merge-file` merges a path's three sides in, "
      "removed after the merge"),
     ("scripts/git/manage-worktrees.py", "copy_worktree_include",
+     "<write>",
      "the untracked files `.worktreeinclude` names, copied into a new task "
      "tree"),
     ("scripts/governance/_evidence_io.py", "append_row",
+     "<write>",
      "one ledger row appended to the evidence shard of this run - a ledger "
      "file under the evidence directory, not a plan file"),
     ("scripts/governance/_invariants.py", "_materialize",
+     "<write>",
      "the plan AS OF A COMMIT, index and shards, written into a scratch "
      "directory to be validated there; the checkout's plan is not touched"),
+    ("scripts/governance/_journal_io.py", "_acquire", "<write>", _PW_LOCK_FILE),
     ("scripts/governance/_journal_io.py", "_append",
+     "<write>",
      "one journal row appended to a month file of the journal, under the "
      "journal's own lock"),
+    ("scripts/governance/_journal_io.py", "_break_stale",
+     ("<write>", "_journal_io._clear_stale_breaker"), _PW_LOCK_FILE),
     ("scripts/governance/_journal_io.py", "_worktree_key_uncached",
+     "<write>",
      "the worktree key file in the checkout's git directory, which names "
      "this tree to the journal"),
     ("scripts/governance/_journal_io.py", "record_plugin_write",
+     "<write>",
      "the slot naming the plugin's last write, in the session's state"),
     ("scripts/governance/_journal_io.py", "writer_token",
+     "<write>",
      "the journal writer's token file in the session's state, read back by "
      "the journal's own appends"),
+    ("scripts/governance/_locks.py", "_dir_mutex", "_locks._open_mutex",
+     _PW_LOCK_FILE),
+    ("scripts/governance/_locks.py", "acquire",
+     ("_locks._claim_shared", "_locks._replace_own", "_locks._rerecord",
+      "_locks._take_over"), _PW_LOCK_FILE),
+    ("scripts/governance/_locks.py", "refresh", "_locks._rerecord",
+     _PW_LOCK_FILE),
     ("scripts/governance/_scoped_commit.py", "record_attempt",
+     "_manifest_io.atomic_write_text",
      "a task attempt's start record, in the drive's state directory"),
-    ("scripts/governance/drive-phase.py", "aside_patch", _PW_SCRATCH),
-    ("scripts/governance/drive-phase.py", "auto_leave_owed", _PW_DRIVE_FILE),
-    ("scripts/governance/drive-phase.py", "auto_run", _PW_DRIVE_FILE),
-    ("scripts/governance/drive-phase.py", "created_since", _PW_SCRATCH),
-    ("scripts/governance/drive-phase.py", "fresh_keeper", _PW_DRIVE_FILE),
-    ("scripts/governance/drive-phase.py", "fresh_keeper.keep", _PW_DRIVE_FILE),
-    ("scripts/governance/drive-phase.py", "recut_tree", _PW_DRIVE_FILE),
+    ("scripts/governance/drive-phase.py", "aside_patch", "<write>", _PW_SCRATCH),
+    ("scripts/governance/drive-phase.py", "auto_leave_owed",
+     "drive-phase.write_json_atomic", _PW_DRIVE_FILE),
+    ("scripts/governance/drive-phase.py", "auto_run", "<write>", _PW_DRIVE_FILE),
+    ("scripts/governance/drive-phase.py", "created_since", "<write>", _PW_SCRATCH),
+    ("scripts/governance/drive-phase.py", "fresh_keeper.keep",
+     "drive-phase.write_json_atomic", _PW_DRIVE_FILE),
+    ("scripts/governance/drive-phase.py", "recut_tree",
+     "drive-phase.keep_redo_work", _PW_DRIVE_FILE),
     ("scripts/governance/drive-phase.py", "reopen_integration",
+     "_manifest_io.atomic_write_text",
      "the wave's integration state file, in the phase tree's git directory"),
-    ("scripts/governance/drive-phase.py", "resume_writer", _PW_DRIVE_FILE),
-    ("scripts/governance/drive-phase.py", "review_fix_dispatch", _PW_DRIVE_FILE),
-    ("scripts/governance/drive-phase.py", "reviewer_dispatch", _PW_DRIVE_FILE),
-    ("scripts/governance/drive-phase.py", "set_aside", _PW_DRIVE_FILE),
-    ("scripts/governance/drive-phase.py", "take_slice", _PW_DRIVE_FILE),
-    ("scripts/governance/drive-phase.py", "validation_dispatch", _PW_DRIVE_FILE),
-    ("scripts/governance/drive-phase.py", "write_explain", _PW_DRIVE_FILE),
-    ("scripts/governance/drive-phase.py", "write_state", _PW_DRIVE_FILE),
+    ("scripts/governance/drive-phase.py", "resume_writer",
+     "<write>", _PW_DRIVE_FILE),
+    ("scripts/governance/drive-phase.py", "review_fix_dispatch",
+     "<write>", _PW_DRIVE_FILE),
+    ("scripts/governance/drive-phase.py", "reviewer_dispatch",
+     "<write>", _PW_DRIVE_FILE),
+    ("scripts/governance/drive-phase.py", "set_aside", "<write>", _PW_DRIVE_FILE),
+    ("scripts/governance/drive-phase.py", "take_slice",
+     "drive-phase.write_json_atomic", _PW_DRIVE_FILE),
+    ("scripts/governance/drive-phase.py", "validation_dispatch",
+     "<write>", _PW_DRIVE_FILE),
+    ("scripts/governance/drive-phase.py", "write_explain",
+     "drive-phase.write_json_atomic", _PW_DRIVE_FILE),
+    ("scripts/governance/drive-phase.py", "write_state",
+     "drive-phase.write_json_atomic", _PW_DRIVE_FILE),
     ("scripts/governance/run-agent-session.py", "_run",
+     "run-agent-session._in_session",
      "the spawned session's stderr file, in the run's own scratch directory"),
     ("scripts/governance/run-agent-session.py", "main",
+     "run-agent-session.write_record",
      "the JSON line `--record` names, one per run - the caller's file"),
     ("scripts/governance/run-test-gate.py", "_write_own_log",
+     "<write>",
      "the raw log an `--own` run writes, which no plan reader opens"),
-    ("scripts/governance/stamp-verification.py", "_isolated_run", _PW_SCRATCH),
-    ("scripts/governance/stamp-verification.py", "_lay_over", _PW_SCRATCH),
-    ("scripts/governance/stamp-verification.py", "run_red", _PW_SCRATCH),
+    ("scripts/governance/stamp-verification.py", "_isolated_run",
+     "<write>", _PW_SCRATCH),
+    ("scripts/governance/stamp-verification.py", "_lay_over",
+     "<write>", _PW_SCRATCH),
+    ("scripts/governance/stamp-verification.py", "run_red", "<write>", _PW_SCRATCH),
     ("scripts/governance/verify-invariants.py", "_baseline_answer",
+     "_invariants.write_baseline",
      "the invariant baseline file `--baseline` writes, beside the plan but "
      "not a plan file any reader assembles"),
     ("scripts/manifest/_manifest_io.py", "ensure_claude_ignored",
+     "<write>",
      "one ignore line appended to the checkout's `.claude/.gitignore`"),
     ("scripts/manifest/audit-task.py", "_locked_file_return",
+     "audit-task._file_once_report",
      "a filed agent return, created once under the plan's returns directory "
      "and never rewritten - not a document the plan is assembled from"),
     ("scripts/manifest/fetch-ado-items.py", "main",
+     "_manifest_io.atomic_write_json",
      "the JSON of fetched work items at the `--out` path the caller names"),
-    ("scripts/manifest/read-ado-links.py", "main",
-     "the JSON of read work-item links at the `--out` path the caller names"),
+    ("scripts/manifest/merge-manifest.py", "_content_merge",
+     ("merge-manifest._write", "merge-manifest.run_driver"),
+     "the three sides of one plan file and the driver's answer, in a scratch "
+     "directory removed when the recomputation of git's merge of that file "
+     "ends - never the work tree"),
     ("scripts/manifest/merge-manifest.py", "driver_main",
+     ("merge-manifest._write", "merge-manifest.run_driver"),
      "the file git hands a merge driver as `%A`, which git itself moves into "
      "the work tree; git takes no plugin lock, and the guide's rule section "
      "names this write as outside the rule"),
     ("scripts/manifest/merge-manifest.py", "install",
+     "merge-manifest._write",
      "the repository's `.gitattributes` line and the driver's shim, at install"),
     ("scripts/manifest/merge-manifest.py", "uninstall",
+     "merge-manifest._write",
      "the repository's `.gitattributes` with the driver's line taken out"),
+    ("scripts/manifest/migrate-manifest.py", "_keep_restore_point",
+     "<write>",
+     "the converter's restore point - a copy of the index taken before "
+     "/audit:layout rewrites the plan - in the backups directory beside it, "
+     "which no plan reader assembles"),
+    ("scripts/manifest/read-ado-links.py", "main",
+     "_manifest_io.atomic_write_json",
+     "the JSON of read work-item links at the `--out` path the caller names"),
     ("scripts/panel/_panel_runstate.py", "record_opened",
+     "<write>",
      "the panel's opened-at record, in the session's state, which says when "
      "the panel was last opened"),
+    ("scripts/panel/_panel_write.py", "_legacy_claim", "<write>", _PW_LOCK_FILE),
     ("scripts/panel/_panel_write.py", "write_config",
+     "_manifest_io.raw_atomic_write_json",
      "the project's `audit.config.json`, which is configuration and not a "
      "plan file"),
     ("scripts/panel/_panel_write.py", "write_theme",
+     "_manifest_io.raw_atomic_write_json",
      "the panel's theme file, beside the configuration - colours a page "
      "reads, not a plan file"),
     ("scripts/panel/panel-server.py", "_clear_launch_stderr",
+     "<write>",
      "the panel server's launch stderr file, emptied at start so a launch "
      "reports only its own errors"),
     ("scripts/report/render-report.py", "main",
+     "<write>",
      "the rendered report pages - HTML, Markdown and the share copy - at the "
      "paths the caller names"),
     ("scripts/status/audit-lookup.py", "write_brief",
+     "<write>",
      "a brief written for a spawned agent, under the session's state"),
     ("scripts/usage/usage_ledger.py", "append_rows",
+     "usage_ledger._append_locked",
      "rows appended to a usage ledger month file, under the ledger's own "
      "lock"),
     ("scripts/usage/usage_ledger.py", "ensure_ledger_dir",
+     "<write>",
      "the usage ledger directory's marker file, which tells git and a "
      "reader what the directory holds"),
+    ("scripts/usage/usage_ledger.py", "lock_month", "<write>", _PW_LOCK_FILE),
     ("scripts/usage/usage_ledger.py", "mark_start_notice",
+     "_manifest_io.atomic_write_text",
      "the usage ledger's start-notice marker, so a notice is printed once "
      "per model set"),
     ("scripts/usage/usage_ledger.py", "rewrite_month",
+     ("<write>", "usage_ledger._append_locked", "usage_ledger._replace_rows"),
      "a usage ledger month file, rewritten whole under its own lock"),
     ("scripts/usage/usage_ledger.py", "save_cursor",
+     "_manifest_io.atomic_write_text",
      "the usage reader's cursor file, which says how far the transcripts "
      "were read"),
 )
@@ -3066,37 +3168,128 @@ def _pw_words(name):
 
 
 def _pw_arg(call, index, keyword):
-    """The expression `call` passes at `index` or as `keyword`, or None."""
-    if len(call.args) > index and not isinstance(call.args[index], ast.Starred):
-        return call.args[index]
+    """`(expression, None)` for what `call` passes at position `index` (None for a
+    keyword-only parameter) or as `keyword`, else `(None, why)`: `starred` when a
+    `*` argument stands at or before the position, `keywords` when a `**` mapping
+    could carry it, `omitted` when the call passes it nowhere."""
     for kw in call.keywords:
-        if kw.arg == keyword:
-            return kw.value
-    return None
+        if keyword and kw.arg == keyword:
+            return kw.value, None
+    if index is not None:
+        for at, arg in enumerate(call.args):
+            if isinstance(arg, ast.Starred):
+                return None, "starred"
+            if at == index:
+                return arg, None
+    if any(kw.arg is None for kw in call.keywords):
+        return None, "keywords"
+    return None, "omitted"
 
 
-def _pw_primitive(call, os_names, shutil_names):
-    """The path expression a write primitive writes, or None."""
+def _pw_bare(func, bindings):
+    """`(module, name)` a bare-name call is bound to by a `from` import of a
+    primitive's module (aliased, or through a star import), else None."""
+    if not isinstance(func, ast.Name):
+        return None                     # `module.name`: `_pw_primitive` reads it
+    bound = bindings[0].get(func.id)
+    if bound and bound[0] == "fn" and bound[1] in _PW_PRIMITIVES:
+        return bound[1], bound[2]
+    if bound:
+        return None                     # a sibling's function: `_pw_callee`'s
+    # A star import binds a name only if that module has it: `from shutil
+    # import *` leaves the builtin `open` alone, `from os import *` does not.
+    star = [m for m in bindings[3] if func.id in _PW_PRIMITIVES.get(m, ())]
+    return (star[-1], func.id) if star else None
+
+
+def _pw_mode_writes(call, index, keyword):
+    """True / False whether an `open` call's mode writes, or the reason it cannot
+    be told. A mode left out is `r`, which writes nothing."""
+    mode, why = _pw_arg(call, index, keyword)
+    if why == "omitted":
+        return False
+    if why:
+        return "mode not located: %s" % (why,)
+    if isinstance(mode, ast.Constant) and isinstance(mode.value, str):
+        return bool(_PW_WRITING_MODE.search(mode.value))
+    return "mode is not a literal"
+
+
+def _pw_flags_write(flags, os_names):
+    """True / False whether an `os.open` flags expression writes, or the reason it
+    cannot be told: it is read only when made of `os.O_*` names (bare, or
+    through `getattr(os, "O_*", 0)`), numbers and `|`."""
+    names, unknown = set(), False
+    for node in ast.walk(flags):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) \
+                and node.value.id in os_names and node.attr.startswith("O_"):
+            names.add(node.attr)
+        elif isinstance(node, ast.Call) and getattr(node.func, "id", None) == "getattr" \
+                and len(node.args) >= 2 and isinstance(node.args[1], ast.Constant):
+            names.add("%s" % (node.args[1].value,))
+        elif isinstance(node, ast.Name) and node.id not in os_names \
+                and node.id != "getattr" and not node.id.startswith("O_"):
+            unknown = True
+        elif isinstance(node, ast.Name) and node.id.startswith("O_"):
+            names.add(node.id)
+    if names & _PW_WRITING_FLAGS:
+        return True
+    return "flags are not literal `os.O_*` names" if unknown else False
+
+
+def _pw_primitive(call, bindings):
+    """None when `call` is no write primitive; else `(path expression, None)` or
+    `(None, why)` when it writes and its path - or whether it writes at all -
+    cannot be located. Never None for a primitive whose answer is unknown: an
+    unknown is reported, and only a call known to write nothing is dropped."""
     func = call.func
+    os_names, shutil_names = bindings[1], bindings[2]
     owner = func.value.id if isinstance(func, ast.Attribute) \
         and isinstance(func.value, ast.Name) else None
-    if (isinstance(func, ast.Name) and func.id == "open") or (
-            isinstance(func, ast.Attribute) and func.attr == "open"
-            and owner in _PW_OPEN_MODULES):
-        mode = _pw_arg(call, 1, "mode")
-        if isinstance(mode, ast.Constant) and isinstance(mode.value, str) \
-                and _PW_WRITING_MODE.search(mode.value):
-            return _pw_arg(call, 0, "file")
-        return None
-    if not isinstance(func, ast.Attribute):
-        return None
-    if func.attr in _PW_MOVE_CALLS and owner in os_names:
+    bare = _pw_bare(func, bindings)
+    module, name = bare if bare else (
+        "os" if owner in os_names else "shutil" if owner in shutil_names
+        else owner if owner in _PW_OPEN_MODULES else None,
+        func.attr if isinstance(func, ast.Attribute) else None)
+    builtin_open = isinstance(func, ast.Name) and func.id == "open" \
+        and not bare and "open" not in bindings[0]
+    if builtin_open or (
+            module in _PW_OPEN_MODULES and name == "open"):
+        writes = _pw_mode_writes(call, 1, "mode")
+    elif module == "os" and name == "open":
+        flags, why = _pw_arg(call, 1, "flags")
+        if why:
+            return None, "flags not located: %s" % (why,)
+        writes = _pw_flags_write(flags, os_names)
+        if writes is True:
+            return _pw_arg(call, 0, "path")
+        if writes is False:
+            return None                 # every flag named, none of them writes
+        return None, writes
+    elif module == "os" and name in _PW_MOVE_CALLS:
         return _pw_arg(call, 1, "dst")
-    if func.attr in _PW_COPY_CALLS and owner in shutil_names:
+    elif module == "shutil" and name in _PW_COPY_CALLS:
         return _pw_arg(call, 1, "dst")
-    if func.attr in ("write_text", "write_bytes"):
-        return func.value
-    return None
+    elif isinstance(func, ast.Attribute) and func.attr in ("write_text",
+                                                           "write_bytes"):
+        return func.value, None
+    elif isinstance(func, ast.Attribute) and func.attr == "open" \
+            and owner not in os_names and owner not in _PW_OPEN_MODULES \
+            and call.args and isinstance(call.args[0], ast.Constant) \
+            and isinstance(call.args[0].value, str) \
+            and _PW_MODE_LITERAL.match(call.args[0].value):
+        # A path object's `open(mode)`: only a literal mode is read, since an
+        # `open` method of anything else takes no mode first - the docstring of
+        # `plan_writer_violations` lists the non-literal one.
+        return ((func.value, None) if _PW_WRITING_MODE.search(call.args[0].value)
+                else None)
+    else:
+        return None                     # no primitive: a callee, or nothing
+    if writes is True:
+        return _pw_arg(call, 0, "file")
+    if writes is False:
+        return None                     # a mode read as one that writes nothing
+    return None, writes
 
 
 def _pw_functions(tree):
@@ -3116,25 +3309,39 @@ def _pw_functions(tree):
     return found
 
 
-def _pw_own_calls(fn):
-    """Every Call in `fn`'s own body; a nested def or class is a unit of its
-    own, a lambda's body is `fn`'s."""
-    calls, stack = [], list(fn.body)
+def _pw_scope_parts(node):
+    """The parts of a nested def or class that run in the ENCLOSING scope when it
+    is defined: a def's decorators and default values; a class's decorators,
+    bases and body statements (its methods are units of their own)."""
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return (list(node.decorator_list) + list(node.args.defaults)
+                + [d for d in node.args.kw_defaults if d is not None])
+    return (list(node.decorator_list) + list(node.bases)
+            + [kw.value for kw in node.keywords] + list(node.body))
+
+
+def _pw_own_calls(body):
+    """Every Call the statements `body` make in their own scope: a nested def's
+    body is a unit of its own, while its decorators and defaults, a class's
+    body statements and a lambda's body run here."""
+    calls, stack = [], list(body)
     while stack:
         node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            stack.extend(_pw_scope_parts(node))
+            continue
         if isinstance(node, ast.Call):
             calls.append(node)
-        stack.extend(child for child in ast.iter_child_nodes(node)
-                     if not isinstance(child, (ast.FunctionDef,
-                                               ast.AsyncFunctionDef,
-                                               ast.ClassDef)))
+        stack.extend(ast.iter_child_nodes(node))
     return calls
 
 
 def _pw_bindings(tree):
     """({local name: ("mod", basename) | ("fn", basename, name)}, the names
-    bound to os, the names bound to shutil) for one module."""
-    names, os_names, shutil_names = {}, set(), set()
+    bound to os, the names bound to shutil, the modules star-imported) for one
+    module. A relative import binds nothing here: no module of this tree uses
+    one, since every sibling is reached by bare basename."""
+    names, os_names, shutil_names, star = {}, set(), set(), []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -3147,19 +3354,39 @@ def _pw_bindings(tree):
                     shutil_names.add(local)
         elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
             for alias in node.names:
-                if alias.name != "*":
+                if alias.name == "*":
+                    star.append(node.module.split(".")[-1])
+                else:
                     names[alias.asname or alias.name] = (
                         "fn", node.module.split(".")[-1], alias.name)
-    return names, os_names, shutil_names
+    return names, os_names, shutil_names, star
+
+
+# The module's own statements, as a unit of their own: a write at import time,
+# or a call into a forwarder made there, decides a path as a function does.
+_PW_MODULE_UNIT = "<module>"
+
+
+def _pw_params(args):
+    """([parameter names], {name: (position or None, default expression or
+    None)}) of a def - a keyword-only parameter has no position."""
+    positional = list(getattr(args, "posonlyargs", [])) + list(args.args)
+    defaults = [None] * (len(positional) - len(args.defaults)) + list(args.defaults)
+    shape = dict((a.arg, (at, d)) for at, (a, d) in enumerate(zip(positional, defaults)))
+    shape.update((a.arg, (None, d)) for a, d in zip(args.kwonlyargs, args.kw_defaults))
+    return [a.arg for a in positional + list(args.kwonlyargs)], shape
 
 
 def _pw_units(script_dir, hooks_dir):
-    """([unit], files read, [unreadable file]) - one unit per def, as
-    (file, module, qualified name, chain, bindings, parameters, own calls)."""
+    """([unit], files read, [unreadable file]) - one unit per def and one for
+    each module's own statements, as (file, module, qualified name, chain,
+    bindings, parameters, own calls, {parameter: (position, default)})."""
     script_dir = script_dir or _output.SCRIPTS_DIR
     hooks_dir = hooks_dir if hooks_dir is not None else _output.HOOKS_DIR
     units, unreadable, read = [], [], 0
     for kind, directory in _source_roots(script_dir, hooks_dir):
+        # A root that is not there reads fewer files, and is not silent: every
+        # row naming a function of it is then reported as naming no function.
         if not os.path.isdir(directory):
             continue
         for rel, path in _output.lint_py_files(directory):
@@ -3168,25 +3395,35 @@ def _pw_units(script_dir, hooks_dir):
                 with open(path, "r", encoding="utf-8") as fh:
                     tree = ast.parse(fh.read(), filename=rel)
             except (OSError, SyntaxError, ValueError):
-                unreadable.append(named)
+                unreadable.append(named)    # reported by name as unscannable
                 continue
             read += 1
             module = os.path.splitext(os.path.basename(rel))[0]
             bindings = _pw_bindings(tree)
+            units.append((named, module, _PW_MODULE_UNIT, (), bindings, [],
+                          _pw_own_calls(tree.body), {}))
             for qual, fn, chain in _pw_functions(tree):
-                args = fn.args
-                params = [a.arg for a in list(getattr(args, "posonlyargs", []))
-                          + args.args + args.kwonlyargs]
-                units.append((named, module, qual, chain, bindings, params,
-                              _pw_own_calls(fn)))
+                params, shape = _pw_params(fn.args)
+                # A parameter the body assigns again no longer holds the path
+                # the caller handed in, so a write through it is decided here.
+                rebound = set(n.id for stmt in fn.body for n in ast.walk(stmt)
+                              if isinstance(n, ast.Name)
+                              and isinstance(n.ctx, ast.Store))
+                units.append((named, module, qual, chain, bindings,
+                              [p for p in params if p not in rebound],
+                              _pw_own_calls(fn.body), shape))
     return units, read, unreadable
 
 
 def _pw_callee(unit, call, defined):
     """(module, qualified name) of the function `call` reaches, or None: a
     bare name is a def of the enclosing chain, then of the module, then a
-    `from` import; `alias.name` is a function of an imported module."""
-    _named, module, _qual, chain, bindings, _params, _calls = unit
+    `from` import; `alias.name` is a function of an imported module. None is
+    a callee this lint cannot name - a method, a value from a dict or a
+    variable, a `getattr`, a `_loader` sibling - which the docstring of
+    `plan_writer_violations` lists, because reporting each would report every
+    method call of the tree."""
+    module, chain, bindings = unit[1], unit[3], unit[4]
     func = call.func
     if isinstance(func, ast.Name):
         for depth in range(len(chain), -1, -1):
@@ -3203,22 +3440,36 @@ def _pw_callee(unit, call, defined):
 
 
 def _pw_sites(unit, forwards, defined):
-    """[(call, path expression, via)] for every write `unit` makes: a primitive
-    (`via` is `<write>`), or a call of a function that forwards one of its
-    parameters to a write (`via` is `module.function`)."""
+    """[(call, path expression or None, via, the path is the unit's own
+    parameter)] for every write `unit` makes: a primitive (`via` is `<write>`),
+    or a call of a function that forwards one of its parameters to a write
+    (`via` is `module.function`). A path that cannot be located is None, with
+    the reason in `via` (`_PW_UNLOCATED`); a path the call leaves to the
+    forwarder's default is that default expression, which the forwarder's
+    own module decides, never a parameter of this unit."""
     out = []
     for call in unit[6]:
-        target = _pw_primitive(call, unit[4][1], unit[4][2])
+        prim = _pw_primitive(call, unit[4])
         via = "<write>"
-        if target is None:
+        if prim is None:
             key = _pw_callee(unit, call, defined)
             if key not in forwards:
+                # Not a writer this lint resolves: a callee that forwards
+                # nothing to a write, or one `_pw_callee` cannot name.
                 continue
-            target = _pw_arg(call, forwards[key][0], forwards[key][1])
+            position, name, default = forwards[key]
+            target, why = _pw_arg(call, position, name)
             via = "%s.%s" % key
-            if target is None:
+            if why == "omitted" and default is not None:
+                out.append((call, default, via, False))
                 continue
-        out.append((call, target, via))
+        else:
+            target, why = prim
+        if why:
+            out.append((call, None, _PW_UNLOCATED % (via, why), False))
+            continue
+        out.append((call, target, via,
+                    isinstance(target, ast.Name) and target.id in unit[5]))
     return out
 
 
@@ -3239,22 +3490,25 @@ def _plan_write_scan(script_dir, hooks_dir):
         for unit in units:
             key = (unit[1], unit[2])
             if key in forwards:
-                continue
-            for _call, target, _via in _pw_sites(unit, forwards, defined):
-                if isinstance(target, ast.Name) and target.id in unit[5]:
-                    forwards[key] = (unit[5].index(target.id), target.id)
+                continue                    # already found to forward
+            for _call, target, _via, own in _pw_sites(unit, forwards, defined):
+                if own:
+                    position, default = unit[7][target.id]
+                    forwards[key] = (position, target.id, default)
                     grew = True
                     break
     found = []
     for unit in units:
-        decided = [(call, target, via) for call, target, via
+        decided = [(call, target, via) for call, target, via, own
                    in _pw_sites(unit, forwards, defined)
-                   if not (isinstance(target, ast.Name) and target.id in unit[5])]
+                   if not own]
         if not decided:
+            # Every write goes to a path its caller hands in: a forwarder, whose
+            # callers are judged in its place.
             continue
         hint = set()
         for _call, target, _via in decided:
-            for node in ast.walk(target):
+            for node in ast.walk(target) if target is not None else ():
                 if isinstance(node, ast.Name):
                     hint |= _pw_words(node.id)
                 elif isinstance(node, ast.Attribute):
@@ -3322,26 +3576,61 @@ def plan_writer_violations(script_dir=None, hooks_dir=None, plan_table=None,
     is named manifest/shard..."), never the verdict: a fresh `json.dump` to a
     shard path through a parameter named `p` in a new helper makes the helper
     a forwarder and its caller a decider no table names. And each row is held
-    to the code: a row naming no decider, a plan row whose callee pattern a
-    write of that function does not match, a plan row whose case is gone from
-    its suite, a reason shorter than `_MIN_WRITER_REASON`, and a function in
-    two classes are all reported. A scan that read no file or found no writer
-    is refused rather than reported clean.
+    to the code: a row naming no decider, a row of EITHER table whose callee
+    pattern a write of that function does not match (so a write added through
+    another callee, a bare primitive included, is red by name), a plan row
+    whose case is gone from its suite, a reason shorter than
+    `_MIN_WRITER_REASON`, and a function in two classes are all reported. A
+    scan that read no file or found no writer is refused rather than reported
+    clean.
 
-    WHAT IT CANNOT SEE. A write through a CALLABLE handed in (`_under_lock`'s
-    `body`), so a verb's row sits at its `cmd_*` door and pa0 holds the door
-    itself; a callee reached by anything but a bare name or `module.name` - a
-    method of an object, a function stored in a variable or a dict, a
-    `getattr`, a sibling loaded through `_loader`; a path that is a parameter
-    passed through a container or an attribute into a forwarder (the caller is
-    then the decider, which is conservative, never a hole); `open` with a mode
-    that is not a literal; `os.open`/`os.write`, `Path.open`, `os.link`,
-    `shutil.copytree`; and every write a subprocess makes - git's own, the
-    merge into the parent checkout and a member tree's records refresh among
-    them, which the guide's rule section names as outside the rule. Whether a
-    plan row's reason is TRUE it does not judge beyond its callee and its case:
-    the case is the proof, and `tests/test__evidence_io.py`'s pa block runs
-    each mechanism through the real command with a change in the window.
+    WHAT IT CANNOT RESOLVE IS REPORTED, NEVER DROPPED. A resolved writer handed
+    its path starred or inside a `**` mapping, a primitive whose mode or flags
+    cannot be located or are not literals, and a parameter left out with no
+    default are sites of the CALLING function, their `via` saying why
+    (`_PW_UNLOCATED`); a parameter left out is read as its default expression.
+    A module's own statements are a unit (`<module>`), so a write at import
+    time and a forwarder whose one caller is module level are both reported;
+    a primitive imported by bare name, aliased or through a star import, is
+    the same primitive; a parameter the body assigns again holds no path the
+    caller handed in, so a write through it is the function's own decision.
+    Each `continue` and `None` left in the scan is a call known to write
+    nothing, a callee named below, or a unit already decided, and says so.
+
+    WHAT IT CANNOT SEE - the callee through a dict, `getattr` or a method, the
+    delete and the truncation are cases of `tests/test__deps.py` (pw13). A
+    write through a CALLABLE handed in (`_under_lock`'s `body`), so a verb's row
+    sits at its `cmd_*` door and pa0 holds the door itself; a callee reached by
+    anything but a bare name or `module.name` - a method of an object, a
+    function stored in a variable or a dict, a `getattr`, a sibling loaded
+    through `_loader` - since reporting each would report every method call of
+    the tree; a write through a descriptor (`os.write`, `os.fdopen`), whose
+    path is read where `os.open` with a writing flag opens it, or is a
+    `mkstemp` temp whose replace is read; a path object's `open` whose mode is
+    not a literal, since an `open` method of anything else takes no mode and
+    reading each would report them all. A second write added to a classified
+    function through a callee its row already names is covered by that row
+    (pw13b): a row is a pattern of callees, not a count of sites. A path passed
+    through a container or an attribute into a forwarder makes the caller the
+    decider, which is conservative, never a hole. A delete or a truncation is
+    not read (`os.remove`, `os.unlink`, `shutil.rmtree`, `os.rmdir`,
+    `os.truncate`): what the index lock guards against is a stale read saved
+    over a newer write, and a delete saves nothing - but a delete of a plan
+    file loses that file, so the deletes in this tree that can reach one are
+    named: `audit-task._locked_seed` removes the manifest it has just written
+    when that seed does not validate, inside its locked section;
+    `_panel_write.restore` removes a file a failed save created, as the verbs'
+    undo, inside their locked section; `integrate-task.refresh_records` and
+    `_worktrees._put` remove a member tree's record or plan file inside that
+    tree, by the tree's own move and with no index lock, which the guide's rule
+    section names; `drive-phase.set_aside` removes a task's untracked declared
+    files when its work is set aside, a plan file only where a task declares
+    one. And every write a subprocess makes - git's own, the merge
+    into the parent checkout and a member tree's records refresh among them,
+    which the guide's rule section names as outside the rule. Whether a plan
+    row's reason is TRUE it does not judge beyond its callee and its case: the
+    case is the proof, and `tests/test__evidence_io.py`'s pa block runs each
+    mechanism through the real command with a change in the window.
     """
     plan_table = PLAN_WRITERS if plan_table is None else plan_table
     other_table = OTHER_WRITERS if other_table is None else other_table
@@ -3379,24 +3668,30 @@ def plan_writer_violations(script_dir=None, hooks_dir=None, plan_table=None,
             violations.append((named, "%s() is in %s at once - a writer is in "
                                       "exactly one class" % (
                                           owner, " and ".join(classes))))
-        row = plan.get(key)
-        if row is not None:
+        for label, row in (("PLAN_WRITERS", plan.get(key)),
+                           ("OTHER_WRITERS", other.get(key))):
+            if row is None:
+                continue                    # the function's class is the other one
+            # A row covers the callees it names and no other: a write added
+            # through another callee - a bare primitive included - is red here.
             patterns = row[2] if isinstance(row[2], tuple) else (row[2],)
             stray = [site for site in sites if not any(
                 fnmatch.fnmatchcase(site[1], p) for p in patterns)]
             if stray:
                 violations.append((named, (
-                    "PLAN_WRITERS row for %s() says it writes through %s, and "
-                    "%s does not - the row describes code that is not there"
-                    % (owner, " or ".join(patterns),
+                    "%s row for %s() says it writes through %s, and %s does not "
+                    "- the row describes code that is not there"
+                    % (label, owner, " or ".join(patterns),
                        ", ".join("line %d via %s" % s for s in stray[:3])))))
+        row = plan.get(key)
+        if row is not None:
             missing = _pw_case_missing(repo, row[3])
             if missing:
                 violations.append((named, "PLAN_WRITERS row for %s() %s, so "
                                           "nothing proves it" % (owner, missing)))
     live = set((named, owner) for named, owner, _s, _h in found)
     for label, rows, reason_at in (("PLAN_WRITERS", plan_table, 4),
-                                   ("OTHER_WRITERS", other_table, 2)):
+                                   ("OTHER_WRITERS", other_table, 3)):
         for row in rows:
             if len((row[reason_at] or "").strip()) < _MIN_WRITER_REASON:
                 violations.append((row[0], (

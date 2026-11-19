@@ -490,6 +490,28 @@ TABLE = (
   "        if not classes and not hint:\n            continue\n"
   "        if not classes:\n            violations.append((named, (",
   DEP, "pw3"),
+ # ...and with a call whose path argument cannot be located DROPPED, as it was
+ # before: a path handed in starred or inside `**` then decides nothing.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "            out.append((call, None, _PW_UNLOCATED % (via, why), False))\n",
+  "            pass\n", DEP, "pw10"),
+ # ...and with the module's own statements left out of the units: a write at
+ # import time, and a forwarder whose one caller is module level, go unread.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "            units.append((named, module, _PW_MODULE_UNIT, (), bindings, [],\n"
+  "                          _pw_own_calls(tree.body), {}))\n",
+  "", DEP, "pw12"),
+ # ...and with a star import binding every name, the shape it had while it was
+ # written: `from shutil import *` then takes the builtin `open`, and a write
+ # through it is read as a shutil call that writes nothing.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "    star = [m for m in bindings[3] if func.id in _PW_PRIMITIVES.get(m, ())]",
+  "    star = list(bindings[3])", DEP, "pw12"),
+ # ...and with an OTHER_WRITERS row's callee pattern ignored: a raw write added
+ # beside the callee the row names is then covered by the row's reason.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "                           (\"OTHER_WRITERS\", other.get(key))):",
+  "                           (\"OTHER_WRITERS\", None)):", DEP, "pw14"),
  # The scrub-by-default rule, crippled. It is what keeps a new caller from
  # reaching the JSON writer that leaves machine paths in, and a version
  # reporting nothing reads exactly like a tree whose only raw writes are listed.
@@ -1365,9 +1387,16 @@ ALLOW = (
  # the path its caller handed in decides nothing, and convicting it would put
  # a row on every forwarding helper of the tree - `pw5`'s fixture holds two.
  ("plan_writer_violations", L + "_deps.py", "replace",
-  "                   if not (isinstance(target, ast.Name) and target.id in unit[5])]",
+  "                   if not own]",
   "                   if True]",
   DEP, "pw5"),
+ # The every-writer-classified rule, with a forwarder's default read even when
+ # the caller passes the path: a forwarder handing its own parameter into the
+ # parameter whose default it overrides then decides that default - `pw10b`'s
+ # `relay_default`.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "            if why == \"omitted\" and default is not None:",
+  "            if default is not None:", DEP, "pw10b"),
  # The raw-writer allow-list, ignored: a site that names its reason for
  # writing bytes exactly as given - a re-encoding, the user's own settings -
  # would be convicted anyway, and `rj2`'s fixture holds one beside the

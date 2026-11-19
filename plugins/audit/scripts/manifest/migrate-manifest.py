@@ -282,6 +282,17 @@ def _restore(path, backup, target):
             % (path, target))
 
 
+def _keep_restore_point(path, stamp):
+    """(backup path, whether the backups directory is ignored) - a copy of the
+    index at `path` under the backups directory beside it, the file `_restore`
+    puts back. Its own function so the converter's plan write and this copy are
+    held to their own callees: the copy is not a plan file, and the save is."""
+    backup_dir, ignored = _mio.ensure_backup_dir(path)
+    backup = os.path.join(backup_dir, "%s.bak-%s" % (os.path.basename(path), stamp))
+    shutil.copy2(path, backup)
+    return backup, ignored
+
+
 def _preview(raw_index, index_path, manifest, to, target):
     """The `--dry-run` line for either direction. Names the files that would appear and,
     for the reverse, the directory that would be moved aside — a preview that showed
@@ -311,15 +322,16 @@ def _changed_since(path, as_read):
     """None while the plan at `path` still assembles to `as_read`, else the
     refusal: something wrote it after this run read it.
 
-    THE LOCK THIS RUNS UNDER DOES NOT STOP THAT WRITE. `/audit:layout` takes the
-    index lock by hand before calling this script, so the claim is the SESSION's,
-    and a gate or verb of that same session asking for the lock is answered as
-    its holder and writes - a probe showed a run record landing in the window
-    and the save below writing it back out of existence. Comparing a fresh read
-    with the first one just before the save turns that lost write into a
-    refusal that names it. It does not close the window: a write landing
-    between this read and the save is still lost, and that interval holds no
-    other step of this run, where before it held the validation and the backup.
+    THE LOCK THIS RUNS UNDER DOES NOT STOP THAT WRITE. `/audit:layout`'s command
+    document takes the index lock by hand before calling this script, so the
+    claim is the SESSION's, and a gate or verb of that same session asking for
+    the lock is answered as its holder and writes - a probe showed a run record
+    landing in the window and the save below writing it back out of existence.
+    Comparing a fresh read with the first one just before the save turns that
+    lost write into a refusal that names it. It does not close the window: a
+    write landing after this read is still lost, and that window is the whole
+    save - every shard and then the index, each a file of its own - where
+    before it also held the validation and the restore point.
     """
     try:
         now = _plan_text(_mio.load_manifest(path))
@@ -403,12 +415,9 @@ def migrate(path, *, to="sharded", dry_run=False, force=False, renumber=False, o
         return 0, _preview(raw, path, manifest, to, target)
 
     stamp = _utc_stamp()
-    backup = None
+    backup, ignored = None, True
     if out is None:                     # in-place: back up the original first
-        backup_dir, ignored = _mio.ensure_backup_dir(path)
-        backup = os.path.join(backup_dir,
-                              "%s.bak-%s" % (os.path.basename(path), stamp))
-        shutil.copy2(path, backup)
+        backup, ignored = _keep_restore_point(path, stamp)
     retired = ""
     # Asked of the ASSEMBLED plan before either save splits or joins it: the
     # news is about values, wherever the layout puts them.

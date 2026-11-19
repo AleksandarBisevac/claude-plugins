@@ -134,7 +134,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   proving it reads behind the index lock** (contributors). `_deps.plan_writer_violations()`
   fails a function that decides a path it writes and that no table classifies - a plan writer
   with its case, a writer the state lint holds, or a writer of something else saying what - so a
-  new save helper is caught at its caller whatever it is named.
+  new save helper is caught at its caller whatever it is named. Every row names the callees its
+  function writes through, so a write added through another one is red; a call whose path the
+  lint cannot locate is reported at its caller with the reason, never skipped; and each caller of
+  the evidence module's locked write has a case of its own landing another writer's change as it
+  asks for the lock.
+- **`merge-manifest.py resolve` refuses a write made while the merge was stopped even when that
+  file was staged.** It compares each plan file with git's merge of it recomputed from the merge's
+  own commits (`HEAD`, `MERGE_HEAD` and their merge base, through the file's merge driver or
+  `git merge-file`), no longer with the index, which `git add` moves; before, a stray write that
+  was staged passed as what the merge left and was overwritten. Its refusal names, for each file,
+  the commands that put it back, which discard what it holds. It runs only commands git 2.30
+  already has (`rev-parse`, `cat-file --filters`, `check-attr`, `merge-file`, `hash-object`,
+  `update-index`), so on that git, as on a newer one, an unstaged stray write was refused before
+  this change and still is, and a staged one, overwritten before, is now refused. A merge run with a strategy option
+  (`-X ours`) leaves files the recomputation cannot reproduce, which are refused, never written
+  over.
+- **`repair-tests-add.py --apply` refuses when every entry it found changed in the plan before
+  its lock**, as `repair-commits.py --apply` does, instead of saving the plan unchanged and
+  reporting it repaired: exit 1 and `REFUSED: ... nothing was written - re-run to look again`.
+- **A plan write whose lock holder died while it waited says the lock looks abandoned**, with the
+  steps to release it, instead of saying the lock was not free; the drive waits only on the gate
+  runner's own record-refusal line naming a busy lock, not on that sentence anywhere in its
+  output.
 - **The bug a red CI run owes is filed in one place, and names the failed jobs.**
   `full-gate.py --ci-run` files it, titled with the branch, commit and run as before; the drive
   no longer files one itself. Reading the same run again files nothing: a bug with that title,

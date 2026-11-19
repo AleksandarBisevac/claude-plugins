@@ -1860,21 +1860,30 @@ at once did not. `state_write_sites()` prints the corpus the rule judged. A meth
 on a string or a path is not the `os` module's and is not read — the allow row in
 `tools/prove-gates.py` holds that line.
 `plan_writer_violations()` classifies every function under `scripts/` and `hooks/` that DECIDES a
-path some write lands on — a writing `open`, an os move, a shutil copy or a path's `write_text` in
-its own body, or a call of a function that forwards one of its parameters to one, found to a
+path some write lands on — a writing `open` or `os.open`, an os move or link, a shutil copy, a
+path's `open` in a writing mode or its `write_text` in its own body, a primitive imported by bare
+name included, or a call of a function that forwards one of its parameters to one, found to a
 fixpoint — into exactly one class: a plan writer (`PLAN_WRITERS`, naming the callee each of its
 writes goes through and the case proving it reads the plan behind the index lock), a writer the
 state lint already holds (derived from `STATE_WRITERS`), or a writer of something else
-(`OTHER_WRITERS`, saying what it writes). A function in none is red by name; plan words in its
-path are a hint printed beside that report, never the verdict, so a new save helper whose names
-carry no plan word is still caught at its caller. A row naming no such function, a plan row whose
-callee no longer matches the code or whose case is gone from its suite, a short reason and a
-function in two classes are each reported, and a scan that read nothing is refused.
-`plan_writer_sites()` prints the corpus. The verbs' rows sit at their `cmd_*` doors because a
-write through a callable handed in (`_under_lock`'s `body`) is invisible to the scan; the door
-itself is held by `tests/test__evidence_io.py`'s `pa0`, and the same block runs each mechanism
-through the real command with another writer's change landed as it asks for the lock. Its
-docstring's *WHAT IT CANNOT SEE* names the rest, a subprocess's writes among them.
+(`OTHER_WRITERS`, naming its callees the same way and saying what it writes). A module's own
+statements are a unit (`<module>`). What the scan cannot resolve is reported, never dropped: a
+path argument passed starred or inside `**`, or a mode or flags it cannot read, is a site of the
+calling function with the reason in its callee (`_worktrees._undo (path not located: starred)`),
+and a parameter left out is read as its default. A function in none is red by name; plan words in
+its path are a hint printed beside that report, never the verdict, so a new save helper whose
+names carry no plan word is still caught at its caller. A row naming no such function, a row of
+either table whose callees no longer match the code — so a write added through another callee is
+red even where the row's reason would cover it — a plan row whose case is gone from its suite, a
+short reason and a function in two classes are each reported, and a scan that read nothing is
+refused. `plan_writer_sites()` prints the corpus. The verbs' rows sit at their `cmd_*` doors
+because a write through a callable handed in (`_under_lock`'s `body`) is invisible to the scan;
+`tests/test__evidence_io.py`'s `pa0` holds only the door's call position, and the same block runs
+each write mechanism the doors share (`pa1`, `pa2`, `pa10`, `pm1`-`pm3`) and each caller of
+`write_plan_file` (`pf1`-`pf7`) through the real code with another writer's change landed as it
+asks for the lock. Its docstring's *WHAT IT CANNOT SEE* names the rest — a callee reached
+through an object, a dict or `getattr`, a delete and the deletes that can reach a plan file, a
+subprocess's writes among them.
 `step_pointer_violations()` reads every pointer to a numbered step of a document — the document
 named before or after the word, the word in any case (docstrings here capitalise it), a comma
 list, a lettered range, a pointer wrapped across a comment line — in every `.md`, `.py` and script this repo keeps, and fails one naming a step the document
@@ -4162,19 +4171,28 @@ nothing reports, where a refused record is exit 3 with its ledger row standing f
 --state` on a sharded plan holds `index` across its `git commit`, so a project's slow pre-commit
 hook keeps a wave sibling's record waiting for as long as the hook runs.
 
-**Every other writer of a plan file is held to the same rule by a lint, and git's own writes are
-outside it.** `_deps.plan_writer_violations()` (under `_deps.py` above) places every function that
-decides a written path, each plan writer with the case showing it reads behind the lock — the two
-repairs re-read the plan inside their locked section and save only that read (`rc12`, `rt16`),
-and the layout converter, run under a lock its command took by hand, refuses a plan that changed
-since its read (`ml1`: a gate of the same session is answered as that lock's holder and wrote
-mid-conversion, which the converter's save then dropped). The merge driver's `resolve` is inside
-the rule too, though it reads no plan file at all: it builds every file from git's commits, so
-under `index` and before its first write it asks each target what it holds, and refuses the whole
-write, naming each file, when one holds anything but the driver's markers, what git's merge left
-there, or what `resolve` is about to write (`rw1`: a run record written into a shard the merge
-left clean survives with nothing written; `rw5`: a `resolve` stopped after its first file is
-completed by the next call). A conflicted shard holding the driver's marker block needs no
+**Every other writer of a plan file reads behind the lock, refuses on a change since its read, or
+is named below as outside the rule — and a lint holds that.** `_deps.plan_writer_violations()`
+(under `_deps.py` above) places every function that decides a written path, each plan writer with
+the case showing it reads behind the lock — the two repairs re-read the plan inside their locked
+section and save only that read (`rc12`, `rt16`), and refuse when the window took every row they
+found (`rc13`, `rt17`); the layout converter, run under a lock its command's document takes by
+hand, refuses a plan that changed since its read (`ml1`: a gate of the same session is answered
+as that lock's holder and wrote mid-conversion, which the converter's save then dropped), and a
+write landing after that re-read, during the save of every shard and the index, is still lost.
+The merge driver's `resolve` is inside the rule too, though it reads no plan file at all: it
+builds every file from git's commits, so under `index` and before its first write it asks each
+target what it holds, and refuses the whole write, naming each file and the commands that put it
+back, when one holds anything but what `resolve` is about to write or **git's merge of that file
+recomputed from the merge's own commits** — `HEAD`, `MERGE_HEAD` and their merge base, through the
+file's merge driver or `git merge-file` — never the index, which `git add` and `git add -u` move
+while the merge is stopped (`rw1`: a run record written into a shard the merge left clean survives
+with nothing written; `rw7`: the same write staged by name, staged by `git add -u`, staged then
+written again, and a conflicted shard resolved by hand and staged, are each refused, and `rw7b`
+runs the commands each refusal names; `rw9`: on a CRLF work tree; `rw10`: with no driver
+installed; `rw5`: a `resolve` stopped after its first file is completed by the next call). What it cannot recompute is a merge run with a strategy option
+(`-X ours`) or a strategy of its own: the reference then differs from what the merge left, and
+the file is refused, never overwritten. A conflicted shard holding the driver's marker block needs no
 comparison, because each `PLAN_WRITERS` row reads the file it writes as JSON first and a marker
 block is not JSON (`rw3`: the evidence writer refuses a record for a task in it, and the plan's
 loader fails on it); one holding JSON instead is a stray like any other. **Writes no plugin lock

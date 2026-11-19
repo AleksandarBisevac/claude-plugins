@@ -3920,8 +3920,8 @@ def _plan_writer_cases(check):
               not set(flagged) & set(["keep", "relay", "peek", "shard_name"]))
         rows = (("scripts/saver.py", "tidy", "<write>",
                  "tests/none.py pw0", _PW_REASON),)
-        other = (("scripts/saver.py", "carry", _PW_REASON),
-                 ("scripts/saver.py", "keep", _PW_REASON))
+        other = (("scripts/saver.py", "carry", "saver.keep", _PW_REASON),
+                 ("scripts/saver.py", "keep", "<write>", _PW_REASON))
         held = M.plan_writer_violations(tree, hooks, rows, other, (), repo=tree)
         said = " | ".join(w for _f, w in held)
         check("pw6 EACH ROW IS HELD TO THE CODE: a plan row whose callee "
@@ -3933,16 +3933,16 @@ def _plan_writer_cases(check):
               and "names case pw0 in tests/none.py, which cannot be read" in said
               and "OTHER_WRITERS row for keep() names no function" in said)
         twice = M.plan_writer_violations(
-            tree, hooks, (), (("scripts/saver.py", "tidy", _PW_REASON),
-                              ("scripts/saver.py", "carry", _PW_REASON)),
+            tree, hooks, (), (("scripts/saver.py", "tidy", "saver.keep", _PW_REASON),
+                              ("scripts/saver.py", "carry", "saver.keep", _PW_REASON)),
             (("scripts/saver.py", "tidy", _PW_REASON),), repo=tree)
         check("pw7 A WRITER IN TWO CLASSES IS REPORTED - an OTHER_WRITERS row "
               "for a function STATE_WRITERS already holds: %r" % (twice,),
               any("tidy() is in OTHER_WRITERS and STATE_WRITERS" in w
                   for _f, w in twice))
         short = M.plan_writer_violations(
-            tree, hooks, (), (("scripts/saver.py", "tidy", "writes"),
-                              ("scripts/saver.py", "carry", _PW_REASON)), (),
+            tree, hooks, (), (("scripts/saver.py", "tidy", "saver.keep", "writes"),
+                              ("scripts/saver.py", "carry", "saver.keep", _PW_REASON)), (),
             repo=tree)
         check("pw8 a row whose reason is a label is reported: %r" % (short,),
               any("has no reason" in w for _f, w in short))
@@ -3958,6 +3958,204 @@ def _plan_writer_cases(check):
               len(blind) == 1 and "looked at nothing" in blind[0][1])
     finally:
         shutil.rmtree(empty, ignore_errors=True)
+    _plan_writer_reach_cases(check)
+
+
+# What a resolved writer is handed when its path argument cannot be located:
+# starred, inside `**`, or left out for the default. Each caller is a decision
+# the lint has to report, never a call it drops.
+_PW_UNLOCATED_SRC = (
+    "import json\n"
+    "import os\n\n\n"
+    "def keep(p, doc):\n"
+    "    with open(p, 'w') as fh:\n"
+    "        json.dump(doc, fh)\n\n\n"
+    "def stash(doc, p=os.path.join('docs', 'audit', 'audit-plan.json')):\n"
+    "    with open(p, 'w') as fh:\n"
+    "        json.dump(doc, fh)\n\n\n"
+    "def starred(where, doc):\n"
+    "    keep(*(os.path.join(where, 'a.json'), doc))\n\n\n"
+    "def keyworded(where, doc):\n"
+    "    keep(**{'p': os.path.join(where, 'b.json'), 'doc': doc})\n\n\n"
+    "def defaulted(doc):\n"
+    "    stash(doc)\n\n\n"
+    "def named(where, doc):\n"
+    "    keep(doc=doc, p=os.path.join(where, 'c.json'))\n\n\n"
+    "def relay(p, doc):\n"
+    "    keep(p, doc)\n\n\n"
+    "def relay_kw(p, doc):\n"
+    "    keep(doc=doc, p=p)\n\n\n"
+    "def relay_default(doc, p):\n"
+    "    stash(doc, p)\n")
+
+# The escapes outside a function's own calls: a write at module level, a
+# forwarder whose one caller is module level, a primitive imported by bare name
+# (aliased, and through a star import), a path object's `open`, `os.open` with
+# a writing flag, and a link's destination.
+_PW_ESCAPES_SRC = (
+    "import os\n"
+    "from os import replace as swap\n"
+    "from shutil import *\n"
+    "from pathlib import Path\n\n\n"
+    "def put(p):\n"
+    "    with open(p, 'w') as fh:\n"
+    "        fh.write('{}')\n\n\n"
+    "def renamed(where):\n"
+    "    swap(where, os.path.join(where, 'z.json'))\n\n\n"
+    "def copied(where):\n"
+    "    copy2(where, os.path.join(where, 'y.json'))\n\n\n"
+    "def opened(where):\n"
+    "    with Path(where).open('w') as fh:\n"
+    "        fh.write('{}')\n\n\n"
+    "def flagged(where):\n"
+    "    os.close(os.open(os.path.join(where, 'x.json'), os.O_WRONLY | os.O_CREAT))\n\n\n"
+    "def linked(where):\n"
+    "    os.link(where, os.path.join(where, 'w.json'))\n\n\n"
+    "def reads(where):\n"
+    "    with Path(where).open('r') as fh:\n"
+    "        return fh.read(), os.open(where, os.O_RDONLY)\n\n\n"
+    "open(os.path.join('docs', 'audit', 'audit-plan.json'), 'w').close()\n"
+    "put(os.path.join('docs', 'audit', 'phases', 'P2.json'))\n")
+
+# The shapes the lint does NOT read, each on its WHAT IT CANNOT SEE list: a
+# callee reached through a dict, through getattr and as a method; a delete and
+# a truncation of a plan path; a second write added to a classified function
+# through the callee its row already names.
+_PW_UNREAD_SRC = (
+    "import json\n"
+    "import os\n\n\n"
+    "def keep(p, doc):\n"
+    "    with open(p, 'w') as fh:\n"
+    "        json.dump(doc, fh)\n\n\n"
+    "SAVERS = {'keep': keep}\n\n\n"
+    "def tabled(where, doc):\n"
+    "    SAVERS['keep'](os.path.join(where, 'phases', 'P1.json'), doc)\n\n\n"
+    "def looked_up(where, doc):\n"
+    "    getattr(__import__('unread'), 'keep')(os.path.join(where, 'P1.json'), doc)\n\n\n"
+    "class Box:\n"
+    "    def save(self, p, doc):\n"
+    "        keep(p, doc)\n\n\n"
+    "def via_method(where, doc):\n"
+    "    Box().save(os.path.join(where, 'phases', 'P1.json'), doc)\n\n\n"
+    "def removed(where):\n"
+    "    os.remove(os.path.join(where, 'phases', 'P1.json'))\n\n\n"
+    "def truncated(where):\n"
+    "    os.truncate(os.path.join(where, 'phases', 'P1.json'), 0)\n\n\n"
+    "def listed(where, doc):\n"
+    "    keep(os.path.join(where, 'notes.json'), doc)\n"
+    "    keep(os.path.join(where, 'phases', 'P1.json'), doc)\n")
+
+
+def _pw_names(violations):
+    """`{function: [what is said of it]}` of a violation list."""
+    found = {}
+    for _f, w in violations:
+        found.setdefault(w.split("()")[0].split()[-1], []).append(w)
+    return found
+
+
+def _plan_writer_reach_cases(check):
+    """(pw10+) What the lint cannot resolve is reported, the escapes are read or
+    listed, and a row covers only the callees it names."""
+    tree = _ck_tree((("saver2.py", _PW_UNLOCATED_SRC),
+                     ("escapes.py", _PW_ESCAPES_SRC),
+                     ("unread.py", _PW_UNREAD_SRC)))
+    hooks = os.path.join(tree, "no-hooks-here")
+    try:
+        bare = M.plan_writer_violations(tree, hooks, (), (), (), repo=tree)
+        by = _pw_names([v for v in bare if v[0] == "scripts/saver2.py"])
+        check("pw10 A CALL WHOSE PATH ARGUMENT CANNOT BE LOCATED IS A SITE OF THE "
+              "CALLER, never dropped: the path passed starred and inside `**` are "
+              "each reported with the reason said, the path left to the callee's "
+              "default is read from that default, and a keyword path is located: "
+              "%r" % (by,),
+              sorted(by) == ["defaulted", "keyworded", "named", "starred"]
+              and "path not located: starred" in " ".join(by["starred"])
+              and "path not located: keywords" in " ".join(by["keyworded"])
+              and "saver2.stash" in " ".join(by["defaulted"])
+              and "LOOKS like a plan writer" in " ".join(by["defaulted"]))
+        check("pw10b SECOND DIRECTION: a forwarder handing its own parameter on - "
+              "by position, by keyword, and into the parameter whose default it "
+              "overrides - decides nothing and is not reported: %r" % (sorted(by),),
+              not set(by) & set(["relay", "relay_kw", "relay_default", "keep",
+                                 "stash"]))
+        esc = _pw_names([v for v in bare if v[0] == "scripts/escapes.py"])
+        check("pw12 EACH ESCAPE IS READ: a write at module level and a forwarder "
+              "whose one caller is module level (both `<module>`), a primitive "
+              "imported by bare name (aliased, and through a star import), a path "
+              "object's `open`, `os.open` with a writing flag and a link's "
+              "destination are each reported - and a read-mode `open` and an "
+              "`os.open` that only reads are not: %r" % (sorted(esc),),
+              sorted(esc) == ["<module>", "copied", "flagged", "linked", "opened",
+                              "renamed"]
+              and len(esc["<module>"]) == 1
+              and "via escapes.put" in esc["<module>"][0]
+              and "via <write>" in esc["<module>"][0])
+        unread = _pw_names([v for v in bare if v[0] == "scripts/unread.py"])
+        cannot = " ".join(M.plan_writer_violations.__doc__.split())
+        listed = dict((shape, word in cannot) for shape, word in (
+            ("a dict", "a dict"), ("getattr", "`getattr`"), ("a method", "a method"),
+            ("a delete", "a delete"), ("a truncation", "a truncation"),
+            ("the same callee", "through a callee its row already names")))
+        check("pw13 THE LIST OF WHAT IT CANNOT SEE IS TRUE: a callee reached "
+              "through a dict, through getattr, a delete and a truncation of a "
+              "plan path are not read - only `listed`, whose writes go through a "
+              "resolved callee, is reported - and each unread shape is named on "
+              "the docstring's list: %r %r" % (sorted(unread), listed),
+              sorted(unread) == ["listed"] and all(listed.values()))
+        row = (("scripts/unread.py", "listed", "unread.keep", _PW_REASON),)
+        covered = M.plan_writer_violations(tree, hooks, (), row, (), repo=tree)
+        check("pw13b ...and that last shape is why it is listed: `listed`'s row "
+              "names `unread.keep`, and its second write through the same callee "
+              "is covered by that row: %r" % (
+                  [w for f, w in covered if "listed()" in w],),
+              not [w for f, w in covered if "listed()" in w])
+        sites = dict(((f, fn), s) for f, fn, s, _h in M.plan_writer_sites())
+        advance = sites.get(("scripts/git/_worktrees.py", "_advance"), [])
+        check("pw11 THE INSTANCE IN THE TREE: `_worktrees._advance` hands its "
+              "undo helper a starred tuple, and each such call is a site of "
+              "`_advance` with the reason said: %r" % (advance,),
+              len(advance) >= 1 and all(
+                  via == "_worktrees._undo (path not located: starred)"
+                  for _l, via in advance))
+    finally:
+        shutil.rmtree(tree, ignore_errors=True)
+    _row_cover_cases(check)
+
+
+def _row_cover_cases(check):
+    """(pw14+) A row covers the callees it names, in both tables."""
+    src = _PW_HELPER_SRC + (
+        "\n\ndef spill(where, doc):\n"
+        "    keep(os.path.join(where, 'notes.json'), doc)\n"
+        "    with open(os.path.join(where, 'phases', 'P1.json'), 'w') as fh:\n"
+        "        json.dump(doc, fh)\n")
+    tree = _ck_tree((("saver.py", src),))
+    hooks = os.path.join(tree, "no-hooks-here")
+    try:
+        other = (("scripts/saver.py", "tidy", "saver.keep", _PW_REASON),
+                 ("scripts/saver.py", "carry", "saver.keep", _PW_REASON),
+                 ("scripts/saver.py", "spill", "saver.keep", _PW_REASON))
+        held = M.plan_writer_violations(tree, hooks, (), other, (), repo=tree)
+        spill = [w for _f, w in held if w.startswith("OTHER_WRITERS row for spill()")]
+        check("pw14 AN OTHER-WRITERS ROW CARRIES ITS CALLEE: `spill`'s row says "
+              "it writes through `saver.keep`, and the raw write added beside "
+              "that call is red by name, while `tidy` and `carry`, whose only "
+              "writes go through the callee their rows name, are not: %r" % (held,),
+              len(spill) == 1 and "via <write>" in spill[0]
+              and not [w for _f, w in held if "tidy()" in w or "carry()" in w])
+    finally:
+        shutil.rmtree(tree, ignore_errors=True)
+    bare_plan = [r[:2] for r in M.PLAN_WRITERS
+                 if "<write>" in (r[2] if isinstance(r[2], tuple) else (r[2],))]
+    converter = [r for r in M.OTHER_WRITERS
+                 if r[:2] == ("scripts/manifest/migrate-manifest.py",
+                              "_keep_restore_point")]
+    check("pw14b NO PLAN ROW ADMITS ANY WRITE: no PLAN_WRITERS row's callee is a "
+          "bare primitive - the converter's restore-point copy is a helper with a "
+          "row of its own - so a raw write added to a plan writer is red by name: "
+          "%r %r" % (bare_plan, converter),
+          bare_plan == [] and len(converter) == 1 and converter[0][2] == "<write>")
 
 
 def _with_function_replaced(source, name, replacement):

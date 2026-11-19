@@ -331,6 +331,42 @@ def _cases(check):
               and (_wtask.get("lastRun") or {}).get("runId") == "RW"
               and (_wtask.get("testEvidence") or {}).get("runId") == "RW"
               and _wtask["tests"]["add"] == [FIXED])
+
+        # THE WINDOW TAKES THE WHOLE REPAIR: the one entry found rewritable is
+        # changed by another writer as the repair asks for the lock, so the
+        # fresh read holds nothing the rows still match.
+        mrepo, mpath2 = _repo(tmp, "missed", _plan([
+            _task("P0.1", "pending", [LOOSE])]))
+        theirs = "tests/elsewhere.py: another writer's entry"
+        _mseen = []
+
+        def _miss(project, lock_name, *a, **k):
+            if lock_name == M.LOCK_NAME and not _mseen:
+                _mseen.append(None)
+                doc = _read(mpath2)
+                doc["phases"][0]["tasks"][0]["tests"]["add"] = [theirs]
+                with open(mpath2, "w", encoding="utf-8") as fh:
+                    json.dump(doc, fh)
+                _mseen[0] = True
+            return _real_acquire(project, lock_name, *a, **k)
+        _locks.acquire = _miss
+        try:
+            _mout, _mcode = _harness._capture(M.main, [mpath2, "--apply"])
+        finally:
+            _locks.acquire = _real_acquire
+        with open(mpath2, "rb") as fh:
+            _mafter = fh.read()
+        check("rt17 NOTHING LEFT TO APPLY IS REFUSED, as the commits repair "
+              "refuses it: every entry found rewritable changed in the window, "
+              "so --apply exits 1, says nothing was written and why, and the "
+              "plan holds the other writer's entry as it wrote it: %r"
+              % ((_mcode, _mseen, _mout[-300:]),),
+              _mcode == 1 and _mseen == [True]
+              and "nothing was written" in _mout
+              and "changed in the plan since it was read" in _mout
+              and json.loads(_mafter.decode("utf-8"))["phases"][0]["tasks"][0][
+                  "tests"]["add"] == [theirs]
+              and "REWROTE" not in _mout)
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)

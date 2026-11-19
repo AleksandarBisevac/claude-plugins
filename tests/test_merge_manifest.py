@@ -562,12 +562,18 @@ def _window_plan(extra=None):
             "fileIndex": index, "bugs": []}
 
 
-def _stopped_merge(tmp, name, env):
+def _stopped_merge(tmp, name, env, autocrlf=False, driver=True):
     """A sharded plan with the driver installed, both sides minting P1.2, and `git
-    merge` stopped on P1's shard -> (repo, index path, merge exit, merge output)."""
+    merge` stopped on P1's shard -> (repo, index path, merge exit, merge output).
+    `autocrlf` sets `core.autocrlf=true` in the repository before anything is
+    committed, so every file git checks out is CRLF in the work tree. `driver`
+    False takes the driver out of this clone's config before the merge, as a clone
+    that never installed it is - `.gitattributes` still names it."""
     repo = os.path.join(tmp, name)
     os.makedirs(repo)
     _harness.git(repo, "init", "-q", "-b", "main")
+    if autocrlf:
+        _harness.git(repo, "config", "core.autocrlf", "true")
     idx = os.path.join(repo, "docs", "audit", "plan.json")
     _write_json(idx, _window_plan())
     _mio.save_sharded(idx, _window_plan())
@@ -580,8 +586,30 @@ def _stopped_merge(tmp, name, env):
     _harness.git(repo, "checkout", "-q", "main")
     _mio.save_sharded(idx, _window_plan({"title": "ours", "files": ["src/o.ts"]}))
     _harness.git(repo, "commit", "-qam", "ours")
+    if not driver:
+        _harness.git(repo, "config", "--remove-section", "merge.%s" % (M.DRIVER_NAME,))
     code, out = _git(repo, env, "merge", "-q", "side", "-m", "merge")
     return repo, idx, code, out
+
+
+def _json_or_none(raw):
+    """`raw` parsed, or None when it is not JSON - so a marker block fails the
+    spelling conjunct it is compared in rather than raising out of the case."""
+    try:
+        return json.loads(raw.decode("utf-8", "replace"))
+    except ValueError:
+        return None
+
+
+def _eol_settings(repo):
+    """Every `core.autocrlf`/`core.eol` setting git reads in `repo`, with where it
+    came from, or what git answered - printed beside a byte comparison, never
+    asserted."""
+    done = subprocess.run(["git", "-C", repo, "config", "--show-origin",
+                           "--get-regexp", r"^core\.(autocrlf|eol|safecrlf)$"],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    text = (done.stdout + done.stderr).decode("utf-8", "replace").strip()
+    return text or "none set (git exit %d)" % (done.returncode,)
 
 
 def _plan_bytes(repo):
@@ -652,15 +680,29 @@ def _window_cases(check, tmp, env):
         merged = {"phases": []}
     p1 = [(t["id"], t["title"]) for ph in merged["phases"] if ph["id"] == "P1"
           for t in ph["tasks"]]
+    # Each conjunct named, so a red on one platform says which one and with what
+    # bytes. The spelling conjunct compares BYTES with the plugin's own document,
+    # which is LF on every platform: on Windows a text-mode write turns each LF
+    # into CRLF, and on any other platform this conjunct cannot tell the two
+    # apart - there it proves only that the bytes are the plugin's spelling.
+    spelled = dict((rel, b"<<<<<<<" not in raw and raw.decode("utf-8", "replace")
+                    == _mio.json_document(_json_or_none(raw)))
+                   for rel, raw in clean.items())
+    conjuncts = {"exit 0": code == 0,
+                 "renumbered": p1 == [("P1.1", "a"), ("P1.2", "ours"),
+                                      ("P1.3", "theirs")],
+                 "files": sorted(clean) == ["docs/audit/phases/BF10.json",
+                                            "docs/audit/phases/P1.json",
+                                            "docs/audit/plan.json"],
+                 "spelling": bool(spelled) and all(spelled.values())}
     check("rw4 ALLOW: with no stray write resolve writes as before - exit 0, theirs' "
           "P1.2 renumbered to P1.3, the index and both shards in the plugin's spelling "
-          "with no marker: %s" % (out,),
-          code == 0 and p1 == [("P1.1", "a"), ("P1.2", "ours"), ("P1.3", "theirs")]
-          and sorted(clean) == ["docs/audit/phases/BF10.json", "docs/audit/phases/P1.json",
-                                "docs/audit/plan.json"]
-          and all(b"<<<<<<<" not in raw and raw.decode("utf-8")
-                  == _mio.json_document(json.loads(raw.decode("utf-8")))
-                  for raw in clean.values()), p1)
+          "(LF, on every platform) with no marker: %s" % (out,),
+          all(conjuncts.values()),
+          "%r on %s, git's line-ending settings as the fixture's git reads them: "
+          "%r; bytes %r" % (conjuncts, sys.platform, _eol_settings(repo_b),
+                            dict((rel, raw[:90]) for rel, raw in clean.items()
+                                 if not spelled.get(rel))))
     # The same plan reached through a symlinked directory - a temp dir under
     # /var on macOS is one - names what it wrote relative to the work tree, and a
     # second run over its own output is accepted.
@@ -755,8 +797,13 @@ def _window_cases(check, tmp, env):
     real_write = M._write
     wrote = []
 
-    def stop_after_first(path, text, newline=None):
+    def stop_after_first(path, text, newline="\n"):
         real_write(path, text, newline)
+        # Only a write into the work tree is resolve's own: the scratch files the
+        # reference reruns a content merge in sit outside it.
+        if os.path.relpath(os.path.realpath(path),
+                           os.path.realpath(repo_c)).startswith(".."):
+            return
         wrote.append(os.path.relpath(path, repo_c).replace(os.sep, "/"))
         raise _Interrupted()
     M._write = stop_after_first
@@ -795,6 +842,150 @@ def _window_cases(check, tmp, env):
           "refused with nothing written, naming `git checkout -m --`, and after that "
           "command brings the conflict back resolve completes: %s | %s" % (out, out2),
           refused and code2 == 0 and _plan_bytes(repo_d) == clean)
+    _moved_index_cases(check, tmp, env, clean)
+
+
+def _hand_resolved(repo):
+    """P1's shard rewritten by hand as one side's JSON - a resolution the person
+    typed, which no marker block marks."""
+    _split, shards = _mio.split_manifest(
+        _window_plan({"title": "ours", "files": ["src/o.ts"]}))
+    with open(os.path.join(repo, _W_SHARD % "P1"), "w", encoding="utf-8") as fh:
+        fh.write(_mio.json_document(shards["P1"]))
+
+
+def _fix_lines(out):
+    """The commands a stray refusal names to put each file back, one argv each."""
+    import shlex
+    lines = out.splitlines()
+    at = [i for i, ln in enumerate(lines) if ln.rstrip().endswith("then run resolve again:")]
+    if not at:
+        return []
+    found = []
+    for ln in lines[at[0] + 1:]:
+        if not ln.startswith("      "):
+            break
+        found.append(shlex.split(ln.strip()))
+    return found
+
+
+def _moved_index_cases(check, tmp, env, clean):
+    # THE REFERENCE IS NOT THE INDEX. Every command here moves the index during a
+    # stopped merge, and each is routine while a conflict is open: a stray write
+    # it stages must still be refused, with nothing written and the write kept.
+    # Before the reference was the merge's own result, each staged row below
+    # passed the refusal and was overwritten.
+    rows = (
+        ("the stray record's shard staged by name",
+         lambda r: _harness.git(r, "add", "--", _W_SHARD % "BF10"), "BF10"),
+        ("every tracked change staged (`git add -u`)",
+         lambda r: _harness.git(r, "add", "-u"), "BF10"),
+        ("staged, then written again",
+         lambda r: (_harness.git(r, "add", "--", _W_SHARD % "BF10"),
+                    _record_into(r, os.path.join(r, "docs", "audit", "plan.json"),
+                                 "BF10.1", "BF10", "RT")), "BF10"),
+        ("the conflicted shard resolved by hand and staged",
+         lambda r: (_hand_resolved(r), _harness.git(r, "add", "--", _W_SHARD % "P1")),
+         "P1"))
+    held, refused = [], []
+    for i, (label, stage, stray) in enumerate(rows):
+        repo, idx, _c, _o = _stopped_merge(tmp, "w-moved-%d" % (i,), env)
+        landed = {}
+        if stray == "BF10":
+            landed = _record_into(repo, idx, "BF10.1", "BF10", "RS")
+        stage(repo)
+        before = _plan_bytes(repo)
+        code, out = _resolve(["resolve", idx, "--renumber", "theirs"])
+        ok = (code != 0 and _plan_bytes(repo) == before
+              and "nothing was written" in out and (_W_SHARD % stray) in out
+              and (stray != "BF10" or (landed.get("written")
+                                       and _last_run(repo, "BF10") in ("RS", "RT"))))
+        if not ok:
+            held.append((label, code, out[-400:]))
+        refused.append((label, repo, idx, out))
+    check("rw7 A STRAY WRITE THE INDEX WAS MOVED OVER IS STILL REFUSED - staged by "
+          "name, by `git add -u`, staged then written again, a hand resolution "
+          "staged: each exits non-zero, writes nothing, keeps the write and names "
+          "its file; not refused as said: %r" % (held,), held == [])
+    # Each row's printed commands, run as printed: the clean shard's blob staged
+    # from its side, and the conflicted shard's marker text - a content merge no
+    # commit holds - staged from git's object store.
+    untrue = []
+    for label, repo, idx, out in refused:
+        fixes = _fix_lines(out)
+        for argv in fixes:
+            if argv[:1] == ["git"]:
+                _harness.git(repo, *argv[1:])
+        code, out2 = _resolve(["resolve", idx, "--renumber", "theirs"])
+        if not (fixes and all(a[:1] == ["git"] for a in fixes)
+                and ["git", "update-index", "--cacheinfo"] in [a[:3] for a in fixes]
+                and code == 0 and _plan_bytes(repo) == clean):
+            untrue.append((label, fixes, code, out2[-300:]))
+    check("rw7b ...and the commands it names for a STAGED stray are true: run as "
+          "printed they put the file back as git's merge left it, index and work "
+          "tree, and resolve then completes with the undisturbed bytes - for a "
+          "clean shard and for the conflicted one; untrue: %r" % (untrue,),
+          len(refused) == len(rows) and untrue == [])
+
+    # SECOND DIRECTION: the index moved with NOTHING stray in the tree - every
+    # file staged as the merge left it, markers included - is no refusal. The
+    # case that goes red when the reference over-fires on a moved index.
+    repo, idx, _c, _o = _stopped_merge(tmp, "w-all-staged", env)
+    _harness.git(repo, "add", "-A")
+    code, out = _resolve(["resolve", idx, "--renumber", "theirs"])
+    check("rw8 ALLOW: every plan file staged as the merge left it (the marker block "
+          "included) is no stray - resolve exits 0 with the undisturbed bytes: %s"
+          % (out,), code == 0 and _plan_bytes(repo) == clean)
+
+    # A CRLF WORK TREE: git checks text out with CRLF where `core.autocrlf` asks
+    # for it, so a file the merge left clean differs byte for byte from the LF
+    # blob. The comparison is of text read with universal newlines against the
+    # blob as checkout would write it, so neither the allow nor the refusal
+    # depends on the line endings.
+    repo, idx, _c, _o = _stopped_merge(tmp, "w-crlf", env, autocrlf=True)
+    with open(os.path.join(repo, "docs", "audit", "plan.json"), "rb") as fh:
+        crlf = b"\r\n" in fh.read()
+    code, out = _resolve(["resolve", idx, "--renumber", "theirs"])
+    allowed = code == 0
+    repo2, idx2, _c, _o = _stopped_merge(tmp, "w-crlf-stray", env, autocrlf=True)
+    landed = _record_into(repo2, idx2, "BF10.1", "BF10", "RC")
+    _harness.git(repo2, "add", "--", _W_SHARD % "BF10")
+    code2, out2 = _resolve(["resolve", idx2, "--renumber", "theirs"])
+    check("rw9 IN A CRLF WORK TREE (`core.autocrlf=true`, the index file checked "
+          "out with CRLF: %r) no stray is resolved and a staged stray is refused "
+          "with the record kept: %s | %s" % (crlf, out, out2),
+          crlf and allowed and code2 != 0 and landed.get("written")
+          and _last_run(repo2, "BF10") == "RC")
+
+    # A CLONE THAT NEVER CONFIGURED THE DRIVER gets git's line merge for every plan
+    # file both sides changed, and the reference reruns that line merge rather
+    # than the driver - so the files git's markers left are accounted for, and a
+    # staged stray in the shard both sides left alone is still refused.
+    found = []
+    for name in ("w-no-driver", "w-no-driver-stray"):
+        repo, idx, mcode, _o = _stopped_merge(tmp, name, env, driver=False)
+        landed = {}
+        if name.endswith("stray"):
+            # Written into the shard by hand: the evidence writer reads the index
+            # first, and here the index holds git's markers.
+            shard = os.path.join(repo, _W_SHARD % "BF10")
+            with open(shard, encoding="utf-8") as fh:
+                body = json.load(fh)
+            body["tasks"][0]["lastRun"] = {"runId": "RD"}
+            with open(shard, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(_mio.json_document(body))
+            landed = {"written": True}
+            _harness.git(repo, "add", "--", _W_SHARD % "BF10")
+        with open(idx, "rb") as fh:
+            markers = b"<<<<<<<" in fh.read()
+        code, out = _resolve(["resolve", idx, "--renumber", "theirs"])
+        found.append((mcode, markers, code, landed.get("written"),
+                      _last_run(repo, "BF10"), out[-300:]))
+    check("rw10 WITHOUT THE DRIVER (git's line merge left markers in the index: "
+          "%r) resolve writes over the markers git left, and refuses a staged stray "
+          "with the record kept: %r" % ([f[1] for f in found], found),
+          found[0][0] != 0 and found[0][1] and found[0][2] == 0
+          and found[1][2] != 0 and found[1][3] and found[1][4] == "RD")
 
 
 def _load_or_empty(path):
