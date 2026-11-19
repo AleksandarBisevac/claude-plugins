@@ -4231,8 +4231,7 @@ reconciled onto it. `base_row_for()` is the one selection of that run for a set 
 `base_unmeasured()` names the red steps it did not measure (`[]` when it measured every one) -
 the question a base run answers, asked before one starts; a base step answers only when it
 reached a verdict (`step_answered()`, read by `base_step()`), so one that timed out or was killed
-measured nothing. A gate gone green before any red record read its base keeps
-the base's verdict on the green run's record (`keep_settled_base()`, `SETTLED_OF_KEY`). A base run is also KEPT where the red's
+measured nothing. A base run is also KEPT where the red's
 reading lives: `keep_base()` puts it on the red task's record, under the reading's own
 `BASE_RUNS_KEY` (`baseRed.baseRuns`, keyed by the reading's base commit, the newest
 `MAX_KEPT_BASE_RUNS`); `carry_kept_bases()` carries it to the record that replaces it while that
@@ -5340,8 +5339,7 @@ tree and the phase gate's stop). A phase gate launched by a sign-off answer resu
 at the same head and is forgotten at another. A wave print carries the rules of each member with a `run:` line once.
 The base measurement a red asks for is chosen the same way, over the red steps of the recorded
 run: past the bound, unmeasured, or under `auto` it is `dispatch-base`, whose `run:` line is this
-script's own `base-run` verb, and `wait-base` holds every red `base_turn` does not decide beside
-it until that run has left its reading. Its
+script's own `base-run` verb, and `wait-base` holds until that run has left its reading. Its
 reading is `run-test-gate.py`'s own `base_red` over the base run, which no recorded row carries,
 so the run keeps it in a record of its own, one per launch beside the drive's state
 (`base_progress_path`), which `next` folds into the start's mark each time it reads the mark
@@ -5444,49 +5442,34 @@ is measured, and a HEAD that moved anything else, or that git cannot compare, is
 (`brc1`, `brc2`, `brc5`). Where it runs is `gate_in_background`'s answer over the red steps:
 past the foreground bound, unmeasured, or under `auto` it is `dispatch-base`, run in the background
 by `drive-phase.py base-run` with no bound, which writes only its launch's own record, and read
-back off the start's mark that record is folded into (`base_mark`, `base_gate`). Its rule
-(`BASE_BESIDE_RULE`) has the next `next` called at once, which reads the red back, and what it
-does with that red while the base runs is ONE table, `BASE_TURNS`, built over every red decision
-DECISIONS names (`RED_DECISIONS`) and answered by `base_turn`, which has no default, over what is
-known of the base and the decision the red would be asked (`red_decision_name`): only the free
-resume - `gate-red-writer` with a round left (`BESIDE_DECISIONS`) - is decided beside the running
-base, naming it as still running (`BESIDE_WHY`) and marking the mark `beside` so `base_gate` never
-reads that red back again; every other red decision, plain `gate-red` among them, is held
-(`wait-base`), as is a later red of the start. THE INVARIANT behind it: while the base of a
-start's red is unmeasured, the drive accepts no answer that spends and charges the task nothing.
-What each answer spends is one table, `ANSWER_SPENDS` (`retry` an attempt, every other answer
-none - a `resume`'s writer round is counted by `MAX_RESUME_ROUNDS`); a red's decision records
-under `BASE_OPEN_KEY` whether its base is still running beside it or unknown (`base_open`: a base
-settled as unmeasurable, or a start past `UNMEASURED_BOUND`, records nothing); and `apply_answer`,
-the one place an answer is applied, refuses before anything is written every answer that spends
-over such a decision (`base_refusal`, exit 2, naming the answers open now), whatever decision
-offered it. The printed decision omits those answers and says so (`BASE_HELD_LINE`), while the
-refusal stays for a decision printed earlier and answered late; `auto` answers no decision, so it
-never meets it. The sites that decide by their own condition outside the table take no answer,
-and the table's comment says why that is safe: the task's own suites (`own_red`), a kept base not read back (`kept_reading`), a join, and
-a green settling the mark (`settle_green`). A later start of the same task at a commit that task's
-earlier launch is still measuring joins it (`running_at`, `join_base`, `JOINED_KEY`) rather than
-starting a second run, its line saying whether that run has started. A decision taken beside the
-base and still unanswered when it ends, or when its launch is replaced, is dropped and taken again
-over the mark (`beside_ended`, `rejoin_base`), its line saying which; an answer given then is
-refused with nothing spent, and the next `next` takes the decision again. A `resume` answered
-while it runs sends the writer, which is not interrupted when the base ends, and the red its round
-leaves is read against the kept base - found red at base too it is `gate-red-base`, whose reason
-counts the rounds resumed beside the base up to its end (`resumed_beside`, `RESUMED_BESIDE_WHY`,
-the count stamped by `stamp_end`); a resume spends no attempt. A gate gone green after it settles
-the ended mark (`settle_green`): it is decided, its stage queued, the base's verdict of the red it
-was launched for kept on the green run's record (`_evidence_io.keep_settled_base`, under `baseRed`
-naming the red in `settledOf`), and where the base had the red a dated note on the task naming the
-runs and no cause (`BASE_GREEN_NOTE`), which `audit-lookup.py`'s `base_green_lines` reads into the
-reviewer's brief and the sign-off's section for that task by the one mark the note carries
-(`_evidence_io.BASE_GREEN_MARK`); a joined mark is decided and keeps and notes nothing, since it
-measured another start's red. A kept base that cannot be read back falls to the measurement this
-start took, else to `gate-red-base-unknown` in the refusal's own words. `nh1`-`nh3`, `bq1` and
-`bh0`-`bh8` drive it; `bx1`-`bx5` walk the invariant over every red decision, every answer and
-each unmeasured base state; `bw1`-`bw5` hold its sentences and `bj1`-`bj2` the settle;
-`bh5r`/`bh6r` read the note `settle_green` wrote through the reviewer's brief, and `bg1`-`bg4` in
-`test_audit_lookup.py` hold both briefs. A base measured under the bound still runs
-inside `next` and decides before any round. The
+back off the start's mark that record is folded into (`base_mark`, `base_gate`, `wait-base`). A RED
+WAITS FOR ITS BASE: while the start's mark is launched and not ended, `base_gate` prints the wait
+and nothing else, so no decision about the red exists to answer, no writer round runs over an
+unmeasured base and no gate can turn green over one; once the run ends, the red is read back and
+decided over what it left, and a run that stopped without a reading is read as cut short on that
+call (`cut_short`), its tree and claim removed, and asked as `gate-red-base-unknown`. THE
+INVARIANT behind it: while the base of a start's red is unmeasured, the drive accepts no answer
+that spends and charges the task nothing. What each answer spends is one table, `ANSWER_SPENDS`
+(`retry` an attempt, `resume` a session round, which `MAX_RESUME_ROUNDS` counts; every other answer
+none); the start's own mark carries `BASE_OPEN_KEY` while a red decided over it is unknown and its
+base can still be measured (`base_still_open`, `open_mark`: a base settled as unmeasurable, or a
+start past `UNMEASURED_BOUND`, carries none, and a green gate takes it off); and `apply_answer`, the
+one place an answer is applied, refuses before anything is written every answer that spends while
+that mark leaves the base unmeasured (`base_open_of`, `base_refusal`, exit 2, naming the answers
+open now), whatever decision is staged there. An unknown red with no mark to say what its base
+stands on fails closed. What is open is one predicate, `answers_open`, which the printed decision
+(`BASE_HELD_LINE` naming what it holds back), the base's refusal and the refusal of a resume with no
+recorded session all read; `auto` answers no decision, so it never meets it. The sites that decide
+by their own condition take no answer, and the comment above `ANSWER_SPENDS` says why that is
+safe: the task's own suites (`own_red`), a kept base not read back (`kept_reading`), and a join. A
+later start of the same task at a commit that task's earlier launch is still measuring joins it
+(`running_at`, `join_base`, `JOINED_KEY`) rather than starting a second run, its line saying whether
+that run has started, and waits on it. A kept base that cannot be read back falls to the
+measurement this start took, else to `gate-red-base-unknown` in the refusal's own words. `wb1`-`wb3`,
+`bq1` and `bh1`-`bh4` drive it; `bx1` walks the invariant over every task decision, every answer
+and each unmeasured base state, `bx2` holds every rule line's cost to the table, `bx4` and `bx6`
+hold the open-now predicate and its fail-closed reading, and `bw3`-`bw6` hold its sentences. A
+base measured under the bound still runs inside `next` and decides before any round. The
 drive's state file has one writer, `next`, and every write of it or of a run's record replaces the
 file whole (`write_json_atomic`), so neither a `next` running beside the base run nor a write cut
 half-way loses the reading; measured under the bound it runs inside `next`, held to `BASE_MEASURE_SECONDS`, and a

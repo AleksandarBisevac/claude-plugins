@@ -6396,31 +6396,7 @@ def _rk_rows(root):
                 "atBase": [], "introduced": [], "unknown": [],
                 "basis": "no run recorded at base"}}),
             "RK", "2026-11-18T10:10:00Z"),
-        # The green run that replaced RK's red: a green run carries no reading
-        # of its own, which is what lets the base's verdict of RK be kept on it.
-        "green": row(_rk_green(), "RG", "2026-11-18T10:11:00Z"),
     }
-
-
-# The base's verdict of the red RK, as the drive hands it to the writer once a
-# green run replaced that red.
-_RK_SETTLED = {"run": "RB", "head": _KB_HEAD, "verdict": "base-only",
-               "atBase": [_KB_SUITE], "introduced": [], "unknown": [],
-               "basis": "base run RB fails it too"}
-
-
-def _rk_green():
-    """A measured green run: `_rk_measured`'s fields, every step passing and
-    no base reading, as run-test-gate writes a green run."""
-    out = _rk_measured()
-    out["status"] = "passed"
-    out["steps"] = [dict(st, exit=0) for st in out["steps"]]
-    for st in out["steps"]:
-        for key in ("failing", "failingSuites", "failingSuitesBasis",
-                    "failingBasis"):
-            st.pop(key, None)
-    out.pop(M.BASE_RED_KEY, None)
-    return out
 
 
 def _rk_shapes(rows):
@@ -6448,9 +6424,6 @@ def _rk_shapes(rows):
         ("a red carrying kept base runs", "task",
          [rec(rows["red"]), lambda root, mpath: M.keep_base(
              root, mpath, rows["red"], _kb_base("RB", "RK"))]),
-        ("a green carrying a settled base reading", "task",
-         [rec(rows["green"]), lambda root, mpath: M.keep_settled_base(
-             root, mpath, _RK_TASK, _RK_SETTLED, "RK")]),
         ("a phase-scope record", "phase", [rec(rows["phase"])]),
         ("a phase-scope whole repeat", "phase",
          [rec(rows["whole"], source=src)]),
@@ -6564,7 +6537,7 @@ def _record_schema_cases(check):
         check("rk1 THE INVARIANT: every record shape the recorder composes - "
               "measured, part and whole repeats, a record sharing each subtree "
               "it can share, one cut at every position of the cut order, kept "
-              "and settled base readings, replaced launches, a phase's - is "
+              "base runs, replaced launches, a phase's - is "
               "stored and is accepted by the published `lastRun`, read by the "
               "reader validate-manifest uses, with no keyword left unread: "
               "refused by the writer %r / refused by the schema %r"
@@ -6590,8 +6563,7 @@ def _record_schema_cases(check):
             shaped |= set((r.get(M.BASE_RED_KEY) or {}))
         owed = (list(M._RECORD_SHAPED) + list(M.RECORD_LINE_KEYS)
                 + [M.REPEAT_UNREAD_KEY, M.REPLACED_KEY, M.LAUNCH_KEY,
-                   M.BASE_RUNS_KEY,
-                   getattr(M, "SETTLED_OF_KEY", "a settled reading's key")])
+                   M.BASE_RUNS_KEY])
         uncomposed = {
             "RECORD_CUT_ORDER": [c for c in M.RECORD_CUT_ORDER
                                  if c not in cut_last],

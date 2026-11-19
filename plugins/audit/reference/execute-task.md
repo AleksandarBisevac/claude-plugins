@@ -275,26 +275,17 @@ verb writes and refuses, and what the run commands leave behind, is
         its base measured once per start, chosen the same way over its red steps:
         past the bound, unmeasured, or under `auto` it is `dispatch-base` (a
         `drive-phase.py base-run` in the background, which writes only a record of
-        its own that `next` folds into the start's mark): run its `run:` line in the
-        background and call `next` at once. Only the free resume is decided beside
-        a running base - `gate-red-writer` with a round left, read back from the
-        red's recorded row and named as having its base still running; any other
-        decision (plain `gate-red`, whose `retry` spends an attempt) waits for it
-        (`wait-base`), as does a later red of the start, and a later start of the
-        same task at that commit joins the run rather than starting a second
-        (`base_turn`'s table). While a red's base is unmeasured - running, not
-        started, stopped before a reading, unread - the drive refuses every answer
-        that spends (`retry`, the one `ANSWER_SPENDS` prices), nothing spent; the
-        printed decision does not offer it, and the refusal names the answers open.
-        A decision still unanswered when the base ends, or its launch is replaced,
-        is taken again over the mark; an answer given then is refused, nothing
-        spent, and the next `next` takes the decision again. A red then found red
-        at base too says how many writer rounds were resumed beside it before its
-        end (no attempt is spent on them); a gate gone green after it keeps the
-        base's verdict on its record (`lastRun.baseRed.settledOf`) and, where the
-        base had the red, a dated note on the task naming no cause, which the
-        reviewer's brief and the sign-off show; a joined base keeps nothing.
-        One measured fast runs inline. No base run starts
+        its own that `next` folds into the start's mark), then `wait-base`: a red
+        waits for its base, so no decision about it exists until that run ends, and
+        the red's verdict is then read back from its recorded row as a background
+        gate's is. A later start of the same task at that commit joins the running
+        base run rather than starting a second, and waits on it too. Where a decision is
+        answered, the drive refuses every answer that spends (`retry` an attempt,
+        `resume` a session round, as `ANSWER_SPENDS` prices them) while the start's
+        own base mark says its base is unmeasured - running, stopped before a
+        reading, or decided unknown while it can still be measured - nothing spent;
+        the printed decision does not offer them, and the refusal names the answers
+        open. One measured fast runs inline. No base run starts
         for a red whose every failing suite is a file the task's `tests.add`
         created - a regular file git places at no path of the base commit under
         the filesystem's own comparison of names and pairs with no base file by

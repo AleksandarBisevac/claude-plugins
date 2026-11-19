@@ -1,0 +1,56 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test_audit_lookup.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-19T10:45:27Z",
+    "basis": "`python3 tests/test_drive_phase.py --selftest --stage bx-block --stage bw-block --stage bh-block` in a throwaway tree at HEAD exited 1 with 7 of 15 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bh1 (house FAIL), bh2 (house FAIL), bx2 (house FAIL), bx1 (house FAIL), bx4 (house FAIL), bx6 (house FAIL), bw6 (house FAIL): SELFTEST FAILED: 8/15 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "REMOVAL of deciding a red beside a running base. drive-phase.py (git diff HEAD --stat: 196 insertions, 374 deletions): gone BASE_BESIDE_RULE (dispatch-base back to WRITER_RULE), RED_DECISIONS, BESIDE_DECISIONS, BASE_TURNS, base_turn, BESIDE_KEY, BESIDE_WHY, RESUMED_BESIDE_WHY, stamp_end, resumed_beside, running_beside, beside_ended, rejoin_base, the drive_locked re-take/late-answer block, the measured_reading beside branch, base_open (pending key), settle_green and BASE_GREEN_NOTE; base_gate prints wait-base itself again while the start's mark is launched and not ended (pre-phase hold), keeping the JOINED read-back. Added: SPENDS_ATTEMPT/SPENDS_ROUND with ANSWER_SPENDS pricing resume a session round; decision_mark (the start's mark by the decision's start), base_open_of (running / unknown via BASE_OPEN_KEY on the MARK / unrecorded = fail closed for gate-red-base-unknown with no mark), base_refused(held, pending, answer), answers_open (one predicate incl. the no-session resume test) used by render_decision, base_refusal(state, pending, answer), answer_refusal(state=) and without_writer_way; base_still_open + open_mark stamp/clear the key on the mark in gate_red_decision, cleared on a green gate. OWN_RED_WHY now says the suites are files the task created, absent at base, and where their cases come from is not read. Rule lines: gate-red-writer says resume is a round spent and no attempt, retry spends an attempt; gate-red-base-unknown says both are refused while the base can still be measured. _evidence_io.py: SETTLED_OF_KEY, _SETTLED_KEYS, BASE_GREEN_MARK, keep_settled_base removed. audit-lookup.py: BASE_GREEN_TITLE/ASK and base_green_lines and both readers removed (file byte-identical to 199bfe76^). schema: the settledOf sentence of lastRun.baseRed removed (-168 bytes). Docs: orchestrator.md 62000 -> 61997 bytes, execute-task.md, PLUGIN-BUILD-GUIDE.md (both sections and the case-id list), CHANGELOG Unreleased entry rewritten. Tests: drive suite nh-block and bj-block gone, wb-block added (wb1-wb4), bh-block rewritten (bh1 join, bh2 kept unread, bh3/bh4 plain red held, bh5 unread kept base unknown), bx-block reworked (bx1 derived in-process walk over every task decision x answer through apply_answer in 3 base states, bx2 extended to attempts and rounds, bx4 open-now predicate, bx6 fail closed, bx3/bx5 kept), bw1/bw2 gone and bw6 added, bq1 restored to the hold, bn docstring/bn2 clause, sn3 expects the fail-closed unknown red; test_audit_lookup bg-block gone (file byte-identical to 199bfe76^); test__evidence_io settled shape, _RK_SETTLED, _rk_green and the owed key gone. Gate: 4/4 files ok, 2393 cases, exit 0. Extra: lint sweep 8/8 files ok 1144 cases; measure-context --gate OK; check-rendered-artifacts --before-commit OK; check-example-ledgers OK; check-git-pipeline OK; g1 PASS (no --write-map needed); ruff and vermin clean. Final full sweep after the last edit: 198/198 files ok, 19442 cases, exit 0.",
+    "descriptive": "A red now waits for its base run; no decision about it exists while the base measures, and the answer refusal reads the start's own base mark."
+  },
+  "testsAdded": [
+    "bx1 derived walk: every task decision and answer applied through apply_answer over a base handed out, measuring and stopped, after first asserting the drive prints wait-base and no decision",
+    "bx6 an unknown red with no mark fails closed, with its twins",
+    "wb3 resume and retry asked while the base is handed out answer nothing, attempts and rounds unchanged, launch unchanged",
+    "wb2 a killed base run is read as cut short on the next call, tree and claim removed, gate-red-base-unknown with retry and resume refused",
+    "wb4 a green gate takes the open key off the start's mark",
+    "wb1 no writer round runs while the base is unmeasured, and the red is decided gate-red-base over it once it ends",
+    "bx2 every rule line's attempt and round claims held to ANSWER_SPENDS",
+    "bx4 the printed decision, the base refusal and the session refusal share one open-now predicate",
+    "bw6 the own-files skip sentence says what it knows and nothing about predating"
+  ],
+  "casesAdded": [
+    [
+      "bx1",
+      "bx6",
+      "wb3"
+    ],
+    [
+      "wb2",
+      "wb4"
+    ],
+    [
+      "wb1"
+    ],
+    [
+      "bx2",
+      "bx4"
+    ],
+    [
+      "bw6"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py base_gate prints base_wait_said while base_waiting(held) (the hold); apply_answer calls base_refusal(state, pending, answer) which reads decision_mark -> base_open_of; ANSWER_SPENDS resume = SPENDS_ROUND; docs rewritten to say only that\n2 mutations on a scratch copy, each confirmed landed and restored in the same process: writer hold removed -> bh1 bh2 bq1 bx1 wb1-wb4 red; plain-red hold removed -> bh3 bh4; refusal reads a key on the decision -> bx1 bx4 bx6 wb2 wb4; resume priced free -> bx1 bx2 bx4 bx6 wb2 wb4; refusal unconditional -> bx4 bx5 bx6; fail-closed removed -> bx6; session test removed -> bx4; join removed -> bh1; mark never opened -> wb2 wb4; green keeps the key -> wb4; earlier repairs: symlink -> bo7, letter case -> bo6, rename -> bo5, silent base step -> kb4, keep_base any commit -> kb5, unread kept base given to writer -> survived until bh5 was added, then bh5\n3 git grep for beside/free resume/base_turn/BASE_TURNS/settle_green/stamp_end/resumed_beside/BESIDE_/settledOf/BASE_GREEN over the tree minus docs/audit: hits left are carry_beside_work, _manifest_beside_gate_set and test__proc_group _BESIDE_PATH, unrelated meanings of the word\n4 the refusal is enforced by apply_answer/base_refusal and the hold by base_gate, named in the guide's and execute-task.md's own sentences\n5 widest composed record measured twice (10:08 and 10:11 UTC): HEAD 3835 bytes over 12 shapes, now 3835 over 11, spread 0; the removed settled shape was 1749\n6 n/a - no guard reading a command\n7 numbers in this return carry their command; none written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:447af435c7800c04448416c1c57ec55aa8ff750c255adf39c02259bbe559e3ea\",\"dirtyDigest\":\"sha256:a233b4ec3f0e0ed42ef96efc762e710c747a23fe2f5ed68eaf7f6b1de77ea642\",\"dirtyPaths\":{\"CHANGELOG.md\":\"e5953a9998c4655a\",\"PLUGIN-BUILD-GUIDE.md\":\"41cae48940eea452\",\"plugins/audit/reference/execute-task.md\":\"9de4cc85f966573d\",\"plugins/audit/reference/orchestrator.md\":\"3363d05475d4c88f\",\"plugins/audit/schema/audit-plan.schema.json\":\"bd39b15736bd9697\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"d491a49f250fff97\",\"plugins/audit/scripts/governance/drive-phase.py\":\"035247fffc0e3d45\",\"plugins/audit/scripts/status/audit-lookup.py\":\"e2dadd41f0e1db07\",\"tests/test__evidence_io.py\":\"023ed79df3a10564\",\"tests/test_audit_lookup.py\":\"d79e85cbda5632aa\",\"tests/test_drive_phase.py\":\"66ec7caab6f5f92d\"},\"head\":\"5fb16b90\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__evidence_io.py\",\"tests/test_audit_lookup.py\",\"tests/test_drive_phase.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:1ce62a7eccb486304470eab209bde0c46220cccc6d8fd3e0308bda3f9d55b2d9\",\"v\":2}",
+  "testsAddGaps": [
+    "tests/test_drive_phase.py: The state that makes the class possible is removed rather than guarded a fourth time: no decision about a red exists while its base is unmeasured, because the ... - bound to `wb3`, which the suite did not print",
+    "tests/test_drive_phase.py: Gone with the beside decision: a held red whose base run stopped without a reading is read as cut short on the next call, as a held base already was, and asks ... - bound to `wb2`, which the suite did not print",
+    "tests/test_drive_phase.py: Gone with the beside decision: a held red whose base run stopped without a reading is read as cut short on the next call, as a held base already was, and asks ... - bound to `wb4`, which the suite did not print",
+    "tests/test_drive_phase.py: Gone with the beside decision: no writer round runs while a base is unmeasured, so no gate can turn green over one - bound to `wb1`, which the suite did not print"
+  ],
+  "testsAddUnchecked": []
+}
