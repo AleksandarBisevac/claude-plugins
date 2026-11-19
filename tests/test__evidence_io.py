@@ -4759,6 +4759,37 @@ def _kept_base_cases(check):
               % ((measured, unmeasured, nothing, own, green),),
               measured == [] and unmeasured == ["lint"]
               and nothing == ["sweep"] and own == ["sweep"] and green is None)
+
+        # A base step that reached no verdict measured nothing: timed out, or
+        # killed by a signal. The answered base is the twin, still measured.
+        silent = [M.base_unmeasured(red_steps, _KB_HEAD, "P1.1", [dict(
+            base, steps=[dict(_kb_step([]), **change)])]) for change in (
+                {"exit": None, "outcome": "timeout"}, {"exit": -9},
+                {"exit": None})]
+        answered = M.base_unmeasured(red_steps, _KB_HEAD, "P1.1", [base])
+        check("kb4 A BASE STEP COUNTS AS MEASURED ONLY WHEN IT ANSWERED: one that "
+              "timed out, was killed by a signal or recorded no exit leaves the "
+              "red step unmeasured, so the base is measured again rather than "
+              "read as green there; an answered base step still measures it: "
+              "%r" % ((silent, answered),),
+              silent == [["sweep"], ["sweep"], ["sweep"]] and answered == [])
+
+        # A base of ANOTHER commit is kept on no record, and nothing is written.
+        M.write_record(root, mpath, "task", ids, M.run_record(
+            _kb_red("R5", "2026-11-18T08:00:00Z")))
+        with open(spath, "rb") as fh:
+            before = fh.read()
+        elsewhere = keep(root, mpath, _kb_red("R5", "2026-11-18T08:00:00Z"),
+                         _kb_base("RX", "R5", head="feedface0000")) if keep \
+            else {"written": True, "reason": None}
+        with open(spath, "rb") as fh:
+            after = fh.read()
+        check("kb5 keep_base HANDED A BASE OF ANOTHER COMMIT REFUSES: its "
+              "sentence names the commit and the run, and the shard's bytes "
+              "are what they were: %r" % (elsewhere,),
+              elsewhere.get("written") is False
+              and "feedface0000" in str(elsewhere.get("reason"))
+              and "RX" in str(elsewhere.get("reason")) and before == after)
     except Exception as exc:                                   # noqa: BLE001
         check("kb0 the kept-base block ran to its end (%s: %s)"
               % (type(exc).__name__, exc), False)
@@ -6365,7 +6396,31 @@ def _rk_rows(root):
                 "atBase": [], "introduced": [], "unknown": [],
                 "basis": "no run recorded at base"}}),
             "RK", "2026-11-18T10:10:00Z"),
+        # The green run that replaced RK's red: a green run carries no reading
+        # of its own, which is what lets the base's verdict of RK be kept on it.
+        "green": row(_rk_green(), "RG", "2026-11-18T10:11:00Z"),
     }
+
+
+# The base's verdict of the red RK, as the drive hands it to the writer once a
+# green run replaced that red.
+_RK_SETTLED = {"run": "RB", "head": _KB_HEAD, "verdict": "base-only",
+               "atBase": [_KB_SUITE], "introduced": [], "unknown": [],
+               "basis": "base run RB fails it too"}
+
+
+def _rk_green():
+    """A measured green run: `_rk_measured`'s fields, every step passing and
+    no base reading, as run-test-gate writes a green run."""
+    out = _rk_measured()
+    out["status"] = "passed"
+    out["steps"] = [dict(st, exit=0) for st in out["steps"]]
+    for st in out["steps"]:
+        for key in ("failing", "failingSuites", "failingSuitesBasis",
+                    "failingBasis"):
+            st.pop(key, None)
+    out.pop(M.BASE_RED_KEY, None)
+    return out
 
 
 def _rk_shapes(rows):
@@ -6393,7 +6448,9 @@ def _rk_shapes(rows):
         ("a red carrying kept base runs", "task",
          [rec(rows["red"]), lambda root, mpath: M.keep_base(
              root, mpath, rows["red"], _kb_base("RB", "RK"))]),
-        ("a red carrying a settled base reading", "task", [rec(src)]),
+        ("a green carrying a settled base reading", "task",
+         [rec(rows["green"]), lambda root, mpath: M.keep_settled_base(
+             root, mpath, _RK_TASK, _RK_SETTLED, "RK")]),
         ("a phase-scope record", "phase", [rec(rows["phase"])]),
         ("a phase-scope whole repeat", "phase",
          [rec(rows["whole"], source=src)]),
@@ -6533,7 +6590,8 @@ def _record_schema_cases(check):
             shaped |= set((r.get(M.BASE_RED_KEY) or {}))
         owed = (list(M._RECORD_SHAPED) + list(M.RECORD_LINE_KEYS)
                 + [M.REPEAT_UNREAD_KEY, M.REPLACED_KEY, M.LAUNCH_KEY,
-                   M.BASE_RUNS_KEY])
+                   M.BASE_RUNS_KEY,
+                   getattr(M, "SETTLED_OF_KEY", "a settled reading's key")])
         uncomposed = {
             "RECORD_CUT_ORDER": [c for c in M.RECORD_CUT_ORDER
                                  if c not in cut_last],
@@ -6589,6 +6647,20 @@ def _record_schema_cases(check):
               len(placed) >= 2
               and all((node or {}).get("$ref") == "#/$defs/lastRun"
                       for _w, node in placed))
+
+        said = ((((doc.get("$defs") or {}).get("lastRun") or {})
+                 .get("properties") or {}).get(M.BASE_RED_KEY) or {}) \
+            .get("description") or ""
+        positions = [w for w in ("first key", "last key") if w in said]
+        check("rk6 THE CUT ORDER IS THE TABLE'S TO SAY: the published "
+              "description of `lastRun.baseRed` names `RECORD_CUT_ORDER` for "
+              "which key a record over its bound loses, and claims no position "
+              "of its own - kept base runs are cut where that table puts them, "
+              "which a sentence naming a position contradicted: %r"
+              % ((positions, said[-400:]),),
+              "RECORD_CUT_ORDER" in said and positions == []
+              and "%s.%s" % (M.BASE_RED_KEY, M.BASE_RUNS_KEY)
+              in M.RECORD_CUT_ORDER)
     except Exception as exc:                                   # noqa: BLE001
         check("rk0 the record-schema block ran to its end (%s: %s)"
               % (type(exc).__name__, exc), False)

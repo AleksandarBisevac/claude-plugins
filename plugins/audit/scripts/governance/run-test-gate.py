@@ -577,13 +577,14 @@ BASE_RED_ONLY = "red only where the base is red"
 BASE_RED_INTRODUCED = "red the task introduced"
 # The basis `failing_lines` and `failing_suites` give a list they cut at its
 # bound: a case or a suite past the cut is on no row, so the list is not every
-# one that failed.
-CASES_CUT = "the rest are not carried"
+# one that failed. The phrase is `_evidence_io`'s, which the drive reads too.
+CASES_CUT = _ev.LIST_CUT
 
 
 def _base_step(base_steps, step):
     """`_evidence_io.base_step`: the base run's step answering for `step`,
-    the one rule `base_unmeasured` reads a measured step by too."""
+    the one rule `base_unmeasured` reads a measured step by too - a base step
+    that reached no verdict answers for nothing."""
     return _ev.base_step(base_steps, step)
 
 
@@ -621,8 +622,8 @@ def _escaped(line):
 
 def _suites_cut(step):
     """Whether a step's failing suites were cut at their bound, so a suite past
-    the cut is on no row."""
-    return CASES_CUT in str(step.get("failingSuitesBasis") or "")
+    the cut is on no row (`_evidence_io.suites_cut`)."""
+    return _ev.suites_cut(step)
 
 
 def _same_case(one, other):
@@ -735,7 +736,11 @@ def _charge_step(step, base_steps):
     joined = declared is not None and bool(derived)
     if same is None and not ((_ev.is_derived_step(step.get("name")) or joined)
                              and named):
-        return [], [], ["%s (the base run has no such step)" % (step["name"],)]
+        silent = any(isinstance(st, dict) and st.get("name") == step.get("name")
+                     for st in base_steps or [])
+        return [], [], ["%s (%s)" % (step["name"], "the base run's step of that "
+                                     "name reached no verdict" if silent else
+                                     "the base run has no such step")]
     if not named:
         if not _ev._counts_as_failed(same):
             return [], [step["name"]], []
@@ -755,7 +760,8 @@ def _charge_step(step, base_steps):
             answering = [] if entry is None else [entry]
         else:
             answering = [st for st in base_steps or []
-                         if _ev.step_runs_suite(st, suite)]
+                         if _ev.step_answered(st)
+                         and _ev.step_runs_suite(st, suite)]
         word = (_suite_at_base(suite, step, answering) if answering
                 else "%s (no step of the base run ran it)" % (suite,))
         if word == "at-base":

@@ -445,8 +445,10 @@
         "severity": "high",
         "file": "plugins/audit/scripts/governance/_evidence_io.py (shared_with_repeated, bounded_record); plugins/audit/schema/audit-plan.schema.json (lastRun.required)",
         "issue": "The recorder writes a run record the published schema refuses. A record for a reused verdict stores no `steps` (they are shared with the run it repeats and named under sharedWithRepeated) while the schema's lastRun requires `steps`. The first such record was written into this repository's own plan by the committed code, and tests/test_validate_manifest.py sp1 is red on it with the validator's own words: the published schema refuses this value, and validate-manifest will refuse it from 4.0.0 (a warning in 3.x). So from the next major release every plan in which a gate verdict was reused is INVALID by the plugin's own validator, which is in the default set of the status gate. The task that introduced the sharing proved its records against readers and never against the schema; its sweep was green only because no shared record existed in the live plan yet.",
-        "resolution": "Every record the recorder can compose (measured, part repeat, whole repeat, shared, cut by the bound, carrying kept or settled base runs, with replaced launches) is one the published schema accepts, held by a case that composes each shape through the writer and validates it with the same reader validate-manifest uses; the schema describes the stored form, including when steps may be absent; this repository's own plan validates with no schema line.",
-        "fixTask": "P169.21-6l3"
+        "resolution": "fixed in P169.21-6l3 (8b0cfc237783): Every record the recorder can compose (measured, part repeat, whole repeat, shared, cut by the bound, carrying kept or settled base runs, with replaced launches) is one the published schema accepts, held by a case that composes each shape through the writer and validates it with the same reader validate-manifest uses; the schema describes the stored form, including when steps may be absent; this repository's own plan validates with no schema line.",
+        "fixTask": "P169.21-6l3",
+        "commit": "8b0cfc237783",
+        "status": "fixed"
       },
       {
         "id": "P169-R51",
@@ -508,9 +510,49 @@
         "file": "CHANGELOG.md (Unreleased)",
         "issue": "One clause describes a repair to behaviour no release ever had (that the validator used to warn every such record broke the schema): the record itself is new in this unreleased section, so a reader of the release notes meets a fix for something they never saw.",
         "resolution": "The clause goes; the sentence says what the schema accepts."
+      },
+      {
+        "id": "P169-R59",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/drive-phase.py (apply_answer, base_refusal, the key recorded only by gate_red_decision)",
+        "issue": "Third sighting of one class, found reviewing the uncommitted invariant: the refusal of a spending answer over an unmeasured base fires only for a decision that carries a key, and only the red-gate decision writes that key, so a spending decision produced anywhere else goes past it. Reached through the recommended path (probe on the suite's own fixtures): a writer decision is taken beside a base handed out but not started; the person answers the recommended resume; the resumed round produces no result (a crash, the budget running out); the next call asks the no-return decision, which carries no key; `retry` is applied, attempts go 1 to 2, the base is never measured and its launch is orphaned. The derived case proves the refusal given the key, never that every producer records it.",
+        "resolution": "The state that makes the class possible is removed rather than guarded a fourth time: no decision about a red exists while its base is unmeasured, because the drive holds for the base it launched, as it did before the base could be decided beside. What remains of the refusal reads the start's own base mark, not a key on the decision. Cases stage the probe's sequence and show there is nothing to answer.",
+        "fixTask": "P169.23-6l3"
+      },
+      {
+        "id": "P169-R60",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py (beside_ended, base_refusal)",
+        "issue": "A base run whose processes die beside a writer decision leaves the decision stuck: the mark is folded but never marked done, the decision is never taken again, every re-render says the base is still running beside it, and the refusal says the spending answer opens once the base ends with a reading, which will never happen. `rerun` gets out, and nothing says so. Nothing is charged. Established by probe.",
+        "resolution": "Gone with the beside decision: a held red whose base run stopped without a reading is read as cut short on the next call, as a held base already was, and asks the base-unknown decision.",
+        "fixTask": "P169.23-6l3"
+      },
+      {
+        "id": "P169-R61",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py (gate_step, settle_green)",
+        "issue": "A gate that goes green while the base beside it is still running is never settled: the settle returns early because the mark is not done, the reviewer is dispatched, and when the base later ends as red-at-base no note is written, no verdict kept and the mark never decided. Ending before a slow background base is the likely order, and it is the case the note and the reviewer's section exist for. Established by probe; the changelog sentence about a gate gone green beside a base is false for it.",
+        "resolution": "Gone with the beside decision: no writer round runs while a base is unmeasured, so no gate can turn green over one; the settle path, its kept reading and the note's reader go if nothing reaches them, or stay with a case if something does.",
+        "fixTask": "P169.23-6l3"
+      },
+      {
+        "id": "P169-R62",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py (ANSWER_SPENDS; the open-now list); the rule line of gate-red-base-unknown",
+        "issue": "The table of what an answer costs prices `resume` as free while it spends one of the start's bounded resume rounds and a paid session, and one rule line says a round spent in words the case holding the lines to the table does not recognise. The refusal and the printed decision list `resume` as open on the base-unknown decision when no session is recorded, and it is then refused for that reason.",
+        "resolution": "The table prices rounds as well as attempts and every rule line is held to it; the open-now list applies the session test.",
+        "fixTask": "P169.23-6l3"
+      },
+      {
+        "id": "P169-R63",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py (own_red)",
+        "issue": "The own-files skip trusts the runner's suite name: a file the task created that re-exports cases from a file the base has is read as the task's own red, with no base run. A suite name says where cases were collected, not where they come from. From reading; a question more than a defect.",
+        "resolution": "The skip's sentence says what it knows (the failing suite is a file the task created; where its cases come from is not read), so the person can ask for a base measurement; or the skip measures when the created file imports a test file the base has.",
+        "fixTask": "P169.23-6l3"
       }
     ],
-    "outcome": "[findings: 58 - 3 high, 21 med, 34 low; 16 with a recorded fix commit]"
+    "outcome": "[findings: 63 - 4 high, 23 med, 36 low; 17 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1615,7 +1657,8 @@
         "P169.15-6l3",
         "P169.16-6l3",
         "P169.21-6l3",
-        "P169.22-6l3"
+        "P169.22-6l3",
+        "P169.23-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -1707,7 +1750,8 @@
         "P169.15-6l3",
         "P169.16-6l3",
         "P169.21-6l3",
-        "P169.22-6l3"
+        "P169.22-6l3",
+        "P169.23-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -1826,7 +1870,8 @@
         "P169.18-6l3",
         "P169.19-6l3",
         "P169.21-6l3",
-        "P169.22-6l3"
+        "P169.22-6l3",
+        "P169.23-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -3776,7 +3821,8 @@
       "blockedBy": [],
       "dependsOn": [
         "P169.21-6l3",
-        "P169.22-6l3"
+        "P169.22-6l3",
+        "P169.23-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -3931,7 +3977,8 @@
         "P169.15-6l3",
         "P169.16-6l3",
         "P169.21-6l3",
-        "P169.22-6l3"
+        "P169.22-6l3",
+        "P169.23-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -4418,7 +4465,7 @@
     {
       "id": "P169.21-6l3",
       "title": "Every run record the recorder can write is one the published schema accepts: a record that shares its steps with the run it repeats validates, held by a case that composes each shape through the writer",
-      "status": "in_progress",
+      "status": "done",
       "description": "The recorder writes a run record its own published schema refuses, and the validator will refuse it from 4.0.0. Finding P169-R50 has the whole account. Reproduce first: `python3 tools/sweep-selftests.py tests/test_validate_manifest.py` is red on case sp1 at the branch head, on this repository's own plan (`docs/audit/phases/P169.json`, the `lastRun` of task P169.5: a reused verdict whose `steps` are shared with `repeatedRun` and named under `sharedWithRepeated`, while the schema's `$defs.lastRun.required` lists `steps`).\n\nTHE INVARIANT, stated once and held by one case rather than fixed for this one key: every record the recorder can compose is accepted by the published schema, read by the same schema reader `validate-manifest` uses (`_json_schema`). Compose each shape THROUGH THE WRITER in a fixture (never hand-built): a measured run, a part repeat, a whole repeat, a record sharing each subtree the sharing can share, a record cut by the byte bound at every position of the cut order, a record carrying kept base runs and one carrying a settled base, one with replaced launches, a phase-scope record, and the pointer forms. Derive the list of shapes from the code's own tables (`RECORD_CUT_ORDER`, the shareable paths, the record-shaped keys) so a key added to a table is validated without anyone remembering to add a case; a table entry the case cannot compose fails the case by name.\n\nTHE DESIGN QUESTION is yours to settle with a measurement, and the outcome says which way and why:\n (a) the schema describes the stored form: `steps` may be absent exactly when `sharedWithRepeated` names it (and likewise for any other required key the sharing or the cut can remove), expressed with keywords the repository's schema reader ACTUALLY implements (read `_json_schema.py`; if a keyword is missing, adding it there is in scope with cases in its suite, and the reader must refuse a keyword it does not implement rather than skip it: check what it does today with one it does not know and say so); or\n (b) the recorder never removes a key the schema requires.\n Sharing exists because it took the widest record from about thirty thousand bytes to about fourteen thousand; (b) gives that back for every reused verdict. Measure the widest record under each, twice with a gap, with the command that prints it. `lastRun` is new in this unreleased phase, so no published contract is broken either way: say so in COMPATIBILITY terms only if you touch that document's subject (you should not need to).\n Whichever you choose: the record ALREADY in this repository's plan must validate after your change without anyone editing docs/audit/ (you may not touch it). If your design cannot make that so, STOP BEFORE FILING and hand back the repair the orchestrator would run, with the reason.\n\nALSO OWED.\n1. What does a reader that does NOT resolve sharing see? `record_row` resolves; list every reader of `lastRun` that reads the stored form directly (the panel's state, the report, status, the doctor, the demo generator, `subject_records`, reconcile, the pointer, the group copy in the task verbs) and for each say whether it reads `steps` and what it shows when they are shared. A reader that shows \"no steps\" for a shared record is a defect of this class: fix it to read through the one resolver, with a case.\n2. The validator's sentence promises a refusal \"from 4.0.0\": this release is 4.0.0. Find where that tier is decided and say, in the outcome, what else the live plan and the two committed example plans would be refused for on that day (run the strict form over each and list the lines): nothing is to be fixed beyond this task's class, the list is what the release's contract-removal task needs.\n\nACCEPTANCE: sp1 green on the live plan; the shape case red at the branch head for the shared-steps shape and green after; a mutation that makes the writer drop a required key the schema does not excuse turns it red, and a mutation that makes the schema excuse an absent `steps` unconditionally turns a twin red (a record with no steps and no sharing must still be refused); mutations on scratch copies outside every checkout, restored in the same command, each confirmed landed. The help payload has a byte budget (`tests/test__help.py` p5, forty thousand bytes of headroom owed and almost none left): a schema description you add is paid for by one you shorten. Full sweep green, with no exception this time.\n\nDEPENDANTS to answer for by name: `validate-manifest.py` (warning tier and `--strict`), `_json_schema.py` and its suite, the schema's `lastRun` under tasks, phases and `$defs` (three places name it: say whether they are one definition), `tests/test__manifest_vocab.py` and `tests/test_gen_demo_manifest.py` (they hold the vocabulary), the demo generator's records, the committed example plan and starter template, `examples/` pins, and every direct reader listed under point 1.\n\nIf a file you need is outside your list, STOP BEFORE FILING and hand back the exact change with the reason: a return is filed once per start.",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json",
@@ -4454,14 +4501,17 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8b0cfc237783",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "DESIGN (a), the schema describes the stored form. plugins/audit/schema/audit-plan.schema.json $defs/lastRun: `steps` leaves `required` (runId, status, at stay) and one `anyOf` holds it: arm 1 {type: object, required: [steps]}, arm 2 {required: [sharedWithRepeated], properties: {sharedWithRepeated: {contains: {const: steps}}}}; arm 1 alone carries a type, so the reader's arm rule reports a failure as arm 1's own 'lastRun.steps is required by the schema'. The `steps` description gains 'Absent only when `sharedWithRepeated` names `steps`.', paid by cutting the `sharedWithRepeated` description's restatement of how steps are derived and its '(which `record_row` asks first)' clause. Help payload (tests/test__help.py _payload_bytes) 159688 at head -> 159665 now, limit PAYLOAD_CAP-PAYLOAD_HEADROOM = 160000. The $defs/lastRun top description is not in the payload (the $ref sibling's description is served), so trimming it pays nothing; that trim was reverted. _json_schema.py: `contains` added to SUPPORTED, `_check_contains`: at least one item admits (draft 2020-12 default minContains, so an empty list is refused), one reason per list, unread propagated, non-arrays left alone. MEASUREMENT (scratch scripts that read M.record_bytes; (b) = the stored record with `steps` put back from `_copied_steps(repeatedRun)` and dropped from sharedWithRepeated): live plan, 10 records: widest (a) 16807 = widest (b) 16807 (P169.20-6l3, which shares no steps), and the one shared-steps record P169.5 goes 9436 -> 15374 under (b). Worst-case fixture (whole repeat of a run at MAX_STEPS steps, each at MAX_FAILING+2 lines of 600 chars): (a) 34896, (b) 68416, past RECORD_MAX_BYTES 49152, because `steps` is in no position of RECORD_CUT_ORDER and bounded_record keeps a record still over its bound. Measured at 08:40:50/08:41:10 and again at 08:47:30, spread 0. (b) also cannot make the record already in docs/audit/phases/P169.json validate without editing it; (a) does, and sp1 is green. TODAY'S UNKNOWN KEYWORD: the reader does not silently skip it. check_findings returns it in `unread` (js3; `contains` itself came back as unread {'contains'} before this change). _manifest_rules._check_schema turns each unread keyword into a `rules.schema.unchecked` WARNING ('those values were NOT verified'), which validate-manifest --strict reads as a FINDING (is_schema_line). The gap: a caller of check_findings that ignores `unread` sees a pass. rk1 counts unread keywords as refusals for that reason. TESTS: tests/test__evidence_io.py rk-block (rk1-rk5, staged), composed through write_record/keep_base/run_record/finished_record in fresh git fixtures; tests/test__json_schema.py contains row in KEYWORD_ROWS + js12. SHAPES and their tables: measured (lines+launch), part repeat, whole repeat sharing every equal subtree, whole repeat keeping its own reach, whole repeat of the record it replaces (carried under the lock), repeat whose source neither holds (repeatedRunUnread), steps cut at MAX_STEPS (stepsDropped), record replacing launched runs (replacedLaunches), red with kept base runs (keep_base), red with a settled base reading, phase-scope record, phase-scope whole repeat, and one record per bound that cuts one more RECORD_CUT_ORDER field (composed as keep_base composes: finished_record over a part repeat with every observation and a kept base run). rk2 derives its tables: RECORD_CUT_ORDER (each entry must be the one field some bound newly cut), shareable = keys of a measured record outside _NEVER_SHARED holding a dict/list longer than its path (_shared_paths' rule) + steps, record-shaped = _RECORD_SHAPED + RECORD_LINE_KEYS + REPEAT_UNREAD_KEY, REPLACED_KEY, LAUNCH_KEY, BASE_RUNS_KEY. rk3: every stored pointer equals pointer_from_record and pointer_for of every row, each validated against $defs/testEvidence. rk4: the twin. rk5: tasks' and phases' lastRun are each a $ref to $defs/lastRun, so ONE definition across the three places. MUTATIONS (scratch copy outside the checkout, each anchor counted once, landed confirmed, __pycache__ purged, restored in the same run): writer stores steps without naming them in sharedWithRepeated -> rk1, rk2, rk4 red; writer drops `at` -> rk1-rk4 red; schema arm 1 loses required [steps] (steps excused unconditionally) -> rk4 alone red, rk1 green; `contains` always admits -> js1 red; never admits -> rk1 red; unmutated copy all green. READERS OF THE STORED FORM: subject_records (raw; used by reconcile for at/runId/pointer only), _reconciled (runId/at, pointer_from_record), pointer_from_record (runId/status/at, all in _NEVER_SHARED), _put_record (runId, launch/replacedLaunches via replaced_launches, record_row for the carry), keep_base/carry_kept_bases (resolved_shared), records_of_bodies (record_row, which resolves first; repeatedRun read whole, never shared into), run_by_launch (rows), audit-task.py _group_record/signoff (copies the stored record whole + gradedBy, sharing intact, reads no steps), gen-demo-manifest _recorded (writes run_record; demo has no repeats). The panel, report, status and doctor never read lastRun: grep of plugins/audit/scripts (ui JS included), hooks, tools and .claude/hooks for RECORD_KEY|lastRun shows no other reader. They read through read_rows/record_row. No reader shows 'no steps' for a shared record, so nothing needed fixing. 4.0.0 TIER: the word is BUG_VALUE_REFUSAL_RELEASE = '4.0.0' (_manifest_crossrefs.py:656, re-exported _manifest_rules.py:221), used only in the warning sentence. Nothing switches on by version. The refusal exists only as --strict (validate-manifest.py strict_split:129). validate-manifest --strict --verbose today: docs/audit/audit-plan.json OK exit 0, examples/acme-store/audit-plan.json OK exit 0, plugins/audit/templates/audit-plan.starter.json OK exit 0, no schema line in any, so on that day nothing else is refused. DOCS: CHANGELOG [Unreleased] sharing sentence now says the schema accepts the stored form via `contains`; PLUGIN-BUILD-GUIDE lastRun paragraph names sharedWithRepeated/resolved_shared and rk1/rk2. Untouched (not needed): validate-manifest.py, tests/test_validate_manifest.py, _evidence_io.py, COMPATIBILITY.md. DEPENDANTS: validate-manifest.py still correct (warning tier and --strict read the schema; sp1 green); _json_schema.py + suite changed as above; test__manifest_vocab and test_gen_demo_manifest green in the gate; demo records, the example plan and the starter template validate --strict; examples/ pins check-example-pins OK; _manifest_crossrefs/_manifest_rules, other check_findings callers: contains reaches them through SUPPORTED, no behaviour change for schemas without it. FULL SWEEP after the last edit: 198/198 files ok, 19414 cases, exit 0.",
+        "descriptive": "The published schema now accepts every run record the recorder writes, a whole repeat that shares its steps included, held by one case that composes each shape through the writer; the live plan validates again (sp1 green)"
       },
       "startedAt": "2026-11-19T07:33:24Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-19T08:06:00Z",
+      "verifiedBy": [
+        "rk-block in tests/test__evidence_io.py: every record shape composed through the writer validates against $defs/lastRun with no keyword unread (rk1); every entry of the cut order, the shareable paths and the record-only keys is composed (rk2); pointer forms validate (rk3); a record without steps that does not name them shared is refused (rk4, the twin); lastRun is one definition at each place (rk5)",
+        "tests/test__json_schema.py: a `contains` row in KEYWORD_ROWS (js1/js2) and js12 (empty array refused, non-array untouched, unread carried up)"
+      ],
       "notes": [
         {
           "at": "2026-11-19T06:50:07Z",
@@ -4504,6 +4554,24 @@
             "ms": 387930,
             "basis": "durationMs in run 2026-11-19T08:03:33Z.73f706's record (run-test-gate --record)",
             "runId": "2026-11-19T08:03:33Z.73f706"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-19T07:55:31Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1324000,
+            "startedAt": "2026-11-19T07:33:27Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-19T08:03:33Z.73f706",
+            "kind": "wait",
+            "ms": 1000,
+            "startedAt": "2026-11-19T07:56:39Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 8b0cfc237783",
+            "kind": "commit",
+            "ms": 2728,
+            "startedAt": "2026-11-19T08:05:56Z"
           }
         ],
         "firstStartedAt": "2026-11-19T07:33:24Z"
@@ -4612,12 +4680,24 @@
         "runId": "2026-11-19T08:03:50Z.245a1d",
         "status": "passed",
         "at": "2026-11-19T08:03:50Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "8b0cfc237783",
+        "at": "2026-11-19T08:06:00Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-19T07:55:30Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__evidence_io.py` in a throwaway tree at HEAD exited 1 with 1 of 401 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rk1 (house FAIL): SELFTEST FAILED: 400/401 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P169.22-6l3",
       "title": "While the base of a red is unmeasured the drive accepts no answer that spends and charges the task nothing: one check where answers are applied, read from the table of what each answer costs, with the set-aside repair of the base decisions carried forward",
-      "status": "pending",
+      "status": "in_progress",
       "description": "This task carries forward a repair that was written, reviewed and set aside, and finishes it. Read three things before designing, in this order.\n\n1. THE CLASS. The commit that stopped holding a red for a base run measured in the background (`git log --oneline -8`, the one titled \"The base is measured only when a red could predate the task\") was reviewed twice. Both reviews found the same class: something the drive does while the base of a red is skipped, unread or still running changes who the red is charged to, or costs the task what a held base would not have. The phase's findings P169-R41 to R49 (first review) and R51 to R55 (second review, of the repair) carry every scenario with the probe that established it.\n\n2. THE SAVED REPAIR. The patch file the orchestrator names in its prompt (the cancelled task P169.20-6l3 records where it is kept) is the whole earlier repair (twelve files; it applies cleanly to the branch head: `git apply --check` it, then apply it with `git apply`, which is the one write to the checkout you make without the Edit tool; every later edit goes through Edit). It was green on its own gate, proved ten mutations, and settles R42's first three shapes, R43, R44, R45, R46, R47, R48 and R49. Its decision table `BASE_TURNS` and `base_turn` are a starting point, not a constraint: the second review found that only two of its six call sites compute a pair, that the others use the table as a switch beside conditions that still decide, and that its default is dead code.\n\n3. WHY IT WAS NOT ENOUGH (P169-R51, high). The repair limited the decision taken beside a running base to the writer decision \"because its resume spends nothing\", but that decision also offers `retry`, which spends an attempt over an unmeasured base. The rule was put on the NAME of the decision; the thing that spends is the ANSWER. This is the second time the same class was fixed in one place and found open in the next, so by this repository's rule the fix is now an invariant, not another row.\n\nTHE INVARIANT, to be stated once above the code and enforced in ONE place:\n   While the base of a start's red is unmeasured (skipped as not needed is \"measured\" only by the rules of the saved repair; running, never started, killed, replaced, or kept-but-unread are all unmeasured), the drive accepts no answer that spends, whatever decision offered it, and charges nothing to the task.\n \"Spends\" is read from the drive's own table of what each answer costs (find it: the sentences \"retry spends one\", \"rerun spends no attempt\" come from somewhere; if the cost of an answer lives only in prose today, making it a table that both the prose and the check read is part of this task). The check sits where an answer is applied, before anything is written, and its refusal spends nothing, exits the way the drive's existing \"answers nothing\" refusals exit, and says which answers are open now and that the others open when the base ends. Decide and state whether the decision printed beside a base should also OMIT the answers it would refuse (it should not offer what it will refuse; but the refusal stays, since a decision can be answered late).\n The case that holds it is derived, not enumerated: for every decision the drive can print for a red (from `DECISIONS`), for every answer that decision offers, with the base in each unmeasured state, assert the attempt count and the resume-round count before and after, and that no writer or executor was dispatched by a spending answer. A decision or answer added to the tables later is covered without anyone adding a case; one the case cannot stage fails it by name.\n\nALSO OWED (second review).\n - R52: the own-files skip must hold only for a path the base commit's tree lacks AND that the task did not arrive at by renaming or copying a base file (ask git with rename detection); compare the way the filesystem compares (a case-insensitive filesystem holds `Tests/X.py` and `tests/x.py` as one file); a symlink measures. Each with the twin that still skips.\n - R53: a settled reading is kept and noted only against the red it was measured for; a mark that joined another start's base run is decided and keeps nothing it did not measure.\n - R54: each sentence says what the code knows (the green-over-base-red note does not name a cause it did not observe; a replaced launch is not \"ended\"; the joined-unread sentence; the join's line for a run that never started; the documents say WHICH starts join).\n - R55: cases for a green gate whose base mark is already decided or still running; the table total by construction rather than by a dead default; a case in the gate runner's own suite for a base step that reached no verdict.\n - The table: either every site that reads a base mark's state decides through it, or say plainly in its comment which sites decide by their own condition and why that is safe. A table that is a comment beside the code is the thing the second review caught.\n\nACCEPTANCE.\n1. Every finding R41 to R49 and R51 to R55 has a case red at the branch head (before the patch) or, for those the patch already settles, red at the head and green with the patch; R51 to R55 red WITH the patch applied and green after your change. Say which is which.\n2. Mutations on scratch copies outside every checkout, restored in the same command, each confirmed landed: the invariant's check removed; `retry` beside a base applied; the spend table saying `retry` costs nothing; a renamed file read as the task's own; a joined mark keeping a reading; plus the saved repair's ten, re-run against the final code.\n3. plugins/audit/reference/orchestrator.md sits exactly at its context ceiling: `python3 tools/measure-context.py --gate` stays green, a byte added there is a byte cut there. The help payload's budget (`tests/test__help.py` p5) has almost no room: a schema description you add is paid for by one you shorten.\n4. The drive suite is staged and long, and one of its cases (bq4, a base run killed while it measures) is known to fail once in a while under load: if it is the only red of a run, run its block again alone twice and report all three results rather than calling it green or red.\n5. Full sweep green with no exception, after the last edit.\n\nDEPENDANTS to answer for by name: every decision and step the drive prints for a red and for a base (`gate-red`, `gate-red-writer`, `gate-red-base`, `gate-red-base-unknown`, `dispatch-base`, `wait-base`) and the documents that name them or their answers; the `auto` mode's choice among answers (it must never choose one the invariant refuses: check it and say); `run-test-gate.py --base-of` and `--kept-only`; the time record's base stage (once per measurement); the cancelled-gate bound and the replaced-launch path where they meet a base mark; the reviewer's brief and the sign-off (the note's reader, in audit-lookup.py); the schema's `lastRun.baseRed` description and the suites that hold its vocabulary.\n\nIf a file you need is outside your list, STOP BEFORE FILING and hand back the exact change with the reason: a return is filed once per start.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -4673,14 +4753,14 @@
         "P169.5",
         "P169.21-6l3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-19T08:06:05Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -4756,6 +4836,225 @@
         "P169-R53",
         "P169-R54",
         "P169-R55"
+      ],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-19T09:11:42Z",
+            "ms": 23327,
+            "basis": "selectionMs in run 2026-11-19T09:18:36Z.38e735's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-19T09:18:36Z.38e735"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-19T09:12:06Z",
+            "ms": 389548,
+            "basis": "durationMs in run 2026-11-19T09:18:36Z.38e735's record (run-test-gate --record)",
+            "runId": "2026-11-19T09:18:36Z.38e735"
+          }
+        ],
+        "firstStartedAt": "2026-11-19T08:06:05Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-19T09:18:54Z.a1369c",
+        "status": "passed",
+        "durationMs": 218,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:24702c8ac38d8f5cbb2b87ef7c179148a0751187b415f5b7bdc2af6d95973551",
+        "reuseKey": "1:sha256:95ab742bf75d47f0020e02b4fd3e84e9cb210cf4f69446a2106bf73eaba3d0e3",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-19T09:18:36Z.38e735",
+          "ts": "2026-11-19T09:18:36Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+        "selectionMs": 15954,
+        "at": "2026-11-19T09:18:54Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "attempt": 1,
+          "banners": [],
+          "durationMs": 389548,
+          "failed": [],
+          "gateDigest": "sha256:24702c8ac38d8f5cbb2b87ef7c179148a0751187b415f5b7bdc2af6d95973551",
+          "gateReach": {
+            "gaps": []
+          },
+          "gateSource": "task",
+          "launch": "2026-11-19T09:11:42Z-d65fb02d",
+          "observations": {
+            "countsBasis": "no step printed a summary this reader can count (python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test_audit_lookup.py + affected/related:... (5515 more characters)), so the size of this gate is not knowable from its output",
+            "coverage": [
+              "tests/test__evidence_io.py",
+              "tests/test__evidence_io.py",
+              "tests/test_audit_lookup.py",
+              "tests/test_drive_phase.py",
+              "tests/test_drive_phase.py",
+              "tests/test_run_test_gate.py",
+              "tests/test_run_test_gate.py"
+            ],
+            "coverageBasis": "the runner named 207 path(s); the work under test declares 21 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 197/197 and 202 more; declared but not named by the run: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/execute-task.md, plugins/audit/reference/orchestrator.md and 5 more; breadth: the run named 175 suite path(s) and this task declares 21 file(s), and 170 of them are suites the task neither declares nor is named after (test__deps.py, test__output.py, test_audit_task.py, test_close_phase.py, test_commit_task_work.py, test_stamp_verification.py, tests/_harness.py and 163 more) - this gate asks more than the task changed; that is reported, not refused",
+            "ranTotal": null,
+            "treeBasis": "git described the tree before and after",
+            "treeMutated": []
+          },
+          "reuseKey": "1:sha256:95ab742bf75d47f0020e02b4fd3e84e9cb210cf4f69446a2106bf73eaba3d0e3",
+          "runId": "2026-11-19T09:18:36Z.38e735",
+          "selectionMs": 23327,
+          "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+          "startedAt": "2026-11-19T09:12:06Z",
+          "status": "passed",
+          "via": "cli",
+          "at": "2026-11-19T09:18:36Z",
+          "testedState": {
+            "dirtyBasis": "git described the tree before the run; 17 dirty path(s)",
+            "dirtyDigest": "sha256:71b50d47b130a32e4a51a0ff9653d7643f677320f82818736d68d093c421ed6d",
+            "head": "8b0cfc23",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeBasis": "13 declared file(s); 13 read, 0 missing",
+            "scopeDigest": "sha256:214e3fadffe9e76829d180ca8cd5d413401ea20bd58235413c335efc7198921a",
+            "scopeListDigest": "sha256:15a26a06dac87ca8dba7cb759cf90cd918c3cb2cf53eca862e1470746997f540"
+          },
+          "steps": [
+            {
+              "commandBytes": 5463,
+              "commandSha256": "c71087f4a4124b827c284d78e91959034ad82f1d90d5803a6184dd5345b7633e",
+              "durationMs": 389372,
+              "exit": 0,
+              "measured": "not-knowable",
+              "name": "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test_audit_lookup.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "program": "python3",
+              "ran": null,
+              "suiteReader": "none"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-19T09:18:36Z.38e735",
+            "launch": "2026-11-19T09:11:42Z-d65fb02d",
+            "status": "passed",
+            "at": "2026-11-19T09:18:36Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-19T09:18:54Z.a1369c",
+        "status": "passed",
+        "at": "2026-11-19T09:18:54Z"
+      }
+    },
+    {
+      "id": "P169.23-6l3",
+      "title": "A red waits for its base: the drive no longer decides a red beside a base run still measuring, so nothing is charged or decided while a base is unmeasured, by construction",
+      "status": "pending",
+      "description": "Three independent reviews in a row found the same class in the same feature, each time in the place the previous repair did not look: first a plain red decision answered with `retry` beside a running base (P169-R41), then `retry` on the writer decision beside it (P169-R51), then a decision produced elsewhere (the no-return ask after a resumed round) that goes past the refusal because only the red-gate decision records the key the refusal reads (P169-R59), with two more consequences of the same state (a killed base leaves the decision stuck, R60; a gate gone green before the base ends is never settled, R61). Each repair was sound for what it covered. The feature's state space (decisions x answers x who produced the decision x what the base is doing x green or red x waves) is what keeps producing the next one.\n\nTHE DECISION THIS TASK CARRIES OUT: the drive no longer decides a red beside a base run that is still measuring. A red whose base is being measured WAITS for it (`wait-base`), as it did before this phase. Then the invariant \"nothing is charged to a task, and nothing about its red is decided, while the base of that red is unmeasured\" holds by construction: there is no pending decision to answer, no writer round to run, no gate to turn green, while a base runs. The measured basis for giving the feature up is in the phase's records: on this repository's recorded runs the beside decision applied to no red at all (every recorded red took the agent path), and its derived saving on the session-writer path was the base run's own duration, which the same phase already cut by measuring only the red steps. The feature is not lost: it is recorded for the session-per-task design, where a task has its own tree and the writer is a session, with what these three reviews established as its entry conditions.\n\nWHAT STAYS (all of it is on the branch head, and none of it depends on deciding beside a base): a base run is not started for a red in files the task created and the base lacks (with the rename, letter-case and symlink readings); a red whose steps a recorded or kept base run already measured reads that run; a measured base is kept on the red's record; a base step that reached no verdict is not \"measured\"; a start joins a base run already measuring its commit rather than launching a second; `keep_base` refuses another commit.\n\nWHAT GOES: every path by which a decision about a red is taken, printed, answered, re-taken or settled while its base runs: the beside turn in the decision table, the rule telling the orchestrator to call next at once after `dispatch-base`, the beside mark and its end detection, the re-take of a beside decision, the count of rounds resumed beside a base and its sentence, the refusal of a late answer to a beside decision, and the green-over-running-base settle. For each of the following, decide by REACHABILITY and say which way it went and why: the settle on a green gate with its kept reading (`settledOf`), the dated note and its reader in the reviewer's brief and the sign-off (with every red held until its base is read, can a gate still go green over a base mark that is ended and undecided? if nothing reaches it, it goes, with its record key, its schema sentence and its composed record shape; if something does, it stays with a case that reaches it by that path); the refusal of a spending answer over an unmeasured base (it still has one real subject: the base-unknown decision, where the base can still be measured and `retry` is offered; keep the refusal for that, reading the START'S OWN BASE MARK in the drive's state rather than a key on the decision, so that any decision for that task, whoever produced it, is covered; a decision with no record of what its base stands on fails closed).\n Dead code is removed, not left behind a switch: no option, no flag, no table row that nothing takes.\n\nALSO OWED.\n - R62: the table of what an answer costs prices resume rounds as well as attempts; every rule line and every sentence that names a cost is held to it by the case that already holds the attempt wording (extend its reading rather than adding a second one); the list of answers open now applies the same session test the refusal applies.\n - R63: the own-files skip's sentence says what it knows: the failing suite is a file the task created and the base lacks; where the cases in it come from is not read. State whether measuring when the created file imports a test file the base has is worth its cost, with a count from this repository's recorded reds (read only, the command in the outcome, the number in no document); do it only if that count says so.\n - The three probes of the third review become cases: the resumed round with no result, the killed base, the gate green before the base ends. With the beside decision gone each must show there was nothing to answer or settle at that point, and each must be red at the branch head.\n\nACCEPTANCE.\n1. A derived case: for every decision the drive can print for a task (all of `DECISIONS`, not only the red ones), staged while that task's start holds a base mark that is launched and not ended, no answer is accepted that spends (from the cost table) and none dispatches a writer or an executor; in practice the drive prints `wait-base` and no decision at all, and the case asserts that first. A decision it cannot stage in that state fails by name.\n2. Mutations on scratch copies outside every checkout, restored in the same command, each confirmed landed: the hold removed for the writer decision; the hold removed for the plain red; the refusal reading a key on the decision instead of the base mark; the cost table pricing resume as free; plus the earlier repairs' mutations that still have a subject, re-run against the final code (say which no longer have one, and why).\n3. plugins/audit/reference/orchestrator.md sits exactly at its context ceiling and its paragraph on the base decision changes (it says \"only resume beside it\"): the reworded paragraph is no longer than the one it replaces, and `python3 tools/measure-context.py --gate` stays green. The executor reference, the build guide and the changelog describe one behaviour: a red waits for its base. The changelog's Unreleased entries about the beside decision are rewritten to what ships, not appended to: a reader of the release notes must not meet a feature and its removal.\n4. Bytes: a record key that goes makes the widest record no wider; measured twice with a gap, in the outcome.\n5. Wall time, said honestly in the outcome: what a red now waits on this repository's recorded base durations (the commands from the earlier accounts are in the phase's returns), and that this is the same wait as before the phase minus the base runs the skip rules avoid.\n6. Full sweep green with no exception, after the last edit.\n\nDEPENDANTS to answer for by name: every decision and step the drive prints for a red and for a base and the documents that name them or their answers; `run-test-gate.py --base-of` and `--kept-only`; the time record's base stage (queued once per measurement: with no beside path, by which call); the join of an earlier start's base; the cancelled-gate bound and the replaced-launch path where they meet a base mark; the reviewer's brief and the sign-off if the note's reader goes; the schema's `lastRun.baseRed` description, the composed record shapes that hold every record to the schema (a key that goes leaves the tables and its shape), and the vocabulary suites.\n\nIf a file you need is outside your list, STOP BEFORE FILING and hand back the exact change with the reason: a return is filed once per start.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "tests/test_drive_phase.py",
+        "tests/test__evidence_io.py",
+        "tests/test_run_test_gate.py",
+        "tests/test_audit_lookup.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/orchestrator.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: The state that makes the class possible is removed rather than guarded a fourth time: no decision about a red exists while its base is unmeasured, because the ...",
+          "tests/test_drive_phase.py: Gone with the beside decision: a held red whose base run stopped without a reading is read as cut short on the next call, as a held base already was, and asks ...",
+          "tests/test_drive_phase.py: Gone with the beside decision: no writer round runs while a base is unmeasured, so no gate can turn green over one",
+          "tests/test_drive_phase.py: The table prices rounds as well as attempts and every rule line is held to it",
+          "tests/test_drive_phase.py: The skip's sentence says what it knows (the failing suite is a file the task created"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test_audit_lookup.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.22-6l3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-19T09:27:44Z",
+          "text": "scope: plugins/audit/scripts/governance/drive-phase.py, every path the finding(s) P169-R59, P169-R60, P169-R61, P169-R62, P169-R63 name"
+        },
+        {
+          "at": "2026-11-19T09:27:44Z",
+          "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: its import closure reaches plugins/audit/scripts/governance/drive-phase.py)"
+        },
+        {
+          "at": "2026-11-19T09:27:54Z",
+          "text": "it quotes one refusal sentence of the gate runner about work declaring no files; this task changes no sentence of that path",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-19T09:27:54Z",
+          "text": "it quotes the schema's red-first enum; this task edits one description under lastRun and no enum",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-19T09:27:54Z",
+          "text": "it quotes the orchestrator reference's sentence about push and stash; this task rewords only the paragraph on the base decision and leaves that sentence",
+          "waives": ".claude/hooks/guard-uncommitted.py"
+        },
+        {
+          "at": "2026-11-19T09:27:54Z",
+          "text": "it quotes the '## [Unreleased]' heading; this task edits entries under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        }
+      ],
+      "fixes": [
+        "P169-R59",
+        "P169-R60",
+        "P169-R61",
+        "P169-R62",
+        "P169-R63"
       ]
     }
   ],

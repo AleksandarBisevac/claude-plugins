@@ -1939,6 +1939,25 @@ def _tests_add_review_lines(task, filed):
     return lines
 
 
+# A task whose gate went green over a red its base commit already had carries
+# a dated note saying so, written by the drive (`settle_green`). The note is
+# read here by the one mark its text carries (`_evidence_io.BASE_GREEN_MARK`),
+# never by a spelling of its own, and a task with no such note costs a brief
+# nothing.
+BASE_GREEN_TITLE = "A red its base already had"
+BASE_GREEN_ASK = ("Read whether the change turned that red green by changing "
+                  "the check rather than the code.")
+
+
+def base_green_lines(task):
+    """`<at>: <text>` of each of the task's notes saying its gate went green
+    over a red its base commit already had, oldest first; [] for none."""
+    return ["%s: %s" % (n.get("at"), n.get("text"))
+            for n in task.get("notes") or []
+            if isinstance(n, dict)
+            and _evio.BASE_GREEN_MARK in str(n.get("text") or "")]
+
+
 def compose_reviewer_brief(manifest, phase, task, ctx, filed):
     """The task-mode reviewer's whole brief, as lines. `filed` is the
     executor's `(rel, text)` for the current start, text present. The task's
@@ -1964,6 +1983,9 @@ def compose_reviewer_brief(manifest, phase, task, ctx, filed):
         % (evidence.get("runId"), evidence.get("status"), evidence.get("at"))
         if evidence else "No run is recorded for this task (no "
         "task.testEvidence) - read that as absent, not as passed."])
+    green = base_green_lines(task)
+    if green:
+        lines += _section(BASE_GREEN_TITLE, green + [BASE_GREEN_ASK])
     lines += _section("Gate commands, %s" % (whose,),
                       gate_lines(manifest, entries))
     lines += refuse_lines(manifest)
@@ -2299,6 +2321,9 @@ def phase_brief_parts(manifest, phase, ctx):
         entries, whose = _task_gate(manifest, phase, task)
         evidence = task.get("testEvidence") or {}
         _rel, text = filed_return(ctx, task, "executor")
+        green = base_green_lines(task)
+        green = (["%s:" % (BASE_GREEN_TITLE,)] + ["- %s" % (g,) for g in green]
+                 + [BASE_GREEN_ASK]) if green else []
         answers, owed_by = mechanical.get(tid, ({}, {}))
         computed = answer_lines(answers, owed_by) if (
             not owed_why and _fr.owed_answer(task, phase, live, answered)) else []
@@ -2316,7 +2341,7 @@ def phase_brief_parts(manifest, phase, ctx):
             "files:"] + ["- %s" % (f,) for f in task.get("files") or []]
             + _tests_add_review_lines(task, _filed_obj(text)) + [
             _recorded_run_line(evidence, rows, rows_why),
-            _gate_results_line(evidence, rows, rows_why),
+            _gate_results_line(evidence, rows, rows_why)] + green + [
             "gate commands, %s:" % (whose,)] + gate_lines(manifest, entries)
             + _task_commit_diff_lines(ctx, task.get("commit"),
                                       task.get("files"))

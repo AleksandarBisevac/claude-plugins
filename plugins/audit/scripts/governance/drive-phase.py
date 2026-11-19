@@ -179,8 +179,8 @@ gate, which repeats each step that grades the tree while nothing it graded has
 moved and measures an entry naming a path its identity leaves out; one
 measured under the bound runs inline. A red's base measurement is chosen the
 same way, as `dispatch-base`, read back off the start's mark
-(`base_reading_for`); the red is decided beside it rather than held for it,
-and a later red meets `wait-base` while it runs. A red task gate on a task with a
+(`base_reading_for`); only the free resume is decided beside it, and every
+other red meets `wait-base` while it runs (`base_turn`). A red task gate on a task with a
 recorded session asks `gate-red-writer`, whose recommended `resume` sends the
 gate's failing lines to the latest session and spends no attempt; once
 `MAX_RESUME_ROUNDS` are spent the plain `gate-red` is asked, after a note naming
@@ -494,11 +494,12 @@ ADVANCE_LINE = "then: next %(phase)s --answer sign-off --reason <the summary>"
 ADVANCE_NOT_APPLIED = "sign-off answered in advance, not applied: %s"
 WRITER_RULE = ("Run the run: line --explain prints in Bash, in the background, "
                "and call next after it exits.")
-# A base run is the one background step `next` does not wait for: the red it
-# measures is decided while it runs (`base_reading_for`, `base_gate`).
+# A base run is the one background step `next` may not wait for: the red it
+# measures is decided while it runs when that decision is the free resume, and
+# held for it otherwise (`base_turn`, `base_reading_for`, `base_gate`).
 BASE_BESIDE_RULE = ("Run the run: line --explain prints in Bash, in the "
-                    "background, and call next at once: the red is decided "
-                    "beside it.")
+                    "background, and call next at once: a free resume is "
+                    "decided beside it, any other decision waits for it.")
 # The one statement of whose money a session spends. The run: line is a separate
 # process with its own --budget-usd, which an orchestrator capped by its own
 # --max-budget-usd compared with what it had left and stopped on. The text is
@@ -561,7 +562,8 @@ STEPS = {
     "decide-gate-red-writer": {
         "line": "decide gate-red-writer %(task)s: recorded gate red (%(why)s)%(run)s",
         "rule": ("recommended: resume - the session that wrote it gets the "
-                 "failing lines and no attempt is spent; retry spends one.",)},
+                 "failing lines and no attempt is spent; retry spends one, and "
+                 "is refused while the base still runs.",)},
     "dispatch-executor": {
         "line": "dispatch %(agent)s %(task)s model=%(model)s brief=%(brief)s",
         "rule": (DISPATCH_RULE,)},
@@ -616,10 +618,10 @@ STEPS = {
                  "with the reason; the owner may commit over it with "
                  "commit-task-work.py --override-verdict and a reason.",
                  "resume (the recorded writer session, a round spent) and retry "
-                 "(a fresh attempt, one spent) are offered for a base that can "
-                 "never be measured and a red known to be the task's own, and "
-                 "are never recommended: nothing is sent until one is "
-                 "answered.")},
+                 "(a fresh attempt, one spent) are the way past a base that can "
+                 "never be measured, and are never recommended: nothing is sent "
+                 "until one is answered, and retry is refused while the base "
+                 "can still be measured.")},
     "decide-gate-cancelled": {
         "line": "decide gate-cancelled %(task)s: the gate's %(why)s",
         "rule": ("No verdict was reached and no attempt is spent: something "
@@ -822,7 +824,8 @@ DECISIONS = {
     # or one naming no base run: no session is sent unasked, since nothing
     # says the task introduced it. `measure-base` drops the start's base mark
     # so the base is measured again; `resume` and `retry` are the way past a
-    # base that can never be measured, offered and never recommended, and
+    # base that can never be measured, offered and never recommended - `retry`
+    # refused while the base can still be measured (`base_refusal`) - and
     # `resume` is refused where the red carries no writer session. Its signal
     # is `ask` (`SIGNAL_VERBS`): two of its options spend a writer round or an
     # attempt on a red nothing blames on the task, so the pipeline commands put
@@ -915,6 +918,10 @@ PHASE_DECISIONS = ("triage", "round-cap", "no-phase-review-return",
 # A decision's own answer line, printed under it: not a step, since it is never
 # printed alone.
 ANSWER_LINE = "answer: next %(phase)s --answer %(options)s%(reason)s"
+# The line a decision taken over an unmeasured base prints for the answers it
+# does not offer (`base_refused`).
+BASE_HELD_LINE = ("not offered until the base is measured: %s - it spends, and "
+                  "the red is not known to be the task's")
 
 # --- the signal: one line per step -------------------------------------------------
 # `next --signal` prints each step as ONE line,
@@ -2166,12 +2173,19 @@ def render_decision(ctx, pending):
         return render_triage(ctx, pending)
     if name == "round-cap":
         return render_round_cap(ctx, pending)
-    options, needs = DECISIONS[name]
+    every, needs = DECISIONS[name]
+    # An answer the drive would refuse is not offered (`base_refused`); the
+    # refusal stays, since a decision printed earlier can be answered late.
+    options = tuple(o for o in every if not base_refused(pending, o))
+    needs = tuple(n for n in needs if n in options)
     lines = step_text("decide-%s" % (name,), task=pending.get("task"),
                       phase=ctx["phase"], why=pending.get("why") or "",
                       run=verdict_said(pending))
     if name in UNFILED_SUBMIT_ROLE:
         lines += unfiled_submit_lines(pending, UNFILED_SUBMIT_ROLE[name])
+    if options != every:
+        lines.append(BASE_HELD_LINE % ", ".join(o for o in every
+                                                if o not in options))
     if options:
         lines.append(ANSWER_LINE % {
             "phase": ctx["phase"], "options": "|".join(options),
@@ -3079,12 +3093,13 @@ def writer_path_on(ctx):
     return bool(writer) and not problem
 
 
-def without_writer_way(name):
-    """What to answer instead of `resume` on decision `name` when the writer
-    path is off, read off the answers `DECISIONS` gives it: a fresh `retry`
-    where it offers one, else `block` - or the setting put back."""
-    options, needs = DECISIONS[name]
-    if "retry" in options:
+def without_writer_way(pending):
+    """What to answer instead of `resume` on the decision `pending` when the
+    writer path is off, read off the answers `DECISIONS` gives it: a fresh
+    `retry` where it offers one the drive would take (`base_refused`), else
+    `block` - or the setting put back."""
+    options, needs = DECISIONS[pending["decision"]]
+    if "retry" in options and not base_refused(pending, "retry"):
         return "answer retry"
     return "answer block%s, or set executor.%s again and answer resume" % (
         " with --reason" if "block" in needs else "", WRITER_MODEL_KEY)
@@ -3102,7 +3117,7 @@ def resume_writer(ctx, state, task, pending, tree=None):
     if problem or not writer:
         return _stopped(ctx, problem or "executor.%s is no longer set, so there "
                         "is no writer session to resume; %s" % (
-                            WRITER_MODEL_KEY, without_writer_way(pending["decision"])))
+                            WRITER_MODEL_KEY, without_writer_way(pending)))
     held = writer_state(state, task)
     round_n = held["resumes"] + 1
     prompt = session_record(ctx, task, held["seq"])[:-len(".jsonl")] + ".prompt.md"
@@ -3318,10 +3333,12 @@ def rerun_alongside(ctx, state, manifest, pending):
 # `dispatch-base` prints this script's `base-run` as the `run:` line - the tree
 # built, `run-test-gate.py --base-of --record` run with no bound, the tree taken
 # down, the reading kept in the launch's own record, which `next` folds into
-# the start's mark. The red it was launched for is NOT held for it: the next
-# `next` decides that red beside the running base (`running_beside`), and only
-# a later red of the start meets `wait-base` while the run has not finished; a
-# decision still unanswered when the run ends is taken again over what it left
+# the start's mark. The red it was launched for is held for it only when its
+# decision would cost something: the next `next` decides the free resume beside
+# the running base (`running_beside`), and every other red - plain `gate-red`,
+# a later red of the start - meets `wait-base` while the run has not finished
+# (`base_turn` holds the table); a decision still unanswered when the run ends
+# is taken again over what it left, and one answered after it is refused
 # (`beside_ended`).
 # Measured under the bound, it runs inside `next`, held to the bound; a run past
 # it there is stopped and handed to the background, never read.
@@ -3440,13 +3457,247 @@ def base_measure_due(state, task, row, runs):
 #   ...measured, the row's reading  nothing  none      `--base-of --kept-only`,
 #     predates the kept run                              read again, nothing run
 #   anything else - a suite named   nothing  one, per  the measured reading, as
-#     by no runner, a file git        start             before; a background one
-#     cannot place at the base,                         is decided BESIDE it
-#     a step the base never ran                         (`running_beside`)
+#     by no runner, a file git        commit            before; while a background
+#     cannot place at the base,                         one runs, `base_turn` says
+#     a step the base never ran                         what the red may be decided on
 #
 # A file git cannot answer for, a head it cannot resolve, or a red step whose
 # runner named no suite is not a created file: the red then may predate the
-# task, so the base is measured rather than the red charged to the task.
+# task, so the base is measured rather than the red charged to the task. The
+# question is asked of the RUNNER's path, from the directory the gate ran in,
+# spelled from the checkout's top through `_config.plan_to_git`: only a regular
+# file there that no path of the base commit's tree names under the
+# filesystem's own comparison, and that git's rename and copy detection pairs
+# with no base file, is created (`absent_at`). A symlink runs its target's
+# cases, a renamed or copied base file holds its cases, and a case-insensitive
+# filesystem reads another letter case as the base's file, so each measures; a
+# suite list cut at its bound may hold an old suite past the cut, so it
+# measures too.
+#
+# A BASE RUN THAT IS SKIPPED, UNREAD OR STILL RUNNING NEVER CHANGES WHO A RED
+# IS CHARGED TO, and never costs the task anything a held base would not have.
+# Two mechanisms hold it. `BASE_TURNS` says what the drive does with a red
+# while its base runs, and with a decision taken beside a base that has since
+# ended; it is built over every red decision DECISIONS names, so a decision
+# added there is a pair it answers, and `base_turn` has no default. And the one
+# place answers are applied refuses every answer that spends (`ANSWER_SPENDS`)
+# while the base of the red it answers is unmeasured (`base_refusal`), whatever
+# decision offered it - the backstop for every path below.
+#
+#   known about the base       would               turn     the drive
+#   running, for this red      gate-red-writer     beside   decides the red now,
+#                                                           the base named running:
+#                                                           the resume spends nothing
+#   running, for this red      any other red       hold     wait-base: a retry
+#                                                           would spend an attempt
+#                                                           over an unmeasured base
+#   running, another red       any red             hold     wait-base, as before
+#   ended or replaced, a       answered            refuse   the answer is refused,
+#     beside decision pending                               the decision taken again
+#   ended or replaced, a       unanswered          retake   dropped, and decided
+#     beside decision pending                               again over the mark
+#
+# THESE SITES DECIDE BY THEIR OWN CONDITION, outside the table, and none of
+# them can charge a red to the task: a red whose every failing suite the task
+# created is read on its own row's reading (`own_red`); a kept base that would
+# not read back falls to what this start measured, else is unknown in the
+# refusal's words (`kept_reading`); a red of a later start at a commit an
+# earlier start's launch still measures joins that launch (`running_at`); and
+# a green gate decides the ended mark (`settle_green`). None of them takes an
+# answer, so none can spend; a decision any of them leads to is answered
+# through `base_refusal` like every other.
+RED_DECISIONS = tuple(sorted(d for d in DECISIONS
+                             if d == "gate-red" or d.startswith("gate-red-")))
+# The red decisions taken beside their own running base: the free resume.
+BESIDE_DECISIONS = ("gate-red-writer",)
+BASE_TURNS = dict(
+    [((known, would), "beside" if known == "running-this"
+      and would in BESIDE_DECISIONS else "hold")
+     for known in ("running-this", "running-other") for would in RED_DECISIONS]
+    + [(("ended-pending", "answered"), "refuse"),
+       (("ended-pending", "unanswered"), "retake")])
+
+
+def base_turn(known, would):
+    """What the drive does with a red whose base is in the state `known`, the
+    red's decision being `would` - `BASE_TURNS`' entry for the pair. A pair it
+    does not hold raises KeyError: the table is built over every red decision,
+    so one outside it is a caller's mistake, never a turn to guess."""
+    return BASE_TURNS[(known, would)]
+
+
+# WHAT EACH ANSWER SPENDS of the task: an answer that starts the task again
+# (`start_task`) spends an attempt of `meta.maxAttempts`; every other spends
+# none. A `resume` sends a writer round, which MAX_RESUME_ROUNDS counts rather
+# than the attempts, and the rounds sent beside a base are told once it ends
+# (`resumed_beside`). The rule lines of STEPS say the same in words, and the
+# drive's suite holds each such word to this table; the words are not built
+# from it, since each sits in a sentence about its own decision.
+ANSWER_SPENDS = {
+    "accept": None, "block": None, "booted": None, "carry": None,
+    "close": None, "confirm": None, "continue": None, "decline": None,
+    "discard": None, "file": None, "fix": None, "leave": None,
+    "measure-base": None, "no-change": None, "no-ff": None, "not-asked": None,
+    "not-reachable": None, "one-more-round": None, "re-review": None,
+    "recheck": None, "redispatch": None, "redo": None, "rerun": None,
+    "resume": None, "retry": "an attempt", "sign-off": None, "widen": None}
+# The key a red's decision records, while its base is unmeasured, which way it
+# is: still RUNNING beside the decision (handed out, or measuring), or UNKNOWN -
+# stopped before a reading, unread, or taken for another red. A base settled
+# as unmeasurable, or a start past UNMEASURED_BOUND, is measured as far as it
+# ever will be, and records nothing.
+BASE_OPEN_KEY = "baseOpen"
+
+
+def answer_spends(answer):
+    """What `answer` spends of the task (`ANSWER_SPENDS`), None for nothing.
+    An answer the table does not hold raises KeyError."""
+    return ANSWER_SPENDS[answer]
+
+
+def base_refused(pending, answer):
+    """Whether `answer` to `pending` is one the drive refuses: it spends, and
+    the base of the red the decision is about is unmeasured (`BASE_OPEN_KEY`).
+    The one predicate the refusal and the printed decision both ask."""
+    return bool((pending or {}).get(BASE_OPEN_KEY)) \
+        and answer_spends(answer) is not None
+
+
+def base_open(state, task, text, unknown):
+    """What a red's decision records under `BASE_OPEN_KEY` when its reading
+    stands on no base run: `running` while the base launched for this red
+    runs beside it (`running_beside`), `unknown` when the base cannot be known
+    yet, else None - including a base measured as unmeasurable for this red
+    and a start past the bound, which nothing measures again."""
+    if running_beside(state, task, text) is not None:
+        return "running"
+    if unknown is None:
+        return None
+    held = _marked(state, BASE_MEASURED, task)
+    if unmeasurable_bound(held) or (unmeasurable(held) and mark_reds(held)
+                                     & red_runs(text, None)):
+        return None
+    return "unknown"
+
+
+def base_refusal(ctx, state, manifest, pending, answer):
+    """The refusal of `answer` to `pending` while the base of its red is
+    unmeasured (`base_refused`), else None: nothing is written, the decision
+    still waits. Its words say which way the base stands - read off the mark
+    as it is now - which answers are open, and when the others open."""
+    if not base_refused(pending, answer):
+        return None
+    options, _needs = DECISIONS[pending["decision"]]
+    task = _mio.tasks_by_id(manifest).get(pending.get("task")) or {}
+    held = _marked(state, BASE_MEASURED, task) if task else None
+    held = held if isinstance(held, dict) else {}
+    if pending.get(BASE_OPEN_KEY) == "running" and not held.get("ran"):
+        stands = "its base run, handed out at %s, has not started" % (
+            held.get("at"),)
+    elif pending.get(BASE_OPEN_KEY) == "running" and not held.get("done") \
+            and base_running(held):
+        stands = "its base run, launched at %s, is still measuring" % (
+            held.get("at"),)
+    elif pending.get(BASE_OPEN_KEY) == "running":
+        stands = "its base run stopped before it left a reading"
+    else:
+        stands = "its base is not measured"
+    later = [o for o in options if base_refused(pending, o)]
+    when = ("once that base run ends with a reading"
+            if pending.get(BASE_OPEN_KEY) == "running" else
+            "once the base is measured%s" % (
+                " (--answer measure-base)" if "measure-base" in options
+                else ""))
+    return ("--answer %s refused, nothing spent: it spends %s, and %s's red is "
+            "not known to be the task's - %s. Open now: %s; %s opens %s" % (
+                answer, answer_spends(answer), pending.get("task"), stands,
+                "|".join(o for o in options if not base_refused(pending, o)),
+                "|".join(later), when))
+
+
+def red_decision_name(state, task, reading, unknown):
+    """The decision a red task gate is asked, read off what decides it: red at
+    base (`gate-red-base`), a base nobody can know (`gate-red-base-unknown`),
+    the free resume of the recorded writer session while a round is left
+    (`gate-red-writer`), else plain `gate-red`, whose retry spends an attempt.
+    The one reading `gate_red_decision` takes and `base_turn` is asked with."""
+    if (reading or {}).get("verdict") == "base-only":
+        return "gate-red-base"
+    if unknown is not None:
+        return "gate-red-base-unknown"
+    if recorded_session(state, task) is not None \
+            and writer_state(state, task)["resumes"] < MAX_RESUME_ROUNDS:
+        return "gate-red-writer"
+    return "gate-red"
+
+
+# The key a start's base mark names the red it JOINED under - the red of a later
+# start at the commit an earlier start's base run was still measuring - and the
+# status of that red, which `base_gate` reads back once the run ends.
+JOINED_KEY = "joinedFor"
+JOINED_STATUS_KEY = "joinedStatus"
+JOINED_UNREAD = ("the base run %s this red joined measured run %s's red; a base "
+                 "run is read back only against the red it was launched for, so "
+                 "this red was not read against it")
+
+
+def mark_reds(held):
+    """The red runs the base mark `held` measures for: the one it was launched
+    for and the one a later start joined it with."""
+    held = held if isinstance(held, dict) else {}
+    return set([held.get("of"), held.get(JOINED_KEY)]) - set([None])
+
+
+def running_at(ctx, state, task, row):
+    """An earlier start's background base launch still measuring the commit
+    the red run `row` ran at - folded with what its run recorded - else None.
+    A mark of THIS start, or one naming no commit, is none."""
+    prior = _marked_any_start(state, BASE_MEASURED, task)
+    if _marked(state, BASE_MEASURED, task) is not None \
+            or not (isinstance(prior, dict) and prior.get("background")):
+        return None
+    folded, _final = fold_progress(ctx, task["id"], prior)
+    head = ((row or {}).get(_evio.BASE_RED_KEY) or {}).get("head")
+    if base_waiting(folded) and head and folded.get("head") \
+            and _evio.same_head(folded["head"], head):
+        return folded
+    return None
+
+
+def join_base(ctx, state, task, row, held):
+    """Make `held`, the running launch `running_at` found, this start's base
+    mark, measuring the red run `row` too: no second run of that commit is
+    started, and the launch's own `base-run` folds into this mark as into the
+    first."""
+    joined = dict((k, v) for k, v in held.items()
+                  if k not in ("beside", "resumesAtBeside", "resumesAtEnd",
+                               "decided"))
+    joined.update({JOINED_KEY: row.get("runId"),
+                   JOINED_STATUS_KEY: row.get("status")})
+    _mark(state, BASE_MEASURED, task, joined)
+    write_state(ctx, state)
+    ctx["did"].append("%s's red %s joins the base run %s at %s for run %s, %s; "
+                      "no second run is started" % (
+                          task["id"], row.get("runId"),
+                          "launched" if held.get("ran") else "handed out",
+                          held.get("at"), held.get("of"),
+                          "still measuring its commit" if held.get("ran")
+                          else "not started yet"))
+
+
+def stamp_end(state, task_id, start, held):
+    """The base mark `held` (of the start `start`) with the writer rounds
+    resumed so far stamped on it (`resumesAtEnd`) the first time its run is
+    read as ended while a red was decided beside it - the count
+    `resumed_beside` stops at. Any other mark, or one already stamped, is
+    returned as it is."""
+    if not (isinstance(held, dict) and held.get("beside") and held.get("done")) \
+            or "resumesAtEnd" in held:
+        return held
+    entry = (state.get("writer") or {}).get(task_id) or {}
+    value = entry.get("value") if entry.get("start") == start else None
+    resumes = (value or {}).get("resumes") if isinstance(value, dict) else 0
+    return dict(held, resumesAtEnd=int(resumes or 0))
 OWN_RED_WHY = ("no base run is started: every failing suite (%s) is a file "
                "this task's tests.add created - absent at base %s - so none of "
                "its cases can predate the task")
@@ -3470,39 +3721,146 @@ BESIDE_WHY = ("its base (run %s's red steps at %s) is still running beside "
               "this decision, launched %s; the next red is read against it")
 
 
-def own_red(ctx, task, row):
+def own_red(ctx, task, row, tree=None):
     """The sentence saying no base run is owed because every failing suite of
-    the red run `row` is a file `task`'s `tests.add` created - named by it, and
-    absent at the run's head - else None: a red step whose runner named no
-    suite, a suite `tests.add` does not name, a file present at that commit,
-    or a commit git cannot read is a red that may predate the task."""
+    the red run `row` is a file `task`'s `tests.add` created - named by it, in
+    the directory the gate ran in (`member_project` of `tree`), and absent at
+    the run's head by the runner's own path (`absent_at`) - else None: a red
+    step whose runner named no suite or whose suite list was cut, a suite
+    `tests.add` does not name, a file present at that commit, or any answer
+    git gives but a clean not-found is a red that may predate the task."""
     added = _fr.tests_add_files(task)
     head = ((row or {}).get("testedState") or {}).get("head")
     red = [st for st in (row or {}).get("steps") or []
            if _evio._counts_as_failed(st)]
     if not (added and head and red) or any(
-            not _evio.named_failing_suites([st]) for st in red):
+            not _evio.named_failing_suites([st]) or _evio.suites_cut(st)
+            for st in red):
         return None
-    suites = _evio.named_failing_suites(red)
-    paths = [_evio.resolve_named(s, added)[0] for s in suites]
-    if any(p is None for p in paths):
+    suites = sorted(set(_evio.named_failing_suites(red)))
+    if any(_evio.resolve_named(s, added)[0] is None for s in suites):
         return None
-    if carry_git(ctx["project"], ["cat-file", "-e",
-                                  "%s^{commit}" % (head,)])[0] != 0:
+    where = member_project(ctx, tree) or ctx["project"]
+    if not all(absent_at(where, head, s) for s in suites):
         return None
-    if any(carry_git(ctx["project"], ["cat-file", "-e", "%s:./%s" % (
-            head, p)])[0] == 0 for p in paths):
-        return None
-    return OWN_RED_WHY % (", ".join(sorted(set(paths))), head[:12])
+    return OWN_RED_WHY % (", ".join(suites), head[:12])
 
 
-def base_need(ctx, task, row):
+def absent_at(where, head, path):
+    """Whether the runner's `path` - a file in `where`, the directory the gate
+    ran in - is a file the task CREATED since commit `head`: a regular file
+    (a symlink runs its target's cases, so it measures), whose repository
+    path no file of `head`'s tree has under the filesystem's own comparison
+    (`folds_case`: a case-insensitive filesystem reads another letter case as
+    the same file), and which git's rename and copy detection pairs with no
+    file of `head` (`created_since`). False for every other answer, and for
+    every git answer but a clean one: an unknown head, a path outside the
+    repository, git that would not start."""
+    full = os.path.join(where, path)
+    if os.path.islink(full) or not os.path.isfile(full):
+        return False
+    code, out, _err = carry_git(where, ["rev-parse", "--show-toplevel"],
+                                _own_index_env())
+    if code != 0:
+        return False
+    top = out.decode("utf-8", "replace").strip()
+    hc = _loader.load_hooks_config(modname="audit__config")
+    # The runner's path, spelled from `where`, as git spells it from the top.
+    rel = hc.plan_to_git(path.replace(os.sep, "/"), top, where)
+    code, out, _err = carry_git(where, ["ls-tree", "-r", "--full-tree",
+                                        "--name-only", "-z", head])
+    if code != 0 or rel is None:
+        return False
+    fold = folds_case(full, where, path)
+    key = (lambda name: name.casefold()) if fold else (lambda name: name)
+    names = set(key(n.decode("utf-8", "replace"))
+                for n in out.split(b"\0") if n)
+    return key(rel) not in names and created_since(where, top, head, rel, key)
+
+
+def folds_case(full, where, path):
+    """Whether the filesystem holding `full` (`where`/`path`) reads `path`
+    spelled in the other letter case as the same file - asked of the file
+    itself. A path with no letter to swap cannot differ in case, and reads
+    as not folding."""
+    other = os.path.join(where, path.swapcase())
+    if other == full:
+        return False
+    try:
+        return os.path.samefile(full, other)
+    except OSError:
+        return False
+
+
+def created_since(where, top, head, rel, key):
+    """Whether git, asked with rename and copy detection over a scratch copy
+    of the index holding `rel` as an intent to add, lists the path `rel` - as
+    git spells it from `top`, the checkout's top - as ADDED since `head`, not
+    the far end of a rename or a copy of a file `head` holds. Each path git
+    prints is spelled from `where` (`_config.git_to_plan`) and compared with
+    `rel` spelled the same way, under `key`, the filesystem's own comparison.
+    The real index is never written. False for every other answer, and for
+    any git or filesystem failure."""
+    code, out, _err = carry_git(where, ["rev-parse", "--git-path", "index"],
+                                _own_index_env())
+    if code != 0:
+        return False
+    index = out.decode("utf-8", "replace").strip()
+    index = index if os.path.isabs(index) else os.path.join(where, index)
+    scratch = tempfile.mkdtemp(prefix="drive-created-")
+    try:
+        copy = os.path.join(scratch, "index")
+        if os.path.isfile(index):
+            shutil.copyfile(index, copy)
+        env = dict(_own_index_env(), GIT_INDEX_FILE=copy)
+        # Matched as the filesystem compares, so a file spelled on disk in
+        # another letter case than the runner's is the one added.
+        magic = "top,icase" if key("A") == key("a") else "top"
+        code, _out, _err = carry_git(where, [
+            "add", "-N", "--", ":(%s)%s" % (magic, rel)], env)
+        if code != 0:
+            return False
+        code, out, _err = carry_git(where, [
+            "diff", "-M", "-C", "--find-copies-harder", "--name-status", "-z",
+            head, "--"], env)
+    except OSError:
+        return False
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    if code != 0:
+        return False
+    hc = _loader.load_hooks_config(modname="audit__config")
+    return created_in(out.decode("utf-8", "replace").split("\0"),
+                      hc.git_to_plan(rel, top, where), key,
+                      lambda name: hc.git_to_plan(name, top, where))
+
+
+def created_in(fields, path, key, spell):
+    """Whether the `--name-status -z` listing `fields` holds `path` as added:
+    an `A` entry naming it, and no rename or copy whose far end it is - each
+    path the listing names spelled as `path` is (`spell`) and compared under
+    `key`."""
+    added, at = False, 0
+    while at < len(fields) and fields[at]:
+        status = fields[at]
+        width = 3 if status[:1] in ("R", "C") else 2
+        names = fields[at + 1:at + width]
+        if names and key(spell(names[-1])) == key(path):
+            added = status == "A"
+            if not added:
+                return False
+        at += width
+    return added
+
+
+def base_need(ctx, task, row, tree=None):
     """`(why_not, stale)` - why no base run is owed for the red run `row`, or
     None when one is; and `stale`, True when the reason is a measurement
     recorded after the row's own reading was taken, so the reading is to be
-    taken again over it (`kept_reading`). The table above is the rule."""
+    taken again over it (`kept_reading`). The table above is the rule; `tree`
+    is the member tree the gate ran in, None for the project."""
     reading = (row or {}).get(_evio.BASE_RED_KEY)
-    own = own_red(ctx, task, row)
+    own = own_red(ctx, task, row, tree)
     if own is not None:
         return own, False
     head = ((row or {}).get("testedState") or {}).get("head")
@@ -3591,7 +3949,7 @@ def unmeasurable_elsewhere(held, runs):
     run other than `runs`. Such a mark says nothing about any other red: the
     head has moved since, or the work has, so the other red may be runnable
     at its base where the first was not. It is read as no mark at all."""
-    return unmeasurable(held) and held.get("of") not in runs
+    return unmeasurable(held) and not (mark_reds(held) & set(runs))
 
 
 def measure_base(ctx, phase, row, tree=None, placed=None, started=None,
@@ -3929,12 +4287,17 @@ def base_mark(ctx, state, task):
     """The start's base mark in `state` as `next` reads it: folded with what
     its background run recorded (`fold_progress`) and kept in `state`. A
     record nothing will write again is written into the drive's state and
-    then removed, so what it said outlives it."""
+    then removed, so what it said outlives it. The first read of a beside
+    mark's end stamps the resume count on it (`stamp_end`)."""
     held, final = fold_progress(ctx, task["id"],
                                 _marked(state, BASE_MEASURED, task))
     if not (isinstance(held, dict) and held.get("background")):
         return held
-    _mark(state, BASE_MEASURED, task, held)
+    stamped = stamp_end(state, task["id"], start_key(task), held)
+    _mark(state, BASE_MEASURED, task, stamped)
+    if stamped is not held and final is None:
+        write_state(ctx, state)
+    held = stamped
     if final is not None:
         write_state(ctx, state)
         drop_progress(ctx, final)
@@ -4033,6 +4396,9 @@ def launch_base(ctx, state, task, row, tree, why, cut=None):
     at = _utc_stamp()
     replaced = _marked_any_start(state, BASE_MEASURED, task)
     held = {"of": row.get("runId"), "status": row.get("status"),
+            # The commit it measures, which a later start's red at that commit
+            # joins rather than measuring again (`running_at`).
+            "head": (row.get(_evio.BASE_RED_KEY) or {}).get("head"),
             "said": "launched", "verdict": None,
             "run": None, "atBase": [], "introduced": [], "background": True,
             "at": at, "launch": "%s-%s" % (at, os.urandom(4).hex()),
@@ -4076,7 +4442,8 @@ def cut_short(ctx, state, task, held):
     said = ("%s's base not measured: the run measuring it stopped before it "
             "left a reading" % (task["id"],))
     ctx["did"].append(said)
-    held = dict(held, done=True, unknowable=True, measurable=True, said=said)
+    held = stamp_end(state, task["id"], start_key(task), dict(
+        held, done=True, unknowable=True, measurable=True, said=said))
     _mark(state, BASE_MEASURED, task, held)
     write_state(ctx, state)
     return held
@@ -4127,17 +4494,36 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
     # Folded first: a background run that finished unmeasurable says so only
     # in its own record, and the due question reads the mark in `state`.
     base_mark(ctx, state, task)
+    unread = None
     if row is not None and (reading or {}).get("verdict") \
             in BASE_MEASURE_VERDICTS:
-        why_not, stale = base_need(ctx, task, row)
-        if why_not is not None:
+        why_not, stale = base_need(ctx, task, row, tree)
+        again, said = (kept_reading(ctx, phase, row) if why_not and stale
+                       else (reading, None))
+        if said is not None:
+            # Measured, and not read back: the sentence about that measurement
+            # is not said, and the red falls to what this start measured.
+            ctx["did"].append(said)
+            unread = said
+        elif why_not is not None:
             if stale:
-                again, said = kept_reading(ctx, phase, row)
-                reading = again if again is not None else reading
-                ctx["did"].append(said or "%s's red read again against the "
-                                  "base kept for its commit" % (task["id"],))
+                ctx["did"].append("%s's red read again against the base kept "
+                                  "for its commit" % (task["id"],))
             settle_mark(ctx, state, task)
-            return None, dict(reading, **{NOT_MEASURED_KEY: why_not}), None
+            return None, dict(again, **{NOT_MEASURED_KEY: why_not}), None
+    step, use, unknown = measured_reading(ctx, state, phase, task, row, reading,
+                                          runs, tree)
+    if unread is not None and step is None and unknown is None \
+            and not base_behind(use):
+        return None, use, unread
+    return step, use, unknown
+
+
+def measured_reading(ctx, state, phase, task, row, reading, runs, tree=None):
+    """`base_reading_for`'s answer once no measurement already recorded for
+    the red's commit has decided it: the base measured for this start - due,
+    running, joined or ended - or the row's own `reading`. `runs` are the red
+    runs the gate's output stands for (`red_runs`)."""
     if base_measure_due(state, task, row, runs):
         before = _marked(state, BASE_MEASURED, task)
         if unmeasurable_bound(before):
@@ -4148,25 +4534,34 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
             if base_behind(reading):
                 return None, reading, None
             return None, reading, bound_said(before)
-        due, why = gate_in_background(ctx, _evio.red_step_names(row))
-        if due:
-            return launch_base(ctx, state, task, row, tree, why), None, None
-        held = {"of": row.get("runId"), "verdict": None, "run": None,
-                "atBase": [], "introduced": [],
-                UNMEASURED_BEFORE: unmeasured_before(
-                    _marked(state, BASE_MEASURED, task))}
-        got = take_base(ctx, phase, task, row, tree,
-                        mark_keeper(ctx, state, task, held), BASE_MEASURE_SECONDS)
-        if got["cut"] is not None:
-            return launch_base(ctx, state, task, row, tree, "its run inside "
-                               "next %s" % (got["cut"],), got["cut"]), None, None
+        running = running_at(ctx, state, task, row)
+        if running is not None:
+            join_base(ctx, state, task, row, running)
+        else:
+            due, why = gate_in_background(ctx, _evio.red_step_names(row))
+            if due:
+                return launch_base(ctx, state, task, row, tree, why), None, None
+            held = {"of": row.get("runId"), "verdict": None, "run": None,
+                    "atBase": [], "introduced": [],
+                    UNMEASURED_BEFORE: unmeasured_before(
+                        _marked(state, BASE_MEASURED, task))}
+            got = take_base(ctx, phase, task, row, tree,
+                            mark_keeper(ctx, state, task, held),
+                            BASE_MEASURE_SECONDS)
+            if got["cut"] is not None:
+                return launch_base(ctx, state, task, row, tree, "its run "
+                                   "inside next %s" % (got["cut"],),
+                                   got["cut"]), None, None
     held = base_mark(ctx, state, task)
     if not isinstance(held, dict) or unmeasurable_elsewhere(held, runs):
         return None, reading, None
     if base_waiting(held):
-        if held.get("of") in runs and not held.get("beside"):
-            # NOT HELD: the red it was launched for is decided now, the base
-            # running beside the decision (`running_beside`).
+        known = "running-this" if (mark_reds(held) & runs) else "running-other"
+        would = red_decision_name(state, task, reading, None)
+        if base_turn(known, would) == "beside" and not held.get("beside"):
+            # NOT HELD, for the free resume alone: the red it was launched for
+            # is decided now, the base running beside the decision
+            # (`running_beside`).
             held = dict(held, beside=True, resumesAtBeside=writer_state(
                 state, task)["resumes"])
             _mark(state, BASE_MEASURED, task, held)
@@ -4181,10 +4576,17 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
     if held.get("ran") and not held.get("done"):
         held = cut_short(ctx, state, task, held)
     mine = held.get("of") in runs
+    joined = not mine and held.get(JOINED_KEY) in runs
     held, fresh = decided_mark(ctx, state, task, held)
     use = fresh if (fresh is not None and mine) else reading
     if base_behind(use):
         return None, use, None
+    if joined:
+        # The base this red joined measured another red of its commit; this
+        # one is read against it only through the recorded run, which no
+        # reader answered here.
+        return None, use, (held.get("said") if held.get("unknowable") else
+                           JOINED_UNREAD % (held.get("run"), held.get("of")))
     if not mine:
         return None, use, ("the base measured for this start was taken for "
                            "run %s, not for this red (%s), and this red's own "
@@ -4226,6 +4628,73 @@ def settle_mark(ctx, state, task):
         decided_mark(ctx, state, task, held)
 
 
+# What the task's note says when its gate went green over a red its base had:
+# a red the task did not make is green now, which a reviewer and the sign-off
+# read as a question about the change. What made it green is not recorded -
+# a resumed round, a rerun, a change made by hand all end the same way - so
+# the note names the runs and no cause.
+BASE_GREEN_NOTE = ("%s's gate " + _evio.BASE_GREEN_MARK + ": the base of red "
+                   "run %s, measured in run %s at %s, was red on %s, and run "
+                   "%s is green over it; what made it green is not recorded, so "
+                   "whether the check changed rather than the code is the "
+                   "review's to read")
+
+
+def settle_green(ctx, state, task):
+    """A green gate's answer to the start's base mark when its measurement
+    ended undecided - a red decided beside it, then green: the mark decided
+    and the base run's stage queued (`decided_mark`), the base's verdict of
+    the red it was launched for kept on the green run's record
+    (`_evidence_io.keep_settled_base`), and, when the base had the red, a
+    dated note on the task (`BASE_GREEN_NOTE`). A mark a later start JOINED
+    is decided and keeps nothing: it measured the earlier start's red. A mark
+    still measuring, already decided, or absent is left; each write that is
+    refused is said, never raised."""
+    held = base_mark(ctx, state, task)
+    if not (isinstance(held, dict) and held.get("done")) or held.get("decided"):
+        return
+    held, fresh = decided_mark(ctx, state, task, held)
+    if held.get(JOINED_KEY):
+        # A joined mark measured the earlier start's red, not this one: its
+        # verdict is of a red this start never had, so nothing of it is kept
+        # or noted here.
+        ctx["did"].append("%s's base, joined from run %s's launch, is decided; "
+                          "its verdict is of that red, so none is kept beside "
+                          "this green gate" % (task["id"], held.get("of")))
+        return
+    if not base_behind(fresh):
+        ctx["did"].append("%s's base ended with no reading, so no verdict of it "
+                          "is kept beside the green gate" % (task["id"],))
+        return
+    red = held.get("of")
+    kept = _evio.keep_settled_base(
+        ctx["project"], ctx["manifest"],
+        {"taskId": task["id"], "phaseId": ctx["phase"]}, fresh, red,
+        config=ctx["config"])
+    said = "%s's base verdict of run %s (%s)" % (task["id"], red,
+                                                 fresh.get("verdict"))
+    if kept["written"]:
+        ctx["did"].append(said + " kept on its green record")
+    else:
+        warn(ctx, "%s kept on no record: %s" % (said, kept["reason"]))
+    if not fresh.get("atBase"):
+        return
+    green = _marked(state, "gated", task)
+    refused = note_task(ctx, task, BASE_GREEN_NOTE % (
+        task["id"], red, fresh["run"], str(fresh.get("head") or "")[:12],
+        ", ".join(fresh["atBase"]),
+        (green.get("runId") if isinstance(green, dict) else None)
+        or "no run named"), stage_args(state, task))
+    if refused is None:
+        stages_carried(state, task)
+        write_state(ctx, state)
+        ctx["did"].append("%s noted: its gate went green over a red its base "
+                          "had" % (task["id"],))
+    else:
+        warn(ctx, "%s's gate went green over a red its base had, and the note "
+                  "saying so was refused (%s)" % (task["id"], refused))
+
+
 def red_status(ctx, held):
     """The status of the red run a base launch was measured for: the one the
     launch recorded, else the ledger row's - None when neither says."""
@@ -4248,15 +4717,20 @@ def base_gate(ctx, state, phase, task, tree=None):
     `read_back` asks again - never with a rerun's `--no-reuse`. `(None, None)`
     otherwise.
 
-    NOT HELD: while the base runs, the red it was launched for is read back
-    and decided beside it (`base_reading_for` marks it `beside`), and a mark
-    whose red was decided so is never read back here again - the gate after
-    it measures the work as it is now."""
+    WHILE THE BASE RUNS, the red it was launched for is read back and either
+    decided beside it - the free resume alone (`base_turn`; `base_reading_for`
+    marks it `beside`) - or held for it (`wait-base`); a mark whose red was
+    decided beside is never read back here again - the gate after it measures
+    the work as it is now. A mark a later start JOINED reads back that start's
+    red (`JOINED_KEY`), never the earlier start's."""
     held = base_mark(ctx, state, task)
     if not (isinstance(held, dict) and held.get("background")
             and not held.get("decided") and not held.get("beside")):
         return None, None
-    return None, read_back(ctx, held.get("of"), red_status(ctx, held),
+    run_id, status = ((held[JOINED_KEY], held.get(JOINED_STATUS_KEY))
+                      if held.get(JOINED_KEY) else
+                      (held.get("of"), red_status(ctx, held)))
+    return None, read_back(ctx, run_id, status,
                            lambda verbose: record_gate(ctx, phase, task, tree,
                                                        verbose=verbose),
                            "gate %s" % (task["id"],))
@@ -4371,6 +4845,8 @@ def sweep_base_trees(ctx, state):
         value, final, running = fold_reading(ctx, task_id,
                                              (marks[task_id] or {}).get("value"))
         if final is not None:
+            value = stamp_end(state, task_id, (marks[task_id] or {}).get("start"),
+                              value)
             spent.append(final)
             marks[task_id] = dict(marks[task_id], value=value)
             changed = True
@@ -4478,16 +4954,23 @@ def gate_red_decision(ctx, state, manifest, phase, task, text, tree=None):
     beside = running_beside(state, task, text)
     if beside is not None:
         verdict[BESIDE_KEY] = beside.get("launch")
-    if (reading or {}).get("verdict") == "base-only":
+    # Read by `base_refusal` when the decision is answered, and by the printed
+    # decision, which offers no answer that refusal would refuse.
+    opened = None if base_behind(reading) else base_open(state, task, text,
+                                                         unknown)
+    if opened is not None:
+        verdict[BASE_OPEN_KEY] = opened
+    name = red_decision_name(state, task, reading, unknown)
+    if name == "gate-red-base":
         spent = resumed_beside(state, task)
         if spent:
             why = "%s; %s" % (why, RESUMED_BESIDE_WHY % (spent,))
         return decision(ctx, state, "gate-red-base", task, why, extra=verdict)
     session = recorded_session(state, task)
-    if unknown is not None:
+    held = writer_state(state, task)
+    if name == "gate-red-base-unknown":
         extra = dict(verdict)
-        if session is not None \
-                and writer_state(state, task)["resumes"] < MAX_RESUME_ROUNDS:
+        if session is not None and held["resumes"] < MAX_RESUME_ROUNDS:
             # What `--answer resume` sends, should the owner answer it.
             extra.update(session=session,
                          failing=failing_lines(gate_row(ctx, text), text))
@@ -4495,8 +4978,7 @@ def gate_red_decision(ctx, state, manifest, phase, task, text, tree=None):
             head, _clip(unknown, 200)), extra=extra)
     if session is None:
         return decision(ctx, state, "gate-red", task, why, extra=verdict)
-    held = writer_state(state, task)
-    if held["resumes"] < MAX_RESUME_ROUNDS:
+    if name == "gate-red-writer":
         return decision(ctx, state, "gate-red-writer", task, "%s; session %s, "
                         "round %d/%d" % (why, session[:8], held["resumes"] + 1,
                                          MAX_RESUME_ROUNDS),
@@ -4531,15 +5013,19 @@ def base_note(state, task, text, reading):
 
 def resumed_beside(state, task):
     """The writer rounds resumed while the start's base ran beside the red it
-    was launched for (`resumesAtBeside`, the count when it was so marked),
-    once that base has ended - 0 when none was. Asked when the red is found
-    red at base too: those rounds were sent before anyone could know the
-    red was not the task's, and the decision says so."""
+    was launched for (`resumesAtBeside`, the count when it was so marked) up to
+    the count stamped when its end was first read (`resumesAtEnd`,
+    `stamp_end`), once that base has ended - 0 when none was. Asked when the
+    red is found red at base too: those rounds were sent before anyone could
+    know the red was not the task's, and the decision says so; a round sent
+    after the end was sent knowing it."""
     held = _marked(state, BASE_MEASURED, task)
     if not (isinstance(held, dict) and held.get("beside") and held.get("done")):
         return 0
-    return max(0, writer_state(state, task)["resumes"]
-               - int(held.get("resumesAtBeside") or 0))
+    now = writer_state(state, task)["resumes"]
+    upto = min(now, int(held["resumesAtEnd"])) if isinstance(
+        held.get("resumesAtEnd"), int) else now
+    return max(0, upto - int(held.get("resumesAtBeside") or 0))
 
 
 def running_beside(state, task, text):
@@ -4548,23 +5034,27 @@ def running_beside(state, task, text):
     None."""
     held = _marked(state, BASE_MEASURED, task)
     if isinstance(held, dict) and held.get("beside") and not held.get("done") \
-            and held.get("of") in red_runs(text, None):
+            and mark_reds(held) & red_runs(text, None):
         return held
     return None
 
 
 def beside_ended(ctx, state, manifest, pending):
-    """True when `pending` is a red's decision taken beside its running base
-    (`BESIDE_KEY`) and that base has since ended: unanswered, it is taken
-    again over what the base measured, so a red the base shares is not put
-    to the writer. An answer given to it is the owner's, and is applied."""
+    """Whether `pending`, a red's decision taken beside its running base
+    (`BESIDE_KEY`), stands beside it no longer: `ended` once that launch has
+    ended, `replaced` once the start's mark names another launch or none -
+    nothing read says how the first one ended - else None. Unanswered, it is
+    taken again over what the mark holds, so a red the base shares is not put
+    to the writer; an answer given to it then is refused, and the decision
+    taken again the same way (`base_turn`, `ended-pending`)."""
     launch = (pending or {}).get(BESIDE_KEY)
     task = _mio.tasks_by_id(manifest).get((pending or {}).get("task"))
     if not launch or task is None:
-        return False
+        return None
     held = base_mark(ctx, state, task)
-    return not (isinstance(held, dict) and held.get("launch") == launch
-                and not held.get("done"))
+    if not (isinstance(held, dict) and held.get("launch") == launch):
+        return "replaced"
+    return "ended" if held.get("done") else None
 
 
 def rejoin_base(state, task):
@@ -6689,6 +7179,7 @@ def gate_step(ctx, state, manifest, phase, task, tree=None):
         verdict_taken(ctx, out + err, tree),
         scope=_tree_stamp.declared_scope(task.get("files"))))
     write_state(ctx, state)
+    settle_green(ctx, state, task)
     banners = gate_banners(out + err)
     ctx["did"].append("gate %s green%s" % (task["id"], " (%s)" % (
         "; ".join(banners),) if banners else ""))
@@ -9771,8 +10262,9 @@ def answer_refusal(ctx, pending, answer, reason, fixes=()):
     if answer == "resume" and pending["decision"] == "gate-red-base-unknown" \
             and not pending.get("session"):
         return ("no writer session is recorded for this red with a round left, "
-                "so --answer resume has none to send to; answer retry, or "
-                "measure-base")
+                "so --answer resume has none to send to; answer %s" % (
+                    "measure-base" if base_refused(pending, "retry")
+                    else "retry, or measure-base",))
     if pending["decision"] == "scope-gap" and answer == "widen" \
             and not pending.get("config"):
         return ("no runner config file exists to widen, so --answer widen has "
@@ -9922,7 +10414,14 @@ def _state_answer(out):
 
 def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
                  fixes=()):
-    """Act on an answer to the pending decision; None when the drive goes on."""
+    """Act on an answer to the pending decision; None when the drive goes on.
+    THE ONE PLACE AN ANSWER IS APPLIED, and so the one place the drive refuses,
+    before anything is written, every answer that spends while the base of
+    the red it answers is unmeasured (`base_refusal`): the decision still
+    waits, and nothing is charged to the task."""
+    refused = base_refusal(ctx, state, manifest, pending, answer)
+    if refused is not None:
+        return E_USAGE, "%s %s: %s" % (PREFIX, ctx["phase"], refused)
     task = _mio.tasks_by_id(manifest).get(pending.get("task")) if pending.get("task") else None
     state.pop("pending", None)
     write_state(ctx, state)
@@ -12771,13 +13270,24 @@ def drive_locked(ctx, state, answer, reason, fixes):
                 held = None
         answer = held
         pending = None
-    if pending and answer is None and beside_ended(ctx, state, manifest, pending):
-        ctx["did"].append("the base measured beside %s's %s decision has ended; "
-                          "the red is decided again over it"
-                          % (pending["task"], pending["decision"]))
+    gone = beside_ended(ctx, state, manifest, pending) if pending else None
+    if gone is not None:
+        turn = base_turn("ended-pending", "unanswered" if answer is None
+                         else "answered")
+        ended = ("the base beside %s's %s %s, and that decision is taken "
+                 "again over what the start's base mark holds now" % (
+                     pending["task"], pending["decision"],
+                     "has ended" if gone == "ended" else
+                     "was replaced by another launch"))
         state.pop("pending", None)
         rejoin_base(state, _mio.tasks_by_id(manifest)[pending["task"]])
         write_state(ctx, state)
+        if turn == "refuse":
+            return E_USAGE, ("%s %s: --answer %s refused, nothing spent - %s; "
+                             "next %s takes it" % (
+                                 PREFIX, ctx["phase"], answer, ended,
+                                 ctx["phase"]))
+        ctx["did"].append(ended)
         pending = None
     if pending and pending["decision"] == "triage":
         pending = refresh_triage(ctx, state, phase, pending)

@@ -110,10 +110,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   is kept on the red task's `lastRun` record, beside its reading (`baseRed.baseRuns`), so a later
   red at that commit reads it from the plan - `run-test-gate.py --base-of` answers from it with
   nothing run, and `--kept-only` asks for that answer alone. A base measured in the background no
-  longer holds the red: `dispatch-base` is followed by the red's decision at the next `next`, the
-  base named as still running, and a red the base then shows it shares stops as `gate-red-base`
-  with no further resume, naming the writer rounds resumed beside the base before its verdict. A base measured inside `next`, under the foreground bound, still
-  decides before any round.
+  longer holds a red whose decision is the free resume (`gate-red-writer` with a round left): that
+  decision is taken at the next `next`, the base named as still running, and a red the base then
+  shows it shares stops as `gate-red-base` with no further resume, naming the writer rounds resumed
+  beside the base before its end. Every other decision - plain `gate-red`, with no session or no
+  round left, whose `retry` spends an attempt - still waits for the base (`wait-base`), and a later
+  start of the same task at a commit whose base is still running joins that run rather than
+  starting a second. While a red's base is unmeasured the drive takes no answer that spends: one
+  table says what each answer costs, the one place answers are applied refuses `retry` there
+  whatever decision offered it, nothing spent, and the printed decision does not offer it. An
+  answer to a decision taken beside a base that has since ended, or whose launch was replaced, is
+  refused, nothing spent, and the decision is taken again over the base. A gate gone green beside a
+  base settles it: the base's verdict is kept on the green run's record (`baseRed`, naming the red
+  under `settledOf`), its stage reaches the time record, and when the base had the red the task
+  carries a dated note naming the runs and no cause, which the reviewer's brief and the sign-off's
+  section for that task both show; a base a later start joined keeps no verdict of the red it was
+  not launched for. The own-files skip asks git of the runner's path at the base commit, under the
+  filesystem's own comparison of names and with rename and copy detection, and measures a symlink,
+  any answer but a clean not-found and a cut suite list; a kept base that cannot be read back is
+  never sent to the writer as measured; a base step that reached no verdict measures nothing. A
+  base measured inside `next`, under the foreground bound, still decides before any round.
 - **Every reader of recorded runs reads the plan's records beside the ledger, and answers the
   same from either.** The run a task's or a phase's `lastRun` record holds is read as its ledger
   row would be, one entry per run, the ledger's row winning where both hold it: the verdict a

@@ -12215,6 +12215,47 @@ def _member_records_cases(check):
         _harness.remove_tree(root)
 
 
+def _silent_base_step_cases(check):
+    """A base step that reached no verdict - it timed out, was killed by a
+    signal, or left no exit - measured nothing, so it answers for nothing: a
+    declared red step whose base step of that name is one is not knowable, in
+    words saying so rather than that the base has no such step, and a derived
+    step's suite is never read as run by such a step. Each with the twin a
+    base step that answered still decides."""
+    named = "the 1 suite file(s) the sweep %s" % (_ev_io.NAMED_FAILING,)
+    red = {"name": "sweep", "exit": 1, "failingSuites": ["tests/test_a.py"],
+           "failingSuitesBasis": named,
+           "failing": ["tests/test_a.py: FAIL a1 the case"]}
+    silent = [{"name": "sweep", "exit": None, "outcome": "timeout"},
+              {"name": "sweep", "exit": -9}, {"name": "sweep", "exit": None}]
+    quiet = [M._charge_step(red, [step]) for step in silent]
+    absent = M._charge_step(red, [{"name": "lint", "exit": 0}])
+    answered = M._charge_step(red, [{"name": "sweep", "exit": 0}])
+    check("sv1 A DECLARED STEP'S BASE STEP THAT REACHED NO VERDICT is said as "
+          "that - timed out, killed by a signal, no exit - never as a step the "
+          "base run lacks, and charges the red to neither side; the base step "
+          "missing is still said as missing, and one that answered green "
+          "charges the red to the task: %r" % ((quiet, absent, answered),),
+          all(q == ([], [], ["sweep (the base run's step of that name reached "
+                             "no verdict)"]) for q in quiet)
+          and absent == ([], [], ["sweep (the base run has no such step)"])
+          and answered == ([], ["tests/test_a.py"], []))
+
+    derived = dict(red, name="%srelated: tests/test_a.py"
+                   % (_ev_io.DERIVED_STEP_PREFIX,))
+    ran = dict(red, name="the declared sweep")
+    no_verdict = M._charge_step(derived, [dict(ran, exit=None,
+                                                outcome="timeout")])
+    with_verdict = M._charge_step(derived, [ran])
+    check("sv2 A DERIVED STEP'S SUITE IS NEVER READ AS RUN BY A BASE STEP THAT "
+          "REACHED NO VERDICT, though that step named the suite: no step of the "
+          "base run ran it; THE TWIN, the same base step with its exit read "
+          "the suite: %r" % ((no_verdict, with_verdict),),
+          no_verdict == ([], [], ["tests/test_a.py (no step of the base run "
+                                  "ran it)"])
+          and "no step of the base run ran it" not in repr(with_verdict))
+
+
 def _shared_records_cases(check):
     """The records a member tree's run leaves out of its changed paths are the
     ones `_invariants.record_rels` names - git-root-relative - and not a list of
@@ -14723,6 +14764,7 @@ def _selftest():
         _harness.stage(check, "jn-block", _joined_run_cases)
         _joined_repeat_cases(check)
         _harness.stage(check, "jnb-block", _joined_base_cases)
+        _harness.stage(check, "sv-block", _silent_base_step_cases)
         _harness.stage(check, "rp-block", _member_records_cases)
         _harness.stage(check, "rs-block", _shared_records_cases)
         _group_cases(check)

@@ -1,0 +1,96 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test_audit_lookup.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-19T09:10:09Z",
+    "basis": "`python3 tests/test_drive_phase.py --selftest --stage nh-block --stage bh-block --stage bo-block --stage bx-block --stage bj-block` in a throwaway tree at HEAD exited 1 with 17 of 23 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests on HEAD's code failing only the unknown-stage check for `bh-block`, `bj-block`, `bo-block`, `bx-block`, which the task's test files add - the stage is new at HEAD: its cases did not exist at HEAD, which is red for them), each passing with the working tree's implementation - bh0 (house FAIL), bh1 (house FAIL), bh2 (house FAIL), bh3 (house FAIL), bh4 (house FAIL), bo1 (house FAIL), bo2 (house FAIL), bo3 (house FAIL), bo4 (house FAIL) and 8 more: SELFTEST FAILED: 5/23 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Patch 2026-11-19-P169.20-6l3-base-turns.patch applied with one git apply (exit 0); its blocks ran green before any edit (kb 403/403, bg 201/201, bo+bn 7/7, bh 11/11, nh+bq 11/11, run-test-gate 719/719). New cases written next and seen RED with the patch applied: bx1 bx2 bx4 (invariant, table, printed decision), bw1-bw5 (sentences; ids renamed from bs* after the duplicate-id check flagged ux-block's bs1/bs2), bj1 (joined mark kept a reading), bo5 bo6 bo7 (rename/copy, case, symlink), bh0 (table total, no default). Green with the patch already: bj2, sv1, sv2, rk6, bx3, bx5. THE INVARIANT: drive-phase.py apply_answer (the one place answers are applied) calls base_refusal FIRST, before the pending is popped or anything written; it refuses (exit 2, nothing spent, decision still waiting) every answer ANSWER_SPENDS prices (retry = an attempt; every other answer None, a resume's writer round counted by MAX_RESUME_ROUNDS) while the decision records BASE_OPEN_KEY - set by gate_red_decision via base_open: 'running' while the base launched for the red runs beside it, 'unknown' when it cannot be known yet; nothing for a reading on a base run, a base measured unmeasurable for this red, or a start past UNMEASURED_BOUND. The refusal names the base state read off the mark now (not started / still measuring / stopped before a reading / not measured), the open answers, and when the others open. render_decision omits refused answers and prints BASE_HELD_LINE; the refusal stays for late answers. without_writer_way and the resume-without-session hint no longer recommend retry where it would be refused. BASE_TURNS is a dict built over (running-this|running-other) x RED_DECISIONS (derived from DECISIONS) plus ended-pending answered/unanswered; base_turn indexes it, no default; the switch-style rows (own, kept-unread, running-earlier, ended-green) removed and the comment says which sites decide by their own condition and why that is safe. R52: absent_at measures a symlink, spells the runner path from the top through _config.plan_to_git, compares against ls-tree -r --full-tree under the filesystem's case comparison (folds_case samefile probe), and created_since asks git diff -M -C --find-copies-harder over a scratch index copy with an icase-aware intent-to-add, names spelled back through git_to_plan (the git-path lint gb1 required the pair). R53: settle_green decides a joined mark and keeps/notes nothing, keeps the base verdict under held['of'] only. R54: BASE_GREEN_NOTE names the green run and says the cause is not recorded; beside_ended returns ended|replaced and the refusal says which; JOINED_UNREAD reworded; join_base says 'handed out ... not started yet' unless ran; execute-task.md, CHANGELOG, guide say 'a later start of the same task'. R55: bj2, bh0, sv1/sv2. rk shapes compose a green carrying a settled reading through keep_settled_base; SETTLED_OF_KEY added to rk2's owed keys; rk6 holds the schema's lastRun.baseRed description to RECORD_CUT_ORDER. Mutations on scratch copies (p22/tree, p22/tree2, rsync of the tree without .git), anchor counted once, landing confirmed, restored byte-equal, __pycache__ purged: own i1-i16 and i18 all red (cases below), i17 (SETTLED_OF_KEY renamed consistently) survived - schema baseRed is an open object, no reader sees a difference; saved m1-m14 re-anchored (m3, m5 on the final code), all red. Widest record (p22/widest.py, read only, HEAD archive vs tree), 09:43:02 and 09:58:10: widest lastRun 16807 bytes (P169.20-6l3) both, before and after; settled baseRed key 204 bytes, widest with it 17012; this change writes no record field (BASE_OPEN_KEY is drive state). Pre-filing: lint sweep 8/8 files ok 1144 cases (after gb1 fix; first run red on gb1 in my own new functions); _deps g1 green so no --write-map; check-rendered-artifacts --before-commit exit 0; check-example-ledgers exit 0; check-git-pipeline exit 0; measure-context --gate exit 0 with orchestrator.md 62000/62000 (not touched by me); test__help p5 green, no schema description added. Gate command exit 0: 4/4 files ok, 2404 cases. Full sweep after the last edit: 198/198 files ok, 19453 cases, exit 0; bq4 did not go red.",
+    "descriptive": "While a red's base is unmeasured the drive refuses every answer that spends, at the one place answers are applied, priced by one table; the own-files skip now measures renames, copies, case-folded names and symlinks, and the joined-mark and base sentences say only what is known."
+  },
+  "testsAdded": [
+    "bh0 rewritten: BASE_TURNS total over every red decision, base_turn raises on a pair it does not hold",
+    "bh3 restarts by hand rather than answering retry beside a running base",
+    "bo5 renamed directory and copied file measure, twin created file skips",
+    "bo6 case-insensitive filesystem reads another letter case as the base file, twin skips",
+    "bo7 symlink measures",
+    "bx1 the invariant walked: every red decision x every spending answer x five unmeasured base states, attempts/rounds/task record/pending unchanged, nothing dispatched",
+    "bx2 ANSWER_SPENDS total over DECISIONS and agreeing with every rule line's cost words",
+    "bx3 auto answers no decision",
+    "bx4 printed decision offers only answers it will take",
+    "bx5 twin: base measured, retry applied and one attempt spent",
+    "bw1-bw5 note names no cause, replaced launch said replaced, JOINED_UNREAD, join line says not started, documents name a later start of the same task",
+    "bj1 joined mark keeps and notes nothing, twin own mark keeps under its red",
+    "bj2 green gate leaves a decided or still-running mark",
+    "sv1 sv2 run-test-gate base step that reached no verdict",
+    "rk settled shape composed through keep_settled_base, SETTLED_OF_KEY owed, rk6 cut-order description"
+  ],
+  "casesAdded": [
+    [
+      "bh0",
+      "bh1",
+      "bh2"
+    ],
+    [
+      "bo1",
+      "bo2",
+      "bo3",
+      "bo4"
+    ],
+    "bh7",
+    "bh4",
+    [
+      "bh5",
+      "bh6",
+      "bh5r",
+      "bh6r"
+    ],
+    "kb4",
+    "bh8",
+    "kb5",
+    [
+      "bx1",
+      "bx2",
+      "bx4",
+      "bx5"
+    ],
+    [
+      "bo5",
+      "bo6",
+      "bo7"
+    ],
+    "bj1",
+    [
+      "bw1",
+      "bw2",
+      "bw3",
+      "bw4",
+      "bw5"
+    ],
+    [
+      "bh0",
+      "bj2",
+      "sv1",
+      "sv2"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py:10422 apply_answer calls base_refusal (3583) before the pop; ANSWER_SPENDS 3536, base_open 3566, gate_red_decision records it 4959; render_decision omits at 2179; absent_at 3749/created_since 3795; settle_green joined branch 4657; beside_ended 5042\n2 own mutations i1-i16, i18 each red (bx1/bx2/bx4, bo5/bo6/bo7, bj1, bw1/bw2/bw4, bh0, sv1, rk2) then restored byte-equal; over-fire i9 (refusal unconditional) -> bx5 red, i16 (own mark keeps nothing) -> bj1 red; i17 survived (consistent key rename, open schema object); saved m1-m14 re-anchored, all red\n3 grep -n 'answer retry\\|\"retry\"' drive-phase.py: DECISIONS rows (offer only, gated by render_decision/base_refusal), without_writer_way 3102 fixed, resume-hint 10266 fixed, apply_answer retry 10520 behind base_refusal; stale cause sentences: grep 'turned it green\\|turned green' -> guide 4234 and test 22474/22682 reworded, schema hit names settledOf only (left)\n4 rule 'retry refused while the base still runs/can still be measured' sits in STEPS decide-gate-red-writer and decide-gate-red-base-unknown, enforced by base_refusal in apply_answer, named in the guide and execute-task.md sentences\n5 widest record measured twice with a gap (09:43:02, 09:58:10): 16807 bytes both, HEAD and tree; narrow command timed once (32.34 s under a running sweep), stated as once\n6 n/a - no guard; the refusal reads the pending decision's recorded base state and the answer's table row, not the command text\n7 no number written into prose; byte figures only in this outcome with the command (p22/widest.py)",
+  "stamp": "audit-stamp: {\"content\":\"sha256:1fba7cbe8517599073c6db3c9cb7f2ae4b99deb24af887e0390dda4e181735cd\",\"dirtyDigest\":\"sha256:1e1a1653247040d126c93d0953c70f8c428d8d21980d3518d517c56f8b90f92b\",\"dirtyPaths\":{\"CHANGELOG.md\":\"b831b928d7717aea\",\"PLUGIN-BUILD-GUIDE.md\":\"d85cb4dd3f288670\",\"plugins/audit/reference/execute-task.md\":\"1c7fe9dc5cfb6655\",\"plugins/audit/reference/orchestrator.md\":\"64d1ade0c2c08124\",\"plugins/audit/schema/audit-plan.schema.json\":\"ebaf26f435fcb8ca\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"dddf4c11f1a228a4\",\"plugins/audit/scripts/governance/drive-phase.py\":\"402f5d841c7149ea\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"c84ff1eb72c69662\",\"plugins/audit/scripts/status/audit-lookup.py\":\"cea5fbd6a12a6409\",\"tests/test__evidence_io.py\":\"179c8eab7400ca62\",\"tests/test_audit_lookup.py\":\"192478b5b23b7351\",\"tests/test_drive_phase.py\":\"4268b2e77394403c\",\"tests/test_run_test_gate.py\":\"8a163cab33b0e164\"},\"head\":\"8b0cfc23\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__evidence_io.py\",\"tests/test_audit_lookup.py\",\"tests/test_drive_phase.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:214e3fadffe9e76829d180ca8cd5d413401ea20bd58235413c335efc7198921a\",\"v\":2}",
+  "testsAddGaps": [
+    "tests/test_drive_phase.py: Each sentence says what the code knows and names its basis - bound to `bw1`, which the suite did not print",
+    "tests/test_drive_phase.py: Each sentence says what the code knows and names its basis - bound to `bw2`, which the suite did not print",
+    "tests/test_drive_phase.py: Each sentence says what the code knows and names its basis - bound to `bw3`, which the suite did not print",
+    "tests/test_drive_phase.py: Each sentence says what the code knows and names its basis - bound to `bw4`, which the suite did not print",
+    "tests/test_drive_phase.py: Each sentence says what the code knows and names its basis - bound to `bw5`, which the suite did not print",
+    "tests/test_drive_phase.py: A case for each, or the dead default removed with the table made total by construction - bound to `sv1`, which the suite did not print",
+    "tests/test_drive_phase.py: A case for each, or the dead default removed with the table made total by construction - bound to `sv2`, which the suite did not print"
+  ],
+  "testsAddUnchecked": [
+    "tests/test__evidence_io.py: A base step counts as measured only when it answered - not checked: the submit's command did not run `tests/test__evidence_io.py`, so the ids bound to it were not compared with any printed label",
+    "tests/test__evidence_io.py: A case that hands keep_base a base of another commit and asserts the refusal's sentence and that nothing is written - not checked: the submit's command did not run `tests/test__evidence_io.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

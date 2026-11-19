@@ -15,8 +15,8 @@ sign-off** are in `reference/execute-task.md` and `reference/phase-signoff.md`.
 A headless role run: `run-agent-session.py`; under `executor.writerModel` each writer and
 per-task reviewer runs through it (the drive files the reviewer's return), and a red its base
 does not share resumes the session up to `MAX_RESUME_ROUNDS` times. A gate or base
-unmeasured or past the Bash bound is a background step (`dispatch-gate`; `dispatch-base`, red
-decided beside it); an unknowable base is `gate-red-base-unknown` (execute-task.md).
+unmeasured or past the Bash bound is a background step (`dispatch-gate`; `dispatch-base`, only
+resume beside it); an unknowable base is `gate-red-base-unknown` (execute-task.md).
 
 ## At a glance
 

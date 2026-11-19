@@ -1090,12 +1090,26 @@ def base_run(rows, head, exclude_tasks=(), names=None, suites=None):
             for st in row.get("steps") or []))])
 
 
+def step_answered(step):
+    """Whether a recorded step reached a verdict a reader may compare: an exit
+    the runner reported (an int, zero or above), and no no-verdict `outcome`.
+    A step that timed out, was killed by a signal (a negative exit) or left no
+    exit measured nothing, so it answers for nothing at base."""
+    if not isinstance(step, dict) or step.get("outcome"):
+        return False
+    reported = step.get("exit")
+    return (isinstance(reported, int) and not isinstance(reported, bool)
+            and reported >= 0)
+
+
 def base_step(base_steps, step):
     """The base run's step answering for `step`: the same name and, where both
     carry the command verbatim, the same command - a renamed command is another
-    check, whatever its key."""
+    check, whatever its key - and one that answered (`step_answered`): a base
+    step with no verdict measured nothing, and is never read as green there."""
     for st in base_steps or []:
-        if not isinstance(st, dict) or st.get("name") != step.get("name"):
+        if not isinstance(st, dict) or st.get("name") != step.get("name") \
+                or not step_answered(st):
             continue
         if st.get("command") and step.get("command") \
                 and str(st["command"]) != str(step["command"]):
@@ -1126,7 +1140,8 @@ def base_unmeasured(steps, head, task_id, rows):
     (`base_row_for`), the way it reads them: a step it has under the same
     name (`base_step`) is measured; a derived or joined step's suite is
     measured where a step of that run is known to have run it
-    (`step_runs_suite`). Every red step when no such run is recorded, `[]`
+    (`step_runs_suite`) - in either case only a base step that answered
+    (`step_answered`). Every red step when no such run is recorded, `[]`
     when every one is measured, None when nothing in `steps` is red.
 
     THE QUESTION A BASE RUN ANSWERS, asked before one is started: a commit
@@ -1139,7 +1154,7 @@ def base_unmeasured(steps, head, task_id, rows):
     base = base_row_for(red, head, task_id, rows) if head else None
     if base is None:
         return [str(st.get("name")) for st in red]
-    base_steps = [st for st in base.get("steps") or [] if isinstance(st, dict)]
+    base_steps = [st for st in base.get("steps") or [] if step_answered(st)]
     out = []
     for step in red:
         if base_step(base_steps, step) is not None:
@@ -1314,6 +1329,76 @@ def keep_base(project, manifest_path, red, base, session_id=None, wait=None,
         wait=RECORD_WAIT_SECONDS if wait is None else wait,
         outcome="the base run was kept on no record",
         repair="the next red at that commit measures its base again",
+        config=config)
+    return {"written": got["written"], "reason": got["reason"],
+            "path": got["path"]}
+
+
+# A WRITER RESUMED BESIDE A RUNNING BASE CAN TURN THE GATE GREEN BEFORE ANY RED
+# RECORD READS THAT BASE: the green run replaces the red's record and carries no
+# reading, so the base's verdict of the red would be kept nowhere the plan
+# holds. The drive keeps it on the green run's record, under `BASE_RED_KEY`
+# like any reading, naming the red it was taken for under `SETTLED_OF_KEY` -
+# the key that tells a settled reading from a red run's own. Only the verdict
+# and what it charged are kept; the base run itself is a ledger row and, while
+# a red of its commit stands, a kept run (`keep_base`).
+SETTLED_OF_KEY = "settledOf"
+_SETTLED_KEYS = ("run", "head", "verdict", "atBase", "introduced", "unknown")
+# The words a task's note carries when its gate went green over a red its base
+# commit already had: the drive writes them, and a reader of the task's notes
+# finds that note by them rather than by a copy of the sentence.
+BASE_GREEN_MARK = "went green over a red its base commit already had"
+
+
+def keep_settled_base(project, manifest_path, ids, reading, red_run,
+                      session_id=None, wait=None, config=None):
+    """Keep `reading` - the base's verdict of the red run `red_run`, which a
+    green run of the subject `ids` (`taskId`, `phaseId`) has since replaced -
+    on that green run's record, cut to `_SETTLED_KEYS` and naming `red_run`
+    (`SETTLED_OF_KEY`), in one locked write of the shard.
+    `{"written", "reason", "path"}`: `reason` says why nothing was kept - no
+    task or phase is named, the reading names no base run, or the subject's
+    newest record is the red itself or a red of its own (it holds a reading
+    that settles nothing), or the lock was not free."""
+    if not ids.get("taskId") or not ids.get("phaseId"):
+        return {"written": False, "path": None,
+                "reason": "no task and phase are named, so no record holds the "
+                          "base's verdict of run %s" % (red_run,)}
+    if not (isinstance(reading, dict) and reading.get("run")):
+        return {"written": False, "path": None,
+                "reason": "the base's reading of run %s names no base run, so "
+                          "there is no verdict to keep" % (red_run,)}
+    path, sharded = _phase_file(manifest_path, ids["phaseId"])
+    if not path or not os.path.exists(path):
+        return {"written": False, "path": None,
+                "reason": "no phase %r in this manifest" % (ids["phaseId"],)}
+    kept = dict((k, reading[k]) for k in _SETTLED_KEYS if k in reading)
+    kept[SETTLED_OF_KEY] = red_run
+
+    def change(body):
+        subject, _task, problem = _holders(body, "task", ids, sharded)
+        if problem is not None:
+            return None, problem, None
+        record = resolved_shared(subject.get(RECORD_KEY))
+        own = (record or {}).get(BASE_RED_KEY)
+        if not isinstance(record, dict) \
+                or str(record.get("runId")) == str(red_run) or (
+                    isinstance(own, dict) and not own.get(SETTLED_OF_KEY)):
+            return None, ("%s's newest run (%s) is not a green run that "
+                          "replaced run %s, so the base's verdict of that red "
+                          "is kept on no record" % (
+                              ids["taskId"], (record or {}).get("runId"),
+                              red_run)), None
+        subject[RECORD_KEY] = finished_record(dict(record, **{
+            BASE_RED_KEY: kept}), RECORD_MAX_BYTES)
+        return body, None, subject[RECORD_KEY]
+    got = write_plan_file(
+        project, path, change, "keeping a settled base verdict",
+        session_id=session_id,
+        wait=RECORD_WAIT_SECONDS if wait is None else wait,
+        outcome="the base's verdict was kept on no record",
+        repair="the drive's state still holds it, and the task's note says "
+               "it where the base had the red",
         config=config)
     return {"written": got["written"], "reason": got["reason"],
             "path": got["path"]}
@@ -5047,6 +5132,18 @@ def _counts_as_failed(step):
     non-zero exit, no no-verdict `outcome`, and no `muted` marker."""
     return (isinstance(step, dict) and step.get("exit") not in (0, None)
             and not step.get("outcome") and not step.get("muted"))
+
+
+# The basis `run-test-gate.failing_lines` and `failing_suites` give a list they
+# cut at its bound: a case or a suite past the cut is on no row, so the list is
+# not every one that failed. One phrase, read by the gate and by the drive.
+LIST_CUT = "the rest are not carried"
+
+
+def suites_cut(step):
+    """Whether a step's failing suites were cut at their bound (`LIST_CUT`), so
+    a suite past the cut is on no row and the carried ones are not all."""
+    return LIST_CUT in str((step or {}).get("failingSuitesBasis") or "")
 
 
 def named_failing_suites(steps):
