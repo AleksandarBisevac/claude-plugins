@@ -1,0 +1,117 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py --jobs 4 tests/test__floor_guard.py tests/test_drive_phase.py tests/test__filed_returns.py tests/test_audit_lookup.py tests/test__status_facts.py": "pass",
+    "python3 tools/sweep-selftests.py --jobs 4 tests/test__deps.py tests/test__output_lints.py tests/test__refs.py": "pass",
+    "run-test-gate.py docs/audit/audit-plan.json SG1 --task SG1.56-ukq (unrecorded)": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "python3 tools/prove-gates.py --list": "pass",
+    "ruff check plugins/audit tests": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts tests": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-19T08:13:50Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__floor_guard.py` in a throwaway tree at HEAD exited 1 with 5 of 169 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fx4 (house FAIL), fm83 (house FAIL), fm84 (house FAIL), fx13 (house FAIL), fx14 (house FAIL): SELFTEST FAILED: 164/169 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "_floor_guard.py: a new section 'what a name stands for' - _binds/_bindings, one stack pass over the copy counting every binding of every bare name file-wide at any depth (import, store, del, def, class statement, parameter, except target, global/nonlocal, match capture, type parameter) plus each star import; _resolve(name, binds) returns ('import', dotted target) only when the name is bound exactly once and that once is an import at module level with no star import anywhere, ('class', line, words) for one class statement, ('builtin', None, words) for a name bound nowhere, else (None, None, words) - words true of the whole file. SKIP_FORMS is read through _skip_form(func, binds): a row only where the head resolves to an import of the row's module; a skip-spelled call whose head does not resolve, or resolves to a relative import, is nobody's: _reason_aside blanks all its arguments and records (owner, dump, why), _parse_test carries them as tree.unresolved_skips and the bindings as tree.binds, and _python_test adds _unresolved_reason, so a changed argument reads not compared (naming the definition, the name and how the file binds it), never a changed head; a call proven another module's (_harness.skip) is no row and is compared whole. Rule 3: _base_reading follows a bare base bound once by a class statement in any position, reads an import or a builtin as another module's, declines anything else with a reason. Rule 4: _namespace_uses (one BFS walk) records every reference to globals/locals/vars, called or not, that is not read in place (subscript load, compare, iteration, a _READING_METHODS call) or handed directly by position or keyword to a callee _proven_callee proves (an import, or a builtin other than exec/eval - builtins_write.py run over every callable of builtins: only exec and eval write into a handed dict). Tables now: _COMPUTED = the copy's own namespace used other than to read it in place; a setattr call; an exec or eval call; a star import. _CLASS_COMPUTED = a class decorator; a metaclass; a base class of the copy running code for each subclass; a base class of the copy binding names by computation; a base class the reading cannot follow. Removed as special cases of not proven: _imported, _spelling, _reason_of, _marks_only, _namespace_store, _namespace_written, _namespace_handed, _file_callee, _type_call, _rebound_base, _NAMESPACE_WRITES, the per-row example constants and find_moves' bindings parameter (rows: the namespace store/write/handed-to-a-file-callee rows, the type() row, the base-bound-twice row). Payload shape and SET_ASIDE unchanged. tests/test__floor_guard.py: removed fx10/fx11 (per-row examples run with and without the row) and the old fx12; new fm83 (9 deny inputs read not compared with the word of what was not proven), fm84 (two-place import, rebound module, star import: reason/condition change is never a finding), fm85 (a skip-spelled call of another module's import is an ordinary call: a finding), fa60 (allow twins read clean), fx13 (generated pairs over GEN_DIMENSIONS, 8 dimensions; the case prints its pair count; each copy executed in-process as a module of a generated package, tests run by calling them and by unittest.TestResult; the oracle _gen_failing imports and calls nothing of the floor guard), fx14 (the README passage and the build guide paragraph each name every BINDINGS row; the not-read list stands in the guide's paragraph alone). Changed: fa58 (one import of unittest, since a second binds it twice), fm78 (the type() input removed: running both copies loses nothing), fx4's invariant (an edited unresolved skip expects not compared). Suite: 169/169, about 12 s against 11.3 s before (round one; rounds two and three in the reply). Mutation probe (scratchpad sg1.56/mutations.py, 22 rows on copies: rules 1-4 off, rule 2 over-firing, MA MB MC MD MI ME MF MM re-anchored, the oracle given the guard's answer, three allow rows, three document rows): every row caught. Commit measurement over 1055 task commits against sg1.50's: no verdict moved; 7 commits gain a not-compared clause on files already not compared (a local dict named mark, a file's own def skip). Sweeps n1_noise, n2_shapes, n2_classes, u1_unsafe, n3_skipdeco: no flip.",
+    "descriptive": "The floor guard sets a bare new test aside only on proof: one file-wide resolution of a name, every base followed or declined, a namespace harmless only when read in place, and an unresolved skip never a finding - held by one generated case that runs both copies of every pair."
+  },
+  "testsAdded": [
+    "fm83: inputs that lose a failing test through a rebound or star-imported skip name, a rebound module, a base through an alias or a factory, a namespace handed to a renamed callee, in a list, through a partial or uncalled to a file callee - each reads not compared naming what was not proven",
+    "fm84: a skip whose name does not resolve (two-place import, rebound module, star import) with its reason or condition changed is never a finding",
+    "fm85: a skip-spelled call of a name that resolves to another module's import is an ordinary call, its argument change a finding",
+    "fa60: the allow twins - single imports, aliases, quiet same-file bases in any position, a namespace handed directly to an imported runner, a namespace read in place - read clean",
+    "fx13: one generated case building pairs across spelling, change, base, callee, handing, namespace use, builtin and binding, running both copies of each; a pair losing a failing test never reads clean, a twin is never a finding, a provable twin reads clean, and a value no pair uses fails by name",
+    "fx14: the README passage and the build guide paragraph each name every binding-table row, and the not-read list stands in the guide's paragraph alone"
+  ],
+  "casesAdded": [
+    [
+      "fm83",
+      "fm84",
+      "fm85",
+      "fa60"
+    ],
+    "fx13",
+    "fx14"
+  ],
+  "claims": "claims:\n1 _floor_guard.py _resolve is the one resolution the guide paragraph describes; _skip_form, _base_reading and _proven_callee each call it; _unresolved_reason is what makes a changed unresolved argument read not compared\n2 mutations.py 22 rows on copies, anchors asserted once, pycache purged, restored byte for byte: every row caught (R1count, R1star, R2mark, R2args, R3, R4, R2over, MA-MM, ORACLE, A1-A3, D1-D3); allow direction red under A1-A3 (fa60) and R2over (fm85)\n3 the class is every way a name can be bound: one counting pass replaces the listed forms; the measurement over 1055 task commits found the first version's over-fire (a skip-spelled call of another module's import read as unresolved in 77 rows) and it was fixed and pinned by fm85; the remaining 7 moved rows are judged honest\n4 n/a - no rule to an agent; the documents' passages are held to the binding tables by fx14, and the guide paragraph names the generated case that holds the reading\n5 suite timing measured in three rounds with gaps, before and after each round; spread in the reply\n6 n/a - no guard of a command\n7 no number written into the documents; counts in the case lines are printed by the suite",
+  "stamp": "audit-stamp: {\"content\":\"sha256:12274aa0037d3e0e54b6ab350b276c6882eeceef51c4b60e70dc01b2fe9012e1\",\"dirtyDigest\":\"sha256:9d0eda43d1c903ee91989973dbb63c922e053f46cd9f256c47ce480ab27ab164\",\"dirtyPaths\":{\"CHANGELOG.md\":\"d0df02c379204bca\",\"PLUGIN-BUILD-GUIDE.md\":\"944e770456a85df0\",\"plugins/audit/README.md\":\"b07727783005e064\",\"plugins/audit/scripts/governance/_floor_guard.py\":\"9d5241f0d70efdae\",\"tests/test__floor_guard.py\":\"e45bbf2bbcb4a331\"},\"head\":\"7deb26eb\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/README.md\",\"plugins/audit/scripts/governance/_floor_guard.py\",\"tests/test__floor_guard.py\"],\"scopeDigest\":\"sha256:335747ea48bdae7511bfd2b2798fac07a8578742afbd09c044c3d24cb193ad9f\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "3 move(s) that lower the bar across 5 file(s) of the diff; 3 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md; 1 file(s) that could hold a move not compared: tests/test__floor_guard.py",
+    "findings": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test__floor_guard.py",
+        "line": 3874,
+        "side": "base",
+        "what": "labelled check `fx10 every row of the binding tables (%s) carries examples, and eac...` is gone from the tree copy",
+        "part": "gone"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test__floor_guard.py",
+        "line": 3905,
+        "side": "base",
+        "what": "labelled check `fx11 the case's own route for the bare-new-test row (`_inv_bound`, ...` is gone from the tree copy",
+        "part": "gone"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test__floor_guard.py",
+        "line": 3925,
+        "side": "base",
+        "what": "labelled check `fx12 the README and the build guide name every row of the binding t...` is gone from the tree copy",
+        "part": "gone"
+      }
+    ],
+    "declared": [],
+    "renamed": [
+      {
+        "path": "tests/test__floor_guard.py",
+        "from": "fm78 a bare new test under a name the base copy binds by computation in the scope it lands in - a store into globals(), locals() or vars(), setattr on its class, a class made by type, an exec call, a decorated class - is no new unit: its file is not compared, only added, naming it at a line it added and saying the base copy binds names by computation there: %r",
+        "to": "fm78 a bare new test under a name the base copy binds by computation in the scope it lands in - a store into globals(), locals() or vars(), setattr on its class, an exec call, a decorated class - is no new unit: its file is not compared, only added, naming it at a line it added and saying the base copy binds names by computation there: %r",
+        "line": 3397
+      }
+    ],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__floor_guard.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 2376 (`INV_MUST = ((\"a value inside a label edited\", \"findings\"),`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "7deb26ebe2499625d4d1975a2625368072168f94"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-19T08:13:52Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

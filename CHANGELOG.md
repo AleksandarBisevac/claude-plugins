@@ -284,6 +284,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   base row rather than by a separate one. The README and the build guide name every form by its
   row's own words, a case holding them to the tables, and what is knowingly not read is listed
   once, in the build guide's section on the module.
+- **The floor guard sets a bare new test aside only on proof.** The reading listed the ways a
+  name can be bound, and every way it had not listed read clean: a skip name rebound by a store
+  or imported under a star import, a base named through an alias or a factory, a namespace handed
+  to a helper reached through an alias, placed in a container or handed through a partial - each
+  let a bare new test read clean while the base copy ran a failing test the tree copy no longer
+  runs. What a
+  name stands for is now one reading over the whole file - an import only where the file binds
+  the name exactly once, by an import at module level, with no star import anywhere - and a
+  decorator, a base and the copy's own namespace are harmless only where that reading proves them
+  so; anything not proven reads not compared, with a reason naming the name and how the file
+  binds it. A call spelled like a skip whose name does not resolve is never a finding: a change
+  to its arguments - under a module imported in two places, rebound, or reached by a relative
+  import - had read as a changed head, and now makes the file not compared. The binding forms
+  that became special cases of not proven are gone from the tables, and the case that held each
+  row by its own example gives way to one generated case that builds pairs of copies across every
+  dimension the rule names and runs both copies of each, so its oracle is the run and not the
+  module. What is proven, declined and still read without proof is stated once, in the build
+  guide's section on `_floor_guard.py`.
 - **An Acceptance list the clause reader could not number is now read, never silently dropped.**
   The items after a task description's last `Acceptance:` were read only when numbered
   `(1) ... (2) ...`; a Markdown numbered list and unnumbered prose read as no clause, so on the

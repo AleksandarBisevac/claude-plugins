@@ -6074,44 +6074,57 @@ of a bare new test, or a new labelled check (`_new_test_aside`): a new test is a
 has no decorator, default or evaluated annotation, is nested in no function, and is under a name
 the base copy cannot have bound - it mentions the name nowhere, as an identifier (`_identifiers`)
 or as a word inside a string (`_string_words`), and binds nothing by computation in the scope the
-test lands in (`_computed_scopes`, by the two tables of `BINDINGS`). `_COMPUTED` holds the forms a
-statement of the scope's own body binds by, at any depth of its blocks but in no function or class
-nested in it, or that point at the scope from anywhere in the copy: a store into the names
-`globals()`, `locals()` or `vars()` hands out; a call writing into the names `globals()`, `locals()`
-or `vars()` hands out; a setattr call, which also binds a class it names, anywhere; a class made by a
-call to type; an exec or eval call, the module's too from anywhere when handed `globals()`; a star
-import; and a namespace handed to a callee the copy defines - a function, class, method or lambda
-assigned to a name, at any depth, and never a name the copy only imports - since handing it is the
-binding, the callee's body not being read. `_CLASS_COMPUTED` holds a class's own: a class decorator
-that is no skip or mark, a metaclass, a base class of the copy running code for each subclass, a
-base class of the copy binding names by computation, and a base class the copy binds more than
-once. A class is read with its bases of the same file, through further bases: a base is a bare
-name defined once in the copy as a class and bound in no other way, each class is asked once, in
-the copy's order - which puts every base a class can name before it, since the base must be bound
-when the class statement runs and a class nested in a function holds no bare new test - so the
-reading costs what the classes and their bases are, and a base whose name the copy binds twice is
-declined as not compared rather than guessed at. Every row carries its own examples
-- a base copy and the bare test added at its end - and `tests/test__floor_guard.py` runs each
-against the tables as they stand, where it must be not compared with a reason naming the row, and
-against the same tables with that row taken out, handed to `find_moves` as `bindings`, where it
-must read clean; a row with no example, or whose example reads the same without it, fails that
-case by name, which is how an equivalent row is found and removed rather than kept. The same case
-reads the case's own route for this row (`_inv_bound`, built without the module's tables) against
-the same examples and against the allow twins. Any other new test stays in the rest, so its file is
-not compared, only added, naming it, and one held by a string or by computation is named with how
-the base copy can bind it - unless it is the rename of a base test gone from the tree with the same
-head and body, under a name the base copy cannot have bound, whose head is then compared with that
-test's.
+test lands in (`_computed_scopes`, by the two tables of `BINDINGS`). Any other new test stays in
+the rest, so its file is not compared, only added, naming it, and one held by a string or by
+computation is named with how the base copy can bind it - unless it is the rename of a base test
+gone from the tree with the same head and body, under a name the base copy cannot have bound, whose
+head is then compared with that test's.
 
-What the bare-new-test reading knowingly does not read stands here and nowhere else; the README and
-the changelog point to this paragraph. The reading is of the forms the two tables hold, not of what
-code does, so a test bound in a way no row holds is not seen - and these are the ways left out on
-purpose: a namespace handed to a callee in another module (this tree's staged suites hand
-`globals()` to a runner that only reads it); a base class from another module, or any base spelled
-through an attribute (`mod.Base`), which is read as another module's; a module reached through an
-alias inside a function (`mod = sys.modules[__name__]` and then `setattr(mod, ...)` in a helper); a
-descriptor's naming hook (`__set_name__`); a module-level attribute hook (a module's `__getattr__`);
-and a name bound by another module at import.
+**What the bare-new-test reading proves, declines and reads without proof.** This paragraph is the
+one place it is stated; the README and the changelog point here. A bare new test is set aside only
+on proof, and whatever is not proven reads not compared - never clean, and never a finding. *What a
+name stands for* is one reading, `_resolve` over one pass of the copy (`_bindings`), counting every
+binding of the name in the whole file at any depth - an import, a store or a del, a def, a class
+statement, a parameter, an except target, a global or nonlocal declaration, a match capture: the
+name stands for an import only when the copy binds it exactly once and that once is an import at
+module level, and a star import anywhere proves no bare name at all. So a skip or a mark (`SKIP_FORMS`)
+is known only where its spelled head resolves to an import of the row's module (`unittest.skipIf`,
+`from unittest import skipIf`, `import unittest as ut`), and one whose name resolves to another
+module (`_harness.skip`) is no row, an ordinary call compared whole; a call spelled like one whose
+name does not resolve - rebound, shadowed in a function, imported from two places, under a star
+import, or a relative import's, whose package is not known - is nobody's: as a decorator it makes the class or test it stands on not compared, and a change to its
+arguments makes the file not compared, with a reason naming the definition, the name and how the
+copy binds it, rather than reading as a changed head. *Each base is followed or declined*: an import
+is another module's and read no further; a bare name the copy binds exactly once, by a class
+statement, is followed in whatever position it stands, through further bases of the same file, each
+class asked once in the copy's order; anything else - a store, an alias, a factory call, a name
+bound twice - is declined, with a reason saying how the whole file binds it. *A namespace that
+escapes is a binding*: `globals()`, `locals()` and `vars()`, called or not, are harmless only when
+read in place - subscripted to read, tested with `in`, iterated, asked by a reading method
+(`_READING_METHODS`) - or handed directly, by position or keyword, to a callee proven to be another
+module's or to a builtin that writes nothing (`exec` and `eval` are the builtins that write, which a
+run of every builtin over a handed dict shows); handed to a callee of the copy however it is
+reached, placed in a container, stored, or handed to any callee not proven so (a partial, an
+expression), it is a binding. The
+forms are the rows of the two tables, by their own names. `_COMPUTED`, for a statement of the
+scope's own body at any depth of its blocks but in no function or class nested in it, or pointing
+at the scope from anywhere: the copy's own namespace used other than to read it in place; a setattr
+call, which also binds a class it names, anywhere; an exec or eval call; a star import.
+`_CLASS_COMPUTED`, for a class: a class decorator (one proven a skip or a mark binds nothing); a
+metaclass; a base class of the copy running code for each subclass; a base class of the copy
+binding names by computation; a base class the reading cannot follow. What is still read as
+harmless without proof, on purpose: what a callee of another module does with a callable handed
+beside the namespace (this tree's staged suites hand `globals()` and their table to a runner that
+only reads it); the code text an exec or eval runs, which is taken to bind the scope it stands in
+and no other; a module reached through an alias inside a function (`mod = sys.modules[__name__]`
+and then `setattr(mod, ...)` in a helper); a descriptor's naming hook (`__set_name__`); a
+module-level attribute hook (a module's `__getattr__`); a class made by a call to type, which binds
+only the name it is assigned to; and a name bound by another module at import.
+`tests/test__floor_guard.py` holds the reading by a generated case that builds pairs of copies
+across every dimension this paragraph names - spelling, base, callee, handing, namespace use,
+builtin and binding - and runs both copies of each, the oracle being the run alone: a pair whose
+tree copy loses a failing test must not read clean, and a value no pair uses fails the case by
+name.
 
 A docstring holding no example (`_docstring_aside`): one holding a doctest prompt in either copy is
 syntax of the statement holding it. A reason, where the skip's own signature calls it one
@@ -6119,13 +6132,12 @@ syntax of the statement holding it. A reason, where the skip's own signature cal
 or call documents as its reason, by position or keyword; an expected-failure mark's first
 positional argument is its condition and is compared, and a skip the table does not know has
 nothing set aside. What a skip or a mark is comes from one table, `SKIP_FORMS`, and the reason set
-aside and the class decorator that binds nothing (`_marks_only`) both ask it through `_skip_form`,
-so a spelling one knows the other knows too: a row is known by its dotted name (`unittest.skipIf`,
-`pytest.mark.usefixtures`), read through the copy's imports (`_imported`), and by its bare name
-only where the copy imports it by name from the row's module (`from unittest import skipIf`, `from
-pytest import mark`, an alias included); a name the copy defines itself as a function or class, or
-imports from two places, is no skip, so a function of the file called `skip` decorating a class is
-a class decorator that binds. The cost is measured rather than tuned away: a new
+aside and the class decorator that binds nothing (`_decorated_class`) both ask it through
+`_skip_form`, so a spelling one knows the other knows too: a row is known where its spelled head
+resolves (`_resolve`, in the paragraph above) to an import of the row's module (`unittest.skipIf`,
+`pytest.mark.usefixtures`, `from unittest import skipIf`, `from pytest import mark`, an alias
+included); a name the copy binds any other way, or more than once, is nobody's, so a function of
+the file called `skip` decorating a class makes that class not compared. The cost is measured rather than tuned away: a new
 decorated or parametrised test makes its file not compared, and so does a bare one beside a table
 of tests the base copy generates into its namespace. What the reading does not claim: it is a comparison of structure
 that never evaluates code, so a new test or check can do anything when it runs and is reported as
