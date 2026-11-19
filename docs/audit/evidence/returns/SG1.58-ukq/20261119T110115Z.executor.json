@@ -1,0 +1,79 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__floor_guard.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-19T12:56:47Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__floor_guard.py` in a throwaway tree at HEAD exited 1 with 4 of 184 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fm90 (house FAIL), fx17 (house FAIL), fx18 (house FAIL), fa64 (house FAIL): SELFTEST FAILED: 180/184 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) _floor_guard.py: _rows_spelled keeps only the rows matched on the most trailing names, so pytest.mark.xfail / mark.xfail is the mark.xfail row alone and never also the xfail function row whose reason is position 0; rows left of one length (skip of unittest and pytest) agree on position 0, held by fx17. _switch defers a namespace use spelled through an attribute and keeps it only when the attribute is taken from a name an import of the builtins module binds anywhere in the copy (alias included, counted however often the name is bound otherwise), from __builtins__, or from an entry of the modules table (sys.modules['builtins']); any other attribute named globals, locals or vars turns nothing. New helpers _attribute_owner and _builtins_bound; the comment above _NAMESPACES and the docstrings of _rows_spelled and _switch say this. SKIP_FORMS, SET_ASIDE and the payload shape are unchanged. (2) tests/test__floor_guard.py, 7 new cases, no existing case changed: fm90 (xfail mark condition widened positionally and by condition=, under one import, the module imported twice, a star import, a turned switch, plus a parametrized case's marks under a star import and a strict mark in a file an eval round trip switches: all findings), fa63 (its twin: the reason alone, clean under one import, not compared under two), fx17 (every spelling of every row of the module's table returns rows of one length with its own row among them, and every pair of rows one spelling matches agrees on the reason position, disagreeing pairs named), fx18 (the suite's own SIGNATURES table, written from the documented signatures of unittest skip/skipIf/skipUnless/expectedFailure/TestCase.skipTest and pytest mark.skip/mark.skipif/mark.xfail/mark usefixtures/pytest.skip/pytest.xfail: every row x every spelling (dotted, bare with its import, through mark for the marks, self. for the method) x 4 contexts (one import, the spelling's name bound twice, a star import, a turned switch) x each argument changed alone in each way of passing it, plus the call added; the oracle is the changed argument against the suite's table, never the module; the case prints 372 pairs over 21 spellings of 11 rows in 4 contexts, 84 cells), fx19 (every row of SKIP_FORMS has a SIGNATURES entry and none is stray, by name), fa64 (an ordinary object's globals/locals/vars, a name builtins no import binds, and an environment's globals in a file that imports builtins for print: a bare new test reads clean), fm91 (builtins imported, aliased, __builtins__, imported twice, looked up in sys.modules: the switch turns, its reason naming the line). (3) PLUGIN-BUILD-GUIDE.md: the sentence listing the spellings of the namespace in the switch paragraph now says an attribute counts only on the builtins module and an attribute of that name on any other object turns nothing. CHANGELOG.md: the floor guard's one-switch entry reworded for the attribute spelling and for one form per call with every row held. Red before the fix: fm90, fx17, fx18, fa64 failed (SELFTEST FAILED: 180/184), fa63, fx19, fm91 passed as allow twins. After: 184/184 (sweep exit 0). Probes from the orchestrator rerun on this tree: r1 - the six conditional-xfail condition rows under two imports, star import and a globals() read went partly-read -> findings, every other row identical to the stored before file; r2_rows - pytest.mark.xfail and mark.xfail now match mark.xfail alone (positions []), pytest.mark.skip matches mark.skip alone, skip spellings keep the two skip rows at position 0; r4 - both xfail shapes findings; r5_attr - clean; q1, q3, q5, q7, q8, p1_rule, my_rows, u1_unsafe, n1_noise, n2_shapes, n2_classes byte-identical to the stored outputs. Measurement over the repository's task commits (measure.py of the last task): this tree, the tree before (7daa3d0a) and export-68c5879 all 1200 commits {clean 274, findings 397, partly-read 529}; versus the tree before no commit differs in verdict, findings or not-compared text; versus 68c5879 no finding lost or gained, and the same five commits whose not-compared text the previous task changed still differ (95d5549a06, 46a6e095b0, d24b3047d5, 82174ff4a3, 100beb3669). Mutation probe (scratchpad sg1.58/mutations.py, run from the worktree root): 14 of 14 rows caught, none judged equivalent. Suite seconds, direct --selftest, two runs with a gap: before 12.54 and 14.06, after 12.92 and 14.59. Dependants: drive-phase.py imports the module and uses _bases/_fit, untouched - test_drive_phase.py 1008 cases green; _filed_returns.py, status/audit-lookup.py, _status_facts read the payload, whose shape is unchanged - test__filed_returns 146, test_audit_lookup 207, test__status_facts 199 cases green; gate-parity.py reads the suite's _cases, exit 0; plugins/audit/README.md's passage stays correct (its sentence that an expected-failure mark's first argument is its condition and is compared is now true in every file context); the documents' basename dependants - test__deps, test__output_lints, test__refs 792 cases green. The orchestrator's unrecorded gate: first run red with no failing file named while three measurement runs and a dependants sweep loaded the machine; the same 194 affected files rerun by sweep-selftests: 194/194 ok; the gate rerun on a quieter machine: GATE GREEN, exit 0. ruff and vermin clean; prove-gates --list exit 0.",
+    "descriptive": "A conditional expected-failure mark's widened condition is a finding again in every file context, every skip/mark row is held in every spelling by the suite's own signatures, and a template environment's globals no longer turns the switch."
+  },
+  "testsAdded": [
+    "fm90: a conditional expected-failure mark's widened condition, positional and by keyword, is a finding under one import, two imports, a star import and a turned switch, and in a parametrized case's marks and a strict mark",
+    "fa63: its twin - the mark's reason changed alone is clean under one import and not compared under two",
+    "fx17: every spelling of every row of the module's table is one form, its own row among them, and no pair of rows one spelling matches disagrees on the reason position",
+    "fx18: every row in every spelling, under a resolved and an unresolved name, with each argument changed alone in each way of passing it, answers as the suite's own signatures say",
+    "fx19: every row of the module's table has an entry in the suite's signatures, and none is stray",
+    "fa64: an attribute named globals, locals or vars on an ordinary object turns nothing",
+    "fm91: the namespace reached through the builtins module - imported, aliased, its dunder name, imported twice, from the modules table - still turns the switch"
+  ],
+  "casesAdded": [
+    [
+      "fm90",
+      "fa63",
+      "fx17"
+    ],
+    [
+      "fx18",
+      "fx19"
+    ],
+    [
+      "fa64",
+      "fm91"
+    ]
+  ],
+  "claims": "claims:\n1 _floor_guard.py _rows_spelled: the max/filter lines keep the longest match; _switch: the through list and its final filter on the builtins names; _attribute_owner returns the dunder name for a modules-table entry; the build guide sentence and the changelog lines describe those lines\n2 14 mutation rows, allow rows included, in sg1.58/mutations.py, each red on its named case and restored byte for byte: every row taken -> fm90 fx17 fx18; shorter wins -> same; skipIf 1->0 and xfail 0->1 -> fx18; pytest.skip 0->1 -> fx17 fx18; mark.xfail keyword dropped -> fx18; a row added -> fx19; unresolved reason not set aside (allow) -> fa63 fx18; any attribute switches -> fa64; builtins never switches -> fm91 fm86 fx13; dunder, alias, modules table dropped -> fm91; ordinary attribute switches once builtins is imported (allow) -> fa64\n3 grep of _rows_spelled in the module: 3 hits - its definition, _skip_form (truthiness only, unchanged by the narrowing) and _reason_aside (the one the defect was in, fixed by the narrowing); grep of _NAMESPACES: 3 hits, all in _namespace, whose only caller is _switch, fixed there; probes r1/r2/r4/r5 and earlier ones rerun\n4 n/a - no rule to an agent\n5 suite seconds two runs with a gap: before 12.54 and 14.06, after 12.92 and 14.59; the measurement is one run per tree and says so\n6 the switch reads the AST object an attribute is taken from and the import statements that bind it, not the text; allow fa64 shown red on HEAD and green after, fm91 green on HEAD and after\n7 the counts in fx18's line are printed by the case itself; no number written into the documents",
+  "stamp": "audit-stamp: {\"content\":\"sha256:eadaa95054bc36a0cc54a7e1d28da3b2980049d87f37efa6a75612c08339b183\",\"dirtyDigest\":\"sha256:49bde28f9152a903cf6e99fb7fd3108f38ac79d28784bae79dbce78b855e002d\",\"dirtyPaths\":{\"CHANGELOG.md\":\"e15d39454313ce7a\",\"PLUGIN-BUILD-GUIDE.md\":\"6931a5013ba12159\",\"plugins/audit/scripts/governance/_floor_guard.py\":\"ab4e486136356bd1\",\"tests/test__floor_guard.py\":\"a642a5db55324ecb\"},\"head\":\"7daa3d0a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/_floor_guard.py\",\"tests/test__floor_guard.py\"],\"scopeDigest\":\"sha256:eef81a5afda3f28e94b878325969436f99eab775b1431a89567401c3f4253a65\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 1 of the diff's 4 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 2 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md; 1 file(s) that could hold a move not compared: tests/test__floor_guard.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__floor_guard.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was only added: every statement of the base copy outside them stands in the tree copy, in order and in place, and the first added one is at tree line 4976 (`XFAIL_MARK = (\"import sys\\nimport pytest\\n{extra}\\n\\n@pytest.mark.x...`); what it runs is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "7daa3d0af9492777ac835a60a8033d2605c7d566"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-19T12:56:49Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

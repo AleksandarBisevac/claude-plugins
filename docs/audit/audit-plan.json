@@ -1428,7 +1428,8 @@
       "SG1.54-ukq",
       "SG1.55-ukq",
       "SG1.56-ukq",
-      "SG1.57-ukq"
+      "SG1.57-ukq",
+      "SG1.58-ukq"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2119,7 +2120,8 @@
       "SG1.54-ukq",
       "SG1.55-ukq",
       "SG1.56-ukq",
-      "SG1.57-ukq"
+      "SG1.57-ukq",
+      "SG1.58-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -14019,7 +14021,8 @@
       "SG1.45-ukq",
       "SG1.50-ukq",
       "SG1.56-ukq",
-      "SG1.57-ukq"
+      "SG1.57-ukq",
+      "SG1.58-ukq"
     ],
     "tests/test__floor_guard.py": [
       "SG1.4",
@@ -14033,7 +14036,8 @@
       "SG1.45-ukq",
       "SG1.50-ukq",
       "SG1.56-ukq",
-      "SG1.57-ukq"
+      "SG1.57-ukq",
+      "SG1.58-ukq"
     ],
     "plugins/audit/evals/bugfix/scaffold.sh": [
       "SG1.9",

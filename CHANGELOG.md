@@ -310,7 +310,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   the builtins module or the modules entry's `__dict__` was taken as read in place - each let a
   bare new test read clean while the base copy ran a failing test the tree copy no longer runs.
   Now one switch per file, computed from the base copy alone, comes first: an unproven use of
-  the namespace at any depth, an exec or eval call, a star import, or a store or setattr on the
+  the namespace at any depth - as a bare name or through the builtins module, never an attribute
+  of that name on another object, such as a template environment's `globals` - an exec or eval
+  call, a star import, or a store or setattr on the
   file's own modules entry leaves nothing of the file proven, and the scope-by-scope reading of
   those forms is gone. The proven uses are a short list made from a sweep of this repository's
   test files - handed directly to another module's callee, and the namespace's own `get` - and
@@ -319,9 +321,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   module imported twice or any star import, every argument of a skip spelled call was set aside,
   so a widened skip condition read not compared; and any call on a receiver named `mark` was
   taken as a mark, so a changed assertion through a dictionary or a match object called `mark`
-  read not compared. A call is now spelled like a skip only by its own last names, and only its
-  reason position is set aside, so a condition, an assertion, a new skip or a deleted test is
-  a finding in any file. The module states its binding kinds once (`BINDING_KINDS`) and the
+  read not compared. A call is now spelled like a skip only by its own last names, as the one
+  form matched on the most of them - a conditional expected-failure mark is never also the
+  function of the same last name, whose reason stands where the mark's condition does - and only
+  its reason position is set aside, so a condition, an assertion, a new skip or a deleted test is
+  a finding in any file; the suite states each row's reason position from the frameworks'
+  documented signatures, holds every row in every spelling under a name that resolves and one
+  that does not, and fails by name for a row it has no entry for. The module states its binding kinds once (`BINDING_KINDS`) and the
   suite holds a rebinding pair, or the reason there can be none, for each, failing by name for a
   kind with neither; a second generated case holds every reported move in every file context.
   The rule as built is stated in the build guide's section on `_floor_guard.py`.

@@ -4967,6 +4967,352 @@ def _moves_in_contexts(check):
           and not any(oracles.values()))
 
 
+# --- a call is one form, and every form is held ------------------------------------
+# A conditional expected-failure mark takes its CONDITION first; the function of the
+# same last name takes its reason first. A call spelled through a dotted row name is
+# that row alone, so the mark's condition is never set aside as a reason, whatever
+# the file imports.
+
+XFAIL_MARK = ("import sys\nimport pytest\n{extra}\n\n@pytest.mark.xfail({cond}, reason='r')\n"
+              "def test_x():\n    assert 1 == 2\n")
+XFAIL_CONTEXTS = (
+    ("one import", ""),
+    ("the module imported twice", "\n\ndef _again():\n    import pytest\n    return pytest\n"),
+    ("a star import", "from os.path import *\n"),
+    ("a turned switch", "\n\ndef test_roundtrip():\n    assert eval(repr([1])) == [1]\n"))
+XFAIL_PARAM = ("import sys\nimport pytest\nfrom os.path import *\n\n\n@pytest.mark.parametrize('v', [\n"
+               "    1,\n    pytest.param(2, marks=pytest.mark.xfail(sys.platform == 'nope', "
+               "reason='r')),\n])\ndef test_p(v):\n    assert v == 1\n")
+XFAIL_STRICT = ("import sys\nimport pytest\n\n\ndef test_roundtrip():\n    assert eval(repr([1])) == "
+                "[1]\n\n\n@pytest.mark.xfail(sys.platform == 'nope', reason='known bug', strict=True)\n"
+                "def test_x():\n    assert 1 == 2\n")
+
+
+def _xfail_condition_deny(check):
+    path = "tests/test_xfail.py"
+    seen = []
+    for context, extra in XFAIL_CONTEXTS:
+        for spelled in ("sys.platform == 'nope'", "condition=sys.platform == 'nope'"):
+            base = XFAIL_MARK.format(extra=extra, cond=spelled)
+            tree = base.replace("== 'nope'", "!= 'nope'")
+            got = _run([(path, base, tree)])
+            way = "by keyword" if spelled.startswith("condition=") else "positionally"
+            seen.append(("%s, %s" % (context, way), got["answer"],
+                         bool(got["findings"]), got["notRead"]))
+    for label, base, old, new in (
+            ("a parametrized case's marks under a star import", XFAIL_PARAM, "== 'nope'", "!= 'nope'"),
+            ("strict, in a file an eval round trip switches", XFAIL_STRICT, "== 'nope'", "!= 'nope'")):
+        assert base.count(old) == 1, label
+        got = _run([(path, base, base.replace(old, new))])
+        seen.append((label, got["answer"], bool(got["findings"]), got["notRead"]))
+    check("fm90 a conditional expected-failure mark's condition widened - first positionally and "
+          "by its keyword - is a finding under one import, the module imported twice, a star "
+          "import and a turned switch, and in a parametrized case's marks and a strict mark: %s"
+          % some_of([s for s in seen if s[1:3] != (M.FINDINGS, True)], render=repr),
+          len(seen) == 2 * len(XFAIL_CONTEXTS) + 2
+          and [s[1:3] for s in seen] == [(M.FINDINGS, True)] * len(seen))
+
+
+def _xfail_reason_allow(check):
+    path = "tests/test_xfail.py"
+    seen = []
+    for context, extra in XFAIL_CONTEXTS[:2]:
+        base = XFAIL_MARK.format(extra=extra, cond="sys.platform == 'nope'")
+        got = _run([(path, base, base.replace("reason='r'", "reason='r2'"))])
+        seen.append((context, got["answer"], got["findings"], got["notRead"] != []))
+    check("fa63 THE TWIN of fm90: the same mark's reason changed alone reads clean under one "
+          "import and not compared under two: %r" % (seen,),
+          [s[1:] for s in seen] == [(M.CLEAN, [], False), (PARTLY_READ, [], True)])
+
+
+def _module_row_spellings(row):
+    """The names a reader writes for one row of the module's table: the dotted one
+    and the bare one, a family by one member. A method row's spelling is the call
+    on the test's own receiver."""
+    name, module = row[0], row[1]
+    if name.endswith(".*"):
+        name = name[:-2] + ".usefixtures"
+    if module == "*":
+        return ("self.%s" % name,)
+    return ("%s.%s" % (module, name), name)
+
+
+def _one_form(check):
+    """Every spelling of every row of the module's table, asked which rows it is:
+    rows matched on the same number of names, its own row among them, and no two
+    with different reason positions. This check may read the module's table."""
+    rows_spelled = getattr(M, "_rows_spelled", None)
+    table = tuple(getattr(M, "SKIP_FORMS", None) or ())
+    mixed, missing, clash = [], [], []
+    asked = 0
+    for row in table:
+        if row[1] == "*" or row[0].endswith(".*"):
+            continue
+        for spelled in _module_row_spellings(row):
+            asked += 1
+            got = list(rows_spelled(spelled)) if rows_spelled else []
+            if len(set(r[0].count(".") for r in got)) != 1:
+                mixed.append((spelled, [(r[0], r[1]) for r in got]))
+            if row not in got:
+                missing.append((spelled, row[:2]))
+    for i, a in enumerate(table):
+        for b in table[i + 1:]:
+            if a[3] == b[3]:
+                continue
+            for spelled in _module_row_spellings(a) + _module_row_spellings(b):
+                got = list(rows_spelled(spelled)) if rows_spelled else []
+                if a in got and b in got:
+                    clash.append(("%s.%s" % (a[1], a[0]), "%s.%s" % (b[1], b[0]), spelled))
+    check("fx17 a call matches one form: every spelling of every row of the module's table is "
+          "the rows matched on its most trailing names, its own row among them, and no pair of "
+          "rows that one spelling matches gives the reason two positions - %d spellings asked, "
+          "matched on different lengths %r, own row not matched %r, pairs with two reason "
+          "positions %r" % (asked, mixed, missing, clash),
+          rows_spelled is not None and asked > 0 and not mixed and not missing and not clash)
+
+
+# The suite's own statement of each row of the module's table, written from the
+# frameworks' documented signatures and not read from the module: (name, module,
+# where the call stands, the reason's position - None where it is keyword-only or
+# there is none -, the reason's keywords, and the arguments the generator writes,
+# each (its keywords, whether it may stand positionally, its value, a changed
+# value)). A family row is held by one member, usefixtures(*names).
+SIGNATURES = (
+    ("skip", "unittest", "decorator", 0, ("reason",),
+     ((("reason",), True, "'why'", "'why now'"),)),
+    ("skipIf", "unittest", "decorator", 1, ("reason",),
+     ((("condition",), True, "sys.platform == 'nope'", "sys.platform != 'nope'"),
+      (("reason",), True, "'why'", "'why now'"))),
+    ("skipUnless", "unittest", "decorator", 1, ("reason",),
+     ((("condition",), True, "sys.platform != 'nope'", "sys.platform == 'nope'"),
+      (("reason",), True, "'why'", "'why now'"))),
+    ("expectedFailure", "unittest", "decorator", None, (), ()),
+    ("skipTest", "*", "method", 0, ("reason",), ((("reason",), True, "'why'", "'why now'"),)),
+    ("mark.skip", "pytest", "decorator", 0, ("reason",),
+     ((("reason",), True, "'why'", "'why now'"),)),
+    ("mark.skipif", "pytest", "decorator", None, ("reason",),
+     ((("condition",), True, "sys.platform == 'nope'", "sys.platform != 'nope'"),
+      (("reason",), False, "'why'", "'why now'"))),
+    ("mark.xfail", "pytest", "decorator", None, ("reason",),
+     ((("condition",), True, "sys.platform == 'nope'", "sys.platform != 'nope'"),
+      (("reason",), False, "'why'", "'why now'"), (("strict",), False, "True", "False"))),
+    ("mark.*", "pytest", "decorator", None, (), (((), True, "'db'", "'cache'"),)),
+    ("skip", "pytest", "body", 0, ("reason", "msg"),
+     ((("reason", "msg"), True, "'why'", "'why now'"),
+      (("allow_module_level",), False, "False", "True"))),
+    ("xfail", "pytest", "body", 0, ("reason",), ((("reason",), True, "'why'", "'why now'"),)),
+)
+
+FORM_UNIT = ("{head}class TestA(unittest.TestCase):\n{deco}    def test_plain(self):\n{call}"
+             "        self.assertEqual(1, 1)\n\n    def test_other(self):\n        self.assertTrue(True)\n")
+FORM_PYTEST = "{head}{deco}def test_plain():\n{call}    assert 1 == 1\n\n\ndef test_other():\n    assert True\n"
+
+
+def _sig_spellings(entry):
+    """(spelling, the import line it needs, the name that line binds) for one entry of
+    `SIGNATURES`: the dotted name, the bare one with its import - through `mark` for
+    a mark -, or the call on the test's receiver for a method."""
+    name, module = entry[0], entry[1]
+    if name.endswith(".*"):
+        name = name[:-2] + ".usefixtures"
+    if module == "*":
+        return (("self.%s" % name, "import unittest", "unittest"),)
+    head = name.split(".")[0]
+    return (("%s.%s" % (module, name), "import %s" % module, module),
+            (name, "from %s import %s" % (module, head), head))
+
+
+def _form_calls(entry):
+    """(the argument list, each argument's (passed by: position index or keyword))
+    for each way of passing the entry's documented arguments: every one that may
+    stand positionally does, then each argument in turn by each of its keywords,
+    those after it by their first keyword."""
+    args = entry[5]
+    plain = []
+    for k, (keys, positional, _v, _c) in enumerate(args):
+        plain.append(k if positional and all(a[1] for a in args[:k]) else keys[0])
+    calls = [tuple(plain)]
+    for k, (keys, _positional, _v, _c) in enumerate(args):
+        for key in keys:
+            ways = tuple(plain[:k]) + (key,) + tuple(a[0][0] if a[0] else None for a in args[k + 1:])
+            if None not in ways and ways not in calls:
+                calls.append(ways)
+    return calls
+
+
+def _form_text(entry, ways, changed):
+    """The argument list `ways` with the argument at index `changed` given its
+    changed value."""
+    out = []
+    for k, (way, arg) in enumerate(zip(ways, entry[5])):
+        value = arg[3] if k == changed else arg[2]
+        out.append(value if isinstance(way, int) else "%s=%s" % (way, value))
+    return ", ".join(out)
+
+
+# (context, the text after the imports - {again} the spelling's own import inside a
+# function, {bound} the name it binds -, whether a name the file imports resolves)
+FORM_CONTEXTS = (
+    ("one import", "", True),
+    ("the spelling's name bound twice", "\n\ndef _again():\n    {again}\n    return {bound}\n", False),
+    ("a star import", "from os.path import *\n", False),
+    ("a turned switch", "\n\ndef _never():\n    return eval('1')\n", False))
+
+
+def _form_copy(entry, spelled, imports, extra, text):
+    """One copy of a file holding the entry's call spelled `spelled` with the
+    argument list `text`, or none where `text` is None."""
+    where, framework = entry[2], entry[1]
+    unit = framework != "pytest"
+    head = "import sys\n" + ("import unittest\n" if unit else "")
+    if imports not in head:
+        head += imports + "\n"
+    head += extra + "\n\n"
+    call = "" if text is None else "%s(%s)" % (spelled, text) if entry[5] or where != "decorator" \
+        else spelled
+    deco = "" if where != "decorator" or text is None else ("    @%s\n" if unit else "@%s\n") % call
+    body = "" if where == "decorator" or text is None else ("        %s\n" if unit else "    %s\n") % call
+    return (FORM_UNIT if unit else FORM_PYTEST).format(head=head, deco=deco, call=body)
+
+
+def _form_pairs():
+    """(label, base, tree, the expected answer) for every entry of `SIGNATURES`, in
+    every spelling, in every context: each argument changed alone in each way of
+    passing it, and the call added. The expected answer comes from the entry: a
+    changed reason is clean where the name resolves - a method on the test's own
+    receiver names nothing the file binds, so it always does - and not compared
+    where it does not; anything else is a finding."""
+    out = []
+    for entry in SIGNATURES:
+        for spelled, imports, bound in _sig_spellings(entry):
+            for context, extra, resolves in FORM_CONTEXTS:
+                extra = extra.format(again=imports, bound=bound)
+                resolves = resolves or entry[1] == "*"
+                cell = "%s.%s as %s, %s" % (entry[1], entry[0], spelled, context)
+                first = _form_calls(entry)[0]
+                added = _form_text(entry, first, None) if entry[5] else ""
+                out.append(("%s: the call added" % cell, _form_copy(entry, spelled, imports, extra, None),
+                            _form_copy(entry, spelled, imports, extra, added), "findings"))
+                for ways in _form_calls(entry):
+                    for k, way in enumerate(ways):
+                        is_reason = way == entry[3] if isinstance(way, int) else way in entry[4]
+                        want = "findings" if not is_reason else "clean" if resolves else "partly-read"
+                        base = _form_copy(entry, spelled, imports, extra, _form_text(entry, ways, None))
+                        tree = _form_copy(entry, spelled, imports, extra, _form_text(entry, ways, k))
+                        assert base != tree, cell
+                        out.append(("%s: %s changed in (%s)" % (cell, way, ", ".join(str(w) for w in ways)),
+                                    base, tree, want))
+    return out
+
+
+def _forms_held(check):
+    path = "tests/test_forms.py"
+    pairs = _form_pairs()
+    wrong, cells = [], set()
+    for label, base, tree, want in pairs:
+        cells.add(label.split(":")[0])
+        got = _run([(path, base, tree)])
+        if want == "findings":
+            ok = got["answer"] == M.FINDINGS and bool(got["findings"])
+        elif want == "clean":
+            ok = (got["answer"], got["findings"], got["notRead"]) == (M.CLEAN, [], [])
+        else:
+            ok = got["answer"] == PARTLY_READ and got["findings"] == [] and got["notRead"] != []
+        if not ok:
+            wrong.append((label, want, _show(got), got["notRead"]))
+    oracles = _oracle_reads(("_form_pairs", "_form_calls", "_form_text", "_form_copy",
+                             "_sig_spellings"))
+    spellings = sum(len(_sig_spellings(e)) for e in SIGNATURES)
+    check("fx18 every row of the table, in every spelling it is known by, under a name that "
+          "resolves and under one that does not, holds: an argument changed that is not the "
+          "row's reason by the suite's own signatures is a finding, the reason alone clean "
+          "where the name resolves and not compared where it does not - %d pairs over %d "
+          "spellings of %d rows in %d contexts (%d cells), the oracle functions reading the "
+          "module at %r, wrong %s"
+          % (len(pairs), spellings, len(SIGNATURES), len(FORM_CONTEXTS), len(cells),
+             dict((k, v) for k, v in oracles.items() if v), some_of(wrong, render=repr)),
+          len(cells) == spellings * len(FORM_CONTEXTS) and len(oracles) == 5
+          and not any(oracles.values()) and not wrong)
+
+
+def _forms_covered(check):
+    """The suite's signatures against the module's table: this check may read the
+    table; the oracle of fx18 may not."""
+    module = [(row[0], row[1]) for row in getattr(M, "SKIP_FORMS", None) or ()]
+    suite = [(e[0], e[1]) for e in SIGNATURES]
+    missing = ["%s of %s" % k for k in module if k not in suite]
+    stray = ["%s of %s" % k for k in suite if k not in module]
+    check("fx19 every row of the module's table of skips and marks has an entry in the suite's "
+          "own signatures, and the suite states no row the table does not hold: module rows %d, "
+          "with no entry %r, entries the table does not hold %r" % (len(module), missing, stray),
+          module != [] and len(set(suite)) == len(suite) and not missing and not stray)
+
+
+# An attribute merely named for the namespace: a template environment's dictionary
+# and its like, on an object of the file. Only the builtins module's attribute of
+# that name is the namespace.
+ATTR_ORDINARY = (
+    ("a template environment's globals stored into",
+     "import types\n\n\ndef make_env():\n    env = types.SimpleNamespace(globals={})\n"
+     "    env.globals['site'] = 'x'\n    return env\n"),
+    ("an application's nested environment updated",
+     "import types\n\nAPP = types.SimpleNamespace(env=types.SimpleNamespace(globals={}))\n"
+     "APP.env.globals.update(site='x')\n"),
+    ("an object's locals read and vars stored into",
+     "import types\n\nCTX = types.SimpleNamespace(locals={}, vars={})\nCTX.vars['k'] = CTX.locals\n"),
+    ("a name builtins that is no import of it",
+     "import types\n\nbuiltins = types.SimpleNamespace(globals=dict)\nbuiltins.globals()['k'] = 1\n"),
+    ("an environment's globals in a file that imports the builtins module for its print",
+     "import builtins\nimport types\n\nSAY = builtins.print\nENV = types.SimpleNamespace(globals={})\n"
+     "ENV.globals['say'] = SAY\n"))
+ATTR_BUILTINS = (
+    ("the builtins module imported", "import builtins\n\n\nbuiltins.globals()['test_' + 'a'] = _fail\n",
+     "builtins.globals()"),
+    ("the builtins module under an alias", "import builtins as _b\n\n\n_b.vars()['test_' + 'a'] = _fail\n",
+     "_b.vars()"),
+    ("the builtins module's dunder name", "__builtins__.locals()['test_' + 'a'] = _fail\n",
+     "__builtins__.locals()"),
+    ("the builtins module imported twice",
+     "import builtins\n\n\ndef _again():\n    import builtins\n    return builtins\n\n\n"
+     "builtins.globals()['test_' + 'a'] = _fail\n", "builtins.globals()"),
+    ("the builtins module looked up in the modules table",
+     "import sys\n\n\nsys.modules['builtins'].globals()['test_' + 'a'] = _fail\n",
+     "sys.modules['builtins'].globals()"))
+
+
+def _attr_allow(check):
+    path = "tests/test_attr.py"
+    seen = []
+    for label, text in ATTR_ORDINARY:
+        base = text + PROOF_FN
+        got = _run([(path, base, base + GEN_FUNCTION)])
+        seen.append((label, (got["answer"], got["findings"], got["notRead"])))
+    check("fa64 an attribute named globals, locals or vars on an ordinary object - a template "
+          "environment's, an application's, a name builtins that no import binds, one in a file "
+          "that imports the builtins module for something else - turns nothing, and a bare new "
+          "test beside it reads clean: %r" % (seen,),
+          [s[1] for s in seen] == [(M.CLEAN, [], [])] * len(ATTR_ORDINARY))
+
+
+def _attr_deny(check):
+    path = "tests/test_attr.py"
+    seen = []
+    for label, text, marker in ATTR_BUILTINS:
+        base = PROOF_FAIL + text + PROOF_FN
+        tree = base + GEN_FUNCTION
+        got = _run([(path, base, tree)])
+        said = [n["reason"] for n in got["notRead"]]
+        line = "line %d of the base copy" % _first_line(base, marker)
+        seen.append((label, _not_unit(got, path, tree, base, "test_a", "by computation"),
+                     len(said) == 1 and line in said[0], said))
+    check("fm91 THE TWIN of fa64: the namespace reached through the builtins module - imported, "
+          "under an alias, by its dunder name, imported twice, looked up in the modules table - "
+          "still turns the switch, and a bare "
+          "new test beside it is not compared, the reason naming that line: %s"
+          % some_of([s for s in seen if s[1:3] != ((PARTLY_READ, [], True, True), True)], render=repr),
+          [s[1:3] for s in seen] == [((PARTLY_READ, [], True, True), True)] * len(ATTR_BUILTINS))
+
+
 # The README's list of binding forms and the build guide's paragraph on what is
 # proven, declined and read without proof: (document, the phrase opening the
 # passage, the text closing it). A row name found elsewhere in a document does
@@ -5214,6 +5560,13 @@ def _cases(check):
     _generated(check)
     _binding_kinds(check)
     _moves_in_contexts(check)
+    _xfail_condition_deny(check)
+    _xfail_reason_allow(check)
+    _one_form(check)
+    _forms_held(check)
+    _forms_covered(check)
+    _attr_allow(check)
+    _attr_deny(check)
     _forms_documented(check)
     _time(check)
     _untold(check)

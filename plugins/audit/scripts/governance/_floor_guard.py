@@ -1052,14 +1052,19 @@ SKIP_FORMS = (
 
 
 def _rows_spelled(spelled):
-    """The rows of `SKIP_FORMS` a dotted name is spelled like: its last name is
-    the row's own name, or its last two are, for a row named with a dot - so
-    `skip`, `ut.skipIf` and `pt.mark.xfail` are, and `mark.get` or `s.mark.group`
-    are not. A family row names no one callable, so no spelling is it; only
-    `_row_named`, through the copy's imports, reaches one."""
+    """The one form of `SKIP_FORMS` a dotted name is spelled like: the rows whose
+    own name is its last names, matched on the most of them - so `skip`,
+    `ut.skipIf` and `pt.mark.xfail` are rows, `mark.get` and `s.mark.group` are
+    not, and `pt.mark.xfail` is the mark alone, never also the function of the
+    same last name, whose reason stands where the mark's condition does. Rows
+    left of one length are one name in two frameworks, and the suite holds that
+    they agree on the reason's position. A family row names no one callable, so
+    no spelling is it; only `_row_named`, through the copy's imports, reaches one."""
     parts = spelled.split(".")
-    return [row for row in SKIP_FORMS if row[1] != "*" and not row[0].endswith(".*")
-            and row[0] == ".".join(parts[-1 - row[0].count("."):])]
+    matched = [row for row in SKIP_FORMS if row[1] != "*" and not row[0].endswith(".*")
+               and row[0] == ".".join(parts[-1 - row[0].count("."):])]
+    longest = max([row[0].count(".") for row in matched] or [0])
+    return [row for row in matched if row[0].count(".") == longest]
 
 
 def _row_named(full):
@@ -1312,8 +1317,10 @@ def _identifiers(tree):
 _WORD = re.compile(r"\w+")
 _HERE = "here"
 # The names under which a copy reaches its own namespace, as a bare name or as
-# the last name of an attribute, called or not; `vars` with an argument is the
-# copy's own only for its entry of the modules table, whose `__dict__` is too.
+# an attribute of the builtins module, called or not; `vars` with an argument is
+# the copy's own only for its entry of the modules table, whose `__dict__` is too.
+# An attribute of that name on any other object - a template environment's
+# `globals` - is an ordinary attribute.
 _NAMESPACES = ("globals", "locals", "vars")
 
 
@@ -1357,6 +1364,29 @@ def _namespace(node, called):
         and _callee(node) in _NAMESPACES and id(node) not in called
 
 
+def _attribute_owner(node):
+    """For a use of the namespace `_namespace` read through an attribute - the
+    call's callable or the attribute itself -, the bare name it is taken from,
+    the builtins module's dunder name for an entry of the modules table, which
+    may be that module looked up by name, or "" for any other expression; None
+    for a use that is no attribute."""
+    func = node.func if isinstance(node, ast.Call) else node
+    if not isinstance(func, ast.Attribute) or func.attr == "__dict__":
+        return None
+    if _is_module_entry(func.value):
+        return "__builtins__"
+    return func.value.id if isinstance(func.value, ast.Name) else ""
+
+
+def _builtins_bound(node):
+    """The bare names one import statement, at any depth, binds to the builtins
+    module - counted however often the name is bound otherwise, so a second
+    binding of it never hides the namespace."""
+    if not isinstance(node, ast.Import):
+        return ()
+    return tuple(a.asname or a.name for a in node.names if a.name == "builtins")
+
+
 def _proven_use(ref, parent, grand, binds):
     """None for a use of the namespace `ref` - a child of `parent`, itself a
     child of `grand` - that is on the proven list: handed directly, by position
@@ -1386,8 +1416,13 @@ def _switch(tree, binds):
     `_proven_use` does not prove, at any depth; an exec or eval call; a star
     import; a store or setattr on an entry of the modules table. None when it
     has none. One walk, breadth first, so a call is met before its callable and
-    a node after its parents; `binds` are the copy's, its switch not yet set."""
+    a node after its parents; `binds` are the copy's, its switch not yet set. A
+    use through an attribute counts only where the attribute is taken from a name
+    an import of the builtins module binds anywhere in the copy, its dunder name,
+    or an entry of the modules table (`_attribute_owner`) - decided once the walk
+    has met every import."""
     called, parents, found, todo = set(), {}, [], collections.deque([tree])
+    builtins, through = set(["__builtins__"]), []
     while todo:
         node = todo.popleft()
         if isinstance(node, ast.Call):
@@ -1395,11 +1430,16 @@ def _switch(tree, binds):
         for child in ast.iter_child_nodes(node):
             parents[id(child)] = node
             todo.append(child)
+        builtins.update(_builtins_bound(node))
         what = None
         if _namespace(node, called):
             parent = parents.get(id(node))
             how = _proven_use(node, parent, parents.get(id(parent)), binds)
             what = how and "the copy's own namespace %s" % how
+            owner = _attribute_owner(node)
+            if what and owner is not None:
+                through.append((node.lineno, what, owner))
+                what = None
         elif isinstance(node, ast.Call) and _callee(node.func) in ("exec", "eval"):
             what = "an exec or eval call"
         elif isinstance(node, ast.ImportFrom) and any(a.name == "*" for a in node.names):
@@ -1412,6 +1452,7 @@ def _switch(tree, binds):
             what = "a setattr on an entry of the modules table"
         if what:
             found.append((node.lineno, what))
+    found.extend((line, what) for line, what, owner in through if owner in builtins)
     return min(found) if found else None
 
 

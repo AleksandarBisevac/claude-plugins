@@ -6090,8 +6090,12 @@ entry of the modules table (`sys.modules[__name__]`, and that entry's `__dict__`
 at all - no name of it resolves, no base is followed, no bare new test is set aside - and the file
 reads not compared with one reason naming the first such line. A setattr on any other object does
 not turn it, and is read for the class it names. *The namespace* is reached under every spelling
-the reading knows - `globals`, `locals` and `vars` as a bare name or as the last name of an
-attribute, called or not (`builtins.globals()` included), `vars` of the modules-table entry, and
+the reading knows - `globals`, `locals` and `vars` as a bare name or as an attribute of the
+builtins module, called or not (`builtins.globals()`, the module under an alias, `__builtins__`:
+an attribute taken from a name any import of the builtins module binds, from its dunder name, or
+from an entry of the modules table;
+an attribute of one of those names on any other object, a template environment's `globals`, is
+ordinary and turns nothing), `vars` of the modules-table entry, and
 that entry's `__dict__` - and *the proven list is short*: the namespace handed directly, by
 position or by keyword, to a callee whose first name resolves to an import at module level (the
 staged suites hand `globals()` to their runner), and the namespace's own `get` called, a method of
