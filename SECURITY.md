@@ -1656,9 +1656,10 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    makes the question's disk calls it made before, call for call, plus, for a
    write that would create its file, a link question for the config's folder
    and one for its file, which is what resolving the project's config path
-   costs; it lists no directory and makes no more in total than before identity
-   was asked. A file merely named like the config in a plain folder pays more,
-   on purpose: it reads the config and the two folders, asks the directory the
+   costs; it lists no directory and, beside those link questions, makes no more
+   in total than before identity was asked, counted as the calls the question's
+   own source makes. A file merely named like the config in a plain folder pays
+   more, on purpose: it reads the config and the two folders, asks the directory the
    config would hang off whether it holds a repository, walks from the project
    to its checkout, lists the registrations directory, reads each registration
    and asks each registered tree (`cf29` counts every call that asks the disk
@@ -1679,7 +1680,11 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    `tests/test_guard_edits.py` assert each answer for the volume the suite runs
    on and print which kind it was; the other kind is driven through a stubbed
    volume answer (`cf25`–`cf25d`), and each component's own directory through a
-   stubbed per-directory answer (`cf31`, `cf31b`). `cf32` builds the real
+   stubbed per-directory answer given to the walk itself (`cf31`, `cf31b`),
+   since the hook asks the real disk before it reaches the walk; what the hook
+   answers end to end for those writes is asserted on the real volume, held
+   where it folds (`cf31c`) and allowed where it tells case apart (`cf31d`),
+   the half the volume cannot show printed as skipped. `cf32` builds the real
    arrangement — a disk image with the other case rule mounted at the project's
    `.claude` — where the host has `hdiutil` (macOS), and is skipped by name with
    the reason elsewhere.

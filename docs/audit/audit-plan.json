@@ -2351,7 +2351,8 @@
       "SG1.52-ukq",
       "SG1.53-ukq",
       "SG1.54-ukq",
-      "SG1.55-ukq"
+      "SG1.55-ukq",
+      "SG2.4-xk1"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -12821,7 +12822,9 @@
       "P156.8-3st",
       "P157.1",
       "P157.7-mwz",
-      "SG1.23-ukq"
+      "SG1.23-ukq",
+      "SG2.5-xk1",
+      "SG2.7-xk1"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -13937,7 +13940,8 @@
       "SG1.46-ukq",
       "SG1.48-ukq",
       "SG1.52-ukq",
-      "SG1.55-ukq"
+      "SG1.55-ukq",
+      "SG2.4-xk1"
     ],
     "tests/test_guard_history_rewrite.py": [
       "P131.1",
@@ -14329,7 +14333,9 @@
       "SG1.29-ukq",
       "SG1.33-ukq",
       "SG1.39-ukq",
-      "SG1.41-ukq"
+      "SG1.41-ukq",
+      "SG2.5-xk1",
+      "SG2.7-xk1"
     ],
     "tests/test__config_rules_lints.py": [
       "P131.2"
@@ -14411,7 +14417,8 @@
     ],
     "tests/test__harness.py": [
       "P142.11-6yq",
-      "P152.5"
+      "P152.5",
+      "SG2.5-xk1"
     ],
     ".claude/.gitignore": [
       "P148.20-xpz"
@@ -14569,7 +14576,10 @@
       "SG1.21-ukq",
       "SG1.25-ukq",
       "SG2.1-ukq",
-      "SG1.28-ukq"
+      "SG1.28-ukq",
+      "SG2.5-xk1",
+      "SG2.6-xk1",
+      "SG2.7-xk1"
     ],
     "tests/test_sweep_selftests.py": [
       "SG1.23-ukq"

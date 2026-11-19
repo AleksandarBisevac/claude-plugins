@@ -707,23 +707,33 @@ def _owner(name):
     return os.path if name == "os.path" else os
 
 
-def _disk_calls(fn):
-    """(result of fn(), {call: count}) over `_DISK_CALLS`. A call counts when no
-    other counted call happened inside it - the leaf - so `realpath` counts as
-    the `lstat` and `readlink` calls it makes, and an `isdir` that asks the disk
-    itself, as it does on some platforms, counts once as `os.path.isdir`."""
-    seen = []
+def _disk_record(fn, outer=False):
+    """(result of fn(), [(call, first argument)]) over `_DISK_CALLS`, in the
+    order the calls ended.
+
+    By default a call is recorded when no other counted call happened inside it
+    - the leaf - so `realpath` records as the `lstat` and `readlink` calls it
+    makes, and an `isdir` that asks the disk itself, as it does on some
+    platforms, records once as `os.path.isdir`. That measure is the host's: a
+    posix `realpath` is built from counted calls and a windows one is not, so
+    two leaf counts compare equal only where both sides make the same library
+    calls. With `outer`, a call is recorded only when no counted call is in
+    progress - the call the code under test makes itself, once, whatever the
+    library builds it from - which is the same measure on every host."""
+    seen, depth = [], [0]
     saved = [(owner, name, getattr(_owner(owner), name))
              for owner, name in _DISK_CALLS if hasattr(_owner(owner), name)]
 
     def counting(label, real):
         def call(*a, **k):
-            mark = len(seen)
+            mark, top = len(seen), depth[0] == 0
+            depth[0] += 1
             try:
                 return real(*a, **k)
             finally:
-                if len(seen) == mark:
-                    seen.append(label)
+                depth[0] -= 1
+                if (top if outer else len(seen) == mark):
+                    seen.append((label, a[0] if a else None))
         return call
     for owner, name, real in saved:
         setattr(_owner(owner), name, counting("%s.%s" % (owner, name), real))
@@ -732,8 +742,15 @@ def _disk_calls(fn):
     finally:
         for owner, name, real in saved:
             setattr(_owner(owner), name, real)
+    return out, seen
+
+
+def _disk_calls(fn, outer=False):
+    """(result of fn(), {call: count}) over `_DISK_CALLS`, counted as
+    `_disk_record` records them."""
+    out, seen = _disk_record(fn, outer)
     by = {}
-    for label in seen:
+    for label, _arg in seen:
         by[label] = by.get(label, 0) + 1
     return out, by
 
@@ -960,6 +977,17 @@ def _spelling_cases(check, cfg, tf, nested, _cf, _w):
     # answered "no candidate". Only the file named as the config pays more
     # than before identity was asked, and lists one directory: the
     # registrations'. A listing is its own case.
+    #
+    # The call-for-call comparisons hold whichever way a call is counted, since
+    # both sides make the same library calls. The budget against the question
+    # before identity does not: it compares sequences with different numbers
+    # of `realpath` calls, and a posix `realpath` is built from counted calls
+    # while a windows one is not, so on posix the library's own cost decided
+    # it. The budget is therefore counted as the question's own source asks
+    # (`_disk_calls(..., outer=True)`), the same on every host - and by that
+    # measure a write that creates its file may pay more than before by the
+    # link questions above, one per component of `CONFIG_REL`, which the
+    # budget allows it and no other write; the case prints both totals.
     def _before(target, own):
         os.path.realpath(target)
         os.path.realpath(own)
@@ -1062,7 +1090,7 @@ def _spelling_cases(check, cfg, tf, nested, _cf, _w):
 
     plain_cfg = os.path.join(main, "docs", "cf-sample", *rel)
     os.makedirs(os.path.dirname(plain_cfg))
-    costs, kinds = [], []
+    costs, kinds, budget = [], [], []
     for src, plain in ((os.path.join(nested, "src", "app.ts"), False),
                        (os.path.join(nested, "src", "cf-new.ts"), False),
                        (plain_cfg, True)):
@@ -1081,31 +1109,40 @@ def _spelling_cases(check, cfg, tf, nested, _cf, _w):
         _, off = _disk_calls(lambda: _with_attr(
             "_config_shaped_top", lambda real: None,
             lambda: _config_way(asked), on=_config))
+        _, before_own = _disk_calls(lambda: _before(target, own), outer=True)
+        _, now_own = _disk_calls(lambda: _config_way(asked), outer=True)
+        links = 0 if os.path.exists(target) else len(rel)
         listed = sum(now.get(n, 0) for n in _LISTINGS)
         name = os.path.basename(src) if not plain else "plain folder"
+        within = sum(now_own.values()) <= sum(before_own.values()) + links
         costs.append((name, verdict, sum(before.values()),
                       sum(walked.values()), sum(now.values()), listed,
-                      now == today and (plain or (
-                          now == off
-                          and sum(now.values()) <= sum(before.values())))))
+                      now == today and (plain or (now == off and within))))
         kinds.append((name, _kinds(walked), _kinds(now)))
+        if not plain:
+            budget.append((name, sum(before_own.values()),
+                           sum(now_own.values()), links, within))
     _, walk = _disk_calls(lambda: _checkout_walk(main))
     check("cf29 an ordinary write - an existing and a new source file - and a "
           "file merely named like the config in a plain folder make the config "
           "question's disk calls call for call: before the walk's, and for a "
           "write that creates its file a link question for the config's "
           "folder and its file, what resolving the project's config path "
-          "costs; the ordinary ones no more in total than before identity was "
-          "asked and none for the nested tree's identity, the config-named "
-          "one the registrations read and each registered tree asked - those "
-          "found from the checkout the project lies in, the walk to it adding "
+          "costs; the ordinary ones none for the nested tree's identity and no "
+          "more in total than before identity was asked beside the link "
+          "questions a creating write pays, counted as the question's own "
+          "source asks (a library call once, whatever this host builds it "
+          "from); the config-named one the registrations read and each "
+          "registered tree asked - those found from the checkout the project lies in, the walk to it adding "
           "%d calls for a project at its checkout's top %r and no member place "
           "asked (name, verdict, before identity, before the folder was "
           "resolved, now, listings, held): %r; by kind, before the folder was "
-          "resolved and now: %r"
-          % (sum(walk.values()), _kinds(walk), costs, kinds),
-          len(costs) == 3 and all(not v and held
-                                  for _n, v, _b, _t, _now, _l, held in costs))
+          "resolved and now: %r; as the question's own source asks (name, "
+          "before identity, now, link questions allowed, within): %r"
+          % (sum(walk.values()), _kinds(walk), costs, kinds, budget),
+          len(costs) == 3 and len(budget) == 2
+          and all(not v and held
+                  for _n, v, _b, _t, _now, _l, held in costs))
     check("cf29b ...and the ordinary ones list no directory, the config-named "
           "one the registrations' alone (listings: %r)"
           % ([(c[0], c[5]) for c in costs],),
@@ -1139,77 +1176,139 @@ def _table_case(check):
 
 
 def _walk_cases(check, cfg, main, fresh, rel, _w):
-    """cf31: each component of a creating write is judged in the directory that
-    holds it - the volume's answers substituted by a model, so every host runs
-    it. `_one_entry(directory, name, own)` and `_volume_folds(directory)` are
-    answered from `model`, a directory's rule; every question is recorded."""
+    """cf31, cf31b: each component of a creating write is judged in the
+    directory that holds it, asked of the walk that judges it
+    (`_config._case_walk`) with both of the volume's answers substituted:
+    `_one_entry(directory, name, own)` and `_volume_folds(directory)` are
+    answered from `model`, a directory's rule, and every question is recorded.
+
+    The walk is driven, not the hook, because the hook asks the real disk
+    before it reaches the walk - `_one_place` looks the written folder up as
+    spelled, which finds the config's folder on a volume that folds case and
+    nothing on one that tells case apart, and a windows `realpath` returns the
+    folder in its stored letter case - so the hook's answer is the host's and
+    a model substituted under it is not what decides. The questions the walk
+    asks that are NOT substituted are recorded as well, and each must be of a
+    path spelled as the config's own below the directory the case made, an
+    answer no host can change. That, and not the word in the label, is what
+    lets every host run these two.
+
+    cf31c and cf31d: what the hook answers end to end for the same writes, on
+    the real volume the suite stands on, read from the disk."""
     top = os.path.realpath(fresh)
     cdir = os.path.join(top, rel[0])
     os.makedirs(cdir)
     with open(os.path.join(cdir, "settings.json"), "w", encoding="utf-8") as fh:
         fh.write("{}\n")
+    walk = getattr(_config, "_case_walk", None)
+    own_spelled = [os.path.join(top, *rel[:i + 1]) for i in range(len(rel))]
 
-    def _run(model, path):
+    def _rel(path):
+        return os.path.relpath(path, top) if isinstance(path, str) else path
+
+    def _run(model, parts):
+        """(the walk's word, the substituted questions, every unsubstituted
+        question not of a path spelled as the config's own)."""
         asked = {"entry": [], "rule": []}
 
         def entry(directory, name, own):
-            asked["entry"].append((directory, name, own))
+            asked["entry"].append((_rel(directory), name, own))
             return bool(model.get(directory))
 
         def rule(directory):
-            asked["rule"].append(directory)
+            asked["rule"].append(_rel(directory))
             return model.get(directory)
-        verdict = _with_attr("_one_entry", entry, lambda: _with_attr(
-            "_volume_folds", rule, lambda: _cf_decide(
-                cfg, "Write", _w(path), main, "agent-cf")[0], on=_config),
-            on=_config)
-        return verdict, asked
+        if walk is None:
+            return "NO _config._case_walk", asked, []
+        word, calls = _disk_record(lambda: _with_attr(
+            "_one_entry", entry, lambda: _with_attr(
+                "_volume_folds", rule, lambda: walk(top, tuple(parts),
+                                                    tuple(rel)),
+                on=_config), on=_config), outer=True)
+        stray = [(call, _rel(arg)) for call, arg in calls
+                 if arg not in own_spelled]
+        return word, asked, stray
 
     up = _cap(rel[0])
-    dir_only = os.path.join(top, up, rel[1])
-    both = os.path.join(top, up, "Audit.Config.json")
-    name_only = os.path.join(cdir, "Audit.Config.json")
+    here = os.curdir
     folds_above = {top: True, cdir: False}
     folds_below = {top: False, cdir: True}
     seen = []
-    for label, model, path, want, entries, rules in (
+    for label, model, parts, want, entries, rules in (
             ("dir-variant, top folds, .claude tells case apart", folds_above,
-             dir_only, "block", [(top, up, rel[0])], []),
+             (up, rel[1]), "folded", [(here, up, rel[0])], []),
             ("both variant, top folds, .claude tells case apart", folds_above,
-             both, "allow", [(top, up, rel[0])], [cdir]),
+             (up, "Audit.Config.json"), None, [(here, up, rel[0])], [rel[0]]),
             ("dir-variant, top tells case apart, .claude folds", folds_below,
-             dir_only, "allow", [(top, up, rel[0])], []),
+             (up, rel[1]), None, [(here, up, rel[0])], []),
             ("name-variant, top tells case apart, .claude folds", folds_below,
-             name_only, "block", [], [cdir])):
-        verdict, asked = _run(model, path)
-        seen.append((label, verdict, asked["entry"] == entries
-                     and asked["rule"] == rules))
-        if verdict != want or asked["entry"] != entries \
-                or asked["rule"] != rules:
-            seen[-1] = seen[-1] + ((want, entries, rules, asked),)
-    check("cf31 STUBBED - each component of a creating write is judged in the "
-          "directory that holds it: where the config's own component exists "
-          "there by whether both names reach one entry, where it does not by "
-          "that directory's own rule; a name in the project tree is never "
-          "asked of the .claude below it, nor the reverse: %r" % (seen,),
-          len(seen) == 4 and all(len(s) == 3 and s[1] == w and s[2]
-                                 for s, w in zip(seen, ("block", "allow",
-                                                        "allow", "block"))))
+             (rel[0], "Audit.Config.json"), "folded", [], [rel[0]])):
+        word, asked, stray = _run(model, parts)
+        right = (word == want and asked["entry"] == entries
+                 and asked["rule"] == rules and not stray)
+        seen.append((label, word, right) if right else (
+            label, word, right, {"want": (want, entries, rules),
+                                 "asked": asked, "unsubstituted": stray}))
+    check("cf31 STUBBED, the same on every host - each component of a creating "
+          "write is judged in the directory that holds it: where the config's "
+          "own component exists there by whether both names reach one entry, "
+          "where it does not by that directory's own rule; a name in the "
+          "project tree is never asked of the .claude below it, nor the "
+          "reverse; and the walk asks the disk nothing it was not handed but "
+          "paths spelled as the config's own (row, the walk's word, right): %r"
+          % (seen,),
+          len(seen) == 4 and all(s[2] for s in seen))
+
+    dir_only = os.path.join(top, up, rel[1])
+    both = os.path.join(top, up, "Audit.Config.json")
+    top_folds = _swapped_exists(cdir)
+    cdir_folds = not _swapped_differs(cdir)
+    ends = [(_rel(p), agent is None,
+             _cf_decide(cfg, "Write", _w(p), main, agent)[0])
+            for p in (dir_only, both) for agent in ("agent-cf", None)]
+    held = (top_folds, top_folds, top_folds and cdir_folds,
+            top_folds and cdir_folds)
+    want = [(r, m, ("ask" if m else "block") if h else "allow")
+            for (r, m, _g), h in zip(ends, held)]
+    vol = ("read from the disk: the project tree folds case: %s, its .claude "
+           "folds case: %s; host %s" % (top_folds, cdir_folds, sys.platform))
+    halves = (
+        ("cf31c the hook end to end, on a real volume that folds case: .claude "
+         "existing and the config absent, a creating write through the "
+         "folder's name in another case, and through folder and file both, is "
+         "held - refused to a subagent, asked of the main session - each name "
+         "judged by the rule of the directory it is looked up in"),
+        ("cf31d ...and on a real volume that tells case apart the same writes "
+         "are another file and allowed"))
+    # Which half runs is the disk's answer just read, so the half not run is
+    # printed as not run here - never as passed - and the other kind of volume
+    # runs it: a CI runner on one, or a case-sensitive disk image under TMPDIR.
+    ran, other = halves if top_folds else halves[::-1]
+    check("%s (%s): %r" % (ran, vol, ends), ends == want and len(ends) == 4,
+          "want %r" % (want,))
+    _harness.skip(check, other, "the volume this suite stands on %s (%s); "
+                  "this half runs on a volume that %s" % (
+                      "folds case" if top_folds else "tells case apart", vol,
+                      "tells case apart" if top_folds else "folds case"), True)
+
     os.remove(os.path.join(cdir, "settings.json"))
     os.rmdir(cdir)
     created = []
-    for model, want in (({top: True}, "block"), ({top: False}, "allow")):
-        verdict, asked = _run(model, both)
-        created.append((model[top], verdict, asked["entry"], asked["rule"]))
-    check("cf31b STUBBED: with no .claude yet, the directory the write would "
-          "create takes the rule of the directory it would be created in - one "
-          "question of the tree, asked once, held where it folds and allowed "
-          "where it does not, and no identity question where nothing exists "
-          "(folds, verdict, identity questions, rule questions asked of): %r"
-          % ([(f, v, e, [os.path.relpath(d, main) for d in r])
-              for f, v, e, r in created],),
-          [c[1] for c in created] == ["block", "allow"]
-          and all(c[2] == [] and c[3] == [top] for c in created))
+    for model, want in (({top: True}, "folded"), ({top: False}, None)):
+        word, asked, stray = _run(model, (up, "Audit.Config.json"))
+        created.append((model[top], word, asked["entry"], asked["rule"],
+                        stray))
+    check("cf31b STUBBED, the same on every host: with no .claude yet, the "
+          "directory the write would create takes the rule of the directory "
+          "it would be created in - one question of the tree, asked once, "
+          "folded where it folds and another file where it does not, no "
+          "identity question where nothing exists, and nothing else asked of "
+          "the disk but paths spelled as the config's own (folds, the walk's "
+          "word, identity questions, rule questions asked of, unsubstituted): "
+          "%r" % (created,),
+          [c[1] for c in created] == ["folded", None]
+          and all(c[2] == [] and c[3] == [here] and not c[4]
+                  for c in created))
 
 
 _IMAGE_TOOL = "hdiutil"
@@ -1295,6 +1394,21 @@ def _volume_pair_cases(check, cfg):
         check("cf32b ...and nothing was created: the config is absent after "
               "the hook was asked", not os.path.exists(
                   os.path.join(mount, rel[1])))
+        # The real twin of cf31's substituted row with both names in another
+        # case: held only where both directories they are looked up in fold,
+        # and here one of them tells case apart, whichever the host's is.
+        both_got = [(agent is None, _cf_decide(
+            cfg, "Write", {"file_path": os.path.join(
+                proj, _cap(rel[0]), "Audit.Config.json"), "content": _CF_BODY},
+            proj, agent)[0]) for agent in ("agent-cf", None)]
+        both_held = not host_tells and not mount_tells
+        check("cf32e ...and a name differing in case in both the folder and "
+              "the file is held only where both directories it is looked up in "
+              "fold - one of them tells case apart here, so it is another file "
+              "and allowed (project tree tells case apart: %s, mounted .claude "
+              "tells case apart: %s): %r" % (host_tells, mount_tells, both_got),
+              both_got == [(m, ("ask" if m else "block") if both_held
+                            else "allow") for m in (False, True)])
         # A repository nested INSIDE the mounted directory, its `.claude`
         # present: there the config's own directory exists, so a name differing
         # in case is judged by identity, in the mount - which answers "one

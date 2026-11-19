@@ -23,7 +23,23 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "SG2-R1",
+        "severity": "low",
+        "file": "tests/test_guard_edits.py:1289-1292",
+        "issue": "The not-run half of cf31c/cf31d is recorded through _harness.skip(check, other, ..., True): `absent` is the constant True, so the helper failing direction (skipped on a host that has the mechanism) can never fire. The half is chosen by the same top_folds read that picks the half that ran, so it is true by construction, but on a mixed volume (project tree folds and .claude tells case apart, or the reverse) cf31c label still says `on a real volume that folds case` while only the folder row is held, and nothing marks the mixed case as neither kind. Only SKIPPED HERE is printed, so a reader cannot tell a mixed volume from a plain one except through the printed pair of folds answers.",
+        "resolution": "Pass the evidence the helper asks for (for the not-run half, the negation of the disk read that selected the other half), and when top_folds != cdir_folds label the case as the mixed volume rather than as either kind."
+      },
+      {
+        "id": "SG2-R2",
+        "severity": "low",
+        "file": "tests/test_guard_edits.py:1114-1117",
+        "issue": "The cf29 budget for a write that creates its file allows `links` = len(rel) extra calls (2) while the measured extra by the question own source is 1 (cf-new.ts: 4 before, 5 now, allowance 2, in after.folding.out). A single disk call added to that write path still passes `within` (6 <= 6); only the call-for-call comparisons `now == today` and `now == off` catch it, so the claim that the budget is what turns an added call red holds for the existing-file write (allowance 0, exact) but not for the creating one. The mutation row for a disk call added to the config question path went red through the call-for-call half, not the budget.",
+        "resolution": "Say in the comment above _before (the call-for-call paragraph) that the added calls of a creating write are held by `now == today`, not by the budget; or tighten the allowance to the measured link count per host once windows CI has printed it."
+      }
+    ],
+    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -170,6 +186,10 @@
         {
           "at": "2026-11-19T11:22:10Z",
           "text": "26. From the fresh read of the task that made the config hold ask the checkout it finds (no regression in its own code): (a) the journal's pass after hangs until the host's hook timeout when a directory above the project holds a named pipe called .git - the author's identity reading opens every ancestor's git entry without asking whether it is a regular file (usage_ledger.file_witness); it hangs the same way before that task for the project's own config and manifest writes, so open only regular files, as the pointer reader does; (b) no case holds that a git entry reached through a symbolic link is followed (stat changed to lstat turns only the disk-call count red) - give it a row beside the separate-git-directory and submodule rows; (c) no case holds that the found top is asked when its common directory cannot be read (the early return restored leaves both suites green); (d) SECURITY.md says any other entry is passed over as git's discovery passes over it - for a pointer file that is unreadable, binary or over the bound git stops with an error instead; the direction is safe, the sentence is not true of git; (e) a directory holding only HEAD is taken for a repository where git is not, and a pointer file naming a directory that does not exist ends the walk; (f) read, not run: a pointer whose path is not UTF-8 is passed over."
+        },
+        {
+          "at": "2026-11-19T16:01:33Z",
+          "text": "27. From the fresh read of the merge's conflict resolutions (no code finding; every case id and block of both sides present once). MED, a document claim: CHANGELOG.md, Unreleased, Changed - the entry 'A brief's rules win over a skill's instruction, and the phase review is handed its review skill' still announces the review skill reaching the phase brief and the validation session, which the development branch released (its Fixed entry 'The configured review skill now runs at phase sign-off'), and says the session 'is started with that skill' with no condition where the merged code leaves it out and warns when the runner cannot load it (runner_review_skill). Cut the entry to the half that is new - the precedence rule in both agent bodies and the appended preamble - and retitle it. LOW: the same merge left a blank line after each of the four sub-headings of Unreleased where no other sub-heading of the file has one - remove them. LOW, a record and not a document: SG1.10's verifiedBy and red-first basis in the plan cite the session-runner case ids the merge renamed (now ras82, ras82b, ras83); the old ids name the development branch's timing cases - say so in a note on that task rather than rewriting its record."
         }
       ]
     },
@@ -343,6 +363,174 @@
         "status": "passed",
         "at": "2026-11-19T15:52:06Z"
       }
+    },
+    {
+      "id": "SG2.4-xk1",
+      "title": "The config hold's substituted-volume case and its disk-call count answer the same on every host, or say which host's half ran",
+      "status": "in_progress",
+      "description": "The first CI run over the skill-gates phase was red on two suites cases that are green on the machine they were written on (macOS, a volume that folds letter case). Both are cases of tests/test_guard_edits.py; the failing lines are quoted in the brief's notes.\n\nMEASURED IN CI (ubuntu and windows runners), read from the job logs.\n(a) cf31, named STUBBED, on ubuntu: the row 'dir-variant, top folds, .claude tells case apart' answered allow with NO question recorded, where it wants block and one identity question. On windows the same row answered block with no identity question, and the row 'dir-variant, top tells case apart, .claude folds' answered block where it wants allow. The case substitutes two questions of hooks/_config.py (_one_entry, _volume_folds) and its docstring says every host runs it; the path it drives (audit_config_way -> _names_audit_config -> _one_place) asks the REAL disk first - a stat of the written folder spelled in the other letter case, which exists on a folding volume and not on one that tells case apart, and a realpath that on windows returns the folder in its stored letter case. So the substituted model and the real volume disagree on two of three hosts. The orchestrator's reading, not yet proven by a run: the hold's real answers on each host are right and the case is what is host-bound.\n(b) cf29 on windows: the row for a write that creates its file counted 5 disk calls now against 4 before identity was asked, so the case's 'no more in total than before' is false there; by kind it was realpath 2, stat 1 before the folder was resolved and islink 2, realpath 2, stat 1 now. On a posix host the realpath of the library is built from calls the counter counts and on windows it is not, so the two sides of the comparison are not the same measure on every host.\n\nTHE RULE TO BUILD.\n1. A case named STUBBED reaches no disk question it has not substituted, except one whose answer cannot differ between hosts (a path spelled as the config's own, in a directory the case made). Either drive the unit the model stands in for (the walk that judges one component in the directory holding it) or substitute every question on the driven path; a case that still depends on the host says so in its name and prints which host's half ran, and the other half is held by a real-volume case that runs where that volume exists.\n2. What the hold answers END TO END for a folder or file name differing in letter case alone is asserted against the real volume the suite stands on, read from the disk and not from the platform's name: held where the volume folds, allowed where it tells case apart. Both halves must be reachable on at least one CI host each, and the suite's existing case-sensitive disk-image cases are the place to look before adding one.\n3. A disk-call comparison compares two counts taken the same way on the host it runs on. Where a library call is built from counted calls on one host and not on another, the case counts what the hold itself asks (the calls its own source makes), or states the inequality per kind so the library's own cost is on neither side.\n4. No behaviour of hooks/_config.py changes unless a run on a real volume shows the hold answering wrongly; if one does, stop and report it rather than changing the hold inside this task.\n\nHOW TO PROVE. Red before, reproduced locally: run the suite with its scratch space on a case-sensitive volume (a case-sensitive APFS disk image attached for the run and detached after, never a volume someone else attached) and show cf31 fail there as it does on ubuntu. Green after on both the folding system volume and the case-sensitive image. A mutation probe the orchestrator can run from the worktree root: the walk made to ask the wrong directory; the identity question dropped; the rule question answered for the wrong directory; a disk call added to the ordinary-write path. Windows cannot be run locally: state in the return exactly which lines depend on windows behaviour that only CI can confirm, and why they should hold.\n\nNOT in this task: the hold's rule itself; the journal hook; any case not named here unless the same host dependence is shown in it by a run (then list it and fix it by the same rule).\n\nAcceptance:\n(1) The substituted-volume case gives the same verdicts and the same recorded questions on a folding volume and on one that tells case apart.\n(2) The end-to-end answer for a letter-case variant is asserted against the real volume, each half on a volume where it can run, and a half that did not run is printed as not run.\n(3) The disk-call comparison holds by the same measure on every host, and an added disk call on the ordinary-write path still turns it red.\n(4) hooks/_config.py is unchanged, or the return names the real-volume run that required a change.",
+      "files": [
+        "tests/test_guard_edits.py",
+        "SECURITY.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_guard_edits.py: the substituted-volume walk answers the same on a folding and a case-sensitive volume, and the end-to-end letter-case answer is asserted against the real volume with the half that ran printed"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_guard_edits.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-19T15:52:56Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-19T15:52:56Z"
+      },
+      "reviewPerTask": "signals",
+      "notes": [
+        {
+          "at": "2026-11-19T16:52:19Z",
+          "text": "Scope widened to SECURITY.md at the drive's refusal: its sentence on the disk-call count ('no more in total than before identity was asked') was true only under a count that takes a library call as the calls inside it, and its sentence on the stubbed per-directory answer named cases that now drive the walk itself; the task's test change would have left both describing something no case holds."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-11-19T17:01:15Z.22669b",
+        "status": "passed",
+        "at": "2026-11-19T17:01:16Z"
+      }
+    },
+    {
+      "id": "SG2.5-xk1",
+      "title": "A growth-per-doubling case measures runs long enough for the clock it reads, by one shared helper, so a coarse clock cannot turn it red or green",
+      "status": "cancelled",
+      "description": "The first CI run over the skill-gates phase was red on windows in two timing cases that are green on macOS and ubuntu.\n\nMEASURED IN CI (windows runner), read from the job logs.\n(a) tests/test__clause_coverage.py cw8: 'list numbers on one line grew 0.00x, 15.62x, 3.00x per doubling; mentions on one line grew 15.62x, 1.00x, 4.00x; markers on one line grew 15.62x, 2.00x, 2.50x'. The case reads time.process_time, whose step on windows is about 15.6 ms: a run shorter than one step reads as zero or as one whole step, so the ratios are the clock's, not the code's.\n(b) tests/test_build_shop.py esc53 (python's regex engine): worst growth 5.38x with the LONGEST run at 0.0033 s. The case reads time.perf_counter over single runs of a few milliseconds on a shared runner; its node twin esc55 passed in the same job.\n\nTHE RULE TO BUILD.\n1. ONE HELPER, in tests/_harness.py, measures a growth series: for each size it repeats the measured call until the total is at least a stated multiple of the clock's own resolution (asked of the clock - time.get_clock_info - and floored by a measured step, since a documented resolution can be finer than the step the clock really takes) and at least a stated minimum duration, and returns per-call seconds with the repeat count. Both cases use it; neither keeps a private loop.\n2. A size whose single run is too short to measure is REPEATED, never skipped and never passed: a series the helper could not bring above the floor inside the case's deadline is a failure that says so.\n3. The thresholds keep their meaning: growth per doubling within the stated power, the longest within its ceiling, a child killed at its deadline a failure. The power is not loosened to make a runner pass; if a threshold moves, the return carries the measured spread on this machine (two runs with a gap) that justifies it.\n4. The cases still catch what they were written for: a reading made quadratic again turns each red.\n\nHOW TO PROVE. Red before, locally: substitute a clock with a 15.6 ms step (and one that returns zero for a short run) for the one each case reads and show the present loops produce the CI ratios; green after with the same substituted clock. The existing mutation of each case (the quadratic reading; the regular expression made to backtrack) still turns it red under the helper, by a mutation probe the orchestrator can run from the worktree root, which also holds: the repeat floor removed; the helper returning a total instead of per-call seconds. Suite seconds before and after, two runs with a gap. Windows cannot be run locally; say which lines only CI can confirm.\n\nNOT in this task: the code under measurement; esc47 (another task); any other timing case unless a run with the substituted coarse clock shows the same fault in it (then list it and move it to the helper).\n\nAcceptance:\n(1) Both cases take their series from one helper in tests/_harness.py that repeats a run until it is long enough for the clock.\n(2) Under a substituted clock with a 15.6 ms step both cases answer as they do under the real clock.\n(3) A series that cannot be measured inside the deadline fails and says so.\n(4) The quadratic and backtracking mutations still turn the cases red.",
+      "files": [
+        "tests/_harness.py",
+        "tests/test__clause_coverage.py",
+        "tests/test_build_shop.py",
+        "tests/test__harness.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__harness.py: the growth-series helper repeats a run until it is long enough for a coarse clock, returns per-call seconds, and fails a series it cannot measure inside the deadline"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__harness.py tests/_harness.py tests/test__clause_coverage.py tests/test_build_shop.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: its tests.add named a suite file that does not exist; the harness carries its own cases, so the task is re-added naming tests/_harness.py"
+      },
+      "startedAt": null,
+      "completedAt": "2026-11-19T15:52:46Z",
+      "verifiedBy": []
+    },
+    {
+      "id": "SG2.6-xk1",
+      "title": "The eval builder's own-repository refusal is held on every host: what must never happen is asserted everywhere, and the check itself where git lets the patched builder reach it",
+      "status": "pending",
+      "description": "The first CI run over the skill-gates phase was red on windows in one case of tests/test_build_shop.py that is green on macOS and ubuntu.\n\nMEASURED IN CI (windows runner), read from the job log. esc47 patches the shipped builder (plugins/audit/evals/build-shop.sh) to keep GIT_DIR, points GIT_DIR at another repository's .git, runs the bugfix scaffold and wants exit 3 with the words 'own repository' - the builder's check that the repository it built is the workspace's own. On windows the patched builder exited 2 with 'fatal: this operation must be run in a work tree | build-shop: git add failed': git itself refused before the builder's check was reached. Its neighbours esc45, esc46 and esc48 passed in the same job, so the shipped builder leaves the other repository alone there. Why git for windows refuses at that point (the form GIT_DIR arrives in under the shell that runs the builder, or how that git reads GIT_DIR with no work tree named) was NOT established - nothing here can run windows.\n\nTHE RULE TO BUILD.\n1. WHAT MUST NEVER HAPPEN IS ASSERTED ON EVERY HOST: a builder that kept GIT_DIR never exits 0, and the other repository is byte for byte and ref for ref what it was (the reading esc45 and esc46 already take).\n2. THE CHECK ITSELF IS ASSERTED WHERE IT IS REACHED: exit 3 with its own words. Where git stops the patched builder first, the case does not pass silently and does not fail for git's reason: it prints that the check was not reached on this host, with git's words, as its own line a reader of a CI log can find.\n3. THE CHECK IS ALSO HELD WITHOUT GIT'S HELP, on every host: one case drives the builder's own-repository check through an input that does not depend on how a git build reads GIT_DIR (for instance a patched builder whose build lands in the workspace while the question the check asks is answered for another repository), so the check has a red-first proof on windows too.\n4. Nothing of the shipped builder changes unless a run shows it building into a repository that is not the workspace's; if one does, stop and report it.\n\nHOW TO PROVE. Locally: the present case green; a substituted git that refuses the way the windows log shows ('this operation must be run in a work tree' at the add) makes the PRESENT case red and the new one print the not-reached line and still hold rule 1. A mutation probe the orchestrator can run from the worktree root: the builder's check removed (the rule-3 case and the reached half go red); the check made to exit 0; rule 1's comparison of the other repository dropped. Say in the return which lines only a windows run can confirm.\n\nNOT in this task: the timing cases (another task); the scaffolds' content; the eval cases' yaml.\n\nAcceptance:\n(1) On every host a builder that kept GIT_DIR does not exit 0 and leaves the other repository unchanged.\n(2) The own-repository check is asserted where reached, and a host where git stops first prints that as its own line.\n(3) One case holds the check on every host without depending on how git reads GIT_DIR, and removing the check turns it red.",
+      "files": [
+        "tests/test_build_shop.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_build_shop.py: a builder that kept GIT_DIR never exits 0 and leaves the other repository unchanged on every host, the own-repository check is asserted where reached with the not-reached half printed, and one case holds the check without git's help"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_build_shop.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "SG2.7-xk1",
+      "title": "A growth-per-doubling case measures runs long enough for the clock it reads, by one shared helper, so a coarse clock cannot turn it red or green",
+      "status": "pending",
+      "description": "The first CI run over the skill-gates phase was red on windows in two timing cases that are green on macOS and ubuntu.\n\nMEASURED IN CI (windows runner), read from the job logs.\n(a) tests/test__clause_coverage.py cw8: 'list numbers on one line grew 0.00x, 15.62x, 3.00x per doubling; mentions on one line grew 15.62x, 1.00x, 4.00x; markers on one line grew 15.62x, 2.00x, 2.50x'. The case reads time.process_time, whose step on windows is about 15.6 ms: a run shorter than one step reads as zero or as one whole step, so the ratios are the clock's, not the code's.\n(b) tests/test_build_shop.py esc53 (python's regex engine): worst growth 5.38x with the LONGEST run at 0.0033 s. The case reads time.perf_counter over single runs of a few milliseconds on a shared runner; its node twin esc55 passed in the same job.\n\nTHE RULE TO BUILD.\n1. ONE HELPER, in tests/_harness.py (which carries its own cases), measures a growth series: for each size it repeats the measured call until the total is at least a stated multiple of the clock's own resolution (asked of the clock - time.get_clock_info - and floored by a measured step, since a documented resolution can be finer than the step the clock really takes) and at least a stated minimum duration, and returns per-call seconds with the repeat count. Both cases use it; neither keeps a private loop.\n2. A size whose single run is too short to measure is REPEATED, never skipped and never passed: a series the helper could not bring above the floor inside the case's deadline is a failure that says so.\n3. The thresholds keep their meaning: growth per doubling within the stated power, the longest within its ceiling, a child killed at its deadline a failure. The power is not loosened to make a runner pass; if a threshold moves, the return carries the measured spread on this machine (two runs with a gap) that justifies it.\n4. The cases still catch what they were written for: a reading made quadratic again turns each red.\n\nHOW TO PROVE. Red before, locally: substitute a clock with a 15.6 ms step (and one that returns zero for a short run) for the one each case reads and show the present loops produce the CI ratios; green after with the same substituted clock. The existing mutation of each case (the quadratic reading; the regular expression made to backtrack) still turns it red under the helper, by a mutation probe the orchestrator can run from the worktree root, which also holds: the repeat floor removed; the helper returning a total instead of per-call seconds. Suite seconds before and after, two runs with a gap. Windows cannot be run locally; say which lines only CI can confirm.\n\nNOT in this task: the code under measurement; esc47 (another task); any other timing case unless a run with the substituted coarse clock shows the same fault in it (then list it and move it to the helper).\n\nAcceptance:\n(1) Both cases take their series from one helper in tests/_harness.py that repeats a run until it is long enough for the clock.\n(2) Under a substituted clock with a 15.6 ms step both cases answer as they do under the real clock.\n(3) A series that cannot be measured inside the deadline fails and says so.\n(4) The quadratic and backtracking mutations still turn the cases red.",
+      "files": [
+        "tests/_harness.py",
+        "tests/test__clause_coverage.py",
+        "tests/test_build_shop.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/_harness.py: the growth-series helper repeats a run until it is long enough for a coarse clock, returns per-call seconds, and fails a series it cannot measure inside the deadline"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/_harness.py tests/test__clause_coverage.py tests/test_build_shop.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-19T15:52:47Z",
+          "text": "tdd as asked: tests/_harness.py is the task's only test file and is its own implementation (an inline suite), so a red run at HEAD would lay the fix over with the cases; the red-first helper may answer could-not-prove or not red for it, and --tests-mode regression files without a red-first proof"
+        }
+      ]
     }
   ],
   "parentBranch": "integration/skill-gates",
