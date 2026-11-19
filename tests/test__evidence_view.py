@@ -497,7 +497,7 @@ def _cases(check):
     # their own words: they are facts about the plan, which no read decides.
     _real_read_rows = _evidence_io.read_rows
 
-    def _boom(project, config=None):
+    def _boom(project, config=None, manifest_path=None):
         raise OSError("permission denied (fixture)")
     _evidence_io.read_rows = _boom
     try:

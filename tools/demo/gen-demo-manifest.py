@@ -1378,6 +1378,54 @@ SCHEMA_EXEMPTIONS = {
     "lastRun.launch":
         "the token a caller handed `run-test-gate.py --launch` to find a run it "
         "started in the background; the demo launches nothing.",
+    "lastRun.replacedLaunches":
+        "the launched runs a record replaced; the demo launches nothing, so no "
+        "record replaced a launched one.",
+    "lastRun.recordCut":
+        "what a record dropped past `_evidence_io.RECORD_MAX_BYTES`; the demo's "
+        "runs are a few steps wide and no record of them comes near the bound, so "
+        "a cut would be one nothing made.",
+    "lastRun.sharedWithRepeated":
+        "the paths a repeat's record holds only in the run it carries; no demo "
+        "record is a repeat, so none carries a run to share a field with.",
+    "lastRun.followersOwed":
+        "the generated files a red run's changes owe a re-render of; the demo "
+        "declares no follower recipe, so no run owes one.",
+    "lastRun.followersUnread":
+        "how many follower recipes a run could not read, for "
+        "lastRun.followersOwed's reason: there is no recipe to read.",
+    "lastRun.gateReach":
+        "the reach reading a real gate takes over the declared files with its "
+        "suites; the demo's runs are generated, not run, and its tree has no "
+        "suite to reach a file with.",
+    "lastRun.gateReachNotAsked":
+        "why the reach reading was not taken; for lastRun.gateReach's reason no "
+        "run asked it, so there is nothing to say was not asked.",
+    "lastRun.treeMutatedDropped":
+        "a count of moved paths past `MAX_PATHS`; no demo run moves that many.",
+    "lastRun.coverageDropped":
+        "a count of coverage paths past `MAX_PATHS`; no demo run names that many.",
+    "lastRun.baseOf":
+        "set only on a base run measured for a red task run (`--base-of`); the "
+        "demo measures no base.",
+    "lastRun.cancelledBy":
+        "the signal that cancelled a run; no demo run was cancelled, and a "
+        "cancelled run is no verdict a surface shows.",
+    "lastRun.attributionBasis":
+        "why a red run's attribution line said what it did, for "
+        "lastRun.attribution's reason: the demo runs nothing that prints it.",
+    "lastRun.narrowed":
+        "written only by a phase gate `meta.phaseGate` narrowed; the demo sets no "
+        "narrowing mode.",
+    "lastRun.shadow":
+        "written only by a phase gate run in `meta.phaseGate` shadow mode; the "
+        "demo sets no such mode.",
+    "lastRun.runner":
+        "which wrapper wrote a run; absent is the gate itself "
+        "(`_evidence_io.RUNNER_KEY`'s rule), and every demo run is the gate's.",
+    "lastRun.sessionId":
+        "the session a run was recorded from; the demo's runs are generated "
+        "outside any session, so an id would name a session that never was.",
     "lastRun.gradedBy":
         "written only on a group member's copy of its carrier's record, for "
         "testEvidence.gradedBy's reason: the demo signs no group off.",

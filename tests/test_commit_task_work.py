@@ -396,7 +396,8 @@ def _gate(fx, manifest=None, task=TASK, set_apart=True, reuse=False):
 
 
 def _newest_row(fx, tid=TASK):
-    rows = [r for r in _evidence_io.read_rows(fx["root"])["rows"]
+    rows = [r for r in _evidence_io.read_rows(
+        fx["root"], manifest_path=_evidence_io.plan_file_of(fx["root"]))["rows"]
             if r.get("taskId") == tid]
     return rows[-1] if rows else {}
 

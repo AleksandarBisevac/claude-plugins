@@ -314,7 +314,8 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None,
         return None
     read_error = None
     try:
-        read = _evidence_io.read_rows(project, config=config)
+        read = _evidence_io.read_rows(project, config=config,
+                                      manifest_path=manifest_path)
     except Exception as exc:
         read, read_error = {"rows": []}, "%s" % (exc,)
     rows = [r for r in (read.get("rows") or []) if isinstance(r, dict)]

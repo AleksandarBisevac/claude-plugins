@@ -540,7 +540,7 @@ def _full_run_cases(check):
                                                          declare_gate=True)
         _real_read_rows = _evidence.read_rows
 
-        def _boom(project, config=None):
+        def _boom(project, config=None, manifest_path=None):
             raise OSError("permission denied (fixture)")
         _evidence.read_rows = _boom
         try:

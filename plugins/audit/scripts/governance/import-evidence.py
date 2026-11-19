@@ -27,9 +27,12 @@ ONE RUN, ONE ROW. A shard under a NEW name whose runIds the ledger already
 holds is refused too, naming each id and the file holding it, and so is a
 shard repeating a runId among its own rows, naming the shard itself: every
 reader of the directory counts rows, so the same run twice is counted twice.
-A run the plan holds only as a `lastRun` record is held in the same sense -
-`_evidence_io.read_rows` reads the records beside the rows, one entry per
-run - and is refused the same way, the holder named being the plan file.
+A run the plan holds only as a `lastRun` record is NOT held in that sense, and
+the shard carrying it is imported: a plan that travels with git while its
+evidence files do not receives the record of a run recorded on another
+machine first, and refusing that machine's ledger file for it would make the
+file unimportable for good. `_evidence_io.read_rows` then reads the run once,
+as its row - the union's rule for a run both places hold (`held_runs`).
 A ledger that cannot be read in full refuses the import rather than reading as
 empty - the check could not be made, and that is what the refusal says.
 
@@ -176,22 +179,33 @@ def learn_from_commands(rows, manifest_path, project):
             and _ev.row_is_red(row) and row.get("runId")]
 
 
-def held_runs(project, config):
-    """`(heldBy, unreadable)` - which file already holds each runId - a ledger
-    file, or for a run the plan holds only as a record the plan file holding
-    it - and which ledger files could not be read in full.
+def held_runs(project, config, manifest_path):
+    """`(heldBy, unreadable)` - which ledger file already holds each runId as
+    a ROW, and which ledger files could not be read in full.
 
-    ONE READ, `_evidence_io.read_rows`, the reader every consumer of this
-    directory trusts: its `rowFiles` names the file each row came from, and its
-    `unreadableFiles` is the verdict on what was lost. A second walk to name the
-    holder would be a second decode, free to disagree with this one about
+    ONLY A ROW IS A SECOND COUNT. A run the plan holds only as a record
+    (`ROW_FROM_RECORD`) is not a duplicate of the same run arriving as a row:
+    a plan that travels with git while its evidence files do not receives
+    the record of a run recorded on another machine before that machine's
+    ledger file, and the union every reader takes (`read_rows`, through
+    `with_records`) reads a run both hold as its row. Refusing the file for
+    it would make that machine's ledger file unimportable for good. So a
+    plan file that would not read changes nothing here either: no record is
+    a holder, readable or not.
+
+    ONE READ, `_evidence_io.read_rows` over the plan this import was handed,
+    the reader every consumer of this directory trusts: its `rowFiles` names
+    the file each row came from, `rowSources` which of them are rows, and its
+    `unreadableFiles` is the verdict on what was lost. A second walk to name
+    the holder would be a second decode, free to disagree with this one about
     whether a file holds a row at all.
     """
-    ledger = _ev.read_rows(project, config)
+    ledger = _ev.read_rows(project, config, manifest_path=manifest_path)
     held = {}
-    for row, name in zip(ledger["rows"], ledger["rowFiles"]):
+    for row, name, source in zip(ledger["rows"], ledger["rowFiles"],
+                                 ledger["rowSources"]):
         run_id = str(row.get("runId") or "")
-        if run_id and run_id not in held:
+        if source == _ev.ROW_FROM_LEDGER and run_id and run_id not in held:
             held[run_id] = name
     return held, list(ledger["unreadableFiles"])
 
@@ -247,13 +261,15 @@ def unreadable_refusal(paths):
         % (", ".join(paths),))
 
 
-def import_shard(project, shard_path, config=None, manifest_path=None):
+def import_shard(project, shard_path, config=None, *, manifest_path):
     """`(exitCode, answer)` - verify `shard_path`'s chain and copy it whole into
     this project's evidence directory. Writes nothing on a refusal.
 
-    With `manifest_path`, a successful import's `learnFrom` carries the
-    command for each red full row it holds (`learn_from_commands`), built off
-    the rows this call already parsed rather than a second read of the file.
+    `manifest_path` is the plan this import was handed: the runs already held
+    are read beside it (`held_runs`), and a successful import's `learnFrom`
+    carries the command for each red full row it holds
+    (`learn_from_commands`) against it, built off the rows this call already
+    parsed rather than a second read of the file.
 
     THE VERIFIER IS BORROWED, NOT WRITTEN TWICE. `_evidence_io.verify_rows` is
     the one place a broken chain, an edited row or a corrupted mid-file line is
@@ -297,8 +313,7 @@ def import_shard(project, shard_path, config=None, manifest_path=None):
         return E_FAIL, answer
     parsed = [r for r in rows if not r.get("_unparseable")]
     run_ids = [str(row.get("runId") or "?") for row in parsed]
-    learn = (learn_from_commands(parsed, manifest_path, project)
-             if manifest_path else [])
+    learn = learn_from_commands(parsed, manifest_path, project)
     directory = _ev.evidence_dir(project, config)
     dest = os.path.join(directory, basename)
     if os.path.isfile(dest):
@@ -328,7 +343,7 @@ def import_shard(project, shard_path, config=None, manifest_path=None):
     # second row inside this shard - is a second count. Checked after the
     # same-name branch, which is why the identical re-import above never
     # meets it, and before anything is written.
-    held, unreadable = held_runs(project, config)
+    held, unreadable = held_runs(project, config, manifest_path)
     if unreadable:
         answer["refused"] = unreadable_refusal(unreadable)
         return E_FAIL, answer

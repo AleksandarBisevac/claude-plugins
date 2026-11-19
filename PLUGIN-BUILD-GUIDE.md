@@ -4018,7 +4018,28 @@ walking the directory again with a decode of its own.
 union of the ledger's rows and every `lastRun` record the plan holds (`plan_bodies()` reads the
 index and its shards as written, `records_of_bodies()` reads each record in the row's shape
 through `record_row()`), one entry per `runId` — a run both hold stays the ledger's row, with the
-record's `launch` token merged onto it (`with_records()`). The entries a record supplied come
+record's `launch` token and `replacedLaunches` merged onto it when the row lacks them
+(`with_records()`). **The plan is a required argument** (`read_rows(project, config, *,
+manifest_path)`; None is a `ValueError`): every caller hands it the plan its own command was
+handed, so in a project holding two plans a run recorded for one is not reused for, bound to or
+found from the other, whose task ids may collide; a caller that was handed none says so by
+passing `plan_file_of(project)`. **One walk over a plan's files** — `walk_plan(index, read,
+label, join)` — holds the one rule for a file that will not read: its label is listed, never
+skipped. `plan_bodies()` walks the disk with it, `subject_records()` reads through
+`plan_bodies()`, and `close-phase.py`'s `tip_bodies()` walks the branch tip through git with
+it, so a shard that will not read is named by all three with its file (`pw1`).
+**The record is sufficient.** `run_record()` carries every key its row carries but those
+`RECORD_NOT_CARRIED` names, each with its reason; `tests/test__evidence_io.py` (`rs1`-`rs3`)
+reads the keys `row_for()` can write off its source and fails on one the record drops without a
+reason. Past `RECORD_MAX_BYTES` a record cuts in `RECORD_CUT_ORDER` — the coverage paths first,
+which decide nothing — and says each cut in `recordCut`. **A repeat's record stores what it
+shares with the run it carries once** (`finished_record()` = `bounded_record()` then
+`shared_with_repeated()`): a subtree equal to the same one in `repeatedRun` is held there and
+its path named under `SHARED_KEY`, and a whole repeat's steps - the carried run's, each naming
+it - are named `steps` and derived again (`_copied_steps()`); `record_row()` asks
+`resolved_shared()` first, so every reader of the seam reads either place as before, and a
+path the carried run no longer holds is named under `SHARED_UNRESOLVED_KEY` rather than read
+as absent (`tests/test__evidence_io.py` `sh1`-`sh4`). The entries a record supplied come
 after every row; `rowSources[i]` says which place answered (`ROW_FROM_LEDGER` or
 `ROW_FROM_RECORD`), and for a record `rowFiles[i]` is the plan file that holds it, relative to
 the project — so a caller naming where a run lives names that file. `files`, `unreadable` and
@@ -5055,9 +5076,12 @@ temp file inside the destination directory and only `os.replace` gives it the fi
 counts rows, so a run arriving twice is counted twice. The import is refused, exit 1, naming each
 duplicated `runId` and the file already holding it, when the shard carries a `runId` the ledger
 already holds under another file, or repeats a `runId` among its own rows (the shard itself is
-then the holder). The holders come from `_evidence_io.read_rows`'s `rowFiles`, the same read every
-consumer trusts, so a run the plan holds only as a `lastRun` record is held as a row is and refused
-the same way, the plan file named as its holder (`i45`; `i46` is the allow twin). A ledger that cannot be read in full refuses the import too, saying the check
+then the holder). The holders come from `_evidence_io.read_rows`'s `rowFiles` over the plan this
+import was handed, the same read every consumer trusts, counting only the entries whose
+`rowSources` says `ROW_FROM_LEDGER`: a run the plan holds only as a `lastRun` record is NOT a
+holder, so the ledger file carrying it is imported and the run is then read once, as its row
+(`i45`) — the state of a plan that travels with git while its evidence files do not; once that
+run is a row, a second file carrying it is refused naming the ledger file (`i46`). A ledger that cannot be read in full refuses the import too, saying the check
 could not be made rather than reading as empty — an unread row may be the duplicate — and names the
 file with the step that clears each cause it cannot tell apart — make a file that would not open
 readable; truncate a torn tail's partial line on purpose; restore a file with a corrupted line from
@@ -5248,8 +5272,11 @@ inline run too, under `WRITER_RULE`, with the reason on the line below it, and a
 token (`launch_token()`) on it as `--launch` (`with_launch()`), and marks the launch with that
 token. The run it started is the subject's run carrying the token, found through
 `_evidence_io.run_by_launch` over `read_rows` - the records the plan holds as well as the
-ledger's rows - never "a run the drive had not seen before", which a sibling's run of the same
-subject also is; a relaunch prints the command again under a new token, and a mark holding no
+ledger's rows, both carrying the token - never "a run the drive had not seen before", which a
+sibling's run of the same subject also is. When no run carries it because another run's record
+replaced the launched one and no ledger row of it is left, the record that replaced it lists it
+(`replacedLaunches`, read by `_evidence_io.replaced_by`) and the drive says which run replaced
+it and launches the gate again (`replaced_gate`) rather than waiting; a relaunch prints the command again under a new token, and a mark holding no
 token, from a drive that handed out none, is never read back - a task's gate is launched again
 and a phase gate's launch is forgotten and its gate chosen again. A `next`
 before the launched run exists is `wait-gate`,
@@ -6941,7 +6968,7 @@ line endings on every platform; a rewrite goes through `_manifest_io.atomic_writ
 writes the platform's own, and every reader splits on either. `--json`'s payload also
 carries `planCost` (since P56.6): `_usage_economics.plan_cost_claim`, read against BOTH ledgers
 this command's project has — the usage ledger already loaded for everything else, and
-`_evidence_io.read_rows(project)` for the gate-scope and gate-reuse comparisons, which live in
+`_evidence_io.read_rows` over that manifest for the gate-scope and gate-reuse comparisons, which live in
 the OTHER, evidence, ledger. Unfiltered by the CLI's own `--since`/`--phase`/etc: the three
 comparisons it folds together are already narrow, so a window on top would only thin them
 further. It finds the manifest through `_manifest_io.resolve_manifest` (its own `resolve_manifest`

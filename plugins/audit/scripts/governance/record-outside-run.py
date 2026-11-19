@@ -216,7 +216,8 @@ def record_outside(project, manifest_path, label, started_at, ts, duration_ms,
                         "refused": "the row could not be appended (%s)" % (exc,)}
     rows = []
     try:
-        rows = _ev.read_rows(project, config=config)["rows"]
+        rows = _ev.read_rows(project, config=config,
+                             manifest_path=manifest_path)["rows"]
     except Exception:
         rows = []
     # WHO THIS ROW NOW CONTESTS, said on the run that writes it. The operator who

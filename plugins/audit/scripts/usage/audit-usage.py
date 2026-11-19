@@ -1231,7 +1231,12 @@ def main(argv):
             # comparisons this folds together are already narrow, and a
             # window on top would only thin them further.
             "planCost": ul.plan_cost_claim(
-                manifest, rows, _evidence_io.read_rows(project)["rows"]),
+                manifest, rows, _evidence_io.read_rows(
+                    project, manifest_path=(
+                        manifest_path if manifest_path is not None
+                        # No plan resolved: the configured path, which holds
+                        # no plan file and so no record - the ledger alone.
+                        else _evidence_io.plan_file_of(project)))["rows"]),
         }
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0

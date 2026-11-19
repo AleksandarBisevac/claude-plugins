@@ -1480,7 +1480,7 @@ def red_step_lines(ctx, manifest, phase, task, evidence):
     if not run_id:
         return ["red steps: not read - the task records no run"]
     try:
-        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+        rows = recorded_runs(ctx)["rows"]
     except Exception as exc:
         return ["red steps: not read - the ledger could not be read (%s)"
                 % (str(exc) or exc.__class__.__name__,)]
@@ -1580,6 +1580,15 @@ RETURN_ON_STDIN = ("Put the return object in place of the middle line and run "
 # constant and holds each agent definition filing through `submit` to carry
 # the same words after its own block.
 PRINTED_FILES_NOTHING = "Printing the return object as your reply files nothing."
+
+
+def recorded_runs(ctx):
+    """`_evidence_io.read_rows` over the ledger and the records of the plan
+    this lookup was handed - `ctx["manifest"]`, never the one the config
+    names, which in a project holding two plans is the other one."""
+    return _evio.read_rows(ctx["project"], ctx["config"],
+                           manifest_path=absolute_manifest(ctx["project"],
+                                                           ctx["manifest"]))
 
 
 def absolute_manifest(project, manifest, path=os.path):
@@ -2234,7 +2243,7 @@ def phase_brief_parts(manifest, phase, ctx):
         listed.append(task)
     rows, rows_why = [], ""
     try:
-        read = _evio.read_rows(ctx["project"], ctx["config"])
+        read = recorded_runs(ctx)
         rows = read["rows"]
     except Exception as exc:
         rows_why = str(exc) or exc.__class__.__name__
@@ -2587,7 +2596,7 @@ def write_brief(manifest, manifest_path, project_arg, node_id, role):
             return E_CONFIG, problem
         entries, _whose = _task_gate(manifest, phase, task)
         try:
-            rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+            rows = recorded_runs(ctx)["rows"]
         except Exception:                                      # noqa: BLE001
             # Advisory: a ledger that cannot be read measured nothing, and
             # every step then says it is unmeasured rather than passing as fast.
@@ -3006,7 +3015,8 @@ def main(argv):
             return E_USAGE
         project, config = _evio.project_config_for(args.manifest, args.project)
         try:
-            read = _evio.read_rows(project, config)
+            read = _evio.read_rows(project, config,
+                                   manifest_path=os.path.abspath(args.manifest))
         except Exception as exc:
             sys.stderr.write(
                 "audit-lookup.py: cannot read the evidence ledger: %s\n"

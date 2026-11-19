@@ -555,7 +555,7 @@ def learn_from_row(row, manifest_path, project, out):
 def learn(manifest_path, project, lines, started, out):
     """Act on the row a red run recorded; return how many verbs failed."""
     try:
-        ledger = _ev.read_rows(project)
+        ledger = _ev.read_rows(project, manifest_path=manifest_path)
     except Exception as exc:
         out("%s learned nothing: the evidence ledger could not be read (%s)"
             % (PREFIX, exc))
@@ -613,7 +613,7 @@ def learn_from(manifest_path, project, run_id, out):
     the command, so its failure is the answer. Exit 0 once it ran, including
     when it filed nothing, and the lines above the summary say why."""
     try:
-        ledger = _ev.read_rows(project)
+        ledger = _ev.read_rows(project, manifest_path=manifest_path)
     except Exception as exc:
         out("%s cannot learn from run %s: the evidence ledger could not be "
             "read (%s)" % (PREFIX, run_id, exc))

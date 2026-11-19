@@ -113,13 +113,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   repeated another run carries that run with it (`lastRun.repeatedRun`), so a repeat is followed
   to the run that measured it with no ledger row at all; a task commit binds to such a repeat
   from the record only while that carried run is there, and refuses as before when it is in
-  neither place. `import-evidence.py` refuses a run the plan holds only as a record as it refuses
-  a run the ledger holds, naming the plan file. The published schema describes every field a
-  record carries, `repeatedRun` included; nothing it accepted is refused. A missing evidence directory is said in a sentence naming it,
-  never as a count of zero files, and the two refusals above name it so. The step driver hands
-  each background gate a launch token (`--launch`) and reads back the run carrying it, never the
-  newest run it had not seen - a sibling's run of the same task is not its own; a launch marked
-  by an earlier drive, with no token, is not read back but launched or chosen again.
+  neither place. `import-evidence.py` refuses only a run the ledger already holds as a row: a
+  ledger file carrying a run the plan holds only as a record - the ordinary state of a plan that
+  travels with git while its evidence files do not - is imported, and the run is then read once,
+  as its row. Every reader is handed the plan its command was handed, never the one the config
+  names (`read_rows` refuses a call naming none), so in a project holding more than one plan a
+  run recorded for one is not reused for, bound to or found from another whose task ids
+  collide. The published schema describes every field a record carries, `repeatedRun`
+  included; nothing it accepted is refused. A record now carries every field its ledger row
+  carries but the few `RECORD_NOT_CARRIED` names with a reason - the followers a red owes, the
+  reach reading, the observations (what the run moved, the coverage comparison) - so a run held
+  only as a record answers the drive, the gate's repeat, the panel and the report as its row
+  would; a record over its byte bound drops the coverage paths first and says so. A repeat's
+  record holds each field equal to the run it carries once, in that run, and a whole repeat's
+  steps are derived from it rather than copied, so a repeat no longer weighs twice its source;
+  and the step names a count's basis samples are cut to the sample budget like every name
+  after them, so a gate whose step is a long command no longer copies that command into the
+  sentence whole. A missing
+  evidence directory is said in a sentence naming it, never as a count of zero files, and every
+  refusal of an unknown run names both places it looked; a plan shard that will not read is
+  named with its file by every reader of the plan's records - a task commit or a landing whose
+  subject's shard will not read is refused rather than bound to an older row. The step driver
+  hands each background gate a launch token (`--launch`), on the run's ledger row as on its
+  record, and reads back the run carrying it, never the newest run it had not seen - a
+  sibling's run of the same task is not its own; when another run's record replaced the
+  launched run's and no ledger row of it is left, the driver says which run replaced it and
+  launches the gate again rather than waiting; a launch marked by an earlier drive, with no
+  token, is not read back but launched or chosen again.
 - **A recorded run the plan holds no record of exits 3, red or green.** The record write
   waits behind another writer of the plan file rather than skipping it, and a record it still
   cannot write is exit 3 with a `record:` line naming the ledger file the run's row went to

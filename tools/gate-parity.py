@@ -1438,6 +1438,10 @@ AUDITED_EXEMPTIONS = {
     "SCHEMA_EXEMPTIONS": ("live", "schema_coverage"),
     "NOT_A_GATE": ("live", "coverage"),
     "PLUGIN_OWNED_IN_CLAUDE": ("live", "tests/test_commit_task_work.py ctw-at9"),
+    # The keys of a ledger row the plan's record does not carry: `rs2` reports an
+    # entry naming a key `row_for` cannot write, so a row outliving its key is red;
+    # the sentence beside each entry is not compared against anything.
+    "RECORD_NOT_CARRIED": ("live", "tests/test__evidence_io.py rs2"),
     "ALLOW_EXEMPT": ("live", "prove"),
     "PROSE_SCAN_EXEMPT": ("live", "prose_number_claims"),
     "CITATION_SCAN_EXEMPT": ("live", "register_citation_violations"),

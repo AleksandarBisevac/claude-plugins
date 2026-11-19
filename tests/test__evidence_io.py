@@ -1007,7 +1007,7 @@ def _cases(check):
               % (os.path.basename(recorded["path"]),),
               "ci-99" in os.path.basename(recorded["path"]))
 
-        back = M.read_rows(plain)
+        back = M.read_rows(plain, manifest_path=M.plan_file_of(plain))
         check("ev19 both rows read back, and the reader says how many files it "
               "walked - 'no rows' and 'no files' are different answers and a "
               "reader that returned a bare list could not tell them apart: %r"
@@ -1028,7 +1028,7 @@ def _cases(check):
 
         with open(path, "a", encoding="utf-8") as fh:
             fh.write("{not json at all\n")
-        torn = M.read_rows(plain)
+        torn = M.read_rows(plain, manifest_path=M.plan_file_of(plain))
         check("ev20b ...and a line that never became a row adds no entry, so "
               "`rowFiles` stays index-aligned with `rows`: %r"
               % ((len(torn["rows"]), len(torn.get("rowFiles") or [])),),
@@ -1041,7 +1041,7 @@ def _cases(check):
         with open(os.path.join(mid_dir, "2026-01.mid.jsonl"), "w",
                   encoding="utf-8") as fh:
             fh.write('{"runId": "M1"}\n{not json at all\n{"runId": "M2"}\n')
-        mid = M.read_rows(mid_proj)
+        mid = M.read_rows(mid_proj, manifest_path=M.plan_file_of(mid_proj))
         check("ev20c ...nor does an unparseable line in the MIDDLE of a file: "
               "`rowFiles` stays index-aligned with `rows`: %r"
               % ((mid["unreadable"], mid.get("rowFiles")),),
@@ -1055,7 +1055,8 @@ def _cases(check):
               % ((len(torn["rows"]), torn["unreadable"]),),
               len(torn["rows"]) == 2 and torn["unreadable"] == 1)
 
-        empty = M.read_rows(os.path.join(tmp, "nothing-here"))
+        nothing = os.path.join(tmp, "nothing-here")
+        empty = M.read_rows(nothing, manifest_path=M.plan_file_of(nothing))
         check("ev21 a directory that is not there reads as no files and no "
               "rows, without raising - a reader is asked this on a repo that "
               "has never recorded anything, and an exception there would take "
@@ -1073,7 +1074,7 @@ def _cases(check):
         bad_path = os.path.join(bad_dir, "2026-01.bad.jsonl")
         with open(bad_path, "wb") as fh:
             fh.write(b'{"runId": "B-clean"}\n{"runId": "B-\xffmoved"}\n')
-        bad_read = M.read_rows(bad_proj)
+        bad_read = M.read_rows(bad_proj, manifest_path=M.plan_file_of(bad_proj))
         bad_verdict = M.verify(bad_proj)
         replaced = [r for r in bad_read["rows"] if "�" in json.dumps(
             r, ensure_ascii=False)]
@@ -1109,7 +1110,7 @@ def _cases(check):
         with open(os.path.join(uni_dir, "2026-01.uni.jsonl"), "w",
                   encoding="utf-8") as fh:
             fh.write('{"runId": "U-ćevap — été"}\n')
-        uni_read = M.read_rows(uni_proj)
+        uni_read = M.read_rows(uni_proj, manifest_path=M.plan_file_of(uni_proj))
         uni_verdict = M.verify(uni_proj)
         check("ev21d ALLOW: a clean UTF-8 file with non-ASCII text reads as "
               "before - its row returned intact, nothing lost, no finding: %r"
@@ -1845,7 +1846,8 @@ def _cases(check):
         orphan = _manifest_project("orphan")[0]
         M.append_row(orphan, {"v": 1, "runId": "RX", "ts": "2026-08-26T09:00:00Z",
                               "scope": "task", "status": "passed", "steps": []})
-        best = M.latest_by_subject(M.read_rows(orphan)["rows"])
+        best = M.latest_by_subject(M.read_rows(
+            orphan, manifest_path=M.plan_file_of(orphan))["rows"])
         check("ed14 a row that names no subject is SKIPPED, never guessed at - "
               "it cannot be pointed at anything, and inventing one would put a "
               "pointer on a task that never ran: %r" % (list(best),),
@@ -3043,7 +3045,7 @@ def _worktree_ledger_cases(check):
     check("ew3 merging both worktree branches into main raises no evidence "
           "conflict", all(m.returncode == 0 for m in merges),
           repr([(m.returncode, m.stdout[-200:]) for m in merges]))
-    read = M.read_rows(main)
+    read = M.read_rows(main, manifest_path=M.plan_file_of(main))
     check("ew4 every name is read: read_rows walks all three files, and the "
           "merged ledger verifies",
           read["files"] == 3 and sorted(r["runId"] for r in read["rows"])
@@ -4243,7 +4245,7 @@ def _runnable_full_gate_cases(check):
               == _manifest_vocab.FULL_STATUS_PROVISIONAL)
         row = _rfg_green_row(root, head, ["true"])
         declared = [c for _n, c in _rfg_gate(mixed)["commands"]]
-        rows = M.read_rows(root)["rows"]
+        rows = M.read_rows(root, manifest_path=mpath)["rows"]
         check("rfg6 RED-FIRST: the green [true] run is a whole run for "
               "_full_disqualification and full_status against the runnable "
               "gate: %r" % ((M._full_disqualification(row, declared),
@@ -4372,7 +4374,7 @@ def _tree_key_cases(check):
         lines = []
         code = rtg.main([mpath, "P1", "--project-dir", project, "--record",
                          "--tree", tree], out=lines.append)
-        rows = M.read_rows(project)["rows"]
+        rows = M.read_rows(project, manifest_path=mpath)["rows"]
         written = ((rows[-1].get("testedState") or {}).get("tree") or {}
                    ).get("key") if rows else None
         keys.append(written)
@@ -5281,8 +5283,10 @@ def _last_run_cases(check):
         bound = M.MAX_STEPS * per_step + 4000
         check("lr7 the record's size is bounded by the gate's width: steps cut "
               "at MAX_STEPS with the cut counted, failing lines per step cut at "
-              "MAX_FAILING and each at the journal's value bound, a step key the "
-              "record does not carry left off - %d bytes against a bound of %d: "
+              "MAX_FAILING and each at the journal's value bound, and every "
+              "other key a row's step carries kept as the row holds it (the "
+              "record carries what a reader of the row reads, "
+              "RECORD_NOT_CARRIED) - %d bytes against a bound of %d: "
               "%r" % (size, bound, (len(big.get("steps") or []),
                                     big.get("stepsDropped"))),
               len(big.get("steps") or []) == M.MAX_STEPS
@@ -5291,7 +5295,7 @@ def _last_run_cases(check):
                       for s in big["steps"])
               and all(len(ln) <= _journal_io.MAX_VALUE_CHARS
                       for s in big["steps"] for ln in s.get("failing") or [])
-              and not any("teardown" in s for s in big["steps"])
+              and all(s.get("teardown") == "noise" for s in big["steps"])
               and 0 < size <= bound)
         sroot, smpath, sspath = _lr_project(tmp, "scrub")
         raw = dict(rec or {}, runId="R4", steps=[
@@ -5412,7 +5416,9 @@ def _repeat_record_cases(check):
         M.write_record(root, mpath, "task", ids, M.run_record(measured))
         bare = M.run_record(repeat)
         got = M.write_record(root, mpath, "task", ids, bare)
-        rec = _rv_task(spath).get("lastRun") or {}
+        # As a reader resolves it: a whole repeat stores its copied steps once,
+        # in the run it carries (`resolved_shared`, the rule `record_row` asks).
+        rec = M.resolved_shared(_rv_task(spath).get("lastRun") or {})
         check("rv1 SOURCE IN THE REPLACED RECORD: a whole repeat built with no "
               "source carries the steps of the record it replaces - each "
               "naming RM, none keeping a duration of its own - and RM whole "
@@ -5442,7 +5448,7 @@ def _repeat_record_cases(check):
         M.write_record(root2, mpath2, "task", ids, M.run_record(other))
         M.write_record(root2, mpath2, "task", ids,
                        M.run_record(repeat, source=measured))
-        rec2 = _rv_task(spath2).get("lastRun") or {}
+        rec2 = M.resolved_shared(_rv_task(spath2).get("lastRun") or {})
         check("rv2 SOURCE ONLY IN THE LEDGER: the record replaced is another "
               "run (RX), so the steps come from RM's ledger row handed as the "
               "source - RM's step, naming RM, and RM under `repeatedRun`, "
@@ -5762,11 +5768,11 @@ def _one_reader_cases(check):
     records as from the older ledger rows they replace."""
     tmp = _harness.fixture_root("audit-evidence-onereader-")
     try:
-        rroot, _rm, _rs = ri_fixture(tmp, "rows", rows=True, records=False)
-        croot, _cm, _cs = ri_fixture(tmp, "records", rows=False, records=True)
-        broot, _bm, bshards = ri_fixture(tmp, "both", rows=True, records=True)
-        from_rows = M.read_rows(rroot)
-        from_records = M.read_rows(croot)
+        rroot, rm, _rs = ri_fixture(tmp, "rows", rows=True, records=False)
+        croot, cm, _cs = ri_fixture(tmp, "records", rows=False, records=True)
+        broot, bm, bshards = ri_fixture(tmp, "both", rows=True, records=True)
+        from_rows = M.read_rows(rroot, manifest_path=rm)
+        from_records = M.read_rows(croot, manifest_path=cm)
         a_rows = ri_answers(from_rows["rows"])
         a_records = ri_answers(from_records["rows"])
         differ = sorted(k for k in a_rows if a_rows[k] != a_records.get(k))
@@ -5804,7 +5810,7 @@ def _one_reader_cases(check):
                               "sha256:k9"),
             "task", {"taskId": "P1.4", "phaseId": "P1"},
             {"runId": "R9", "ts": "2026-11-18T10:30:00Z"})))
-        both = M.read_rows(broot)
+        both = M.read_rows(broot, manifest_path=bm)
         ids = [str(r.get("runId")) for r in both["rows"]]
         where = dict((str(r.get("runId")), (src, f)) for r, src, f in zip(
             both["rows"], both.get("rowSources") or [], both["rowFiles"]))
@@ -5850,7 +5856,7 @@ def _one_reader_cases(check):
                        "tasks": [], M.RECORD_KEY: dict(carried, gradedBy="P1"),
                        M.POINTER_KEY: dict(M.pointer_from_record(carried),
                                            gradedBy="P1")}, fh)
-        sevens = [r for r in M.read_rows(groot)["rows"]
+        sevens = [r for r in M.read_rows(groot, manifest_path=gmpath)["rows"]
                   if r.get("runId") == "R7"]
         check("ri7 a group member's copy of its carrier's record is the SAME "
               "run, read once and under the carrier - as the ledger holds it "
@@ -5859,12 +5865,12 @@ def _one_reader_cases(check):
               len(sevens) == 1 and sevens[0].get("phaseId") == "P1"
               and sevens[0].get("scope") == "phase")
         # --- a repeat whose source the record does not hold ---------------
-        nroot, _nm, nshards = ri_fixture(tmp, "bare-repeat", rows=False)
+        nroot, nm, nshards = ri_fixture(tmp, "bare-repeat", rows=False)
         with io.open(nshards["P1"], encoding="utf-8") as fh:
             bare = dict(json.load(fh)["tasks"][0][M.RECORD_KEY], steps=[])
         bare.pop(getattr(M, "REPEATED_RUN_KEY", "repeatedRun"), None)
         ri_put_record(nshards["P1"], "P1.1", bare)
-        lone = M.read_rows(nroot)["rows"]
+        lone = M.read_rows(nroot, manifest_path=nm)["rows"]
         repeat = M.row_by_run(lone, "R2") or {}
         check("ri8 a repeat whose record holds neither its source run nor its "
               "steps is read as the repeat it is - never as a measurement a "
@@ -5880,9 +5886,302 @@ def _one_reader_cases(check):
         _harness.remove_tree(tmp)
 
 
+# --- the record carries what a reader of the seam reads ------------------------
+def _rs_row_for_keys():
+    """Every top-level key `row_for` can write, read off its source: the keys
+    of the dict it builds, each `row[<constant>] = ...`, and each `row[key]`
+    whose `key` a loop takes from a tuple of constants. Read off the code
+    rather than a run, because most keys are written only when a run has
+    something to say, and a fixture would have to know every such case."""
+    import ast
+    with io.open(M.__file__, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    consts = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 \
+                and isinstance(node.targets[0], ast.Name) \
+                and isinstance(node.value, ast.Constant) \
+                and isinstance(node.value.value, str):
+            consts[node.targets[0].id] = node.value.value
+    fn = [n for n in tree.body
+          if isinstance(n, ast.FunctionDef) and n.name == "row_for"][0]
+
+    def word(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.Name):
+            return consts.get(node.id)
+        return None
+    # Every loop over a tuple of constants under one variable name, unioned:
+    # two loops may reuse a name, and a key either one writes is writable.
+    found, loops = set(), {}
+    for node in ast.walk(fn):
+        if isinstance(node, ast.For) and isinstance(node.target, ast.Name) \
+                and isinstance(node.iter, ast.Tuple):
+            loops.setdefault(node.target.id, []).extend(
+                word(e) for e in node.iter.elts)
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            if isinstance(target, ast.Name) and target.id == "row" \
+                    and isinstance(node.value, ast.Dict):
+                found.update(word(k) for k in node.value.keys)
+            if isinstance(target, ast.Subscript) \
+                    and isinstance(target.value, ast.Name) \
+                    and target.value.id == "row":
+                index = target.slice
+                if type(index).__name__ == "Index":       # the 3.8 wrapper
+                    index = index.value
+                if isinstance(index, ast.Name) and index.id in loops:
+                    found.update(loops[index.id])
+                else:
+                    found.add(word(index))
+    return found
+
+
+def _rs_full_result():
+    """A gate result carrying every field a run can leave on its row - the
+    fields the record went without."""
+    steps = [_ri_step("sweep", exit_code=1, ms=2000,
+                      failingSuites=["tests/test_a.py"],
+                      failingSuitesBasis=M.NAMED_FAILING + " by the summary",
+                      outcomeBasis="exit 1", timeoutSeconds=600)]
+    out = _ri_result("failed", steps, _ri_state(RI_H1, False, "sha256:s"),
+                     "sha256:kfull", verdict=M.PART_REUSED,
+                     reused={"runId": "RS", "ts": "2026-11-18T10:00:00Z",
+                             "status": "passed"})
+    out.update({
+        M.SELECTION_KEY: 120, M.BASE_OF_KEY: "RT",
+        "ranTotal": 3, "countsBasis": "3 checks the runner counted",
+        "treeMutated": [" M src/moved.py"],
+        "treeBasis": "1 changed path; 1 of 1 changed path(s) are declared",
+        "overlap": ["src/moved.py", "src/other.py"],
+        "coverageBasis": "2 path(s) the runner named",
+        M.FOLLOWERS_KEY: [{"path": "docs/x.html", "recipe": "make x",
+                           "owner": "tools/check-rendered-artifacts.py"}],
+        "followersUnread": 1,
+        M.GATE_REACH_KEY: {"gaps": [{"path": "src/lonely.py",
+                                     "why": "no suite reached it",
+                                     "suites": []}]},
+        M.GATE_REACH_NOT_ASKED_KEY: "the reach was read for the declared "
+                                    "files only",
+        "cancelledBy": "SIGTERM",
+        "attributionBasis": "the tree was dirty outside the work",
+        M.BASE_RED_KEY: {"run": "RB", "head": RI_H0, "task": "P1.9",
+                         "verdict": "introduced", "atBase": [],
+                         "introduced": ["tests/test_a.py"], "unknown": [],
+                         "basis": "base run RB passed it"},
+        "muted": [{"test": "tests/test_m.py", "bugId": "BUG-1",
+                   "until": "2026-12-01"}],
+        "narrowed": {"listed": 2, "full": 9},
+        "shadow": {"listed": 2, "full": 9, "missed": ["tests/test_z.py"]},
+        M.LEFT_TO_PHASE_GATE_KEY: [{"name": "e2e", "arm": "declared",
+                                    "basis": "phaseGateOnly", "matched": "e2e"}],
+        "groupWith": ["P2"]})
+    return out
+
+
+def _record_sufficiency_cases(check):
+    """(rs) The record carries what a reader of the one seam reads off a row:
+    every key `row_for` can write is carried, or named in
+    `RECORD_NOT_CARRIED` with the reason no reader of the seam needs it off a
+    record; and a run read back from its record alone answers each carried
+    key as its ledger row does."""
+    tmp = _harness.fixture_root("audit-evidence-sufficient-")
+    try:
+        root = os.path.join(tmp, "p")
+        ri_plan(root)
+        skipped = getattr(M, "RECORD_NOT_CARRIED", None)
+        writable = _rs_row_for_keys()
+        row = M.row_for(root, _rs_full_result(), "task",
+                        {"taskId": "P1.1", "phaseId": "P1"},
+                        {"runId": "RF", "ts": "2026-11-18T11:00:00Z",
+                         "startedAt": "2026-11-18T10:59:00Z", "via": "cli",
+                         "attempt": 2, "sessionId": "s-1",
+                         M.RUNNER_KEY: M.RUNNER_GATE,
+                         "launch": "tok-RF"})
+        back = M.record_row(M.run_record(row), "task", "P1.1", "P1")
+        # The counts of what a row cut are written only when something was
+        # cut, so a second row cuts every capped list once.
+        many = dict(_rs_full_result(),
+                    treeMutated=[" M src/m%d.py" % i
+                                 for i in range(M.MAX_PATHS + 2)],
+                    overlap=["src/o%d.py" % i for i in range(M.MAX_PATHS + 3)])
+        many["steps"] = [_ri_step("s%d" % i) for i in range(M.MAX_STEPS + 1)]
+        cut_row = M.row_for(root, many, "task",
+                            {"taskId": "P1.1", "phaseId": "P1"},
+                            {"runId": "RC", "ts": "2026-11-18T11:30:00Z"})
+        cut_back = M.record_row(M.run_record(cut_row), "task", "P1.1", "P1")
+        lost = sorted(set(
+            [k for k in row if k not in (skipped or {})
+             and back.get(k) != row[k]]
+            + ["%s (cut row)" % k for k in cut_row
+               if k not in (skipped or {}) and cut_back.get(k) != cut_row[k]]))
+        check("rs1 THE TABLE: every key `row_for` can write is either named in "
+              "RECORD_NOT_CARRIED with a reason or written by one of this "
+              "case's two rows, so rs3 asks it of a record - neither: %r"
+              % (sorted(k for k in writable if k is not None
+                        and k not in (skipped or {}) and k not in row
+                        and k not in cut_row),),
+              isinstance(skipped, dict) and None not in writable
+              and all(isinstance(v, str) and len(v) > 20
+                      for v in skipped.values())
+              and all(k in row or k in cut_row or k in skipped
+                      for k in writable))
+        check("rs2 ...and the table names no key the row cannot carry - a "
+              "stale entry would excuse a key nobody writes: %r"
+              % (sorted(k for k in (skipped or {}) if k not in writable
+                        and k not in M.CHAIN_KEYS),),
+              isinstance(skipped, dict)
+              and all(k in writable or k in M.CHAIN_KEYS for k in skipped))
+        check("rs3 a run read back from its RECORD alone answers every key it "
+              "carries as its ledger row does - followers owed, the reach "
+              "reading, the observations (tree moved, coverage), the base "
+              "reading, the mutes - differing: %r" % (lost,),
+              isinstance(skipped, dict) and lost == []
+              and back.get(M.FOLLOWERS_KEY) == row.get(M.FOLLOWERS_KEY)
+              and (back.get("observations") or {}).get("coverage")
+              == ["src/moved.py", "src/other.py"]
+              and back.get("treeMutated") == ["src/moved.py"]
+              and back.get(M.GATE_REACH_KEY) == row.get(M.GATE_REACH_KEY)
+              and back.get("launch") == "tok-RF")
+        # --- the bound, and what goes first -------------------------------
+        bound = getattr(M, "RECORD_MAX_BYTES", None)
+        order = list(getattr(M, "RECORD_CUT_ORDER", ()) or ())
+        wide = dict(_rs_full_result(), overlap=[
+            "src/%s/%s.py" % ("d" * 40, i) for i in range(M.MAX_PATHS)])
+        big = M.row_for(root, wide, "task", {"taskId": "P1.1", "phaseId": "P1"},
+                        {"runId": "RW", "ts": "2026-11-18T11:00:00Z"})
+        record = M.run_record(big, bound=(len(json.dumps(
+            M.run_record(big, bound=10 ** 9), separators=(",", ":"))) - 1)
+            if bound is not None else None)
+        cut = record.get(getattr(M, "RECORD_CUT_KEY", "recordCut"))
+        read = M.record_row(record, "task", "P1.1", "P1")
+        check("rs4 A RECORD OVER ITS BOUND drops the first field of "
+              "RECORD_CUT_ORDER - the coverage paths, which are reported and "
+              "decide nothing - says so on the record, and its reader reads "
+              "that field as cut, with a basis naming the bound, never as no "
+              "comparison made: %r" % ((bound, order[:2], cut,
+                                        (read.get("observations") or {})),),
+              isinstance(bound, int) and "observations.coverage" in order
+              and order.index("observations.coverage")
+              < order.index("observations.treeMutated")
+              and cut == ["observations.coverage"]
+              and (read.get("observations") or {}).get("coverage") is None
+              and "RECORD_MAX_BYTES" in str(
+                  (read.get("observations") or {}).get("coverageBasis"))
+              and read.get("treeMutated") == ["src/moved.py"])
+        small = M.run_record(row)
+        check("rs5 SECOND DIRECTION: a record under its bound is cut nothing "
+              "and says nothing about a cut - the case that fails if every "
+              "record were cut: %r" % (sorted(small),),
+              getattr(M, "RECORD_CUT_KEY", "recordCut") not in small
+              and (small.get("observations") or {}).get("coverage")
+              == ["src/moved.py", "src/other.py"])
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _sh_rows(root, reach_of_repeat):
+    """`(source row, whole repeat row)`: a measured run carrying a reach
+    reading and observations, and a whole repeat of it whose reach reading is
+    `reach_of_repeat` and whose observations are the source's."""
+    ids = {"taskId": "P1.1", "phaseId": "P1"}
+    state = _ri_state(RI_H1, False, "sha256:s")
+    obs = {"ranTotal": 3, "countsBasis": "3 checks the runner counted",
+           "overlap": ["src/%s/o%d.py" % ("d" * 30, i) for i in range(4)],
+           "coverageBasis": "4 path(s) the runner named"}
+    measured = _ri_result("passed", [_ri_step("sweep")], state, "sha256:k")
+    measured.update(obs, **{M.GATE_REACH_KEY: _sh_reach("a")})
+    source = M.row_for(root, measured, "task", ids,
+                       {"runId": "RS", "ts": "2026-11-18T10:00:00Z"})
+    repeat = _ri_result("passed", [], state, "sha256:k", verdict=M.REUSED,
+                        reused={"runId": "RS", "ts": "2026-11-18T10:00:00Z",
+                                "status": "passed"})
+    repeat.update(obs, **{M.GATE_REACH_KEY: reach_of_repeat})
+    row = M.row_for(root, repeat, "task", ids,
+                    {"runId": "RR", "ts": "2026-11-18T10:05:00Z"})
+    return source, row
+
+
+def _sh_reach(tag):
+    return {"gaps": [{"path": "src/%s/lonely%d.py" % (tag, i),
+                      "why": "no suite reached it", "suites": []}
+                     for i in range(6)]}
+
+
+def _shared_subtree_cases(check):
+    """(sh) A repeat's record stores a subtree it shares with the run it
+    carries once, and a reader of either place reads what it read before."""
+    tmp = _harness.fixture_root("audit-evidence-shared-")
+    key = getattr(M, "SHARED_KEY", "sharedWithRepeated")
+    try:
+        root = os.path.join(tmp, "p")
+        ri_plan(root)
+        source, row = _sh_rows(root, _sh_reach("a"))
+        stored = M.run_record(row, source=source)
+        # The record as it was written before the rule: carried and bounded,
+        # every subtree in both places.
+        whole = M.bounded_record(M.repeat_carried(M._record_of(row), source),
+                                 M.RECORD_MAX_BYTES)
+        read = [M.record_row(r, "task", "P1.1", "P1") for r in (stored, whole)]
+        carried = [M.record_row(r[M.REPEATED_RUN_KEY], "task", "P1.1", "P1")
+                   for r in (stored, whole)]
+        check("sh1 STORED ONCE: a whole repeat's reach reading, equal to the "
+              "run it carries, is held only there and named under the shared "
+              "key - the record is smaller - and a reader of the repeat and a "
+              "reader of the run it carries each read exactly what they read "
+              "off the record holding both copies: %r"
+              % ((stored.get(key), M.record_bytes(stored),
+                  M.record_bytes(whole), read[0] == read[1],
+                  carried[0] == carried[1]),),
+              M.GATE_REACH_KEY in (stored.get(key) or [])
+              and M.GATE_REACH_KEY not in stored
+              # A whole repeat's steps are the carried run's: derived again,
+              # each naming that run, rather than held twice.
+              and "steps" in (stored.get(key) or []) and "steps" not in stored
+              and [s.get(M.STEP_REUSED_KEY) for s in read[0]["steps"]]
+              == [{"runId": "RS", "ts": "2026-11-18T10:00:00Z"}]
+              and M.record_bytes(stored) < M.record_bytes(whole)
+              and read[0] == read[1] and carried[0] == carried[1]
+              and read[0].get(M.GATE_REACH_KEY) == row.get(M.GATE_REACH_KEY)
+              and key not in read[0])
+        source2, row2 = _sh_rows(root, _sh_reach("b"))
+        differ = M.run_record(row2, source=source2)
+        back = M.record_row(differ, "task", "P1.1", "P1")
+        check("sh2 THEY DIFFER, BOTH KEPT: a repeat whose reach reading is not "
+              "the carried run's keeps its own beside it, the shared key "
+              "names no such path, and each reader reads its own: %r"
+              % ((differ.get(key), sorted(differ)),),
+              M.GATE_REACH_KEY in differ
+              and M.GATE_REACH_KEY not in (differ.get(key) or [])
+              and back.get(M.GATE_REACH_KEY) == _sh_reach("b")
+              and differ[M.REPEATED_RUN_KEY].get(M.GATE_REACH_KEY)
+              == _sh_reach("a"))
+        measured = M.run_record(source)
+        check("sh3 SECOND DIRECTION: a measured run carries no run, so its "
+              "record shares nothing and names no shared path - the case that "
+              "fails if every record were rewritten: %r" % (sorted(measured),),
+              key not in measured
+              and measured.get(M.GATE_REACH_KEY) == source.get(M.GATE_REACH_KEY))
+        torn = json.loads(json.dumps(stored))
+        torn[M.REPEATED_RUN_KEY].pop(M.GATE_REACH_KEY, None)
+        lost = M.record_row(torn, "task", "P1.1", "P1")
+        unresolved = getattr(M, "SHARED_UNRESOLVED_KEY", "sharedUnresolved")
+        check("sh4 A SHARED PATH THE CARRIED RUN NO LONGER HOLDS is named as "
+              "not given back, never read as a run with no reach reading said "
+              "nothing about: %r" % ((lost.get(unresolved),),),
+              lost.get(unresolved) == [M.GATE_REACH_KEY]
+              and M.GATE_REACH_KEY not in lost)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _selftest():
     def body(check):
         _harness.stage(check, "ev-block", _cases)
+        _harness.stage(check, "rs-block", _record_sufficiency_cases)
+        _harness.stage(check, "sh-block", _shared_subtree_cases)
         _harness.stage(check, "lr-block", _last_run_cases)
         _harness.stage(check, "rv-block", _repeat_record_cases)
         _harness.stage(check, "lk-block", _shard_lock_ast_cases)

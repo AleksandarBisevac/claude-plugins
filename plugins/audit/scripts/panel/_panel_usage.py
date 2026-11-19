@@ -373,7 +373,8 @@ def _gate_catches_payload(project, config):
         manifest_path = _manifest_path(project, config)
         eproject, econfig = _evidence_io.project_config_for(
             manifest_path, project_dir=project)
-        read = _evidence_io.read_rows(eproject, econfig)
+        read = _evidence_io.read_rows(eproject, econfig,
+                                      manifest_path=manifest_path)
         if read.get("unreadable"):
             return _gate_catches_read_error(
                 "%s ledger file(s) or line(s) could not be read"

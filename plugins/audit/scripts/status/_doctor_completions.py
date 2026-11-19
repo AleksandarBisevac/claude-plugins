@@ -152,7 +152,10 @@ def check_evidence_pointers(rep, project, manifest):
                     and block.get("runId"):
                 pointers.append((scope, subject, block["runId"]))
     try:
-        read = _evidence_io.read_rows(project)
+        # The doctor is handed no plan of its own: it diagnoses the one the
+        # project's config names, so that is the plan whose records are read.
+        read = _evidence_io.read_rows(
+            project, manifest_path=_evidence_io.plan_file_of(project))
         # Through `movedFrom`: a run recorded under a moved task's old id is that
         # task's run, not a subject the plan no longer has.
         latest = _evidence_io.latest_by_subject(

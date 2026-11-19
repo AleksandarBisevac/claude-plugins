@@ -8813,7 +8813,8 @@ def _group_cases(check):
 
         # ---- (ve) ONE verdict-binding rule: sign-off grades as a task commit does
         def ve_rows(proj):
-            return _ve_evidence.read_rows(proj)["rows"]
+            return _ve_evidence.read_rows(
+                proj, manifest_path=_ve_evidence.plan_file_of(proj))["rows"]
         import _evidence_io as _ve_evidence
         v1_proj, v1_mp, _v1 = gs_fixture("ve-reuse")
         gs_gate(v1_proj, v1_mp, "P1")
@@ -11773,7 +11774,8 @@ def _record_cases(check):
         check("ff4 ALLOW CASE: an unknown runId is refused exit 2, naming NO "
               "run rather than handing back the ordinary derivation in "
               "silence: %r" % (txtff[:120],),
-              codeff == 2 and "no run with this id" in txtff
+              codeff == 2 and "no run NO-SUCH-RUN is in the evidence ledger"
+              in txtff and "in any record the plan" in txtff
               and task_in(ff_mp, "P1.5") is None)
 
         # ---- a torn ledger line: the run is not called absent ---------------
@@ -11845,7 +11847,7 @@ def _record_cases(check):
                                  "bugId": "BUG-1",
                                  "until": "2999-01-01"}]}]})
         _ff_muted_row = _ff_ev.row_by_run(
-            _ff_ev.read_rows(ff_proj)["rows"], "RUN-MUTED")
+            _ff_ev.read_rows(ff_proj, manifest_path=ff_mp)["rows"], "RUN-MUTED")
         codeff, txtff = run(
             ["add", "Fix beside a quarantine", "--phase", "P1",
              "--project-dir", ff_proj, "--failing-from", "RUN-MUTED",
@@ -12358,7 +12360,8 @@ def _record_cases(check):
         check("cp3 ALLOW CASE: --basis-run naming a run the evidence ledger "
               "does not hold is refused exit 2, and nothing is written -- a "
               "coupling says what taught it: %r" % (txtcp3[:140],),
-              codecp3 == 2 and "no run with this id" in txtcp3
+              codecp3 == 2 and "no run NO-SUCH-RUN is in the evidence ledger"
+              in txtcp3 and "in any record the plan" in txtcp3
               and len(cp_coupling(cp_mp)) == 1)
 
         # ---- ALLOW CASE: --test naming no real path is refused -------------
@@ -12531,7 +12534,8 @@ def _record_cases(check):
              "--project-dir", cc_proj])
         check("cc8 ALLOW CASE: an unknown runId is refused exit 2: %r"
               % ((codecc8, txtcc8[:200]),),
-              codecc8 == 2 and "no run with this id" in txtcc8)
+              codecc8 == 2 and "no run NO-SUCH-RUN is in the evidence ledger"
+              in txtcc8 and "in any record the plan" in txtcc8)
         cc_row("RUN-CC-OLD", "2026-09-02T00:00:00Z", "full",
                ["tests/test_c.py"], _cc_named)
         codecc9, txtcc9 = run(
@@ -23846,8 +23850,11 @@ def _group_record_cases(check):
               "steps, each naming it, and no unread marker - the source was one "
               "lookup away: %r" % (got,),
               carried.get("runId") == "RS"
+              # As a reader resolves it: the copied steps are stored once, in
+              # the run the copy carries.
               and [(s.get("name"), (s.get("reusedFrom") or {}).get("runId"))
-                   for s in (got or {}).get("steps") or []] == [("sweep", "RS")]
+                   for s in _evidence_io.resolved_shared(got or {}).get("steps")
+                   or []] == [("sweep", "RS")]
               and unread not in (got or {}))
         bare_proj, bare_mpath = project("bare", [])
         none = M._group_record(bare_proj, bare_mpath, None, {"id": "P1"},

@@ -387,10 +387,33 @@ def red_after_green(rows):
 
 
 def plan_records(project, manifest_path):
-    """`[(row, label)]` - the records the plan at `manifest_path` holds, each
-    in its run's row shape (`_evidence_io.records_of_bodies`)."""
-    return _evidence_io.records_of_bodies(
-        _evidence_io.plan_bodies(manifest_path, project)[0])
+    """`(records, unreadable)` - the records the plan at `manifest_path`
+    holds, each in its run's row shape (`_evidence_io.records_of_bodies`),
+    and the label of each plan file that would not read (`plan_bodies`)."""
+    bodies, lost = _evidence_io.plan_bodies(manifest_path, project)
+    return _evidence_io.records_of_bodies(bodies), lost
+
+
+def subject_file_lost(lost, manifest_path, phase_id):
+    """The labels among `lost` (plan files that would not read) that could
+    hold the record of a subject of phase `phase_id`: the file its phase
+    lives in - its shard, or the one file - matched by that file's path
+    under the plan's directory, so a label read off the disk and one read at
+    a branch tip (`branch:path`) are matched alike; every lost label when
+    the index itself names no such file, since the index is then what was
+    lost."""
+    if not lost:
+        return []
+    try:
+        path, _sharded = _evidence_io._phase_file(manifest_path, phase_id)
+    except Exception:                                          # noqa: BLE001
+        path = None
+    if not path:
+        return list(lost)
+    tail = os.path.relpath(path, os.path.dirname(
+        os.path.abspath(manifest_path))).replace(os.sep, "/")
+    return [label for label in lost
+            if str(label).replace(os.sep, "/").split(":")[-1].endswith(tail)]
 
 
 def subject_runs(texts, records):
@@ -401,7 +424,7 @@ def subject_runs(texts, records):
 
 def binding(project, ids, entries, source, owns, manifest_path, record,
             no_gate, config=None, build=None, texts=None, digest_root=None,
-            records=None):
+            records=None, records_lost=()):
     """`{"state", "sentence", "row", "measured", "notes"}` - whether the subject's
     newest recorded verdict binds the declared work `owns` as it stands now.
 
@@ -409,8 +432,11 @@ def binding(project, ids, entries, source, owns, manifest_path, record,
     one under `project` - a landing reads the branch it would merge - and
     `digest_root` the tree whose declared files the digest is taken over when
     that is not `project` either. `records` is the plan's records to read
-    beside it (`plan_records`' shape) when they are not the ones the plan at
-    `manifest_path` holds - the branch's, for a landing.
+    beside it (`plan_records`' first half) when they are not the ones the
+    plan at `manifest_path` holds - the branch's, for a landing - and
+    `records_lost` the plan files that read could not read; a lost file
+    holding this subject's record refuses (`ARM_UNREADABLE`), as a ledger
+    file lost whole does.
 
     THE RECORDS ARE RUNS AS THE ROWS ARE: the newest run of the subject is
     read from the union, so a plan whose ledger holds no row of a run its
@@ -441,7 +467,21 @@ def binding(project, ids, entries, source, owns, manifest_path, record,
         out["arm"] = ARM_UNREADABLE
         return out
     if records is None:
-        records = plan_records(project, manifest_path)
+        records, records_lost = plan_records(project, manifest_path)
+    # A PLAN FILE THAT WOULD NOT READ BLOCKS AS A LOST LEDGER FILE DOES, when
+    # it is the file this subject's record lives in: its newest run may be
+    # the record that read lost, and an older row read in its place is a
+    # verdict nobody can say is the newest.
+    lost_here = subject_file_lost(records_lost, manifest_path, ids.get("phaseId"))
+    if lost_here:
+        out["sentence"] = (
+            "the plan file %s, which holds %s's record, could not be read, so "
+            "%s's newest run - the record that read lost - is not established "
+            "and no verdict found in the evidence ledger can stand for it; "
+            "repair the file (`validate-manifest.py` names what is wrong with "
+            "it) and %s" % (", ".join(lost_here), who, who, record))
+        out["arm"] = ARM_UNREADABLE
+        return out
     ledger = {"rows": subject_runs(texts, records)}
     rows = [r for r in ledger["rows"]
             if isinstance(r, dict) and _evidence_io._same_subject(r, ids)]
@@ -452,7 +492,8 @@ def binding(project, ids, entries, source, owns, manifest_path, record,
                if _evidence_io.stamp_moment(r.get("ts")) is None]
     if undated:
         out["sentence"] = (
-            "the evidence ledger holds %s row(s) whose ts names no moment - %s "
+            "the evidence ledger and the plan's records hold %s run(s) whose ts "
+            "names no moment - %s "
             "- so none of them can be placed before or after the others and "
             "any could be %s's newest verdict; the verdict it stands under is "
             "not established. `%s` shows the ledger; repair the ts or remove "
@@ -629,17 +670,18 @@ def task_binding(project, manifest_path, manifest, phase, task, record, no_gate,
 
 def phase_binding(project, manifest_path, manifest, phase, files, record,
                   no_gate, config=None, texts=None, digest_root=None,
-                  records=None):
+                  records=None, records_lost=()):
     """`binding` for `phase`'s own gate over `files` - its task files, or a
-    group's union when `phase` carries a group's one run. `texts`, `records`
-    and `digest_root` are `binding`'s: the ledger, the plan's records and the
-    tree being judged when they are not the ones under `project`."""
+    group's union when `phase` carries a group's one run. `texts`, `records`,
+    `records_lost` and `digest_root` are `binding`'s: the ledger, the plan's
+    records, the plan files that would not read, and the tree being judged
+    when they are not the ones under `project`."""
     entries, source = _mio.gate_entries(phase, None)
     build = ((manifest or {}).get("meta") or {}).get("buildCommands")
     return binding(project, {"phaseId": str(phase.get("id"))}, entries, source,
                    files, manifest_path, record, no_gate, config=config,
                    build=build, texts=texts, digest_root=digest_root,
-                   records=records)
+                   records=records, records_lost=records_lost)
 
 
 # The arms a sign-off recorded with `--no-evidence-reason` answers: a green that

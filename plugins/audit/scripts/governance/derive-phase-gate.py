@@ -213,12 +213,14 @@ def _touched_paths(phase):
     return _gate_derive._touched_files(phase)
 
 
-def _gather_facts(manifest, phase, project, out):
+def _gather_facts(manifest, phase, project, out, mpath=None):
     """`(facts, lines)` -- every observation `_gate_derive.derive` may read,
     each measured live and NEVER guessed. `lines` carries a reason for every
     observation this run could not make (no `derived` config at all, no
     `baseRef` to diff from), the same "never silent, never invented" rule
     `_gate_derive._importers_arm` already applies to its own three checks.
+    `mpath` is the plan this command was handed, whose records are read
+    beside the ledger; the one the config names when none is given.
     """
     meta = manifest.get("meta") if isinstance(manifest, dict) else {}
     meta = meta if isinstance(meta, dict) else {}
@@ -288,7 +290,10 @@ def _gather_facts(manifest, phase, project, out):
     else:
         lines.append("changed: skipped - phase.baseRef is not set")
 
-    rows = _evidence_io.read_rows(project).get("rows") or []
+    rows = _evidence_io.read_rows(
+        project, manifest_path=(mpath if mpath is not None
+                                else _evidence_io.plan_file_of(project))
+    ).get("rows") or []
     red_row = _gate_derive.newest_red_phase_row(rows, phase.get("id")
                                                 if isinstance(phase, dict) else None)
     # The one reading every learner shares: a failed, unmuted step whose
@@ -616,7 +621,8 @@ def _locked_run(args, project, config, mpath, phase_id, out):
             out("[derive-phase-gate] %s: %s" % (phase_id, msg))
         return E_OK
 
-    facts, fact_lines = _gather_facts(assembled, phase, project, out)
+    facts, fact_lines = _gather_facts(assembled, phase, project, out,
+                                      mpath=mpath)
     result = _gate_derive.derive(assembled, phase, facts)
     result["lines"] = list(result.get("lines") or []) + fact_lines
     at = _utc_stamp.utc_stamp()

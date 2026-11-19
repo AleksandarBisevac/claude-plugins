@@ -183,7 +183,7 @@ def _cases(check):
               "valid but a git diff would not call unchanged",
               landed == data1)
 
-        read_back = _ev.read_rows(d1)["rows"]
+        read_back = _ev.read_rows(d1, manifest_path=mp1)["rows"]
         check("i3 read_rows() finds both rows through the SAME reader every "
               "other consumer of this directory uses, with their runIds intact: "
               "%r" % ([r.get("runId") for r in read_back],),
@@ -965,14 +965,15 @@ def _cases(check):
                                     os.path.realpath(d42)))
 
         # --- a row whose ts names no moment is imported, and NAMED ----------
-        d43, _mp43 = project()
+        d43, mp43 = project()
         name43 = "2026-02.ci-w43.jsonl"
         data43, _ = _shard_bytes(name43, [
             {"runId": "run-dated", "v": 1, "status": "passed",
              "ts": "2026-02-01T10:00:00+02:00"},
             {"runId": "run-undated", "v": 1, "status": "passed",
              "ts": "last tuesday"}])
-        code43, answer43 = M.import_shard(d43, write_shard(name43, data43))
+        code43, answer43 = M.import_shard(d43, write_shard(name43, data43),
+                                          manifest_path=mp43)
         told43 = []
         M.render(answer43, out=told43.append)
         check("i43 a shard row whose ts names no moment is imported, NOT "
@@ -983,9 +984,13 @@ def _cases(check):
               and any("run-undated" in line and "no moment" in line
                       for line in told43))
         # --- a run the plan holds only as a record, arriving in a shard -----
-        # The same rule as a run held as a row (i13-i16): one run, one entry,
-        # wherever the reader finds it - refused, naming the plan file that
-        # holds the record, with nothing written.
+        # NOT a duplicate. A plan that travels with git while its evidence
+        # files do not receives the record of a run recorded on another
+        # machine before that machine's ledger file; refusing the file for it
+        # would make that file unimportable for good. Only a run held as a
+        # LEDGER ROW is a second count (i13-i16); a run held as a record is
+        # imported, and the union's rule (`_evidence_io.with_records`: the
+        # row, where both hold one run) decides which copy a reader sees.
         d45, mp45 = project()
         with io.open(mp45, encoding="utf-8") as fh:
             plan45 = json.load(fh)
@@ -1005,24 +1010,30 @@ def _cases(check):
         json45 = json.loads(run([mp45, src45, "--project-dir", d45,
                                  "--json"])[1])
         ev45 = _ev.evidence_dir(d45)
+        read45 = _ev.read_rows(d45, manifest_path=mp45)
+        seen45 = [(r.get("runId"), src) for r, src in zip(
+            read45["rows"], read45.get("rowSources") or [])
+            if r.get("runId") == "run-rec1"]
         check("i45 a shard carrying a runId the plan holds ONLY as a record - no "
-              "evidence directory at all - is refused exit 1 as a held row is "
-              "(i13), naming the plan file that holds it and not the new id, "
-              "and nothing is written: %r / %r / %r"
-              % (code45, out45, json45.get("duplicates")),
-              code45 == 1 and "run-rec2" not in out45
-              and json45.get("duplicates")
-              == [{"runId": "run-rec1", "file": "docs/audit/audit-plan.json"}]
-              and not (os.path.isdir(ev45) and os.listdir(ev45)))
-        name46 = "2026-01.ci-rec-new.jsonl"
+              "evidence directory at all - is IMPORTED, exit 0, the file "
+              "written whole; the run is then one entry, the ledger's row, as "
+              "the union reads a run both hold: %r / %r / %r / %r"
+              % (code45, out45, json45.get("duplicates"), seen45),
+              code45 == 0 and json45.get("duplicates") == []
+              and os.path.isdir(ev45) and sorted(os.listdir(ev45)) == [name45]
+              and seen45 == [("run-rec1", _ev.ROW_FROM_LEDGER)])
+        name46 = "2026-01.ci-rec-again.jsonl"
         data46, _ = _shard_bytes(
-            name46, [{"runId": "run-rec3", "v": 1, "status": "passed"}])
+            name46, [{"runId": "run-rec1", "v": 1, "status": "passed"}])
         code46, out46 = run([mp45, write_shard(name46, data46),
                              "--project-dir", d45])
-        check("i46 ALLOW: the same plan imports a shard whose runs its record "
-              "does not hold - a record refuses only the run it is: %r (%s)"
-              % (code46, out46),
-              code46 == 0 and sorted(os.listdir(ev45)) == [name46])
+        check("i46 SECOND DIRECTION: once that run is a ledger ROW, a shard "
+              "under another name carrying it again is refused exit 1, naming "
+              "the ledger file that holds it - never the plan file - and "
+              "nothing is written: %r (%s)" % (code46, out46),
+              code46 == 1 and name45 in out46
+              and "audit-plan.json" not in out46
+              and sorted(os.listdir(ev45)) == [name45])
         check("i44 SECOND DIRECTION: a row stamped with an offset names a "
               "moment and is not listed as undated - a note that fired on every "
               "spelling but the Z form would be read past: %r"

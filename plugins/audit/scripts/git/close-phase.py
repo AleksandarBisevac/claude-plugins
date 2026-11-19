@@ -1890,56 +1890,55 @@ def branch_texts(git_root, project, branch, phase_tree, directory):
 
 def _tip_json(git_root, branch, rel):
     """The JSON file at `rel` (root-relative, posix) as committed at `branch`'s
-    tip, or None when git holds none there or it will not parse."""
+    tip, None when git holds none there; raises when git holds one that will
+    not parse - `_evidence_io.walk_plan`'s reader contract, so a shard that
+    will not read is named rather than skipped."""
     code, raw = _git_bytes(git_root, ["cat-file", "blob",
                                       "refs/heads/%s:%s" % (branch, rel)])
     if code != 0:
         return None
-    try:
-        return json.loads(raw.decode("utf-8"))
-    except Exception:
-        return None
+    return json.loads(raw.decode("utf-8"))
 
 
 def tip_bodies(git_root, branch, manifest_path):
-    """`(bodies, why)` - every phase body of the plan as committed at `branch`'s
-    tip, in `_evidence_io.plan_bodies`' shape - the index's own phases, or each
-    shard it names - or `([], why)` when git holds no such plan there."""
+    """`(bodies, why, unreadable)` - every phase body of the plan as committed
+    at `branch`'s tip and the label (`branch:path`) of each plan file there
+    that would not read, through `_evidence_io.walk_plan` - the one walk over
+    a plan's files and its one rule for a file that will not read, the disk's
+    `plan_bodies` being the other reader of it - or `([], why, [])` when the
+    plan is not in the repository, or when git holds none of it there."""
     rel = os.path.relpath(manifest_path, git_root).replace(os.sep, "/")
     if rel.startswith(".."):
-        return [], "%s is outside the repository" % (manifest_path,)
-    index = _tip_json(git_root, branch, rel)
-    if not isinstance(index, dict):
-        return [], "git holds no readable %s at %s" % (rel, branch)
-    base = posixpath.dirname(rel)
-    bodies = []
-    for stub in index.get("phases") or []:
-        if not isinstance(stub, dict):
-            continue
-        if not stub.get("shard"):
-            bodies.append(("%s:%s" % (branch, rel), stub))
-            continue
-        path = posixpath.normpath(posixpath.join(base, str(stub["shard"])))
-        body = _tip_json(git_root, branch, path)
-        if isinstance(body, dict):
-            bodies.append(("%s:%s" % (branch, path), body))
-    return bodies, ""
+        return [], "%s is outside the repository" % (manifest_path,), []
+    bodies, lost = _evidence_io.walk_plan(
+        rel, lambda path: _tip_json(git_root, branch, path),
+        lambda path: "%s:%s" % (branch, path),
+        lambda index, shard: posixpath.normpath(
+            posixpath.join(posixpath.dirname(index), shard)))
+    if not bodies and not lost:
+        return [], "git holds no %s at %s" % (rel, branch), []
+    return bodies, "", lost
 
 
 def branch_records(git_root, project, branch, phase_tree, manifest_path):
-    """`(records, notes)` - the records the plan holds as the landing judges it,
-    in `_verdict_binding.plan_records`' shape: at the branch tip, unioned with
-    the worktree holding the branch when there is one - `branch_texts`' rule
-    for the ledger, asked of the plan's shards."""
-    bodies, why = tip_bodies(git_root, branch, manifest_path)
+    """`(records, notes, unreadable)` - the records the plan holds as the
+    landing judges it, in `_verdict_binding.plan_records`' shape: at the
+    branch tip, unioned with the worktree holding the branch when there is
+    one - `branch_texts`' rule for the ledger, asked of the plan's shards -
+    and every plan file either read could not read, each named in `notes`
+    too: a shard that will not read is never skipped in silence."""
+    bodies, why, lost = tip_bodies(git_root, branch, manifest_path)
     tree = _phase_project(git_root, project, phase_tree)
     if tree:
-        local, _lost = _evidence_io.plan_bodies(
+        local, local_lost = _evidence_io.plan_bodies(
             os.path.join(tree, os.path.relpath(manifest_path, project)), tree)
         bodies = bodies + local
+        lost = lost + local_lost
     notes = (["the plan's records could not be read at the branch tip (%s)"
               % (why,)] if why and not tree else [])
-    return _evidence_io.records_of_bodies(bodies), notes
+    notes += ["the plan file %s could not be read, so no record it holds was "
+              "read" % (label,) for label in lost]
+    return _evidence_io.records_of_bodies(bodies), notes, lost
 
 
 def _phase_project(git_root, project, phase_tree):
@@ -2227,16 +2226,18 @@ def gate_answer(project, manifest_path, manifest, phase, git_root=None,
     files = _vb.phase_files(members)
     config = _journal_io.load_config(project)
     texts, digest_root, scratch, notes = None, None, None, []
-    records = None
+    records, records_lost = None, ()
     journal = None
     tip_lost = False
     if branch and git_root:
         texts, notes = branch_texts(git_root, project, branch, phase_tree,
                                     _evidence_io.evidence_dir(project, config))
         # THE BRANCH'S RECORDS, as its ledger is read: a run the branch's
-        # shards hold and no ledger row does is still the run that lands.
-        records, record_notes = branch_records(git_root, project, branch,
-                                               phase_tree, manifest_path)
+        # shards hold and no ledger row does is still the run that lands -
+        # and a shard there that will not read refuses the landing of the
+        # phase it holds (`_verdict_binding.subject_file_lost`).
+        records, record_notes, records_lost = branch_records(
+            git_root, project, branch, phase_tree, manifest_path)
         notes = notes + record_notes
         journal, journal_notes = branch_texts(
             git_root, project, branch, phase_tree,
@@ -2262,7 +2263,7 @@ def gate_answer(project, manifest_path, manifest, phase, git_root=None,
             project, manifest_path, manifest, carrier, files, record,
             "phase %s declares no gate, so its landing rests on its sign-off alone"
             % (cid,), config=config, texts=texts, digest_root=digest_root,
-            records=records)
+            records=records, records_lost=records_lost)
     finally:
         if scratch:
             _output.remove_tree(scratch)
@@ -2283,7 +2284,7 @@ def gate_answer(project, manifest_path, manifest, phase, git_root=None,
             texts if texts is not None else _vb.ledger_texts(project, config),
             (phase or {}).get("id"), answer, record,
             records=(records if records is not None
-                     else _vb.plan_records(project, manifest_path)))
+                     else _vb.plan_records(project, manifest_path)[0]))
         if own is not None:
             answer = own
     return answer, signed, notes
@@ -3434,8 +3435,22 @@ def main(argv, out=print):
     # The observation carries the phase as it stands on disk; the settlement the
     # CLEANUP is judged by is the same question with `mergedAt` supplied by this run.
     observation["settled"] = settlement(phase, merged=False)
-    landed, landed_basis = phase_as_landed(git_root, args.manifest, names["branch"],
-                                           args.phase)
+    try:
+        landed, landed_basis = phase_as_landed(git_root, args.manifest,
+                                               names["branch"], args.phase)
+    except Exception as exc:                                   # noqa: BLE001
+        # A PLAN FILE AT THE TIP THAT WILL NOT READ refuses the landing, named
+        # by the one walker's rule (`tip_bodies`), rather than a traceback or
+        # the plan on disk standing in for the copy that would land.
+        _bodies, _why, lost = tip_bodies(git_root, names["branch"],
+                                         args.manifest)
+        out("[close-phase] REFUSED: the plan as %s holds it could not be read "
+            "(%s: %s)%s, so neither its sign-off nor the record of its newest "
+            "run is established. Repair the file on the branch and close "
+            "again. Nothing was merged or written."
+            % (names["branch"], type(exc).__name__, exc,
+               " - %s would not read" % (", ".join(lost),) if lost else ""))
+        return E_FAIL
     the_plan = plan(observation, names["branch"], names["parent"],
                     names["policy"], want_worktree=args.remove_worktree,
                     want_branch=args.delete_branch, no_ff=args.no_ff)

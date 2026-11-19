@@ -575,7 +575,8 @@ def build_state(project, run=None, full_run_cache=None, live=None):
             # which both consumers would render as a ledger that holds nothing.
             # The error travels instead, to both of them.
             try:
-                ledger_read = _evidence_io.read_rows(project, config=config)
+                ledger_read = _evidence_io.read_rows(project, config=config,
+                                                     manifest_path=mpath)
                 ledger_error = None
             except Exception as exc:
                 ledger_read = None
@@ -607,7 +608,8 @@ def build_state(project, run=None, full_run_cache=None, live=None):
             # exactly the ones they name.
             evidence = _evidence_view(project, composition, config=config,
                                       read=ledger_read,
-                                      read_error=ledger_error)
+                                      read_error=ledger_error,
+                                      manifest_path=mpath)
             bugs = _bugs_view(manifest)
             proposals = _proposals_view(manifest)
     return {

@@ -1445,7 +1445,8 @@
       "P169.9",
       "P169.15-6l3",
       "P169.16-6l3",
-      "P169.18-6l3"
+      "P169.18-6l3",
+      "P169.19-6l3"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2140,7 +2141,8 @@
       "P169.15-6l3",
       "P169.16-6l3",
       "P169.17-6l3",
-      "P169.18-6l3"
+      "P169.18-6l3",
+      "P169.19-6l3"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2447,7 +2449,8 @@
       "P154.3-mkf",
       "P159.2",
       "P168.4",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -4558,7 +4561,8 @@
       "P169.8",
       "P169.15-6l3",
       "P169.16-6l3",
-      "P169.18-6l3"
+      "P169.18-6l3",
+      "P169.19-6l3"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -5831,7 +5835,8 @@
       "P130.23-ywo",
       "P131.1",
       "P131.2",
-      "P138.2"
+      "P138.2",
+      "P169.16-6l3"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -5856,7 +5861,8 @@
       "P123.62-64p",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P169.16-6l3"
     ],
     "plugins/audit/scripts/panel/_panel_discovery.py": [
       "P12.2",
@@ -5946,7 +5952,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P169.2"
+      "P169.2",
+      "P169.16-6l3"
     ],
     "plugins/audit/scripts/panel/_panel_ui.py": [
       "P11.1",
@@ -5980,7 +5987,8 @@
       "P125.135-0h5",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P169.16-6l3"
     ],
     "plugins/audit/scripts/panel/_panel_write.py": [
       "P12.4",
@@ -6070,7 +6078,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P169.2"
+      "P169.2",
+      "P169.16-6l3"
     ],
     "plugins/audit/scripts/report/_report_html.py": [
       "P13.1",
@@ -6203,7 +6212,8 @@
       "P130.8",
       "P130.9",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P169.16-6l3"
     ],
     "plugins/audit/scripts/status/_doctor_ado.py": [
       "P57.5",
@@ -6230,7 +6240,8 @@
       "P123.65-64p",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P169.16-6l3"
     ],
     "plugins/audit/scripts/status/_doctor_hygiene.py": [
       "P18.6",
@@ -6348,7 +6359,8 @@
       "P131.1",
       "P131.2",
       "P169.8",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "plugins/audit/scripts/status/_gate_feed.py": [
       "P48.3",
@@ -6513,7 +6525,9 @@
       "P166.1",
       "P166.2",
       "P166.3-b8m",
-      "P168.4"
+      "P168.4",
+      "P169.16-6l3",
+      "P169.19-6l3"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -6585,7 +6599,8 @@
       "P155.49-gfj",
       "P167.5",
       "P167.7-fge",
-      "P169.2"
+      "P169.2",
+      "P169.16-6l3"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -6726,7 +6741,8 @@
       "P130.12-ywo",
       "P131.1",
       "P131.2",
-      "P161.5-toy"
+      "P161.5-toy",
+      "P169.16-6l3"
     ],
     "plugins/audit/scripts/usage/usage_ledger.py": [
       "P14.1",
@@ -9119,7 +9135,8 @@
       "P169.1",
       "P169.11-6l3",
       "P169.14-6l3",
-      "P169.17-6l3"
+      "P169.17-6l3",
+      "P169.16-6l3"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -9489,7 +9506,8 @@
       "P131.2",
       "P148.5",
       "P148.23-xpz",
-      "P168.5"
+      "P168.5",
+      "P169.16-6l3"
     ],
     "plugins/audit/tests/test_derive_phase_gate.py": [
       "P79.3",
@@ -9559,7 +9577,8 @@
       "P131.1",
       "P131.2",
       "P169.6",
-      "P169.7"
+      "P169.7",
+      "P169.16-6l3"
     ],
     "plugins/audit/tests/test_full_gate.py": [
       "P80.10",
@@ -9594,7 +9613,9 @@
       "P153.17-34e",
       "P153.18-34e",
       "P153.19-34e",
-      "P153.20-34e"
+      "P153.20-34e",
+      "P169.16-6l3",
+      "P169.19-6l3"
     ],
     ".claude/hooks/arm-release-bypass.py": [
       "P80.11",
@@ -9604,7 +9625,8 @@
       "P125.68-0h5",
       "P125.100-0h5",
       "P130.8",
-      "P131.1"
+      "P131.1",
+      "P169.19-6l3"
     ],
     "plugins/audit/tests/test_verify_invariants.py": [
       "P75.1",
@@ -9752,7 +9774,8 @@
       "P168.4",
       "P168.6",
       "P169.4",
-      "P169.16-6l3"
+      "P169.16-6l3",
+      "P169.19-6l3"
     ],
     "plugins/audit/tests/test__verdict_binding.py": [
       "P74.3-qq5",
@@ -9775,7 +9798,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P169.8"
+      "P169.8",
+      "P169.16-6l3"
     ],
     "plugins/audit/tests/test_record_outside_run.py": [
       "P74.9-qq5",
@@ -9828,7 +9852,8 @@
       "P131.5",
       "P132.4",
       "P154.3-mkf",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/authors.png": [
       "P84.7-791",
@@ -9855,7 +9880,8 @@
       "P131.5",
       "P132.4",
       "P154.3-mkf",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/dark.png": [
       "P84.7-791",
@@ -9882,7 +9908,8 @@
       "P131.5",
       "P132.4",
       "P154.3-mkf",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/demo-gate.gif": [
       "P84.7-791",
@@ -9920,7 +9947,8 @@
       "P131.5",
       "P132.4",
       "P154.3-mkf",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/filtered.png": [
       "P84.7-791",
@@ -9947,7 +9975,8 @@
       "P131.5",
       "P132.4",
       "P154.3-mkf",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/filters.png": [
       "P84.7-791",
@@ -9974,7 +10003,8 @@
       "P131.5",
       "P132.4",
       "P154.3-mkf",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/mobile.png": [
       "P84.7-791",
@@ -9998,7 +10028,8 @@
       "P125.105-0h5",
       "P125.81-0h5",
       "P125.99-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/overview.png": [
       "P84.7-791",
@@ -10025,7 +10056,8 @@
       "P131.5",
       "P132.4",
       "P154.3-mkf",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-appearance.png": [
       "P80.8",
@@ -10057,7 +10089,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-blocks.png": [
       "P80.8",
@@ -10089,7 +10122,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-composition-expanded.png": [
       "P80.8",
@@ -10121,7 +10155,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-composition.png": [
       "P80.8",
@@ -10153,7 +10188,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-confirm.png": [
       "P80.8",
@@ -10185,7 +10221,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-dark.png": [
       "P80.8",
@@ -10217,7 +10254,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-gate.png": [
       "P80.8",
@@ -10249,7 +10287,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-guards.png": [
       "P80.8",
@@ -10281,7 +10320,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-help.png": [
       "P80.8",
@@ -10313,7 +10353,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-mobile.png": [
       "P80.8",
@@ -10345,7 +10386,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-monthly.png": [
       "P80.8",
@@ -10377,7 +10419,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-overview.png": [
       "P80.8",
@@ -10409,7 +10452,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-person.png": [
       "P80.8",
@@ -10441,7 +10485,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-policy-expanded.png": [
       "P80.8",
@@ -10473,7 +10518,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-policy.png": [
       "P80.8",
@@ -10505,7 +10551,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-proposals.png": [
       "P80.8",
@@ -10537,7 +10584,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "docs/screenshots/panel-usage.png": [
       "P80.8",
@@ -10569,7 +10617,8 @@
       "P125.107-0h5",
       "P125.99-0h5",
       "P125.135-0h5",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "tools/ui-tests/evidence-read-error.test.mjs": [
       "P80.15-rtb"
@@ -10603,7 +10652,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P148.15-xpz"
+      "P148.15-xpz",
+      "P169.16-6l3"
     ],
     "plugins/audit/tests/test_propose_gates.py": [
       "P80.15-rtb",
@@ -11406,7 +11456,8 @@
       "P169.6",
       "P169.16-6l3",
       "P169.15-6l3",
-      "P169.18-6l3"
+      "P169.18-6l3",
+      "P169.19-6l3"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -12856,7 +12907,8 @@
       "P166.2",
       "P166.3-b8m",
       "P169.8",
-      "P169.9"
+      "P169.9",
+      "P169.16-6l3"
     ],
     "tests/test__evidence_io.py": [
       "P131.1",
@@ -12886,11 +12938,13 @@
       "P169.8",
       "P169.15-6l3",
       "P169.16-6l3",
-      "P169.18-6l3"
+      "P169.18-6l3",
+      "P169.19-6l3"
     ],
     "tests/test__evidence_view.py": [
       "P131.1",
-      "P169.2"
+      "P169.2",
+      "P169.16-6l3"
     ],
     "tests/test__excerpt.py": [
       "P131.1"
@@ -13077,7 +13131,8 @@
     ],
     "tests/test__panel_state.py": [
       "P131.1",
-      "P169.2"
+      "P169.2",
+      "P169.16-6l3"
     ],
     "tests/test__panel_ui.py": [
       "P131.1",
@@ -13299,7 +13354,8 @@
       "P168.4",
       "P168.6",
       "P169.4",
-      "P169.16-6l3"
+      "P169.16-6l3",
+      "P169.19-6l3"
     ],
     "tests/test__warning_groups.py": [
       "P131.1",
@@ -13372,7 +13428,8 @@
       "P166.1",
       "P166.2",
       "P166.3-b8m",
-      "P168.4"
+      "P168.4",
+      "P169.19-6l3"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -13516,7 +13573,8 @@
       "P131.1",
       "P148.23-xpz",
       "P155.15",
-      "P168.5"
+      "P168.5",
+      "P169.16-6l3"
     ],
     "tests/test_detect_plan_skip.py": [
       "P131.1",
@@ -13666,7 +13724,8 @@
       "P169.6",
       "P169.16-6l3",
       "P169.15-6l3",
-      "P169.18-6l3"
+      "P169.18-6l3",
+      "P169.19-6l3"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -13677,7 +13736,8 @@
     "tests/test_full_gate.py": [
       "P131.1",
       "P169.6",
-      "P169.7"
+      "P169.7",
+      "P169.16-6l3"
     ],
     "tests/test_gen_demo_manifest.py": [
       "P131.1",
@@ -13805,7 +13865,8 @@
     ],
     "tests/test_record_outside_run.py": [
       "P131.1",
-      "P169.8"
+      "P169.8",
+      "P169.16-6l3"
     ],
     "tests/test_record_risk_confirmation.py": [
       "P131.1",

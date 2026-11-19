@@ -129,7 +129,7 @@ def propose(manifest_path, commands, project_dir=None):
     except Exception as exc:
         raise RuntimeError(_manifest_vocab.LEDGER_LOCATION_FAILED % (exc,))
     try:
-        read = _evio.read_rows(project, config)
+        read = _evio.read_rows(project, config, manifest_path=manifest_path)
     except Exception as exc:
         raise RuntimeError(_manifest_vocab.LEDGER_READ_FAILED % (exc,))
     rows = read.get("rows") or []

@@ -825,7 +825,7 @@ def empty_evidence():
 
 
 def evidence_view(project, composition, config=None, read=None,
-                  read_error=None):
+                  read_error=None, manifest_path=None):
     """The recorded runs the plan POINTS AT, as facts the browser re-aggregates.
 
     Keyed by `runId` and cut to the pointers the composition rows already carry,
@@ -853,7 +853,8 @@ def evidence_view(project, composition, config=None, read=None,
     the caller already has: two reads of a ledger a parallel run may have grown
     between is how they would come to disagree, and a read that failed would
     otherwise fail twice, in two different shapes, for one cause. `None` (the
-    default) asks `read_rows` itself, which is every caller before this one.
+    default) asks `read_rows` itself, beside the plan this function was handed
+    as `manifest_path` - the one the config names when it was handed none.
 
     `read_error`, WHEN GIVEN, IS THE CALLER'S OWN FAILED READ, and it wins over
     `read`. A failed read is not an empty one: the ledger may hold every run the
@@ -878,7 +879,10 @@ def evidence_view(project, composition, config=None, read=None,
             run_id = pointer.get("runId") if isinstance(pointer, dict) else None
             if isinstance(run_id, str) and run_id:
                 wanted.add(run_id)
-    read = read if isinstance(read, dict) else _ev.read_rows(project, config=config)
+    read = read if isinstance(read, dict) else _ev.read_rows(
+        project, config=config,
+        manifest_path=(manifest_path if manifest_path is not None
+                       else _ev.plan_file_of(project, config)))
     newest = {}
     # `row_by_run`'s order, one key at a time: two worktrees write two files
     # whose concatenation is in no meaningful order, so reading position would

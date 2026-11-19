@@ -929,6 +929,11 @@ def _cases(check):
           and "plural((ev&&ev.unreadable)||0,'line unreadable',"
               "'lines unreadable')" in _evsrc
           and "The plan caches the verdict" in _evsrc)
+    check("ev11b ...and it names BOTH places a run is held - the runs the page "
+          "is shipped are the ledger's rows and the plan's own records read "
+          "as one, so a run in neither is not a claim about the ledger alone",
+          "and the evidence ledger does not hold it (" in _evsrc
+          and "), nor do the plan\\'s own records. The plan caches" in _evsrc)
     check("ev12 a run is decoded against the column names the SERVER shipped "
           "beside it, never against indices typed here - facts plus their "
           "field list is the Usage tab's shape, and a hand-written index is how "

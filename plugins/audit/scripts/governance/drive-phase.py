@@ -1637,21 +1637,35 @@ def ledger_unread(exc):
     """Why no row was read when the ledger itself would not read. It names no
     run: the launch's read and its repeat's name two runs of one measurement,
     and an unreadable ledger cannot say they are one, so the line is said once
-    for the ledger rather than once for each name."""
-    return "the evidence ledger could not be read (%s: %s)" % (
-        type(exc).__name__, exc)
+    for the ledger rather than once for each name. Both places a run is read
+    from are named, since the one read covers the ledger and the plan's
+    records."""
+    return ("the recorded runs - the evidence ledger and the plan's records - "
+            "could not be read (%s: %s)" % (type(exc).__name__, exc))
+
+
+def recorded_runs(ctx):
+    """`_evidence_io.read_rows` over the plan the drive was handed - the
+    drive's one read of recorded runs: the ledger's rows and the records of
+    THAT plan, never of the one the project's config names, which in a
+    project holding more than one plan is another plan whose task ids may
+    collide with this one's."""
+    return _evio.read_rows(ctx["project"], ctx["config"],
+                           manifest_path=ctx["manifest"])
 
 
 def ledger_row(ctx, run_id):
-    """`(row, None)` - the evidence row of `run_id` - or `(None, why)` when the
-    ledger will not read or holds no such row."""
+    """`(row, None)` - the recorded run `run_id`, a ledger row or a record -
+    or `(None, why)` when the runs will not read or hold no such run, `why`
+    naming both places looked (`_evidence_io.run_not_found`)."""
     try:
-        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+        read = recorded_runs(ctx)
     except Exception as exc:                                   # noqa: BLE001
         return None, ledger_unread(exc)
-    row = _evio.row_by_run(rows, run_id)
+    row = _evio.row_by_run(read["rows"], run_id)
     if row is None:
-        return None, "the evidence ledger holds no row of run %s" % (run_id,)
+        return None, _evio.run_not_found(ctx["project"], read, ctx["manifest"],
+                                         run_id, ctx["config"])
     return row, None
 
 
@@ -1751,7 +1765,7 @@ def repeated_measured(ctx, row):
     if not isinstance(row, dict) or row.get(_evio.VERDICT_SOURCE) != _evio.REUSED:
         return None
     try:
-        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+        rows = recorded_runs(ctx)["rows"]
     except Exception:                                          # noqa: BLE001
         return None
     found = _evio.measured_row(rows, row)
@@ -1823,7 +1837,7 @@ def red_at_base(ctx, task_ids=(), names=None):
     if not head:
         return [], None
     try:
-        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+        rows = recorded_runs(ctx)["rows"]
     except Exception:                                          # noqa: BLE001
         return [], None
     base = _evio.base_run(rows, head, task_ids, names)
@@ -1847,7 +1861,7 @@ def base_red_why(ctx, text, manifest, phase, task, reading=None):
         if not found:
             return ""
         try:
-            rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+            rows = recorded_runs(ctx)["rows"]
         except Exception:                                      # noqa: BLE001
             return ""
         reading = (_evio.row_by_run(rows, found.group(1)) or {}).get(
@@ -3031,12 +3045,14 @@ def gate_row_read(ctx, text):
     if not found:
         return None, None
     try:
-        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+        read = recorded_runs(ctx)
     except Exception as exc:                                   # noqa: BLE001
         return None, ledger_unread(exc)
+    rows = read["rows"]
     row = _evio.row_by_run(rows, found.group(1))
     if row is None:
-        return None, "the evidence ledger holds no row of run %s" % (found.group(1),)
+        return None, _evio.run_not_found(ctx["project"], read, ctx["manifest"],
+                                         found.group(1), ctx["config"])
     return _evio.measured_row(rows, row) or row, None
 
 
@@ -3153,7 +3169,7 @@ def verdict_basis(ctx, manifest, task_id, held):
     measured_in = (None if not where or os.path.realpath(where)
                    == os.path.realpath(ctx["project"]) else where)
     try:
-        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+        rows = recorded_runs(ctx)["rows"]
     except Exception as exc:                                   # noqa: BLE001
         return _evio.STORED_UNKNOWN, "the ledger could not be read (%s)" % (exc,)
     return _evio.stored_verdict_moved(rows, held.get("runId"), {
@@ -4050,7 +4066,7 @@ def red_status(ctx, held):
     if held.get("status"):
         return held["status"]
     try:
-        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+        rows = recorded_runs(ctx)["rows"]
     except Exception:                                          # noqa: BLE001
         return None
     return (_evio.row_by_run(rows, held.get("of")) or {}).get("status")
@@ -4142,11 +4158,14 @@ def measure_launch(ctx, phase, task, launch):
                              PREFIX, ctx["phase"], task_id, held.get("said")))
     keep = fresh_keeper(ctx, task, launch)
     try:
-        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+        read = recorded_runs(ctx)
     except Exception as exc:                                   # noqa: BLE001
-        rows, why = [], "the evidence ledger could not be read (%s)" % (exc,)
+        rows, why = [], ledger_unread(exc)
     else:
-        why = "the red run %s is not in the evidence ledger" % (held.get("of"),)
+        rows = read["rows"]
+        why = "the red run is not found - %s" % (_evio.run_not_found(
+            ctx["project"], read, ctx["manifest"], held.get("of"),
+            ctx["config"]),)
     row = _evio.row_by_run(rows, held.get("of"))
     row = _evio.measured_row(rows, row) or row
     if row is None:
@@ -5105,7 +5124,7 @@ def run_followers(ctx, run_id):
     """The `followersOwed` records of the ledger row `run_id` names, each with a
     path; `[]` when there is no such row or the ledger cannot be read."""
     try:
-        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+        rows = recorded_runs(ctx)["rows"]
     except Exception:                                          # noqa: BLE001
         return []
     # A repeated verdict's row names the run that measured it, and the
@@ -6549,10 +6568,11 @@ def gate_in_background(ctx, names, joins=None):
     if joins:
         return True, joins
     try:
-        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+        rows = recorded_runs(ctx)["rows"]
     except Exception as exc:                                   # noqa: BLE001
-        return True, ("the evidence ledger could not be read (%s), so its "
-                      "duration is unknown" % (type(exc).__name__,))
+        return True, ("the recorded runs - the evidence ledger and the plan's "
+                      "records - could not be read (%s), so its duration is "
+                      "unknown" % (type(exc).__name__,))
     reading = _evio.gate_mean_ms(rows, names)
     if reading is None:
         return True, "no recorded run has measured every step of it"
@@ -6661,20 +6681,52 @@ def with_launch(argv, token):
 
 def new_gate_row(ctx, launched, key):
     """`((runId, status), None)` - the run of the subject `key` that carries the
-    launch token of `launched` - `(None, None)` while no run carries it (or the
-    mark holds no token), `(None, why)` when the runs cannot be read."""
+    launch token of `launched`, on its ledger row or its record - `(None,
+    None)` while no run carries it (or the mark holds no token), `(None, why)`
+    when the runs cannot be read.
+
+    A LAUNCHED RUN WHOSE RECORD ANOTHER RUN REPLACED, with no ledger row of it
+    left, answers `((None, REPLACED), replacement)`: `replacement` is
+    `(the launched run's entry, the row of the run that replaced it)`
+    (`_evidence_io.replaced_by`), so the caller says which run replaced it
+    rather than waiting for a run that has already ended."""
     token = launched.get("launch") if isinstance(launched, dict) else None
     if not token:
         return None, None
     try:
-        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+        rows = recorded_runs(ctx)["rows"]
     except Exception as exc:                                   # noqa: BLE001
-        return None, "the evidence ledger could not be read (%s: %s)" % (
-            type(exc).__name__, exc)
-    found = _evio.run_by_launch(
-        [r for r in rows if _evio.subject_key(r) == key], token)
-    return ((found.get("runId"), found.get("status"))
-            if found and found.get("runId") else None), None
+        return None, ledger_unread(exc)
+    mine = [r for r in rows if _evio.subject_key(r) == key]
+    found = _evio.run_by_launch(mine, token)
+    if found and found.get("runId"):
+        return (found.get("runId"), found.get("status")), None
+    replaced = _evio.replaced_by(mine, token)
+    if replaced is not None:
+        return (None, REPLACED), replaced
+    return None, None
+
+
+# The status `new_gate_row` answers for a launched run another run's record
+# replaced with no ledger row of it left to read back.
+REPLACED = "replaced"
+
+
+def replaced_gate(ctx, subject, replacement, relaunch):
+    """The step after a launched gate's run was replaced: say the run the
+    launch started was recorded and then replaced on the plan, by which run,
+    and that no ledger row of it is left to read its verdict back from -
+    then launch the gate again through `relaunch()`, the only way to a
+    verdict of this launch's own. No attempt is spent: the run ended, and
+    what it found is not lost work of the task's."""
+    entry, row = replacement
+    warn(ctx, "gate of %s: the run it launched (%s, %s at %s) was replaced on "
+              "the plan by run %s (%s, launch %s) before its verdict was read "
+              "back, and no ledger row of it is left to read - launched again"
+              % (subject, entry.get("runId"), entry.get("status"),
+                 entry.get("at"), row.get("runId"), row.get("status"),
+                 row.get(_evio.LAUNCH_KEY) or "none"))
+    return relaunch()
 
 
 def unrepeatable_red(run_id, status):
@@ -6802,11 +6854,14 @@ def repeat_said(ctx, run_id, text, label):
         return None
     found = _RUN_ID.search(text or "")
     try:
-        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+        read = recorded_runs(ctx)
     except Exception as exc:                                   # noqa: BLE001
         rows, why = [], ledger_unread(exc)
     else:
-        why = "the ledger holds no row of the run it names"
+        rows = read["rows"]
+        why = _evio.run_not_found(ctx["project"], read, ctx["manifest"],
+                                  found.group(1) if found else "",
+                                  ctx["config"])
     row = _evio.row_by_run(rows, found.group(1)) if found else None
     if row is None:
         return ("%s measured again inside next: run %s did not repeat on this "
@@ -6929,6 +6984,11 @@ def background_gate(ctx, state, phase, task, tree):
         return launch_gate(ctx, state, phase, task, tree,
                            launched.get("argv") or None), None
     found, why = new_gate_row(ctx, launched, ("task", task["id"]))
+    if found is not None and found[1] == REPLACED:
+        return replaced_gate(
+            ctx, task["id"], why,
+            lambda: launch_gate(ctx, state, phase, task, tree,
+                                launched.get("argv"))), None
     if why is not None:
         return _stopped(ctx, why), None
     if found is None:
@@ -10027,7 +10087,7 @@ def gate_went_red(ctx):
     """The ids of the tasks whose recorded gate ever came back `failed` in
     the project's evidence ledger, or None when the ledger cannot be read."""
     try:
-        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+        rows = recorded_runs(ctx)["rows"]
     except Exception:                                          # noqa: BLE001
         return None
     return set(r.get("taskId") for r in rows if isinstance(r, dict)
@@ -11542,6 +11602,11 @@ def chosen_phase_gate(ctx, state, phase, head):
             return None, run_phase_gate(ctx, phase)
         return launch_phase_gate(ctx, state, phase, head, why=why), None
     found, why = new_gate_row(ctx, launched, ("phase", phase["id"]))
+    if found is not None and found[1] == REPLACED:
+        return replaced_gate(
+            ctx, "the phase", why,
+            lambda: launch_phase_gate(ctx, state, phase, head,
+                                      launched.get("argv"))), None
     if why is not None:
         return _stopped(ctx, why), None
     if found is None:

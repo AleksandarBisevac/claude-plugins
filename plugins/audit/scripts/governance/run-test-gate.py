@@ -252,8 +252,23 @@ DEFAULT_TIMEOUT_SECONDS = 3600
 # `node_modules/...` stack frame is not, so an element count says nothing about
 # how long the line comes out. These strings are copied verbatim into a COMMITTED
 # ledger row, so the budget is a size limit on the record and not only on a
-# terminal.
+# terminal - for every item after the first: `some_of` shows its first item
+# whole whatever its length, so a sample whose item is a whole command passes a
+# render that cuts it (`sample_name`).
 SAMPLE_BUDGET = 160
+
+
+def sample_name(name):
+    """One step's name as a basis sentence samples it: whole when it fits
+    `SAMPLE_BUDGET`, else cut to it, saying how much was left out. A step's
+    name is its command, which the step itself carries whole; a gate whose
+    step was a long sweep carried that command into its count's sentence
+    entire."""
+    text = str(name)
+    if len(text) <= SAMPLE_BUDGET:
+        return text
+    return "%s... (%d more characters)" % (text[:SAMPLE_BUDGET],
+                                           len(text) - SAMPLE_BUDGET)
 
 # --- how much did it do -------------------------------------------------------
 # Runners that report their own step count, and the words they end a step with.
@@ -1699,17 +1714,20 @@ def counts_basis(steps, shared):
     if not counted:
         basis = ("no step printed a summary this reader can count (%s), so the "
                  "size of this gate is not knowable from its output"
-                 % (_output.some_of(silent, budget=SAMPLE_BUDGET),))
+                 % (_output.some_of(silent, budget=SAMPLE_BUDGET,
+                                    render=sample_name),))
     elif silent:
         basis = ("%d of %d step(s) printed a summary this reader counted; %s "
                  "did not, so this total is a floor and not a size"
                  % (len(counted), len(steps),
-                    _output.some_of(silent, budget=SAMPLE_BUDGET)))
+                    _output.some_of(silent, budget=SAMPLE_BUDGET,
+                                    render=sample_name)))
     else:
         basis = ("counted from each runner's own summary line, over %d step(s)"
                  % (len(steps),))
     for grp in (shared or ()):
-        names = _output.some_of(grp["names"], budget=SAMPLE_BUDGET)
+        names = _output.some_of(grp["names"], budget=SAMPLE_BUDGET,
+                                render=sample_name)
         if grp["verdict"] == SAME_SUITE:
             basis += ("; %s each reported %d check(s) over the same suite "
                       "file(s), so that count is in this total ONCE and is not "
@@ -1718,7 +1736,8 @@ def counts_basis(steps, shared):
             basis += ("; %s each reported %d check(s) and %s named no suite "
                       "file, so they are ADDED here and may be one suite twice"
                       % (names, grp["ran"],
-                         _output.some_of(grp["silent"], budget=SAMPLE_BUDGET)))
+                         _output.some_of(grp["silent"], budget=SAMPLE_BUDGET,
+                                         render=sample_name)))
     return basis
 
 
@@ -5527,7 +5546,7 @@ def _graded_by_after_banner(out, line):
     return _out
 
 
-def _say_who_else_was_running(project, res, row, out=print):
+def _say_who_else_was_running(project, res, row, manifest_path, out=print):
     """Print who else was moving this machine while the run happened.
 
     TWO QUESTIONS WITH TWO REMEDIES, kept apart on purpose. A suite running
@@ -5548,7 +5567,7 @@ def _say_who_else_was_running(project, res, row, out=print):
     rest of this file draws.
     """
     try:
-        rows = _ev.read_rows(project)["rows"]
+        rows = _ev.read_rows(project, manifest_path=manifest_path)["rows"]
     except Exception as exc:
         out("  machine:  who else was running could not be read (%s)" % (exc,))
         return
@@ -5624,7 +5643,10 @@ def _record_run(project, args, res, source, commands, manifest, out=print):
                 # not a duration. `runner` is deliberately NOT set: absent means
                 # the gate, which is what this run is, and `RUNNER_KEY`'s note
                 # says why writing it on every row would cost the distinction.
-                _ev.STARTED_KEY: res.get("startedAt")}
+                _ev.STARTED_KEY: res.get("startedAt"),
+                # THE LAUNCH TOKEN on the row as on the record: the record is
+                # replaced by the subject's next run, the row is not.
+                _ev.LAUNCH_KEY: getattr(args, "launch", None)}
     # FROM `gate_of`, NEVER FROM THE STEPS. `published` is what decides whether a
     # command is stored verbatim or as a digest, and the steps carry the very
     # commands being judged - deriving it from them would make every command its
@@ -5649,7 +5671,8 @@ def _record_run(project, args, res, source, commands, manifest, out=print):
             if text.startswith(lead):
                 said[key] = text[len(lead):].strip()
         out(line)
-    _say_who_else_was_running(project, res, recorded["row"], out=_keep)
+    _say_who_else_was_running(project, res, recorded["row"], args.manifest,
+                              out=_keep)
     record, stages = _run_record_of(project, args, ids, recorded["row"], said)
     pointer = _ev.write_record(project, args.manifest, source, ids, record,
                                stages=stages, session_id=identity["sessionId"])
@@ -5713,7 +5736,8 @@ def _run_record_of(project, args, ids, row, lines):
     looks again, under its lock, in the record it replaces, and a record that
     still has no copy says so (`REPEAT_UNREAD_KEY`)."""
     record = _ev.record_carrying(project, row, lines=lines,
-                                 launch=getattr(args, "launch", None))
+                                 launch=getattr(args, "launch", None),
+                                 manifest_path=args.manifest)
     stages = []
     if ids.get("taskId") is not None:
         stages, _gaps = _ev.record_stages(
@@ -5991,15 +6015,15 @@ def _run_base_of(project, args, manifest, tree, out=print):
         out("[run-test-gate] %s" % (refused,))
         return E_ASK
     try:
-        rows = _ev.read_rows(project)["rows"]
+        read = _ev.read_rows(project, manifest_path=args.manifest)
     except Exception as exc:                                   # noqa: BLE001
-        out("[run-test-gate] --base-of: the ledger could not be read (%s)"
-            % (exc,))
+        out("[run-test-gate] --base-of: the recorded runs could not be read "
+            "(%s)" % (exc,))
         return E_ASK
-    row = _ev.row_by_run(rows, args.base_of)
+    row = _ev.row_by_run(read["rows"], args.base_of)
     if row is None:
-        out("[run-test-gate] --base-of: no run %s is recorded in the ledger"
-            % (args.base_of,))
+        out("[run-test-gate] --base-of: %s" % (_ev.run_not_found(
+            project, read, args.manifest, args.base_of),))
         return E_ASK
     commands, published, left = base_commands(
         row, manifest, row.get("phaseId") or args.phase, tree)
@@ -6037,7 +6061,8 @@ def _run_base_of(project, args, manifest, tree, out=print):
     measured = base_row if base_row is not None else _ev.row_for(
         project, res, _ev.BASE_SCOPE, {}, {"runId": "unrecorded"},
         published=published)
-    reading = base_reading(row, row.get("taskId"), lambda: rows + [measured])
+    reading = base_reading(row, row.get("taskId"),
+                           lambda: read["rows"] + [measured])
     answer = {"baseOf": args.base_of, "recorded": base_row is not None,
               "runId": base_row.get("runId") if base_row else None,
               "head": (res.get("testedState") or {}).get("head"),
@@ -6272,7 +6297,7 @@ def _run_full(project, args, manifest, out=print):
     # file read with losses may hold the bounding run, and the post-pass
     # then asks nothing and names the file rather than bound by an older one.
     run_id = _ev.new_run_id()
-    ledger = _ev.read_rows(project)
+    ledger = _ev.read_rows(project, manifest_path=args.manifest)
     selection = _ev.selection_miss(
         res.get("steps"), manifest.get("phases") or [], head, project,
         ledger["rows"], [c for _name, c in commands],
@@ -6606,8 +6631,8 @@ def main(argv, out=print):
     if args.reconcile:
         report = _ev.reconcile(project, args.manifest,
                                session_id=os.environ.get("CLAUDE_CODE_SESSION_ID"))
-        out("[run-test-gate] reconcile: %d subject(s) in the ledger"
-            % (report["subjects"],))
+        out("[run-test-gate] reconcile: %d subject(s) in the ledger and the "
+            "plan's records" % (report["subjects"],))
         for line in report["moved"]:
             out("  moved:    %s" % (line,))
         for line in report["already"]:
@@ -6617,7 +6642,11 @@ def main(argv, out=print):
         if report["unreadable"]:
             out("  %d unreadable row(s) were skipped - a torn line is counted "
                 "here rather than dropped in silence" % (report["unreadable"],))
-        return E_FAIL if report["refused"] else E_OK
+        for label in report.get("unreadablePlanFiles") or []:
+            out("  UNREAD:   %s would not read, so no record it holds was "
+                "reconciled" % (label,))
+        return E_FAIL if report["refused"] or report.get(
+            "unreadablePlanFiles") else E_OK
     if args.own:
         commands, source, err = own_gate_of(manifest, args.phase, args.task)
     else:
@@ -6845,13 +6874,15 @@ def main(argv, out=print):
                                                       identity["grading"])
             if repeatable and not args.no_reuse:
                 found = _ev.reusable_run(
-                    _ev.read_rows(project)["rows"], source,
+                    _ev.read_rows(project,
+                                  manifest_path=args.manifest)["rows"], source,
                     subject_ids(args.phase, args.task, source),
                     identity["key"], REUSABLE_STATUS, steps=repeatable)
                 if found is not None:
                     part = (found, repeatable, graded_commands)
         elif not args.no_reuse:
-            ledger = _ev.read_rows(project)["rows"]
+            ledger = _ev.read_rows(project,
+                                   manifest_path=args.manifest)["rows"]
             prior = _ev.reusable_run(ledger, source,
                                      subject_ids(args.phase, args.task, source),
                                      identity["key"], REUSABLE_STATUS)
@@ -6998,7 +7029,8 @@ def main(argv, out=print):
     if args.task is not None and res.get("failed") \
             and res.get(_ev.VERDICT_SOURCE) != _ev.REUSED:
         found = base_reading(res, args.task,
-                             lambda: _ev.read_rows(project)["rows"])
+                             lambda: _ev.read_rows(
+                                 project, manifest_path=args.manifest)["rows"])
         if found is not None:
             res[_ev.BASE_RED_KEY] = found
     res[_ev.GATE_DIGEST_KEY] = _ev.gate_digest(

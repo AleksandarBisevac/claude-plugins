@@ -861,7 +861,8 @@ def read_held_phases(project):
     full_commands = evidence_io.full_gate_commands(data)
     if not full_commands:
         return ([], None)
-    ledger = evidence_io.read_rows(project)
+    ledger = evidence_io.read_rows(
+        project, manifest_path=os.path.join(project, MANIFEST_REL))
     if ledger.get("unreadable"):
         return ([], "the evidence ledger carries file(s) that could not be "
                     "read or verified: %s"
@@ -1691,7 +1692,9 @@ def _selftest():
         # resolution would disqualify a run that really did measure the
         # declared gate and hold this release open forever.
         bare = evidence_io.full_status(
-            evidence_io.read_rows(tmp2).get("rows") or [],
+            evidence_io.read_rows(
+                tmp2, manifest_path=os.path.join(tmp2, MANIFEST_REL)
+            ).get("rows") or [],
             {"id": "P1", "mergedHead": merged_head}, tmp2, ["full"])
         vocab = modules[2]
         check("gr31 the bare fullGate entry (no preamble, no buildCommands "

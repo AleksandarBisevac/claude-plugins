@@ -2907,7 +2907,7 @@ _is_shared_key = _gate_derive.is_shared_key
 _repointed = _gate_derive.repointed
 
 
-def _failing_from_lookup(project, phase, run_id):
+def _failing_from_lookup(project, mpath, phase, run_id):
     """`(row, refusal)` for `--failing-from <run_id>` -- the evidence row a
     failed-first fix task derives its gate from, or the reason it cannot.
     Exactly one of the two is not `None`.
@@ -2932,7 +2932,7 @@ def _failing_from_lookup(project, phase, run_id):
     the line that read lost.
     """
     row, refusal = _ledger_run(
-        project, "--failing-from", run_id,
+        project, mpath, "--failing-from", run_id,
         "a failed-first fix task names the phase run that failed")
     if refusal:
         return None, refusal
@@ -4445,7 +4445,7 @@ def _locked_add(args, project, config, mpath, title, out):
         return E_USAGE
     failing_row = None
     if args.failing_from:
-        failing_row, refusal = _failing_from_lookup(project, phase,
+        failing_row, refusal = _failing_from_lookup(project, mpath, phase,
                                                     args.failing_from)
         if refusal:
             out(refusal)
@@ -9067,14 +9067,20 @@ def _move_refusal(node, phase, target_id):
     return None
 
 
-def _runs_under(project, tid):
-    """How many ledger rows name `tid` as their task, or None when the ledger
-    cannot be read - an unread ledger is said as such, never counted as none."""
+def _runs_under(project, tid, mpath):
+    """How many recorded runs - ledger rows and the records of the plan at
+    `mpath`, the one being moved in - name `tid` as their task, or None when
+    they cannot be read in full: a read that raised, or one that could not
+    read a ledger file or a plan file, is said as such, never counted as
+    none."""
     try:
-        rows = _evidence_io.read_rows(project)["rows"]
+        read = _evidence_io.read_rows(project, manifest_path=mpath)
     except Exception:
         return None
-    return len([r for r in rows if isinstance(r, dict) and r.get("scope") == "task"
+    if _evidence_io.lost_in_read(project, read):
+        return None
+    return len([r for r in read["rows"] if isinstance(r, dict)
+                and r.get("scope") == "task"
                 and str(r.get("taskId")) == str(tid)])
 
 
@@ -9161,7 +9167,7 @@ def _locked_move(args, project, config, mpath, tid, target_id, out):
                          "phaseId": target_id})
     index_note = _index_dirty_note(written, mpath, project, target_id)
     waiting = _waiting_on(renamed, moved)
-    left_runs = _runs_under(project, tid)
+    left_runs = _runs_under(project, tid, mpath)
     # A BLOCKED task moves with its status, and readiness over its references
     # alone would print a copyable `/audit:run` for work that is not runnable.
     blocked = moved.get("status") == "blocked"
@@ -14299,7 +14305,7 @@ def _locked_couple(args, project, config, mpath, out):
             % (head,))
         return E_USAGE
     row, refusal = _ledger_run(
-        project, "--basis-run", run_id,
+        project, mpath, "--basis-run", run_id,
         "a coupling says what taught it, and this run taught nothing "
         "recorded")
     if refusal:
@@ -14376,49 +14382,33 @@ def _locked_couple(args, project, config, mpath, out):
     return 0
 
 
-def _ledger_run(project, flag, run_id, why):
-    """`(row, refusal)` for the evidence row `run_id` names -- exactly one is
-    not None. `why` ends the refusal for a run the ledger does not hold.
+def _ledger_run(project, mpath, flag, run_id, why):
+    """`(row, refusal)` for the recorded run `run_id` names -- exactly one is
+    not None. `why` ends the refusal for a run neither place holds.
 
-    The run is looked for in the ledger AND in the records the plan holds
-    (`read_rows` reads both), so a refusal names both places it looked.
+    The run is looked for in the ledger AND in the records of the plan at
+    `mpath` - the plan this verb was handed, never the one the config names
+    - and a refusal names both places it looked
+    (`_evidence_io.run_not_found`).
 
     A LOST LINE IS NAMED, NEVER READ AS ABSENCE. `read_rows` skips a line it
-    cannot parse and counts it; a run not found among the readable rows may
-    be on exactly that line, so the refusal says which file could not be
-    read in full rather than asserting the run was never recorded."""
+    cannot parse and counts it, and names a plan file that would not read; a
+    run not found among what was read may be in exactly that, so the refusal
+    says which file could not be read in full rather than asserting the run
+    was never recorded."""
     try:
-        ledger = _evidence_io.read_rows(project)
+        read = _evidence_io.read_rows(project, manifest_path=mpath)
     except Exception as exc:
-        return None, ("[audit-task] %s %s: the evidence ledger could not be "
-                      "read (%s)" % (flag, run_id, exc))
-    row = _evidence_io.row_by_run(ledger.get("rows") or [], run_id)
+        return None, ("[audit-task] %s %s: the recorded runs - the evidence "
+                      "ledger and the plan's records - could not be read (%s)"
+                      % (flag, run_id, exc))
+    row = _evidence_io.row_by_run(read.get("rows") or [], run_id)
     if row is not None:
         return row, None
-    if ledger.get("unreadable") or ledger.get("unreadablePlanFiles"):
-        lost = [_output.posix_rel(p, project) if os.path.isabs(p) else p
-                for p in (list(ledger.get("unreadableFiles") or [])
-                          + list(ledger.get("unreadablePlanFiles") or []))]
-        return None, ("[audit-task] %s %s: no run with this id is among the "
-                      "readable rows of the evidence ledger or the records "
-                      "the plan holds, and some of them could not be read "
-                      "(%s) -- the run may be in what that read lost, so "
-                      "repair it before asking again"
-                      % (flag, run_id, ", ".join(lost) or "file unnamed"))
-    return None, ("[audit-task] %s %s: no run with this id is in the "
-                  "evidence ledger (%s) or in any record the plan (%s) holds "
-                  "-- %s" % (flag, run_id, _ledger_where(project, ledger),
-                             _output.posix_rel(
-                                 _evidence_io.plan_file_of(project), project),
-                             why))
-
-
-def _ledger_where(project, ledger):
-    """Where the evidence ledger was looked for: its directory, and that it
-    does not exist when `read_rows` said so - never a count over nothing."""
-    where = _output.posix_rel(_evidence_io.evidence_dir(project), project)
-    return ("%s, which does not exist" % (where,)
-            if ledger.get("ledgerAbsent") else where)
+    said = _evidence_io.run_not_found(project, read, mpath, run_id)
+    if _evidence_io.lost_in_read(project, read):
+        return None, "[audit-task] %s %s: %s" % (flag, run_id, said)
+    return None, "[audit-task] %s %s: %s -- %s" % (flag, run_id, said, why)
 
 
 def _caught_refusal(row, run_id, test, listing):
@@ -14532,7 +14522,7 @@ def _locked_couple_caught(args, test, project, config, mpath, out):
             "on the entry, so it takes none of %s" % (", ".join(extra),))
         return E_USAGE
     row, refusal = _ledger_run(
-        project, "--caught", run_id,
+        project, mpath, "--caught", run_id,
         "a catch names the full run that caught it")
     if refusal:
         out(refusal)

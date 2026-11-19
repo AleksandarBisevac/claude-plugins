@@ -666,7 +666,7 @@ def tasks_of(mpath):
 
 def _ledger_has_green(root, mpath, task_id):
     project, config = _evio.project_config_for(mpath, root)
-    rows = _evio.read_rows(project, config)["rows"]
+    rows = _evio.read_rows(project, config, manifest_path=mpath)["rows"]
     return any(isinstance(r, dict) and r.get("taskId") == task_id
                and r.get("status") == "passed" for r in rows)
 
@@ -1659,7 +1659,7 @@ def _launch_token_cases(check):
     before = _lt_gate_asks(calls)
     code, decided = _signal_raw(M, root, mpath)
     project, config = _evio.project_config_for(mpath, root)
-    read = _evio.read_rows(project, config)
+    read = _evio.read_rows(project, config, manifest_path=mpath)
     sources = dict(zip([r.get("runId") for r in read["rows"]],
                        read.get("rowSources") or []))
     own_run = _lt_run_id(said)
@@ -1703,6 +1703,73 @@ def _launch_token_cases(check):
           and _signal_head(gdecided) != ("wait", "P1.1") and bool(gated)
           and [("GATE VERDICT REUSED" in o) for _a, o in asked] == [True]
           and _head_of(groot) == ghead)
+
+
+def _lr_launched_then_other(M, prefix):
+    """A one-task writer fixture whose launched gate ran red and recorded,
+    and AFTER it another run of the same task under another launch token -
+    the order the earlier cases leave out: `(root, mpath, token, own run,
+    other run, calls)`."""
+    root, mpath, calls = _bg_writer_exited(M, prefix, ("false",))
+    _signal_raw(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    argv = _run_argv(block) or []
+    token = _flag(argv, "--launch")
+    _ran, said = _play_gate(root, argv)
+    # MEASURED, not a repeat: a repeat would carry the launched run whole on
+    # its record (`repeatedRun`), and the launched run would then still be
+    # read - this fixture is the order in which nothing holds it any more.
+    _oran, other_said = _play_gate(
+        root, [w for w in _sans_launch(argv) if w != "--reuse"]
+        + ["--no-reuse", "--launch", "another-%s" % (token,)])
+    return (root, mpath, token, _lt_run_id(said), _lt_run_id(other_said),
+            calls)
+
+
+def _launch_replaced_cases(check):
+    """(lr) The launched run is still the drive's when another run of the
+    same subject is recorded AFTER it and so replaces its record: the ledger
+    row carries the launch token as the record does, so the drive reads the
+    run it launched back from that row; and with no ledger row to read, the
+    drive says the launched run was replaced, by which run, and launches the
+    gate again - never a wait on a run that has already ended."""
+    M, why = _load("drive_phase_replaced", real_gate_choice=True)
+    if M is None:
+        check("lrp1 the driver loads", False, why)
+        return
+    root, mpath, token, own, other, calls = _lr_launched_then_other(
+        M, "lrp-ledger")
+    project, config = _evio.project_config_for(mpath, root)
+    read = _evio.read_rows(project, config, manifest_path=mpath)
+    held = [(r.get("runId"), r.get("launch"), src) for r, src in zip(
+        read["rows"], read.get("rowSources") or [])
+        if r.get("runId") in (own, other)]
+    check("lrp1 the LEDGER ROW of a launched run carries its launch token, as "
+          "its record does - so a reader of the row alone finds the run: %r"
+          % ((token, own, other, held),),
+          bool(token) and own is not None and other is not None and own != other
+          and (own, token, _evio.ROW_FROM_LEDGER) in held)
+    code, line = _signal_raw(M, root, mpath)
+    check("lrp2 the launched run recorded, then ANOTHER run of the task "
+          "recorded after it and replacing its record: the next call decides "
+          "from the launched run's ledger row - red, as it ran - and does not "
+          "wait for a run that has already ended: %r" % ((code, line),),
+          code == 0 and "gate-red-writer" in line
+          and _signal_head(line) != ("wait", "P1.1"))
+    groot, gmpath, gtoken, gown, gother, gcalls = _lr_launched_then_other(
+        M, "lrp-records")
+    _lt_drop_ledger(groot, gmpath)
+    code, line = _signal_raw(M, groot, gmpath)
+    _c, shown = _explain_of(M, groot, gmpath, "P1.1")
+    again = _run_argv(shown) or []
+    check("lrp3 WITH NO LEDGER ROW, the launched run's record replaced by "
+          "another run's: the drive says the run it launched was replaced, "
+          "naming the run that replaced it, and dispatches the gate again "
+          "under a new token rather than waiting: %r"
+          % ((gown, gother, code, line, shown[-600:]),),
+          code == 0 and _signal_head(line) == ("dispatch", "P1.1")
+          and gother is not None and "replaced" in shown and gother in shown
+          and _flag(again, "--launch") not in (None, gtoken))
 
 
 # --- a background gate read back, with a step that grades the plan ------------------
@@ -3106,7 +3173,7 @@ def _writer_scope_cases(check):
                   "no patch read",),
           applies is not None and applies.returncode == 0)
     project, config = _evio.project_config_for(mpath, root)
-    runs = [r for r in _evio.read_rows(project, config)["rows"]
+    runs = [r for r in _evio.read_rows(project, config, manifest_path=mpath)["rows"]
             if isinstance(r, dict) and r.get("taskId") == "P1.1"
             and r.get(_evio.VERDICT_SOURCE) != _evio.REUSED]
     # The red for a set-aside that commits on the gate measured before it: the
@@ -5269,7 +5336,8 @@ def _sv_pure_cases(check, M):
             "gateDigest": _evio.gate_digest(entries, None),
             "testedState": {"tree": {"key": _evio.tree_key(where)}},
             "steps": [{"name": "unit", "exit": 0}]}, writer="sv7", config={})
-        ctx = {"project": proj, "config": {}, "gitRoot": proj}
+        ctx = {"project": proj, "config": {}, "gitRoot": proj,
+               "manifest": os.path.join(proj, "audit-plan.json")}
         basis = dict((label, M.verdict_basis(ctx, manifest, "P1.1",
                                              {"runId": "r1", "tree": tree})[0])
                      for label, tree in (("same", where), ("other", other),
@@ -7315,7 +7383,7 @@ def _actions(root):
 
 def _rows_of(root, mpath, task_id):
     project, config = _evio.project_config_for(mpath, root)
-    return [r for r in _evio.read_rows(project, config)["rows"]
+    return [r for r in _evio.read_rows(project, config, manifest_path=mpath)["rows"]
             if isinstance(r, dict) and r.get("taskId") == task_id]
 
 
@@ -12897,7 +12965,7 @@ def _auto_cases(check):
     held_mean = G._evio.gate_mean_ms
     G._evio.gate_mean_ms = lambda rows, names: (10.0, 3)
     try:
-        ctx = {"project": gate_root, "config": {}}
+        ctx = {"project": gate_root, "config": {}, "manifest": _gate_mpath}
         plain = G.gate_in_background(ctx, ["true"])
         inside = G.gate_in_background(dict(ctx, auto=True), ["true"])
         empty = G.gate_in_background(dict(ctx, auto=True), [])
@@ -15355,7 +15423,7 @@ def _reuse_gate_verb_cases(check, M):
         banners, stop = M.green_phase_gate(ctx, state, phase, head)
     held = state.get("phaseGate") or {}
     project, config = _evio.project_config_for(mpath, root)
-    named = _evio.row_by_run(_evio.read_rows(project, config)["rows"],
+    named = _evio.row_by_run(_evio.read_rows(project, config, manifest_path=mpath)["rows"],
                              held.get("runId"))
     check("dc4p the held phase-gate green names its run as the ledger keeps it - "
           "a row of the phase, at the head the drive holds it at - so a reuse "
@@ -15376,7 +15444,7 @@ def _reuse_gate_verb_cases(check, M):
           "the id alone, and names the ledger row the held run names: %r"
           % ((terse, read_id),),
           bool(held.get("runId")) and read_id == held.get("runId")
-          and _evio.row_by_run(_evio.read_rows(project, config)["rows"],
+          and _evio.row_by_run(_evio.read_rows(project, config, manifest_path=mpath)["rows"],
                                read_id) is not None)
     before = seen["runs"]
     M.bind_coverage(state, phase, "the human: a yes over that run", head)
@@ -19765,7 +19833,7 @@ def _tm_stages(mpath, kind=None, task_id="P1.1"):
 def _tm_rows(root, mpath):
     """`{runId: row}` of every evidence row the fixture recorded."""
     project, config = _evio.project_config_for(mpath, root)
-    return dict((r.get("runId"), r) for r in _evio.read_rows(project, config)["rows"]
+    return dict((r.get("runId"), r) for r in _evio.read_rows(project, config, manifest_path=mpath)["rows"]
                 if isinstance(r, dict) and r.get("runId"))
 
 
@@ -20504,7 +20572,12 @@ def _timing_unread_cases(check):
 
     def read_rows(*args, **kw):
         # Only the reads a stage is built from fail; the verdict's read stands.
-        if sys._getframe(1).f_code.co_name in timing_reads:
+        # The drive reads through `recorded_runs`, so the reader asking is
+        # the frame above that one.
+        frame = sys._getframe(1)
+        if frame.f_code.co_name == "recorded_runs":
+            frame = frame.f_back
+        if frame.f_code.co_name in timing_reads:
             raise OSError(_TM_UNREAD)
         return real(*args, **kw)
     M._evio.read_rows = read_rows
@@ -20530,6 +20603,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("ws-block", "_writer_session_cases"),
           ("bg-block", "_background_gate_cases"),
           ("lt-block", "_launch_token_cases"),
+          ("lrp-block", "_launch_replaced_cases"),
           ("gc-block", "_gate_choice_cases"),
           ("gc6-block", "_gate_choice_follow_cases"),
           ("gc8-block", "_gate_choice_signoff_cases"),
@@ -21944,14 +22018,14 @@ def _base_red_drive_cases(check):
     real, real_head = M._evio.read_rows, M.git_head
     M.git_head = lambda _ctx: head
     try:
-        ctx = {"project": "unused", "config": {}}
-        M._evio.read_rows = lambda _p, _c=None: {"rows": rows}
+        ctx = {"project": "unused", "config": {}, "manifest": "unused.json"}
+        M._evio.read_rows = lambda _p, _c=None, **_k: {"rows": rows}
         said = [M.base_red_why(ctx, "evidence: recorded %s\n" % (run,), manifest,
                                phase, phase["tasks"][0])
                 for run in ("r-task", "r-none", "r-plain", "r-unread")]
         at_head = []
         for ledger in ledgers:
-            M._evio.read_rows = lambda _p, _c=None, _l=ledger: {"rows": _l}
+            M._evio.read_rows = lambda _p, _c=None, _l=ledger, **_k: {"rows": _l}
             at_head.append(M.red_at_base(ctx, ["P1.1", "P1.2", "P1.3"]))
         # A newer clean run of ANOTHER gate, red on a suite of its own: the
         # reading filters by the gate's step names, as `run-test-gate.base_red`
@@ -21964,7 +22038,7 @@ def _base_red_drive_cases(check):
                                   % (_evio.NAMED_FAILING,)}])
         mixed = [_at_head("h-unit", "2026-10-19T06:00:00Z", "P1.9", clean),
                  other_gate]
-        M._evio.read_rows = lambda _p, _c=None: {"rows": mixed}
+        M._evio.read_rows = lambda _p, _c=None, **_k: {"rows": mixed}
         try:
             by_name = [M.red_at_base(ctx, ["P1.1"], names)
                        for names in (["unit"], None)]
@@ -22085,7 +22159,7 @@ def _base_mark(root, M=None):
 
 def _ledger_of(root):
     """`(task rows, base rows)` of the fixture's evidence ledger."""
-    rows = _evio.read_rows(root)["rows"]
+    rows = _evio.read_rows(root, manifest_path=_evio.plan_file_of(root))["rows"]
     return ([r for r in rows if r.get("scope") == "task"],
             [r for r in rows if r.get("scope") == _BASE_SCOPE])
 

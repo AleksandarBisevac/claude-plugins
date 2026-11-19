@@ -1373,7 +1373,8 @@ def _history_cases(check):
         # ledger reader, the real gate resolution, the real `full_status`
         # putting the real git to work.
         ev = M._evidence_io
-        rows = ev.read_rows(one, config={"manifestPath": "audit-plan.json"}
+        rows = ev.read_rows(one, config={"manifestPath": "audit-plan.json"},
+                            manifest_path=os.path.join(one, "audit-plan.json")
                             )["rows"]
         declared = [c for _n, c in ev.resolved_commands(
             back, back["meta"].get("fullGate"))]

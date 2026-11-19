@@ -205,7 +205,8 @@ def _full_run_block(manifest, manifest_path, project):
         return _full_run_unknown(manifest,
                                  _manifest_vocab.LEDGER_LOCATION_FAILED % (exc,))
     try:
-        rows = _evidence_io.read_rows(project_root, config=config)["rows"]
+        rows = _evidence_io.read_rows(project_root, config=config,
+                                      manifest_path=manifest_path)["rows"]
     except Exception as exc:                       # defensive; see the docstring
         return _full_run_unknown(manifest,
                                  _manifest_vocab.LEDGER_READ_FAILED % (exc,))

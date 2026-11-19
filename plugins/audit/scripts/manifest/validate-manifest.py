@@ -208,7 +208,7 @@ def main(argv):
     gap = _manifest_rules.phase_gate_suite_gap(manifest)
     if gap is None and isinstance(_exclude, list) and _exclude:
         _project, _config = _ev.project_config_for(paths[0])
-        _read = _ev.read_rows(_project, _config)
+        _read = _ev.read_rows(_project, _config, manifest_path=paths[0])
         if _read["unreadable"]:
             # AN UNREADABLE LEDGER IS SAID, NEVER READ AS 'NO SUITE'. A torn
             # line, an unparseable row or a file this could not even open

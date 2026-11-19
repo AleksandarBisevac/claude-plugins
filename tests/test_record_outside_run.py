@@ -99,7 +99,7 @@ def _cases(check):
         return code, "\n".join(lines)
 
     def rows(proj):
-        return _ev.read_rows(proj)["rows"]
+        return _ev.read_rows(proj, manifest_path=_ev.plan_file_of(proj))["rows"]
 
     try:
         # --- the window, asked directly ---------------------------------------

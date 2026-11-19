@@ -2669,7 +2669,8 @@ def _muted_coupling_cases(check, _run, _rows, _entry, k):
         check("dcp15 ALLOW: the same unmuted-for-it green runs still age "
               "the other coupling into a CANDIDATE: %r" % (_rows(rep),),
               len(cand) == 1 and "tests/test_d.py" in cand[0]["detail"])
-        rows = _evidence_io.read_rows(muted)["rows"]
+        rows = _evidence_io.read_rows(
+            muted, manifest_path=_evidence_io.plan_file_of(muted))["rows"]
         moments, _undated = M._measured_run_moments(rows, ["echo x"])
         ages = [M.coupling_age(_entry(t, ["src/x.py"],
                                       "2026-02-01T00:00:00Z"), moments)[0]

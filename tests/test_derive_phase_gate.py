@@ -606,7 +606,8 @@ def _cases(check):
         seen.append(steps)
         return ["spy.test.ts"]
 
-    M._evidence_io.read_rows = lambda _project_dir, config=None: {"rows": [red]}
+    M._evidence_io.read_rows = (lambda _project_dir, config=None,
+                                manifest_path=None: {"rows": [red]})
     M._evidence_io.named_failing_suites = _spy
     try:
         facts_sh, _lines_sh = M._gather_facts(

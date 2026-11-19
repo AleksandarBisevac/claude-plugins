@@ -1419,7 +1419,8 @@ def _read_gate_rows(project, manifest_rel):
         return (None, None, None,
                 _manifest_vocab.LEDGER_LOCATION_FAILED % (exc,), 0)
     try:
-        read = _evidence_io.read_rows(eproject, econfig)
+        read = _evidence_io.read_rows(eproject, econfig,
+                                      manifest_path=manifest_path)
     except Exception as exc:
         return None, None, None, _manifest_vocab.LEDGER_READ_FAILED % (exc,), 0
     return (eproject, econfig, read.get("rows") or [], None,

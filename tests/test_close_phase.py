@@ -2735,6 +2735,97 @@ def _record_landing_cases(check):
                 _harness.remove_tree(root)
 
 
+def _pw_calls(module_path, function):
+    """`(calls, shard_reads)` in `function`'s body in the file at
+    `module_path`: the names it calls (attribute or bare), and how many
+    times it reads a `shard` key itself - a walk of its own over the plan's
+    files, which the one walker exists to replace."""
+    import ast
+    with open(module_path, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    fn = [n for n in tree.body
+          if isinstance(n, ast.FunctionDef) and n.name == function]
+    if not fn:
+        return None, None
+    calls, shard_reads = set(), 0
+    for node in ast.walk(fn[0]):
+        if isinstance(node, ast.Call):
+            target = node.func
+            calls.add(target.attr if isinstance(target, ast.Attribute)
+                      else getattr(target, "id", None))
+            if isinstance(target, ast.Attribute) and target.attr == "get" \
+                    and node.args and isinstance(node.args[0], ast.Constant) \
+                    and node.args[0].value == "shard":
+                shard_reads += 1
+        if isinstance(node, ast.Subscript):
+            index = node.slice
+            if type(index).__name__ == "Index":       # the 3.8 wrapper
+                index = index.value
+            if isinstance(index, ast.Constant) and index.value == "shard":
+                shard_reads += 1
+    return calls, shard_reads
+
+
+def _plan_walker_cases(check):
+    """(pw) One walk over a plan's files, with one rule for a file that will
+    not read - `_evidence_io.walk_plan` - used by the disk's `plan_bodies`,
+    by `subject_records` through it, and by the branch tip's `tip_bodies`;
+    and a tip shard that will not read is reported with its file, never
+    skipped as a plan that holds no record."""
+    import _evidence_io as E
+    ev_path = E.__file__
+    cp_path = M.__file__
+    shapes = dict((name, _pw_calls(path, name)) for name, path in (
+        ("plan_bodies", ev_path), ("subject_records", ev_path),
+        ("tip_bodies", cp_path)))
+    walker = _pw_calls(ev_path, "walk_plan")
+    check("pw1 ONE WALKER: `plan_bodies` and `tip_bodies` call `walk_plan`, "
+          "`subject_records` reads through `plan_bodies`, and none of the "
+          "three reads a `shard` key itself - the walk and its rule for a "
+          "file that will not read live in `walk_plan` alone: %r"
+          % (dict((k, (sorted(c for c in (v[0] or ()) if c), v[1]))
+                  for k, v in shapes.items()),),
+          walker[0] is not None
+          and "walk_plan" in (shapes["plan_bodies"][0] or ())
+          and "walk_plan" in (shapes["tip_bodies"][0] or ())
+          and "plan_bodies" in (shapes["subject_records"][0] or ())
+          and all(v[1] == 0 for v in shapes.values()))
+    root = None
+    try:
+        root, mpath, git = _record_landing_fixture(
+            "closephase-walker", [(0, "passed")], (), sharded=True)
+        clean = M.branch_records(root, root, "audit/p1-demo", None, mpath)
+        shard = os.path.join(root, "docs", "audit", "phases", "P1.json")
+        with open(shard, "w") as fh:
+            fh.write('{"id": "P1", "tasks": [')
+        git("add", "-A")
+        git("commit", "-q", "-m", "a shard that will not read")
+        torn = M.branch_records(root, root, "audit/p1-demo", None, mpath)
+        check("pw2 SECOND DIRECTION: a readable tip shard is read - its record "
+              "is there - and no plan file is reported lost: %r"
+              % ((len(clean[0]), clean[1:]),),
+              len(clean) == 3 and len(clean[0]) == 1 and clean[2] == []
+              and clean[1] == [])
+        check("pw3 A TIP SHARD THAT WILL NOT READ is reported with its file - "
+              "`<branch>:<path>` - in the landing's notes and in what was "
+              "lost, and no record of it is read: %r" % ((torn,),),
+              len(torn) == 3 and torn[0] == []
+              and torn[2] == ["audit/p1-demo:docs/audit/phases/P1.json"]
+              and any("audit/p1-demo:docs/audit/phases/P1.json" in n
+                      and "could not be read" in n for n in torn[1]))
+        git("checkout", "-q", "main")
+        code, text = _close(mpath, root, "--keep-branch")
+        check("pw4 ...and the landing of the phase that shard holds is refused "
+              "naming it - the record that read lost may be its newest run - "
+              "and nothing lands: exit %r, landed %r, %r"
+              % (code, _landed(git), text[:500]),
+              code == 1 and not _landed(git)
+              and "audit/p1-demo:docs/audit/phases/P1.json" in text)
+    finally:
+        if root:
+            _harness.remove_tree(root)
+
+
 def _landing_cases(check):
     """THE HEAD IT WOULD MERGE, not the tree `--project` names; and a sign-off
     that chose to stand on no run, honoured for the green it set aside and not
@@ -5316,6 +5407,7 @@ STAGES = (("tk-block", "_takeover_cases"), ("lk-block", "_lock_cases"),
           ("rs-block", "_read_set_reach_cases"), ("ov-block", "_override_cases"),
           ("la-block", "_landing_cases"),
           ("lr-block", "_record_landing_cases"),
+          ("pw-block", "_plan_walker_cases"),
           ("co-block", "_checked_out_cases"),
           ("sy-block", "_symlink_cases"), ("cm-block", "_composed_cases"),
           ("sd-block", "_same_dir_cases"),

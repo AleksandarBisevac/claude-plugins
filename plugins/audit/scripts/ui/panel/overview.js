@@ -515,12 +515,15 @@ function evState(node,ev,basis){
    why:'the plan points at run '+rid+', but '
      +unread+' The plan caches the verdict "'
      +((pointer&&pointer.status)||'not recorded')+'".'};
+ // Both places a run is held are named: the runs shipped are the ledger's
+ // rows and the plan's own records read as one, so a run in neither is a
+ // claim about both - never about the ledger alone.
  if(!run)return {key:'dangling',run:null,
    why:'the plan points at run '+rid
-     +' and the evidence ledger does not hold it — '
+     +' and the evidence ledger does not hold it ('
      +plural((ev&&ev.files)||0,'file read','files read')+', '
      +plural((ev&&ev.unreadable)||0,'line unreadable','lines unreadable')
-     +'. The plan caches the verdict "'
+     +'), nor do the plan\'s own records. The plan caches the verdict "'
      +((pointer&&pointer.status)||'not recorded')+'".'};
  // A group member's pointer is its carrier's run, named as the carrier's: bare,
  // it would read as a sign-off run this phase made.

@@ -7115,7 +7115,7 @@ def _record_order_cases(check):
     except _CutOff:
         raised = True
     recorded_line = [ln for ln in seen if ln.startswith("  evidence: recorded")]
-    rows = _ev_io.read_rows(root)["rows"]
+    rows = _ev_io.read_rows(root, manifest_path=_ev_io.plan_file_of(root))["rows"]
     check("dg22 THE ROW IS WRITTEN BEFORE THE BANNER: `_record_run` already "
           "runs before `render`, so a run cut off AT the first verdict "
           "banner still leaves `evidence: recorded <runId>` printed and the "
@@ -7340,7 +7340,7 @@ def _derived_gate_cases(check):
               and "measured the DERIVED gate" in ln
               and "2 of 2 listed checks" in ln
               and "before P1 is whole" in ln for ln in lines1b))
-    rows_derived = _ev_io.read_rows(root)["rows"]
+    rows_derived = _ev_io.read_rows(root, manifest_path=_ev_io.plan_file_of(root))["rows"]
     check("dg3s ALLOW: an ENFORCE-mode run - `phase.testGateBasis` is "
           "already `derived` - prints no `shadow:` line and records no "
           "`shadow` field: asking whether the derived gate `would have` "
@@ -7390,7 +7390,7 @@ def _derived_gate_cases(check):
     lines3 = []
     M.main([mp3, "P1", "--project-dir", root3, "--no-reuse", "--record"],
           out=lines3.append)
-    rows3 = _ev_io.read_rows(root3)["rows"]
+    rows3 = _ev_io.read_rows(root3, manifest_path=_ev_io.plan_file_of(root3))["rows"]
     check("dg19 RED-FIRST: a WIDE run of a shadow-mode phase with two "
           "failing suites, one of them listed in `testGateDerived.tests`, "
           "records `shadow.missed` of one - the suite the derived gate "
@@ -7420,7 +7420,7 @@ def _derived_gate_cases(check):
     lines4 = []
     M.main([mp4, "P1", "--project-dir", root4, "--no-reuse", "--record"],
           out=lines4.append)
-    rows4 = _ev_io.read_rows(root4)["rows"]
+    rows4 = _ev_io.read_rows(root4, manifest_path=_ev_io.plan_file_of(root4))["rows"]
     check("dg19-allow: a plan with no `meta.phaseGate.mode` at all records "
           "no `shadow` field and prints no shadow line, even with the same "
           "two failing suites and a `testGateDerived` on the phase",
@@ -7450,7 +7450,7 @@ def _derived_gate_cases(check):
     lines5 = []
     M.main([mp5, "P1", "--project-dir", root5, "--no-reuse", "--record"],
           out=lines5.append)
-    rows5 = _ev_io.read_rows(root5)["rows"]
+    rows5 = _ev_io.read_rows(root5, manifest_path=_ev_io.plan_file_of(root5))["rows"]
     check("dg20 RED-FIRST: mode `shadow` AND `phase.testGateBasis == "
           "\"derived\"` together still record no `shadow` field and print "
           "no `shadow:` line, on the SAME two failing suites `dg19` reads a "
@@ -7635,9 +7635,9 @@ def _own_cases(check):
           log_dir.replace("\\", "/").endswith(
               ".claude/logs/gate-raw"))
 
-    before_rows = _ev_io.read_rows(root)["rows"]
+    before_rows = _ev_io.read_rows(root, manifest_path=_ev_io.plan_file_of(root))["rows"]
     _run_own()
-    after_rows = _ev_io.read_rows(root)["rows"]
+    after_rows = _ev_io.read_rows(root, manifest_path=_ev_io.plan_file_of(root))["rows"]
     check("own8 NOTHING IS RECORDED: the ledger carries exactly as many "
           "rows after an `--own` run as before it - no row, and so no "
           "pointer either, whatever the plan's own testEvidence says: %r"
@@ -10065,6 +10065,7 @@ def _crowd_cases(check):
                         fh.write(json.dumps(r) + "\n")
             lines = []
             M._say_who_else_was_running(root, {"status": "passed"}, row,
+                                        _ev_io.plan_file_of(root),
                                         out=lines.append)
             return [ln for ln in lines if "machine:" in ln]
         mine = {"runId": "B", _ev_io.STARTED_KEY: "2026-09-26T15:49:37Z",
@@ -10108,6 +10109,7 @@ def _crowd_cases(check):
                              "relinkedThrough": chained[-1]["hash"]})
         lines = []
         M._say_who_else_was_running(root, {"status": "passed"}, mine,
+                                    _ev_io.plan_file_of(root),
                                     out=lines.append)
         got = [ln for ln in lines if "machine:" in ln]
         check("gc5 the gc1 pair inside a stretch a ledger merge re-chained is "
@@ -10191,7 +10193,7 @@ def _layout_project_cases(check):
         finally:
             if env_was is not None:
                 os.environ["CLAUDE_PROJECT_DIR"] = env_was
-        here = [r.get("scope") for r in _ev_io.read_rows(root)["rows"]]
+        here = [r.get("scope") for r in _ev_io.read_rows(root, manifest_path=_ev_io.plan_file_of(root))["rows"]]
         # Three dirnames up from the manifest is <base>/outer/inner.
         stray = [top for top, _dirs, _files in os.walk(base)
                  if os.path.basename(top) == "evidence"
@@ -10219,7 +10221,7 @@ def _full_review_only_cases(check):
         lines = []
         code = M.main([mpath, "--full", "--project-dir", root, "--record"],
                       out=lines.append)
-        rows = _ev_io.read_rows(root)["rows"]
+        rows = _ev_io.read_rows(root, manifest_path=_ev_io.plan_file_of(root))["rows"]
         said = [ln for ln in lines if "not a command" in ln]
         check("fo1 RED-FIRST: a meta.fullGate holding only a `review-only:` "
               "entry runs no step, prints the not-a-command line naming it, "
@@ -10239,7 +10241,8 @@ def _full_review_only_cases(check):
         lines = []
         code = M.main([mpath_m, "--full", "--project-dir", root_m, "--record"],
                       out=lines.append)
-        full_rows = [r for r in _ev_io.read_rows(root_m)["rows"]
+        full_rows = [r for r in _ev_io.read_rows(
+            root_m, manifest_path=_ev_io.plan_file_of(root_m))["rows"]
                      if r.get("scope") == "full"]
         said = [ln for ln in lines if "not a command" in ln]
         steps = full_rows[0]["steps"] if len(full_rows) == 1 else []
@@ -10263,7 +10266,8 @@ def _full_review_only_cases(check):
     try:
         code = M.main([mpath_c, "--full", "--project-dir", root_c, "--record"],
                       out=(lambda _l: None))
-        full_rows = [r for r in _ev_io.read_rows(root_c)["rows"]
+        full_rows = [r for r in _ev_io.read_rows(
+            root_c, manifest_path=_ev_io.plan_file_of(root_c))["rows"]
                      if r.get("scope") == "full"]
         with open(mpath_c) as fh:
             plan_c = json.load(fh)
@@ -10314,7 +10318,8 @@ def _full_review_only_cases(check):
         lines = []
         code = M.main([mpath_f, "--full", "--project-dir", root_f, "--record"],
                       out=lines.append)
-        full_rows = [r for r in _ev_io.read_rows(root_f)["rows"]
+        full_rows = [r for r in _ev_io.read_rows(
+            root_f, manifest_path=_ev_io.plan_file_of(root_f))["rows"]
                      if r.get("scope") == "full"]
         said = [ln for ln in lines if "not a command" in ln]
         steps = full_rows[0]["steps"] if len(full_rows) == 1 else []
@@ -10372,7 +10377,7 @@ def _hand_run_project_cases(check):
         os.chdir(here)
         codes.append(M.main([os.path.join(root, rel), "P1", "--record"],
                             out=said.append))
-        rows = _ev_io.read_rows(root)["rows"]
+        rows = _ev_io.read_rows(root, manifest_path=_ev_io.plan_file_of(root))["rows"]
         strays = [p for p in (os.path.join(audit, ".claude"),
                               os.path.join(audit, "docs"))
                   if os.path.exists(p)]
@@ -10436,7 +10441,7 @@ def _full_scope_cases(check):
         code = M.main([mpath, "--full", "--project-dir", root, "--record"],
                       out=lines.append)
         text = "\n".join(lines)
-        rows = _ev_io.read_rows(root)["rows"]
+        rows = _ev_io.read_rows(root, manifest_path=_ev_io.plan_file_of(root))["rows"]
         full_rows = [r for r in rows if r.get("scope") == "full"]
         check("fg5 RED-FIRST: a declared fullGate records a scope-full row "
               "with the head it measured and a clean dirtyOutside, prints "
@@ -10481,7 +10486,7 @@ def _full_scope_cases(check):
         code = M.main([mpath_d, "--full", "--project-dir", root_d, "--record"],
                       out=lines.append)
         text = "\n".join(lines)
-        rows = _ev_io.read_rows(root_d)["rows"]
+        rows = _ev_io.read_rows(root_d, manifest_path=_ev_io.plan_file_of(root_d))["rows"]
         row = [r for r in rows if r.get("scope") == "full"][0]
         check("fg8 RED-FIRST: a dirty tree outside the recorder's own paths "
               "prints FULL RUN ON A DIRTY TREE and is carried onto the row - "
@@ -10519,7 +10524,7 @@ def _full_scope_cases(check):
                       out=(lambda _l: None))
         manifest_now = json.loads(open(mpath_w2).read())
         phase = dict(manifest_now["phases"][0], mergedHead=head_full)
-        rows = _ev_io.read_rows(root_w2)["rows"]
+        rows = _ev_io.read_rows(root_w2, manifest_path=_ev_io.plan_file_of(root_w2))["rows"]
         # `full_commands` IS THE BARE COMMAND HALF of `resolved_commands` -
         # see `_evidence_io.full_status`'s own docstring for why that, and
         # not the (name, command) pairs, is the contract.
@@ -10555,7 +10560,7 @@ def _full_scope_cases(check):
     try:
         code = M.main([mpath_p, "--full", "--project-dir", root_p, "--record"],
                       out=(lambda _l: None))
-        rows = _ev_io.read_rows(root_p)["rows"]
+        rows = _ev_io.read_rows(root_p, manifest_path=_ev_io.plan_file_of(root_p))["rows"]
         recorded = [s.get("command") for r in rows if r.get("scope") == "full"
                     for s in r.get("steps") or []]
         check("fg10c ...and with meta.nodePreamble set, the recorded command "
@@ -10689,7 +10694,8 @@ def _sm_run(fx, mode):
     lines = []
     code = M.main([fx["mpath"], "--full", "--project-dir", fx["root"],
                    "--record"], out=lines.append)
-    full_rows = [r for r in _ev_io.read_rows(fx["root"])["rows"]
+    full_rows = [r for r in _ev_io.read_rows(
+        fx["root"], manifest_path=_ev_io.plan_file_of(fx["root"]))["rows"]
                  if r.get("scope") == "full"]
     return code, lines, full_rows[-1] if full_rows else {}
 
@@ -12298,7 +12304,7 @@ def _tree_cases(check):
         return M.main(base + list(extra), out=lines.append), lines
 
     code, lines = run("--record", "--tree", tree)
-    rows = _ev_io.read_rows(project)["rows"]
+    rows = _ev_io.read_rows(project, manifest_path=_ev_io.plan_file_of(project))["rows"]
     row = rows[-1] if rows else {}
     state = row.get("testedState") or {}
     tree_digest = _tree_stamp.scope_digest(tree, ["tests/test_a.py"])[0]
@@ -12398,7 +12404,7 @@ def _wave_tree_cases(check):
 
     lines = []
     code = M.main(base + ["--task", "P1.1"], out=lines.append)
-    rows = _ev_io.read_rows(project)["rows"]
+    rows = _ev_io.read_rows(project, manifest_path=_ev_io.plan_file_of(project))["rows"]
     state = (rows[-1].get("testedState") or {}) if rows else {}
     key = (state.get("tree") or {}).get("key")
     tree_digest = _tree_stamp.scope_digest(tree, ["tests/test_a.py"])[0]
@@ -12426,7 +12432,7 @@ def _wave_tree_cases(check):
 
     again = []
     acode = M.main(base + ["--task", "P1.1", "--tree", tree], out=again.append)
-    arows = _ev_io.read_rows(project)["rows"]
+    arows = _ev_io.read_rows(project, manifest_path=_ev_io.plan_file_of(project))["rows"]
     astate = (arows[-1].get("testedState") or {}) if arows else {}
     check("wt4 ALLOW: the same task WITH --tree is measured in it and records "
           "its key: %r" % ((acode, (astate.get("tree") or {}).get("key")),),
@@ -13951,12 +13957,16 @@ def _last_run_record_cases(check):
           and _lr_subject(body, "P1.2").get("testEvidence")
           == {"runId": r_id, "status": "failed", "at": red.get("at")})
     check("lr5 THE EVIDENCE ROW IS STILL WRITTEN, under the same runId as the "
-          "record, and it carries none of the record's own keys - the launch "
-          "token is the record's alone: %r"
-          % (sorted(rows.get(g_id) or {}),),
+          "record, carrying none of the record's own keys - and the launch "
+          "token on it as on the record, since the record is replaced by the "
+          "subject's next run and the row is not; a run launched with no "
+          "token carries none: %r"
+          % ((sorted(rows.get(g_id) or {}), (rows.get(r_id) or {}).get("launch")),),
           g_id in rows and r_id in rows
           and rows[g_id].get("status") == "passed"
-          and not any(k in rows[g_id] for k in ("launch", "lastRun", "machine")))
+          and rows[g_id].get("launch") == "tok-green"
+          and "launch" not in rows[r_id]
+          and not any(k in rows[g_id] for k in ("lastRun", "machine")))
 
     # --- a lock held past the wait: exit 3, the log named, the shard unchanged
     import _locks
@@ -14010,8 +14020,10 @@ def _record_repeat_gate_cases(check):
         code = M.main([mp, "P1", "--project-dir", root, "--record",
                        "--task", "P1.1"] + list(extra), out=lines.append)
         _raw, body = _lr_read(shard)
-        return code, "\n".join(lines), _lr_subject(body, "P1.1").get(
-            "lastRun") or {}
+        # As a reader resolves it: a whole repeat stores its copied steps
+        # once, in the run it carries (`resolved_shared`).
+        return code, "\n".join(lines), _ev_io.resolved_shared(
+            _lr_subject(body, "P1.1").get("lastRun") or {})
 
     def steps(record):
         return [(s.get("name"), (s.get("reusedFrom") or {}).get("runId"),
@@ -14196,8 +14208,446 @@ def _record_part_reuse_cases(check):
         _harness.remove_tree(root)
 
 
+# --- every reader, with the ledger directory gone -------------------------------
+def _lg_repo():
+    """`(root, manifest)`: a committed sharded project whose phase P1's own
+    gate is red AND owes a follower (its step prints the follower line), whose
+    task P1.1 has a green gate of its own, and whose task P1.2 a red one."""
+    root = _harness.fixture_root("run-test-gate-ledger-gone-")
+    for d in (("docs", "audit", "phases"), (".claude",), ("src",)):
+        os.makedirs(os.path.join(root, *d))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    with open(os.path.join(root, "src", "a.py"), "w") as fh:
+        fh.write("declared = 1\n")
+    line = _ev_io.follower_line("docs/page.html", "make page", "lint.page")
+    owe = "%s -c %s %s" % (
+        shlex.quote(sys.executable),
+        shlex.quote("import sys; print(sys.argv[1]); sys.exit(1)"),
+        shlex.quote(line))
+    mp = os.path.join(root, "docs", "audit", "audit-plan.json")
+    with open(mp, "w") as fh:
+        json.dump({"meta": {"version": 3, "buildCommands": {
+                       "ok": "true", "red": "false", "owe": owe}},
+                   "phases": [{"id": "P1", "title": "one",
+                               "shard": "phases/P1.json"}]}, fh)
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+              "w") as fh:
+        json.dump({"id": "P1", "title": "P1", "status": "in_progress",
+                   "testGate": ["owe"], "tasks": [
+                       {"id": "P1.1", "title": "t", "status": "in_progress",
+                        "files": ["src/a.py"], "tests": {"gate": ["ok"]}},
+                       {"id": "P1.2", "title": "r", "status": "in_progress",
+                        "files": ["src/a.py"], "tests": {"gate": ["red"]}}]},
+                  fh)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", "docs", ".claude", "src"],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    return root, mp
+
+
+def _lg_answers(root, mp, runs, mods):
+    """`{reader: answer}` - every reader of recorded runs asked about the
+    runs `runs` names, in the project `root`, each answer normalized to what
+    the reader decides (the project's path spelled `<P>`), so two projects
+    holding the same runs compare equal."""
+    import _manifest_io
+    import _verdict_binding as _vb
+    import _evidence_view
+    import _panel_composition
+    D, AT, CP, AS = mods
+    manifest = _manifest_io.load_manifest(mp)
+    phase = manifest["phases"][0]
+    tasks = dict((t["id"], t) for t in phase["tasks"])
+
+    def norm(value):
+        return json.loads(json.dumps(value, sort_keys=True, default=str)
+                          .replace(os.path.realpath(root), "<P>")
+                          .replace(root, "<P>"))
+
+    def binding(answer):
+        return norm({"state": answer.get("state"), "arm": answer.get("arm"),
+                     "row": (answer.get("row") or {}).get("runId"),
+                     "measured": (answer.get("measured") or {}).get("runId")})
+
+    def asked(fn):
+        try:
+            return fn()
+        except Exception as exc:                               # noqa: BLE001
+            return "raised %s: %s" % (type(exc).__name__, exc)
+
+    ctx = {"project": root, "config": _journal_io.load_config(root),
+           "manifest": mp, "gitRoot": root}
+    out = {}
+    out["commit binding (accept)"] = asked(lambda: binding(_vb.task_binding(
+        root, mp, manifest, phase, tasks["P1.1"], "record", "no gate")))
+    out["commit binding (refuse)"] = asked(lambda: binding(_vb.task_binding(
+        root, mp, manifest, phase, tasks["P1.2"], "record", "no gate")))
+    out["close-phase"] = asked(lambda: binding(
+        CP.gate_answer(root, mp, manifest, phase)[0]))
+    out["drive read-back"] = asked(lambda: norm(D.new_gate_row(
+        ctx, {"launch": "lg-tok"}, ("task", "P1.1"))))
+    out["drive followers"] = asked(lambda: norm(
+        D.run_followers(ctx, runs["phase"])))
+    out["--failing-from"] = asked(lambda: norm(
+        (lambda r: ((r[0] or {}).get("runId"), r[1]))(
+            AT._failing_from_lookup(root, mp, phase, runs["phase"]))))
+    out["couple --basis-run"] = asked(lambda: norm(
+        (lambda r: ((r[0] or {}).get("runId"), r[1]))(
+            AT._ledger_run(root, mp, "--basis-run", runs["phase"], "w"))))
+    # The report ships the row it graded whole. Two kinds of key are not an
+    # answer and differ between the two by design: the ledger's chain and its
+    # line format (`CHAIN_KEYS` and `v` - a record is no link of it), and the
+    # two lines only the record keeps (`machine`, `attribution`, which the
+    # recorder printed and wrote beside the run, never on its row).
+    unanswered = set(_ev_io.CHAIN_KEYS) | set(("v", "machine", "attribution"))
+
+    def facts(value):
+        if isinstance(value, dict):
+            return dict((k, facts(v) if k != "row" else (
+                dict((rk, rv) for rk, rv in v.items() if rk not in unanswered)
+                if isinstance(v, dict) else v))
+                for k, v in value.items())
+        if isinstance(value, list):
+            return [facts(v) for v in value]
+        return value
+    out["report evidence facts"] = asked(lambda: norm(facts(
+        dict((k, v) for k, v in (_evidence_view.load_evidence(
+            manifest, mp, root) or {}).items()
+             if k not in ("files", "unreadable", "ledgerAbsent")))))
+    composition = {"tasks": [dict(t) for t in phase["tasks"]],
+                   "phases": [dict(phase)]}
+    out["panel evidence facts"] = asked(lambda: norm(
+        (lambda v: {"runs": v.get("runs"), "fields": v.get("fields"),
+                    "readError": v.get("readError")})(
+            _panel_composition.evidence_view(root, composition))))
+    buf = _io.StringIO()
+    with _ctx.redirect_stdout(buf):
+        code = asked(lambda: AS.main([mp, "--json"]))
+    status = asked(lambda: json.loads(buf.getvalue()))
+    out["status"] = (status if isinstance(status, str)
+                     else code if isinstance(code, str)
+                     else norm([code, status]))
+    return out
+
+
+def _ledger_gone_cases(check):
+    """(lg) The ledger directory REMOVED after recording: every reader of
+    recorded runs answers, from the plan's records alone, as it answers with
+    the ledger there - or says what it could not read - in two copies of one
+    project, one keeping its ledger and one without it."""
+    root, mp = _lg_repo()
+    gone = None
+    try:
+        lines = []
+        M.main([mp, "P1", "--project-dir", root, "--record", "--no-reuse"],
+               out=lines.append)
+        M.main([mp, "P1", "--project-dir", root, "--record", "--no-reuse",
+                "--task", "P1.2"], out=lines.append)
+        M.main([mp, "P1", "--project-dir", root, "--record", "--no-reuse",
+                "--task", "P1.1", "--launch", "lg-tok"], out=lines.append)
+        said = re.findall(r"evidence: recorded (\S+)", "\n".join(lines))
+        runs = dict(zip(("phase", "red", "green"), said))
+        gone = root + "-gone"
+        shutil.copytree(root, gone, symlinks=True)
+        _harness.remove_tree(_ev_io.evidence_dir(gone))
+        mp_gone = os.path.join(gone, os.path.relpath(mp, root))
+        mods = (_loader.load_script("drive-phase.py", "dp_lg"),
+                _loader.load_script("audit-task.py", "at_lg"),
+                _loader.load_script("close-phase.py", "cp_lg"),
+                _loader.load_script("audit-status.py", "as_lg"))
+        held = _lg_answers(root, mp, runs, mods)
+        alone = _lg_answers(gone, mp_gone, runs, mods)
+        differ = sorted(k for k in held if held[k] != alone.get(k))
+        check("lg1 THE LEDGER GONE, EVERY READER ANSWERS AS BEFORE: the commit "
+              "binding (accept and refuse), close-phase, the drive's read-back "
+              "and its followers, --failing-from, couple --basis-run, status, "
+              "the report's and the panel's evidence facts each answer from "
+              "the plan's records alone as they do with the ledger there - "
+              "differing: %r" % (dict((k, (held[k], alone.get(k)))
+                                      for k in differ),),
+              len(runs) == 3 and not os.path.isdir(_ev_io.evidence_dir(gone))
+              and differ == [])
+        check("lg2 ...and the table is not vacuous: the accepted binding is "
+              "bound to the green run, the refused one names the red, the "
+              "drive reads back the launched run and the follower the phase's "
+              "red owes, and the lookups find the phase's run: %r"
+              % (dict((k, alone.get(k)) for k in (
+                  "commit binding (accept)", "commit binding (refuse)",
+                  "drive read-back", "drive followers", "couple --basis-run")),),
+              not [k for k, v in list(alone.items()) + list(held.items())
+                   if str(v).startswith("raised ")]
+              and (alone["commit binding (accept)"] or {}).get("state") == "bound"
+              and (alone["commit binding (accept)"] or {}).get("row")
+              == runs.get("green")
+              and (alone["commit binding (refuse)"] or {}).get("row")
+              == runs.get("red")
+              and alone["drive read-back"] == [[runs.get("green"), "passed"],
+                                               None]
+              and [f.get("path") for f in alone["drive followers"] or []]
+              == ["docs/page.html"]
+              and (alone["couple --basis-run"] or [None])[0] == runs.get("phase"))
+        rl = []
+        code = M.main([mp_gone, "P1", "--project-dir", gone, "--record",
+                       "--task", "P1.1"], out=rl.append)
+        shard = os.path.join(gone, "docs", "audit", "phases", "P1.json")
+        _raw, body = _lr_read(shard)
+        record = _lr_subject(body, "P1.1").get("lastRun") or {}
+        check("lg3 GATE REUSE with the ledger gone: the next run of the green "
+              "task repeats the run held only as its record, as it would the "
+              "ledger's row: %r"
+              % ((code, record.get(_ev_io.VERDICT_SOURCE),
+                  record.get("reusedFrom")),),
+              code == M.E_OK
+              and record.get(_ev_io.VERDICT_SOURCE) == _ev_io.REUSED
+              and (record.get("reusedFrom") or {}).get("runId")
+              == runs.get("green"))
+    finally:
+        _harness.remove_tree(root)
+        if gone:
+            _harness.remove_tree(gone)
+
+
+# --- the seam reads the plan it was handed -------------------------------------
+def _tp_second_plan(root):
+    """A second plan in `root` - `plans/b/audit-plan.json`, which no config
+    names - whose phase and task ids collide with the configured plan's
+    (`_lr_repo`): P1 and its P1.1, on the same file and the same gate."""
+    path = os.path.join(root, "plans", "b", "audit-plan.json")
+    os.makedirs(os.path.dirname(path))
+    with open(path, "w") as fh:
+        json.dump({"meta": {"version": 3, "buildCommands": {
+                       "ok": "true", "red": "false"}},
+                   "phases": [{"id": "P1", "title": "b", "status": "in_progress",
+                               "testGate": ["ok"], "tasks": [
+                                   {"id": "P1.1", "title": "b-t",
+                                    "status": "in_progress",
+                                    "files": ["src/a.py"],
+                                    "tests": {"gate": ["ok"]}}]}]}, fh)
+    for arg in (["add", "--", "plans"],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "second plan"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    return path
+
+
+def _counts_sample_cases(check):
+    """(cs) The step names a count's basis samples are held to the sample
+    budget, the first one included: a step named by a whole sweep command
+    carried that command into the sentence - and so into every ledger row
+    and record of its run - entire."""
+    long_name = "python3 tools/sweep-selftests.py " + " ".join(
+        "tests/test_%03d.py" % (i,) for i in range(300))
+    basis = M.counts_basis([{"name": long_name, "ran": None}], ())
+    budget = getattr(M, "SAMPLE_BUDGET", 0)
+    check("cs1 A STEP NAME LONGER THAN THE SAMPLE BUDGET is cut to it in the "
+          "count's basis, saying how much was left out: %d characters, %r"
+          % (len(basis), basis[-120:]),
+          len(basis) < budget + 200 and long_name not in basis
+          and long_name[:budget] in basis and "more characters" in basis)
+    short = M.counts_basis([{"name": "sweep", "ran": None},
+                            {"name": "lint", "ran": None}], ())
+    check("cs2 SECOND DIRECTION: names within the budget are named whole and "
+          "nothing says a name was cut - the case that fails if every name "
+          "were cut: %r" % (short,),
+          "sweep, lint" in short and "more characters" not in short)
+
+
+def _plan_handed_cases(check):
+    """(tp) Every caller hands the one seam (`read_rows`) the plan it was
+    handed: in a project holding two plans whose task ids collide, a run
+    recorded for one - held only as its record, the ledger gone - is not
+    reused for the other's task, not bound to it, and not found from it."""
+    import _verdict_binding as _vb
+    root, mp_a, _shard = _lr_repo()
+    # `--base-of` measures in a tree that is not the project; the lookup this
+    # asks about refuses before anything is measured there.
+    base_tree = _harness.fixture_root("run-test-gate-tp-tree-")
+    try:
+        mp_b = _tp_second_plan(root)
+        evdir = _ev_io.evidence_dir(root)
+        lines = []
+        code_a = M.main([mp_a, "P1", "--project-dir", root, "--record",
+                         "--no-reuse", "--task", "P1.1"], out=lines.append)
+        run_a = (re.findall(r"evidence: recorded (\S+)", "\n".join(lines))
+                 or [None])[-1]
+        _harness.remove_tree(evdir)
+        try:
+            M._ev.read_rows(root)
+            bare = "no refusal"
+        except TypeError as exc:
+            bare = "TypeError: %s" % (exc,)
+        try:
+            M._ev.read_rows(root, manifest_path=None)
+            none = "no refusal"
+        except ValueError as exc:
+            none = "ValueError: %s" % (exc,)
+        check("tp1 THE PLAN IS A REQUIRED ARGUMENT OF THE SEAM: `read_rows` "
+              "with no plan refuses, and so does one handed None - no reader "
+              "falls back to the plan the config names: %r" % ((bare, none),),
+              bare.startswith("TypeError") and "manifest_path" in bare
+              and none.startswith("ValueError"))
+        read_a = M._ev.read_rows(root, manifest_path=mp_a)
+        read_b = M._ev.read_rows(root, manifest_path=mp_b)
+        check("tp2 the run recorded for the configured plan, held only as its "
+              "record, is read beside that plan and not beside the second one, "
+              "whose task ids collide: %r"
+              % ((code_a, run_a, [r.get("runId") for r in read_a["rows"]],
+                  [r.get("runId") for r in read_b["rows"]]),),
+              code_a == M.E_OK and run_a
+              and _ev_io.row_by_run(read_a["rows"], run_a) is not None
+              and _ev_io.row_by_run(read_b["rows"], run_a) is None)
+        manifest_b = _mio_load(mp_b)
+        phase_b = manifest_b["phases"][0]
+        bound = _vb.task_binding(root, mp_b, manifest_b, phase_b,
+                                 phase_b["tasks"][0], "record a run",
+                                 "no gate")
+        check("tp3 NOT BOUND: the second plan's P1.1 does not stand under the "
+              "first plan's run - its binding names no row: %r"
+              % ((bound.get("state"), (bound.get("row") or {}).get("runId")),),
+              (bound.get("row") or {}).get("runId") != run_a
+              and bound.get("state") != "bound")
+        base_lines = []
+        code_base = M.main([mp_b, "P1", "--project-dir", root, "--base-of",
+                            run_a, "--tree", base_tree], out=base_lines.append)
+        base_text = "\n".join(base_lines)
+        check("tp4 NOT FOUND: `--base-of` that run on the second plan is "
+              "refused exit 2 - no run of that id beside THIS plan - naming the "
+              "second plan's file, never the configured one: %r"
+              % ((code_base, base_text[-400:]),),
+              code_base == M.E_ASK and ("no run %s" % (run_a,)) in base_text
+              and "plans/b/audit-plan.json" in base_text
+              and "docs/audit/audit-plan.json" not in base_text)
+        # The two plans' identity keys differ anyway (each run rewrites its
+        # own plan's shard, which the other plan's key reads as content), so
+        # "the record repeats nothing" alone cannot fail. What the reuse
+        # lookup was HANDED is the claim: the rows it searched, captured at
+        # `reusable_run`, with a run of the first plan as the control that
+        # the capture sees a record at all.
+        real_reusable = M._ev.reusable_run
+        searched = []
+
+        def capturing(rows, *a, **k):
+            searched.append([r.get("runId") for r in rows or []
+                             if isinstance(r, dict)])
+            return real_reusable(rows, *a, **k)
+        M._ev.reusable_run = capturing
+        try:
+            reuse_lines = []
+            code_b = M.main([mp_b, "P1", "--project-dir", root, "--record",
+                             "--task", "P1.1"], out=reuse_lines.append)
+            searched_b, searched[:] = list(searched), []
+            code_a2 = M.main([mp_a, "P1", "--project-dir", root, "--record",
+                              "--task", "P1.1"], out=[].append)
+            searched_a = list(searched)
+        finally:
+            M._ev.reusable_run = real_reusable
+        record_b = (_lr_subject(_mio_load(mp_b)["phases"][0], "P1.1")
+                    .get("lastRun") or {})
+        check("tp5 NOT REUSED: the second plan's P1.1, run with reuse on, "
+              "searched rows holding none of the first plan's runs, and is "
+              "measured - its record repeats no run - while the first plan's "
+              "own reuse searched its record (the control): %r"
+              % ((code_b, searched_b, code_a2, searched_a,
+                  record_b.get("runId"), record_b.get(_ev_io.VERDICT_SOURCE),
+                  record_b.get("reusedFrom")),),
+              code_b == M.E_OK and searched_b
+              and not any(run_a in ids for ids in searched_b)
+              and searched_a and any(run_a in ids for ids in searched_a)
+              and record_b.get("runId")
+              and record_b.get("runId") != run_a
+              and (record_b.get("reusedFrom") or {}).get("runId") != run_a
+              and record_b.get(_ev_io.VERDICT_SOURCE)
+              not in (_ev_io.REUSED, _ev_io.PART_REUSED))
+    finally:
+        _harness.remove_tree(root)
+        _harness.remove_tree(base_tree)
+
+
+def _mio_load(path):
+    import _manifest_io
+    return _manifest_io.load_manifest(path)
+
+
+# --- a refusal names both places, and a plan file that would not read ----------
+def _both_places_cases(check):
+    """(bp) A run looked for and not found is refused naming BOTH places it
+    was looked for - the ledger's directory (said as absent when it is) and
+    the plan file - and a plan shard that will not read is said as that,
+    with its file, by every reader of the plan's records: never read as no
+    run."""
+    import _verdict_binding as _vb
+    root, mp, _shard = _lr_repo()
+    base_tree = _harness.fixture_root("run-test-gate-bp-tree-")
+    try:
+        lines = []
+        code = M.main([mp, "P1", "--project-dir", root, "--base-of",
+                       "NO-SUCH-RUN", "--tree", base_tree], out=lines.append)
+        text = "\n".join(lines)
+        check("bp1 `--base-of` an unknown run with no ledger directory is "
+              "refused exit 2 naming the ledger directory as not existing AND "
+              "the plan file whose records were read: %r" % ((code, text),),
+              code == M.E_ASK and "no run NO-SUCH-RUN" in text
+              and "docs/audit/evidence, which does not exist" in text
+              and "docs/audit/audit-plan.json" in text)
+        # A second phase whose shard will not read: the index names it.
+        with open(mp, "r") as fh:
+            index = json.load(fh)
+        index["phases"].append({"id": "P2", "title": "two",
+                                "shard": "phases/P2.json"})
+        with open(mp, "w") as fh:
+            json.dump(index, fh)
+        torn = os.path.join(root, "docs", "audit", "phases", "P2.json")
+        with open(torn, "w") as fh:
+            fh.write('{"id": "P2", "tasks": [')
+        read = _ev_io.read_rows(root, manifest_path=mp)
+        said = _ev_io.run_not_found(root, read, mp, "NO-SUCH-RUN")
+        check("bp2 A SHARD THAT WILL NOT READ IS NAMED, with its file, by the "
+              "seam - and a run not found beside it is said as possibly in "
+              "what the read lost, never as no run: %r"
+              % ((read.get("unreadablePlanFiles"), said),),
+              any(str(p).replace(os.sep, "/").endswith("phases/P2.json")
+                  for p in read.get("unreadablePlanFiles") or [])
+              and "phases/P2.json" in said.replace(os.sep, "/")
+              and "could not be" in said and "is in the evidence ledger" not in said)
+        records, lost = _vb.plan_records(root, mp)
+        refused = _vb.binding(root, {"taskId": "P2.1", "phaseId": "P2"},
+                              ["ok"], "task", ["src/a.py"], mp, "record a run",
+                              "no gate")
+        other = _vb.binding(root, {"taskId": "P1.1", "phaseId": "P1"},
+                            ["ok"], "task", ["src/a.py"], mp, "record a run",
+                            "no gate")
+        check("bp3 THE BINDING refuses a subject whose own shard will not read "
+              "as unreadable, naming the file - its newest run may be the "
+              "record that read lost - and a subject of another, readable "
+              "shard is not refused for it: %r"
+              % ((lost, refused.get("arm"), refused.get("sentence"),
+                  other.get("arm")),),
+              refused.get("arm") == _vb.ARM_UNREADABLE
+              and "phases/P2.json" in str(refused.get("sentence")).replace(
+                  os.sep, "/")
+              and other.get("arm") != _vb.ARM_UNREADABLE)
+        report = _ev_io.reconcile(root, mp)
+        check("bp4 reconcile names the plan file it could not read rather than "
+              "reporting every subject reconciled: %r"
+              % (report.get("unreadablePlanFiles"),),
+              any(str(p).replace(os.sep, "/").endswith("phases/P2.json")
+                  for p in report.get("unreadablePlanFiles") or []))
+    finally:
+        _harness.remove_tree(root)
+        _harness.remove_tree(base_tree)
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "tp-block", _plan_handed_cases)
+        _harness.stage(check, "cs-block", _counts_sample_cases)
+        _harness.stage(check, "bp-block", _both_places_cases)
+        _harness.stage(check, "lg-block", _ledger_gone_cases)
         _harness.stage(check, "lr-block", _last_run_record_cases)
         _harness.stage(check, "rpt-block", _record_repeat_gate_cases)
         _record_wording_cases(check)

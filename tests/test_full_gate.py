@@ -149,7 +149,7 @@ def _end_to_end_cases(check):
         lines = []
         code = M.main([mpath, "--project-dir", root], out=lines.append)
         text = "\n".join(lines)
-        rows = _ev_io.read_rows(root)["rows"]
+        rows = _ev_io.read_rows(root, manifest_path=mpath)["rows"]
         full_rows = [r for r in rows if r.get("scope") == "full"]
         check("fge1 a real full-gate.py run against a real run-test-gate.py "
               "exits 0, prints the runner's own FULL GATE GREEN line (a "
@@ -858,7 +858,7 @@ def _learn_from_cases(check):
         _imported_row(root_x, "RUN-CI-RAISE")
         real_read = _ev_io.read_rows
 
-        def raising_read(project, config=None):
+        def raising_read(project, config=None, manifest_path=None):
             raise OSError("the reader under test refused the ledger")
         _ev_io.read_rows = raising_read
         try:
@@ -1258,7 +1258,8 @@ def _learning_stdin_route_cases(check):
         _imported_row(root, "RUN-CI-PLAN", misses=[
             {"test": "tests/test_cart.py", "phases": ["P1"],
              "sources": ["src/cart.py"], "phasesDropped": "P2  P3"}])
-        row = [r for r in _ev_io.read_rows(root).get("rows") or []
+        row = [r for r in _ev_io.read_rows(
+                   root, manifest_path=_ev_io.plan_file_of(root)).get("rows") or []
                if r.get("runId") == "RUN-CI-PLAN"][0]
         plan = M.learning_plan(row, {}, {}, _ev_io.suite_listing(root))
         shaped = [(v[0], len(v)) for v in plan["verbs"]]

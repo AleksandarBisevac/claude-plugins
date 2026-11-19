@@ -2017,7 +2017,7 @@
         "steps"
       ],
       "additionalProperties": true,
-      "description": "THE NEWEST RECORDED RUN of this task (or of this phase's gate), whole: written by `run-test-gate.py --record` in the same write as `testEvidence`, which is the pointer derived from it (`_evidence_io.pointer_from_record`), under the plan-file lock every verb takes (`index`, through `_evidence_io.write_plan_file`), with the shard read only once that lock is held; `--reconcile` rewrites it from a newer ledger row in the same write as the pointer. REPLACED, NEVER APPENDED - one record per subject, so a shard holds at most one per task and per phase, and a record's size is bounded by the gate's width (`_evidence_io.MAX_STEPS` steps, each with at most `MAX_FAILING` failing lines of at most the journal's value bound). The evidence ledger row of the same run is still written beside it, unchanged, under the same `runId`. Optional and additive: a plan written before this key existed validates exactly as it did, and ABSENT reads as `testEvidence`'s absence does - no record, never a failure. Every string in it passes the plan writer's machine-path scrub, as the rest of the shard does. additionalProperties stays permissive, this document's policy at every object level.",
+      "description": "THE NEWEST RECORDED RUN of this task (or of this phase's gate), whole: written by `run-test-gate.py --record` in the same write as `testEvidence`, which is the pointer derived from it (`_evidence_io.pointer_from_record`), under the plan-file lock every verb takes (`index`, through `_evidence_io.write_plan_file`), with the shard read only once that lock is held; `--reconcile` rewrites it from a newer ledger row in the same write as the pointer. REPLACED, NEVER APPENDED - one record per subject, so a shard holds at most one per task and per phase, and a record's size is bounded by the gate's width (`_evidence_io.MAX_STEPS` steps, each with at most `MAX_FAILING` failing lines of at most the journal's value bound) and then by `_evidence_io.RECORD_MAX_BYTES`, past which `recordCut` names what was dropped. IT CARRIES EVERY KEY ITS LEDGER ROW CARRIES but the few `_evidence_io.RECORD_NOT_CARRIED` names, each with its reason (the chain's own keys, and what the record's place in the plan already says), so every reader of a run - the drive, the gate's repeat, the binding, the panel and the report - answers the same from the record as from the row; `tests/test__evidence_io.py` derives the row's keys from `row_for` and fails on one the record drops without a reason. The evidence ledger row of the same run is still written beside it, unchanged, under the same `runId`. Optional and additive: a plan written before this key existed validates exactly as it did, and ABSENT reads as `testEvidence`'s absence does - no record, never a failure. Every string in it passes the plan writer's machine-path scrub, as the rest of the shard does. additionalProperties stays permissive, this document's policy at every object level.",
       "properties": {
         "runId": {
           "type": "string",
@@ -2214,7 +2214,76 @@
         "stepsDropped": {
           "type": "integer",
           "minimum": 1,
-          "description": "How many steps past `MAX_STEPS` the record does not carry; present only when some were cut."
+          "description": "How many steps past `MAX_STEPS` the record does not carry, the ledger row's own count included; present only when some were cut."
+        },
+        "followersOwed": {
+          "description": "The generated files a red run's changes owe a re-render of, as its ledger row's `followersOwed` (`_evidence_io.FOLLOWERS_KEY`) - each with the recipe that rebuilds it and the check that owns it. The step driver reads it off the run to widen the task to its followers, so a run held only as a record answers it as its row would."
+        },
+        "followersUnread": {
+          "description": "How many follower recipes could not be read when the run asked which generated files it owes, as its ledger row's - beside `followersOwed`, so an empty list is never read as nothing owed."
+        },
+        "gateReach": {
+          "description": "The reach reading the run took over its declared files - which of them no suite in the gate reaches - as its ledger row's (`_evidence_io.GATE_REACH_KEY`); a repeat repeats it from its source."
+        },
+        "gateReachNotAsked": {
+          "description": "Why the reach reading was not taken, in place of `gateReach`, as its ledger row's (`_evidence_io.GATE_REACH_NOT_ASKED_KEY`)."
+        },
+        "observations": {
+          "description": "What the run observed beside its verdict, as its ledger row's: `treeMutated` (the paths the run itself moved, with `treeBasis`) and `coverage` (the paths the runner named, with `coverageBasis`). Past the record's byte bound (`_evidence_io.RECORD_MAX_BYTES`) the coverage paths are cut first, then the moved paths (`RECORD_CUT_ORDER`), each cut leaving its field null and its basis naming the bound, and the cut is said in `recordCut`."
+        },
+        "treeMutatedDropped": {
+          "description": "How many moved paths past `MAX_PATHS` the run's ledger row did not keep; present only when some were cut."
+        },
+        "coverageDropped": {
+          "description": "How many coverage paths past `MAX_PATHS` the run's ledger row did not keep; present only when some were cut."
+        },
+        "recordCut": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The fields this record dropped to stay under `_evidence_io.RECORD_MAX_BYTES`, in the order `RECORD_CUT_ORDER` cut them (`observations.coverage` first). The run's ledger row still carries them whole. Absent when nothing was cut."
+        },
+        "sharedWithRepeated": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The dotted paths of this repeat's record held only in `repeatedRun`, because the two were equal there (`_evidence_io.shared_with_repeated`) - and `steps` on a whole repeat, whose steps are the carried run's each naming it, derived again rather than copied; a reader gives each back from `repeatedRun` (`resolved_shared`, which `record_row` asks first). Absent when the record carries no run or shares nothing with it."
+        },
+        "replacedLaunches": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "The launched runs whose records this record replaced, newest first and at most `_evidence_io.REPLACED_KEEP` of them, each `{runId, launch, status, at}` (`_evidence_io.REPLACED_KEY`). A caller that launched a run in the background and finds no run carrying its token reads this to say the run it launched was recorded and then replaced, and by which run, rather than waiting for it."
+        },
+        "baseOf": {
+          "description": "On a base run, the task run whose base it measured, as its ledger row's (`_evidence_io.BASE_OF_KEY`)."
+        },
+        "cancelledBy": {
+          "description": "The signal that cancelled the run, as its ledger row's - a cancelled run is never a verdict a later run repeats."
+        },
+        "attributionBasis": {
+          "description": "Why the attribution line said what it said, as its ledger row's."
+        },
+        "narrowed": {
+          "description": "On a phase gate narrowed by `meta.phaseGate`, what was listed beside the full set, as its ledger row's."
+        },
+        "shadow": {
+          "description": "On a phase gate run in shadow mode, what the narrowed set would have missed, as its ledger row's."
+        },
+        "runner": {
+          "description": "Which runner wrote the run, as its ledger row's (`_evidence_io.RUNNER_KEY`); absent for the gate itself."
+        },
+        "via": {
+          "description": "The surface the run was started through, as its ledger row's."
+        },
+        "attempt": {
+          "description": "The task attempt the run was recorded under, as its ledger row's."
+        },
+        "sessionId": {
+          "description": "The session the run was recorded from, as its ledger row's."
         }
       }
     },
