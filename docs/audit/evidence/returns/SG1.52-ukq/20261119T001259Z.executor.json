@@ -1,0 +1,133 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_journal_writes.py tests/test__config.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-19T01:18:21Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_journal_writes.py tests/test__config.py` in a throwaway tree at HEAD exited 1 with 6 of 208 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cf29 (house FAIL), cf36 (house FAIL), cf36b (house FAIL), cf39 (house FAIL), cf40b (house FAIL), oq5d (house FAIL): SELFTEST FAILED: 207/208 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "plugins/audit/hooks/_config.py: (1) new _checkout_of(project) - the project resolved (os.path.realpath), then one os.path.lexists of .git per directory up to the root, no listing, no process; returns (top, the project's path below it, '' at the top). No existing function served: checkout_top starts a git rev-parse process, _tree_as_spelled walks as spelled and stops at the project. tree_for and path_tree are untouched. (2) _registered_trees finds the common directory from _common_of(_checkout_of(project)[0]) instead of _common_of(project); for a project below its top every main/registered tree T is returned as T and T/<below> (asked whether or not T/<below> exists yet); a missing worktrees directory no longer returns early. It is still called only from _candidate_tops under _config_named, so the walk runs for a config-named write only. (3) _read_pointer passes over a read that reached _POINTER_BYTES without the line's end; the comment says it may have been cut and why (a cut line of slashes and letters is the root). (4) _candidate_word no longer marks a config-shaped directory asked when it is passed over for holding no repository: tree_for places a write into W/app/.claude in W, the shaped candidate W/app holds no .git and was marked asked, so the registered member place W/app was then skipped - found by cf39's wt-member-place row staying allowed after (1)-(2). Docstrings of _config_named, _registered_trees, _candidate_tops, audit_config_way updated (matched / not matched with the cases). tests/test_guard_edits.py: new cf39/cf39b/cf39c/cf39d (_member_cases: R with project R/app, worktree W, plain member repository P/app with no worktree; hook run as a process for subagent and main, loader oracle over the places the builder lists), cf40/cf40b/cf40c/cf40d (_relative_registration_cases: worktree added with -c worktree.useRelativePaths=true, rewritten relative by hand and labelled so when this git wrote it absolute - git 2.53 here wrote '../../../../W/.git'; cut 2 MiB pointer; gone registration under the project; separate git dir main checkout). cf36 generator gains world dimensions member (top, down) and place (top, member) with named skips no-member-place, nested-repo-has-no-member-place, member-spelled-once, and four measured member arrangements in _GEN_MEASURED; _gen_world builds the member layout and lists every place a loader could be handed. tests/test_journal_writes.py: oq5d (member arrangements, journal hook as a process; _oq_write takes an optional list of trails because a write lying in a worktree's member place is placed in that worktree and its row goes to that worktree's trail); oq5c keeps the top-project ones. Existing cases changed on purpose: cf29's model of a config-named write now includes the checkout walk (asserted now == model as before; the label prints the walk's measured count, 9 lstat calls for the fixture's top project); cf36c now needs a representative per family for each project placement (>= 2x families, at least one member one) where it needed one per family; cf36b's measured list gains four member rows; cf36's oracle list is 'every place', not 'every tree'; _process_count_cases builds its arrangement through _gen_at. Red before the fix (this tree, new test files, old module): cf39 FAIL (all six deny rows ('allow','allow') while loaders read W/app, W, W, R, P, P), cf40b FAIL (root asked: trees asked gained '../../../../../../..'), cf36 FAIL (706 disagreeing, all member), cf36b FAIL (four member rows allowed), oq5d FAIL (no row for the four member rows). Green after: guard 139/139, journal 208/208, test__config ok - task gate sweep exit 0 (3/3 files ok, 766 cases); orchestrator's unrecorded run-test-gate GATE GREEN exit 0. Dependants: test__journal_io 282, test_audit_journal 186, test_guard_bash_writes 239, test_hooks 247, test_require_plan 245 cases ok (sweep exit 0); bench-hooks --gate exit 0 (11 hooks within budget, 3.14.7 only); doc lints test__deps 284, test__output_lints 188, test__refs 320 ok; gate-parity exit 0; prove-gates --list exit 0; ruff and vermin clean on the three Python files. Guard suite standalone, measured once each: 71.2 s before, 88.2 s after; under the two-file sweep 83.4 s. Mutation probe (scratch sg1.52/mutations.py, 9 rows, each anchor applied once on a copy, __pycache__ purged): exit 0, ALL APPLIED AND ALL CAUGHT. Orchestrator probes: p2_member four rows OK (after ('block','ask')); p1_forms S9 both OK, S7 sepgitdir main the one MISMATCH as before (documented, cf40d), every other row as before; p4_matrix every after verdict and journal count equal to the before file's after column; p3_malformed nothing raises, verdicts stand (the plain '/' registration row still asks '/', the cut one no longer); p7_relreg AFTER ('block','ask'); verify_48 v1 UNSAFE 0, v2 REGRESSION 0, v4 WRONG 0, v5 held, probe_u BAD rows 0, probe_t git counts equal; verify_all nine ok lines and probe_j's u3b difference only. Documents (SECURITY.md, plugins/audit/README.md, PLUGIN-BUILD-GUIDE.md, CHANGELOG.md's entry of the registration task) edited through the Edit tool except the first SECURITY.md edit, made by a python replace through Bash; no fail-mode table row changed, test_hooks' quoted phrase untouched. Dependants named by the brief: SECURITY.md and README.md are read by test__deps/test__refs/test_hooks/test__output_lints - green; _config.py is imported by every hook - its changed functions are reached only from audit_config_way and _admin_of_tree (_read_pointer), test__config, test_hooks, test_require_plan, test_guard_bash_writes, test__journal_io, test_audit_journal green; test_guard_edits is imported by test_journal_writes (gen_sweep, _GEN_MEASURED, _gen_world_of, _gen_spell, _gen_label) - updated and green; CHANGELOG.md and PLUGIN-BUILD-GUIDE.md readers green.",
+    "descriptive": "A config-named write in a project that is a directory below its checkout's top now asks the checkout's top, every registered worktree and the member's place in each, so the review's four member rows are held for an edit tool and an MCP write with their journal row, a relative registration and a cut pointer each have a case, and the documents' matched and not-matched lists cite a run for every item."
+  },
+  "testsAdded": [
+    "cf39 in a member project (R/app below R, worktree W, plain member repository P/app with no worktree) the checkout's top's config, W's top's through its link and at the destination, W/app directly, and P's top through its link and at the destination are refused to a subagent and asked of the main session, hook as a process, each read by a loader of a place the builder lists",
+    "cf39b the member allow twins: ordinary writes in the project and in W/app, a config-named file in W/notes, one above the checkout - allowed and read by none",
+    "cf39c an ordinary write in a member project reads no registration, lists nothing, starts no process and asks no git entry above the project",
+    "cf39d NOT MATCHED pinned: a hard link under another name in a member project to W/app's existing config, session standing in W/app, allowed while W/app's loader reads it",
+    "cf40 a worktree registered relative (by git where it can, by hand otherwise, never skipped) has its config held at the destination and through the link, a file beside allowed",
+    "cf40b a 2 MiB registration pointer cut at the bound asks no tree: trees asked and verdicts equal to those without it",
+    "cf40c a worktree under the project whose registration is gone is held as a repository nested under the project",
+    "cf40d NOT MATCHED pinned: a separate-git-dir repository's main checkout from a linked worktree project, allowed while its loader reads it",
+    "cf36 the generated property gains member and place dimensions; cf36b gains four measured member arrangements; cf36c a representative per family for each project placement",
+    "oq5d the journal hook as a process writes one config row for each measured member arrangement written by an edit tool"
+  ],
+  "casesAdded": [
+    [
+      "cf39",
+      "cf39b",
+      "cf39c",
+      "cf36",
+      "cf36b",
+      "cf36c"
+    ],
+    [
+      "cf40",
+      "cf40b"
+    ],
+    [
+      "oq5d"
+    ]
+  ],
+  "claims": "claims:\n1 _config.py _checkout_of (the walk), _registered_trees (checkout's common dir, T and T/<below>), _read_pointer (bound check), _candidate_word (shaped-dir not marked asked) are the lines the documents' new sentences describe; each matched/not-matched item names its case: cf39, cf40c, cf39d, ln40, ln41, ln42, cf40d, ln36, cf36 residual\n2 mutation probe sg1.52/mutations.py: 7 DENY rows (checkout walk undone -> cf39 cf36 cf36b oq5d red; member place dropped -> same; main tree dropped -> cf39 cf38d; relative join dropped -> cf40 (and cf40b); cut pointer read -> cf40b; shaped dir marked asked -> cf39 cf36 cf36b; walk on every write -> cf39c) and 2 ALLOW rows (every directory above the project asked -> cf39b; every subdirectory of a registered tree asked -> cf39b), each anchor applied once on a copy, restored and verified, exit 0\n3 grep -n '_common_of(project)' _config.py: 2 hits before - _registered_trees (fixed, now from the checkout) and _tree_as_spelled's ours (left: changing it would put the checkout walk on ordinary writes from a session standing in another tree, which the task forbids; its consequence is pinned as not matched by cf39d)\n4 n/a - no rule addressed to an agent\n5 guard suite seconds measured once each standalone (71.2 before, 88.2 after) and once under the two-file sweep (83.4); stated as single measurements here, not written into any document\n6 the decision reads the operation: the disk's .git entries from the resolved project, git's registration files, file identity per place; allow twins cf39b/cf39c were green before the deny widened and the ALLOW mutation rows turn them red\n7 the walk's count is printed by cf29 from a measured run (9 lstat for its top project), not written in prose; no number added to a document",
+  "stamp": "audit-stamp: {\"content\":\"sha256:018390bd44d9692ab5508113f393b6671808b085197ecb1d5899db5e4902f71a\",\"dirtyDigest\":\"sha256:e878b807d664fd372a5abb0359fa750107e27432d88cd3409213d673df063d16\",\"dirtyPaths\":{\"CHANGELOG.md\":\"637395b880d87e85\",\"PLUGIN-BUILD-GUIDE.md\":\"5f5fb90b9a27aa61\",\"SECURITY.md\":\"7a41ffa7d2d846d0\",\"plugins/audit/README.md\":\"945ef2d84930fc09\",\"plugins/audit/hooks/_config.py\":\"2c2dc84b1ba3ea94\",\"tests/test_guard_edits.py\":\"5c50f82c5d3ac3ed\",\"tests/test_journal_writes.py\":\"b4e364cbae06a995\"},\"head\":\"8fca5e43\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/README.md\",\"plugins/audit/hooks/_config.py\",\"tests/test__config.py\",\"tests/test_guard_edits.py\",\"tests/test_journal_writes.py\"],\"scopeDigest\":\"sha256:4f838df4789beb98b0d337c1683b1a1682599c665e2436228bf71611a4766e24\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "1 move(s) that lower the bar across 7 file(s) of the diff; 1 change(s) to tests the task declared by case; 4 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md, plugins/audit/README.md; 2 file(s) that could hold a move not compared: tests/test_guard_edits.py, tests/test_journal_writes.py",
+    "findings": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test_guard_edits.py",
+        "line": 1067,
+        "side": "base",
+        "what": "labelled check `cf29 an ordinary write - an existing and a new source file - and a ...` is gone from the tree copy",
+        "part": "gone"
+      }
+    ],
+    "declared": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test_guard_edits.py",
+        "line": 2345,
+        "side": "base",
+        "what": "labelled check `cf36c ...and the hook run as a process gives the in-process verdict...` is gone from the tree copy",
+        "part": "gone"
+      }
+    ],
+    "renamed": [
+      {
+        "path": "tests/test_guard_edits.py",
+        "from": "cf36 over arrangements generated from named dimensions - %s - the hook's question holds a write exactly when the loader, asked for every tree the fixture built, then reads the written file: ran %d (%d read by a loader) per family %r, skipped %r, in %.1fs; families that ran none %r; residual families allowed while read (ran, read) %r; disagreeing %d: [%s]",
+        "to": "cf36 over arrangements generated from named dimensions - %s - the hook's question holds a write exactly when the loader, asked for every place the fixture built that a loader could be handed - each tree's top and, for a member project, each tree's member place - then reads the written file: ran %d (%d read by a loader) per family %r, skipped %r, in %.1fs; families that ran none %r; residual families allowed while read (ran, read) %r; disagreeing %d: [%s]",
+        "line": 2387
+      },
+      {
+        "path": "tests/test_guard_edits.py",
+        "from": "cf36b the measured arrangements - a linked worktree's config outside the project, its folder linked out of the repository, written through the link from the project absent, present and by an MCP tool; the project's linked-out folder written at its destination with the directory above it in another case; a nested worktree's and a nested repository's folder a symlink to a repository; an outside worktree's folder a symlink to a repository or itself one; an outside worktree's config written at its link's destination inside the project and outside it - run as the hook process are held exactly where a loader reads the write, and each one spelled with no case variant is read on every volume: %r",
+        "to": "cf36b the measured arrangements - a linked worktree's config outside the project, its folder linked out of the repository, written through the link from the project absent, present and by an MCP tool; the project's linked-out folder written at its destination with the directory above it in another case; a nested worktree's and a nested repository's folder a symlink to a repository; an outside worktree's folder a symlink to a repository or itself one; an outside worktree's config written at its link's destination inside the project and outside it; in a member project, an outside worktree's member place written directly, its top's linked-out folder written at the destination and through the link, and the checkout's top written at its folder's destination - run as the hook process are held exactly where a loader reads the write, and each one spelled with no case variant is read on every volume: %r",
+        "line": 2427
+      }
+    ],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_guard_edits.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 986 (`common = os.path.join(project, \".git\")`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_journal_writes.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 2127 (`def _oq_write(path, project, sid):`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "8fca5e4370647de5dc58850a863a981571103579"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-19T01:18:23Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

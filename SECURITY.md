@@ -1497,19 +1497,28 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    differ from git's own answer and why no hold is lost by it); and the tree the
    path was placed in, with a repository the resolved path's last components
    hang off inside it. Asked of a write whose file is named as the config is,
-   and of no other: **every tree the repository registers** — its main tree and
-   each worktree its common directory's registrations name, read from those
-   files with no process (`_config._registered_trees`), wherever the tree lies
-   and whatever its config folder is: a real directory, a symlink inside the
+   and of no other: **every tree the repository the project lies in
+   registers** — the repository found from the first directory at or above the
+   project that holds a git entry, the project resolved and then one `lstat`
+   per directory, no listing and no process
+   (`_config._checkout_of`), so a project that is a directory below its
+   checkout's top reads them as one at the top does; its main tree and each
+   worktree its common directory's registrations name, read from those files
+   with no process (`_config._registered_trees`), wherever the tree lies and
+   whatever its config folder is: a real directory, a symlink inside the
    project or out of it, a chain, a directory that is itself a repository or
-   holds a git entry — and each repository under the project, as spelled or
+   holds a git entry; each asked at its top and, for a project below its
+   checkout's top, at the project's own path below that top too, where a
+   session in that tree would open — and each repository under the project, as spelled or
    resolved, that the config's components hang off, as spelled and once
    resolved: the directory above the config folder, never the folder, so a git
    entry inside a config folder decides nothing (`_config._nested_tops`). So an
-   ordinary write reads no registration, lists no directory and starts no
-   process for this question; a registration file or a common-directory file is
-   read only when it is a regular file, and only to a bounded length, and a
-   registration naming no existing directory is passed over. Each tree's config
+   ordinary write walks to no checkout, reads no registration, lists no
+   directory and starts no process for this question; a registration file or a
+   common-directory file is read only when it is a regular file, and only to a
+   bounded length, a read that reaches that bound before its line's end may
+   have been cut and is passed over (`cf40b`), and a registration naming no
+   existing directory is passed over. Each tree's config
    and the written path are compared resolved against resolved, and the
    directories they hang off by identity, never by spelling — so a directory
    above a link's destination spelled in another letter case is that directory.
@@ -1542,30 +1551,53 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    itself a linked worktree, the main checkout's config and a sibling
    worktree's, each written at its folder link's destination: the main tree is
    found beside the common directory, the sibling in its registration.
+   `cf39`–`cf39c` hold a member project — the project a directory below its
+   checkout's top, a registered worktree beside it, and a plain repository
+   with no linked worktree — the hook run as a process: the checkout's top's
+   config, a worktree's top's and the member's place in a worktree are each
+   held where a loader reads the write, through a linked-out folder, at its
+   destination or directly; their twins - an ordinary write in the project and
+   in a worktree's member place, a config-named file in a worktree folder that
+   is no such place, one above the checkout - are allowed; and an ordinary
+   write there walks to no checkout. `cf36` adds the project's place in its
+   checkout and the tree's place a config is of to its dimensions, its fixture
+   listing each tree's top and member place. `cf40` holds a worktree whose
+   registration git wrote relative to its own directory
+   (`worktree.useRelativePaths`, git 2.48 on; on an older git the case
+   rewrites the registration relative by hand and says so, never a skip).
    **Matched:** the project's config and
    the config of every registered worktree of it, through a symlinked folder
    as above — written through the link or at its destination, from a session
-   standing anywhere — and a nested repository's under the project, a symlinked
-   folder on the way included; a hard link to the config of the project or of
-   the session's tree under any name, wherever it is placed; and a spelling that
-   differs from the config's only in letter case, at any directory level, where
-   the directory that name is looked up in folds case. **Not matched, each a run
-   of the guard's suite that allows the write while a loader reads it:** a hard
-   link under a name that is not the config's, placed in the project, to the
-   existing config of another tree, from a session standing in the project
-   (`ln40`), since identity is asked only of the trees asked of every write; a
-   repository nested under a tree other than the project (`ln41`); a worktree
-   whose registration is gone (`ln42`); a repository that is no tree of this one,
-   outside the project (`ln36`); a repository nested under the project that is no
-   tree of this one, its config written at its folder link's destination from a
+   standing anywhere — and, for a project below its checkout's top, the
+   checkout's top's config and each registered tree's at its top and at the
+   member's place in it (`cf39`); a nested repository's under the project, a
+   symlinked folder on the way included, a worktree under the project whose
+   registration is gone among them (`cf40c`); a hard link to the config of the
+   project or of the session's tree under any name, wherever it is placed; and
+   a spelling that differs from the config's only in letter case, at any
+   directory level, where the directory that name is looked up in folds case.
+   **Not matched, each a run of the guard's suite that allows the write while
+   a loader reads it:** a hard link under a name that is not the config's,
+   placed in the project, to the existing config of another tree, from a
+   session standing in the project (`ln40`), since identity is asked only of
+   the trees asked of every write — and so, for a project below its checkout's
+   top, one to the config of a worktree's member place from a session standing
+   there, since the walk from the session's directory does not find that tree
+   (`cf39d`); a repository nested under a tree other than the project (`ln41`);
+   a worktree outside the project whose registration is gone (`ln42`); the main
+   checkout of a repository whose git directory was made apart from it, from a
+   project that is a linked worktree of it, since its common directory is not
+   named `.git` (`cf40d`); a repository that is no tree of this one, outside
+   the project (`ln36`); a repository nested under the project that is no tree
+   of this one, its config written at its folder link's destination from a
    session standing elsewhere, since no component of that path hangs off it
-   (`cf36`'s residual family `nested-repo-at-destination`); and the shell route,
-   which is journalled and not refused (the residuals below). **The journal
+   (`cf36`'s residual family `nested-repo-at-destination`); and the shell
+   route, which is journalled and not refused (the residuals below). **The journal
    writes its config row for exactly the edit-tool writes the guard holds**
    (`oq1`–`oq4d` in `tests/test_journal_writes.py`, the hook run as a process
    over real linked worktrees and symlinked folders, and tables through both
-   hooks; `oq5` over the generated arrangements, `oq5b` and `oq5c` the hook run
-   as a process on the measured ones). An MCP write of another tree's config
+   hooks; `oq5` over the generated arrangements, `oq5b`, `oq5c` and, for a
+   member project, `oq5d` the hook run as a process on the measured ones). An MCP write of another tree's config
    leaves no row, whatever the guard says — the journal's sweep after the call
    does not see it, and `oq5` names those arrangements as a skip. The row's target is `.claude/audit.config.json` when the
    file is the config of the tree whose trail the row goes into, whatever
@@ -1594,8 +1626,9 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    volume, a per-directory setting — answers for the names it holds, and only for
    them. Where nothing can be asked (no name with a letter whose case swaps back,
    or the lookup errors), the spelling is compared without regard to case and the
-   refusal says so. The registrations are read, and a nested repository looked
-   for, only when the file is named as the config is, compared without regard to
+   refusal says so. The checkout is walked to and its registrations read, and a
+   nested repository looked for, only when the file is named as the config is,
+   compared without regard to
    case; that string test comes first, so an ordinary write of a source file
    makes the question's disk calls it made before, call for call, plus, for a
    write that would create its file, a link question for the config's folder
@@ -1603,9 +1636,11 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    costs; it lists no directory and makes no more in total than before identity
    was asked. A file merely named like the config in a plain folder pays more,
    on purpose: it reads the config and the two folders, asks the directory the
-   config would hang off whether it holds a repository, lists the registrations
-   directory, reads each registration and asks each registered tree (`cf29`
-   counts every call that asks the disk and prints them by kind, `cf29b` holds
+   config would hang off whether it holds a repository, walks from the project
+   to its checkout, lists the registrations directory, reads each registration
+   and asks each registered tree (`cf29` counts every call that asks the disk
+   and prints them by kind - the walk's own count among them - `cf39c` holds
+   an ordinary write in a member project to no walk, `cf29b` holds
    the listing at none for the ordinary writes and at the registrations
    directory alone for the config-named one, and `cf30` holds the counted table
    complete against the source of both files). A session

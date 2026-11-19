@@ -610,10 +610,16 @@ trees (`_candidate_tops`) do not depend on where the path resolves to nor on how
 Asked of every write: the project, the tree the session stands in (`_session_tree`), the tree
 the path was placed in, and a repository the resolved path's config components hang off inside
 that tree. Asked of a file named as the config is, and of no other: every tree the repository
-registers (`_registered_trees` — the main tree beside a common directory named `.git`, and each
-`<common>/worktrees/<name>/gitdir` registration naming an existing directory, read with no
-process, each pointer file read only when regular and to a bounded length by `_read_pointer`)
-and each repository under the project that the config's components hang off, as spelled and
+the project lies in registers (`_registered_trees` — the repository found from the first
+directory at or above the project holding a `.git` entry, the project resolved and then one
+`lstat` per directory by
+`_checkout_of`, which `checkout_top` cannot serve since it starts a `git` process; the main tree
+beside a common directory named `.git`, and each `<common>/worktrees/<name>/gitdir`
+registration naming an existing directory, joined with the registration's own directory when
+relative, read with no process, each pointer file read only when regular and to a bounded
+length by `_read_pointer`, which passes over a read that reached the bound before its line's
+end; each tree asked at its top and, for a project below its checkout's top, at the project's
+own path below it, the member's place) and each repository under the project that the config's components hang off, as spelled and
 resolved (`_nested_tops` — the directory above the config folder, never the folder). The
 session's tree is found by a walk up from the session's directory for a directory holding a
 repository (`_tree_as_spelled`), judged this repository's by identity with the project or by
@@ -629,12 +635,16 @@ name differing in case only judged in the directory that holds it — by whether
 reach one entry where the config's own name exists there (`_one_entry`), else by that
 directory's own rule, an existing name looked up under its case swapped (`_volume_folds`), a
 directory the write would create taking the rule of the one it would be created in. The
-registrations are read only after a string test on the file's name, so an ordinary write of a
-source file makes the disk calls it made before, plus a link question for the config's folder
-and one for its file when it would create its file, reads no registration, lists no directory
-and starts no process (`cf29`, `cf29b`, `cf30`, `cf37`, `cf37b`, `cf38`, `cf38b` in
-`tests/test_guard_edits.py`; `cf38c` holds every verdict where a registration or a
-common-directory file is a pipe, a directory or stale). An error asking one
+checkout is walked to and the registrations read only after a string test on the file's name,
+so an ordinary write of a source file makes the disk calls it made before, plus a link question
+for the config's folder and one for its file when it would create its file, walks to no
+checkout, reads no registration, lists no directory and starts no process (`cf29`, `cf29b`,
+`cf30`, `cf37`, `cf37b`, `cf38`, `cf38b`, `cf39c` in `tests/test_guard_edits.py`; `cf38c` holds
+every verdict where a registration or a common-directory file is a pipe, a directory or stale,
+`cf40b` a registration cut at the bound, `cf40` one written relative). A config-shaped
+directory passed over for holding no repository is not marked asked (`_candidate_word`), since a
+worktree's member place holds no `.git` and is asked as a tree when the registrations come. An
+error asking one
 candidate costs that candidate only (`cf35`).
 What it matches and does not is the list under
 `guard-edits.py` below. `audit_config_way(tree, which=True)` also hands back the resolved
@@ -959,25 +969,34 @@ the MCP lane alike), handing it the path as written and the session's directory
 (`_config.config_question`). A write is held when a tree of this repository, or a repository
 nested under the project, would load the written file. Asked of every write: the project, the
 tree the session stands in and the tree the path was placed in; asked of a file named as the
-config is, and of no other: every tree the repository registers, read from its registrations
-with no process, and each repository under the project the config's components hang off.
-**Matched:** the project's config and every registered worktree's, also when `.claude` is a
-symlink — inside the project, out of the repository, into another tree's `.claude`, to a
-repository, through a chain, or dangling — written through the link or at its destination, the
-config present or not; a nested repository's under the project, a symlinked folder on the way
-included; a hard link to the config of the project or of the session's tree under any name,
-wherever it is placed; and a spelling differing only in letter case, at any directory level,
-where the directory that name is looked up in folds case. **Not matched**, each a run of the
-suite that allows the write while a loader reads it: a hard link placed in the project, under
-a name that is not the config's, to another tree's existing config; a repository nested under
-a tree other than the project; a worktree whose registration is gone; a repository outside the
-project that is no tree of this one; a nested repository's config written at its folder link's
-destination from a session standing elsewhere; and the shell route, which is journalled and
-not refused. `cf33`–`cf34c` in `tests/test_guard_edits.py` hold the verdict to what the loader
-of each tree the fixture built then reads, over a table of symlinked arrangements, the hook run
-as a process; `cf36`–`cf36c` over arrangements generated from named dimensions; `cf38`–`cf38c`
-count the registrations, listings and processes the question costs, and `cf38d` holds the main
-checkout's config from a project that is itself a linked worktree. The journal writes its config row for exactly
+config is, and of no other: every tree the repository the project lies in registers, read from
+its registrations with no process - each at its top and, for a project below its checkout's
+top, at the project's place in it - and each repository under the project the config's
+components hang off. **Matched:** the project's config and every registered worktree's, also
+when `.claude` is a symlink — inside the project, out of the repository, into another tree's
+`.claude`, to a repository, through a chain, or dangling — written through the link or at its
+destination, the config present or not; for a project below its checkout's top, the checkout's
+top's config and each registered worktree's at its top and at the project's place in it
+(`cf39`); a nested repository's under the project, a symlinked folder on the way included, a
+worktree under the project whose registration is gone among them (`cf40c`); a hard link to the
+config of the project or of the session's tree under any name, wherever it is placed; and a
+spelling differing only in letter case, at any directory level, where the directory that name
+is looked up in folds case. **Not matched**, each a run of the suite that allows the write
+while a loader reads it: a hard link placed in the project, under a name that is not the
+config's, to another tree's existing config (`ln40`) — for a project below its checkout's top,
+also to the config of a worktree's place the session stands in (`cf39d`); a repository nested
+under a tree other than the project (`ln41`); a worktree outside the project whose registration
+is gone (`ln42`); the main checkout of a repository whose git directory was made apart from it,
+from a linked worktree of it (`cf40d`); a repository outside the project that is no tree of this
+one (`ln36`); a nested repository's config written at its folder link's destination from a
+session standing elsewhere (`cf36`'s residual family); and the shell route, which is journalled
+and not refused. `cf33`–`cf34c` in `tests/test_guard_edits.py` hold the verdict to what the
+loader of each tree the fixture built then reads, over a table of symlinked arrangements, the
+hook run as a process; `cf36`–`cf36c` over arrangements generated from named dimensions, the
+project's place in its checkout among them; `cf38`–`cf38c` count the registrations, listings
+and processes the question costs, `cf38d` holds the main checkout's config from a project that
+is itself a linked worktree, `cf39`–`cf39c` a member project's trees and `cf40` a registration
+written relative. The journal writes its config row for exactly
 the edit-tool writes this hook holds, apart from a hold made without regard to case whose write
 created another file. (2) `guardEdits.customRules` (config) — each
 `{pathPrefix, bannedPattern, message}` blocks its regex under its path prefix; ships EMPTY (the

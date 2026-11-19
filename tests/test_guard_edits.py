@@ -362,6 +362,8 @@ def _cases(check):
     _generated_cases(check)
     _process_count_cases(check)
     _registration_cases(check)
+    _member_cases(check)
+    _relative_registration_cases(check)
 
 
 # --- cf: the audit config is the owner's, not an agent's ------------------------
@@ -980,10 +982,19 @@ def _spelling_cases(check, cfg, tf, nested, _cf, _w):
         if top is not None and top != real_root:
             _config._holds_repository(top)
 
+    def _checkout_walk(project):
+        """The walk from the project up to the first directory holding a git
+        entry: the project resolved, then one entry asked per directory - one
+        here, the project being its checkout's top."""
+        at = os.path.realpath(project)
+        while not os.path.lexists(os.path.join(at, ".git")):
+            at = os.path.dirname(at)
+        return at
+
     def _registrations(project):
         """The trees `project`'s repository registers, read as git keeps them
-        - the main checkout's own common directory here."""
-        common = os.path.join(project, ".git")
+        - the main checkout's own common directory here, found by the walk."""
+        common = os.path.join(_checkout_walk(project), ".git")
         os.path.isdir(common)
         os.path.isfile(os.path.join(common, "commondir"))
         os.path.isfile(os.path.join(common, "HEAD"))
@@ -1064,6 +1075,7 @@ def _spelling_cases(check, cfg, tf, nested, _cf, _w):
                           now == off
                           and sum(now.values()) <= sum(before.values())))))
         kinds.append((name, _kinds(walked), _kinds(now)))
+    _, walk = _disk_calls(lambda: _checkout_walk(main))
     check("cf29 an ordinary write - an existing and a new source file - and a "
           "file merely named like the config in a plain folder make the config "
           "question's disk calls call for call: before the walk's, and for a "
@@ -1071,10 +1083,13 @@ def _spelling_cases(check, cfg, tf, nested, _cf, _w):
           "folder and its file, what resolving the project's config path "
           "costs; the ordinary ones no more in total than before identity was "
           "asked and none for the nested tree's identity, the config-named "
-          "one the registrations read and each registered tree asked (name, "
-          "verdict, before identity, before the folder was resolved, now, "
-          "listings, held): %r; by kind, before the folder was resolved and "
-          "now: %r" % (costs, kinds),
+          "one the registrations read and each registered tree asked - those "
+          "found from the checkout the project lies in, the walk to it adding "
+          "%d calls for a project at its checkout's top %r and no member place "
+          "asked (name, verdict, before identity, before the folder was "
+          "resolved, now, listings, held): %r; by kind, before the folder was "
+          "resolved and now: %r"
+          % (sum(walk.values()), _kinds(walk), costs, kinds),
           len(costs) == 3 and all(not v and held
                                   for _n, v, _b, _t, _now, _l, held in costs))
     check("cf29b ...and the ordinary ones list no directory, the config-named "
@@ -1821,9 +1836,11 @@ def _candidate_error_cases(check, base):
 # predicate grown too wide shows as a count rather than as missing rows. The bulk is
 # the guard's `decide` in this process; one representative per family, and every
 # measured arrangement, is then the hook run as a process, and the two must agree.
-# The oracle owes the module nothing: the world builder records every tree it
-# makes - the project, each worktree, each repository it initialises - and after
-# the write the loader is asked for each of them. No tree is found by a walk, so a
+# The oracle owes the module nothing: the world builder records every place it
+# makes that a loader could be handed - the project and its checkout's top, each
+# worktree's top and, for a member project, each worktree's member place, each
+# repository it initialises - and after the write the loader is asked for each
+# of them. No tree is found by a walk, so a
 # defect in how the module finds its trees cannot be shared by the oracle. A family
 # the property names and the module cannot see is a RESIDUAL (`_GEN_RESIDUAL`),
 # named with its reason: its rows are owed an allow while a loader reads them, so
@@ -1842,6 +1859,13 @@ _GEN_DIMS = (
     # inside the project, or outside every tree.
     _Dim("dest", ("owner", "project", "outside")),
     _Dim("present", (False, True)),
+    # Where the project lies in its checkout: at the top, or one directory
+    # below it - a member project, `top/app`, whose every tree has a member
+    # place `<tree>/app` beside its top.
+    _Dim("member", ("top", "down")),
+    # Which place of the owner's tree the config is: its top, or the member's
+    # place in it. A project at its checkout's top has none apart from the top.
+    _Dim("place", ("top", "member")),
     # How the write names the file: through the config folder as the tree spells
     # it, at the folder's destination, or - the allow twin - a config-named file
     # in a plain folder of the tree that holds an empty git entry, under a
@@ -1855,9 +1879,11 @@ _GEN_DIMS = (
 )
 _Arr = collections.namedtuple("_Arr", [d.name for d in _GEN_DIMS])
 # The dimensions one fixture world is built from; the rest vary over a world.
-_GEN_WORLD_DIMS = ("whose", "folder", "dest", "present")
+_GEN_WORLD_DIMS = ("whose", "folder", "dest", "present", "member", "place")
 # The dimensions a family is counted by: the case fails when one value ran none.
-_GEN_FAMILY_DIMS = ("whose", "folder", "dest")
+_GEN_FAMILY_DIMS = ("whose", "folder", "dest", "member", "place")
+# The member's place below its checkout's top, for a member project.
+_GEN_MEMBER = "app"
 _GEN_BODY_KEY = "cfMark"
 _GEN_PLAN = {"meta": {"version": 3, "developmentBranch": "main"}, "phases": []}
 _GEN_MCP = "mcp__fs__write_file"
@@ -1870,35 +1896,72 @@ _GEN_MCP = "mcp__fs__write_file"
 # Later rounds: a nested worktree's or a nested repository's config folder a
 # symlink to a repository; an outside worktree's folder a symlink to a
 # repository or itself one; an outside worktree's config written at its link's
-# destination, inside the project and outside it.
+# destination, inside the project and outside it. Then the member project: an
+# outside worktree's member place written directly, its top's config folder
+# linked out of the repository written at the destination and through the link,
+# and the checkout's top written at its folder's destination.
+def _gen_at(whose, folder, dest, present, form, level, session, tool,
+            member="top", place="top"):
+    """An arrangement, the project at its checkout's top unless said."""
+    return _Arr(whose, folder, dest, present, member, place, form, level,
+                session, tool)
+
+
 _GEN_MEASURED = (
-    ("a-absent", _Arr("linked-out", "link", "outside", False, "link", None,
-                      "project", "Write")),
-    ("a-present", _Arr("linked-out", "link", "outside", True, "link", None,
-                       "project", "Write")),
-    ("a-mcp", _Arr("linked-out", "link", "outside", False, "link", None,
-                   "project", _GEN_MCP)),
-    ("b-case-above", _Arr("project", "link", "outside", False, "dest", 2,
+    ("a-absent", _gen_at("linked-out", "link", "outside", False, "link", None,
+                         "project", "Write")),
+    ("a-present", _gen_at("linked-out", "link", "outside", True, "link", None,
                           "project", "Write")),
-    ("h1-nested-wt", _Arr("nested-worktree", "link-repo", "outside", False,
-                          "link", None, "project", "Write")),
-    ("h1-nested-wt-mcp", _Arr("nested-worktree", "link-repo", "outside", True,
-                              "link", None, "project", _GEN_MCP)),
-    ("h1-nested-repo", _Arr("nested-repo", "link-repo", "outside", True, "link",
-                            None, "project", "Write")),
-    ("h2-ext-link-repo", _Arr("linked-out", "link-repo", "outside", False,
-                              "link", None, "project", "Write")),
-    ("h2-ext-repo", _Arr("linked-out", "repo", "owner", True, "link", None,
-                         "project", _GEN_MCP)),
-    ("m2-ext-dest-in-project", _Arr("linked-out", "link", "project", False,
-                                    "dest", None, "project", "Write")),
-    ("u3b-ext-dest-outside", _Arr("linked-out", "link", "outside", False,
-                                  "dest", None, "project", "Write")),
+    ("a-mcp", _gen_at("linked-out", "link", "outside", False, "link", None,
+                      "project", _GEN_MCP)),
+    ("b-case-above", _gen_at("project", "link", "outside", False, "dest", 2,
+                             "project", "Write")),
+    ("h1-nested-wt", _gen_at("nested-worktree", "link-repo", "outside", False,
+                             "link", None, "project", "Write")),
+    ("h1-nested-wt-mcp", _gen_at("nested-worktree", "link-repo", "outside",
+                                 True, "link", None, "project", _GEN_MCP)),
+    ("h1-nested-repo", _gen_at("nested-repo", "link-repo", "outside", True,
+                               "link", None, "project", "Write")),
+    ("h2-ext-link-repo", _gen_at("linked-out", "link-repo", "outside", False,
+                                 "link", None, "project", "Write")),
+    ("h2-ext-repo", _gen_at("linked-out", "repo", "owner", True, "link", None,
+                            "project", _GEN_MCP)),
+    ("m2-ext-dest-in-project", _gen_at("linked-out", "link", "project", False,
+                                       "dest", None, "project", "Write")),
+    ("u3b-ext-dest-outside", _gen_at("linked-out", "link", "outside", False,
+                                     "dest", None, "project", "Write")),
+    ("member-wt-place", _gen_at("linked-out", "real", "owner", False, "link",
+                                None, "project", "Write", "down", "member")),
+    ("member-wt-top-dest", _gen_at("linked-out", "link", "outside", False,
+                                   "dest", None, "project", "Write", "down")),
+    ("member-wt-top-link", _gen_at("linked-out", "link", "outside", False,
+                                   "link", None, "project", "Write", "down")),
+    ("member-top-dest", _gen_at("project", "link", "outside", False, "dest",
+                                None, "project", "Write", "down")),
 )
 
 
+def _gen_is_project(arr):
+    """The owner is the project itself - not the top of a member project's
+    checkout, which is another place of the same tree."""
+    return arr.whose == "project" and (arr.member == "top"
+                                       or arr.place == "member")
+
+
 def _gen_owner_is_project(arr, world):
-    return arr.whose == "project" and arr.session == "owner"
+    return _gen_is_project(arr) and arr.session == "owner"
+
+
+def _gen_no_member_place(arr, world):
+    return arr.member == "top" and arr.place == "member"
+
+
+def _gen_nested_repo_member(arr, world):
+    return arr.whose == "nested-repo" and arr.place == "member"
+
+
+def _gen_member_spelled_once(arr, world):
+    return arr.member == "down" and arr.level is not None
 
 
 def _gen_session_tree_elsewhere(arr, world):
@@ -1918,7 +1981,7 @@ def _gen_no_destination(arr, world):
 
 
 def _gen_project_is_owner(arr, world):
-    return arr.whose == "project" and arr.dest == "project"
+    return _gen_is_project(arr) and arr.dest == "project"
 
 
 def _gen_plain_once(arr, world):
@@ -1970,6 +2033,12 @@ def _gen_nothing_to_swap(arr, world):
 
 # Every predicate, with the reason it names. Order is the order they are asked.
 _GEN_SKIPS = (
+    ("no-member-place", _gen_no_member_place,
+     "a project at its checkout's top has no member place apart from the "
+     "top"),
+    ("nested-repo-has-no-member-place", _gen_nested_repo_member,
+     "a repository nested under the project is no tree of this one, so it has "
+     "no member place; it is asked at its top"),
     ("owner-is-project", _gen_owner_is_project,
      "the project's config standing in its owner is the row standing in the "
      "project"),
@@ -1996,6 +2065,10 @@ _GEN_SKIPS = (
      "that component lies above the fixture's own directory"),
     ("nothing-to-swap", _gen_nothing_to_swap,
      "the component has no letter whose case can change"),
+    ("member-spelled-once", _gen_member_spelled_once,
+     "a letter-case variant is a question of the path's spelling, asked the "
+     "same below a member's place as at a top; a member world asks where the "
+     "tree is opened, spelled as it is"),
 )
 
 
@@ -2013,14 +2086,20 @@ def _gen_world_of(base, arr):
     return _gen_world(base, *[getattr(arr, n) for n in _GEN_WORLD_DIMS])
 
 
-def _gen_world(base, whose, folder, dest, present):
-    """A repository at `base/proj` and the tree whose config the family is
-    about, its config folder arranged as `folder` says - a link's destination
-    where `dest` says - the config at the folder's destination when `present`.
-    -> {"base", "proj", "owner", "trees" (every tree this builder made: the
-    project, the worktree, each repository it initialised), "repo"}"""
+def _gen_world(base, whose, folder, dest, present, member="top", place="top"):
+    """A repository at `base/proj` - the project there, or for a member
+    project at `base/proj/app` - and the tree whose config the family is
+    about, at its top or at the member's place in it as `place` says, its
+    config folder arranged as `folder` says - a link's destination where
+    `dest` says - the config at the folder's destination when `present`.
+    -> {"base", "proj" (the project), "top" (its checkout's top), "owner",
+    "trees" (every place this builder made that a loader could be handed: the
+    project and its checkout's top, each worktree's top and member place,
+    each repository it initialised)}"""
     rel = _config.CONFIG_REL.split("/")
-    proj = os.path.join(base, "proj")
+    top = os.path.join(base, "proj")
+    sub = _GEN_MEMBER if member == "down" else ""
+    proj = os.path.join(top, sub) if sub else top
     store = os.path.join(base, "store")
     os.makedirs(os.path.join(proj, "src"))
     os.makedirs(os.path.join(proj, "docs", "audit"))
@@ -2031,18 +2110,19 @@ def _gen_world(base, whose, folder, dest, present):
               encoding="utf-8") as fh:
         json.dump(_GEN_PLAN, fh)
     for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "c"]):
-        _harness.git(proj, *argv, prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+        _harness.git(top, *argv, prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    trees = [top, proj] if sub else [proj]
     if whose == "project":
-        owner = proj
+        owner = top
     else:
         os.makedirs(os.path.join(proj, rel[0]))
     if whose in ("session-tree", "linked-out"):
         owner = os.path.join(base, "ext")
-        _harness.git(proj, "worktree", "add", "-q", owner, "-b", "ext",
+        _harness.git(top, "worktree", "add", "-q", owner, "-b", "ext",
                      prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
     elif whose == "nested-worktree":
         owner = os.path.join(proj, rel[0], "worktrees", "w1")
-        _harness.git(proj, "worktree", "add", "-q", owner, "-b", "w1",
+        _harness.git(top, "worktree", "add", "-q", owner, "-b", "w1",
                      prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
     elif whose == "nested-repo":
         # An unrelated repository, reached through a symlinked folder of the
@@ -2051,7 +2131,16 @@ def _gen_world(base, whose, folder, dest, present):
         _gen_init(os.path.join(store, "vendor", "lib"))
         os.symlink(os.path.join(store, "vendor"), os.path.join(proj, "vendor"))
         owner = os.path.join(proj, "vendor", "lib")
-    trees = [proj] if owner == proj else [proj, owner]
+    if whose in ("session-tree", "linked-out", "nested-worktree"):
+        # A worktree checks the member's place out too, and a loader can be
+        # handed either.
+        trees.append(owner)
+        if sub:
+            trees.append(os.path.join(owner, sub))
+    elif whose == "nested-repo":
+        trees.append(owner)
+    if place == "member" and sub:
+        owner = os.path.join(owner, sub)
     at = os.path.join(owner, rel[0])
     place = {"owner": os.path.join(owner, "config"),
              "project": os.path.join(proj, "shared"),
@@ -2090,7 +2179,8 @@ def _gen_world(base, whose, folder, dest, present):
     os.makedirs(plain)
     for stray in (os.path.join(owner, "notes"), plain):
         open(os.path.join(stray, ".git"), "w").close()
-    return {"base": base, "proj": proj, "owner": owner, "trees": trees}
+    return {"base": base, "proj": proj, "top": top, "owner": owner,
+            "trees": trees}
 
 
 def _gen_link_path(world):
@@ -2211,7 +2301,8 @@ def _gen_world_ruled_out(key):
 
 
 # The predicates that read only the world's own dimensions.
-_GEN_WORLD_SKIPS = ("dangling-holds-nothing", "no-destination",
+_GEN_WORLD_SKIPS = ("no-member-place", "nested-repo-has-no-member-place",
+                    "dangling-holds-nothing", "no-destination",
                     "project-is-owner")
 
 
@@ -2249,8 +2340,10 @@ def gen_sweep(base, visit):
 
 
 def _gen_label(arr):
-    return "%s/%s/%s/%s/%s/%s/%s" % (
-        arr.whose, arr.folder, "present" if arr.present else "absent", arr.form,
+    return "%s/%s/%s/%s%s/%s/%s/%s" % (
+        arr.whose, arr.folder, "present" if arr.present else "absent",
+        "" if arr.member == "top" else "member-%s-place/" % (arr.place,),
+        arr.form,
         "case@%d" % arr.level if arr.level is not None else "plain",
         "in-" + arr.session, "mcp" if arr.tool.startswith("mcp__") else arr.tool)
 
@@ -2293,7 +2386,9 @@ def _generated_cases(check):
     none_ran = sorted("%s=%s" % k for k, n in ran.items() if not n)
     check("cf36 over arrangements generated from named dimensions - %s - the "
           "hook's question holds a write exactly when the loader, asked for "
-          "every tree the fixture built, then reads the written file: ran %d "
+          "every place the fixture built that a loader could be handed - each "
+          "tree's top and, for a member project, each tree's member place - "
+          "then reads the written file: ran %d "
           "(%d read by a loader) per family %r, skipped %r, in %.1fs; families "
           "that ran none %r; residual families allowed while read (ran, read) "
           "%r; disagreeing %d: [%s]"
@@ -2308,11 +2403,14 @@ def _generated_cases(check):
     # first arrangement a loader reads and the first none reads.
     picks = list(_GEN_MEASURED)
     for whose in _GEN_DIMS[0].values:
-        for want in (True, False):
-            hit = [r for r in seen if r[0].whose == whose and bool(r[3]) == want]
-            if hit:
-                picks.append(("%s-%s" % (whose, "read" if want else "unread"),
-                              hit[0][0]))
+        for member in ("top", "down"):
+            for want in (True, False):
+                hit = [r for r in seen if r[0].whose == whose
+                       and r[0].member == member and bool(r[3]) == want]
+                if hit:
+                    picks.append(("%s%s-%s" % (
+                        whose, "" if member == "top" else "-member",
+                        "read" if want else "unread"), hit[0][0]))
     by_arr = dict((r[0], r) for r in seen)
     named = set(n for n, _a in _GEN_MEASURED)
     measured, rep = [], []
@@ -2334,7 +2432,11 @@ def _generated_cases(check):
           "nested repository's folder a symlink to a repository; an outside "
           "worktree's folder a symlink to a repository or itself one; an "
           "outside worktree's config written at its link's destination inside "
-          "the project and outside it - run as the hook process are held "
+          "the project and outside it; in a member project, an outside "
+          "worktree's member place written directly, its top's linked-out "
+          "folder written at the destination and through the link, and the "
+          "checkout's top written at its folder's destination - run as the "
+          "hook process are held "
           "exactly where a loader reads the write, and each one spelled with no "
           "case variant is read on every volume: %r" % (measured,),
           len(measured) == len(_GEN_MEASURED)
@@ -2343,9 +2445,12 @@ def _generated_cases(check):
           and all(m[4] for m, (_n, a) in zip(measured, _GEN_MEASURED)
                   if a.level is None))
     check("cf36c ...and the hook run as a process gives the in-process verdict on "
-          "one representative per family, read and unread: disagreeing %r of %d"
-          % ([r for r in rep if r[2] != r[3]], len(rep)),
-          len(rep) >= len(_GEN_DIMS[0].values)
+          "one representative per family and project placement, read and "
+          "unread: disagreeing %r of %d, member representatives %d"
+          % ([r for r in rep if r[2] != r[3]], len(rep),
+             sum(1 for r in rep if "-member-" in r[0])),
+          len(rep) >= 2 * len(_GEN_DIMS[0].values)
+          and any("-member-" in r[0] for r in rep)
           and all(r[2] == r[3] for r in rep))
 
 
@@ -2449,8 +2554,8 @@ def _process_count_cases(check):
         counts.append((name, hook[0][0], max(h[1] for h in hook), place[1],
                        ceiling[name]))
         verdict, by = _disk_calls(lambda: _gen_decide(
-            {"proj": proj}, _Arr("project", "real", "owner", False, "link",
-                                 None, "project", tool), path, cwd,
+            {"proj": proj}, _gen_at("project", "real", "owner", False, "link",
+                                    None, "project", tool), path, cwd,
             "agent-cf"))
         listed.append((name, verdict, sum(by.get(n, 0) for n in _LISTINGS)))
     check("cf37 an ordinary write - an existing and a new source file - with the "
@@ -2712,6 +2817,427 @@ def _malformed_registration_cases(check, base, proj, ext, common, rel):
           "answers each within %ds and raises nothing (row, got, want): %r"
           % (_REG_TIMEOUT, seen),
           len(seen) == 7 and all(g == w for _n, g, w in seen))
+
+
+# --- cf: a project that is a directory below its checkout's top --------------------
+# A member project: the session's project is `R/app` while the repository's git
+# entry is at `R`. A loader can be handed the checkout's top `R`, the project, a
+# registered worktree's top `W`, and the member's own place in it `W/app`; a plain
+# repository with no linked worktree has `R` and `R/app` alone. Each row is the
+# hook run as a process for a subagent and for the main session, the write then
+# made, and the loader asked for every one of those places - listed by the
+# builder, never found by a walk - so the oracle shares nothing with the module.
+def _member_repo(top, branch_dir):
+    """A repository at `top` whose tracked files lie under `top/app`, committed
+    so a worktree of it checks out `app` too."""
+    os.makedirs(os.path.join(top, "app", "src"))
+    with open(os.path.join(top, "app", "src", "x.ts"), "w",
+              encoding="utf-8") as fh:
+        fh.write("export const x = 1;\n")
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "c"]):
+        _harness.git(top, *argv, prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    if branch_dir:
+        _harness.git(top, "worktree", "add", "-q", branch_dir, "-b", "w",
+                     prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+
+
+def _member_world(base):
+    """R with the project R/app and a worktree W outside it; P a plain member
+    repository, P/app its project, no linked worktree. R's, W's and P's config
+    folders are links to directories outside every tree; W/app's is a real
+    folder. -> {"base", "trees" (every place a loader could be handed), ...}"""
+    rel = _config.CONFIG_REL.split("/")
+    top, wt, plain = (os.path.join(base, n) for n in ("R", "W", "P"))
+    _member_repo(top, wt)
+    _member_repo(plain, None)
+    store = os.path.join(base, "store")
+    for tree, name in ((top, "rcfg"), (wt, "wcfg"), (plain, "pcfg")):
+        os.makedirs(os.path.join(store, name))
+        os.symlink(os.path.join(store, name), os.path.join(tree, rel[0]))
+    os.makedirs(os.path.join(wt, "app", rel[0]))
+    os.makedirs(os.path.join(wt, "notes"))
+    return {"base": base, "top": top, "wt": wt, "plain": plain,
+            "store": store,
+            "trees": [top, os.path.join(top, "app"), wt,
+                      os.path.join(wt, "app"), plain,
+                      os.path.join(plain, "app")]}
+
+
+def _member_rows(world):
+    """(name, project, cwd, path, held) for every row the member cases run."""
+    rel = _config.CONFIG_REL.split("/")
+    top, wt, plain, store = (world[k] for k in ("top", "wt", "plain", "store"))
+    proj, pproj = os.path.join(top, "app"), os.path.join(plain, "app")
+    return (
+        ("wt-member-place", proj, proj, os.path.join(wt, "app", *rel), True),
+        ("wt-top-at-destination", proj, proj,
+         os.path.join(store, "wcfg", rel[1]), True),
+        ("wt-top-through-link", proj, proj, os.path.join(wt, *rel), True),
+        ("top-at-destination", proj, proj, os.path.join(store, "rcfg", rel[1]),
+         True),
+        ("plain-top-at-destination", pproj, pproj,
+         os.path.join(store, "pcfg", rel[1]), True),
+        ("plain-top-through-link", pproj, pproj, os.path.join(plain, *rel),
+         True),
+        # The allow twins: ordinary writes in the member project and in its
+        # worktree; a config-named file in a folder of the worktree that is no
+        # place a loader is handed (red when every subdirectory of a
+        # registered tree is asked); one in the directory above the checkout
+        # (red when every directory above the project is asked).
+        ("ordinary-in-project", proj, proj, os.path.join(proj, "src", "x.ts"),
+         False),
+        ("ordinary-in-worktree", proj, os.path.join(wt, "app"),
+         os.path.join(wt, "app", "src", "x.ts"), False),
+        ("worktree-folder-no-place", proj, proj,
+         os.path.join(wt, "notes", *rel), False),
+        ("above-the-checkout", proj, proj,
+         os.path.join(world["base"], *rel), False),
+    )
+
+
+def _member_cases(check):
+    """cf39, cf39b, cf39c: the member project's trees, as processes."""
+    label = ("cf39 a member project's config-named writes are held where a "
+             "loader reads them")
+    base = os.path.realpath(_harness.fixture_root("guard-edits-member-"))
+    probe = os.path.join(base, "probe-link")
+    linked, why = _harness.attempt(os.symlink, base, probe)
+    if not linked:
+        _harness.skip(check, label, "no symlink can be made here (%s)" % (why,),
+                      os.name == "nt" or not hasattr(os, "symlink"))
+        return
+    os.remove(probe)
+    built, world = _harness.attempt(_member_world, base)
+    if not built:
+        check("%s: the fixture builds (%s)" % (label, world), False)
+        return
+    seen = []
+    for name, proj, cwd, path, held in _member_rows(world):
+        sub = _hook_verdict(proj, cwd, path, _CF_BODY, True)
+        main = _hook_verdict(proj, cwd, path, _CF_BODY, False)
+        reads = (_gen_reads(world, None, path, cwd, name)
+                 if os.path.basename(path) == os.path.basename(
+                     _config.CONFIG_REL) else [])
+        seen.append((name, (sub, main), reads, held))
+    deny = [s for s in seen if s[3]]
+    allow = [s for s in seen if not s[3]]
+    check("cf39 in a member project - the project R/app below its checkout's "
+          "top R, a registered worktree W, and a plain member repository P/app "
+          "with no linked worktree - a config-named write that the checkout's "
+          "top, the worktree's top or the member's place in the worktree "
+          "would load, written through a linked-out folder, at its "
+          "destination or directly, is refused to a subagent and asked of the "
+          "main session, the hook run as a process, each one read by a "
+          "loader of a place the builder listed (row, (sub, main), read by): "
+          "%r" % (deny,),
+          len(deny) == 6
+          and all(v == ("block", "ask") and r for _n, v, r, _h in deny))
+    check("cf39b ...while its allow twins stay quiet - an ordinary write in the "
+          "member project and in its worktree's member place, a config-named "
+          "file in a worktree folder that is no place a loader is handed, and "
+          "one in the directory above the checkout - none read by a loader "
+          "(row, (sub, main), read by): %r" % (allow,),
+          len(allow) == 4
+          and all(v == ("allow", "allow") and not r for _n, v, r, _h in allow))
+    _member_cost_case(check, world)
+    _member_hard_link_case(check, world)
+
+
+def _member_hard_link_case(check, world):
+    """cf39d: what a member project does not match, run so the documents can
+    say so. The tree a session stands in is asked of every write, found by a
+    walk from the session's directory that compares the repository it meets
+    with the project's own git entry; a member project has none, so a session
+    standing in a worktree's member place has no tree of its own asked, and a
+    hard link under a name that is not the config's, placed in the project, to
+    that place's existing config is not matched - the registrations are read
+    for a config-named write alone, and an ordinary write walks to no
+    checkout."""
+    rel = _config.CONFIG_REL.split("/")
+    proj = os.path.join(world["top"], "app")
+    place = os.path.join(world["wt"], "app")
+    conf = os.path.join(place, *rel)
+    link = os.path.join(proj, "notes", "hl.json")
+    os.makedirs(os.path.dirname(link))
+    with open(conf, "w", encoding="utf-8") as fh:
+        json.dump({_GEN_BODY_KEY: "pre"}, fh)
+    made, why = _harness.attempt(os.link, conf, link)
+    if not made:
+        _harness.skip(check, "cf39d a hard link to a member place's config",
+                      "no hard link can be made here (%s)" % (why,),
+                      not hasattr(os, "link"))
+        return
+    try:
+        got = tuple(_hook_verdict(proj, place, link, _CF_BODY, a)
+                    for a in (True, False))
+        reads = _gen_reads(world, None, link, place, "cf39d")
+    finally:
+        os.remove(link)
+        os.remove(conf)
+    check("cf39d NOT MATCHED, run so the documents can say it: in a member "
+          "project, a hard link placed in the project under a name that is not "
+          "the config's, to the existing config of a worktree's member place, "
+          "written from a session standing in that place - its tree is not "
+          "found for a member project, and identity is asked only of the trees "
+          "asked of every write - is allowed while that place's loader reads "
+          "it ((sub, main), read by): %r, %r" % (got, reads),
+          got == ("allow", "allow")
+          and reads == [os.path.relpath(place, world["base"])])
+
+
+def _member_cost_case(check, world):
+    """cf39c: an ordinary write in a member project, in process."""
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    proj = os.path.join(world["top"], "app")
+    common = os.path.join(world["top"], ".git")
+    # The git entries a walk from the project up to its checkout would ask
+    # about beyond the project's own, which the session's tree is compared
+    # with: those of the directories above it. A session standing in a
+    # worktree has its own tree found by a walk from there, which an ordinary
+    # write made before this rule too.
+    walk, at = set(), os.path.dirname(proj)
+    while os.path.dirname(at) != at:
+        walk.add(os.path.join(at, ".git"))
+        at = os.path.dirname(at)
+    prev = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = proj
+    rows = []
+    try:
+        _config.forget_git_standing()
+        for name, cwd, path in (
+                ("in-project", proj, os.path.join(proj, "src", "x.ts")),
+                ("in-project-new", proj, os.path.join(proj, "src", "n.ts")),
+                ("in-worktree", os.path.join(world["wt"], "app"),
+                 os.path.join(world["wt"], "app", "src", "x.ts"))):
+            question = _reg_question(cfg, path, cwd)
+            (way, touched), opened, listed, started = _reg_counted(
+                lambda: _git_entries_touched(question), common)
+            rows.append((name, way, len(opened), len(listed), len(started),
+                         [t for t in touched if t in walk]))
+    finally:
+        if prev is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = prev
+    check("cf39c ...and an ordinary write there - an existing and a new source "
+          "file in the member project, one in its worktree's member place - "
+          "makes the config question read no registration, list no directory, "
+          "start no process and ask the disk about no git entry above the "
+          "project - no walk to its checkout (row, answer, registrations read, "
+          "listings, processes, git entries on that walk asked of): %r"
+          % (rows,),
+          len(rows) == 3
+          and all(not w and o == 0 and n == 0 and p == 0 and not t
+                  for _r, w, o, n, p, t in rows))
+
+
+def _git_entries_touched(fn):
+    """(fn(), every path whose last component is `.git` that a counted disk
+    call was handed while `fn` ran) - the walk to the checkout's git entry,
+    seen by what it asks rather than by its name."""
+    touched = []
+    saved = [(owner, name, getattr(_owner(owner), name))
+             for owner, name in _DISK_CALLS if hasattr(_owner(owner), name)]
+
+    def recording(real):
+        def call(*a, **k):
+            if a and isinstance(a[0], str) and os.path.basename(
+                    a[0].rstrip("/\\")) == ".git":
+                touched.append(a[0])
+            return real(*a, **k)
+        return call
+    for owner, name, real in saved:
+        setattr(_owner(owner), name, recording(real))
+    try:
+        out = fn()
+    finally:
+        for owner, name, real in saved:
+            setattr(_owner(owner), name, real)
+    return out, touched
+
+
+# --- cf: a registration git wrote relative, and one cut at the bound ----------------
+# `git worktree add` writes the registration relative to its own directory under
+# `worktree.useRelativePaths` (git 2.48 on). Where the installed git does not, the
+# registration file is rewritten relative by hand after an ordinary add - the
+# plugin reads that file and nothing else of git's, and the loader oracle needs no
+# git - and the label says which was done, so an older git runs the same row and
+# never skips it.
+def _relative_registration(base):
+    """A project with a worktree W registered relative, W's config folder a link
+    out of every tree. -> (proj, wt, store, how the registration was made)"""
+    proj, wt = os.path.join(base, "proj"), os.path.join(base, "W")
+    os.makedirs(os.path.join(proj, "src"))
+    with open(os.path.join(proj, "src", "x.ts"), "w", encoding="utf-8") as fh:
+        fh.write("export const x = 1;\n")
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "c"]):
+        _harness.git(proj, *argv, prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    _harness.git(proj, "-c", "worktree.useRelativePaths=true", "worktree",
+                 "add", "-q", wt, "-b", "w", prefix=_harness.WORKTREE_PAIR_GIT,
+                 timeout=30)
+    reg = os.path.join(proj, ".git", "worktrees", "W", "gitdir")
+    with open(reg, "r", encoding="utf-8") as fh:
+        written = fh.readline().strip()
+    how = "by git"
+    if os.path.isabs(written):
+        with open(reg, "w", encoding="utf-8") as fh:
+            fh.write(os.path.relpath(os.path.join(wt, ".git"),
+                                     os.path.dirname(reg)) + "\n")
+        how = "by hand, this git wrote it absolute"
+    store = os.path.join(base, "store", "wcfg")
+    os.makedirs(store)
+    os.symlink(store, os.path.join(wt, _config.CONFIG_REL.split("/")[0]))
+    return proj, wt, store, how
+
+
+def _relative_registration_cases(check):
+    """cf40, cf40b: a relative registration held; a cut pointer asks no tree."""
+    label = "cf40 a worktree registered relative is held"
+    base = os.path.realpath(_harness.fixture_root("guard-edits-relreg-"))
+    probe = os.path.join(base, "probe-link")
+    linked, why = _harness.attempt(os.symlink, base, probe)
+    if not linked:
+        _harness.skip(check, label, "no symlink can be made here (%s)" % (why,),
+                      os.name == "nt" or not hasattr(os, "symlink"))
+        return
+    os.remove(probe)
+    built, made = _harness.attempt(_relative_registration, base)
+    if not built:
+        check("%s: the fixture builds (%s)" % (label, made), False)
+        return
+    proj, wt, store, how = made
+    rel = _config.CONFIG_REL.split("/")
+    reg = os.path.join(proj, ".git", "worktrees", "W", "gitdir")
+    with open(reg, "r", encoding="utf-8") as fh:
+        pointer = fh.readline().strip()
+    world = {"base": base, "trees": [proj, wt]}
+    seen = []
+    for name, path, held in (
+            ("at-destination", os.path.join(store, rel[1]), True),
+            ("through-link", os.path.join(wt, *rel), True),
+            ("store-beside", os.path.join(base, "store", "x", rel[1]),
+             False)):
+        verdicts = tuple(_hook_verdict(proj, proj, path, _CF_BODY, a)
+                         for a in (True, False))
+        seen.append((name, verdicts, _gen_reads(world, None, path, proj, name),
+                     held))
+    check("cf40 a worktree whose registration is written relative (%s: %r) - "
+          "its config folder a link out of every tree - has its config, at the "
+          "folder's destination and through the link, refused to a subagent "
+          "and asked of the main session, each read by its loader, while a "
+          "config-named file beside that destination is allowed and read by "
+          "none (row, (sub, main), read by, held): %r" % (how, pointer, seen),
+          not os.path.isabs(pointer) and len(seen) == 3
+          and all(v == (("block", "ask") if h else ("allow", "allow"))
+                  and bool(r) == h for _n, v, r, h in seen))
+    _cut_pointer_case(check, base, proj, store, rel)
+    _gone_registration_case(check, base, proj, rel)
+    _separate_git_dir_case(check, os.path.join(base, "sep"), rel)
+
+
+def _gone_registration_case(check, base, proj, rel):
+    """cf40c: a worktree under the project whose registration is gone is held
+    by the reading of a repository nested under the project - its `.git` file
+    still stands - while one outside the project is not matched (`ln42`)."""
+    gone = os.path.join(proj, rel[0], "worktrees", "gone")
+    _harness.git(proj, "worktree", "add", "-q", gone, "-b", "gone",
+                 prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    _harness.remove_tree(os.path.join(proj, ".git", "worktrees", "gone"))
+    os.makedirs(os.path.join(gone, rel[0]))
+    path = os.path.join(gone, *rel)
+    got = tuple(_hook_verdict(proj, proj, path, _CF_BODY, a)
+                for a in (True, False))
+    reads = _gen_reads({"base": base, "trees": [proj, gone]}, None, path, proj,
+                       "cf40c")
+    check("cf40c a worktree under the project whose registration is gone - its "
+          "admin directory removed, its .git file left - has its config refused "
+          "to a subagent and asked of the main session, held as a repository "
+          "nested under the project, and read by its loader ((sub, main), read "
+          "by): %r, %r" % (got, reads),
+          got == ("block", "ask")
+          and reads == [os.path.relpath(gone, base)])
+
+
+def _separate_git_dir_case(check, base, rel):
+    """cf40d: what is not matched, run so the documents can say it. A
+    repository made with its git directory apart from its checkout keeps its
+    common directory under a name that is not `.git`, so the directory beside
+    it is no main tree, and the main checkout is found by nothing the
+    question reads from a project that is a linked worktree of it."""
+    main, project = os.path.join(base, "M"), os.path.join(base, "P")
+    os.makedirs(os.path.join(main, "src"))
+    with open(os.path.join(main, "src", "x.ts"), "w", encoding="utf-8") as fh:
+        fh.write("export const x = 1;\n")
+    _harness.git(base, "init", "-q", "--separate-git-dir",
+                 os.path.join(base, "G.git"), main,
+                 prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    for argv in (["add", "-A"], ["commit", "-qm", "c"],
+                 ["worktree", "add", "-q", project, "-b", "p"]):
+        _harness.git(main, *argv, prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    store = os.path.join(base, "store", "mcfg")
+    os.makedirs(store)
+    os.symlink(store, os.path.join(main, rel[0]))
+    path = os.path.join(store, rel[1])
+    got = tuple(_hook_verdict(project, project, path, _CF_BODY, a)
+                for a in (True, False))
+    reads = _gen_reads({"base": base, "trees": [project, main]}, None, path,
+                       project, "cf40d")
+    check("cf40d NOT MATCHED, run so the documents can say it: with the git "
+          "directory made apart from the checkout and the project a linked "
+          "worktree of it, the main checkout's config, written at its "
+          "linked-out folder's destination, is allowed while the main "
+          "checkout's loader reads it ((sub, main), read by): %r, %r"
+          % (got, reads),
+          got == ("allow", "allow") and reads == ["M"])
+
+
+def _cut_pointer_case(check, base, proj, store, rel):
+    """cf40b: a registration longer than the bound asks no tree. A
+    config-named file no tree loads is the write asked about, so every
+    candidate tree is asked before the answer; the registration's name sorts
+    before every other, so it is read first."""
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    held = os.path.join(store, rel[1])
+    loose = os.path.join(base, "store", "x", rel[1])
+    prev = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = proj
+
+    def asked_trees():
+        asked = []
+        real = _config._names_audit_config
+
+        def recording(target, tree, *a, **k):
+            asked.append(tree)
+            return real(target, tree, *a, **k)
+
+        def verdict(path):
+            return _with_attr("_names_audit_config", recording,
+                              lambda: _cf_decide(cfg, "Write", {
+                                  "file_path": path, "content": _CF_BODY},
+                                  proj, "agent-cf")[0], on=_config)
+        got = (verdict(held), verdict(loose))
+        return got, sorted(set(os.path.relpath(t, base) for t in asked))
+    try:
+        _config.forget_git_standing()
+        before = asked_trees()
+        cut = os.path.join(proj, ".git", "worktrees", "0-cut")
+        os.makedirs(cut)
+        with open(os.path.join(cut, "gitdir"), "w", encoding="utf-8") as fh:
+            fh.write("/" + "a" * (2 * 1024 * 1024) + "\n")
+        _config.forget_git_standing()
+        after = asked_trees()
+    finally:
+        if prev is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = prev
+    check("cf40b a registration whose pointer is a line of two mebibytes - read "
+          "only up to the bound, so it may be cut - asks no tree: the trees "
+          "asked and the verdicts, for the worktree's config at its "
+          "destination and for a config-named file no tree loads, are those "
+          "without it ((held, loose), trees asked) without %r, with %r"
+          % (before, after),
+          before == after and before[0] == ("block", "allow") and before[1])
 
 
 def _selftest():

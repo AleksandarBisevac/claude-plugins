@@ -1831,26 +1831,63 @@ def _session_tree(tree):
 
 def _config_named(spelled, real):
     """Is the file a path names - as spelled, or resolved - called as the
-    config is, without regard to case? Strings only: the registrations are
-    read, and a nested repository looked for, for no other write, which keeps
-    an ordinary write from paying for either."""
+    config is, without regard to case? Strings only: the checkout is walked
+    to and its registrations read, and a nested repository looked for, for no
+    other write, which keeps an ordinary write from paying for any of it."""
     want = _CONFIG_FOLDED[-1]
     return any(os.path.basename(p).casefold() == want for p in (spelled, real))
 
 
+def _checkout_of(project):
+    """(the checkout the directory `project` lies in, the project's path below
+    that checkout's top) - the first directory at or above `project`, resolved,
+    that holds a `.git` entry, and "" for the path when the project is that top
+    itself - or (None, "") when no directory up to the root holds one.
+
+    Walked as git's discovery walks from a session's directory: from the
+    resolved directory up, one `lstat` of `.git` per directory, ending at the
+    root, with no process and no listing. `checkout_top` answers the same
+    question with a `git rev-parse` process, which a config question does not
+    start; `_tree_as_spelled` walks as spelled and stops at the project, so it
+    cannot find a checkout above it."""
+    real = os.path.realpath(project)
+    at = real
+    while True:
+        if os.path.lexists(os.path.join(at, ".git")):
+            return at, real[len(at):].lstrip(os.sep)
+        parent = os.path.dirname(at)
+        if parent == at:
+            return None, ""
+        at = parent
+
+
 def _registered_trees(project):
-    """Every tree the repository of the directory `project` records: its main
-    tree - the directory holding the common git directory, when that directory
-    is a `.git` (a bare repository has none) - and each worktree registered in
+    """Every place a session of the repository the directory `project` lies in
+    could be opened at: the repository's main tree - the directory holding the
+    common git directory, when that directory is a `.git` (a bare repository
+    has none) - and each worktree registered in
     `<common>/worktrees/<name>/gitdir`, the one-line file naming the path of
     that worktree's `.git` file, relative to the registration where it is not
-    absolute. Read from the files with no process; a registration that is no
-    regular file, or names a directory that does not exist, is passed over.
+    absolute; and, for a project lying below its checkout's top
+    (`_checkout_of`), each of those trees at the project's own path below it
+    too - the member's place in that tree, where a session in it would open.
+    Read from the files with no process; a registration that is no regular
+    file, names a directory that does not exist, or may have been cut
+    (`_read_pointer`) is passed over.
+
+    The repository is found from the checkout the project lies in, not from
+    the project's own `.git` entry alone: a project that is a directory below
+    its checkout's top has none.
 
     The back-pointer is not checked: a registration naming a directory that is
     no longer that worktree (removed, and something else made there) asks one
-    tree too many, which can hold a write, never let one through."""
-    common = _common_of(project)
+    tree too many, which can hold a write, never let one through. A member
+    place is asked whether or not that tree has it yet, since a write there
+    creates it - one more place asked, never one fewer."""
+    top, below = _checkout_of(project)
+    if top is None:
+        return []
+    common = _common_of(top)
     if not common:
         return []
     common = os.path.normpath(common)
@@ -1861,7 +1898,7 @@ def _registered_trees(project):
     try:
         names = sorted(os.listdir(regs))
     except (OSError, ValueError):
-        return out
+        names = []
     for name in names:
         reg = os.path.join(regs, name)
         dotgit = _read_pointer(os.path.join(reg, "gitdir"))
@@ -1870,7 +1907,9 @@ def _registered_trees(project):
         at = os.path.dirname(os.path.normpath(os.path.join(reg, dotgit)))
         if os.path.isdir(at):
             out.append(at)
-    return out
+    if not below:
+        return out
+    return [p for tree in out for p in (tree, os.path.join(tree, below))]
 
 
 def _nested_tops(spelled, real, project):
@@ -1898,8 +1937,9 @@ def _candidate_tops(tree, spelled, real, project, fixed, cache):
     every write (`fixed`), the config-shaped directory off the resolved path
     inside the tree `tree_for` placed it in, and - for a config-named write
     alone - the repositories nested under the project it could be the config
-    of (`_nested_tops`) and every tree the repository registers
-    (`_registered_trees`, read once per question through `cache`)."""
+    of (`_nested_tops`) and every place a session of the repository the
+    project lies in could be opened at (`_registered_trees`, read once per
+    question through `cache`)."""
     out = [(top, False, False) for top in fixed]
     if tree["inside"]:
         out.append((_config_shaped_top(real), True, True))
@@ -1940,13 +1980,17 @@ def audit_config_way(tree, which=False):
     directory holds a repository and `tree_for` placed the path in a tree.
     Asked of a write whose file is named as the config is, as spelled or
     resolved, and of no other (`_candidate_tops`): every tree the repository
-    registers - its main tree and each worktree in its common directory's
-    registrations (`_registered_trees`), wherever each lies and whatever its
-    config folder is - and each repository nested under the project that the
+    the project lies in registers - found from the first directory at or above
+    the project holding a `.git` entry (`_checkout_of`), so a project below its
+    checkout's top reads them too - its main tree and each worktree in its
+    common directory's registrations (`_registered_trees`), wherever each lies
+    and whatever its config folder is, each asked at its top and, for a
+    project below its checkout's top, at the project's own path below that
+    top as well; and each repository nested under the project that the
     config's components hang off, as spelled and once resolved
-    (`_nested_tops`). An ordinary write therefore reads no registration, lists
-    no directory and starts no process here; the identity half of the question
-    is asked of the trees asked of every write.
+    (`_nested_tops`). An ordinary write therefore walks to no checkout, reads
+    no registration, lists no directory and starts no process here; the
+    identity half of the question is asked of the trees asked of every write.
 
     Each candidate's config and the written file are compared resolved against
     resolved and, where both exist, by identity; neither existing, the
@@ -1961,14 +2005,19 @@ def audit_config_way(tree, which=False):
     case of the guard's suite: a hard link under a name that is not the
     config's to another tree's existing config, from a session standing in no
     tree that loads it - identity is asked only of the trees asked of every
-    write; a repository nested under a tree other than the project; a worktree
-    whose registration is gone; a repository that is no tree of this one and
-    lies outside the project; and a repository nested under the project that
-    is no tree of this one, its config written at its folder link's
-    destination from a session standing elsewhere - no component of that path
-    hangs off it. An OSError or a ValueError asking one candidate, or
-    resolving one spelling, answers None for that one and the rest are still
-    asked."""
+    write - and, for a project below its checkout's top, from a session
+    standing in a worktree's member place, whose tree the walk from the
+    session's directory does not find; a repository nested under a tree other
+    than the project; a worktree outside the project whose registration is
+    gone (one under the project is a repository nested under it); the main
+    checkout of a repository whose git directory was made apart from it - its
+    common directory is not named `.git`; a repository that is no tree of
+    this one and lies outside the project; and a repository nested under the
+    project that is no tree of this one, its config written at its folder
+    link's destination from a session standing elsewhere - no component of
+    that path hangs off it. An OSError or a ValueError asking one candidate,
+    or resolving one spelling, answers None for that one and the rest are
+    still asked."""
     miss = (None, None) if which else None
     spellings = _written_spellings(tree)
     if not spellings:
@@ -2031,18 +2080,23 @@ def _candidate_word(real, top, done, shaped, asked, resolved):
     was already asked about this path (`asked`, by spelling and by resolved
     directory, so a repeat costs no disk call) or is a config-shaped one
     (`shaped`) that holds no repository. `resolved` keeps each directory's
-    resolution across the call's spellings; `done` says `top` is resolved."""
+    resolution across the call's spellings; `done` says `top` is resolved.
+
+    A config-shaped directory passed over for holding no repository is not
+    marked asked: the same directory can be a tree by another reading - the
+    member's place in a registered worktree holds no `.git` - and is asked
+    when that candidate comes."""
     if top in asked:
         return None
-    asked.add(top)
     if top not in resolved:
         resolved[top] = top if done else os.path.realpath(top)
     rtop = resolved[top]
     if rtop != top and rtop in asked:
         return None
-    asked.add(rtop)
     if shaped and not _holds_repository(top):
         return None
+    asked.add(top)
+    asked.add(rtop)
     return _names_audit_config(real, rtop)
 
 
@@ -2059,23 +2113,29 @@ TASK_MARKER_FILE = "audit-worktree.json"
 
 
 # The longest line read from a file git keeps to point at a directory - a `.git`
-# file, a worktree's `commondir`, a registration's `gitdir`. A path longer than
-# any the platforms allow is cut, names nothing, and is passed over.
+# file, a worktree's `commondir`, a registration's `gitdir`. A read that reaches
+# this bound without reaching the line's end may have been cut, and is passed
+# over as if the file named nothing: the part read can name a directory the
+# whole line does not - a line of slashes and letters cut there is the root.
 _POINTER_BYTES = 4096
 
 
 def _read_pointer(path):
     """The first line of the git pointer file `path`, stripped, or "" when it
-    is no regular file or cannot be read. Read only when regular and only to
-    `_POINTER_BYTES`, so a pipe or a device standing where git keeps a pointer
-    cannot hold a hook waiting on it."""
+    is no regular file, cannot be read, or its read reached `_POINTER_BYTES`
+    before the line's end. Read only when regular and only to that bound, so
+    a pipe or a device standing where git keeps a pointer cannot hold a hook
+    waiting on it."""
     if not os.path.isfile(path):
         return ""
     try:
         with open(path, "r", encoding="utf-8") as fh:
-            return fh.readline(_POINTER_BYTES).strip()
+            line = fh.readline(_POINTER_BYTES)
     except (OSError, ValueError):
         return ""
+    if len(line) >= _POINTER_BYTES and not line.endswith("\n"):
+        return ""
+    return line.strip()
 
 
 def _admin_of_tree(tree):

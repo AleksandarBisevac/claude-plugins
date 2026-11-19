@@ -454,9 +454,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   fixture built, finding none by a walk, over config folders that link to a repository, are one,
   or hold an empty git entry, and link destinations inside the project and outside it; a case
   counts the registrations, listings and processes the question costs, none for an ordinary
-  write. Still not matched, each a case allowing the write while a loader reads it: a hard link
-  placed in the project under another name to another tree's existing config, a repository
-  nested under a tree other than the project, a worktree whose registration is gone, a
+  write. The registrations were first found from the project's own git entry, so a project that
+  is a directory below its checkout's top read none: its checkout's top's config and a
+  worktree's, written at a linked-out folder's destination or through the link, and the config
+  of the project's own place in a worktree, were allowed while a loader read them. The
+  repository is now found from the first directory at or above the project holding a git entry,
+  with no process, and each tree it registers is asked at its top and at the project's place in
+  it; the property case gains the project's place in its checkout as a dimension, its fixture
+  listing every place a loader could be handed. A registration git wrote relative to its own
+  directory is held by a case, and a registration read up to its bound without reaching its
+  line's end is passed over, since a cut path can name a directory the whole one does not.
+  Still not matched, each a case allowing the write while a loader reads it: a hard link placed
+  in the project under another name to another tree's existing config - for a project below its
+  checkout's top also to the config of a worktree's place the session stands in - a repository
+  nested under a tree other than the project, a worktree outside the project whose registration
+  is gone (one under the project is held as a repository nested under it), the main checkout of
+  a repository whose git directory was made apart from it from a linked worktree of it, a
   repository outside the project that is no tree of this one, and a nested repository's config
   written at its folder link's destination from a session standing elsewhere.
 - **A config or plan file created by a shell command or an MCP tool leaves its journal row, and

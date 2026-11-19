@@ -2124,17 +2124,19 @@ def _oq_hook(event, path, project, sid):
         env=env, timeout=60)
 
 
-def _oq_write(path, project, sid):
+def _oq_write(path, project, sid, trails=None):
     """Pre, the write itself, Post - and the rows the project's trail gained,
-    as (action, target) pairs, with the two exit codes."""
-    before = set(r.get("hash") for r in _journal_io.read_all(project))
+    or every trail of `trails` when given, as (action, target) pairs, with the
+    two exit codes."""
+    trails = trails or [project]
+    before = set(r.get("hash") for t in trails for r in _journal_io.read_all(t))
     pre = _oq_hook("PreToolUse", path, project, sid)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(_OQ_BODY)
     post = _oq_hook("PostToolUse", path, project, sid)
     rows = [(r.get("action"), r.get("target"))
-            for r in _journal_io.read_all(project)
+            for t in trails for r in _journal_io.read_all(t)
             if r.get("hash") not in before]
     return rows, (pre.returncode, post.returncode)
 
@@ -2500,19 +2502,24 @@ def _generated_question_cases(check):
     # The first review's arrangements and the later ones, apart: oq5c is the
     # case the later rounds owe, the journal row a hold lost with it.
     first = ("a-absent", "a-present", "b-case-above")
-    rows_seen, later = [], []
+    rows_seen, later, member = [], [], []
     for name, arr in TGE._GEN_MEASURED:
         if arr.tool != "Write" or arr.session != "project":
             continue
         world = TGE._gen_world_of(os.path.join(base, "p-" + name), arr)
         path, _cwd = TGE._gen_spell(world, arr)
-        rows, codes = _oq_write(path, world["proj"], "sess-oq5b-" + name)
-        # Read by a loader exactly when the config file of a tree the fixture
-        # built now holds the write - not so for the case variant where names
-        # do not fold, which then names another file.
+        # A member arrangement's row is read from the trail of every place
+        # the fixture listed: a write lying in a worktree's member place is
+        # placed in that worktree, whose own trail records it.
+        rows, codes = _oq_write(path, world["proj"], "sess-oq5b-" + name,
+                                world["trees"] if arr.member != "top" else None)
+        # Read by a loader exactly when the config file of a place the
+        # fixture built now holds the write - not so for the case variant
+        # where names do not fold, which then names another file.
         loaded = any(_oq_holds_body(t) for t in world["trees"])
-        (rows_seen if name in first else later).append(
-            (name, loaded, rows, codes))
+        into = (rows_seen if name in first
+                else member if arr.member != "top" else later)
+        into.append((name, loaded, rows, codes))
 
     def one_row_where_read(seen_rows):
         return all(codes == (0, 0)
@@ -2536,6 +2543,16 @@ def _generated_question_cases(check):
           "loader: %r" % (later,),
           len(later) >= 4 and all(loaded for _n, loaded, _r, _c in later)
           and one_row_where_read(later))
+    check("oq5d ...and for the member project's arrangements written by an edit "
+          "tool - the project below its checkout's top: an outside worktree's "
+          "member place written directly, that worktree's top through its "
+          "linked-out folder and at the folder's destination, and the "
+          "checkout's top at its folder's destination - the journal hook run "
+          "as a process writes one config row, in the trail of the project or "
+          "of the tree the write lies in, each being read by the loader of a "
+          "place the fixture listed: %r" % (member,),
+          len(member) >= 4 and all(loaded for _n, loaded, _r, _c in member)
+          and one_row_where_read(member))
 
 
 def _oq_holds_body(tree):

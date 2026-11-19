@@ -5221,7 +5221,7 @@
     {
       "id": "SG1.51-ukq",
       "title": "A call's own reading of the journal switch is kept per call, so a second call of the same writer cannot take the switch-off row away, and the documents say whose row a switch-off in an open call's window is",
-      "status": "in_progress",
+      "status": "done",
       "description": "A narrow review of the task that made the switch-off row owed only by the call whose own pass before read the switch as on found the false rows gone, the rows written with the journal on unchanged byte for byte apart from time and chain fields, and the guard that reads the same start record unmoved. It found two things; each was run by the reviewer and again by the orchestrator.\n\nMEASURED on the tree as it stands.\n(a) A REGRESSION. The reading is per call, and it is stored in the one start record a writer has. Two calls of ONE writer in flight: the second call's pass before replaces the record, the first call's pass after finds a record naming another call and marks nothing. Order - the flipping call's pass before, a second call's pass before, the second's pass after, the flip, the flipping call's pass after: no row, and the trail check says nothing, so the switch-off leaves no record anywhere; the tree before that task wrote the row. The same with an MCP write and an MCP read. With the second call's pass after last, the one row comes from the second call. The suite's case for two calls in flight drives two sessions only, and the documents say two calls in flight across the flip each leave theirs.\n(b) A SENTENCE THAT IS FALSE. The README says a switch turned off by hand or in the panel leaves no row at all. Flipped by hand, or through the panel's own write, WHILE one ordinary call is open - a session's test run, a subagent's MCP read - that call's pass after writes the row under its own session and agent: its own pass before read on, its pass after reads off, and no peer is in the window, since neither a hand edit nor the panel leaves one. Between calls there is no row, as the sentence says. The behaviour is the sweep's and older than that task; the absolute sentence is new.\n(c) NOT DRIVEN, READ FROM THE HOST'S DOCUMENTATION. The host documents that the pass after runs for a tool call that succeeded and that a call that failed - a command exiting non-zero included - is reported under another event, which this plugin does not register. If so, a switch-off made by a command that then fails has no pass after and leaves no row; before that task the next call wrote it. Registering that event is a task of its own in the next phase; here the documents must not claim more than is built.\n\nTHE RULE TO BUILD.\n1. THE READING IS KEPT PER CALL. What a pass before read of the switch is stored under that call's own id, where no other call's pass before can replace it, and the pass after reads its own and no other. The start record the Bash-write guard reads keeps the shape and the meaning it has; say whether it still carries the reading and who reads it.\n2. EVERY CALL IN WHOSE WINDOW THE FLIP LANDED LEAVES ITS ROW, THE SAME WRITER'S INCLUDED - which is what the documents already say. So: the order of (a) writes the flipping call's row; with both calls open across the flip each leaves one; a call whose window closed before the flip leaves none; a call that began after the flip leaves none, as today.\n3. NOTHING NEW IS LEFT BEHIND. With the switch off before a call, its pass before stores no reading - absence already means no mark. A reading is removed by its own pass after. One left by a call whose pass after never ran is removed by a stated rule that is bounded and does not depend on that call ever returning; say which, and what it costs an ordinary call. Two passes before of one writer running at the same moment must not lose either reading - a read-modify-write of one shared file is not that.\n4. THE DOCUMENTS SAY WHOSE ROW IT IS, IN ONE PLACE. A switch-off by hand or in the panel between calls leaves no row and the trail check does not see it. One that lands while a call is open is recorded under that call, as any write the sweep sees in a call's window is: the row says in whose window the switch went off, not whose hand did it. A switch-off by a call whose pass after never runs leaves no row. Each of the three is cited to a case that shows it.\n\nWHAT STAYS. Every row written with the journal on, byte for byte apart from time and chain fields. Every answer of the orchestrator's ten inputs and of the earlier rounds' probes (the brief says where), except the orders of (a), which gain their row. The false rows the last task removed stay removed: a later call after someone else's switch-off writes nothing. The Bash-write guard's verdicts. The hook import budget.\n\nHOW TO PROVE. Red before, each as the hook's passes run as processes around a real write in a real repository: the order of (a) by a command and by an MCP tool - no row; both calls open across the flip - one row where two are owed. Allow twins that must stay quiet: a second call of the same writer that began after the flip; one whose window closed before it; a hand flip between calls; a call with no call id. A mutation probe the orchestrator can run from the worktree root: the reading stored per writer again; the pass after reading any call's reading; a reading stored with the switch off; a reading never removed; the leftover rule removed - each red on a named case; and allow rows - every call after the flip marked, no call marked - each turn a twin red.\n\nNOT in this task: registering the host's event for a failed call; who is named when a hand edit lands in an open call's window, beyond saying so; an MCP write of another tree's config.\n\nAcceptance:\n(1) With two calls of one writer in flight, the call that switched the journal off leaves its row whatever the order of the other call's passes, shown by a command and by an MCP tool.\n(2) A call that began after the flip, or whose window closed before it, leaves no row, and a call with no call id marks nothing.\n(3) No reading is stored while the switch is off, a reading is removed by its own pass after, and one whose pass after never ran is removed by the stated bounded rule.\n(4) Every row written with the journal on is unchanged apart from time and chain fields, and the Bash-write guard's verdicts are unchanged.\n(5) SECURITY.md, the README, the build guide and the changelog say whose row a switch-off between calls, in an open call's window and by a call with no pass after is, each cited to a case, and are true of the code.",
       "files": [
         "plugins/audit/hooks/journal-writes.py",
@@ -5253,14 +5253,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8fca5e437064",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) Where a call's reading lives: one file per call under the state directory, journal-preimage-<writer key>.<first 20 hex of sha256(tool_use_id)>.json (_config.CALL_READING_FILE, _config._call_reading_path). The id reaches the name only through the digest (cr5: an id spelling ../../ stays in the state directory). Written by _config.record_call_reading only when the pass before read the switch on (a missing config reads as on), and only when the payload names a call id. Its body is the config as that pass found it (path, ts, sha256, content), the id and journalOn true. journal-writes._keep_reading writes it on the sweep lane (Bash, MCP) for the project's config, and on the edit lane for a write whose target is CONFIG_REL, in the tree the slot is in. The pass after reads its own (_own_reading -> _config.call_reading), then removes it (_config.drop_call_reading). (2) Two calls of one writer: the per-writer start record and the per-writer, per-path slot were both replaceable. So with the switch off now, the config is judged against the call's own pre-image, not the writer's slot. That is why each call open across the flip leaves a row: without it, the first pass after refreshes the shared slot past the flip and the second sees no move (mutation rows 7 and 8 show this). (3) Leftover rule: a reading whose pass after never runs keeps the journal-preimage- prefix, so detect-plan-skip.py's _gc_state, which runs at each prompt, removes it once its mtime is older than _GC_MAX_AGE (cr5 drives the real function: kept an hour on, removed past the bound). An ordinary call pays nothing for that rule, since no directory listing runs on a tool call. What it does pay with the journal on: on the swept Pre, one more read of the config and one small write; on the Post, one unlink. With the journal off at Post, one more read. A leftover is never another call's reading because its name is that call's id digest (and writer key). No reading is written while the switch is off. (4) journalOn left the shared call-start record: record_call_start lost its journal_on argument, and the record is {at, toolUseId} again, the shape guard-bash-writes reads (call_start, window_peers unchanged). cw7 was re-pinned on purpose. It used to assert that the reading rides in the start record's one write and reads back on only for its call. It now asserts that the record holds exactly {at, toolUseId}, that call_journal_on is False with no reading, and that a reading survives a later call's start record. (5) Edit lane, driven with two Writes of one session on the config (probe_editlane in the scratch directory). Before, PreF PreW PostW flip PostF gave rows=1: W's 'Write wrote' and no flip row, with a verify warning. PreW PreF PostW flip PostF gave the same. PreF PreW flip PostF PostW gave 1 flip row. PreF flip PreW PostW PostF gave 1. After, the counts are 2 (W's write row plus F's flip), 2, 2 flip rows and 1, with no warnings. So it lost the row, and it is fixed under the same rule. sn21 holds it. (6) Probes on this tree. probe_flight: A=2, B=1, C=2, D=1, E=2, F=2, G=2, H=1; before it was A1 B0 C1 D0 E1 F1 G2 H1. probe_open, probe_nopost and probe_spell are identical to the orchestrator's before outputs (diff empty). rows_on gives identical JSON for the export and this tree. probe_guard gives the same verdicts; the only difference is the record keys, ['at','journalOn','toolUseId'] -> ['at','toolUseId']. verify_all, run from a mirrored copy: nine ok, plus probe_j BAD on u3b only (the known one). (7) Bench. The bench-hooks.py --gate exit code was 0. bench-hooks measure() with hooks_dir pointed at matched scratch copies (journal-writes, edit lane), two runs each: before 69.38 ms and 87.71 ms, after 88.83 ms and 67.33 ms. That is noise, and this lane writes no reading. The swept Bash Pre and Post as processes, journal on, n=31 medians, two runs each: before Pre 136.2/139.9 ms and Post 138.6/138.3 ms; after Pre 131.7/138.5 ms and Post 132.6/137.9 ms. The state file count afterwards was the same, so no reading was left behind. (8) Suites: the eight dependants were swept with --jobs 4, exit code 0. test__config 419, test__journal_io 282, test_audit_journal 186, test_guard_bash_writes 239, test_guard_edits 131, test_hooks 247, test_journal_writes 207 and test_require_plan 245 cases all came back ok. test__deps, test__output_lints and test__refs were swept with exit code 0. gate-parity exited 0, prove-gates --list exited 0, ruff exited 0, and vermin -t=3.8- exited 0. run-test-gate for SG1 --task SG1.51-ukq, without --record, printed GATE GREEN. (9) Dependants. _config.py is imported by every hook. The only API changes are record_call_start dropping journal_on (its one caller, journal-writes, is updated) and the new call_reading, record_call_reading and drop_call_reading functions; call_journal_on keeps its signature. guard-bash-writes is unchanged in what it reads, and its suite passes (239 ok). test_guard_edits, test_hooks, test_require_plan, test__journal_io and test_audit_journal are still correct and green. tests/test_journal_writes.py and tests/test__config.py are changed as described. In SECURITY.md, item 3's switch-off sentences were rewritten and no fail-mode table row changed; test_hooks' quoted phrase is untouched. README, the build guide and CHANGELOG were rewritten as below. The other dependants listed in the brief (scripts, tools, eval files) neither read the changed functions nor quote the changed sentences. tools/sweep-selftests.py does not need a row: its existing journal-preimage row matches the new name for a main agent and for a subagent (checked against _LIVE_WRITES_RE). (10) Document sentences, in SECURITY.md item 3, the README journal paragraph, the build guide's 'The last will reaches the trail' and the CHANGELOG Unreleased Security bullet. First: a switch-off by hand or in the panel between calls leaves no row and the trail check does not see it (sn20: by hand, verify gives no finding and no warning naming the config; sn4: in the panel). Second: one that lands while a call is open is recorded under that call; the row says in whose window the switch went off, not whose hand did it (sn20: a command's row under sess-a, a subagent's MCP read's row under agent0007). Third: a switch-off by a call whose pass after never runs leaves no row (sn22: a command and an edit tool). No claim is made about when the host skips the pass after. SECURITY.md's sentence 'the trail check still warns about the hand edit (sn1-sn7)' was narrowed to 'a hand edit an edit tool later rewrote (sn3)', because a hand flip followed only by commands draws no warning (sn20).",
+        "descriptive": "A call's reading of the journal switch, with its config pre-image, is now kept per call, so a second call of the same writer can no longer take the switch-off row away on any lane; the documents now say whose row a switch-off between calls, inside an open call's window, and by a call with no pass after is."
       },
       "startedAt": "2026-11-18T22:35:52Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-19T00:12:42Z",
+      "verifiedBy": [
+        "tests/test_journal_writes.py sn16: two commands of one session, the other's window closed before the flip, in both orders of its passes - the flipping command's one row",
+        "tests/test_journal_writes.py sn17: the same with an MCP write flipping and an MCP read of the same session",
+        "tests/test_journal_writes.py sn18: two calls of one session both open across the flip (three command orders, one MCP order) - two rows",
+        "tests/test_journal_writes.py sn19: a call of the same session that began after the flip, or closed before the flipping call began - one row only",
+        "tests/test_journal_writes.py sn20: a hand flip between calls leaves no row and verify says nothing; while a command or a subagent's MCP read is open, one row under that call's writer",
+        "tests/test_journal_writes.py sn21: the edit lane - two Writes of the config by one session in four orders",
+        "tests/test_journal_writes.py sn22: a switch-off by a call whose pass after never runs (command, edit tool) leaves no row and the next command adds none",
+        "tests/test__config.py cr1-cr5: per-call storage, nothing stored with the switch off, removal by its own Post, no reading lost to concurrent passes before, name by digest and the state sweep's bound",
+        "tests/test__config.py cw7 re-pinned: the start record holds the moment and the id and no reading"
+      ],
       "notes": [
         {
           "at": "2026-11-18T22:35:50Z",
@@ -5318,12 +5328,24 @@
         "runId": "2026-11-19T00:12:37Z.bfe763",
         "status": "passed",
         "at": "2026-11-19T00:12:37Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "8fca5e437064",
+        "at": "2026-11-19T00:12:42Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T23:36:25Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test__config.py` in a throwaway tree at HEAD exited 1 with 11 of 207 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cw7 (house FAIL), cr1 (house FAIL), cr2 (house FAIL), cr3 (house FAIL), cr4 (house FAIL), cr5 (house FAIL), sn16 (house FAIL), sn17 (house FAIL) and 3 more: SELFTEST FAILED: 202/207 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "SG1.52-ukq",
       "title": "The config hold finds the repository from the checkout the project lies in, asks each registered tree at the project's own place in it, and a registration written relative is held by a case",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A narrow review of the task that made the config hold ask every tree the repository registers found no regression: every form of registration git writes - plain, relative, moved, locked, the project itself a linked worktree, a bare repository, a separate git directory, a worktree of a submodule - went from allowed to held and matches the loader; malformed registrations raise nothing; a hundred worktrees cost an ordinary write nothing; the journal rows follow the guard. It found two things; each was run by the reviewer and again by the orchestrator.\n\nMEASURED on the tree as it stands.\n(a) THE RULE IS NOT BUILT FOR A MEMBER PROJECT. The registrations are found from the project's own git entry. A project that is a subdirectory of its checkout - the member-project arrangement this module names itself - has none, so no registration is read and neither the checkout's top nor any worktree is asked. With the checkout R, a worktree W and the project R/app, `git worktree list` from the project prints both; all four of these are allowed for a subagent and for the main session while a loader reads the write: W's config folder a link, written through it; the same written at its destination; R's config folder a link, written at its destination; and the member's own place in the worktree, W/app, written directly. The tree before that task allowed the same, so this is not a regression; the README's 'every registered worktree's' and SECURITY.md's passage say more than is built.\n(b) A READING NO CASE HOLDS. Dropping the join of a relative registration with its own directory leaves the guard suite and the journal suite green; no fixture writes a registration relative. With one, the tree as it stands holds the write and the changed module allows it while the loader reads it.\nAlso measured, smaller: the comment beside the pointer bound says a cut pointer names nothing, and a cut line of slashes and letters resolves to the root, which is then asked as a tree - one tree too many, never a write let through; and the documents list a worktree whose registration is gone as not matched while one under the project is held - more than is claimed.\n\nTHE RULE TO BUILD.\n1. THE REPOSITORY IS THE ONE THE PROJECT LIES IN. For a config-named write the common directory is found from the first directory at or above the project that holds a git entry - by lstat, bounded, no process, no listing - not from the project's own entry alone. An ordinary write still walks nothing it does not walk today.\n2. A TREE IS ASKED WHERE A SESSION WOULD OPEN IT. When the project lies below its checkout's top by a relative path, each registered tree and the main tree is asked at its top and at that same relative place below it - the member's place in that tree - since either can be the directory a loader is handed. For a project that is its checkout's top the two are one and nothing changes.\n3. THE PROPERTY CASE GAINS THE MEMBER DIMENSION, and its fixture records every place it built that a loader could be handed - each tree's top and each member place - so the oracle still owes nothing to the module. A registration written relative is a row of the same fixture, by the means git itself offers where the installed git has it and by a stated other means where not; say which and why it holds on the continuous-integration runners.\n4. A POINTER CUT AT THE BOUND IS PASSED OVER, so the comment is true. The documents say what is matched and what is not from runs: the member project's trees are matched; a registration that is gone is listed by where it is held and where it is not.\n\nWHAT STAYS. Every answer of every earlier probe and of the reviewer's regression matrix (the brief says where), except the four rows of (a), which become holds, each with its journal row for an edit tool. Ordinary writes: no registration read, no listing, no process, the disk-call case unchanged for them. The journal's answers. The hook import budget.\n\nHOW TO PROVE. Red before, each as the guard run as a process on a real repository with a real worktree: the four rows of (a) allowed while the loader reads the write; the relative-registration row green over the changed module. Allow twins that must stay quiet: an ordinary write in a member project and in its worktree; a config-named file in a member project's tree that no place a loader is handed reads; a project that is its checkout's top, unchanged. A mutation probe the orchestrator can run from the worktree root: the common directory taken from the project's own entry again; the member place not asked; the relative join dropped; a cut pointer read; and allow rows - every directory above the project asked as a tree, every subdirectory of a registered tree asked - each turn a twin red.\n\nNOT in this task: a folder beside an empty git entry that is no repository being held; a repository outside the project that is not this one; writes through the shell; an MCP write of another tree's config leaving no journal row.\n\nAcceptance:\n(1) In a member project, a config-named write that the checkout's top, a registered worktree, or the member's place in either would load is blocked for a subagent and asked about for the main session, and leaves its journal row for an edit tool.\n(2) An ordinary write in a member project reads no registration, lists nothing and starts no process, and a project that is its checkout's top answers as before.\n(3) The generated case covers the member dimension with trees taken from its fixture, and a registration written relative is held by a case that goes red when the join is dropped.\n(4) A pointer cut at the bound asks no tree, and SECURITY.md, the README, the build guide and the changelog say what is matched and what is not, true of the code.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -5345,6 +5367,104 @@
         "expectRedFirst": true,
         "gate": [
           "python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_journal_writes.py tests/test__config.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-19T00:12:59Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-19T00:12:57Z",
+          "text": "it quotes the name of the security contact section of SECURITY.md; this task edits only the passage on which trees the config hold asks",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-19T00:12:57Z",
+          "text": "it quotes the sentence of SECURITY.md that the policy denies the tool, not the knowledge; this task edits only the passage on which trees the config hold asks",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-19T00:12:57Z",
+          "text": "it quotes the heading of SECURITY.md on the name-based secret-read guard; this task edits only the passage on which trees the config hold asks",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-19T00:12:57Z",
+          "text": "it quotes the phrase of SECURITY.md on a write journalled after the fact; this task edits only the passage on which trees the config hold asks and leaves that phrase as it is",
+          "waives": "tests/test_hooks.py"
+        },
+        {
+          "at": "2026-11-19T00:12:57Z",
+          "text": "it quotes a phrase of SECURITY.md's passage on committed paths; this task edits only the passage on which trees the config hold asks",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-19T00:12:57Z",
+          "text": "it quotes the phrase of SECURITY.md on a deliberately loud failure; this task edits only the passage on which trees the config hold asks",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-19T00:12:57Z",
+          "text": "it reads the fail-mode table of SECURITY.md by its heading; this task changes no row of that table - the guard's event and fail mode stay as they are",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-19T00:12:57Z",
+          "text": "it quotes the fail-mode row of guard-edits in SECURITY.md; this task changes which trees the guard's question asks, not its event or its fail mode, so the row stays as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-19T00:12:57Z",
+          "text": "a dated design note with a section on SECURITY.md as it stood; this task edits only the passage on which trees the config hold asks and the note records history",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-19T00:12:57Z",
+          "text": "it reads the Unreleased heading of CHANGELOG.md; this task adds an entry on the config hold under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-19T01:52:40Z.a9fc5a",
+        "status": "passed",
+        "at": "2026-11-19T01:52:40Z"
+      }
+    },
+    {
+      "id": "SG1.53-ukq",
+      "title": "The documents say when the trail check sees a switch-off made by hand between calls, and a case holds that an ordinary call leaves no reading behind",
+      "status": "pending",
+      "description": "A narrow review of the task that keeps a call's reading of the journal switch per call found no regression: no row re-reports another call's change, three calls open across the flip each leave a row, a call that began after it leaves none, a pass after run twice leaves one, names of readings and of preimage slots cannot collide, and an ordinary call lists nothing and starts no process. It found two things; each was run by the reviewer and again by the orchestrator.\n\nMEASURED on the tree as it stands.\n(a) A SENTENCE THAT IS FALSE, in four documents. SECURITY.md, the README, the build guide and the changelog say that when the switch is turned off by hand or in the panel between calls there is no row and the trail check does not see it, citing a case. That case deletes the journal before the hand flip, so no row records the config and the check has nothing to compare. With a row that records the config - a panel save, an edit-tool or a command write made while the journal was on, which is the ordinary state - a hand flip between calls draws the check's warning that the config has changed since the last row that recorded it, with or without a later call. The code did not change; the sentence was written into that task's own rule by the orchestrator from a run on an empty journal, and replaced a true one.\n(b) A REMOVAL NO CASE HOLDS AT ITS CALL SITE. With the pass after changed to remove its reading only when it marks a flip, the journal suite stays green, and every ordinary command, MCP or subagent call made with the journal on then leaves its reading in the state directory until the age sweep. The case that holds the removal drives the helper alone.\n\nTHE RULE TO BUILD.\n1. THE SENTENCE SAYS WHAT A RUN SHOWS, in each of the four documents and in one wording: a switch-off by hand or in the panel between calls leaves no row; the trail check warns that the config has changed since the last row that recorded it whenever such a row exists, and is silent only when no row ever recorded the config. It cites one case for each half, and the case for the first half has a row that records the config before the flip.\n2. AN ORDINARY CALL LEAVES NO READING, HELD WHERE IT IS REMOVED: after an ordinary call with the journal on - by a command, by an MCP tool, by a subagent - through the hook's passes run as processes, the state directory holds no reading of that call; and after the pass before alone it holds exactly one, so the case cannot pass by the reading never having been written.\n\nWHAT STAYS. No file under the plugin's hooks or scripts changes. Every other sentence of the passage, and every case as it is, apart from the one the sentence cites if it must gain its row.\n\nHOW TO PROVE. Red before: the new case for the sentence's first half fails on the documents' present wording only by reading - so show it by the run: a config row, a hand flip between calls, the check's warning text; and the same on an empty journal, silent. For rule 2: the reviewer's mutation of the call site - the suite green before your case and red after it, on a copy, never on this checkout. Allow twin: a call whose pass after never ran leaves its one reading, as the documents already say.\n\nNOT in this task: any change to the hook; a config write that moves the state directory; a payload with no call id.\n\nAcceptance:\n(1) SECURITY.md, the README, the build guide and the changelog say that a switch-off by hand between calls leaves no row and that the trail check warns whenever a row recorded the config, each half cited to a case that shows it.\n(2) A case run through the hook's passes fails when the pass after keeps the reading of an ordinary call, for a command, an MCP tool and a subagent, and requires the reading to exist between the two passes.",
+      "files": [
+        "tests/test_journal_writes.py",
+        "SECURITY.md",
+        "plugins/audit/README.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_journal_writes.py: a switch-off by hand between calls leaves no row, and the trail check warns when a row recorded the config and is silent when none did",
+          "tests/test_journal_writes.py: an ordinary call with the journal on leaves no reading in the state directory after its pass after and exactly one between its passes, by a command, an MCP tool and a subagent"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_journal_writes.py"
         ],
         "gateBasis": "tests.add"
       },

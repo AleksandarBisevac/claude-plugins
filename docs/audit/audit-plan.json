@@ -1423,7 +1423,8 @@
       "SG1.49-ukq",
       "SG1.50-ukq",
       "SG1.51-ukq",
-      "SG1.52-ukq"
+      "SG1.52-ukq",
+      "SG1.53-ukq"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2109,7 +2110,8 @@
       "SG1.49-ukq",
       "SG1.50-ukq",
       "SG1.51-ukq",
-      "SG1.52-ukq"
+      "SG1.52-ukq",
+      "SG1.53-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2227,7 +2229,8 @@
       "SG1.48-ukq",
       "SG1.49-ukq",
       "SG1.51-ukq",
-      "SG1.52-ukq"
+      "SG1.52-ukq",
+      "SG1.53-ukq"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -2635,7 +2638,8 @@
       "SG1.49-ukq",
       "SG1.50-ukq",
       "SG1.51-ukq",
-      "SG1.52-ukq"
+      "SG1.52-ukq",
+      "SG1.53-ukq"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -13545,7 +13549,8 @@
       "SG1.48-ukq",
       "SG1.49-ukq",
       "SG1.51-ukq",
-      "SG1.52-ukq"
+      "SG1.52-ukq",
+      "SG1.53-ukq"
     ],
     "tests/test_manage_worktrees.py": [
       "P131.1",
