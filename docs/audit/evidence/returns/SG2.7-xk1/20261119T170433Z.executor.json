@@ -1,0 +1,87 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/_harness.py tests/test__clause_coverage.py tests/test_build_shop.py tests/test__affected_tests.py": "pass",
+    "python3 tools/sweep-selftests.py --selftest": "pass",
+    "run-test-gate.py docs/audit/audit-plan.json SG2 --task SG2.7-xk1 (unrecorded)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-19T18:20:07Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/_harness.py tests/test__clause_coverage.py tests/test_build_shop.py tests/test__affected_tests.py` in a throwaway tree at HEAD exited 1 with 3 of 63 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cw8 (house FAIL), esc53 (house FAIL), esc54 (house FAIL): SELFTEST FAILED: 61/63 cases passed; the run with the task's copy of test-support module tests/_harness.py laid over passed, so it may carry the work the new cases test, and the run was made again with HEAD's copy - the run with the fix lays it over; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "ONE HELPER: tests/_harness.py gains growth_series(call, inputs, clock=time.perf_counter, clock_name='perf_counter', steps=GROWTH_STEPS, min_seconds=GROWTH_MIN_SECONDS, rounds=3, deadline=60.0, wall=time.perf_counter) and clock_step(). It repeats call(x) in batches until a batch's total on `clock` is at least floor = max(steps * max(get_clock_info(clock_name).resolution, measured step), min_seconds); the step is measured by clock_step (reading the clock until it changes, least of three steps from an edge). Rounds take the inputs in turn; a round counts only when its batch reached the floor; per input the least per-call round is kept. It returns {seconds (per call), repeats, totals, floor, resolution, fault}; fault is None, or a sentence naming the input by place and length, the floor and the deadline when an input could not reach `rounds` batches at the floor before `deadline` seconds of `wall`, or 'the clock did not advance' when clock_step sees no change in CLOCK_PROBE_SECONDS. A faulted series holds only the inputs before the first unmeasured one. GROWTH_STEPS = 10: at the floor a doubling reads within (steps-1)/(steps+1) and its inverse of its size, so a linear doubling reads under 2 ** 1.5 while a 1/64 s series fits the children's deadlines. CONSUMERS: cw8's child (tests/test__clause_coverage.py _WIDE_TIMER) and esc53's python child (tests/test_build_shop.py _PY_TIMER) import _harness from TESTS_DIR and call growth_series inside the child, so the child is still the unit killed at WIDE_DEADLINE / TRIPWIRE_DEADLINE; neither keeps a private loop. New per-case parameters: WIDE_SERIES_DEADLINE 45.0, WIDE_MIN_SECONDS 0.02, WIDE_ROUNDS 3 (HEAD's loop took 3 rounds); TRIPWIRE_MIN_SECONDS 0.01, TRIPWIRE_ROUNDS 3 (HEAD's min_rounds), TRIPWIRE_SERIES_DEADLINE 8.0. A helper fault is a case fault worded 'could not be measured: <sentence>'; timer_answer accepts a faulted line. esc53's clock moved from perf_counter to process_time: helper batches on perf_counter still read 4.21x (18:18, load 20) and 4.83x (18:22, load 29, 10 cores) under local load, while process_time under load 29 read 2.13x (measured once under that load; 2.10-2.12x in three later runs under load 3-13). esc55 (node) keeps its own loop: it is another engine and passed on windows. NO threshold moved: WIDE_POWER/FLOOR/CEILING/BYTES/DEADLINE, TRIPWIRE_POWER/FLOOR/CEILING/DEADLINE and gw15's ratio < 6 are unchanged. SAME FAULT ELSEWHERE: of the process_time/perf_counter readers in tests/, gw15 (tests/test_guard_history_rewrite.py, outside the declared files) went red under the coarse clock ('fastest at 4 operands 0.0 s, at 16 0.0 s, ratio unmeasurable'), so it was moved to growth_series (min_seconds 0.005, rounds 5) and its now-unused `import time` removed; the plan gate allowed the edit. fx6 (tests/test__floor_guard.py) was run under the coarse clock and stayed green (a 10 s ceiling over a ~1.1 s run), so it was left alone. RUNS: the gate command above exit 0 (4/4 files, 329 cases); sweep --selftest exit 0 (168/168); the orchestrator's gate unrecorded: GATE GREEN, exit 0; ruff and vermin -t=3.8- clean on the four changed suites; prose_number_claims() and house_style_violations() report nothing. Suite seconds (sweep --jobs 1), before on a HEAD export at 18:12 (load 11.7) and 18:42 (load 2.8), after at 18:43 (load 3.1) and 19:09 (load 3.0): _harness 9.0/9.0 -> 9.1/9.1; test__clause_coverage 4.3/4.3 -> 5.3/5.2; test_build_shop 10.4/10.7 -> 12.2/12.9; test_guard_history_rewrite 0.8 (once at HEAD) -> 0.8/0.8. On a 1/64 s clock (windows' real process-time step) the cw8 child takes 12.6 s and esc53's 18 python children 40.3 s (19:10, load 3.5), against about 2.2 s and 3.1 s on the real clock here. A mutation probe (scratchpad sg2.7/mutations.py, 25 rows, exit 0) holds the before/after coarse-clock rows, the quadratic reading and backtracking tripwire on both clocks, the zero series deadlines, and one row per helper rule. DEPENDANTS: tests/_harness.py's importers and the names used elsewhere (_group_present, _load_sweep, _pid_present, _positive_int) are untouched, since the change only adds names; the prose mentions in tests/test__refs.py and tools/sweep-selftests.py still hold. tests/test__affected_tests.py and tools/sweep-selftests.py are unchanged and green. test__clause_coverage.py's and test_build_shop.py's path mentions (.github/sweep-costs.json, _clause_coverage.py, the eval case.yaml files, tests/test__output_lints.py, CHANGELOG.md, PLUGIN-BUILD-GUIDE.md) are unaffected, and _cases/_selftest/write_hook/tool_result are unchanged. .github/sweep-costs.json now underweights both suites on windows (not a declared file; not edited).",
+    "descriptive": "cw8, esc53 and gw15 now take their growth series from one harness helper that repeats each call until the batch is long enough for the clock's measured step, so a 1/64 s clock neither turns them red (cw8, gw15) nor green on all-zero readings (esc53); a series the helper cannot measure before its deadline fails, naming what was not measured."
+  },
+  "testsAdded": [
+    "gs1-gs8 in tests/_harness.py, over a virtual clock with a 1/64 s step: per-call seconds within 6% and a near-2x doubling (gs1); the floor built on the measured step, not the documented resolution (gs2); a stated minimum duration as the floor (gs3); a pause that lifts a one-call batch over the floor discarded (gs4); a deadline that leaves an input unmeasured is a fault naming it, with no time for it (gs5); a clock that never advances is a fault, not zeros (gs6); the real perf_counter defaults (gs7); a slow stretch falls on one round of every input because rounds take the inputs in turn (gs8)"
+  ],
+  "casesAdded": [
+    [
+      "gs1",
+      "gs2",
+      "gs3",
+      "gs4",
+      "gs5",
+      "gs6",
+      "gs7",
+      "gs8"
+    ]
+  ],
+  "claims": "claims:\n1 tests/_harness.py growth_series/clock_step do what the comment block above them says (floor at the max(steps*max(documented, measured step), min_seconds) line; rounds in turn in the while/for; least per input in _growth_result); the consumer comments name the helper call in each child\n2 mutation probe sg2.7/mutations.py, 25 rows, exit 0: floor removed -> gs1-gs5,gs8 red; total returned -> gs1,gs3,gs4,gs8; measured step ignored -> gs1,gs2; deadline ignored -> gs5; made-up step -> gs6; first round kept -> gs4,gs8; inputs one after another -> gs8; quadratic reading -> cw8 (both clocks); backtracking tripwire -> esc53 (both clocks); allow rows: tree cw8/esc53/gw15 under the coarse clock stay green; files restored in finally, pycache purged between rows\n3 grep -n 'process_time\\|perf_counter' tests/*.py: cw8 and esc53 (moved), fx6 in test__floor_guard.py (run under the coarse clock, stays green; left because its 10 s ceiling is over a ~1.1 s run), gw15 in test_guard_history_rewrite.py (red under the coarse clock; moved)\n4 n/a - no rule addressed to an agent\n5 suite seconds two runs with a gap each side (18:12/18:42 before, 18:43/19:09 after); worst growth two or more runs each; process_time under heavy load measured once (load 29), said so\n6 n/a - no guard\n7 numbers in comments: 1/64 s is windows' clock step, stated as the reason; the ratio bound is derived in the comment from (steps-1)/(steps+1); no count written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:a53293fce94e9d346ce0b701ac114ee98988188f399084293d10dd88969cba61\",\"dirtyDigest\":\"sha256:aea098155414aae3946d2ef99b4cfb0b02095c023bb5aa195ac012dd4600a106\",\"dirtyPaths\":{\"tests/_harness.py\":\"81bd04a4ee780c92\",\"tests/test__clause_coverage.py\":\"7cccf9b78cf180d2\",\"tests/test_build_shop.py\":\"b99773b4fa501e10\",\"tests/test_guard_history_rewrite.py\":\"e24e0c27b5f7abe9\"},\"head\":\"a517d89f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/_harness.py\",\"tests/test__affected_tests.py\",\"tests/test__clause_coverage.py\",\"tests/test_build_shop.py\",\"tests/test_guard_history_rewrite.py\",\"tools/sweep-selftests.py\"],\"scopeDigest\":\"sha256:6f57a4551605d1b1747c0d4bc4c8eb336f8230f96db3c9ab1897f0fbac8e612e\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "1 move(s) that lower the bar across 4 file(s) of the diff; 4 file(s) that could hold a move not compared: tests/_harness.py, tests/test__clause_coverage.py, tests/test_build_shop.py, tests/test_guard_history_rewrite.py",
+    "findings": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test_guard_history_rewrite.py",
+        "line": 1289,
+        "side": "tree",
+        "what": "labelled check `gw15 a long run of quoted -C operands in an unparsed rewrite is gra...` differs from its base copy in its condition and arguments",
+        "part": "arguments"
+      }
+    ],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "tests/_harness.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was only added: every statement of the base copy outside them stands in the tree copy, in order and in place, and the first added one is at tree line 1804 (`GROWTH_STEPS = 10`); what it runs is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test__clause_coverage.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 1498 (`_WIDE_TIMER = r'''`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_build_shop.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 1294 (`_PY_TIMER = r'''`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_guard_history_rewrite.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 35 (`import time`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "a517d89f167970a6aed27febfab0d08ececca773"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-19T18:20:09Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -9551,7 +9551,8 @@
       "P156.7",
       "P156.8-3st",
       "P157.7-mwz",
-      "SG1.23-ukq"
+      "SG1.23-ukq",
+      "SG2.7-xk1"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -12891,7 +12892,8 @@
       "P166.1",
       "P166.2",
       "P166.3-b8m",
-      "P168.6"
+      "P168.6",
+      "SG2.7-xk1"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -13954,7 +13956,8 @@
       "P153.17-34e",
       "P153.18-34e",
       "P153.19-34e",
-      "P153.20-34e"
+      "P153.20-34e",
+      "SG2.7-xk1"
     ],
     "tests/test_guard_secrets_read.py": [
       "P131.1",

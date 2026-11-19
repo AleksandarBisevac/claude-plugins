@@ -32,9 +32,8 @@ import os
 import shlex
 import subprocess
 import sys
-import time
 
-import _harness                                    # sets sys.path for scripts/ + hooks/
+import _harness                                   # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 
@@ -1269,22 +1268,19 @@ def _cases(check):
               v == "allow")
         # How grading GROWS with the run of quoted -C operands, not how long
         # it takes: an absolute bound measures the machine. The two sizes are
-        # timed interleaved and the fastest sample of each kept, so a slow
-        # runner or a scheduler stall inflates both sides or neither. The
-        # trailing quote never closes, so the command is unparsed and graded
-        # by the regex fallback, which is where the backtracking lived.
-        def _rewrite_grading_time(operands):
-            command = "git" + (' -C "a"' * operands) + " rebase '"
-            start = time.perf_counter()
-            M.always_refused(command)
-            return time.perf_counter() - start
-
-        _short, _long = [], []
-        for _ in range(30):
-            _short.append(_rewrite_grading_time(4))
-            _long.append(_rewrite_grading_time(16))
-        _base, _grown = min(_short), min(_long)
-        _ratio = _grown / _base if _base > 0 else None
+        # timed by `_harness.growth_series`, interleaved, each repeated until
+        # its batch is long enough for the clock's step, and the fastest
+        # round of each kept, so a slow runner or a scheduler stall inflates
+        # both sides or neither. The trailing quote never closes, so the
+        # command is unparsed and graded by the regex fallback, which is
+        # where the backtracking lived.
+        _series = _harness.growth_series(
+            M.always_refused,
+            ["git" + (' -C "a"' * operands) + " rebase '" for operands in (4, 16)],
+            min_seconds=0.005, rounds=5, deadline=30.0)
+        _base, _grown = (_series["seconds"] + [None, None])[:2]
+        _ratio = (_grown / _base if _series["fault"] is None and _base > 0
+                  else None)
         # What a bound of six guarantees at four times the operands: red
         # against the backtracking regex, which grows by orders of magnitude
         # here; red against a quadratic only when its per-operand cost is
@@ -1294,9 +1290,10 @@ def _cases(check):
               "rewrite is graded without backtracking, measured as a ratio "
               "so the machine's speed cancels out",
               _ratio is not None and _ratio < 6,
-              "fastest at 4 operands %r s, at 16 %r s, ratio %s"
-              % (_base, _grown,
-                 "unmeasurable: the timer did not resolve the short run"
+              "fastest at 4 operands %r s, at 16 %r s, over %r gradings a "
+              "size, ratio %s"
+              % (_base, _grown, _series["repeats"],
+                 "unmeasurable: %s" % (_series["fault"],)
                  if _ratio is None else "%.2f" % (_ratio,)))
         # A SECOND worktree, still at the base commit, so `HEAD~1` does not
         # resolve there: a reset asked about in the wrong tree is a question

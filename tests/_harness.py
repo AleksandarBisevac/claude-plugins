@@ -1775,6 +1775,142 @@ def gone_within(target, seconds, group=False, interval=0.05):
         time.sleep(interval)
 
 
+# --- a growth series long enough for the clock it reads ---------------------------
+# A timing case that asks "does this grow faster than linearly" reads one call per
+# size, and on a clock that steps in 1/64 s - windows' process-time clock does - a
+# call of a few milliseconds reads as no time or as one whole step. The ratio is
+# then the clock's: a doubling read as 0x or 15.62x, which is what turned such a
+# case red on a windows runner while the code under it had not changed, and a
+# series read as all zeros is the same fault passing. So the calls are repeated
+# until their total is long enough that one step is a small share of it.
+#
+# The floor is `steps` times the step the clock takes, measured here by reading
+# it until it changes, and never less than what `time.get_clock_info` documents
+# for it: a documented resolution can be finer than the step a clock really
+# takes. A minimum duration the caller states lifts it further. A batch at the
+# floor reads off by at most one step at each end, so a doubling reads between
+# (steps - 1) / (steps + 1) and its inverse times its own size: at GROWTH_STEPS a
+# linear doubling reads under 2 ** 1.5, the power cw8 and esc53 hold, while a
+# series on a 1/64 s clock still fits inside their children's deadlines.
+#
+# Each round is one batch of `repeats` calls per input, the inputs in turn, so a
+# slower stretch of the machine falls on every input alike rather than on one of
+# them. A round counts only when its batch reached the floor, and the least
+# per-call time of `rounds` such batches is kept, so a pause inflates one round
+# that the least discards - a pause that lifts a short batch over the floor
+# included. A batch below the floor raises that input's repeat count and the
+# input is tried again, never skipped; an input not measured when `deadline`
+# seconds have passed is the series' fault.
+GROWTH_STEPS = 10
+GROWTH_MIN_SECONDS = 1e-3
+CLOCK_PROBE_SECONDS = 1.0
+# A batch below the floor is retried at this many more calls when it read no time
+# at all, since there is no reading to scale from.
+GROWTH_BLIND_FACTOR = 8
+
+
+def clock_step(clock, wall=time.perf_counter, budget=CLOCK_PROBE_SECONDS):
+    """The least step `clock` was seen taking between two distinct readings, from
+    an edge, over three steps; None when it did not advance within `budget`
+    seconds of `wall`. Reading a process-time clock is itself work, so it advances
+    as this reads it."""
+    began = wall()
+    last = clock()
+    steps = []
+    edge = False
+    while len(steps) < 3:
+        if wall() - began > budget:
+            return None
+        now = clock()
+        if now == last:
+            continue
+        if edge:
+            steps.append(now - last)
+        edge, last = True, now
+    return min(steps)
+
+
+def _input_name(index, inputs):
+    """`input 2 of 3 (length 4000)` - an input named by its place, and by its
+    length when it has one, never by its value: a timed input is long text."""
+    x = inputs[index]
+    told = ("length %d" % len(x)) if hasattr(x, "__len__") else repr(x)[:40]
+    return "input %d of %d (%s)" % (index + 1, len(inputs), told)
+
+
+def _growth_fault(name, floor, deadline, kept, rounds, repeats, read):
+    """The sentence for an input the deadline left short of its rounds."""
+    return ("%s: the deadline of %gs passed with %d of %d rounds at the floor of "
+            "%gs (its last batch, %d calls, read %gs)"
+            % (name, deadline, kept, rounds, floor, repeats, read))
+
+
+def growth_series(call, inputs, clock=time.perf_counter, clock_name="perf_counter",
+                  steps=GROWTH_STEPS, min_seconds=GROWTH_MIN_SECONDS, rounds=3,
+                  deadline=60.0, wall=time.perf_counter):
+    """`call(x)` for each `x` of `inputs`, timed on `clock`, as per-call seconds.
+
+    Returns `{"seconds", "repeats", "totals", "floor", "resolution", "fault"}`:
+    per size, the least per-call time of `rounds` batches that each reached the
+    floor, the calls in the batch kept, and that batch's total; the floor every
+    kept batch reached; the step the floor was built on; and None, or the
+    sentence saying which size could not be measured. A faulted series holds
+    the sizes measured before the fault and none after it, so no unmeasured size
+    can read as fast. `clock_name` names the `time` clock to ask for its
+    documented resolution (None for a clock that is not one); `wall` is what
+    `deadline` is counted on.
+    """
+    began = wall()
+    documented = time.get_clock_info(clock_name).resolution if clock_name else 0.0
+    measured = clock_step(clock, wall)
+    if measured is None:
+        return {"seconds": [], "repeats": [], "totals": [], "floor": None,
+                "resolution": None,
+                "fault": "the clock did not advance in %gs of reading it"
+                         % (CLOCK_PROBE_SECONDS,)}
+    resolution = max(documented, measured)
+    floor = max(steps * resolution, min_seconds)
+    inputs = list(inputs)
+    repeats = [1] * len(inputs)
+    last = [(0, 0.0)] * len(inputs)
+    kept = [[] for _ in inputs]
+    while any(len(k) < rounds for k in kept):
+        for index, x in enumerate(inputs):
+            if len(kept[index]) >= rounds:
+                continue
+            if wall() - began > deadline:
+                return _growth_result(kept, rounds, floor, resolution, _growth_fault(
+                    _input_name(index, inputs), floor, deadline, len(kept[index]),
+                    rounds, last[index][0], last[index][1]))
+            n = repeats[index]
+            start = clock()
+            for _ in range(n):
+                call(x)
+            read = clock() - start
+            last[index] = (n, read)
+            if read >= floor:
+                kept[index].append((read / n, n, read))
+                continue
+            # Scaled from the reading with a quarter to spare, since a reading a
+            # few steps long can be off by a whole step; at least doubled.
+            repeats[index] = (n * GROWTH_BLIND_FACTOR if read <= 0
+                              else max(2 * n, int(n * floor * 1.25 / read) + 1))
+    return _growth_result(kept, rounds, floor, resolution, None)
+
+
+def _growth_result(kept, rounds, floor, resolution, fault):
+    """The series from each input's kept rounds: the inputs before the first one
+    short of `rounds`, each its least per-call round, and none after it."""
+    whole = []
+    for rows in kept:
+        if len(rows) < rounds:
+            break
+        whole.append(min(rows))
+    return {"seconds": [row[0] for row in whole], "repeats": [row[1] for row in whole],
+            "totals": [row[2] for row in whole], "floor": floor,
+            "resolution": resolution, "fault": fault}
+
+
 # --- selftest -----------------------------------------------------------------
 def _capture(fn, *args, **kwargs):
     """`(stdout_text, returned)` for a call that prints. Restores the stream in
@@ -3240,12 +3376,145 @@ def _in_process_runner_cases(check):
         remove_tree(where)
 
 
+def _virtual_clock(step, read_cost=1e-6):
+    """`(now, clock, wall, spend)` over one virtual time: `clock` reads it quantized
+    to `step` (None for no step) and costs `read_cost` a reading, the way a real
+    reading costs a little time; `wall` reads it exactly; `spend` advances it.
+    Nothing here sleeps, so a case over it answers the same on every host."""
+    now = [0.0]
+
+    def clock():
+        now[0] += read_cost
+        return now[0] if step is None else (now[0] // step) * step
+
+    def wall():
+        return now[0]
+
+    def spend(seconds):
+        now[0] += seconds
+    return now, clock, wall, spend
+
+
+def _growth_series_cases(check):
+    """`growth_series` under a virtual clock with the step windows' process-time
+    clock takes (1/64 s): a single call of one to eight milliseconds reads as no
+    time or as one whole step, which is the reading that turned the timing cases
+    red there."""
+    step = 1.0 / 64
+    sizes = (100, 200, 400, 800)
+    owed = [n * 1e-5 for n in sizes]
+
+    def within(got, want, share):
+        return len(got) == len(want) and all(abs(g - w) <= share * w
+                                             for g, w in zip(got, want))
+
+    _now, clock, wall, spend = _virtual_clock(step)
+    got = growth_series(lambda n: spend(n * 1e-5), sizes, clock=clock,
+                        clock_name="perf_counter", steps=20, min_seconds=1e-3,
+                        rounds=3, deadline=60.0, wall=wall)
+    floor = 20 * step
+    check("gs1 a growth series over calls of 1-8 ms read through a clock with a 1/64 s "
+          "step comes back as per-call seconds within 6%% of what each call spent, "
+          "every size repeated until its total is at or above the floor of 20 steps, "
+          "so each doubling reads about 2x: seconds %r, repeats %r, totals %r, "
+          "fault %r"
+          % (got["seconds"], got["repeats"], got["totals"], got["fault"]),
+          got["fault"] is None and within(got["seconds"], owed, 0.06)
+          and all(r > 1 for r in got["repeats"])
+          and all(t >= floor for t in got["totals"])
+          and all(1.75 <= b / a <= 2.3 for a, b in zip(got["seconds"],
+                                                       got["seconds"][1:])))
+    check("gs2 the floor is the stated multiple of the step the clock was MEASURED "
+          "taking (1/64 s), not of the finer resolution `time.get_clock_info` "
+          "documents for the clock named: resolution %r, floor %r"
+          % (got["resolution"], got["floor"]),
+          abs(got["resolution"] - step) < 1e-9 and abs(got["floor"] - floor) < 1e-9)
+
+    _now, clock, wall, spend = _virtual_clock(step)
+    tall = growth_series(lambda n: spend(n * 1e-5), sizes[:1], clock=clock,
+                         clock_name=None, steps=20, min_seconds=1.0, rounds=1,
+                         deadline=60.0, wall=wall)
+    check("gs3 a stated minimum duration above the clock's floor is the floor, and the "
+          "calls are repeated to it: floor %r, totals %r, repeats %r"
+          % (tall["floor"], tall["totals"], tall["repeats"]),
+          tall["fault"] is None and tall["floor"] == 1.0
+          and all(t >= 1.0 for t in tall["totals"])
+          and within(tall["seconds"], owed[:1], 0.06))
+
+    _now, clock, wall, spend = _virtual_clock(step)
+    calls = [0]
+
+    def paused(n):
+        calls[0] += 1
+        spend(n * 1e-5 + (0.5 if calls[0] == 1 else 0.0))
+    held = growth_series(paused, sizes[:2], clock=clock, clock_name=None, steps=20,
+                         min_seconds=1e-3, rounds=3, deadline=60.0, wall=wall)
+    check("gs4 a pause that lifts a batch of ONE call over the floor is a round the "
+          "least of the rounds discards: the series is the calls' own time and the "
+          "first size is repeated; seconds %r, repeats %r, fault %r"
+          % (held["seconds"], held["repeats"], held["fault"]),
+          held["fault"] is None and within(held["seconds"], owed[:2], 0.06)
+          and held["repeats"][0] > 1)
+
+    now, clock, wall, spend = _virtual_clock(step)
+
+    def stretched(n):
+        spend(n * 1e-5 * (3.0 if 0.6 <= now[0] < 6.6 else 1.0))
+    alike = growth_series(stretched, sizes, clock=clock, clock_name=None, steps=20,
+                          min_seconds=1e-3, rounds=3, deadline=60.0, wall=wall)
+    check("gs8 a stretch of the machine three times slower, long enough to hold "
+          "every round of one input were the inputs measured one after another, "
+          "falls on one round of EVERY input because the rounds take the inputs in "
+          "turn, and the least of the rounds discards it: seconds %r, fault %r"
+          % (alike["seconds"], alike["fault"]),
+          alike["fault"] is None and within(alike["seconds"], owed, 0.06))
+
+    _now, clock, wall, spend = _virtual_clock(step)
+    short = growth_series(lambda n: spend(n * 1e-5), sizes, clock=clock,
+                          clock_name=None, steps=20, min_seconds=1e-3, rounds=3,
+                          deadline=0.2, wall=wall)
+    check("gs5 a series the helper cannot bring to the floor inside its deadline is "
+          "a fault that says so - naming the input by its place, the floor and the "
+          "deadline - and no input from the one it could not measure on has a time "
+          "in the series, so a caller cannot read it as fast: fault %r, seconds %r"
+          % (short["fault"], short["seconds"]),
+          short["fault"] is not None and "deadline of 0.2s" in short["fault"]
+          and "floor of 0.3125s" in short["fault"]
+          and re.search(r"^input [0-9]+ of 4 \(", short["fault"]) is not None
+          and len(short["seconds"]) < len(sizes))
+
+    now = [0.0]
+
+    def frozen():
+        now[0] += 1e-4
+        return 0.0
+    def spent(_n):
+        now[0] += 1e-3
+    still = growth_series(spent, sizes, clock=frozen, clock_name=None,
+                          steps=20, min_seconds=1e-3, rounds=3, deadline=60.0,
+                          wall=lambda: now[0])
+    check("gs6 a clock that never advances is a fault, not a series of zeros a "
+          "growth ratio would read as flat: fault %r, seconds %r"
+          % (still["fault"], still["seconds"]),
+          still["fault"] is not None and "advance" in still["fault"]
+          and still["seconds"] == [])
+
+    real = growth_series(lambda n: sum(range(n)), (2000, 4000), min_seconds=2e-3,
+                         rounds=1, deadline=5.0)
+    check("gs7 on this host's own perf_counter the defaults measure a short call: "
+          "no fault, every total at the floor, a repeat count per size; %r" % (real,),
+          real["fault"] is None and len(real["seconds"]) == 2
+          and all(t >= real["floor"] for t in real["totals"])
+          and all(r >= 1 for r in real["repeats"]))
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _stage_runner_cases(check)
         _receive_pack_cases(check)
         _in_process_runner_cases(check)
+        stage(check, "gs-growth", _growth_series_cases)
     return run(body)
 
 

@@ -1486,18 +1486,29 @@ def _conservation_check_cases(check):
 # longest takes more than WIDE_CEILING seconds or holds more than WIDE_BYTES per
 # character of input at its peak, or when its child is still running at
 # WIDE_DEADLINE - a kill is a failure, never a skip. The time is the child's
-# processor time, the least of its rounds: a loaded machine stretches the wall
-# clock of one length and not the next, while the work a reading does is what
-# grows with its length.
+# processor time per reading, taken by `_harness.growth_series`: the readings of
+# one length are repeated until their total is long enough for the clock's step
+# (on windows a process-time reading steps in 1/64 s, so one short reading reads
+# as no time or a whole step), and the least of its rounds is kept - a loaded
+# machine stretches the wall clock of one length and not the next, while the work
+# a reading does is what grows with its length. A length the helper could not
+# measure by WIDE_SERIES_DEADLINE, counted from the child's start, is a failure
+# that names it.
 WIDE_UNITS = tuple(1250 * 2 ** k for k in range(4))
 WIDE_POWER = 1.5
 WIDE_FLOOR = 1e-3
 WIDE_CEILING = 1.0
 WIDE_BYTES = 2000
 WIDE_DEADLINE = 60.0
+WIDE_SERIES_DEADLINE = 45.0
+WIDE_MIN_SECONDS = 0.02
+WIDE_ROUNDS = 3
 _WIDE_TIMER = r'''
 import json, sys, time, tracemalloc
+began = time.perf_counter()
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(0, sys.argv[2])
+import _harness
 import _clause_coverage as M
 KINDS = (
     ("list numbers on one line", lambda n: "Acceptance: (1) a" + " (1)" * n),
@@ -1505,25 +1516,22 @@ KINDS = (
     ("mentions on one line", lambda n: "Acceptance:\n(1) a " + "acceptance : " * n),
     ("markers on one line", lambda n: "Do it. Acceptance: " * n),
 )
-units = json.loads(sys.argv[2])
+job = json.loads(sys.argv[3])
 out = []
 for label, make in KINDS:
-    best = []
-    for n in units:
-        text = make(n)
-        least = None
-        for _round in range(3):
-            began = time.process_time()
-            M.reading_line(text)
-            took = time.process_time() - began
-            least = took if least is None else min(least, took)
-        best.append(least)
-    text = make(units[-1])
+    left = max(0.0, job["deadline"] - (time.perf_counter() - began))
+    got = _harness.growth_series(M.reading_line, [make(n) for n in job["units"]],
+                                 clock=time.process_time, clock_name="process_time",
+                                 min_seconds=job["min_seconds"], rounds=job["rounds"],
+                                 deadline=left)
+    text = make(job["units"][-1])
     tracemalloc.start()
     M.reading_line(text)
     peak = tracemalloc.get_traced_memory()[1]
     tracemalloc.stop()
-    out.append({"kind": label, "seconds": best, "peak": peak, "chars": len(text)})
+    out.append({"kind": label, "seconds": got["seconds"], "repeats": got["repeats"],
+                "floor": got["floor"], "fault": got["fault"], "peak": peak,
+                "chars": len(text)})
 print(json.dumps(out))
 '''
 
@@ -1531,8 +1539,10 @@ print(json.dumps(out))
 def _wide_timing_cases(check):
     """The reading's time at doubling lengths, in a child killed at a deadline."""
     import subprocess
-    argv = [sys.executable, "-c", _WIDE_TIMER, os.path.dirname(M.__file__),
-            json.dumps(list(WIDE_UNITS))]
+    job = {"units": list(WIDE_UNITS), "deadline": WIDE_SERIES_DEADLINE,
+           "min_seconds": WIDE_MIN_SECONDS, "rounds": WIDE_ROUNDS}
+    argv = [sys.executable, "-c", _WIDE_TIMER, _harness.TESTS_DIR,
+            os.path.dirname(M.__file__), json.dumps(job)]
     try:
         done = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, timeout=WIDE_DEADLINE)
@@ -1551,11 +1561,15 @@ def _wide_timing_cases(check):
                                                     .split())[-300:],))
     else:
         for run in runs:
+            if run["fault"] is not None:
+                faults.append("%s could not be measured: %s" % (run["kind"], run["fault"]))
+                continue
             secs = run["seconds"]
             growth = [b / max(a, WIDE_FLOOR) for a, b in zip(secs, secs[1:])]
             if max(growth) > 2 ** WIDE_POWER:
-                faults.append("%s grew %s per doubling" % (
-                    run["kind"], ", ".join("%.2fx" % g for g in growth)))
+                faults.append("%s grew %s per doubling, over %r readings a length"
+                              % (run["kind"], ", ".join("%.2fx" % g for g in growth),
+                                 run["repeats"]))
             if secs[-1] > WIDE_CEILING:
                 faults.append("%s took %.3fs at the longest" % (run["kind"], secs[-1]))
             if run["peak"] > WIDE_BYTES * run["chars"]:

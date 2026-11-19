@@ -1283,11 +1283,23 @@ TRIPWIRE_POWER = 1.5
 TRIPWIRE_FLOOR = 1e-6
 TRIPWIRE_CEILING = 0.25
 TRIPWIRE_DEADLINE = 10.0
-# Each length is timed once per round, the lengths in turn, for at least
-# min_rounds and until budget seconds are spent, and the least time of each is
-# kept: a single pause inflates one timing that the least discards, and a slower
+# Node's child times each length once per round, the lengths in turn, for at
+# least min_rounds and until budget seconds are spent, and keeps the least time of
+# each: a single pause inflates one timing that the least discards, and a slower
 # stretch of the machine falls on every length alike rather than on one of them.
 TIMER_JOB = {"min_rounds": 3, "max_rounds": 40, "budget": 0.05}
+# Python's child takes its series from `_harness.growth_series`, on the child's
+# processor time: a search of a few milliseconds timed alone, on the wall clock,
+# on a shared runner reads the machine's other work as growth, while the work a
+# search does is what grows with its length. The searches of one length are
+# repeated until their total reaches the floor - at least TRIPWIRE_MIN_SECONDS,
+# and the helper's stated multiple of the clock's step, which on windows is
+# 1/64 s - and the least per-search time of TRIPWIRE_ROUNDS such batches is kept.
+# A length the helper could not bring to the floor by TRIPWIRE_SERIES_DEADLINE is
+# a failure that names it, and the child is still killed at TRIPWIRE_DEADLINE.
+TRIPWIRE_MIN_SECONDS = 0.01
+TRIPWIRE_ROUNDS = 3
+TRIPWIRE_SERIES_DEADLINE = 8.0
 
 # The timing children. Each reads a job file - the pattern, the inputs, the
 # rounds - and prints one JSON line; one that prints nothing answered nothing.
@@ -1295,22 +1307,19 @@ _PY_TIMER = r'''
 import json, re, sys, time
 with open(sys.argv[1], encoding="utf-8") as fh:
     job = json.load(fh)
+sys.path.insert(0, job["tests"])
+import _harness
 rx = re.compile(job["pattern"])
-best = [None] * len(job["inputs"])
-hit = [None] * len(job["inputs"])
-spent, rounds = 0.0, 0
-while rounds < job["min_rounds"] or (spent < job["budget"]
-                                     and rounds < job["max_rounds"]):
-    for i, text in enumerate(job["inputs"]):
-        began = time.perf_counter()
-        hit[i] = rx.search(text) is not None
-        took = time.perf_counter() - began
-        best[i] = took if best[i] is None else min(best[i], took)
-        spent += took
-    rounds += 1
+hit = [rx.search(text) is not None for text in job["inputs"]]
+got = _harness.growth_series(rx.search, job["inputs"], clock=time.process_time,
+                             clock_name="process_time", min_seconds=job["min_seconds"],
+                             rounds=job["rounds"], deadline=job["deadline"])
 print(json.dumps({"engine": "python re " + sys.version.split()[0],
-                  "seconds": best, "matched": hit, "rounds": rounds}))
+                  "seconds": got["seconds"], "repeats": got["repeats"],
+                  "fault": got["fault"], "matched": hit}))
 '''
+PY_TIMER_JOB = {"tests": _harness.TESTS_DIR, "min_seconds": TRIPWIRE_MIN_SECONDS,
+                "rounds": TRIPWIRE_ROUNDS, "deadline": TRIPWIRE_SERIES_DEADLINE}
 _JS_TIMER = r'''
 const job = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
 const rx = new RegExp(job.pattern);
@@ -1333,7 +1342,9 @@ process.stdout.write(JSON.stringify({engine: "node " + process.version,
 
 
 def timer_answer(out):
-    """The child's JSON line, or None when it printed no answer of that shape."""
+    """The child's JSON line, or None when it printed no answer of that shape. A
+    line carrying a `fault` - a series the timing helper could not measure - is
+    an answer whose seconds stop where the fault did."""
     lines = out.decode("utf-8", "replace").strip().splitlines()
     try:
         data = json.loads(lines[-1]) if lines else None
@@ -1341,9 +1352,11 @@ def timer_answer(out):
         return None
     if not isinstance(data, dict):
         return None
-    secs, hits = data.get("seconds"), data.get("matched")
+    secs, hits, fault = data.get("seconds"), data.get("matched"), data.get("fault")
     shaped = (isinstance(secs, list) and isinstance(hits, list)
-              and len(secs) == len(hits) == len(TRIPWIRE_UNITS)
+              and len(hits) == len(TRIPWIRE_UNITS)
+              and (len(secs) == len(TRIPWIRE_UNITS) if fault is None
+                   else isinstance(fault, str) and len(secs) < len(TRIPWIRE_UNITS))
               and all(isinstance(s, (int, float)) for s in secs)
               and all(isinstance(h, bool) for h in hits))
     return data if shaped else None
@@ -1383,7 +1396,8 @@ def tripwire_runs(pattern, engines, root):
                                       (label + ", then a destructive call",
                                        TRIPWIRE_TWIN, twin_counted)):
             job = dict(TIMER_JOB, pattern=pattern,
-                       inputs=[tool_input(make(n) + suffix) for n in TRIPWIRE_UNITS])
+                       inputs=[tool_input(make(n) + suffix) for n in TRIPWIRE_UNITS],
+                       **PY_TIMER_JOB)
             with open(job_path, "w", encoding="utf-8") as fh:
                 json.dump(job, fh)
             runs.append((name, counted, run_timers(engines, job_path)))
@@ -1402,12 +1416,17 @@ def timing_faults(runs, engine):
             faults.append("%s: no answer (exit %r): %s"
                           % (name, got["code"], quoted(got["err"], 300)))
             continue
+        if got["data"].get("fault") is not None:
+            faults.append("%s: could not be measured: %s" % (name, got["data"]["fault"]))
+            continue
         secs = got["data"]["seconds"]
         growth = [b / max(a, TRIPWIRE_FLOOR) for a, b in zip(secs, secs[1:])]
         worst, longest = max([worst] + growth), max(longest, secs[-1])
         if max(growth) > 2 ** TRIPWIRE_POWER:
-            faults.append("%s: grew %s per doubling" % (
-                name, ", ".join("%.2fx" % g for g in growth)))
+            reps = got["data"].get("repeats")
+            faults.append("%s: grew %s per doubling%s" % (
+                name, ", ".join("%.2fx" % g for g in growth),
+                "" if reps is None else ", over %r searches a length" % (reps,)))
         if secs[-1] > TRIPWIRE_CEILING:
             faults.append("%s: %.3fs at the longest" % (name, secs[-1]))
     return faults, worst, longest
