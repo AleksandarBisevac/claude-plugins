@@ -867,7 +867,8 @@ def _held_lock_cases(check):
     tmp = _harness.fixture_root("migrate-held-")
     try:
         got = _held_conversion(tmp, "interleaved", True)
-        check("ml1 A GATE OF THE SESSION HOLDING THE LOCK IS ANSWERED AS THE "
+        check("ml1 (migrate-manifest's `migrate`, saving through `save_sharded`) "
+              "A GATE OF THE SESSION HOLDING THE LOCK IS ANSWERED AS THE "
               "HOLDER and writes mid-conversion (the probe: its record "
               "write lands) - and its record is NOT dropped by the "
               "converter's earlier read: the converter finds the plan changed "

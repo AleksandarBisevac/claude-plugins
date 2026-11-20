@@ -490,6 +490,73 @@ TABLE = (
   "        if not classes and not hint:\n            continue\n"
   "        if not classes:\n            violations.append((named, (",
   DEP, "pw3"),
+ # ...and with a call whose path argument cannot be located DROPPED, as it was
+ # before: a path handed in starred or inside `**` then decides nothing.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "                out.append((call, None, _PW_UNLOCATED % (via, why), False))\n",
+  "                pass\n", DEP, "pw10"),
+ # ...and with the module's own statements left out of the units: a write at
+ # import time, and a forwarder whose one caller is module level, go unread.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "            units.append((named, module, _PW_MODULE_UNIT, (), bindings, [],\n"
+  "                          _pw_own_calls(tree.body), {}))\n",
+  "", DEP, "pw12"),
+ # ...and with a star import binding every name, the shape it had while it was
+ # written: `from shutil import *` then takes the builtin `open`, and a write
+ # through it is read as a shutil call that writes nothing.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "    star = [m for m in bindings[3] if func.id in _PW_PRIMITIVES.get(m, ())]",
+  "    star = list(bindings[3])", DEP, "pw12"),
+ # ...and with an OTHER_WRITERS row's callees ignored: a raw write added
+ # beside the callee the row names is then covered by the row's reason.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "        row = other.get(key)\n        if row is not None:\n",
+  "        row = None\n        if row is not None:\n", DEP, "pw14"),
+ # ...and with an OTHER_WRITERS row read as a pattern rather than a count, the
+ # shape it had: a second write through a callee the row already names - the
+ # gate-event log's raw write beside the one its row was written for - is then
+ # covered by the row.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "            left.remove(hit[0])\n        else:\n            uncovered.append(site)\n",
+  "            pass\n        else:\n            uncovered.append(site)\n    left = []\n",
+  DEP, "pw16"),
+ # ...and with the tie to the plan ignored: an OTHER_WRITERS row then covers a
+ # write whose path is a literal `audit-plan` or is held in `mpath`.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "            found.add(_PW_PLAN_LITERAL)\n    return sorted(found)\n",
+  "            found.add(_PW_PLAN_LITERAL)\n    return []\n", DEP, "pw16b"),
+ # ...and with a forwarder recording ONE of the parameters it writes through,
+ # the shape it had (`forwards[key] = ...; break`): a caller handing its own
+ # path in the recorded slot and deciding the other then decides nothing.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "            if own and own != forwards.get(key):\n",
+  "            own = dict(sorted(own.items())[:1])\n"
+  "            if own and own != forwards.get(key):\n", DEP, "pw15"),
+ # ...and with a plan row's case checked for existence only, the shape it had:
+ # a row may then cite any case of its suite, `keep_base` citing `pf1`.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "    if re.search(r\"(?<![\\w-])%s(?![\\w-])\" % (re.escape(subject),), labels[cid]):\n",
+  "    if True:\n", DEP, "pw17"),
+ # ...and with the door case cited by anything: a function that takes no lock
+ # then answers to the case that derives the doors.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "        return \"\" if door else (",
+  "        return \"\" if True else (", DEP, "pw17"),
+ # ...and with numeric `os.open` flags read as writing nothing, the shape it
+ # had: `os.open(p, 1 | 64)` then opens a plan file for write unseen.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "    if names & _PW_WRITING_FLAGS or numbered:",
+  "    if names & _PW_WRITING_FLAGS:", DEP, "pw18"),
+ # ...and with a star import from a sibling binding nothing: a bare call of the
+ # sibling's writer is then no call the lint can name.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "        star = [m for m in bindings[3] if (m, func.id) in defined]\n",
+  "        star = []\n", DEP, "pw18"),
+ # ...and with a path object's `open(mode=...)` keyword unread, the shape it
+ # had: only a mode passed first was read.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "    given = [kw.value for kw in call.keywords if kw.arg == \"mode\"] or call.args[:1]",
+  "    given = call.args[:1]", DEP, "pw18"),
  # The scrub-by-default rule, crippled. It is what keeps a new caller from
  # reaching the JSON writer that leaves machine paths in, and a version
  # reporting nothing reads exactly like a tree whose only raw writes are listed.
@@ -1365,9 +1432,16 @@ ALLOW = (
  # the path its caller handed in decides nothing, and convicting it would put
  # a row on every forwarding helper of the tree - `pw5`'s fixture holds two.
  ("plan_writer_violations", L + "_deps.py", "replace",
-  "                   if not (isinstance(target, ast.Name) and target.id in unit[5])]",
+  "                   if not own]",
   "                   if True]",
   DEP, "pw5"),
+ # The every-writer-classified rule, with a forwarder's default read even when
+ # the caller passes the path: a forwarder handing its own parameter into the
+ # parameter whose default it overrides then decides that default - `pw10b`'s
+ # `relay_default`.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "            if why == \"omitted\" and default is not None:",
+  "            if default is not None:", DEP, "pw10b"),
  # The raw-writer allow-list, ignored: a site that names its reason for
  # writing bytes exactly as given - a re-encoding, the user's own settings -
  # would be convicted anyway, and `rj2`'s fixture holds one beside the

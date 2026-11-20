@@ -15916,7 +15916,16 @@ def _locked_seed(args, project, config, mpath, out):
     (there is no earlier version to read, allocate against or roll back to),
     then re-read and validated exactly like every other write in this file; a
     manifest this would leave invalid is REMOVED rather than kept, because
-    keeping an invalid file nobody asked for is worse than writing nothing."""
+    keeping an invalid file nobody asked for is worse than writing nothing.
+
+    The path is asked again here, behind the lock: `_under_lock` found it free
+    before taking the lock, and a plan another writer created in between would
+    otherwise be written over."""
+    if os.path.lexists(mpath):
+        out("[audit-task] REFUSED: a manifest appeared at %s while seed waited "
+            "for the index lock, so nothing was written. Use add/add-phase to "
+            "extend it." % mpath)
+        return E_USAGE
     contradiction = _gate_contradiction(args)
     if contradiction:
         out(contradiction)

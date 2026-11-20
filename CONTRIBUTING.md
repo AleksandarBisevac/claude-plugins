@@ -811,9 +811,20 @@ Checklist for a new `.py` under `hooks/` or `scripts/`:
 - **A row for every function that decides a path it writes** —
   `_deps.plan_writer_violations()` fails an unplaced one by name. A plan file goes
   in `PLAN_WRITERS` with the case showing the function reads the plan behind the
-  index lock (read inside the locked section, never before it); anything else
-  goes in `OTHER_WRITERS` saying what the file is. A helper that only writes the
-  path its caller hands in needs no row: its caller is the one placed.
+  index lock (read inside the locked section, never before it - a case that
+  lands another writer's change as the function asks for the lock, and whose
+  label names the function - or, for a verb's door, `pa0b`); anything else
+  goes in `OTHER_WRITERS` saying what the file is. Both name the callees the
+  function writes through, and a write through any other callee is red, so a
+  backup copy beside a plan save is a helper with a row of its own. An
+  `OTHER_WRITERS` row is also a count - one entry per write, so a second write
+  through a callee it already names costs one more entry - and it may not
+  cover a write whose path is tied to the plan (named `manifest`, `mpath` or
+  `spath`, or a literal `audit-plan`): that is a `PLAN_WRITERS` row. A helper
+  that only writes the paths its caller hands in needs no row: its caller is
+  the one placed, judged on every parameter it hands over. A path the lint
+  cannot locate (passed starred, inside `**`) is a site of the caller with the
+  reason in its callee, and the row names it so.
 
 Most of this list is enforced by lints, not by review: the checklist is the
 map, the lints are the territory.

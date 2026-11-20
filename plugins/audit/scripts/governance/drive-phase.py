@@ -1293,6 +1293,22 @@ def write_record(text):
     raw.flush()
 
 
+# The line `run-test-gate.py`'s recorder (`_record_run`) prints when the plan
+# refused a run's record, the refusal's own sentence after it.
+GATE_RECORD_REFUSED = "pointer:  NOT updated - "
+
+
+def gate_record_lock_busy(text):
+    """True when the gate runner's words carry its record-refusal line and that
+    LINE's sentence is the busy index lock (`_evio.index_lock_busy`). Read off
+    that one line, never off all the words: a suite's own output can quote the
+    busy sentence while the record was refused for something else."""
+    lead = GATE_RECORD_REFUSED
+    return any(_evio.index_lock_busy(line.lstrip()[len(lead):])
+               for line in (text or "").splitlines()
+               if line.lstrip().startswith(lead))
+
+
 def relay_refusal(ctx, script, code, text):
     """`(E_STOPPED, text)` for a verb that refused: the verb named, then its own
     words whole - the refusal and the remedy it gives - then the rule for a
@@ -1300,10 +1316,10 @@ def relay_refusal(ctx, script, code, text):
 
     THE GATE RUNNER'S EXIT 3 IS A RUN WHOSE RECORD WAS NOT STORED, and only one
     of its causes clears by waiting: the plan's index lock held past the
-    record's wait, which the runner's words say in `_evio.INDEX_BUSY_HEAD`'s
-    sentence. That one takes the verb's rule; a claim that could not be
-    written or a ledger row not stored is the generic stop, since no holder
-    is there to wait for."""
+    record's wait, which the runner's record-refusal line says in
+    `_evio.INDEX_BUSY_HEAD`'s sentence (`gate_record_lock_busy`). That one takes
+    the verb's rule; a claim that could not be written or a ledger row not
+    stored is the generic stop, since no holder is there to wait for."""
     head = "%s %s: stopped - %s refused (exit %d); its own words follow" % (
         PREFIX, ctx["phase"], script, code)
     if script == "audit-lock.py":
@@ -1311,7 +1327,7 @@ def relay_refusal(ctx, script, code, text):
     elif script == "audit-task.py" and code == 3:
         kind = "stop-index-lock"
     elif script == "run-test-gate.py" and code == 3 \
-            and _evio.index_lock_busy(text):
+            and gate_record_lock_busy(text):
         kind = "stop-index-lock"
     else:
         kind = "stopped"

@@ -252,6 +252,12 @@ def apply_repair(mpath, manifest, ans):
             return False, ("cannot re-read %s under the lock, so nothing was "
                            "written: %s" % (mpath, exc)), []
         applied = rewrite(manifest, ans["rewrite"])
+        if not applied:
+            # Every row found changed in the window: saving now would write a
+            # plan this run changed nothing in, and report it repaired.
+            return False, ("every entry found rewritable was changed in the "
+                           "plan since it was read, so nothing was written - "
+                           "re-run to look again"), []
         findings, _warnings = _rules.validate(manifest)
         other_findings = _findings_besides_tests_add(findings)
         if other_findings:
