@@ -2398,7 +2398,14 @@ def dispatch(ctx, state, phase, task, role, tree=None, manifest=None):
     copy stands beside (`unsettled_stop`): an agent's edits there are what the
     next move reads as newer work and holds the tree over. `manifest` is the
     plan the caller already loaded, when it has one: a plan holding no
-    `meta.skillPins` then asks no pin before the mark and loads nothing for it."""
+    `meta.skillPins` then asks no pin before the mark and loads nothing for it.
+
+    A DISPATCH THAT STOPS HAS MARKED NOTHING. Everything it can refuse over is
+    asked before the mark and the brief: the tree, the writer setting, the pins
+    (a session route hands the skills out after the mark, so they are read here,
+    once - `session_hand`, which raises `PinStop` - and the command is built from
+    that read), and whether the writer takes a phase review's findings; a subagent
+    route's pins are asked by the brief, which is written before the mark too."""
     stop = unsettled_stop(ctx, task, tree)
     if stop is not None:
         return stop
@@ -2406,11 +2413,15 @@ def dispatch(ctx, state, phase, task, role, tree=None, manifest=None):
         "executor", "reviewer") else (None, None)
     if problem:
         return _stopped(ctx, problem)
+    held = None
     if session and (manifest is None or _skill_places.skill_pins(manifest) is not None):
-        # A session route hands the skills out after the dispatch is marked, so
-        # a pin that does not match is asked here first (raises PinStop).
-        session_skills(ctx, task)
+        held = session_hand(ctx, task)
     writer = session if role == "executor" else None
+    fix, spent, why_fix = (standing_review_fix(ctx, state, task) if writer
+                           else (None, None, None))
+    if why_fix is not None:
+        return _stopped(ctx, "%s, so whether %s's writer takes a phase review's "
+                        "findings is not known" % (why_fix, task["id"]))
     out, stop = _verb_or_stop(ctx, "audit-lookup.py", [
         ctx["manifest"], "brief", task["id"], "--role",
         "writer" if writer else role, "--project", ctx["project"]])
@@ -2425,23 +2436,18 @@ def dispatch(ctx, state, phase, task, role, tree=None, manifest=None):
           {"scope": brief_scope(task)} if role == "executor" else True)
     write_state(ctx, state)
     brief = project_relative(ctx, found.group(1).strip())
-    fix, spent, why_fix = (standing_review_fix(ctx, state, task) if writer
-                           else (None, None, None))
-    if why_fix is not None:
-        return _stopped(ctx, "%s, so whether %s's writer takes a phase review's "
-                        "findings is not known" % (why_fix, task["id"]))
     if spent:
         ctx["did"].append(_clip(spent, 160))
     if fix is not None:
         return review_fix_dispatch(ctx, state, phase, task, writer, os.path.abspath(
-            os.path.join(ctx["project"], found.group(1).strip())), fix, tree)
+            os.path.join(ctx["project"], found.group(1).strip())), fix, tree, held)
     if writer:
         prompt = os.path.abspath(os.path.join(ctx["project"], found.group(1).strip()))
         _record, argv = open_dispatch(ctx, state, task, 0, lambda record: writer_argv(
-            ctx, task, writer, prompt, record, tree), tree)
+            ctx, task, writer, prompt, record, tree, held=held), tree)
         return writer_said(ctx, task["id"], writer["model"], brief, argv)
     if session:
-        return reviewer_dispatch(ctx, state, phase, task, session, brief, tree)
+        return reviewer_dispatch(ctx, state, phase, task, session, brief, tree, held)
     model = (task.get("model") if role == "executor"
              else (phase.get("review") or {}).get("model")) or "unset"
     agent = EXECUTOR_AGENT if role == "executor" else REVIEWER_AGENT
@@ -2492,6 +2498,20 @@ def session_skills(ctx, task, phase_review=False, plan=None):
                                       _claude_home.claude_home(), _output.PLUGIN_ROOT)
 
 
+def session_hand(ctx, task, phase_review=False, plan=None):
+    """`(names, flags)`: `session_skills`' answer and the `--skill-pin` flags the
+    pins that hold them give - the ONE read of the pins a hand-out makes. The
+    session's command is built from this and from nothing asked again
+    (`writer_argv`'s `held`), so a skill that changes after the check cannot stop
+    the command after the dispatch was marked: the runner holds the bytes to the
+    digest on the command when it starts. `plan` is `load_phase`'s answer when
+    the caller already holds it."""
+    plan = plan if plan is not None else load_phase(ctx)
+    names = session_skills(ctx, task, phase_review, plan)
+    return names, _skill_places.pin_flags(names, plan[0], ctx["project"],
+                                          _claude_home.claude_home(), _output.PLUGIN_ROOT)
+
+
 def runner_review_skill(ctx, manifest, phase):
     """`(skill, left_out)`: the review skill `phase` resolves when the session
     runner would find it in the project, else `(None, why)` - one line naming
@@ -2527,7 +2547,7 @@ def runner_review_skill(ctx, manifest, phase):
 
 
 def writer_argv(ctx, task, writer, prompt, record, tree=None, resume=None,
-                role="writer", phase_review=False):
+                role="writer", phase_review=False, held=None):
     """The command that runs `task`'s writer session - or its reviewer's, under
     `role` - in the task's own tree when it has one, else the project; its
     scratch and its stream under `stateDir`, and one `--skill` per skill the task
@@ -2536,12 +2556,14 @@ def writer_argv(ctx, task, writer, prompt, record, tree=None, resume=None,
     `phase_review` is `session_skills`'s, for a reviewer at phase scope. Each
     pinned name rides with its `--skill-pin`, under the spelling handed out, so
     the runner checks the copy its own tree holds; a plan with no pins adds none.
-    The plan is loaded once for both."""
-    plan = load_phase(ctx)
-    names = session_skills(ctx, task, phase_review, plan)
+    `held` is `session_hand`'s answer for this hand-out when the caller asked it
+    already - before it marked anything or consumed an answer - and the command
+    is built from it without a second read; without it the plan is loaded once
+    and asked here."""
+    names, flags = held if held is not None else session_hand(
+        ctx, task, phase_review)
     skills = [flag for name in names for flag in ("--skill", name)]
-    skills += _skill_places.pin_flags(names, plan[0], ctx["project"],
-                                      _claude_home.claude_home(), _output.PLUGIN_ROOT)
+    skills += flags
     argv = ["python3", _loader.script_path(WRITER_RUNNER), "--role", role,
             "--task", task["id"],
             "--tree", member_project(ctx, tree) or ctx["project"],
@@ -2563,10 +2585,11 @@ def reviewer_session_setting(phase, session):
                 else session["model"])
 
 
-def reviewer_dispatch(ctx, state, phase, task, session, brief, tree=None):
+def reviewer_dispatch(ctx, state, phase, task, session, brief, tree=None, held=None):
     """The dispatch of `task`'s per-task reviewer as a session: its prompt is
     the Agent dispatch's own words, then `REVIEWER_SESSION_RULE`, written to
-    the task's scratch; the command names the reviewer role."""
+    the task's scratch; the command names the reviewer role. `held` is
+    `session_hand`'s answer, which `writer_argv` builds the command from."""
     setting = reviewer_session_setting(phase, session)
     seq = writer_state(state, task, REVIEWER_KEY)["seq"]
     prompt = os.path.join(sessions_dir(ctx), "scratch", task["id"],
@@ -2577,7 +2600,7 @@ def reviewer_dispatch(ctx, state, phase, task, session, brief, tree=None):
                                    REVIEWER_SESSION_RULE))
     _record, argv = open_dispatch(
         ctx, state, task, 0, lambda record: writer_argv(
-            ctx, task, setting, prompt, record, tree, role="reviewer"),
+            ctx, task, setting, prompt, record, tree, role="reviewer", held=held),
         tree, REVIEWER_KEY)
     return writer_said(ctx, task["id"], setting["model"], brief, argv,
                        role="reviewer")
@@ -3075,11 +3098,18 @@ def without_writer_way(name):
         " with --reason" if "block" in needs else "", WRITER_MODEL_KEY)
 
 
-def resume_writer(ctx, state, task, pending, tree=None):
+def resume_writer(ctx, state, task, pending, tree=None, consume=False):
     """`--answer resume` on a red gate: the failing lines go to the recorded
     session as its prompt, in the next round, and no attempt is spent - never
     into a tree a move's copy stands beside (`unsettled_stop`), asked before
-    the prompt is written or the dispatch opened, as `dispatch` asks."""
+    the prompt is written or the dispatch opened, as `dispatch` asks.
+
+    THE ANSWER IS CONSUMED HERE, NOT BEFORE: with `consume`, the pending decision
+    is dropped and the gated mark spent only once nothing can refuse the resume
+    any more - the tree, the writer setting, the skills' pins (`session_hand`,
+    read once; the command is built from it) and the prompt - and it is the
+    dispatch's own write that records both. A stop before that leaves the state
+    as it found it, so the same `--answer` given again works."""
     stop = unsettled_stop(ctx, task, tree)
     if stop is not None:
         return stop
@@ -3088,6 +3118,7 @@ def resume_writer(ctx, state, task, pending, tree=None):
         return _stopped(ctx, problem or "executor.%s is no longer set, so there "
                         "is no writer session to resume; %s" % (
                             WRITER_MODEL_KEY, without_writer_way(pending["decision"])))
+    hand = session_hand(ctx, task)
     held = writer_state(state, task)
     round_n = held["resumes"] + 1
     prompt = session_record(ctx, task, held["seq"])[:-len(".jsonl")] + ".prompt.md"
@@ -3099,9 +3130,12 @@ def resume_writer(ctx, state, task, pending, tree=None):
         return _stopped(ctx, paths_last(
             "the resume prompt for %s could not be written" % (task["id"],),
             [("why", exc), ("prompt", prompt)]))
+    if consume:
+        state.pop("pending", None)
+        _spend(state, "gated", task)
     _record, argv = open_dispatch(ctx, state, task, round_n, lambda record: writer_argv(
-        ctx, task, writer, prompt, record, tree, resume=pending["session"]), tree,
-        kind=RESUME_ROUTES.get(pending["decision"]))
+        ctx, task, writer, prompt, record, tree, resume=pending["session"],
+        held=hand), tree, kind=RESUME_ROUTES.get(pending["decision"]))
     held = writer_state(state, task)
     held["resumes"] = round_n
     _mark(state, "writer", task, held)
@@ -9466,15 +9500,80 @@ def step_member(ctx, state, task_id):
     return "idle", None
 
 
-def walk_wave(ctx, state):
+def owes_executor(ctx, state, manifest, task):
+    """Whether the step is about to hand `task` its executor - the first hand-out
+    of its start, or one issued again - read off the facts `advance` decides it
+    on (`_writer_turn`), without acting. A member that is done, blocked, parked
+    on a decision, not yet ready, whose executor returned or is out is not: a
+    changed skill is no reason to stop what such a member is owed. It leans to
+    asking - a member `advance` would stop before the hand-out is still asked -
+    and what it cannot ask is the reviewer's hand-out, which waits on the gate."""
+    status = task.get("status")
+    if status in _mio.TERMINAL or status == "blocked":
+        return False
+    if ((state.get("wave") or {}).get("parked") or {}).get(task["id"]) is not None:
+        return False
+    if status != "in_progress":
+        return not_ready_why(manifest, task) is None
+    executor, _problem = filed(ctx, task, "executor")
+    turn, _none = _advance_plan("writer", _writer_facts(
+        state, task, executor, lambda: writer_holds(state, task)))
+    return turn in ("dispatch", "redispatch-stale")
+
+
+def ask_member_pins(ctx, state, manifest, phase, task_ids):
+    """Before a wave step marks, starts or records anything: the pins of every
+    member of `task_ids` that is about to be handed its executor, in id order.
+    The first whose skill is not the bytes pinned stops the step, naming the
+    member (`PinStop`, which `drive` words as the stop) - with nothing started, no
+    tree cut and no mark made for ANY member, so a member that comes later in the
+    order cannot leave an earlier one marked dispatched with no dispatch printed.
+    A plan that pins nothing asks nothing and reads no file."""
+    if _skill_places.skill_pins(manifest) is None:
+        return
+    by_id = _mio.tasks_by_id(manifest)
+    for task_id in sorted(task_ids, key=_id_key):
+        task = by_id.get(task_id)
+        if task is None or not owes_executor(ctx, state, manifest, task):
+            continue
+        try:
+            session_skills(ctx, task, plan=(manifest, phase))
+        except _skill_places.PinStop as exc:
+            raise _skill_places.PinStop("%s: %s" % (task_id, exc))
+
+
+def walk_wave(ctx, state, manifest=None, phase=None):
     """Every member's due steps in id order: one print of every dispatch that
     is due, else - when nothing else is - the first parked decision, else None
-    once the wave is through."""
+    once the wave is through.
+
+    A STEP THAT STOPS MARKS NOTHING, in one of two shapes. What can be asked of
+    every member first is (`ask_member_pins`): nothing is written for any. What
+    can only be known once an earlier member was handed out - a later member's
+    start, tree or hand-out refused for any reason - leaves that member printed
+    with the stop as a warning on its print, never dropped: marked in the drive's
+    state and printed nowhere, it would read next step as an executor that
+    returned nothing. `manifest` and `phase` are the step's own read of the plan."""
+    if manifest is None:
+        manifest, phase = load_phase(ctx)
+    ask_member_pins(ctx, state, manifest, phase, state["wave"]["tasks"])
     sent = []
     for task_id in sorted(state["wave"]["tasks"], key=_id_key):
-        kind, said = step_member(ctx, state, task_id)
+        try:
+            kind, said = step_member(ctx, state, task_id)
+        except ValueError as exc:
+            if not sent:
+                raise
+            kind, said = "stop", (E_STOPPED, "%s %s: stopped - %s" % (
+                PREFIX, ctx["phase"], exc))
         if kind == "stop":
-            return said
+            if not sent:
+                return said
+            ctx.pop("stop", None)
+            warn(ctx, "%s stopped the step after %s was handed out: %s" % (
+                task_id, ", ".join(m["signal"]["subject"] for m in sent),
+                said[1].partition("stopped - ")[2] or said[1]))
+            break
         if kind == "dispatch":
             sent.append(said)
         if kind == "dropped":
@@ -9611,13 +9710,17 @@ def wave_step(ctx, state, manifest, phase, width, basis):
                                       manifest, phase, ready))[0])["wave"]
         if len(picked) < 2:
             return NO_WAVE
+        # Every picked member's pins before anything is written - the scope gap
+        # below can park a decision, and the wave's opening records it: a stop
+        # over a pin leaves no wave recorded, nothing started and no tree cut.
+        ask_member_pins(ctx, state, manifest, phase, picked)
         by_id = _mio.tasks_by_id(manifest)
         for task_id in picked:
             stop = scope_gap(ctx, state, by_id[task_id])
             if stop is not None:
                 return stop
         return open_wave(ctx, state, picked, width, basis)
-    return walk_wave(ctx, state)
+    return walk_wave(ctx, state, manifest, phase)
 
 
 # --- answering a decision ---------------------------------------------------------
@@ -9789,6 +9892,16 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
                  fixes=()):
     """Act on an answer to the pending decision; None when the drive goes on."""
     task = _mio.tasks_by_id(manifest).get(pending.get("task")) if pending.get("task") else None
+    if answer == "resume" and pending["decision"] in RESUME_ROUTES:
+        # The one answer whose effect lives only in the hand-out it makes - the
+        # gate measured again and the human asked again if the session is not
+        # resumed - so it is consumed by that hand-out (`resume_writer`), after
+        # everything that can refuse it, and not by the lines below. The task
+        # is not re-started, so no attempt is spent; the gate is not marked as
+        # run, so the next `next` measures the session's fix. A clause gap is
+        # asked at a GREEN gate, whose mark is spent there for it.
+        return resume_writer(ctx, state, task, pending, (
+            (state.get("wave") or {}).get("trees") or {}).get(task["id"]), True)
     state.pop("pending", None)
     write_state(ctx, state)
     if pending["decision"] in PHASE_DECISIONS:
@@ -9830,13 +9943,6 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
             _mark(state, "writer", task, held)
             write_state(ctx, state)
         return None
-    if answer == "resume" and pending["decision"] in RESUME_ROUTES:
-        # The task is not re-started, so no attempt is spent; the gate is not
-        # marked as run, so the next `next` measures the session's fix. A
-        # clause gap is asked at a GREEN gate, whose mark is spent here for it.
-        _spend(state, "gated", task)
-        return resume_writer(ctx, state, task, pending, (
-            (state.get("wave") or {}).get("trees") or {}).get(task["id"]))
     if answer == "resume":
         # The dispatch mark stays, so a return still unfiled is asked about
         # again on the next `next`; no attempt is spent.
@@ -11451,14 +11557,16 @@ def warm_session(ctx, fix, tree=None):
     return (fix["session"] if idle < CACHE_LIFE_SECONDS else None), said
 
 
-def review_fix_dispatch(ctx, state, phase, task, writer, brief, fix, tree=None):
+def review_fix_dispatch(ctx, state, phase, task, writer, brief, fix, tree=None,
+                        hand=None):
     """A re-opened task's writer dispatch, carrying the confirmed findings:
     the first one `--resume`s its last session while that is warm
     (`warm_session`), prompted with the findings alone; otherwise - a cold
     session, or any dispatch after the first, which a resume would hand only
     the findings and not the brief it was re-issued for - a fresh session
     whose prompt is the task's own brief - its text - and then the findings.
-    `fix` is the entry `standing_review_fix` found standing."""
+    `fix` is the entry `standing_review_fix` found standing; `hand` is
+    `session_hand`'s answer, which `writer_argv` builds the command from."""
     carried = _fix_dispatched(fix)
     _manifest, phase = load_phase(ctx)
     held = dict((f.get("id"), f) for f in (phase.get("review") or {}).get("findings")
@@ -11490,7 +11598,7 @@ def review_fix_dispatch(ctx, state, phase, task, writer, brief, fix, tree=None):
                  "%s\n\n%s\n\n%s\n" % (text.rstrip("\n"), REVIEW_FIX_HEAD,
                                        "\n".join(lines)))
     _record, argv = open_dispatch(ctx, state, task, 0, lambda record: writer_argv(
-        ctx, task, writer, prompt, record, tree, resume=session), tree)
+        ctx, task, writer, prompt, record, tree, resume=session, held=hand), tree)
     state[REVIEW_FIX_FIELD][task["id"]] = dict(
         fix, dispatched=carried + [start_key(task)], resumed=session, why=why)
     write_state(ctx, state)

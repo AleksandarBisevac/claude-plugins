@@ -5675,6 +5675,30 @@ the wave with what it waits on, and the walk goes on with the rest (`rf8`, `rf9`
 by the verb - through the call the dispatch makes, then reads it back as it reads any other
 (`run_brief`; `rf10`, `rf11`).
 
+**A step that stops marks nothing the next step reads as done**, in two shapes, held by
+whole-state cases (`_kept_state` before and after, which says what it leaves out: `spd10` one
+task on each route, `spd11` and `spd12` a wave with its second or its first member's pinned
+skill changed). What can be asked of every member before any is touched is asked first:
+`ask_member_pins` reads the pin of each member `owes_executor` finds about to be handed its
+executor - not one that is done, blocked, parked, not ready, or whose executor returned or is
+out - before the wave is recorded, a member started or a tree cut, and names the member
+(`spd17`); a plan that pins nothing asks nothing. What can only be known once an earlier member
+was handed out - a later member's start, tree or hand-out refused for any reason, the reviewer's
+pin among them, which waits on the gate - leaves that member printed with the stop as a warning
+on its print, never dropped (`walk_wave`; `spd20`). `dispatch` asks everything it can refuse
+over before it marks: the tree, the writer setting, the pins - read once by `session_hand`,
+which the session's command is built from, so a skill that changes after the check cannot stop
+the command after the mark (`spd18`) - and whether the writer takes a phase review's findings
+(`spd19`). An answer whose effect lives only in the hand-out it makes is consumed by that
+hand-out: `--answer resume` drops the pending decision and spends the gated mark inside
+`resume_writer`, after the tree, the writer setting, the pins and the prompt, so a stop leaves
+the decision standing and the same answer works again (`spd14`, `spd15`). `--answer redispatch`
+is not held to that, and `spd16` says why: what it did stays recorded and the reviewer is the
+drive's own next move. A stop gives the phase lock back (`lock_to_give_back`), even one a pending
+decision had kept - that is `drive`'s, after `apply_answer` returns, so `spd14` holds
+`apply_answer`'s own writes whole and does not compare the lock's release; the next step takes
+the lock as its first act.
+
 **Sign-off is the same loop.** When every task is terminal, `sign_off` takes over from `finish`.
 The phase reviewer is dispatched (`dispatch_phase_review`, with the brief `audit-lookup.py brief
 --role phase` wrote and the head that brief names kept in the state) when a review skill
@@ -7044,11 +7068,13 @@ so another plugin's skill is left out and the dispatch warns, naming it and the 
 (`runner_review_skill`, `vk1`, `vk2`, `vk4`) — and the per-task reviewer never does (`vk3`,
 through `reviewer_dispatch`). A PINNED review skill is never left out that way: `runner_review_skill`
 and `session_skills` each ask `_skill_places.require_pins` over the project's copy, and `dispatch`
-asks `session_skills` before it marks a session route dispatched, so a pinned skill that is not
-the bytes pinned stops `next` with no dispatch line (`spd4`, `spd5`); `writer_argv` then adds a
-`--skill-pin` per pinned name it hands out (`spd6`). A plan with no `meta.skillPins` costs no
-load for any of it: `advance` hands `dispatch` the plan it loaded, which then asks nothing,
-and `writer_argv` loads the plan once for the skills and the pins (`spd9` counts the loads).
+asks `session_hand` - `session_skills` and the `--skill-pin` flags, one read - before it marks a
+session route dispatched, so a pinned skill that is not the bytes pinned stops `next` with no
+dispatch line (`spd4`, `spd5`); `writer_argv` then adds a `--skill-pin` per pinned name it hands
+out (`spd6`), from that same read when it is handed it (`spd18`). A plan with no `meta.skillPins`
+costs no load for any of it: `advance` hands `dispatch` the plan it loaded, which then asks
+nothing, and `writer_argv` loads the plan once for the skills and the pins, a plan with pins
+no more often (`spd9` counts the loads).
 Its note of each session
 (`session_note`, through `skills_said`) names a declared skill the session never invoked — a
 `plugin:skill` declaration is met by a call with the bare name — or says that no `skillsInvoked`

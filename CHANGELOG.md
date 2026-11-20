@@ -493,6 +493,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ### Fixed
 
+- **A step the drive stops writes nothing the next step reads as done.** A wave stepped its
+  members in id order and let each mark its own dispatch, so a later member's stop ended the
+  step with an earlier member marked as handed out and never printed: the next `next` told the
+  human an executor had returned nothing, or waited on a session command nobody had run. Any
+  member's stop did this; a skill pin that does not match made it common. Now the pins of
+  every member about to be handed an executor are read before the wave is recorded, a member
+  started or anything marked, and the stop names the member and leaves the plan, the drive's
+  state and the briefs as they were; a refusal that can only be known after an earlier member
+  was handed out leaves that member printed, with the stop as a warning on its print. A
+  `dispatch` asks everything it can refuse over before it marks - including whether the writer
+  takes a phase review's findings, which it asked after - and the session's command is built
+  from the one read of the pins that check made. `--answer resume` on a red gate drops the
+  pending decision and spends the gated mark only inside the resume's own hand-out, after the
+  tree, the writer setting, the pins and the prompt: a stop leaves the decision standing and
+  the same answer given again resumes the session, where it used to be lost and the gate run
+  again to ask the same question.
 - **The eval fixture builder refuses before its first git write when git is pointed at another
   repository, rather than noticing after.** `evals/build-shop.sh` cleared a list of names
   written into it before building, and its only check came at the end of the build: with that line

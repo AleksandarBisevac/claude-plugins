@@ -1,0 +1,85 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py --jobs 4 tests/test_drive_phase.py": "pass",
+    "python3 tests/test_drive_phase.py --selftest --stage <block>, each alone, for spn-block ws-block rv-block rw-block pv-block pv4-block pv7-block sr2-block e2e-wave uy-block ab-block ux-block uw-block wq-block au30-block au32-block gw-block kr-block e2e-steps": "pass",
+    "python3 tools/sweep-selftests.py --jobs 4 tests/test__worktrees.py tests/test__output_lints.py tests/test__deps.py tests/test__config.py tests/test_drive_without_model.py tests/test__invariants.py tests/test_audit_lookup.py tests/test__filed_returns.py": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "ruff check plugins/audit tools tests .claude/hooks": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints": "pass",
+    "run-test-gate.py docs/audit/audit-plan.json SG2 --task SG2.16-xk1 --project-dir . (the orchestrator's gate, run once and not recorded)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-20T12:54:07Z",
+    "basis": "`python3 tests/test_drive_phase.py --selftest --stage spn-block` in a throwaway tree at HEAD exited 1 with 13 of 24 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - spd11 (house FAIL), spd12 (house FAIL), spd13 (house FAIL), spd14 (house FAIL), spd15 (house FAIL), spd17 (house FAIL), spd17a (house FAIL), spd21 (house FAIL) and 4 more: SELFTEST FAILED: 11/24 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "REPRODUCED on the real commands (probe: SG2.15's, copied and extended, on a copy of HEAD's plugin, repro.out): (a) a wave whose SECOND member's pin changed - subagent route: the stopped step leaves dispatched-executor[P1.1] in the drive's state, the next `next` after restoring the bytes prints only P1.2, and a `next` after that says `decide no-executor-return P1.1`; session route: dispatched-executor and writer[P1.1] left behind, then `wait P1.1: the writer session has written no record`; (b) a resume: after the stopped `--answer resume` the pending decision is gone and the same answer is refused (`no decision is pending for P1, so --answer resume answers nothing`, exit 2), a resume prompt file left on disk. NOT reproduced as a failure of its own: (c) the window between the pre-check and the command's building cannot be hit deterministically by real commands (a file would have to change between two reads inside one process); it is shown by spd18 and spd18b, which change the bytes in between and are red on HEAD (PinStop after the mark, no dispatch recorded). Also seen on HEAD: a wave whose FIRST member's pin changed leaves the wave recorded, both members started and a tree cut before the stop (no dispatch mark, so benign in effect, but not a state equal to before). FIXED in plugins/audit/scripts/governance/drive-phase.py: (1) ask_member_pins reads the pin of every member that owes its executor (owes_executor: the _writer_turn facts, no action) before the wave is recorded (wave_step) and before any member is stepped (walk_wave), naming the member; (2) walk_wave's second shape: a member that stops (returned stop or raised ValueError) after an earlier member was handed out leaves that member printed, the stop a warning on the print, ctx stop kind cleared; (3) dispatch asks its tree, writer setting, pins (session_hand: ONE read, names and --skill-pin flags) and the review-fix reading before its brief and its mark; writer_argv builds the command from that read (held), also for reviewer_dispatch and review_fix_dispatch; (4) apply_answer sends a resume to resume_writer(consume=True) before consuming anything, and resume_writer drops the pending decision and spends the gated mark only after the tree, the writer setting, the pins and the prompt, the dispatch's own write recording both. --answer redispatch is deliberately NOT moved (what it did stays recorded and the reviewer is the drive's own next move; spd16 holds that). Docs: PLUGIN-BUILD-GUIDE.md (a paragraph in the drive-phase.py section; the run-agent-session.py paragraph on dispatch and writer_argv), CHANGELOG.md Fixed entry under Unreleased (heading untouched). TESTS (tests/test_drive_phase.py, block spn-block, one new function _pin_stop_state_cases and helpers after _pin_load_cases): spd10 one task each route, whole kept state equal; spd11/spd12 wave second/first member, kept state equal, plan untouched, member and skill named, nothing started, on both routes; spd13 restore then the same command hands both members out, print equal line for line to the same wave with no pins; spd14/spd15/spd15a resume stop keeps the decision, gated mark and every file under the state directory, the same answer then resumes with the pin on the command, a no-pin plan resumes as before; spd16 redispatch; spd17/spd17a which members are asked, a plan with no pins asks and reads nothing; spd21 an open wave asks before stepping; spd18/spd18b the command is built from the pre-check's read (executor and reviewer sessions); spd19 the review-fix reading is asked before the mark; spd20 the second shape. spd9 was changed (a plan with a pin now loads the manifest as often as one without, 1 time: the pre-check's read is the one the command is built from). REPOSITORIES BUILT per new case: spd10 two (one per route, copies of cached templates the existing spd cases already build, one git add and one commit each); spd11-spd13 together four wave repositories (two per route: the pinned wave, whose one repository serves all three cases through two stopped steps and one dispatching step, and a plan-with-no-pins twin for the line-for-line comparison), each _wave_repo copy plus about four git calls, four more commits in the pinned one, and one new template (two tasks) built once per run; spd14-spd21 none (a temp directory, no git). The whole-suite sweep ran twice (6:33 with the first defect, 5:57 after, --jobs 4); the block alone runs 10-35 s here, across the 22 mutation rows. NOT RUN: windows. FLOOR GUARD: the new tests carry `# noqa: BLE001` on two broad excepts (the same spelling _caught already uses in this file); no other suppression. TOOLS FILES: none outside the four named files; the plan gate did not refuse. A defect found by the sweep, not by my cases: review_fix_dispatch already had a local named `held`, so my new parameter of that name was shadowed (pv2, rw0-rw8 went red); renamed `hand`; no case of mine holds the command of a review-fix dispatch being built from the pre-check's read (open item). DEPENDANTS: hooks/drive-without-model.py runs drive-phase.py as a process (auto), unchanged, still correct; _worktrees.py names the restore verb, unchanged; tests/test__worktrees.py ut4/ut5 call resume_writer with its old five arguments (new trailing parameter defaults to no consumption) and ran green; test__filed_returns, test__invariants, test_audit_lookup, test__config (apply_answer's widening row), test__output_lints, test__deps, test_drive_without_model ran green; test_audit_status and test_commit_task_work were not run on their own and are in the orchestrator's gate, which passed; the names used elsewhere (_advance_plan, _attempt_start_moment, _carries, _close_plan) are untouched; README, execute-task.md and COMPATIBILITY.md name decisions and keys whose words and meaning are unchanged (no config key added or read); CHANGELOG's Unreleased heading is as it was.",
+    "descriptive": "A step the drive stops over a pin now leaves the drive's kept state as it found it - a wave marks no member before every member's pin is asked, a later member's stop never drops an earlier member's print, and a resume's answer is consumed only by the hand-out it makes."
+  },
+  "testsAdded": [
+    "tests/test_drive_phase.py: whole-snapshot cases over a step stopped over a pin - one task on the subagent and the session route, a wave with its second and with its first member's pinned skill changed on both routes (kept state equal, plan untouched, member named), a resume (decision, gated mark, every state file equal) - and the allow cases: the same command after restoring the bytes hands both members out line for line as a plan with no pins does, the same --answer resume then resumes with the pin on its command, a no-pin plan resumes as before",
+    "tests/test_drive_phase.py: unit cases for the rest of the rule - which members are asked (and none for a plan with no pins), an open wave asks before it steps, the command is built from the pre-check's read for the executor's and the reviewer's session, the review-fix reading is asked before the mark, the second shape (a stop after a member was printed), and the redispatch answer that is deliberately not held to the snapshot"
+  ],
+  "casesAdded": [
+    [
+      "spd10",
+      "spd11",
+      "spd12",
+      "spd13",
+      "spd14",
+      "spd15",
+      "spd15a",
+      "spd16",
+      "spd17",
+      "spd17a",
+      "spd18",
+      "spd18b",
+      "spd19",
+      "spd20",
+      "spd21"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py:9524 ask_member_pins is the pre-check its docstring describes: called at :9716 before scope_gap/open_wave and at :9559 before the first step_member; resume_writer consumes at :3133-3135 after session_hand (:3121) and the prompt write; dispatch asks session_hand (:2418) and standing_review_fix before its brief and _mark; each docstring says only that ordering, the one sentence about redispatch is held by spd16 (HEAD's behaviour asserted, not a snapshot claim)\n2 mutations.py, 22 rows, every one CAUGHT, restore asserted byte for byte, caches purged: pre-check at open removed -> spd11 red; of an open wave removed -> spd21; first member only -> spd11 spd12 spd13 spd17 spd21 (twin last only -> spd12); owes always -> spd17, never -> spd11 spd12 spd13 spd17 spd21; no-key short cut gone -> spd17a, always -> as never; second shape gone / swallowed / kind left set / raise dropped -> spd20; consumed first -> spd14 spd15 (twin never consumed -> spd15 spd15a); command re-read -> spd18 spd18b spd9 (reviewer only -> spd18b; flags dropped -> spd6 spd15 spd18 spd18b); dispatch pre-check skipped -> spd8 spd10 spd16 spd18 spd18b; review-fix reading after the mark -> spd19 (twin always stops -> spd3 spd4 spd5 spd8 spd9 spd13 spd16 spd18 spd18b); POWER row: open pre-check removed under a snapshot narrowed to the dispatch marks -> spd11 spd12 PASS (not seen), whole snapshot -> spd11 red. Red-first against HEAD's drive-phase.py: 11 of 24 pass, 13 red\n3 grep 'state.pop(\"pending\"|_spend(state, \"gated\"|.pop(task[\"id\"], None)' in drive-phase.py: 15 hits - 3134-3135 mine; 1381 _spend itself; 1559 timing entries; 5268 scope_run_current (a rerun mark, not an answer); 7378 keptTrees retire; 7996/8001 wave trees; 9359 recut_tree's gated drop (a redo answer, its stops are the recut's own, not a hand-out the answer waits on); 9496 a parked decision moved; 9905 the preamble every OTHER answer still takes - left because their effect persists when a later stop comes (retry's start, rerun's mark, redispatch's spent mark: spd16), only a resume's effect lives in its hand-out; 10016 redispatch's mark; 12527 the task-close sweep; 12665 and 12708 a stale decision dropped. The class was also checked in the sweep: it found one defect of mine (a parameter shadowed by a local in review_fix_dispatch)\n4 n/a - no rule addressed to an agent written; the guide and the changelog describe the code for its maintainers\n5 measured twice for the sweep (6:33 and 5:57 wall, --jobs 4, one other session on the machine), the block alone 10-35 s over the 22 probe rows (the higher ones with more cases red); the repository counts above are read off the fixtures; no timing is written in a document; windows cost not measured\n6 the pre-check decides from what the drive itself decides on (_writer_turn's facts: filed return, dispatch mark, ready) and the directory require_pins resolves, never a name or a spelling; spd17's allow half (a member whose executor returned or is out, one done, blocked or matching is not stopped over a changed skill) and spd17a (a plan with no pins asks nothing) are green on the tree and each is red under one of the two rows that break the predicate: OWES_ALWAYS is the over-fire twin and OWES_NEVER the under-fire row; they were not shown green before the predicate was written (the cases were written first and were red because the function did not exist)\n7 no count written into prose by me except the two shapes the design has, named in the same sentences, and a fixture's own two members; the prose-number lint ran green (test__output_lints); re-derive: git diff -U0 | grep -nE '(two|three|[0-9]+) (cases|members|shapes|rows)'",
+  "stamp": "audit-stamp: {\"content\":\"sha256:325038653a6e5fc1adccc6af29865ea48338492769f29ee8452eca578a1c1ef0\",\"dirtyDigest\":\"sha256:a7852420c82f8775945379d328a64a3824a32541ecbb79b595bf590b6cb06277\",\"dirtyPaths\":{\"CHANGELOG.md\":\"2c578da75268cb21\",\"PLUGIN-BUILD-GUIDE.md\":\"d1c528aa5f7c2044\",\"plugins/audit/scripts/governance/drive-phase.py\":\"928d678e6f87f4e6\",\"tests/test_drive_phase.py\":\"fe4d082960b01251\"},\"head\":\"a39bc270\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:1e3f979ee167850c1db705ec81ff9c473ec9fcd1c62db14aa20813ae39cf989c\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 1 of the diff's 4 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 2 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md; 1 file(s) that could hold a move not compared: tests/test_drive_phase.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_drive_phase.py",
+        "move": "definition-changed",
+        "reason": "code outside its test definitions was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 19269 (`check(\"spd9 a session-route dispatch of a plan with no skillPins lo...`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "a39bc2703ae9313d38416c8337c7690725d66272"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-20T12:54:22Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
