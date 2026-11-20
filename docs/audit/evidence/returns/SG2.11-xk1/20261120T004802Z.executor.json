@@ -1,0 +1,72 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_build_shop.py": "pass",
+    "run-test-gate.py docs/audit/audit-plan.json SG2 --task SG2.11-xk1 (unrecorded, the orchestrator's gate)": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "tests.expectRedFirst is false and none is owed: the judgement and the child collection under change live in tests/test_build_shop.py itself, so HEAD with the test file copied over it IS the fix and cannot be red. The reds were watched by putting the old behaviour back in a throwaway copy of the working tree (scratch sg2.11/mutations.py, exit 0, 12 rows): exited-child reading removed -> esc69 FAIL (75/76); judgement per doubling again -> esc66 FAIL (75/76); span narrowed to (200, 400, 800) -> esc67 FAIL (75/76); and HEAD's own per-doubling judgement fed the four windows runs of the wide measurement is red on every one (scratch sg2.11/present.py, worst 4.11x to 8.66x per doubling against 2.83).",
+    "at": "2026-11-20, mutation probe on the final tree"
+  },
+  "outcome": {
+    "technical": "tests/test_build_shop.py. (1) GROWTH OVER THE WHOLE SPAN: span_growth(lengths, secs) (line ~1918) returns time at the longest over time at the shortest and (length ratio in characters) ** TRIPWIRE_POWER; timing_faults judges grew > bound once per run and reports least room (bound/grew); tripwire_runs records each run's input lengths. TRIPWIRE_UNITS = (200, 51200) (was 200, 400, 800), TRIPWIRE_POWER unmoved at 1.5. Derivation written above the constant, from the wide measurement of 2026-11-20 (windows-2025 and ubuntu-24.04, python 3.12/3.14, two runs a job): over 200->51200 units the length ratio is 244-334 by kind, bound 3803-6108, largest time ratio 1978 (kind 2, bound 6108), LEAST ROOM 2.87 (windows python 3.14.10 run 1, processor time, a single quote left unpaired) over every file, run, kind and reading incl. node (node's least 14.9); ending at 25600 units the least room is 1.94 (< 2), so 51200 is the shortest end that holds; a quadratic reads L^2 = 59k-112k, 15.6-18.3x its bound. Two lengths only: the judgement reads the ends, a middle length would be judged by nothing and cost a series per kind and twin. (2) CEILING re-derived: TRIPWIRE_CEILING 0.25 -> 1.0 s. Longest text 1883359 characters (command substitutions + twin) x highest cost per character any reading showed, 142.5 ns (windows python 3.12.10) = 0.27 s idle; the red CI run read its longest at 800 units 2.35x the idle figure (0.0055 vs 0.00234 s, measured once) -> ~0.63 s loaded; 1.0 leaves 1.6 over that. (3) DEADLINES unmoved (TRIPWIRE_DEADLINE 10, TRIPWIRE_SERIES_DEADLINE 8): the new series costs at most 2.19 s a child on the 1/64 s clock at the windows numbers (31.8 s for every kind and twin), against 2.58 s / 40.7 s for the old three lengths (scratch sg2.11/cost.py), so nothing requires a raise. (4) EXITED CHILD: run_timers split into start_timers + collect_timers + child_output; child_output reads a child whose communicate timed out but which has exited (poll() not None) and kills only one still running; one deadline from the common start (each child's own, since they start together). Confirmed on this host that communicate(timeout=0) raises TimeoutExpired for an exited child on posix too. (5) NEW CASES: esc66 windows history (WINDOWS_UNITS 200/400/800/51200, WINDOWS_SECONDS, measured 2026-11-20 windows-2025 python 3.14.10 run 1, processor time) within the bound over the span in every kind (least room 2.87) while per doubling it reads up to 4.16x > 2.83, and the recorded lengths still equal the texts the suite builds; esc67 the same costs driven through _harness.growth_series by a substituted engine on a virtual clock stepping 1/64 s (virtual_series): green, least room 2.86, at most 2.17 s a child, 31.8 s for all, within TRIPWIRE_SERIES_DEADLINE; esc68 a quadratic cost on the same clock with no deadline fails the judgement in every kind; esc69 a slow child (sleeping EXITED_SLOW_SLEEP) and a fast one collected after the deadline: slow killed, fast read with its answer, not killed - no engine needed. esc53/esc55 wording now names the whole-span judgement and least room; the timing pass prints each engine's slowest child read time against TRIPWIRE_DEADLINE. (6) CHANGELOG.md [Unreleased]: the sentence saying the suite times at lengths 'each double the last' against TRIPWIRE_POWER was false after this change; rewritten to the whole-span judgement and the exited-child reading. CHANGELOG.md is outside the task's files; the plan gate allowed the edit. Suite: 72 -> 76 cases. Seconds here (macOS, python 3.14.7, node v24.14.1; a second session loads this machine), pass 1 / pass 2 after a 120 s gap: bare before 23.1/30.0, after 20.6/19.4; under the sweep before 23.0/25.9, after 26.0/40.2; the brief's gate run 78.2 s (busy machine). Mutation probe: 12 rows, all CAUGHT, exit 0 (backtracking rows 127 s and 138 s, red by the 10 s kill in python and node: 11 of 18 runs killed in each, the counted twins match at the start). DEPENDANTS: plugins/audit/evals/bugfix/case.yaml and guard-stop/case.yaml - read by path, unchanged, esc51 green; tests/test__output_lints.py - uses _cases/_selftest/the path, signatures unchanged, prose_number_claims and house_style_violations report nothing in the suite, gate green; CHANGELOG.md - changed, see (6); PLUGIN-BUILD-GUIDE.md - its sentence on the suite names no timing, still correct; tree_bytes (test_audit_task.py), write_hook (tools/reach-diff.py) - untouched. WINDOWS-ONLY LINES: child_output's read of an exited child after TimeoutExpired on windows (esc69 on the runner), the real series at (200, 51200) on windows (esc53 room, ceiling, slowest child read time under the sweep), node v22.23.4's answer at 51200 units for the twins; scratch sg2.11/windows_probe.py prints each.",
+    "descriptive": "The tripwire's growth is judged once from 200 to 51200 units against the length ratio to 1.5, which the windows and linux runners' measured cost steps fit with at least 2.87 of room while a quadratic overshoots 15x, and a child that already exited is read rather than reported killed."
+  },
+  "testsAdded": [
+    "esc66: the windows runner's measured times (history) stay within the bound over the whole span in every kind while per doubling they read as backtracking, and the history still describes the suite's texts",
+    "esc67: the same costs, measured by the timing helper on a substituted clock stepping 1/64 s, stay within the bound and within the series deadline, printing what the series costs a windows runner",
+    "esc68: a cost quadratic in length on the same clock fails the whole-span judgement in every kind",
+    "esc69: a slow child still running at the deadline is killed and reported so, and a fast child that exited before its turn is read, not reported killed"
+  ],
+  "casesAdded": [
+    [
+      "esc66",
+      "esc67",
+      "esc68",
+      "esc69"
+    ]
+  ],
+  "claims": "claims:\n1 tests/test_build_shop.py:1918 span_growth is the whole-span judgement the comment above TRIPWIRE_UNITS (1708-1729) describes; 1946 is the one grew > bound per run; 1868 is the exited-child read child_output's docstring describes; 1876 collect_timers counts one deadline from the common start; virtual_series (1956) does one search per input then growth_series, as _PY_TIMER does; CHANGELOG.md sentence rewritten to what the suite now does\n2 scratch sg2.11/mutations.py, 12 rows on a copy of the final tree, exit 0: exited-child read removed -> esc69 red; never-kill (over-fire twin) -> esc69 red; per doubling -> esc66 red; span narrowed -> esc67 red; power 2.5 -> esc66, esc68 red; ceiling 1 ms -> esc53, esc55 red; series deadline 0 -> esc53, esc67 red; history length changed -> esc66 red; backtracking pattern, real and 1/64 s clock -> esc53-esc56 red; baseline and 1/64 s allow rows 76/76 green\n3 grep for the bare shapes (per doubling, TRIPWIRE_, esc53, esc55, run_timers, killed at the) across the tree: CHANGELOG.md:201 claimed doubling lengths - fixed; docs/audit/evidence and phases/*.json hits are filed history of earlier tasks - left, history; nothing else\n4 n/a - no rule to an agent\n5 suite seconds two passes with a 120 s gap, bare and swept, spread written (after: bare 20.6/19.4, swept 26.0/40.2); the cost per child is from virtual_series on the measured numbers, deterministic; the CI load factor 2.35 is written as measured once\n6 n/a - no guard\n7 every number written in the comments is dated history of the 2026-11-20 measurement or the 2026-11-19 red run, named as such; the room and cost figures the cases print are computed at run time",
+  "stamp": "audit-stamp: {\"content\":\"sha256:777ff3d756ab8824800af0e7753bc86984f59b5c4cf54fa4604925221467ad66\",\"dirtyDigest\":\"sha256:d86a4319124a73eec73c577090cbfab71677ce263d2cd086b208b40afc195720\",\"dirtyPaths\":{\"CHANGELOG.md\":\"e2af658ace881e01\",\"tests/test_build_shop.py\":\"fb53d094009f8eb8\"},\"head\":\"57b95e80\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"tests/test_build_shop.py\"],\"scopeDigest\":\"sha256:2583de9a1b910d9deb65fa2af1ad03e49305983785a45c04d81f3844eaa6642c\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "1 move(s) that lower the bar across 2 file(s) of the diff; 1 file(s) not read that cannot hold a move as read here: CHANGELOG.md; 1 file(s) that could hold a move not compared: tests/test_build_shop.py",
+    "findings": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test_build_shop.py",
+        "line": 1918,
+        "side": "base",
+        "what": "labelled check `%s every kind of long passed-over text, at %r units each double the...` is gone from the tree copy",
+        "part": "gone"
+      }
+    ],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_build_shop.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 1708 (`TRIPWIRE_UNITS = tuple(200 * 2 ** k for k in range(3))`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "57b95e80cabd1bad17cd8853b4651c4f7205323d"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-20T01:39:27Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -1705,15 +1705,41 @@ TRIPWIRE_KINDS = (
     ("a single quote left unpaired", lambda n: "echo '" + "word " * n, False),
 )
 TRIPWIRE_TWIN = " ; git reset --hard HEAD~1"
-TRIPWIRE_UNITS = tuple(200 * 2 ** k for k in range(3))
-# The bounds. A kind fails when its time per match grows by more than
-# 2 ** TRIPWIRE_POWER from one length to the next (a time under TRIPWIRE_FLOOR is
-# read as the floor, below which a timer reads noise), when the longest takes more
-# than TRIPWIRE_CEILING per match, or when its child is still running at
-# TRIPWIRE_DEADLINE - a kill is a failure, never a skip.
+# GROWTH IS JUDGED OVER THE WHOLE SPAN, never per doubling: a kind fails when its time
+# at the longest length over its time at the shortest exceeds the ratio of the two
+# texts' lengths, in characters, to the TRIPWIRE_POWER. A host's cost per character is
+# no constant. Measured 2026-11-20 on windows-2025 and ubuntu-24.04 runners, python
+# 3.12 and 3.14, each kind at 200 to 51200 units doubling, each job twice: a host's
+# cost steps up at most once, at a length of its own, with a plateau either side -
+# windows from about 20-30 to 90-140 ns a character, rising between roughly 7 and 60
+# thousand characters; linux flat near 25 to about 300-500 thousand, then 60-85. A
+# doubling across the step read up to 8.66x on windows and 6.71x on linux with the
+# engine linear, and no stretch of lengths is past the step on every host, so a series
+# of doublings at any lengths can read a host's step as backtracking. Over the whole
+# span the step is one bounded factor. From 200 to 51200 units the length ratio was 244 to 334 by kind and the
+# bound 3803 to 6108; the most a time grew was 1978 (single-quoted arguments, bound
+# 6108), and the least room - bound over growth, in every kind, run and reading,
+# python's and node's - was 2.87 (a single quote left unpaired, windows, python
+# 3.14.10, processor time). Ending at 25600 units the least room was 1.94, under the
+# factor of two this span is held to, so the longest length is no shorter. A
+# quadratic search reads the length ratio squared, 59 to 112 thousand: 15.6 to 18.3
+# times its bound. The judgement reads the ends alone, so the lengths are the ends: a
+# middle one would be judged by nothing and cost a series at the clock's floor per kind
+# and twin. Both are asked for their verdict (esc54, esc56).
+TRIPWIRE_UNITS = (200, 51200)
+# The bounds. TRIPWIRE_POWER is the growth's; a time under TRIPWIRE_FLOOR is read as
+# the floor, below which a timer reads noise. TRIPWIRE_CEILING is the most one search
+# at the longest length may take: the longest text there is command substitutions and
+# the twin, 1883359 characters, and the highest cost per character any reading showed
+# at any length was 142.5 ns (windows, python 3.12.10, measured 2026-11-20) - 0.27 s.
+# The red windows run of 2026-11-19, a sweep on a busy runner, read its longest search
+# at 800 units as 0.0055 s, 2.35 times the most an idle run read there (0.00234 s,
+# measured once): about 0.63 s under such load, and the ceiling has 1.6 over that. A
+# child still running at TRIPWIRE_DEADLINE is killed - a kill is a failure, never a
+# skip.
 TRIPWIRE_POWER = 1.5
 TRIPWIRE_FLOOR = 1e-6
-TRIPWIRE_CEILING = 0.25
+TRIPWIRE_CEILING = 1.0
 TRIPWIRE_DEADLINE = 10.0
 # Node's child times each length once per round, the lengths in turn, for at
 # least min_rounds and until budget seconds are spent, and keeps the least time of
@@ -1732,6 +1758,33 @@ TIMER_JOB = {"min_rounds": 3, "max_rounds": 40, "budget": 0.05}
 TRIPWIRE_MIN_SECONDS = 0.01
 TRIPWIRE_ROUNDS = 3
 TRIPWIRE_SERIES_DEADLINE = 8.0
+
+# The windows runner's own times, as history, for the cases that judge a host's step
+# rather than an engine: measured 2026-11-20 on a windows-2025 runner, python 3.14.10,
+# the first of two runs, processor seconds per search over a batch, at WINDOWS_UNITS -
+# one row per TRIPWIRE_KINDS row, in its order, with the characters its text had at the
+# longest of them. Between 200 and 800 units they hold the step a judgement per
+# doubling read as backtracking, and esc66 holds that they still do.
+WINDOWS_UNITS = (200, 400, 800, 51200)
+WINDOWS_SECONDS = (
+    (1155446, (0.000083, 0.000345, 0.000801, 0.104167)),
+    (409654, (0.000021, 0.000038, 0.000078, 0.018601)),
+    (449746, (0.000030, 0.000073, 0.000178, 0.058036)),
+    (921643, (0.000084, 0.000227, 0.000751, 0.075000)),
+    (1883333, (0.000220, 0.000861, 0.002244, 0.187500)),
+    (1012938, (0.000081, 0.000228, 0.000803, 0.093750)),
+    (603331, (0.000042, 0.000104, 0.000228, 0.062500)),
+    (256051, (0.000024, 0.000055, 0.000121, 0.029018)),
+    (256050, (0.000021, 0.000052, 0.000110, 0.027902)),
+)
+# A substituted engine's clock, stepping as windows' process-time clock does. A read
+# costs it CLOCK_READ seconds, so reading it until it steps advances it, as reading a
+# process-time clock does.
+COARSE_STEP = 1.0 / 64
+CLOCK_READ = 1e-6
+# How long esc69's slow child runs: past any reading of it, so it is still running
+# when read, and short enough that a collector which never kills waits it out.
+EXITED_SLOW_SLEEP = 20.0
 
 # The timing children. Each reads a job file - the pattern, the inputs, the
 # rounds - and prints one JSON line; one that prints nothing answered nothing.
@@ -1794,32 +1847,58 @@ def timer_answer(out):
     return data if shaped else None
 
 
-def run_timers(engines, job_path):
-    """Every engine's child on one job, started together, each killed when it is
-    still running TRIPWIRE_DEADLINE seconds after the start: `{engine: result}`."""
-    procs = [(name, subprocess.Popen(argv + [job_path], stdin=subprocess.DEVNULL,
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE))
-             for name, argv in engines]
-    started = time.monotonic()
+def start_timers(engines, job_path):
+    """`[(engine, process)]`: every engine's child on one job, started together."""
+    return [(name, subprocess.Popen(argv + [job_path], stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+            for name, argv in engines]
+
+
+def child_output(proc, left):
+    """`(out, err, killed)` of one child given `left` seconds more. Only a child
+    still running when they are spent is killed: one that has exited is read
+    whatever time is left, since `communicate` with no time left raises for a
+    child that finished - on windows and posix alike - and that is a reading
+    cut short, not a child that overran."""
+    try:
+        out, err = proc.communicate(timeout=left)
+        return out, err, False
+    except subprocess.TimeoutExpired:
+        pass
+    if proc.poll() is not None:
+        out, err = proc.communicate()
+        return out, err, False
+    proc.kill()
+    out, err = proc.communicate()
+    return out, err, True
+
+
+def collect_timers(procs, started, deadline=TRIPWIRE_DEADLINE):
+    """`{engine: result}` of children started together at `started`. One
+    deadline counts from that start for all of them - each child's own, since
+    they began at once - and a child that exited before its turn is read, so a
+    slow child read first cannot spend a later one's time."""
     results = {}
     for name, proc in procs:
-        left = max(0.0, TRIPWIRE_DEADLINE - (time.monotonic() - started))
-        try:
-            out, err = proc.communicate(timeout=left)
-            killed = False
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            out, err = proc.communicate()
-            killed = True
+        out, err, killed = child_output(
+            proc, max(0.0, deadline - (time.monotonic() - started)))
         results[name] = {"killed": killed, "code": proc.returncode,
+                         "read": time.monotonic() - started,
                          "err": err.decode("utf-8", "replace"),
                          "data": None if killed else timer_answer(out)}
     return results
 
 
+def run_timers(engines, job_path):
+    """Every engine's child on one job, started together, each killed when it is
+    still running TRIPWIRE_DEADLINE seconds after the start: `{engine: result}`."""
+    procs = start_timers(engines, job_path)
+    return collect_timers(procs, time.monotonic())
+
+
 def tripwire_runs(pattern, engines, root):
-    """`[(name, counted, {engine: result})]`: each kind and its twin, every length
-    of it timed in each engine's child."""
+    """`[(name, counted, lengths, {engine: result})]`: each kind and its twin, every
+    length of it timed in each engine's child, with its texts' lengths."""
     where = tempfile.mkdtemp(prefix="tripwire-", dir=root)
     job_path = os.path.join(where, "job.json")
     runs = []
@@ -1827,19 +1906,28 @@ def tripwire_runs(pattern, engines, root):
         for name, suffix, counted in ((label, "", False),
                                       (label + ", then a destructive call",
                                        TRIPWIRE_TWIN, twin_counted)):
-            job = dict(TIMER_JOB, pattern=pattern,
-                       inputs=[tool_input(make(n) + suffix) for n in TRIPWIRE_UNITS],
-                       **PY_TIMER_JOB)
+            inputs = [tool_input(make(n) + suffix) for n in TRIPWIRE_UNITS]
+            job = dict(TIMER_JOB, pattern=pattern, inputs=inputs, **PY_TIMER_JOB)
             with open(job_path, "w", encoding="utf-8") as fh:
                 json.dump(job, fh)
-            runs.append((name, counted, run_timers(engines, job_path)))
+            runs.append((name, counted, [len(text) for text in inputs],
+                         run_timers(engines, job_path)))
     return runs
 
 
+def span_growth(lengths, secs):
+    """`(grew, bound)`: the time at the last length over the time at the first - a
+    time under TRIPWIRE_FLOOR read as the floor - and the most it may be, the ratio
+    of the two lengths to the TRIPWIRE_POWER. The lengths between are not read."""
+    grew = secs[-1] / max(secs[0], TRIPWIRE_FLOOR)
+    return grew, (float(lengths[-1]) / lengths[0]) ** TRIPWIRE_POWER
+
+
 def timing_faults(runs, engine):
-    """`(faults, worst growth, longest seconds)` of one engine over every run."""
-    faults, worst, longest = [], 0.0, 0.0
-    for name, _counted, results in runs:
+    """`(faults, least room, longest seconds)` of one engine over every run; the
+    room is the bound over the growth, None when no run was judged."""
+    faults, least, longest = [], None, 0.0
+    for name, _counted, lengths, results in runs:
         got = results[engine]
         if got["killed"]:
             faults.append("%s: killed at the %gs deadline" % (name, TRIPWIRE_DEADLINE))
@@ -1852,22 +1940,48 @@ def timing_faults(runs, engine):
             faults.append("%s: could not be measured: %s" % (name, got["data"]["fault"]))
             continue
         secs = got["data"]["seconds"]
-        growth = [b / max(a, TRIPWIRE_FLOOR) for a, b in zip(secs, secs[1:])]
-        worst, longest = max([worst] + growth), max(longest, secs[-1])
-        if max(growth) > 2 ** TRIPWIRE_POWER:
+        grew, bound = span_growth(lengths, secs)
+        least = bound / grew if least is None else min(least, bound / grew)
+        longest = max(longest, secs[-1])
+        if grew > bound:
             reps = got["data"].get("repeats")
-            faults.append("%s: grew %s per doubling%s" % (
-                name, ", ".join("%.2fx" % g for g in growth),
+            faults.append("%s: grew %.1fx from %d to %d characters, bound %.0fx%s" % (
+                name, grew, lengths[0], lengths[-1], bound,
                 "" if reps is None else ", over %r searches a length" % (reps,)))
         if secs[-1] > TRIPWIRE_CEILING:
             faults.append("%s: %.3fs at the longest" % (name, secs[-1]))
-    return faults, worst, longest
+    return faults, least, longest
+
+
+def virtual_series(costs, deadline=TRIPWIRE_SERIES_DEADLINE):
+    """`(series, seconds)`: what the python child does - one search of each input,
+    then `_harness.growth_series` with the suite's floor, rounds and `deadline` -
+    for a substituted engine whose search of input i costs `costs[i]` seconds of a
+    virtual time read on a clock stepping COARSE_STEP; and the virtual seconds it
+    all took, which is what the child spends on a host whose processor clock steps
+    that far, before its interpreter's start."""
+    now = [0.0]
+
+    def search(index):
+        now[0] += costs[index]
+
+    def clock():
+        now[0] += CLOCK_READ
+        return (now[0] // COARSE_STEP) * COARSE_STEP
+
+    for index in range(len(costs)):
+        search(index)
+    got = _harness.growth_series(search, list(range(len(costs))), clock=clock,
+                                 clock_name=None, min_seconds=TRIPWIRE_MIN_SECONDS,
+                                 rounds=TRIPWIRE_ROUNDS, deadline=deadline,
+                                 wall=lambda: now[0])
+    return got, now[0]
 
 
 def verdict_faults(runs, engine):
     """The runs whose answers at any length are not what the tripwire owes."""
     wrong = []
-    for name, counted, results in runs:
+    for name, counted, _lengths, results in runs:
         data = results[engine]["data"]
         if data is None:
             wrong.append("%s: no answer" % (name,))
@@ -1876,7 +1990,114 @@ def verdict_faults(runs, engine):
     return wrong
 
 
+def windows_rows():
+    """`[(label, lengths at WINDOWS_UNITS, recorded length, seconds)]`: the history
+    beside the texts the suite builds now, so a kind whose text changed is seen."""
+    return [(label, [len(tool_input(make(n))) for n in WINDOWS_UNITS], chars, secs)
+            for (label, make, _twin), (chars, secs) in zip(TRIPWIRE_KINDS,
+                                                           WINDOWS_SECONDS)]
+
+
+def _span_judgement_cases(check):
+    """The judgement fed the windows runner's own times, and a backtracking cost,
+    with no engine: what it must pass and what it must fail."""
+    rows = windows_rows()
+    stale = [label for label, lengths, chars, _secs in rows if lengths[-1] != chars]
+    judged = [(label, span_growth(lengths, secs)) for label, lengths, _c, secs in rows]
+    over = ["%s: grew %.0fx, bound %.0fx" % (label, grew, bound)
+            for label, (grew, bound) in judged if grew > bound]
+    doubled = [max(b / a for a, b in zip(secs[:3], secs[1:3]))
+               for _l, _n, _c, secs in rows]
+    least = min(bound / grew for _label, (grew, bound) in judged)
+    check("esc66 the windows runner's measured times at %r units, a cost per character "
+          "that steps up between them, stay within the bound over the whole span in "
+          "every kind (least room %.2f), while per doubling they read up to %.2fx "
+          "against 2 ** TRIPWIRE_POWER - the step a judgement per doubling reads as "
+          "backtracking; over the bound %r, history no longer the suite's text %r"
+          % (WINDOWS_UNITS, least, max(doubled), over, stale),
+          len(rows) == len(TRIPWIRE_KINDS) and not stale and not over
+          and max(doubled) > 2 ** TRIPWIRE_POWER)
+
+    at = [WINDOWS_UNITS.index(n) for n in TRIPWIRE_UNITS if n in WINDOWS_UNITS]
+    if len(at) != len(TRIPWIRE_UNITS):
+        check("esc67 every length of TRIPWIRE_UNITS %r has a windows time in "
+              "WINDOWS_UNITS %r" % (TRIPWIRE_UNITS, WINDOWS_UNITS), False)
+        return
+    kept, spent, coarse = [], [], []
+    for label, lengths, _chars, secs in rows:
+        got, took = virtual_series([secs[i] for i in at])
+        spent.append(took)
+        if got["fault"] is not None or len(got["seconds"]) != len(at):
+            kept.append("%s: %s" % (label, got["fault"]))
+            continue
+        grew, bound = span_growth([lengths[i] for i in at], got["seconds"])
+        coarse.append(bound / grew)
+        if grew > bound:
+            kept.append("%s: grew %.0fx, bound %.0fx" % (label, grew, bound))
+    check("esc67 ...and measured by the timing helper on a clock stepping 1/64 s, "
+          "the python child's series at %r units of each kind stays within the bound "
+          "(least room %s) and takes at most %.2fs of that clock's time, within "
+          "TRIPWIRE_SERIES_DEADLINE - %.1fs for every kind and its twin, what the "
+          "series costs an idle windows runner; %r"
+          % (TRIPWIRE_UNITS, "%.2f" % min(coarse) if coarse else "none", max(spent),
+             2 * sum(spent), kept),
+          not kept and len(coarse) == len(rows)
+          and max(spent) < TRIPWIRE_SERIES_DEADLINE)
+
+    caught = []
+    for label, lengths, _chars, secs in rows:
+        ends = [lengths[i] for i in at]
+        square = [secs[at[0]] * (n / float(ends[0])) ** 2 for n in ends]
+        got, _took = virtual_series(square, deadline=float("inf"))
+        if got["fault"] is not None or len(got["seconds"]) != len(at):
+            caught.append("%s: not measured: %s" % (label, got["fault"]))
+            continue
+        grew, bound = span_growth(ends, got["seconds"])
+        if grew <= bound:
+            caught.append("%s: grew %.0fx, bound %.0fx" % (label, grew, bound))
+    check("esc68 a search whose cost is quadratic in its length - the slowest a "
+          "backtracking pattern grows - fails the judgement over the span in every "
+          "kind, measured on the same clock with no deadline to fail it first; "
+          "passed or unmeasured %r" % (caught,), not caught)
+
+
+def _exited_child_case(check):
+    """A slow child read first must not spend a later child's time: the slow one
+    is still running at the deadline and is killed, the fast one has exited and
+    is read. The deadline is already spent when the reading starts, which is
+    the windows red run's shape, so the case asks no engine and no clock."""
+    answer = json.dumps({"seconds": [0.0] * len(TRIPWIRE_UNITS),
+                         "matched": [False] * len(TRIPWIRE_UNITS)})
+    slow = [sys.executable, "-I", "-S", "-c",
+            "import time\ntime.sleep(%r)" % (EXITED_SLOW_SLEEP,)]
+    fast = [sys.executable, "-I", "-S", "-c", "print(%r)" % (answer,)]
+    procs = start_timers([("slow", slow), ("fast", fast)], os.devnull)
+    fast_proc = procs[1][1]
+    try:
+        waited = time.monotonic()
+        while fast_proc.poll() is None and time.monotonic() - waited < BUILD_TIMEOUT:
+            time.sleep(0.01)
+        exited = fast_proc.poll() is not None
+        got = collect_timers(procs, time.monotonic(), deadline=0.0)
+    finally:
+        for _name, proc in procs:
+            if proc.poll() is None:
+                proc.kill()
+                proc.communicate()
+    check("esc69 children read after their shared deadline has passed: the slow "
+          "one, still running, is killed and reported so (killed %r), and the fast "
+          "one, which exited before its turn, is read with its answer, never "
+          "reported killed (killed %r, answer %r, exited before the reading %r)"
+          % (got["slow"]["killed"], got["fast"]["killed"],
+             got["fast"]["data"] is not None, exited),
+          exited and got["slow"]["killed"] and got["slow"]["data"] is None
+          and not got["fast"]["killed"] and got["fast"]["data"] is not None
+          and got["fast"]["code"] == 0)
+
+
 def _tripwire_cases(check, root):
+    _span_judgement_cases(check)
+    _exited_child_case(check)
     pattern = grader_field(case_text("guard-stop"), "no-destructive-git",
                            "input_match")
     unused, unknown = tripwire_part_faults(TRIPWIRE_PARTS)
@@ -1901,12 +2122,15 @@ def _tripwire_cases(check, root):
     if node is not None:
         engines.append(("node", [node, "-e", _JS_TIMER]))
     runs = tripwire_runs(pattern, engines, root)
-    said = sorted(set(r[2][name]["data"]["engine"] for r in runs
-                      for name, _argv in engines if r[2][name]["data"]))
-    print("tripwire timing engines: %s%s" % (
-        ", ".join(said) or "none answered",
-        "" if node else " - node is not on PATH, so its half (esc55, esc56) did "
-        "not run here"))
+    said = sorted(set(r[3][name]["data"]["engine"] for r in runs
+                      for name, _argv in engines if r[3][name]["data"]))
+    print("tripwire timing engines: %s%s; each engine's slowest child was read this "
+          "long after its start, against TRIPWIRE_DEADLINE: %s" % (
+              ", ".join(said) or "none answered",
+              "" if node else " - node is not on PATH, so its half (esc55, esc56) "
+              "did not run here",
+              ", ".join("%s %.2fs" % (name, max(r[3][name]["read"] for r in runs))
+                        for name, _argv in engines)))
     for engine, time_id, verdict_id in (("python", "esc53", "esc54"),
                                         ("node", "esc55", "esc56")):
         if engine == "node" and node is None:
@@ -1914,12 +2138,15 @@ def _tripwire_cases(check, root):
                 _harness.skip(check, label, "node is not on PATH, so the pattern "
                               "was not run as a JavaScript regex", True)
             continue
-        slow, worst, longest = timing_faults(runs, engine)
-        check("%s every kind of long passed-over text, at %r units each double "
-              "the last, is answered in %s's regex engine: no child killed at "
-              "TRIPWIRE_DEADLINE, growth per doubling within 2 ** TRIPWIRE_POWER "
-              "(worst %.2fx), the longest within TRIPWIRE_CEILING (%.4fs); %r"
-              % (time_id, TRIPWIRE_UNITS, engine, worst, longest, slow), not slow)
+        slow, least, longest = timing_faults(runs, engine)
+        check("%s every kind of long passed-over text, at %r units, is answered in "
+              "%s's regex engine: no child killed at TRIPWIRE_DEADLINE, the growth "
+              "from the shortest to the longest within the ratio of their lengths "
+              "to the TRIPWIRE_POWER (least room %s), the longest within "
+              "TRIPWIRE_CEILING (%.4fs); %r"
+              % (time_id, TRIPWIRE_UNITS, engine,
+                 "none judged" if least is None else "%.2f" % least, longest, slow),
+              not slow and least is not None)
         wrong = verdict_faults(runs, engine)
         check("%s ...and in %s every long harmless command answers no match and "
               "every one ending in a destructive call answers a match, at every "

@@ -51,9 +51,37 @@
         "file": "tests/test_build_shop.py:1085-1088,1171-1176",
         "issue": "check_reached() reads as not reached any exit 2 whose stderr has build-shop: git init|add|commit failed, whatever git own words were, and the skip goes through _harness.skip(..., True): the absent argument is the constant True, so the helper failure direction (skipped where the mechanism exists) can never fire. On a host where a patched builder fails at a git step for an unrelated reason, esc57 prints SKIPPED HERE and passes; only esc47 weaker conditions and esc58 (check held without GIT_DIR) remain. The words are printed in the label, so it is findable, but nothing requires them to be the work-tree refusal.",
         "resolution": "Optional: have the esc57 skip branch also require git own words to name a work tree or GIT_DIR (a constant next to WINDOWS_WORDS), so an unrelated git failure fails esc57 instead of skipping it; or pass a computed absent argument that is not constant True."
+      },
+      {
+        "id": "SG2-R5",
+        "severity": "med",
+        "file": "tests/test_build_shop.py:1943-1951",
+        "issue": "The wiring from the whole-span judgement to a fault - `if grew > bound: faults.append(...)` in timing_faults - is held by no case that can go red without it. esc66, esc67 and esc68 call span_growth directly (lines 2006, 2033, 2055) and never timing_faults; its only caller is the real-engine pass at 2141, which is green for linear texts with or without that branch. The backtracking mutation rows go red by `killed at the 10s deadline`, not by `grew ... bound`, and no row mutates that branch. By reading, deleting the `if grew > bound` block leaves 76/76 green: the growth judgement is exercised as a pure function but not as the gate (the wiring of the ceiling is held - the 1 ms row reddens esc53 and esc55 - the wiring of the growth fault is not). It is the only real-engine path for a polynomial cost between the power of the bound and the ceiling: an exponent from 1.5 to about 1.9 whose time at 51200 units stays under 1.0 s (kinds 1, 7, 8 read about 0.26 s at n**1.7 on windows numbers), which neither the ceiling nor the deadline catches.",
+        "resolution": "Add a case that feeds timing_faults hand-built `runs` (name, counted, lengths, a mapping from engine to result): one with the lengths and times of the windows history (expect no fault, least room 2.87) and one with the same lengths and a quadratic series (expect a `grew ... bound` fault and least under 1); add a mutation row that removes the `if grew > bound:` block and expects that case red."
+      },
+      {
+        "id": "SG2-R6",
+        "severity": "low",
+        "file": "tests/test_build_shop.py:2006-2012,2051-2058",
+        "issue": "TRIPWIRE_POWER is held only inside a window by the new cases: esc66 needs the windows history to pass (power at least about 1.3) and a per-doubling read above 2 ** power (4.16 > 2 ** power, so power under about 2.06); the quadratic of esc68 is caught while the length ratio to the power stays under 59 thousand (power under about 1.97). A power of 1.9 survives every case by reading, though the task keeps the power unmoved. The mutation row raises it to 2.5 only.",
+        "resolution": "Give esc68 a second cost, a power law at 1.75 anchored the same way, so a power raised past it goes red."
+      },
+      {
+        "id": "SG2-R7",
+        "severity": "low",
+        "file": "tests/test_build_shop.py:1708-1740",
+        "issue": "The load headroom of the ceiling and the room are argued from figures the evidence does not fully carry. (a) `about 0.63 s under such load` scales the 800-unit busy/idle ratio 2.35 from the 2026-11-19 CI log (not handed to me, not read) onto the 51200-unit search, while S/diag4/diag_windows_2025.txt:159,215,255 measure that search idle and loaded directly: 0.1875 s, 0.2031 s and 0.2656 s (1.42x). (b) The comment gives 2.87 as the least room; the suite run of its own on the windows runner read 2.83 (S/diag4/diag_windows_2025.txt:378, esc53), so readings span 2.83 to 3.66 and the margin to the factor of two is narrower than the comment reads. (c) `the longest text there is ... 1883359 characters` is a present-tense count with no command beside it; the stale check of esc66 guards the 1883333 of the history row, not the 26 characters of the twin added to it.",
+        "resolution": "Write the measured loaded figure beside or instead of the extrapolated 2.35, add the 2.83 reading to the room sentence as history, and carry the expression that prints the length of the longest text, or drop the figure."
+      },
+      {
+        "id": "SG2-R8",
+        "severity": "low",
+        "file": "tests/test_build_shop.py:1731-1740,2141-2149",
+        "issue": "One TRIPWIRE_CEILING serves both engines. Node longest search reads 0.005 to 0.009 s on the windows runner (diag4:158,214,254), so 1.0 s is 100 to 200 times its idle figure and catches for node nothing the deadline and the growth judgement (room about 15) do not; for python it catches only a search of about 1 to 2 s (past that, four searches exceed the 8 s series deadline first), a guard 5x over the idle 0.19-0.27 s.",
+        "resolution": "Derive a ceiling per engine (for node from its own loaded 0.0093 s), or say in the comment that the ceiling is python and node is held by growth and the deadline."
       }
     ],
-    "outcome": "[findings: 4 - 0 high, 1 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 8 - 0 high, 2 med, 6 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -208,6 +236,10 @@
         {
           "at": "2026-11-20T00:47:00Z",
           "text": "28. tests/test_build_shop.py on windows depends on WHICH sh the host resolves. Measured 2026-11-20 on a windows-2025 runner, same tree: steps run from PowerShell resolve sh to Git's bin/sh.exe, a launcher that puts Git's own directories ahead of PATH, so a case that hides git (esc18a, esc18b) or substitutes one (esc63, esc65) meets the real git - four reds; steps run from bash resolve usr/bin/sh.exe and all four pass. CI runs from bash, so no leg is red; a developer running the suite from PowerShell is. Rule: the suite picks the sh that honours the PATH it is handed, or says which sh it found when a hidden tool is still found. 29. CHANGELOG.md's earlier Added entry on the eval builder says the redirecting names 'are unset before the first git call'; since the builder now asks git for the names first (a read), the clause wants 'before the first git call that can write'."
+        },
+        {
+          "at": "2026-11-20T00:48:00Z",
+          "text": "30. plugins/audit/evals/build-shop.sh: the check before git init walks the list the block above it computed. If that whole block were lost the list would be empty and the check would ask nothing (the suite still goes red - esc45, esc46 - but the script itself would not refuse). One line: refuse at the check when the list is empty."
         }
       ]
     },
@@ -875,7 +907,7 @@
     {
       "id": "SG2.10-xk1",
       "title": "The eval builder refuses before its first git call when git is redirected to another repository, so a build that lost its unset writes nothing there on any host",
-      "status": "in_progress",
+      "status": "done",
       "description": "plugins/audit/evals/build-shop.sh builds an eval fixture as a repository of its own. Its header states the hazard: git exports GIT_DIR to a hook, so a build started from one would re-initialise and commit into the repository that name points at. Its defence is one line that unsets seven names before the first git call, and a check at the END of the build (`built()`) that refuses, exit 3, a build whose repository is not the workspace's own.\n\nWHAT WAS MEASURED (2026-11-19 and -20; the orchestrator's prompt names the files). A copy of the builder with the unset line patched out, run with GIT_DIR naming another repository:\n- macOS, git 2.53: the build adds and commits INTO THE OTHER REPOSITORY, and only then does the end check refuse with exit 3. The check detects; it does not prevent.\n- windows runner, git 2.56.1.windows.1, GIT_DIR spelled as the host spells it (backslashes): the builder's `git init` REWRITES THE OTHER REPOSITORY'S CONFIG - `bare = false` becomes `bare = true` - and the next step fails with 'fatal: this operation must be run in a work tree', exit 2. The end check is never reached, and the other repository is left bare. With the same path spelled with forward slashes the init changes nothing and the add writes that repository's index and an object, as on macOS.\nSo on every host measured the second line of defence acts after the damage. The owner was asked and decided: the check moves ahead of the first write.\n\nTHE RULE TO BUILD.\n1. BEFORE ITS FIRST GIT CALL THAT CAN WRITE - which is `git init`, not the first add - the builder asks whether the git it is about to run is redirected away from the workspace, and refuses with NOTHING WRITTEN ANYWHERE when it is. The question is asked independently of the unset line, so that line being lost, shortened or reordered is what the check catches.\n2. WHICH NAMES REDIRECT GIT IS GIT'S ANSWER, NOT A LIST IN THE SCRIPT WHERE THAT CAN BE HAD: `git rev-parse --local-env-vars` prints the names git treats as repository-local. Decide, and say why in the header, between asking git for the names and keeping a written list - and note what that changes for the unset line itself, which today names seven and git's list is longer. ONE CONSTRAINT ON THAT: the suites run the builder with the sweep's own `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` pairs in the environment (they turn git's detached housekeeping off - CLAUDE.md, Tests), and `GIT_CONFIG_PARAMETERS` and `GIT_CONFIG_COUNT` are on git's list; a name that configures git without redirecting it to another repository must not be refused and must not be unset. State the rule that tells the two kinds apart rather than listing exceptions.\n3. THE EXIT AND THE WORDS follow the header's own table, which stays true after the change: say which exit a refusal with nothing written is, and keep 'does not hold its own repository' for the end check, which stays as the last line of defence for what the early one cannot see (a repository that is not the workspace's for another reason - the suite's esc58 drives one).\n4. tests/test_build_shop.py then asserts what the task before this one could not: for a builder that lost its unset, on every host, NOT exit 0 AND THE OTHER REPOSITORY BYTE FOR BYTE AND REF FOR REF WHAT IT WAS - unconditionally, with no 'unless the check refused' - and that the workspace was not written either. The cases added by the task before (esc47, esc57, esc58, esc59) are kept, tightened or folded as that requires; none is deleted without its assertion living on in another, and the return says where each went. The 'not reached on this host' line goes if no host can print it any more; say so.\n5. THE PATH SPELLING IS A CASE, not a footnote: GIT_DIR spelled with backslashes and with forward slashes are both driven where the host has both spellings, and where it has one the case says which ran. The substituted git of esc59 stays as the way a refusing git is driven on a host that has none.\n6. The shipped builder still builds both scenarios byte for byte as before when nothing redirects git: the committed ledgers and example fixtures derived from it do not change (`python3 tools/sweep-selftests.py tests/test_build_shop.py`, and the scaffolds' own cases).\n\nALLOW CASES, as explicit as the refusal: a clean environment; a workspace nested inside another checkout (git would discover the parent - the build makes its own repository and that is right); the sweep's GIT_CONFIG_* pairs present; `GIT_CEILING_DIRECTORIES` or another name that is not repository-local.\n\nHOW TO PROVE. Red first on the present builder: the new unconditional assertion fails on this host (the other repository's index and objects change). Green after. A mutation probe the orchestrator can run from the worktree root (a copy of the working tree, each mutation asserted applied, never `git archive HEAD`): the early check removed (the unconditional assertion goes red); the early check moved after `git init`; the early check asked through a wrapper that unset the names first (it can then never fire - the case that drives a lost unset goes red); the allow rows above each kept green under a check widened to refuse any GIT_ name. Say which lines only a windows run can confirm - the config rewrite cannot be reproduced here; describe how the case would catch it there.\n\nNOT in this task: the timing cases of the same suite (esc53, esc55 - another task, next); the scaffolds' content.\n\nAcceptance:\n(1) A builder that lost its unset, run with git redirected to another repository, exits non-zero and leaves that repository and the workspace unwritten, on every host and for either path spelling, asserted unconditionally.\n(2) The check sits before the first git call that can write and does not depend on the unset line.\n(3) A clean environment, a nested workspace, the sweep's git config pairs and a non-repository GIT_ name all build as before.\n(4) The header's exit table and its paragraph on the workspace's own repository say what the script now does.",
       "files": [
         "plugins/audit/evals/build-shop.sh",
@@ -901,14 +933,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "57b95e80cabd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/evals/build-shop.sh: the written seven-name unset line is gone. After the tool and empty-workspace checks the builder asks `git rev-parse --local-env-vars` (answered before git looks for a repository: measured with GIT_DIR naming a missing path), splits it with globbing off, refuses a word that is not a plain name, keeps the two names git itself hands on to another repository (GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT - measured with `git submodule foreach` on git 2.53, which cleared GIT_CONFIG, GIT_GRAFT_FILE, GIT_PREFIX, GIT_NO_REPLACE_OBJECTS and carried those two and GIT_NAMESPACE), refuses exit 2 when git's answer holds no GIT_DIR, and unsets the rest. Directly before `git init` a shell loop reads the environment again (`${name+set}`, set counts, empty or not: an empty GIT_DIR made git 2.53 say 'not a git repository' and 'The empty string is not a valid path', an empty GIT_INDEX_FILE made it write a `.lock`) and refuses with exit 2 ('<NAME> is set, which points git away from this workspace; ... nothing was written'). The header's repository paragraph and exit table are rewritten (exit 2 lists the new refusals under 'refused with nothing written', with the reason it is 2 and not 3); the end check built() is unchanged. GIT_NAMESPACE is no longer cleared: not on git's list, and a build with it set made the same refs and tree (measured). tests/test_build_shop.py: REDIRECT_KEPT is a pattern matching either form of the clearing line; make_box takes a pattern anchor; victim_state adds for-each-ref and reads status with --no-optional-locks; tree_bytes hashes the other repository byte for byte; redirected_build/unwritten_faults/early_refusal_faults replace kept_gitdir_build/kept_gitdir_faults/check_reached/GIT_STOPPED/REFUSING_GIT. Cases: esc47 rewritten (unconditional: not exit 0, other repository bytes+refs unchanged, workspace empty, nothing outside; every GIT_DIR spelling the host has, the label says which ran); esc57 rewritten (the early check refused: exit 2, its line naming GIT_DIR, never the end check's words); esc59 rewritten (a substitute git that turns the other repository bare at init, proved doing it first, as the windows runner's did; holds that the check precedes init); esc48 rewritten (measures on the host's git which listed names git carries into a submodule, equal to CONFIG_CARRIED); esc46 widened to every name git lists less configuration; new esc60 (other names, no GIT_DIR), esc61 (empty GIT_DIR), esc62 (nested workspace, allow), esc63 (config pairs handed to every git call, allow), esc64 (GIT_CEILING_DIRECTORIES, GIT_NAMESPACE, GIT_TERMINAL_PROMPT, allow), esc65 (git answering no names is refused). esc58 kept. The 'not reached on this host' line and check_reached() are gone - no host can print it, since the refusal now reads the environment before any git write; the reviewer's low on check_reached() and the constant skip argument goes with them. Counts: 66 -> 72 cases; bare 14 s -> 19 s and 16 s; under the sweep 13.5 s -> 19.1 s and 17.6 s. Fixtures: both scenarios build the same commits, tree and files as the pre-change builder with nothing set (compared by a scratch script). Also green with dash as sh. CHANGELOG.md: one Fixed entry under [Unreleased]. PLUGIN-BUILD-GUIDE.md not edited: its tree line and evals paragraph say nothing the change makes false. Dependants: bugfix/case.yaml, guard-stop/case.yaml, both scaffold.sh - still correct, they name the builder by path and source it unchanged (scaffold cases esc1-esc15 green); tests/test__output_lints.py - still correct, it reads only the file names (gate green); CHANGELOG.md - the earlier Added entry's clause 'unset before the first git call' is now loose (a read-only rev-parse comes first) and was NOT edited, to keep to one entry; PLUGIN-BUILD-GUIDE.md - still correct. Mutation probe: 16 rows, all caught, baseline 72/72.",
+        "descriptive": "The eval builder now refuses, with nothing written anywhere, before its first git write when git is pointed at another repository, by git's own list of names; the suite asserts that on every host and both path spellings."
       },
       "startedAt": "2026-11-20T00:07:09Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-20T00:47:31Z",
+      "verifiedBy": [
+        "esc47/esc57 rewritten: a builder that lost its clearing line, GIT_DIR naming another repository in every spelling the host has, exits 2 by the early check with the other repository byte for byte and ref for ref unchanged and the workspace empty",
+        "esc59 rewritten: under a git that turns the other repository bare at init (as the windows runner's did), the check precedes init",
+        "esc60 other repository-local names, esc61 empty GIT_DIR, esc65 git naming no names: refused, nothing written",
+        "esc62 nested workspace, esc63 git configuration pairs handed to every git call, esc64 names off git's list: build as before",
+        "esc48 measures which names git carries into another repository; esc46 drives every name git lists"
+      ],
       "notes": [
         {
           "at": "2026-11-19T23:35:21Z",
@@ -956,7 +994,40 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-20T00:35:55Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1724000,
+            "startedAt": "2026-11-20T00:07:11Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-20T00:45:31Z.bd6b51",
+            "kind": "wait",
+            "ms": 7000,
+            "startedAt": "2026-11-20T00:37:09Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-20T00:45:31Z.bd6b51, ending at its startedAt",
+            "kind": "selection",
+            "ms": 16986,
+            "runId": "2026-11-20T00:45:31Z.bd6b51",
+            "startedAt": "2026-11-20T00:37:16Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-20T00:45:31Z.bd6b51",
+            "kind": "gate",
+            "ms": 477857,
+            "runId": "2026-11-20T00:45:31Z.bd6b51",
+            "startedAt": "2026-11-20T00:37:33Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 57b95e80cabd",
+            "kind": "commit",
+            "ms": 2589,
+            "startedAt": "2026-11-20T00:47:27Z"
+          }
+        ],
         "firstStartedAt": "2026-11-20T00:07:09Z"
       },
       "reviewPerTask": "signals",
@@ -964,15 +1035,28 @@
         "runId": "2026-11-20T00:47:26Z.9d270c",
         "status": "passed",
         "at": "2026-11-20T00:47:26Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "57b95e80cabd",
+        "at": "2026-11-20T00:47:31Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-20T00:35:53Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_build_shop.py` in a throwaway tree at HEAD exited 1 with 6 of 72 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - esc47 (house FAIL), esc57 (house FAIL), esc60 (house FAIL), esc61 (house FAIL), esc59 (house FAIL), esc65 (house FAIL): SELFTEST FAILED: 66/72 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "SG2.11-xk1",
       "title": "The tripwire's growth is judged over a span of lengths wide enough that a host's change in per-character cost cannot read as backtracking, and a child that finished is never reported killed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "tests/test_build_shop.py esc53 was red on the windows runner in three CI runs out of three, before and after the timing helper of an earlier task (worst growth per doubling 5.38x, 5.68x, 5.98x against the 2 ** TRIPWIRE_POWER it allows), and green on linux and macOS every time. An earlier task read that as clock noise. It is not, and a scratch diagnostic on both runners measured why (the orchestrator's prompt names the two files; read them before anything else).\n\nWHAT WAS MEASURED, machine idle, single searches on the fine wall clock and batches on processor time agreeing with each other:\n- linux runner, python 3.12.16: every kind grows by about 1.8x to 2.4x per doubling from 200 to 3200 units. Linear.\n- windows runner, python 3.12.10: the cost per character is LOWER than linux's at the short lengths and several times HIGHER at the long ones, with the change spread over roughly a decade of length. One kind read 63, 168, 670, 1984, 4398 microseconds at 200 to 3200 units - 2.7x, 4.0x, 3.0x, 2.2x per doubling; another 8.3x at one doubling in one process and 2.8x for the same doubling in the next. From 1600 to 3200 units the kinds whose text is longest are back near 2.2x. The whole span 200 to 3200 units (16 times the length) grew between about 59 and 89 times.\nTHE ORCHESTRATOR'S READING, to prove or refute by a run of your own on the diagnostic's numbers: this is a cost that is linear in two pieces with a steeper second piece (how that python build's allocator serves the engine's working memory once it passes a size), not backtracking - which would multiply by four at EVERY doubling without settling. A three-point series across the change cannot tell the two apart; that is the defect of the case, on that host.\n- the same diagnostic: the python child alone takes between two and three seconds of wall on the windows runner for one kind, on an idle machine; in the red CI run the node child of the first kind was reported 'killed at the 10s deadline' although node alone answers in well under a second. `run_timers` starts both children together and gives each the time LEFT of one shared deadline, so a python child that used nearly all of it leaves node none, and on windows a `communicate` with no time left raises for a process that has already exited.\n\nTHE RULE TO BUILD.\n1. GROWTH IS JUDGED OVER THE WHOLE SPAN, NOT PER DOUBLING: the time at the longest length over the time at the shortest is at most (the ratio of the two lengths) ** TRIPWIRE_POWER - the same power, unmoved - over a span wide enough that a bounded change in per-character cost cannot reach that bound and backtracking cannot miss it. Derive the span from the measurements and write the derivation where the constants are: the steepest change the diagnostic shows, the bound's room over it, and what a quadratic reads over the same span. The room must be stated as a ratio a reader can check against the diagnostic's numbers, and it must hold for every kind on both runners' numbers with at least a factor of two to spare; if no span gives that at lengths the engines can be asked, stop and say so with the numbers rather than choosing a thinner one.\n2. The lengths are few (the cost of a series on a clock stepping 1/64 s is its number of lengths times its rounds), every engine is asked the same lengths, and the answers at every length are still judged (esc54, esc56). Check that node's engine answers at the longest length at all - a regular expression engine can refuse a long input in its own way - on the node this machine has, and say which node the runner has (the diagnostic prints it).\n3. The absolute ceiling at the longest length and 'no child killed at its deadline' keep their meaning; if the longest length moves, the ceiling is re-derived from the diagnostic's per-character costs and the return carries the arithmetic. A deadline is raised only with the measured wall time that requires it beside it.\n4. A CHILD THAT HAS EXITED IS NEVER 'KILLED'. Whatever time is left when its turn comes, a child that already finished is read, and only one still running at the deadline is killed and reported so. Each engine's deadline is its own or the shared one is honoured without starving the later child - choose, and hold the choice with a case that substitutes a slow first child and a fast second one and needs no real engine.\n5. The cases still catch what they were written for: the tripwire made to backtrack turns the growth case red in both engines, on the real clock and on the substituted 1/64 s clock, and a kinked-linear cost - a substituted engine or a substituted series whose per-length times are the windows runner's own numbers - stays green. That last one is the allow case that was missing; it is driven from the diagnostic's numbers written into the case as history (measured where and when), not re-measured.\n6. `_harness.growth_series` is not changed unless a run shows it must be; it is not among this task's files.\n\nHOW TO PROVE. Feed the present judgement the windows runner's measured series: red (as CI). Feed the new one the same: green, with the room printed. The backtracking mutation: red under the new judgement. Suite seconds before and after, two runs with a gap, and the series' cost on the substituted 1/64 s clock (that is what windows will pay). A mutation probe the orchestrator can run from the worktree root (a copy of the working tree, each mutation asserted applied, never `git archive HEAD`): the span narrowed back to the present three lengths; the power raised; the exited-child reading removed (the starved-child case goes red); the judgement made per doubling again (the windows-numbers allow case goes red). Say which lines only a windows run can confirm.\n\nNOT in this task: the builder and its own-repository cases (the task before this one changes them - read the file as it stands); cw8 and gw15, which passed on the windows runner in the last CI run.\n\nAcceptance:\n(1) The growth judgement is over the whole span at TRIPWIRE_POWER, the span derived in writing from the two runners' measurements with at least a factor of two of room.\n(2) The windows runner's measured series is green under it and a backtracking tripwire is red, in both engines.\n(3) A child that has exited is read and never reported killed, held by a case that needs no real engine.\n(4) No ceiling or deadline moved without the measurement that requires it.",
       "files": [
-        "tests/test_build_shop.py"
+        "tests/test_build_shop.py",
+        "CHANGELOG.md"
       ],
       "tests": {
         "mode": "regression",
@@ -990,16 +1074,41 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-20T00:48:02Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-20T00:48:02Z"
+      },
+      "reviewPerTask": "signals",
+      "notes": [
+        {
+          "at": "2026-11-20T00:53:16Z",
+          "text": "A SECOND MEASUREMENT, wider, taken 2026-11-20 after the description was written (windows-2025 and ubuntu-24.04 runners, python 3.12 and 3.14, every kind, lengths doubling from 200 to 51200 units, each job twice; the orchestrator's prompt names the files). It replaces the description's guess at the cause and its numbers for the span. What it shows: EVERY host has one step in the cost per character, at a length of its own, and a plateau either side. Windows: from about 20-30 ns a character to about 90-140, rising between roughly 7 thousand and 60 thousand characters, flat after; highest over lowest across the whole range up to 6.3. Linux: flat near 25 ns to about 300-500 thousand characters, then one step to 60-85; highest over lowest up to 3.5. The python version does not matter. node's engine is linear over the whole range on both, near 2.0x per doubling. So no stretch of lengths is past the step on every host, and no three-point series is safe; the whole-span judgement of the description stands, and its span is to be derived from THESE numbers: over 200 to 51200 units the length ratio is 244 to 334 by kind, the bound at the power is that ratio to the 1.5, and the largest measured time ratio was 1978 against a bound of about 6100 for that kind. Do the arithmetic for every kind and every run from the files and state the least room found."
+        },
+        {
+          "at": "2026-11-20T01:39:11Z",
+          "text": "this task rewrites one sentence of an existing Unreleased entry about the suite's timing cases and leaves the heading line this file quotes as it is",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-20T01:39:19Z",
+          "text": "Scope widened to CHANGELOG.md on the executor's reason: its Unreleased entry said the suite times each kind at lengths 'each double the last' against the power, which this task makes false (two lengths, growth judged once over the whole span); one sentence of that entry is rewritten, nothing else in the file."
+        }
+      ],
+      "testEvidence": {
+        "runId": "2026-11-20T01:53:08Z.a1726a",
+        "status": "passed",
+        "at": "2026-11-20T01:53:08Z"
+      }
     }
   ],
   "parentBranch": "integration/skill-gates",
