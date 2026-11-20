@@ -1,0 +1,85 @@
+{
+  "gates": {
+    "python3 tools/gate-parity.py": "pass",
+    "python3 tools/sweep-selftests.py .claude/hooks/guard-release.py .claude/hooks/arm-release-bypass.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test__verdict_binding.py tests/test_close_phase.py tests/test_drive_phase.py tests/test_audit_lookup.py tests/test__doctor_completions.py tests/test_audit_status.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-20T14:01:47Z",
+    "basis": "`python3 tests/test__evidence_io.py --selftest` in a throwaway tree at HEAD exited 1 with 15 of 461 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - wh1 (house FAIL), wh3 (house FAIL), wh5 (house FAIL), rf1 (house FAIL), ho1 (house FAIL), hs1 (house FAIL), hs2 (house FAIL), hs4 (house FAIL): SELFTEST FAILED: 443/461 cases passed; --case wh4, wh6, wh7, wh8, wh9, rf2, rf3, rf4, pj1, pj2, ho2, ho3, ho4, ho6, ho7, ho8, hs3, hs5, hs6, hs7, hs8, hs9, bb-table, bb-drive-sites, bb-fixture, bb-remedy, bb-panel-state, bb-cost names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "A subject's run record reaches every reader only through _evidence_io.project_record, through one table (RECORD_GRAMMAR); the writer's one egress, finished_record, stores through stored_record over the same table, and _record_of writes gateSource from the row's scope. A holder (a task whole, or a phase outside its tasks) writing any key twice holds no readable record (holder_duplicate_problem), and run-test-gate refuses to rewrite such a file, naming the hand step. reusable_run repeats nothing over a newer run the same subject holds under another identity or gate (_newer_holder_run). close-phase refuses when a ref does not resolve and none holds the plan; the release guard says a missing shard does not exist. Round 4: rf3 (every required field at every depth), rf4 (an unnamed key at every depth, neither stored nor projected) and ho8 (a task's doubled key leaves its phase's record readable) cover the reviewer's surviving mutations n39, n36 and n34; vm3 and vb-base1/vb-base2 had become vacuous since the projection made their fixture record unreadable (a null baseRed.run, a shape the writer's row_for never stores), now fixed and each asserting the record reads and its kept base run reaches the selection. Docs narrowed: run-test-gate alone refuses a doubled key, the plan's other writers still save the last copy, validate-manifest does not warn on a doubled phase tasks key, SECURITY.md carries the timing command without a number. Worktree, after the last edit: gate-parity exit 0; task sweep 10/10 files, 3556 cases, exit 0; dependant sweep 19/19 files, 3726 cases, exit 0; full sweep 198/198 files, 19811 cases, exit 0; ruff and vermin exit 0; mutation table 54/54 caught on scratch copies. The red-first command runs tests/test__evidence_io.py alone, because the helper's house reader takes one tally (the last N/M line) and two suites in one output would be graded by the second; vm1 is proved red by mutation row 3 (own_runs reads the newest readable row), vm3 by rows 49 and 50 (one selection taking a task's kept base run; own_runs dropping its base-scope filter), which also redden vb-base1/vb-base2; vm2 is the oracle beside vm1 and holds green by design. CI: 44686964116 (round 1) and 44699803319 (round 2) green on every job; round 3's 44738645013 green on every job after one rerun of browser (report), which had been cut at its time bound; round 4 changed only tests and documents. Independent reads: read 1's findings were fixed in round 2; read 2 found M1-M4 and L1-L4 (the projection, a holder writing its record key twice, the subject's newest run deciding reuse, a CHANGELOG over-claim, the guard's missing shard, m21/m24/m28/m29), all confirmed fixed by read 3 with its own probes; read 3 found three tests that could not fail (n34, n36, n39, now ho8, rf4, rf3, each proven red) and four document over-claims (narrowed), and moved the plan's one parse/save door (_manifest_io saving one copy of a doubled key; a doubled phase tasks key) to P169.32-6l3. Dependants: guard-release and arm-release-bypass read the plan through the same parse and pass in the gate and dependant sweeps; the importers of _evidence_io, run-test-gate, _verdict_binding, close-phase and drive-phase pass in those sweeps and the full sweep; PLUGIN-BUILD-GUIDE, SECURITY.md and CHANGELOG were edited to say what the tree does; docs/research/guard-ownership-design.md is a draft outside this task and was not touched.",
+    "descriptive": "A run record is read only as the writer writes it, so no older run answers for a subject whose own record cannot be read."
+  },
+  "testsAdded": [
+    "wh1-wh9: a subject whose record will not read has no older row any reader takes",
+    "rf1-rf4: the projection's one door, every leaf, every required field, every unnamed key",
+    "pj1-pj2: the writer's record equals its projection; the shapes a hand edit leaves",
+    "ho1-ho8: holder rules, the newest holder run deciding reuse, the writer's refusal and the way out",
+    "vm1-vm3: one selection of a subject's own runs for the binding and the member check",
+    "hs1-hs9: a run is held by the subject it measured",
+    "bb-table, bb-drive-sites, bb-fixture, bb-remedy, bb-panel-state, bb-cost: every command that reads runs, black box"
+  ],
+  "casesAdded": [
+    [
+      "wh1",
+      "wh2",
+      "wh3",
+      "wh4",
+      "wh5",
+      "wh6",
+      "wh7",
+      "wh8",
+      "wh9",
+      "rf1",
+      "rf2",
+      "rf3",
+      "rf4",
+      "pj2",
+      "ho1",
+      "ho8"
+    ],
+    [
+      "vm1",
+      "vm2"
+    ],
+    [
+      "vm3"
+    ],
+    [
+      "hs1",
+      "hs2",
+      "hs3",
+      "hs4",
+      "hs5",
+      "hs6",
+      "hs7",
+      "hs8",
+      "hs9"
+    ],
+    [
+      "bb-table",
+      "bb-drive-sites",
+      "bb-fixture",
+      "bb-remedy",
+      "bb-panel-state",
+      "bb-cost"
+    ]
+  ],
+  "claims": "claims:\n- matches-code: the CHANGELOG, PLUGIN-BUILD-GUIDE and SECURITY sentences say only what the tree does; the _manifest_io door is stated as still taking and saving the last copy\n- can-fail: 54/54 mutation rows caught; rf3, rf4, ho8, vm3 and vb-base each proven red under a mutation on a scratch copy and green on the tree\n- class-not-instance: rf3 and rf4 are derived over every object of the table at every depth; vm3 and vb-base now assert their fixture reaches the selection\n- mechanism: the cases in tests/test__evidence_io.py and tests/test__verdict_binding.py\n- measured-twice: task gate green in round 3 and round 4; full sweep green after the last edit\n- operation-not-spelling: no guard code changed this round\n- numbers: the guard timing figures were removed; the command stays",
+  "stamp": "audit-stamp: {\"content\":\"sha256:57942e5e692a2afdb9e1d1af868282bc062f0ce816e91581724b9e00875a4a71\",\"dirtyDigest\":\"sha256:8030dbcb233bb1c3d3cb7ec7827a64c7f5bbc6b709da7d0b54e033d6cdee80f2\",\"dirtyPaths\":{\".claude/hooks/arm-release-bypass.py\":\"ea7371dd711d2ba7\",\".claude/hooks/guard-release.py\":\"92442c710f8d68fa\",\"CHANGELOG.md\":\"7c06a14391a1dcdf\",\"PLUGIN-BUILD-GUIDE.md\":\"942e5697d09f9653\",\"SECURITY.md\":\"56e999c9fa8ad9a2\",\"plugins/audit/scripts/git/close-phase.py\":\"c48bd021d61fa060\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"d95b16ff4cca790e\",\"plugins/audit/scripts/governance/_verdict_binding.py\":\"36c8fdd877f247ee\",\"plugins/audit/scripts/governance/drive-phase.py\":\"bee5e21b7288ea93\",\"plugins/audit/scripts/manifest/validate-manifest.py\":\"5d61e413ff81b05a\",\"plugins/audit/scripts/usage/audit-usage.py\":\"238810bf94e4fe68\",\"tests/test__evidence_io.py\":\"3c2cff1034ccd828\",\"tests/test__verdict_binding.py\":\"8ab77ccf0ba1e1fb\",\"tests/test_audit_usage.py\":\"e2fd003aa70a07b9\",\"tests/test_close_phase.py\":\"4aaf92477565b2b7\",\"tests/test_drive_phase.py\":\"87ad81f610fa5420\",\"tests/test_validate_manifest.py\":\"739e4354891a7289\"},\"head\":\"8219a27b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/hooks/arm-release-bypass.py\",\".claude/hooks/guard-release.py\",\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/scripts/git/close-phase.py\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/_verdict_binding.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/scripts/manifest/validate-manifest.py\",\"plugins/audit/scripts/usage/audit-usage.py\",\"tests/test__evidence_io.py\",\"tests/test__verdict_binding.py\",\"tests/test_audit_usage.py\",\"tests/test_close_phase.py\",\"tests/test_drive_phase.py\",\"tests/test_run_test_gate.py\",\"tests/test_validate_manifest.py\"],\"scopeDigest\":\"sha256:1cd1ba9bd7e73e96d9e69151eeda3cd52d0482e69a7ff7fbbe15162250bc8c11\",\"v\":2}",
+  "testsAddGaps": [
+    "tests/test__evidence_io.py: The case is replaced or joined by the black-box one - bound to `bb-table`, which the suite did not print",
+    "tests/test__evidence_io.py: The case is replaced or joined by the black-box one - bound to `bb-drive-sites`, which the suite did not print",
+    "tests/test__evidence_io.py: The case is replaced or joined by the black-box one - bound to `bb-fixture`, which the suite did not print",
+    "tests/test__evidence_io.py: The case is replaced or joined by the black-box one - bound to `bb-remedy`, which the suite did not print",
+    "tests/test__evidence_io.py: The case is replaced or joined by the black-box one - bound to `bb-panel-state`, which the suite did not print",
+    "tests/test__evidence_io.py: The case is replaced or joined by the black-box one - bound to `bb-cost`, which the suite did not print"
+  ],
+  "testsAddUnchecked": [
+    "tests/test__verdict_binding.py: Closed by the same source-level property - not checked: the submit's command did not run `tests/test__verdict_binding.py`, so the ids bound to it were not compared with any printed label",
+    "tests/test__verdict_binding.py: One selection of a subject's own runs, used by the binding and by the member check - not checked: the submit's command did not run `tests/test__verdict_binding.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

@@ -1229,14 +1229,20 @@ def main(argv):
             # torn or unreadable row is counted there exactly as it would be
             # here. Unfiltered by `--since`/`--phase`/etc - the three
             # comparisons this folds together are already narrow, and a
-            # window on top would only thin them further.
+            # window on top would only thin them further. A TALLY OF WHAT
+            # RAN, so each run is counted under the work it measured, a run
+            # withheld from its subject included, and a row standing for a
+            # record that would not read is no run (`measured_rows`).
             "planCost": ul.plan_cost_claim(
-                manifest, rows, _evidence_io.read_rows(
-                    project, manifest_path=(
-                        manifest_path if manifest_path is not None
-                        # No plan resolved: the configured path, which holds
-                        # no plan file and so no record - the ledger alone.
-                        else _evidence_io.plan_file_of(project)))["rows"]),
+                manifest, rows, _evidence_io.measured_rows(
+                    _evidence_io.read_rows(
+                        project, manifest_path=(
+                            manifest_path if manifest_path is not None
+                            # No plan resolved: the configured path, which
+                            # holds no plan file and so no record - the
+                            # ledger alone.
+                            else _evidence_io.plan_file_of(project)))
+                    ["rows"])),
         }
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0

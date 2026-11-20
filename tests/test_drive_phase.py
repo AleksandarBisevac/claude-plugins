@@ -14631,6 +14631,48 @@ def _signoff_unit_cases(check):
     _chain_next_cases(check)
 
 
+def _gate_went_red_unread_units(check, M):
+    """(gu) Whether a fix task's gate ever went red, asked of a read that lost
+    something: a task whose own record would not read may hold a red, and a
+    ledger line that will not parse may be anyone's - neither reads as a gate
+    that only ever went green."""
+    tmp = tempfile.mkdtemp(prefix="gate-went-red-")
+    try:
+        plan = os.path.join(tmp, "audit-plan.json")
+        lost = {"runId": "GW-LOST", "at": "2026-11-18T10:00:00Z",
+                "status": "failed", "steps": 5}
+        with open(plan, "w", encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 3}, "phases": [{
+                "id": PHASE, "title": "t", "status": "in_progress",
+                "testGate": ["chk"], "tasks": [
+                    {"id": "P1.1", "title": "t", "status": "done",
+                     "tests": {"mode": "gate-only", "gate": ["chk"]},
+                     M._evio.RECORD_KEY: lost},
+                    {"id": "P1.2", "title": "t", "status": "done"}]}]}, fh)
+        ledger = M._evio.evidence_dir(tmp, {})
+        os.makedirs(ledger)
+        _write_lf(os.path.join(ledger, "t.jsonl"), json.dumps({
+            "runId": "GW-OLD", "ts": "2026-11-18T08:00:00Z", "scope": "task",
+            "taskId": "P1.2", "phaseId": PHASE, "status": "passed"}) + "\n")
+        red = _caught(M.gate_went_red, _unit_ctx(project=tmp, manifest=plan))
+        with open(os.path.join(ledger, "t.jsonl"), "a",
+                  encoding="utf-8") as fh:
+            fh.write("{not a row\n")
+        torn = _caught(M.gate_went_red, _unit_ctx(project=tmp,
+                                                   manifest=plan))
+    finally:
+        _harness.remove_tree(tmp)
+    check("gu1 RED-FIRST: a task whose own record would not read - the red "
+          "it holds is read nowhere - is counted among the gates that went "
+          "red, and a task whose runs were all green is not: %r"
+          % (sorted(red, key=str) if isinstance(red, set) else red,),
+          red == set(["P1.1"]))
+    check("gu2 RED-FIRST: a ledger line that will not parse may be any task's "
+          "red, so whether a gate went red is not known (None, which owes the "
+          "review its look), never the set of the lines that did read: %r"
+          % (torn,), torn is None)
+
+
 def _signoff_branch_units(check):
     """The sign-off branches the drives once walked and no kept drive reaches:
     the ledger's red gates, an empty set of findings to mark, a usage ledger
@@ -14656,6 +14698,7 @@ def _signoff_branch_units(check):
           "ledger: every task with a failed row, none with only a passed one, "
           "and no row without a task: %r" % (sorted(red, key=str),),
           red == set(["P1.1", "P1.3"]))
+    _gate_went_red_unread_units(check, M)
     recorded = [dict(FINDINGS[0], id="P1-R1")]
     got = (_caught(M.findings_held, _unit_phase(findings=recorded), []),
            _caught(M.findings_held, _unit_phase(findings=recorded),

@@ -1175,6 +1175,75 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     _harness.stage(check, "bw0 the backfill-window block", _backfill_window_cases)
+    _measured_tally_cases(check)
+
+
+def _mt_payload(malformed):
+    """`audit-usage --json`'s payload over a project whose task P1.1 ran green
+    on its own gate, then red - the red held only as P1.1's record, broken
+    when `malformed` (its `steps` a number), so the read withholds the green
+    from the task."""
+    import io
+    import _evidence_io as E
+    root = _harness.fixture_root("usage-measured-tally-")
+    try:
+        os.makedirs(os.path.join(root, ".claude"))
+        with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+        mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+        with open(mpath, "w") as fh:
+            json.dump({"meta": {"version": 3}, "phases": [
+                {"id": "P1", "title": "one", "shard": "phases/P1.json"}]}, fh)
+
+        def row(run_id, ts, status):
+            return {"runId": run_id, "ts": ts, "scope": "task",
+                    "taskId": "P1.1", "phaseId": "P1", "status": status,
+                    "gateSource": "task", "durationMs": 100,
+                    "steps": [{"name": "sweep", "exit": 0}],
+                    "testedState": {}}
+        E.append_row(root, row("MT-GREEN", "2026-11-18T06:00:00Z", "passed"))
+        red = E.run_record(row("MT-RED", "2026-11-18T08:00:00Z", "failed"))
+        if malformed:
+            red["steps"] = 5
+        with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+                  "w") as fh:
+            json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                       "testGate": ["sweep"], "tasks": [
+                           {"id": "P1.1", "title": "t", "status": "in_progress",
+                            "tests": {"mode": "gate-only", "gate": ["sweep"]},
+                            E.RECORD_KEY: red}]}, fh)
+        buf, real = io.StringIO(), sys.stdout
+        sys.stdout = buf
+        try:
+            code = M.main([mpath, "--project-dir", root, "--json"])
+        finally:
+            sys.stdout = real
+        lost = E.read_rows(root, manifest_path=mpath).get("unreadableRecords")
+        return code, json.loads(buf.getvalue()), len(lost or [])
+    finally:
+        _harness.remove_tree(root)
+
+
+def _measured_tally_cases(check):
+    """(mt) The plan-cost tally counts what RAN: a run withheld from its task
+    because the task's newest record would not read is still that task's
+    run in the count, and the row standing for the record is no run."""
+    oracle = _mt_payload(False)
+    broken = _mt_payload(True)
+
+    def recorded(got):
+        return ((got[1].get("planCost") or {}).get("gateScope") or {}).get(
+            "tasksRecorded")
+    check("mt1 RED-FIRST: `planCost.gateScope.tasksRecorded` holds its count "
+          "over a task whose newest record will not read - the run withheld "
+          "from the task still ran - exactly as over the same plan with the "
+          "record well-formed: oracle %r (exit %r, lost %r), broken %r (exit "
+          "%r, lost %r)" % (recorded(oracle), oracle[0], oracle[2],
+                            recorded(broken), broken[0], broken[2]),
+          oracle[0] == 0 and broken[0] == 0 and oracle[2] == 0
+          and broken[2] == 1 and recorded(oracle) == 1
+          and recorded(broken) == 1)
 
 
 def _usage_lock_race(M, project, lpath, where):

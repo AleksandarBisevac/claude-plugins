@@ -787,6 +787,146 @@ def _unread_binding_cases(check):
         _harness.remove_tree(root)
 
 
+def _vm_shards(root, bodies):
+    """A plan under `root` (made by `_project` first) whose phases are
+    `bodies`, one shard each."""
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"), exist_ok=True)
+    for body in bodies:
+        with open(os.path.join(root, "docs", "audit", "phases",
+                               "%s.json" % (body["id"],)), "w") as fh:
+            json.dump(body, fh)
+    with open(os.path.join(root, "docs", "audit", "audit-plan.json"),
+              "w") as fh:
+        json.dump({"meta": {"version": 3}, "phases": [
+            {"id": b["id"], "title": "one", "shard": "phases/%s.json"
+             % (b["id"],)} for b in bodies]}, fh)
+
+
+def _vm_run(root, run_id, ts, pid, status):
+    """A phase-scope run of `pid`'s gate, measured on `src/a.py` as it is."""
+    return dict(_measured(root, run_id, ts, status=status), phaseId=pid)
+
+
+def _vm_member(root, member_record, member_tasks=()):
+    """`(manifest path, carrier answer)` - carrier P1 holding a green run at
+    10:00 that grades the group, member P2 holding `member_record` and
+    `member_tasks`; no ledger, so every run is a record."""
+    mpath = _project(root, [])
+    os.remove(os.path.join(_evidence_io.evidence_dir(root), "2026-09.t.jsonl"))
+    green = _vm_run(root, "C-GREEN", "2026-11-18T10:00:00Z", "P1", "passed")
+    p1 = {"id": "P1", "title": "one", "status": "in_progress",
+          "testGate": ["test"], "tasks": [],
+          _evidence_io.RECORD_KEY: _evidence_io.run_record(green)}
+    p2 = {"id": "P2", "title": "two", "status": "in_progress",
+          "testGate": ["test"], "tasks": list(member_tasks)}
+    if member_record is not None:
+        p2[_evidence_io.RECORD_KEY] = member_record
+    _vm_shards(root, [p1, p2])
+    return mpath, {"state": "bound", "row": green, "measured": green,
+                   "notes": []}
+
+
+def _member_cases(check):
+    """(vm) A group member's own runs are chosen by the one selection the
+    binding uses, read from what the read returns: a member whose own record
+    would not read refuses the landing naming that record, and a base run a
+    member's task keeps is nobody's verdict, for the member check as for the
+    binding."""
+    root = _harness.fixture_root("verdict-binding-member-")
+    try:
+        said = {}
+        for name, malformed in (("readable", False), ("malformed", True)):
+            here = os.path.join(root, name)
+            os.makedirs(here)
+            _project(here, [])
+            red = _evidence_io.run_record(_vm_run(
+                here, "M-RED", "2026-11-18T11:00:00Z", "P2", "failed"))
+            if malformed:
+                red["steps"] = 5
+            mpath, carrier = _vm_member(here, red)
+            records = M.plan_records(here, mpath)[0]
+            try:
+                got = M.member_red([], "P2", carrier, "record the member",
+                                   records=records)
+            except Exception as exc:                           # noqa: BLE001
+                got = {"arm": "raised", "sentence": "%s: %s"
+                       % (type(exc).__name__, exc)}
+            said[name] = got or {}
+        bad = said["malformed"]
+        check("vm1 RED-FIRST: a group member whose own newest record is a red "
+              "that will not read, newer than the carrier's green, refuses the "
+              "landing on the unreadable arm naming the plan file and the "
+              "field - handed only the records the landing reads, never what "
+              "that read lost: %r" % ((bad.get("arm"),
+                                        (bad.get("sentence") or "")[-300:]),),
+              bad.get("state") == "refused"
+              and bad.get("arm") == M.ARM_UNREADABLE
+              and "docs/audit/phases/P2.json" in (bad.get("sentence") or "")
+              and "%s.steps" % (_evidence_io.RECORD_KEY,)
+              in (bad.get("sentence") or ""))
+        check("vm2 ...THE ORACLE: the same red, well-formed, refuses as the "
+              "member's red naming its run - the malformed case is not refused "
+              "for some other reason: %r" % ((said["readable"].get("arm"),
+                                              (said["readable"].get("row") or {})
+                                              .get("runId")),),
+              said["readable"].get("arm") == M.ARM_RED
+              and (said["readable"].get("row") or {}).get("runId") == "M-RED")
+
+        # ONE SELECTION: a kept base run a member's task holds, newer than the
+        # carrier's run and red, is a measurement of the base commit - the
+        # binding gives the member no verdict from it, so the member check
+        # must not refuse on it either.
+        kb = os.path.join(root, "kept-base")
+        os.makedirs(kb)
+        _project(kb, [])
+        step = {"name": "test", "exit": 1, "ran": 3, "measured": "measured",
+                "durationMs": 9}
+        task_red = _evidence_io.run_record({
+            "v": 1, "runId": "T-RED", "ts": "2026-11-18T09:00:00Z",
+            "scope": "task", "taskId": "P2.1", "phaseId": "P2",
+            "status": "failed", "steps": [step],
+            "testedState": {"head": "c0ffee12ab34"},
+            _evidence_io.BASE_RED_KEY: {
+                "head": "c0ffee12ab34", "verdict": "no-base",
+                "atBase": [], "introduced": [], "unknown": [],
+                "basis": "no run recorded at base"}})
+        base = {"v": 1, "runId": "RB", "ts": "2026-11-18T11:30:00Z",
+                "scope": _evidence_io.BASE_SCOPE, "status": "failed",
+                _evidence_io.BASE_OF_KEY: "T-RED",
+                "testedState": {"head": "c0ffee12ab34"}, "steps": [step]}
+        task_red[_evidence_io.BASE_RED_KEY] = dict(
+            task_red[_evidence_io.BASE_RED_KEY],
+            **{_evidence_io.BASE_RUNS_KEY: [_evidence_io.kept_base(base)]})
+        mpath, carrier = _vm_member(kb, None, member_tasks=[
+            {"id": "P2.1", "title": "t", "status": "in_progress",
+             _evidence_io.RECORD_KEY: task_red}])
+        records, lost = M.plan_records(kb, mpath)
+        member = M.member_red([], "P2", carrier, "record the member",
+                              records=records)
+        own = M.binding(kb, {"phaseId": "P2"}, ["test"], "phase", ["src/a.py"],
+                        mpath, "run the gate", "no gate here", texts=[],
+                        records=records, records_lost=lost)
+        # THE FIXTURE MUST REACH THE SELECTION: the task's record reads, and
+        # the kept base run is among the runs the member check is handed - a
+        # record that would not read answers both questions on another arm.
+        seen = [(r.get("scope"), r.get("runId"))
+                for r in M.subject_runs([], records)]
+        check("vm3 RED-FIRST, ONE SELECTION: a red base run kept on a member's "
+              "task, newer than the carrier's green, is no verdict of the "
+              "member - the binding gives the member none, and the member "
+              "check agrees and refuses nothing, the record reading and its "
+              "base run among the runs both are handed: binding=%r member=%r "
+              "lost=%r runs=%r"
+              % (_said(own), _said(member or {}), lost, seen),
+              own.get("arm") == M.ARM_NO_VERDICT and own.get("row") is None
+              and member is None and not lost
+              and (_evidence_io.BASE_SCOPE, "RB") in seen
+              and not any(str(i).startswith("unreadable-record:")
+                          for _s, i in seen))
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _cases(check)
@@ -794,6 +934,7 @@ def _selftest():
         _harness.stage(check, "vb-record-block", _record_binding_cases)
         _harness.stage(check, "vb-unread-block", _unread_binding_cases)
         _harness.stage(check, "vb-base-block", _kept_base_binding_cases)
+        _harness.stage(check, "vb-member-block", _member_cases)
     return _harness.run(body)
 
 
@@ -817,7 +958,7 @@ def _kb_phase_bodies(root, phase_status, base_status):
            "status": "failed", "steps": [dict(step, exit=1)],
            "testedState": {"head": "c0ffee12ab34"},
            _evidence_io.BASE_RED_KEY: {
-               "run": None, "head": "c0ffee12ab34", "verdict": "no-base",
+               "head": "c0ffee12ab34", "verdict": "no-base",
                "atBase": [], "introduced": [], "unknown": [],
                "basis": "no run recorded at base"}}
     base = {"v": 1, "runId": "RB", "ts": "2026-11-18T04:30:00Z",
@@ -852,18 +993,25 @@ def _kept_base_binding_cases(check):
             answer = M.binding(root, PHASE, ["test"], "phase", ["src/a.py"],
                                mpath, "run the gate", "no gate here", texts=[],
                                records=records, records_lost=lost)
+            # The fixture must reach the binding: the task's record reads and
+            # its kept base run is among the runs the binding is handed.
+            reached = (not lost and ("base", "RB") in [
+                (r.get("scope"), r.get("runId"))
+                for r in M.subject_runs([], records)])
             said[phase_status] = (answer.get("state"), answer.get("arm"),
-                                  (answer.get("row") or {}).get("runId"))
+                                  (answer.get("row") or {}).get("runId"),
+                                  reached)
         check("vb-base1 RED-FIRST: a phase whose own newest run is GREEN binds "
-              "to that run - a newer RED base run kept on a task's record is "
-              "not the phase's verdict and does not refuse it: %r"
-              % (said["passed"],),
-              said["passed"] == ("bound", None, "PH"))
+              "to that run - a newer RED base run kept on a task's record, "
+              "read and handed to the binding, is not the phase's verdict and "
+              "does not refuse it: %r" % (said["passed"],),
+              said["passed"] == ("bound", None, "PH", True))
         check("vb-base2 RED-FIRST, THE OTHER DIRECTION: a phase whose own newest "
               "run is RED is refused on that red - a newer GREEN base run kept "
               "on a task's record, carrying the same declared-work digest, "
-              "never binds the phase over it: %r" % (said["failed"],),
-              said["failed"] == ("refused", M.ARM_RED, "PH"))
+              "read and handed to the binding, never binds the phase over it: "
+              "%r" % (said["failed"],),
+              said["failed"] == ("refused", M.ARM_RED, "PH", True))
     finally:
         _harness.remove_tree(root)
 

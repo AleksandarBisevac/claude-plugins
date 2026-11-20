@@ -985,31 +985,40 @@
         "severity": "med",
         "file": "tools/check-browser-install.py:_builtin_call_problem (the `eval` branch, ~line 1253 of the working tree), and the docstring sentence 'a builtin on BUILTINS called in the one shape its row allows' / BUILTINS row for eval 'the reader holds it to that stub's output'",
         "issue": "contradicts task clause 1 ('NOTHING the action's shell starts may be anything but a stub or an allow-listed tool'; hold it as a positive rule): the `eval` shape check accepts a double-quoted word that starts with `\"$(`, ends with `)\"`, has exactly one substitution and that substitution is `apt-config`, but it never checks the characters between. So `v='; ../../../../../../../../bin/echo ESCAPED #'` followed by `eval \"$(apt-config shell s D/d)$v)\"` has script_problems() == [] (I ran script_problems on that text with the module imported, no writes: it returned []), and the same text under plain bash started the real /bin/echo through a relative path (output ESCAPED). The reader reads the single-quoted assignment as a literal, the prelude disables no program started by a slash path and sd7 sees no absolute path, so both halves are passed and the docstring's claim that eval is held to the stub's output is false. bp10 only has `eval \"$x\"`, which is why the row stays green.",
-        "resolution": "Hold eval to the exact word, not to its first and last characters: accept only a text that matches a fixed shape such as `^\"\\$\\(apt-config [A-Za-z:/ ]+\\)\"$` (nothing between the substitution and the quotes, no `$`, backslash or quote inside), or have _word record that a dq word is one substitution and nothing else. Add bp10 rows for `eval \"$(apt-config shell s D/d)$v)\"` and `eval \"$(apt-config x) ; y\"`, and a bx row that appends the variable-assignment plus eval pair with the file outside, refused by the reader.",
-        "fixTask": "P169.29-6l3"
+        "resolution": "fixed in P169.29-6l3 (7411b3676bcb): Hold eval to the exact word, not to its first and last characters: accept only a text that matches a fixed shape such as `^\"\\$\\(apt-config [A-Za-z:/ ]+\\)\"$` (nothing between the substitution and the quotes, no `$`, backslash or quote inside), or have _word record that a dq word is one substitution and nothing else. Add bp10 rows for `eval \"$(apt-config shell s D/d)$v)\"` and `eval \"$(apt-config x) ; y\"`, and a bx row that appends the variable-assignment plus eval pair with the file outside, refused by the reader.",
+        "fixTask": "P169.29-6l3",
+        "commit": "7411b3676bcb",
+        "status": "fixed"
       },
       {
         "id": "P169-R103",
         "severity": "med",
         "file": "tools/check-browser-install.py:_builtin_call_problem (the `printf` branch)",
         "issue": "contradicts task clause 1: the printf rule is `args[0][\"quoted\"] == \"sq\"`, 'so it is never `-v`' (BUILTINS row, docstring). Quote removal happens before the builtin sees its arguments, so `printf '-v' 'a[$(../../../../../../../../usr/bin/touch x)]' y` has script_problems() == [] (ran it, no writes) while bash parses `'-v'` as the option. The subscript is single-quoted so the reader never reads the substitution it carries; on a bash that evaluates a printf -v subscript (the case bx13 was written for) that starts a real tool by a relative path. I did not run it on a bash 5; this finding rests on the reader accepting it, and on the executor's own reason for refusing `printf -v`. bx13 proves only the unquoted spelling.",
-        "resolution": "Require the format's decoded text, not its quoting, to be safe: accept printf only when args[0] is single-quoted AND its text does not start with `'-` (or require it to contain a `%` conversion and no leading dash), and add a bp10 row `printf '-v' x y` and a bx13 twin with the option quoted.",
-        "fixTask": "P169.29-6l3"
+        "resolution": "fixed in P169.29-6l3 (7411b3676bcb): Require the format's decoded text, not its quoting, to be safe: accept printf only when args[0] is single-quoted AND its text does not start with `'-` (or require it to contain a `%` conversion and no leading dash), and add a bp10 row `printf '-v' x y` and a bx13 twin with the option quoted.",
+        "fixTask": "P169.29-6l3",
+        "commit": "7411b3676bcb",
+        "status": "fixed"
       },
       {
         "id": "P169-R104",
         "severity": "low",
         "file": "tools/check-browser-install.py (docstring 'WHAT A STEP CAN START', 'What stays outside that')",
         "issue": "The 'stays outside' list is stated as complete ('each item is one neither half closes') but findings 1 and 2 are two further shapes the reader accepts that bash reads otherwise; the first item ('a shape it accepts that bash reads otherwise is not seen') covers the class in general only, while the same docstring says the builtins are held 'in the one shape its row allows'. Once 1 and 2 are fixed the same over-claim remains for `[` and `set --`, which were checked by reading only.",
-        "resolution": "After fixing 1 and 2, re-read each remaining row of _builtin_call_problem for the same question (does the check look at the decoded argument, or at its first and last character), and say in the docstring which rows are held by exact match and which by shape.",
-        "fixTask": "P169.29-6l3"
+        "resolution": "fixed in P169.29-6l3 (7411b3676bcb): After fixing 1 and 2, re-read each remaining row of _builtin_call_problem for the same question (does the check look at the decoded argument, or at its first and last character), and say in the docstring which rows are held by exact match and which by shape.",
+        "fixTask": "P169.29-6l3",
+        "commit": "7411b3676bcb",
+        "status": "fixed"
       },
       {
         "id": "P169-R105",
         "severity": "low",
         "file": "tools/check-browser-install.py (case bk11, _PRELUDE)",
         "issue": "Case bk11 (the command hash written through BASH_CMDS, run past the reader) has never been seen red on any bash. On bash 3.2 the variable does not exist. On bash 5 (CI run 44673626435, a disposable probe with the prelude's disabling loop removed, the environment left writable, enable left on and BASH_CMDS left writable) every other construction case went red, bk1 to bk10 and bk12, and bk11 still passed with exit 2. So either the prelude's unset of BASH_CMDS is what holds it (bash drops a special variable's properties when it is unset) and the read-only line adds nothing for it, or the case fails for a reason of its own and asserts nothing about the hold.",
-        "resolution": "Show bk11 red on bash 5 by taking away the thing that holds it (a probe with the unset removed as well), and say in the prelude which line is the hold; if it cannot be made red, the case is restated as what it does show or removed, and the docstring stops naming the construction as a hold for that escape."
+        "resolution": "fixed in P169.29-6l3 (7411b3676bcb): Show bk11 red on bash 5 by taking away the thing that holds it (a probe with the unset removed as well), and say in the prelude which line is the hold; if it cannot be made red, the case is restated as what it does show or removed, and the docstring stops naming the construction as a hold for that escape.",
+        "fixTask": "P169.29-6l3",
+        "commit": "7411b3676bcb",
+        "status": "fixed"
       },
       {
         "id": "P169-R106",
@@ -1039,9 +1048,54 @@
         "issue": "The plan merge treats a run record as an object to merge field by field. With a red on the base, one side recording a green and the other a newer red, the conflicts are the run id, the duration and the moment only; resolving each to one side leaves that side's run id with the other side's status: a run that was red is read back as passed. With the ledger off the record is the only account of the run, so nothing contradicts it.",
         "resolution": "A run record and the pointer beside it merge as one value: both sides changed it means one conflict on the whole record, resolved to one side whole, never a mix of fields; a case builds the three-sided shape and shows no resolution yields a record neither side wrote.",
         "fixTask": "P169.30-6l3"
+      },
+      {
+        "id": "P169-R110",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/_status_facts.py (evidence_subjects, the failing-tests condition); plugins/audit/scripts/status/audit-status.py (the tests word)",
+        "issue": "A phase measured green whose own run record is then made unreadable (a status written twice, a moment that is no moment, steps that are not a list) still reads `tests passed` in the status render, beside the render's own banner that run records cannot be read, and `audit-status --gate`, with the default conditions and with `--fail-on failing-tests`, exits 0 with GATE PASSED: the condition and the word read the pointer, not the record. The validator and the doctor warn and exit 0. So a CI gate on the plan's state stays green over a record nobody can read; only a close and a task's done refuse.",
+        "resolution": "A subject whose own newest record cannot be read gets no passing word in any render, and `failing-tests` trips on it with a sentence naming the record and the remedy; the JSON payload carries the same state; a case holds the three shapes for a task and a phase, and the allow direction (a readable green) stays quiet.",
+        "fixTask": "P169.31-6l3"
+      },
+      {
+        "id": "P169-R111",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py (_identity_measurements, the reuse lookup)",
+        "issue": "After a task's gate source changes, an older green measured on the task's own gate is reused over a newer red of the same task measured on the phase's gate: the reuse lookup requires the row's scope to equal the caller's, so the newer run of the same holder is never weighed. Seen with the ledger on at the branch head and in the reworked tree; with the ledger off the head reused too.",
+        "resolution": "The newest run of the holder decides whether anything may be reused: a newer run of the same holder that is not the reused one, on either gate, stops the reuse and the gate measures; a case drives the flip in both ledger states."
+      },
+      {
+        "id": "P169-R112",
+        "severity": "high",
+        "file": "plugins/audit/scripts/manifest/_manifest_io.py (read_json, save_plan_json) and every verb that saves a plan file through it",
+        "issue": "A plan file that writes a key twice (the shape a keep-both merge resolution leaves) is parsed with the last copy winning and saved back with one copy, silently, by every verb that writes the plan (`audit-task.py note`, `done`, and the others that go through `read_json`/`save_plan_json`). With a task holding its newest red record and then a second copy of the key carrying an older green, an unrelated `note` rewrites the shard with the green alone; from then the lookup names the green, the gate reuses it and `done` closes bound to it, ledger on and off. The run-record reader refuses the shape now, and the one writer that asks it refuses too, but any other save destroys the evidence first.",
+        "resolution": "The plan is parsed through one door that notices a key written twice anywhere in a plan file, and no verb saves a file it read that way: it refuses with the file, the path of the key and the hand step that gets out. Every reader that answers from the plan either goes through that door or is named with why it cannot.",
+        "fixTask": "P169.32-6l3"
+      },
+      {
+        "id": "P169-R113",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py (_record_holders); plugins/audit/scripts/manifest/validate-manifest.py",
+        "issue": "A phase that writes its `tasks` key twice (one copy holding a task with its newest red record, the second the same task with an older green) is read from the last copy by every reader, silently: the lookup names the green, the gate reuses it, the validator says nothing, `done` closes bound to the green and rewrites the shard without the first copy. A container's duplicate is asked only of an object that itself holds a record.",
+        "resolution": "A key written twice on any object that holds records below it (`tasks`, `phases`, the index's phase list) makes every record under it unreadable and is named by the validator; the one-file and the sharded layouts both.",
+        "fixTask": "P169.32-6l3"
+      },
+      {
+        "id": "P169-R114",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py (the executor brief's submit block)",
+        "issue": "When the gate entry that names the task's tests.add file is a shell command joined with '&&', the brief's submit block writes it unquoted after '--'. The shell then splits it: submit's red-first helper is handed only the first command, and the rest runs as a separate command with the return's heredoc attached to it. An executor copying the block as printed files a return whose red-first proof ran the wrong command.",
+        "resolution": "The block hands the helper one argv the shell cannot split (the gate entry quoted as one 'sh -c' word, or the helper given the entry by name), and a case renders a brief for a task whose gate holds '&&' and runs the block it prints against a stub submit."
+      },
+      {
+        "id": "P169-R115",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_runner_output.py (_house_tally) and the red-first helper submit runs",
+        "issue": "The red-first helper grades its command's output by one house tally, the last 'N/M cases passed' line, so a command that runs two suites is graded by the second suite's counts alone; an executor whose tests.add entries live in two suites must file with one and leave the other suite's entries 'not checked'. In the same filing six cases the suite prints on the tree (bb-table, bb-drive-sites, bb-fixture, bb-remedy, bb-panel-state, bb-cost) were reported as not printed by the submit's own run; why was not established.",
+        "resolution": "The helper reads each suite's tally and each case label in a combined output (or takes one command per tests.add file), and the bb-* gap is explained by running the submit's red command by hand at the head and in the tree and comparing what each prints."
       }
     ],
-    "outcome": "[findings: 109 - 10 high, 39 med, 60 low; 81 with a recorded fix commit]"
+    "outcome": "[findings: 115 - 12 high, 41 med, 62 low; 85 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2709,7 +2763,9 @@
         "P169.27-6l3",
         "P169.28-6l3",
         "P169.29-6l3",
-        "P169.30-6l3"
+        "P169.30-6l3",
+        "P169.31-6l3",
+        "P169.32-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -8077,6 +8133,10 @@
         {
           "at": "2026-11-20T06:41:25Z",
           "text": "Also this task's, from the independent review of its unfiled tree: findings P169-R106 (close-phase, a symlinked project spelling), P169-R107 (a record whose moment cannot be placed) and P169-R108 (a duplicate key inside a record). P169-R109 (the merge mixes a record's fields) is P169.30-6l3's."
+        },
+        {
+          "at": "2026-11-20T08:25:51Z",
+          "text": "Also this task's, from the second read of its unfiled tree: finding P169-R111 (an older green on the task's own gate reused over a newer red measured on the phase's gate). P169-R110 (the status gate passes over an unreadable record) is P169.31-6l3's."
         }
       ],
       "fixes": [
@@ -8088,15 +8148,156 @@
         "P169-R98"
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-20T14:02:39Z",
+            "ms": 27272,
+            "basis": "selectionMs in run 2026-11-20T14:12:30Z.908425's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-20T14:12:30Z.908425"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-20T14:03:07Z",
+            "ms": 563608,
+            "basis": "durationMs in run 2026-11-20T14:12:30Z.908425's record (run-test-gate --record)",
+            "runId": "2026-11-20T14:12:30Z.908425"
+          }
+        ],
         "firstStartedAt": "2026-11-20T04:33:17Z"
       },
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-20T14:12:49Z.bf84a5",
+        "status": "passed",
+        "durationMs": 214,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:2c04ee70898a17cc2d94a631dff8774079da6e2dc3d4c105bf31d00e219fae5c",
+        "reuseKey": "1:sha256:58148d6fc77c426f236c5ddcf265340fd79a4e4d6910d4f5de0a4e2be4d05f14",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-20T14:12:30Z.908425",
+          "ts": "2026-11-20T14:12:30Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+        "selectionMs": 16274,
+        "at": "2026-11-20T14:12:49Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "attempt": 1,
+          "banners": [],
+          "durationMs": 563608,
+          "failed": [],
+          "gateDigest": "sha256:2c04ee70898a17cc2d94a631dff8774079da6e2dc3d4c105bf31d00e219fae5c",
+          "gateReach": {
+            "gaps": []
+          },
+          "gateSource": "task",
+          "launch": "2026-11-20T14:02:39Z-0c7229a3",
+          "observations": {
+            "countsBasis": "no step printed a summary this reader can count (python3 tools/gate-parity.py && python3 tools/sweep-selftests.py .claude/hooks/guard-release.py .claude/hooks/arm-release-bypass.py tests/test__evidence_io.py t... (197 more characters) and 1 more), so the size of this gate is not knowable from its output",
+            "coverage": [
+              ".claude/hooks/arm-release-bypass.py",
+              ".claude/hooks/guard-release.py",
+              ".claude/hooks/guard-release.py",
+              "SECURITY.md",
+              "SECURITY.md",
+              "tests/test__evidence_io.py",
+              "tests/test__evidence_io.py",
+              "tests/test__verdict_binding.py",
+              "tests/test__verdict_binding.py",
+              "tests/test_audit_usage.py",
+              "tests/test_close_phase.py",
+              "tests/test_close_phase.py",
+              "tests/test_drive_phase.py",
+              "tests/test_run_test_gate.py",
+              "tests/test_run_test_gate.py",
+              "tests/test_validate_manifest.py"
+            ],
+            "coverageBasis": "the runner named 211 path(s); the work under test declares 31 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 10/10, 186/186 and 205 more; declared but not named by the run: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/scripts/git/close-phase.py, plugins/audit/scripts/governance/_evidence_io.py and 5 more; breadth: the run named 175 suite path(s) and this task declares 31 file(s), and 166 of them are suites the task neither declares nor is named after (test__deps.py, test__output.py, test_audit_task.py, test_commit_task_work.py, test_stamp_verification.py, tests/_harness.py, tests/test__ado_connect.py and 159 more) - this gate asks more than the task changed; that is reported, not refused",
+            "ranTotal": null,
+            "treeBasis": "git described the tree before and after",
+            "treeMutated": []
+          },
+          "reuseKey": "1:sha256:58148d6fc77c426f236c5ddcf265340fd79a4e4d6910d4f5de0a4e2be4d05f14",
+          "runId": "2026-11-20T14:12:30Z.908425",
+          "selectionMs": 27272,
+          "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+          "startedAt": "2026-11-20T14:03:07Z",
+          "status": "passed",
+          "via": "cli",
+          "at": "2026-11-20T14:12:30Z",
+          "testedState": {
+            "dirtyBasis": "git described the tree before the run; 17 dirty path(s)",
+            "dirtyDigest": "sha256:8030dbcb233bb1c3d3cb7ec7827a64c7f5bbc6b709da7d0b54e033d6cdee80f2",
+            "head": "7411b367",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeBasis": "19 declared file(s); 19 read, 0 missing",
+            "scopeDigest": "sha256:1cd1ba9bd7e73e96d9e69151eeda3cd52d0482e69a7ff7fbbe15162250bc8c11",
+            "scopeListDigest": "sha256:ec72c96b7ef895937e080af0696ea5dcf3ef0b682741d02b81faaffef8f93878",
+            "treeKey": "40add997574d"
+          },
+          "steps": [
+            {
+              "command": "python3 tools/gate-parity.py && python3 tools/sweep-selftests.py .claude/hooks/guard-release.py .claude/hooks/arm-release-bypass.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test__verdict_binding.py tests/test_close_phase.py tests/test_drive_phase.py tests/test_audit_lookup.py tests/test__doctor_completions.py tests/test_audit_status.py",
+              "durationMs": 272737,
+              "exit": 0,
+              "measured": "not-knowable",
+              "name": "python3 tools/gate-parity.py && python3 tools/sweep-selftests.py .claude/hooks/guard-release.py .claude/hooks/arm-release-bypass.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test__verdict_binding.py tests/test_close_phase.py tests/test_drive_phase.py tests/test_audit_lookup.py tests/test__doctor_completions.py tests/test_audit_status.py",
+              "ran": null,
+              "suiteReader": "none"
+            },
+            {
+              "commandBytes": 5149,
+              "commandSha256": "4b64cf7287213eb1621f6826f3c78b44680dbfef4d7ac0a54933d4fb9ea09924",
+              "durationMs": 290782,
+              "exit": 0,
+              "measured": "not-knowable",
+              "name": "affected/related: .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "program": "python3",
+              "ran": null,
+              "suiteReader": "none"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-20T14:12:30Z.908425",
+            "launch": "2026-11-20T14:02:39Z-0c7229a3",
+            "status": "passed",
+            "at": "2026-11-20T14:12:30Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-20T14:12:49Z.bf84a5",
+        "status": "passed",
+        "at": "2026-11-20T14:12:49Z"
+      }
     },
     {
       "id": "P169.29-6l3",
       "title": "The browser install check reads a word as bash will see it, after quote removal, so a quoted option or text beside the allowed substitution cannot pass as the allowed shape",
-      "status": "in_progress",
+      "status": "done",
       "description": "The browser install check's reader judges a word by its spelling, and bash judges it by what is left after quote removal; the two differ, and each difference found so far starts a program the check promises cannot start. Two were shown on the committed check and on bash itself: a `printf` whose first word is a single-quoted `-v` is accepted as \"a single-quoted format\" while bash takes it as the option and evaluates the subscript of the name that follows; an `eval` whose word begins with the allowed substitution and ends with `)\"` is accepted whatever sits between, and bash runs the trailing text. The third finding is the docstring that says each builtin is held to one shape.\n\nHold the property, not the two spellings. (1) What the reader asks of a builtin's argument, an operator, an option, a redirection target or an assignment name is asked of the value bash hands on after quote removal, in one place every rule goes through, so a rule cannot be written against the spelling again; where a word's value cannot be known by reading (it carries an expansion), the rule says so and refuses unless the row allows exactly that expansion as the whole word. (2) `eval` takes one word that is exactly one allowed substitution and nothing else. (3) A case that fails by name when a rule is spelling-shaped: every shape the refusing cases carry is run again through the quoting variants that leave bash's reading unchanged (single quotes, double quotes, adjacent quoted pieces, a backslash where the reader reads one) and must still be refused, and every shape the accepting cases carry must be read the same under those variants as bare; and for each accepted shape the case states what bash does with it by running it against the stubs, so \"accepted\" is a statement about bash and not about the reader. (4) For each of the two found escapes say whether the construction half can hold it too (a second hold that does not read text); if it cannot, the docstring names it as held by reading alone, as it already does for the others. (5) The docstring's list of what stays outside is restated from what the cases show, and no sentence says \"one shape\" where the reader allows a family.\n\nThe check runs on bash 3.2 on a developer's machine and bash 5 on the runners, and the two differ in what a builtin accepts: a sentence about bash's behaviour names the version it was seen on, and the orchestrator runs the tree on the runners before it is filed.",
       "files": [
         "tools/check-browser-install.py",
@@ -8125,14 +8326,19 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7411b3676bcb",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/check-browser-install.py: every rule now asks one place, `_bash_reading(parts)`, for a word's value after quote removal (None when an expansion or an unquoted character bash expands makes it unknowable), the sole expansion the word is, and whether it can split; `_word` reads a word into bash's parts (dq backslash removal included) and the spelling-only `quoted` key is gone; command word, set, printf (value known, not starting with '-'), eval (exactly one double-quoted $( ) calling apt-config, nothing beside), [ (known operator, unsplittable operands) and redirection targets (/dev/null by value, >& 1/2 by value, $GITHUB_OUTPUT as the sole expansion) read only that. Third escape found and closed: a builtin called before a same-named function definition (no function may take a stub, tool or builtin name). `{name}` against a redirection refused (bash 4.1+ per the manual). New cases: bq1 (920 respellings of refused shapes), bq2 (324 respellings of the action's shapes), bq3 (each shape and its respellings run under bash's xtrace against the stubs: started commands on the vocabulary, same commands and exit as bare), bq4-bq7 (the three escapes, past the reader and as a step). Construction rows now name their hold lines and rerun with them removed, which must reach outside; this answers finding P169-R105: bk11 was seen red on bash 5.2.21 in CI run 44684189710 (K4, both lines removed), and on bash 5 the unset line and the read-only line each hold it alone (44684182939, 44684186240); on bash 3.2 there is no command hash array and bk11's label says so. Docstring restated (stays-outside list, reading-alone list, versions named; bk1/bk2/bk7 are held by both lines each alone on bash 3.2 but only by the disabling line on bash 5.2.21). BUILTINS reasons rewritten as families. CONTRIBUTING.md: one sentence. Mutation probe scratchpad/p169-29/mutations.py: run 2 saved file says 19 row(s), 0 not as expected (spelling-direction rows turn bq1/bq2 red, over-fire rows turn sd8/bp11 red). Full sweep 198/198 files ok, 19746 cases. Check CPU user+sys interleaved: head 6.22/6.51, final 6.53/6.63.",
+        "descriptive": "The browser install check's reader judges each word by the value bash hands on, so a quoted option, text beside eval's substitution, or a function shadowing a builtin can no longer pass, and a case fails by name if a rule reads spelling again."
       },
       "startedAt": "2026-11-20T04:33:39Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-20T06:45:49Z",
+      "verifiedBy": [
+        "bq1: each refused shape stays refused for its reason under single, double, adjacent-piece, mixed and backslash respellings of every bare word",
+        "bq2: each shape the action has is read with no problem under every respelling",
+        "bq3: each accepted shape and its respellings run under bash's trace start nothing off the vocabulary and run identically",
+        "bq4-bq7: printf with a quoted -v, eval with text after the substitution, eval with a variable after it, and a builtin called before a same-named function: bash's reading shown past the reader, refused by the reader, outside file intact as a step"
+      ],
       "notes": [
         {
           "at": "2026-11-20T04:33:00Z",
@@ -8191,6 +8397,24 @@
             "ms": 133724,
             "basis": "durationMs in run 2026-11-20T06:45:21Z.da4a9e's record (run-test-gate --record)",
             "runId": "2026-11-20T06:45:21Z.da4a9e"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-20T06:41:37Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 7673000,
+            "startedAt": "2026-11-20T04:33:44Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-20T06:45:21Z.da4a9e",
+            "kind": "wait",
+            "ms": 14000,
+            "startedAt": "2026-11-20T06:42:34Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 7411b3676bcb",
+            "kind": "commit",
+            "ms": 3584,
+            "startedAt": "2026-11-20T06:45:44Z"
           }
         ],
         "firstStartedAt": "2026-11-20T04:33:39Z"
@@ -8308,6 +8532,18 @@
         "runId": "2026-11-20T06:45:41Z.67e530",
         "status": "passed",
         "at": "2026-11-20T06:45:41Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "7411b3676bcb",
+        "at": "2026-11-20T06:45:49Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-20T06:41:32Z",
+        "basis": "`python3 tools/check-browser-install.py --selftest` in a throwaway tree at HEAD exited 1 on \"NameError: name '_bash_version' is not defined\" (read as python), and the task introduces '_bash_version': absent from HEAD's tools/gate-parity.py, .github/actions/browser-install/action.yml, CONTRIBUTING.md, tools/check-browser-install.py and present in the working tree's tools/check-browser-install.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -8371,6 +8607,258 @@
       ],
       "fixes": [
         "P169-R109"
+      ]
+    },
+    {
+      "id": "P169.31-6l3",
+      "title": "The status render and its gate give no passing word to a subject whose own run record cannot be read",
+      "status": "pending",
+      "description": "The status render and the status gate answer a subject's tests from the pointer the plan caches, not from the record. A phase measured green whose own record is then unreadable (a status written twice, a moment that names no moment, steps that are not a list) still reads `tests passed`, printed beside the render's own banner that run records cannot be read, and `audit-status --gate` exits 0 with GATE PASSED under the default conditions and under `--fail-on failing-tests`. The validator and the doctor warn and exit 0. A pipeline gating on the plan's state therefore stays green over a record nobody can read; only a close and a task's done refuse.\n\nHold it where the word is produced, so every surface gets it at once. (1) The one function that yields a subject's tests word takes the read's answer for that subject: when the subject's own newest record cannot be read the word is the unreadable one (the read's own sentence, with file and field), never the pointer's. The table, the phase head line, `--short`, `--json` and the gate all go through it; derive the list of surfaces that print a tests word from the code and make a case fail when one prints it another way. (2) `failing-tests` trips on such a subject, in its own sentence, naming the record and the remedy the read prints; `no-test-evidence` does not count it as evidence. A plan with no unreadable record renders and gates byte for byte as before (compare over this repository's plan, the example plan and the starter). (3) The JSON rollup carries the state under the key the tests word already has, as a new value; say in COMPATIBILITY.md's terms whether a new value of that word is an addition (the documents already say an unrecognised word trips nothing: check that an older reader of the JSON is not promised a closed set). (4) Cases: the three shapes for a task and for a phase, ledger on and off; the allow direction (a readable green stays `passed` and the gate passes); and the doctor's and the validator's lines stay what they are (warnings), stated in the documents as such.\n\nThe command document for status is near the help payload's ceiling: a sentence added there is paid for by one removed.",
+      "files": [
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "tests/test__status_facts.py",
+        "tests/test_audit_status.py",
+        "plugins/audit/commands/status.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "tests/test__status_facts.py",
+        "tests/test_audit_status.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_status.py: a task and a phase whose own record cannot be read print the unreadable word on every surface and trip failing-tests, and a readable green stays passed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_status.py tests/test__status_facts.py tests/test__help.py tests/test__evidence_io.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.28-6l3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-20T08:25:50Z",
+          "text": "scope: plugins/audit/scripts/status/_status_facts.py, plugins/audit/scripts/status/audit-status.py, every path the finding(s) P169-R110 name"
+        },
+        {
+          "at": "2026-11-20T08:25:50Z",
+          "text": "scope: tests/test__status_facts.py, the suite that tests plugins/audit/scripts/status/_status_facts.py (python: its import closure reaches plugins/audit/scripts/status/_status_facts.py)"
+        },
+        {
+          "at": "2026-11-20T08:25:50Z",
+          "text": "scope: tests/test_audit_status.py, the suite that tests plugins/audit/scripts/status/audit-status.py (python: its import closure reaches plugins/audit/scripts/status/audit-status.py)"
+        },
+        {
+          "at": "2026-11-20T08:26:42Z",
+          "text": "it quotes the argument hint of status.md, and this task adds no flag and leaves the hint as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-20T08:26:42Z",
+          "text": "it quotes a sentence of COMPATIBILITY.md about config keys, and this task touches only what the document says about the tests word of the status rollup",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-20T08:26:42Z",
+          "text": "it quotes a sentence of COMPATIBILITY.md about where the config lives, which this task does not touch",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-20T08:26:42Z",
+          "text": "it quotes a sentence of COMPATIBILITY.md about which of two keys wins, which this task does not touch",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-20T08:26:42Z",
+          "text": "it quotes the 'Validation stays additive' sentence of COMPATIBILITY.md, which this task does not touch",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-20T08:26:42Z",
+          "text": "it quotes a sentence of COMPATIBILITY.md about shards, which this task does not touch",
+          "waives": "tests/test__manifest_phases.py"
+        },
+        {
+          "at": "2026-11-20T08:26:42Z",
+          "text": "it quotes the '## [Unreleased]' heading, and this task adds entries under that heading without touching it",
+          "waives": "tools/release.py"
+        }
+      ],
+      "fixes": [
+        "P169-R110"
+      ]
+    },
+    {
+      "id": "P169.32-6l3",
+      "title": "The plan is parsed and saved through one door that refuses a key written twice anywhere in a plan file, so no verb keeps one copy silently",
+      "status": "pending",
+      "description": "A plan file that writes a key twice is the shape a keep-both merge resolution leaves, and the plugin reads it with the last copy winning and saves it back with one copy, silently. The run-record reader now refuses such a record and the gate's own writer refuses to rewrite the file, but every other verb that saves the plan (`audit-task.py note`, `done`, the drive's writes, close-phase, the merge resolver's output) parses through `_manifest_io.read_json` and saves through `save_plan_json`: one unrelated `note` rewrites the shard with the copy that happened to be last, and from then the lookup, the gate's reuse and `done` answer from an older green, ledger on and off. A phase that writes `tasks` twice is read from the last copy by every reader and is never named at all. The release guard already refuses a plan with a duplicate key for itself; the plugin's own doors do not.\n\nHold it at the one door through which the plan is parsed and saved. (1) `_manifest_io` parses every plan file with a duplicate-key check (one function, used by `read_json`, `load_manifest`, `load_manifest_at`, the shard reads and the tip reads), and the parse returns the places a key is written twice beside the document; a save of a file read that way refuses, naming the file, the key's path and the hand step that gets out, whatever verb asked. Derive the list of plan readers and writers from the code (the writers lint already tables every function that writes a plan path) and make a case fail when one parses or saves a plan file another way. (2) What a reader does with such a plan is stated per kind: a verb that writes refuses; a read-only renderer (status, report, panel, doctor, validate) says the file and the key in its own channel and reads nothing from the copies; the run-record reader keeps its stricter rule. Remove the duplicate checks that become redundant (the run-record reader's own parse, the gate writer's refusal) in favour of the one door, keeping their cases. (3) The validator names every duplicate in a plan file, any object, both layouts. (4) The merge resolver never writes a file with a key twice (its own output is checked by the same door before it is written). (5) COMPATIBILITY.md: a plan with a key written twice was read before and is refused now; say whether that is a promise broken (it is malformed JSON by RFC 8259's \"SHOULD be unique\", and no released writer produced one: verify the second half by reading the released writers) and record it as what it is. Cases: the keep-both shape on a task's record, on a phase's `tasks`, on the index's `phases`, on a title, on a bug; each verb refuses to save; each renderer names it; the hand step works; and a plan with no duplicate reads and saves byte for byte as before (this repository's plan, the example, the starter).\n\nThe cost to measure: the duplicate check runs on every plan read, including the plan gate on every Edit; measure the hook before and after, twice with a gap (`python3 tools/bench-hooks.py`), and keep it inside the budget the gate holds.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "tests/test__manifest_io.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test__evidence_io.py",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
+        "tests/test_validate_manifest.py",
+        "plugins/audit/scripts/manifest/merge-manifest.py",
+        "tests/test_merge_manifest.py",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "SECURITY.md",
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
+        "tests/test__manifest_io.py",
+        "tests/test__evidence_io.py",
+        "tests/test_validate_manifest.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__manifest_io.py: a plan file with a key written twice (on a task record, a phase's tasks, the index's phases, a title) is refused by every save, named by every read, and a plan with no duplicate reads and saves byte for byte as before",
+          "tests/test__evidence_io.py: after a keep-both merge shape, no verb's save leaves the older copy for the gate to reuse"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__manifest_io.py tests/test__evidence_io.py tests/test_validate_manifest.py tests/test_merge_manifest.py tests/test_audit_task.py tests/test__deps.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.28-6l3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-20T13:08:18Z",
+          "text": "scope: plugins/audit/scripts/manifest/_manifest_io.py, plugins/audit/scripts/governance/_evidence_io.py, plugins/audit/scripts/manifest/validate-manifest.py, every path the finding(s) P169-R112, P169-R113 name"
+        },
+        {
+          "at": "2026-11-20T13:08:18Z",
+          "text": "scope: tests/test__manifest_io.py, the suite that tests plugins/audit/scripts/manifest/_manifest_io.py (python: its import closure reaches plugins/audit/scripts/manifest/_manifest_io.py)"
+        },
+        {
+          "at": "2026-11-20T13:08:18Z",
+          "text": "scope: tests/test__evidence_io.py, the suite that tests plugins/audit/scripts/governance/_evidence_io.py (python: its import closure reaches plugins/audit/scripts/governance/_evidence_io.py)"
+        },
+        {
+          "at": "2026-11-20T13:08:18Z",
+          "text": "scope: tests/test_validate_manifest.py, the suite that tests plugins/audit/scripts/manifest/validate-manifest.py (python: its import closure reaches plugins/audit/scripts/manifest/validate-manifest.py)"
+        },
+        {
+          "at": "2026-11-20T13:08:53Z",
+          "text": "it quotes a sentence of COMPATIBILITY.md about config keys, and this task adds a sentence about plan files with a key written twice without touching that one",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-20T13:08:53Z",
+          "text": "it quotes a sentence of COMPATIBILITY.md about where the config lives, which this task does not touch",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-20T13:08:53Z",
+          "text": "it quotes a sentence of COMPATIBILITY.md about which of two keys wins, which this task does not touch",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-20T13:08:53Z",
+          "text": "it quotes the 'Validation stays additive' sentence of COMPATIBILITY.md, which this task does not touch",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-20T13:08:53Z",
+          "text": "it quotes a sentence of COMPATIBILITY.md about shards, which this task does not touch",
+          "waives": "tests/test__manifest_phases.py"
+        },
+        {
+          "at": "2026-11-20T13:08:53Z",
+          "text": "it quotes the '## [Unreleased]' heading, and this task adds entries under that heading without touching it",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-20T13:08:53Z",
+          "text": "it quotes a sentence of SECURITY.md about the secret-read guard, which this task does not touch",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-20T13:08:53Z",
+          "text": "it quotes a sentence of SECURITY.md about the secret-read guard, which this task does not touch",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-20T13:08:53Z",
+          "text": "it quotes a sentence of SECURITY.md about the journal, which this task does not touch",
+          "waives": "tests/test_hooks.py"
+        },
+        {
+          "at": "2026-11-20T13:08:53Z",
+          "text": "it quotes a sentence of SECURITY.md about committed files, which this task does not touch",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-20T13:08:53Z",
+          "text": "it quotes a sentence of SECURITY.md about the git pipeline, which this task does not touch",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-20T13:08:53Z",
+          "text": "it reads the 'Fail modes (by design)' table of SECURITY.md, which this task does not touch",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-20T13:08:53Z",
+          "text": "it quotes a row of SECURITY.md's fail-mode table, which this task does not touch",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-20T13:08:53Z",
+          "text": "it names a section of SECURITY.md by its heading, which this task does not touch",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-20T13:08:53Z",
+          "text": "it quotes the '[quality-gates security]' subject line of SECURITY.md, which this task does not touch",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        }
+      ],
+      "fixes": [
+        "P169-R112",
+        "P169-R113"
       ]
     }
   ],

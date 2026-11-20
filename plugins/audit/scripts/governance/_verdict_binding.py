@@ -394,8 +394,10 @@ def plan_records(project, manifest_path):
     `_evidence_io.unreadable_records` names it."""
     bodies, lost = _evidence_io.plan_bodies(manifest_path, project)
     doc = _evidence_io.record_schema()[0]
-    return (_evidence_io.records_of_bodies(bodies, doc),
-            list(lost) + _evidence_io.unreadable_records(bodies, doc))
+    plan = _evidence_io.plan_said(project, manifest_path)
+    return (_evidence_io.records_of_bodies(bodies, doc, plan=plan),
+            list(lost) + _evidence_io.unreadable_records(bodies, doc,
+                                                         plan=plan))
 
 
 def subject_file_lost(lost, manifest_path, phase_id):
@@ -405,7 +407,9 @@ def subject_file_lost(lost, manifest_path, phase_id):
     under the plan's directory, so a label read off the disk and one read at
     a branch tip (`branch:path`) are matched alike; every lost label when
     the index itself names no such file, since the index is then what was
-    lost."""
+    lost - and a lost label naming the index itself, wherever it was read:
+    the index is what says which file a phase lives in, so with it lost no
+    file can be said not to hold the subject's record."""
     lost = [label for label in lost or [] if not isinstance(label, dict)]
     if not lost:
         return []
@@ -415,16 +419,52 @@ def subject_file_lost(lost, manifest_path, phase_id):
         path = None
     if not path:
         return list(lost)
+    index = os.path.basename(manifest_path)
     tail = os.path.relpath(path, os.path.dirname(
         os.path.abspath(manifest_path))).replace(os.sep, "/")
-    return [label for label in lost
-            if str(label).replace(os.sep, "/").split(":")[-1].endswith(tail)]
+
+    def names(label, end):
+        said = str(label).replace(os.sep, "/").split(":")[-1]
+        return said == end or said.endswith("/" + end)
+    return [label for label in lost if names(label, tail)
+            or names(label, index)]
 
 
 def subject_runs(texts, records):
     """Every run `texts` (`ledger_texts`' shape) and `records` (`plan_records`'
-    shape) hold, one entry per run: the ledger's row where both hold it."""
+    shape) hold, one entry per run: the ledger's row where both hold it - and,
+    for a record that would not read, the row standing for it with every older
+    run of its subject naming none (`_evidence_io.with_records`)."""
     return _evidence_io.with_records(rows_of(texts), records)[0]
+
+
+def own_runs(rows, ids):
+    """The runs among `rows` that are verdicts of the work `ids` names - THE ONE
+    SELECTION, asked by the binding and by the member check alike. A run of
+    that work (`_same_subject`, so a task's run on its phase's gate is the
+    task's and never the phase's), less a base run a task's red keeps: it
+    names the phase but measured the base commit for that task, so it is no
+    run of either. A row standing for the subject's record that would not
+    read is among them, newest (`_evidence_io.oldest_first`)."""
+    return [r for r in rows or []
+            if isinstance(r, dict)
+            and r.get("scope") != _evidence_io.BASE_SCOPE
+            and _evidence_io._same_subject(r, ids)]
+
+
+def unreadable_refusal(who, row, record):
+    """`binding`'s refusal over `row`, a row standing for a record that would
+    not read (`_evidence_io.is_unreadable_row`), naming that record and the
+    command that measures it again - or None for any other row."""
+    if not _evidence_io.is_unreadable_row(row):
+        return None
+    entry = row[_evidence_io.UNREADABLE_ROW_KEY]
+    return {"state": "refused", "arm": ARM_UNREADABLE, "row": None,
+            "measured": None, "notes": [],
+            "sentence": ("%s - %s's own among them, so its newest run is not "
+                         "established and no older verdict can stand for it; "
+                         "%s" % (_evidence_io.unreadable_records_sentence(
+                             [entry]), who, record))}
 
 
 def binding(project, ids, entries, source, owns, manifest_path, record,
@@ -504,15 +544,15 @@ def binding(project, ids, entries, source, owns, manifest_path, record,
                who, record))
         out["arm"] = ARM_UNREADABLE
         return out
-    # The verdict's runs are the runs of the WORK `ids` names (`_same_subject`,
-    # so a task's run on its phase's gate - `scope: phase` beside its
-    # `taskId` - is the task's and never the phase's), less a base run a
-    # task's red keeps: it names the phase but measured the base commit for
-    # that task, so it is no run of either.
-    rows = [r for r in ledger["rows"]
-            if isinstance(r, dict)
-            and r.get("scope") != _evidence_io.BASE_SCOPE
-            and _evidence_io._same_subject(r, ids)]
+    # The verdict's runs are the runs of the WORK `ids` names (`own_runs`,
+    # the one selection the member check asks too). A row standing for a
+    # record that would not read is the newest of them when it is the
+    # subject's; the question above names it, and this is the same answer
+    # for one the question was not asked about.
+    rows = own_runs(ledger["rows"], ids)
+    stands = unreadable_refusal(who, newest(rows), record)
+    if stands is not None:
+        return dict(out, **dict(stands, notes=notes))
     # A SUBJECT ROW WHOSE ts NAMES NO MOMENT BLOCKS, as an unparseable line
     # does: it cannot be placed before or after any other row, so it could be
     # the newest verdict - and ordering it first would let a green retire it.
@@ -777,9 +817,17 @@ def member_red(texts, member_id, carrier_answer, record, records=()):
     The carrier's run is the group's verdict, and a member's own rows are not
     asked by it; a red recorded on the member alone afterwards is newer evidence
     about the branch every member lands. A red whose moment cannot be placed
-    refuses, the side that cannot land over it unanswered."""
-    rows = [r for r in subject_runs(texts, records)
-            if _evidence_io._same_subject(r, {"phaseId": str(member_id)})]
+    refuses, the side that cannot land over it unanswered.
+
+    The member's runs are `own_runs`, the binding's own selection - so a base
+    run a member's task keeps is no run of the member here either - and a
+    member whose own record would not read refuses naming that record
+    (`unreadable_refusal`): it may hold the member's newest red, and the
+    read gives no older run in its place."""
+    rows = own_runs(subject_runs(texts, records), {"phaseId": str(member_id)})
+    stands = unreadable_refusal(str(member_id), newest(rows), record)
+    if stands is not None:
+        return dict(stands, notes=list(carrier_answer.get("notes") or []))
     red = red_after_green(rows)
     if red is None:
         return None
