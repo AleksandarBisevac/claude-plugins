@@ -114,9 +114,37 @@
         "file": "tests/test_journal_writes.py:4157-4160 (STAGES comment)",
         "issue": "Two sentences claim more than the code shows. 'sn0 is the name that report carried before the suite was staged': before the change the raising block was reported as `sn0 the switch-reading cases` (the removed stage call labelled that way), now it is reported as `sn0`, so the name is shortened, not carried. 'nearly all of it is `oq5`' is a ratio with no basis in the file; its basis (a profile, oq5 50.5 s of 53.3 s) is only in the filed return.",
         "resolution": "Say 'a label beginning sn0, as before' or drop the sentence, and either carry the basis (the command that profiled the block) or delete 'nearly all of it' and keep the pointer to oq5."
+      },
+      {
+        "id": "SG2-R14",
+        "severity": "low",
+        "file": "tests/test_guard_edits.py:2674-2690",
+        "issue": "cf36e puts its measured values (commit ids, object-file counts, lists) into the case LABEL, not the check's third detail argument. Its PASS line is about 1.2 kB and differs on every run (the commit ids move with the commit's second), where every other label of the suite is stable text. Anything that compares labels across runs (the before/after label comparison this task's rule 3 uses, a replay, a credit by label) sees a different case each time.",
+        "resolution": "Keep the label to the static sentence and pass the as_template ... placed values as the detail argument: check(label, cond, detail)."
+      },
+      {
+        "id": "SG2-R15",
+        "severity": "low",
+        "file": "tests/test_guard_edits.py:2279-2281, 2633-2690 (cf36e), 2304-2306 (_gen_init)",
+        "issue": "The third template - the initialised-only repository _gen_init copies into nested-repo, repo and link-repo worlds - is held by no case: cf36e copies only the top template for independence and checks member placement for top and down; nothing asserts that a copy of the init template names no commit. The mutation table has rows for link, hard link, uncommitted template and wrong member template, none for the init template given a committed repository. The records comparison would not tell either, because the hook does not read those repositories' heads.",
+        "resolution": "Add to cf36e (or beside it) a copy of the init template read with _gen_repo_state asserting head None and an empty object count, and a mutation row giving _gen_init the committed template; show it red."
+      },
+      {
+        "id": "SG2-R16",
+        "severity": "low",
+        "file": "tests/test_guard_edits.py:2233-2236",
+        "issue": "The section comment says a repository 'records nothing of where it stands' and that its index is 'the same bytes wherever git made them'. The index records each file's stat data (inode, ctime, mtime, device), so a copied index is stale against the copy's files; it stays correct only because the first status re-hashes. cf36e does show status clean for the copy, so the behaviour is held, but the sentence claims more than is true.",
+        "resolution": "Say that the index's stat data is stale in a copy and that a status re-hashes (cf36e reads it clean), instead of saying nothing records the place."
+      },
+      {
+        "id": "SG2-R17",
+        "severity": "low",
+        "file": ".github/sweep-costs.json:blocks of tests/test_guard_edits.py (ge-generated), blocks of tests/test_journal_writes.py (jw-generated), costs of both",
+        "issue": "The 300.0 figures for the two generated blocks are the timeout the killed blocks were allowed (the recorder reads the log line's seconds), so they are a kill floor and not a measurement, and the table has no per-entry origin to say so. They give block_timeout 900 s each (3 x 300), which against the windows readings of the changed tree (function alone 155.1 s and 122.8 s; through the sweep 235.3 s and 204.0 s, 205.4 s and 175.5 s) is 3.8 to 5.1 times the observed seconds: a usable hang detector, but its basis is the old kill, and the file figures 354.4 and 385.6 sum those floors. The re-record the task says is owed from a log of the changed code exists only in the executor's return prose: I found no task or note in docs/audit/phases/SG2.json that carries it.",
+        "resolution": "Record the owed re-record against the phase as a plan task (acceptance: the two blocks' figures from a windows log of this change through --costs-from-log), as the previous review's resolution asked; until then the closing note must say the two generated figures are kill floors."
       }
     ],
-    "outcome": "[findings: 13 - 0 high, 4 med, 9 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 17 - 0 high, 4 med, 13 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -279,6 +307,10 @@
         {
           "at": "2026-11-20T02:31:04Z",
           "text": "31. tests/test_build_shop.py esc70: the hand-built runs carry repeats None (node's shape), so the ', over [..] searches a length' ending of the growth fault that python's child always produces is held by no case; give one growth run a repeats list and compare the whole text. 32. One TRIPWIRE_CEILING serves both engines; node's longest search read 0.005 to 0.009 s on a windows-2025 runner (2026-11-20), so for node the ceiling catches nothing: derive one per engine, or say in the comment that the ceiling is python's and node is held by growth and the deadline."
+        },
+        {
+          "at": "2026-11-20T04:12:38Z",
+          "text": "33. tests/test_guard_edits.py cf37b counts a decision's disk listings only after the journal library is loaded; a cold hook process lists four of the plugin's scripts folders on its first ordinary write (find_script's walk) and no case holds that figure - add a case counting a cold hook process's listings with its basis, or give find_script a direct path for the journal library so the walk is not paid on every call. 34. tools/sweep-selftests.py merge_costs/record_costs: the cost table carries one platform for all entries and a partial record keeps old block figures, so figures from two machines can sit under one label with no case red - record an origin per block or refuse the mix. 35. tests/test_guard_edits.py: cf37 and cf37b are skipped by name on windows, so the per-call process and listing counts are asserted on no windows leg."
         }
       ]
     },
@@ -811,7 +843,7 @@
     {
       "id": "SG2.8-xk1",
       "title": "The journal hook's and the edit guard's suites run as blocks, and the sweep's cost table holds what the suites of this line cost, so no file of it meets the per-file timeout on the slowest runner",
-      "status": "in_progress",
+      "status": "done",
       "description": "The second CI run over the skill-gates phase was red on windows because tests/test_journal_writes.py 'did not finish within 300s'. It is not a hang: read from the CI logs, the same suite printed its whole run on windows in 240.8 s in the run before the merge (run 44549802704, windows plain 4), and on linux takes between about 40 and 75 s. The sweep's cost table (.github/sweep-costs.json) holds 29.9 slot-seconds for it - a figure recorded before the skill-gates line added its cases - so the runner gave it the floor timeout and dealt it to a part as a light file.\n\nWHAT THE RUNNER ALREADY OFFERS (read tools/sweep-selftests.py before anything: the `blocks, not suites` comment above `work_items()`, the `shards` comment above `parse_shard()`, and how a timeout is calibrated). A suite whose `__main__` is `_harness.staged_main` over a `STAGES` table is run block by block, each block a job on one slot with its own timeout and its own figure in the cost table, then replayed once for the whole run's lines. tests/test_journal_writes.py is one unstaged file; its neighbours of comparable weight are staged (tests/test_guard_edits.py, tests/test_audit_task.py and others - read two before writing a table).\n\nTHE SAME RUN SHOWS THE NEXT ONE COMING: tests/test_guard_edits.py, also unstaged and also grown by this line, printed its run on windows in 236.1 s against the same 300 s. Every file's seconds on every leg of that run are in the file the orchestrator names in your prompt.\n\nTHE RULE TO BUILD.\n1. tests/test_journal_writes.py and tests/test_guard_edits.py each become a staged suite: its cases grouped into blocks along the seams it already has (its `_..._cases(check)` functions and the sections of its main body), each block able to run alone - whatever one block builds for another is built by each that needs it, or moved into a shared fixture function - and the whole run printing THE SAME CASE LINES IN THE SAME ORDER as before. Prove that last sentence by diffing the PASS/FAIL labels of a whole run before and after (ids and order; the summary line's count equal).\n2. No case is dropped, weakened, merged or renamed, and no assertion changes. The floor guard will read this diff and say that code outside the labelled checks moved; that is expected, and the return says why it is not a weakening, with the before/after label diff as the evidence.\n3. THE COST TABLE IS RE-RECORDED, not hand-edited, for the suites this line changed or added - the way the runner's own flag does it (`--record-costs`; read what it writes and for which files) - so each block of this suite and every file the skill-gates line added or grew has a measured figure and none is 'estimated'. Say in the return which files' figures moved by more than double, with both numbers and the command that printed them. The table's figures are this machine's; the timeout a runner applies is the floor or a multiple of the figure - say what that gives the heaviest block of this suite on a runner about six times slower than this machine (the ratio the two CI figures above show against a local run you take), and that it is under the per-job timeout.\n4. gate-parity's shard and time-bound rules stay green (`python3 tools/gate-parity.py`), the runner's own cases stay green (`python3 tools/sweep-selftests.py --selftest`), and the parts still cover the whole tree - the runner's cases pin that.\n5. List in the return every OTHER unstaged suite that took more than half the per-file timeout on any leg of that run, with its seconds - they are not this task's to stage, and the list goes to the phase's batch.\n6. If a single block is itself heavier than the others together (one case that builds many git fixtures), say so and split it where the seam is; do not raise a timeout to make a slow file fit.\n\nHOW TO PROVE. The label diff of rule 1. Each block run alone, in an order other than the table's, green (a block that needs another's leftovers shows here). The suite through the sweep (`python3 tools/sweep-selftests.py tests/test_journal_writes.py --jobs 4`), two runs with a gap, seconds before and after. A mutation probe the orchestrator can run from the worktree root: one block left out of the STAGES table (the suite's or the runner's own coverage rule must go red - find which, and if neither does, that is a finding to report, not to fix here); one case's assertion inverted in a block run alone (red in that block). Windows cannot be run locally: only CI confirms the seconds there.\n\nNOT in this task: the hook under test; any other suite's staging; the timing cases and the mask (other tasks).\n\nAcceptance:\n(1) Both suites are staged, every block runs alone, and a whole run prints the same case labels in the same order with the same count as before.\n(2) The cost table carries measured figures for both suites' blocks and for every file the skill-gates line added or grew, written by the runner's own flag.\n(3) gate-parity and the runner's own cases are green.",
       "files": [
         "tests/test_journal_writes.py",
@@ -837,14 +869,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8698a47e5c47",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "WHAT WAS ALREADY STAGED: neither suite. At HEAD both ended in `_harness.run(_cases)`; the description's sentence calling test_guard_edits.py staged is wrong, as the coordinator said. STAGED NOW: both, `__main__` = `_harness.staged_main` over a literal STAGES table; `_selftest()` removed, as in the staged neighbours (test__output.py, test__deps.py). test_journal_writes.py blocks (cases; slot-seconds in sweep run 2, run 1 in brackets): jw-core `_cases` 144; 1.3 [1.6] | jw-machine-path 5; 0.2 [0.5] | jw-call-mark 5; 0.2 [0.5] | jw-one-question 10; 1.5 [1.8] | jw-link-question 4; 2.2 [2.3] | jw-generated 4; 60.6 [59.6] | jw-topology 1; 2.0 [2.0] | jw-slot 1; 0.9 [0.9] | jw-created-file 13; 3.7 [3.8] | sn0 `_switch_reading_cases` 25; 22.2 [22.1]. The sn0 block's label is `sn0`: before staging a raise there was reported as `sn0 the switch-reading cases`, and a raising block is reported under its STAGES label. test_guard_edits.py blocks: ge-core 47; 0.3 [0.3] | ge-config 66; 0.5 [0.4] | ge-volume-pair 5; 1.5 [1.7] | ge-link 7; 8.7 [8.7] | ge-generated 4; 71.4 [68.9] | ge-process-count 2; 1.6 [1.6] | ge-registration 4; 5.9 [5.9] | ge-member 5; 1.9 [2.1] | ge-relative-registration 4; 1.0 [1.0] | ge-topology 3; 2.1 [2.2]. Moved into shared fixture functions so a block can run alone: `_suite_cfg()` (the cfg `_cases` built inline), `_worktree_fixture(check)` (the worktree pair plus its failing tf0 case, so a block whose own build fails is red, not short of cases), and the wrappers `_config_block_cases` / `_volume_pair_block_cases`, which build their own project dir, cfg and pair. The journal's main body stays one block: its sections took 1.0 s of 83.9 s in process (profile), and each block costs a process start. A HIDDEN DEPENDENCY BETWEEN BLOCKS was found by running each block alone: cf37b (ge-process-count) went red alone, because a cold process's first decide lists 4 of the plugin's scripts/ folders (`_config.find_script` walking to `_journal_io.py` for `_config.journal_lib()`), and in the one-process run an earlier block had already loaded that library. The block now calls `_config.journal_lib()` before it counts, with a comment saying why; cf37b's assertion is unchanged. FINDING for the batch, not fixed: cf37b has only ever measured a warm process, and the real hook is a cold process on every call, so each hook run pays that scripts/ walk. Two stale sentences in test_journal_writes.py (docstring line 18, comment by j4) said `_harness.run` reports a vanished function; now `_harness.stage` does, and they say so. LABEL DIFF: before = HEAD's files run whole; after = the staged whole run. Case ids and verdicts, in order: identical, journal 212/212, guard 147/147 (`diff` exit 0; files labels.before.txt/labels.after.txt/labels.diff under the scratch dir sg2.8/journal and sg2.8/guard). The full label text differs only in run-varying details: hashes, timestamps and seconds (12 journal lines, 4 guard lines). With those masked the guard diff is empty, and the journal differs on sn9 alone, where the detail's repr lists the same two rows in the other order. Its assertion sorts them (`sorted(str(r[0]) ...)`), so this is the read order of the trail, not a change. EACH BLOCK ALONE, reverse table order, fresh scratch cwd/TMPDIR each (each_block_alone.py, exit 0): every block exit 0 with all cases passing; the blocks sum to 212 and 147 = the whole runs. FLOOR GUARD: code moved out of `_cases` into STAGES rows and shared fixtures, and that is the move the guard reports. No assertion changed; the evidence is the label diff and each block's green run alone. The one added statement (`_config.journal_lib()`) restores the state cf37b was always measured in, and the mutation table shows removing it turns cf37b red alone. COST TABLE: departs from the coordinator's 'targeted local --record-costs' on evidence. The table is a windows table (platform windows-2025, recorded from windows cells per the runner's comment), and tests/test_stamp_verification.py swp4 pins that: platform_family(doc.platform) must be win32. A local --record-costs writes platform=darwin; the intermediate table after my local runs had `darwin`, which swp4 refuses. It would also give darwin figures to heavy windows blocks: test_drive_phase ar18-block, windows 235.1 s, would drop to the 300 s floor while taking about that long on windows. So: (1) `python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test_guard_edits.py --jobs 4 --record-costs .github/sweep-costs.json`, twice with a 4-minute gap: the two suites' blocks, measured locally, the only place they can be measured until CI runs them. (2) `python3 tools/sweep-selftests.py --costs-from-log <windows cells of runs 44573316400 (all eight), and the two saved cells each of the third and fourth runs, concatenated> --platform windows-2025 --workers 4 --record-costs .github/sweep-costs.json`, which printed `recorded 199 files' seconds and 285 blocks'`. That run keeps the platform windows-2025 and merges the local block figures, so each staged suite's file figure is its blocks' sum (jw 94.8, ge 94.9). Caveat: those 20 block figures are this machine's (darwin) under a windows label, until the next windows run's logs are recorded. All 49 swept files the line added or grew (git diff --name-only de21866c HEAD) are timed, none estimated. Stale ones: test_build_shop.py 85.8 comes from a windows run that FAILED (exited 1) before it grew to 78 cases, and test__floor_guard.py has staged_main but CI runs it whole, so it has a file figure and no block figures. MOVED BY MORE THAN DOUBLE (old -> new, compare_tables.py HEAD table vs new): test__clause_coverage 0.1->23.1, test_guard_edits 0.9->94.9, tools/release.py 1.6->11.6, test_panel_server 77.6->12.4, test_repair_commits 3.0->13.8, test__config 12.3->54.8, test__usage_detail 0.3->1.2, test_journal_writes 29.9->94.8, test_audit_usage 45.5->15.2, tools/check-example-pins 1.2->3.5, test_render_report 5.8->16.2, test__manifest_phases 0.2->0.5, tools/bench-hooks 2.9->6.9, tools/stream-cost 0.3->0.7, tools/measure-affected-miss 19.8->42.8, test_import_evidence 1.0->2.1. Added: test__floor_guard, test__task_timing, test_build_shop, test_drive_without_model, test_plan_window. TIMEOUT ARITHMETIC (runner's rule, block_timeout = max(300, ceil(TIMEOUT_PER_COST 3 x figure))): ge-generated 71.4 -> ceil(214.2) = 215 -> 300 s; jw-generated 60.6 -> 182 -> 300 s. On a runner 6x slower, ge-generated would take 71.4 x 6 = 428 s > 300, and jw-generated 364 s > 300: both would be killed. The ratio these runs show is smaller. Local sweeps of HEAD's files took 92.6/92.5 s then 91.2/91.3 s (two runs, 4-minute gap); windows took 236.1 s (guard) and 240.8 s (journal) in run 44573316400, about 2.6x, and the fourth run killed both at 300 s, so at least 3.2x. At 3.3x, ge-generated is about 236 s and jw-generated about 200 s: under the 300 s block timeout, but at about 0.79 and 0.67 of it. The CI deadline is 1800 s within a 33-minute job, and the table's longest calibrated timeout is 706 s (drive_phase ar18-block, printed by tt5). RULE 6 IS NOT MET, AND I DID NOT SPLIT: each generated block is heavier than its suite's other nine blocks together (ge 71.4 vs 23.5; jw 60.6 vs 34.2). All of that weight is one case each: cf36 (with cf36b-d, which read cf36's sweep results `seen`/`worlds`) and oq5 (oq5b-d are separable, but only 2.9 s). cProfile of `_generated_cases`: 73.3 s; 27.7 s building 364 worlds with 1497 git calls, about 20 s in the hook's own git calls inside decide (_config, 2496 calls), the rest in process. A split that keeps the labels does not exist: rule 2 and acceptance (1) forbid it, rule 6 asks for it. Options for the coordinator: (a) cut cf36/oq5 into per-family cases (new ids, so the label diff changes); (b) a cheaper world fixture, e.g. a copied template repo instead of init/add/commit per world, which removes up to 1092 of the 1497 fixture git calls; (c) accept a 300 s block at about 0.7-0.8 of it on windows. WALL: the two suites in one sweep took 91.5 s wall before and 73.8 s after (--jobs 4). OTHER UNSTAGED SUITES OVER 150 s (half the per-file timeout) ON ANY LEG of the saved logs (legs_over_half.py): test__output_lints.py 214.5 (run 44573316400, windows plain 4); test__worktrees.py 198.7 (third run, windows plain 3); test_run_test_gate.py 188.2 (fourth run, windows plain 2; 180.3 third run; FAILED exited 1 at 161.2 in run 44573316400 windows cp1252 2); test__affected_tests.py 186.2 (third run, windows plain 3; 179.9 run 44573316400 linux stress 1); test__invariants.py 178.1 (fourth run, windows plain 2; 168.1 third run). MUTATIONS (mutations.py in a copytree of the working tree without .git/node_modules/session state; anchor asserted once; __pycache__ purged; restore checked; exit 0; baselines = allow twins, all green): STAGES row jw-slot removed -> whole run FAIL `STAGED BLOCKS NEVER RUN ... ['_slot_follows_file_cases']` 211/212, and the sweep row FAILED. STAGES row ge-link removed -> FAIL STAGED BLOCKS NEVER RUN ['_candidate_error_cases','_link_cases','_link_mcp_cases'] 140/141, sweep row FAILED. The rule that catches a dropped row is the suite harness's own `stage_faults`/`stage_reach`; the sweep goes red only because its replay runs that same check, and the runner has no rule of its own for it. a1's assertion inverted, jw-core run alone -> FAIL a1 143/144. cf37b's assertion inverted, ge-process-count run alone -> FAIL cf37b 1/2. The block's `_config.journal_lib()` removed -> FAIL cf37b alone, listings 4. DEPENDANTS: hooks/journal-writes.py and hooks/guard-edits.py name the suites' paths, which are unchanged, so still correct. PLUGIN-BUILD-GUIDE.md and SECURITY.md cite oq/cf/cq ids, unchanged, so still correct. plugins/audit/README.md cites the path, still correct. tests/test__output.py reads test_journal_writes.py's source for the posix_rel idiom, and its ot-anchor block passes (49/49). tests/test_guard_secrets_read.py only shares the names `_cases`/`_selftest` and mentions the file in a comment, still correct. tests/test_journal_writes.py imports test_guard_edits (M, _tool_input, gen_sweep, _gen_label, _GEN_MEASURED, _gen_world_of, _gen_spell, topology_worlds, _topo_unbuildable), none renamed; jw-generated and jw-topology pass alone. .github/workflows/ci.yml, CLAUDE.md, CONTRIBUTING.md, CHANGELOG.md and PLUGIN-BUILD-GUIDE.md name the table's path or procedure, still correct. stamp-verification.py reads the table to size a sweep command's deadline: the figures for the two suites rose (about 95 each), so a proof naming them holds back more time; swp4 and the swc/swd/su-sweep-table blocks pass. tools/sweep-selftests.py reads the table, and its own cases pass 168/168 (sh0, sh3, sd2, bk5, tt5 on the live table). ruff and vermin are clean on both suites. MACHINE: another session's sweep in the sibling checkout (pid 88366, tests/test_drive_phase.py, load average 24) ran during my first label runs and had ended before every timing I report (load 2.6-6.8 then); fseventsd sat at 90-180% CPU throughout, and another session's mutations.py ran during my mutation probe, which measures no time.",
+        "descriptive": "Both suites now run as ten blocks each, with the same case labels and every block green alone. The cost table stays a windows table and holds measured figures for every file the line added or grew. Each suite's generated-arrangements block is still one case that would pass 300 s on a runner 6x slower; I report that and leave the split to the coordinator."
       },
       "startedAt": "2026-11-20T02:31:33Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-20T04:12:16Z",
+      "verifiedBy": [
+        "tests/test_journal_writes.py staged into ten STAGES blocks; each passes alone in reverse order; whole run prints the same 212 case ids in the same order (no new case)",
+        "tests/test_guard_edits.py staged into ten STAGES blocks; each passes alone in reverse order; whole run prints the same 147 case ids in the same order (no new case)"
+      ],
       "notes": [
         {
           "at": "2026-11-20T02:31:31Z",
@@ -853,7 +888,46 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-20T03:36:46Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 3912000,
+            "startedAt": "2026-11-20T02:31:34Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-20T03:46:18Z.b47063",
+            "kind": "wait",
+            "ms": 10000,
+            "startedAt": "2026-11-20T03:37:46Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-20T03:46:18Z.b47063, ending at its startedAt",
+            "kind": "selection",
+            "ms": 17298,
+            "runId": "2026-11-20T03:46:18Z.b47063",
+            "startedAt": "2026-11-20T03:37:56Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-20T03:46:18Z.b47063",
+            "kind": "gate",
+            "ms": 483933,
+            "runId": "2026-11-20T03:46:18Z.b47063",
+            "startedAt": "2026-11-20T03:38:14Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-20T04:11:42Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 444000,
+            "startedAt": "2026-11-20T04:04:18Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 8698a47e5c47",
+            "kind": "commit",
+            "ms": 2252,
+            "startedAt": "2026-11-20T04:12:12Z"
+          }
+        ],
         "firstStartedAt": "2026-11-20T02:31:33Z"
       },
       "reviewPerTask": "signals",
@@ -861,6 +935,17 @@
         "runId": "2026-11-20T04:04:17Z.88d278",
         "status": "passed",
         "at": "2026-11-20T04:04:17Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8698a47e5c47",
+        "at": "2026-11-20T04:12:16Z",
+        "return": "docs/audit/evidence/returns/SG2.8-xk1/20261120T023133Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.mode is gate-only with expectRedFirst false: no new case was added, two suites were restructured into blocks with their case labels unchanged. The reds that were owed were taken with the mutation probe instead (5 rows, all caught, baselines green; see outcome).",
+        "at": "n/a"
       }
     },
     {
@@ -1318,6 +1403,60 @@
         "status": "not-attempted",
         "basis": "tests.expectRedFirst is false for this regression task, so no proof is owed; and the helper could not make one, since timing_faults lives in the test file itself, so HEAD with this test file copied over it is the fixed tree. The rule-1 red was watched as a mutation in a throwaway copy of the working tree (scratchpad sg2.12/mutations.py --only 'growth branch of timing_faults deleted'): on the suite as it stood (sg2.12/test_build_shop.before.py) the deletion left ALL PASS 76/76, red [] - the reviewer's claim, measured; on the changed suite it reads SELFTEST FAILED 77/78, red ['esc70'] and nothing else.",
         "at": "2026-11-20T02:07:46Z"
+      }
+    },
+    {
+      "id": "SG2.13-xk1",
+      "title": "A generated arrangement's repository is copied from a template made once, so the two generated blocks cost a windows runner what the hook under test costs it, and the cost table times their blocks from a windows log",
+      "status": "in_progress",
+      "description": "The task before this one staged tests/test_guard_edits.py and tests/test_journal_writes.py, and its review left two findings this task answers. (1) In each suite one block is a single case heavier than the other nine together - `ge-generated` (cf36 and the cases reading its sweep) and `jw-generated` (oq5) - and on the windows leg both were killed at the 300 s block timeout in the first CI run that carried the blocks (run 44672849174, windows plain 2: `ge-generated [300.0s]`, `jw-generated [300.0s]`, both DID NOT REPORT; every other block of both suites was green on every leg). (2) The cost table holds this machine's macOS seconds for the two suites' twenty blocks under `platform: windows-2025`, so `block_timeout` gave the two heavy blocks the 300 s floor where a windows figure would have calibrated it.\n\nWHAT WAS MEASURED (the orchestrator's prompt names the files; the probe is a script you can run here). Each generated block's function was run alone, with every child process timed by what it ran, on a windows-2025 and an ubuntu-24.04 runner and on this machine, 2026-11-20. On the windows runner, alone and idle: the guard block's function 213.5 s, of which 171.6 s in 3283 child processes and 121.5 s in `_gen_world` (364 worlds, 334 ms each); the journal block's 218.7 s, 188.6 s in 3321 child processes, 142.2 s in `_gen_world` (376 worlds). The same functions took 25.4 s and 12.7 s on the linux runner. Per git call on that windows runner: commit about 91 ms, init 59 ms, add 65 ms, worktree add 123 ms, rev-parse 25 ms, config 27 ms; on linux each is 1 to 6 ms. So the block is slow on windows because a world is built with a process per git act, and the fixture - not the hook under test - is the larger half: of the guard block's git calls, init, add and commit (1254 of them) build repositories whose content does not depend on where they stand, 243 are `worktree add`, and 1716 are the hook's own `rev-parse` questions. The same probe timed the alternative on the same runner: a world's repository by init+add+commit 0.208 s, by copying a template of the same repository 0.039 s (status clean, same head).\n\nTHE RULE TO BUILD.\n1. A REPOSITORY WHOSE CONTENT DOES NOT DEPEND ON ITS PATH IS BUILT ONCE AND COPIED. `_gen_world` and `_gen_init` (tests/test_guard_edits.py; the journal suite reaches them through `gen_sweep`) take each such repository from a template git made once in this process - one per distinct committed content (the member project commits a different tree from the top-level one; an initialised-only repository is a third) - and copy it into place. What stays a git call per world is only what records the world's own path (`worktree add`), plus whatever else you show cannot be copied; say which calls remain and why. The journal block makes several hundred `git config` calls of its own (379 on the windows runner): find where they come from and move into the template any whose effect is the same for every world.\n2. A COPY IS A REPOSITORY OF ITS OWN. Nothing may be shared between a world and the template or another world - no hard link, no alternates file, no path inside the copy naming the template - because the cases write into worlds, and `visit` is promised the world as it found it. Hold this with a permanent case that needs few git calls: two worlds copied from one template, a commit made in one, and the other and the template read back unchanged (head, status, object count); and the copy's own configuration and git directory naming no path outside itself. Red first by making the copy share (a link in place of a copy) - show that run.\n3. THE SWEEP'S ANSWERS DO NOT CHANGE. cf36's records - for every arrangement the verdict as a subagent, as the main session, and what a loader reads - and oq5's are dumped before and after (a probe, not a case) and compared whole with paths normalised to the world's base: identical, the same count ran per family and the same count skipped per predicate. The suites' case labels and their order are identical before and after (ids and order; the summary's count grows only by the cases rule 2 adds). No case is dropped, weakened, merged or renamed; cf36, cf36b-d and oq5 keep their ids and conditions.\n4. WORLDS STAY REAL WHERE THE CASES LOOK. A case in these blocks that decides by a property git alone gives a repository (a worktree's `.git` file and its registration, a repository's own `.git`, an empty git entry) still gets that property from git or from the same bytes git wrote; nothing writes git's internal files by hand. `forget_git_standing` and every other reset the sweep makes per world stay.\n5. THE COST TABLE TIMES THE TWO SUITES' BLOCKS FROM A WINDOWS LOG, through the runner's own flag and nothing typed: `--costs-from-log` over the windows cells of that CI run (the orchestrator's prompt names the joined log), with `--platform windows-2025`. Read `costs_from_render` and `block_costs_from_render` first and say what they record for a block that was killed (its line is in the log with the seconds it was allowed) and what timeout that gives each generated block on the next windows run; say also what the recorder writes as a staged suite's FILE figure when a log holds the suite in several parts, and whether that is the suite's cost or one part's. After this task the table must hold no figure for these two suites that came from this machine; a later run's log, with the cheaper fixture measured on windows, replaces the floor figures - that re-record is not yours (no such log exists yet) and you name it in the return as owed.\n6. THE STAGES COMMENT of tests/test_journal_writes.py says two things the code does not show (the review's low finding): that `sn0` is the name the report carried before staging (it was a longer label beginning `sn0`), and that the generated block is 'nearly all' one case, a ratio with no basis in the file. Say what is true or drop each; after this task the second is probably no longer true at all.\n\nHOW TO PROVE. The probe before and after, here: the block functions' seconds, the count of child processes by kind, and `_gen_world`'s seconds (two runs with a gap; another session works on this machine). From the per-call windows figures above, the arithmetic of what the remaining calls cost a windows runner for each block - an estimate, labelled as one; the orchestrator runs the probe on a windows runner afterwards and that reading is the fact. The record and label comparisons of rule 3. Each block of both suites alone, in reverse table order, green, counts summing to the whole run's (the script from the task before is named in the prompt). A mutation probe the orchestrator can run from the worktree root (copies of the working tree, each mutation asserted applied, bytecode caches purged, never `git archive HEAD`): the copy replaced by a link to the template (rule 2's case red); the template built without its commit (which case goes red, and it must be one); one family's worlds built from the wrong template (the member project given the top-level one - cf36 or the record comparison must tell). `python3 tools/gate-parity.py` and `python3 tools/sweep-selftests.py --selftest` green, and the cases of tests/test_stamp_verification.py that read the live cost table.\n\nNOT in this task: the hook under test and how many questions it asks git; splitting cf36 or oq5 into several cases; any other suite; the runner's merge of figures from two machines (the batch holds it); a timeout raised by hand.\n\nAcceptance:\n(1) A world's path-independent repositories are copied from templates made once per process, the copies share nothing with the template or each other, and a case holds that.\n(2) cf36's and oq5's records and both suites' case labels are identical before and after, apart from the cases this task adds.\n(3) The cost table's figures for the two suites' blocks come from a windows log through the runner's flag, and the return states the timeout each generated block gets on the next windows run.",
+      "files": [
+        "tests/test_guard_edits.py",
+        "tests/test_journal_writes.py",
+        ".github/sweep-costs.json"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_guard_edits.py: two worlds copied from one template share nothing - a commit made in one leaves the other and the template unchanged, and a copy names no path outside itself"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_journal_writes.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-20T04:35:50Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-20T04:35:47Z",
+          "text": "the cost table is re-recorded by this file's own --costs-from-log, which writes the comment text it quotes; the task changes figures through that writer and edits nothing in the table by hand",
+          "waives": "tools/sweep-selftests.py"
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-20T04:35:50Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-20T05:55:05Z.f5f997",
+        "status": "passed",
+        "at": "2026-11-20T05:55:05Z"
       }
     }
   ],

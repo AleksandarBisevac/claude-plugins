@@ -2229,22 +2229,99 @@ _GEN_SKIPS = (
 _GEN_UNLINKED = ("real", "repo", "git-entry")
 
 
-def _gen_init(at):
-    """A repository initialised at `at`, made here as the fixture's own act."""
-    _harness.git(at, "init", "-q", prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+# --- cf: a world's repositories, copied from templates git made once ---------------
+# A repository a world needs records nothing of where it stands - the files it
+# commits, its objects, refs, index and config are the same bytes wherever git
+# made them - so each one is copied from a template git made once per block, in
+# the block's own fixture root (`gen_templates`): the project committed at its
+# checkout's top, the project committed at `_GEN_MEMBER` below it, and a
+# repository only initialised. What records a world's own path stays a git call
+# per world: `worktree add`, which writes the worktree's `.git` file naming its
+# registration and the registration naming the worktree.
+#
+# A COPY IS A REPOSITORY OF ITS OWN, because the cases write into worlds and
+# `visit` is promised the world as it found it: every directory is made and every
+# file's bytes written anew (`_gen_copy`) - no link, no alternates, no path naming
+# the template - and `cf36e` holds that. The copy writes bytes and no mode bit, so
+# no file of a copy is read-only on any host: git marks its objects read-only, a
+# windows remove refuses a read-only file, and a copy keeping the bit would be
+# removable only where the remover clears it first. The templates stand on the
+# volume the worlds do, so what git probes of a volume as it initialises - letter
+# case, links, the executable bit - reads the same for a template and its copies.
+def _gen_project_files(proj):
+    """The files a world's project commits, written under `proj`."""
+    os.makedirs(os.path.join(proj, "src"))
+    os.makedirs(os.path.join(proj, "docs", "audit"))
+    with open(os.path.join(proj, "src", "x.ts"), "w", encoding="utf-8") as fh:
+        fh.write("export const x = 1;\n")
+    with open(os.path.join(proj, "docs", "audit", "audit-plan.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump(_GEN_PLAN, fh)
 
 
-def _gen_world_of(base, arr):
+def gen_templates(base):
+    """The repositories a world copies (the block above), made by git under
+    `base/templates`, once per caller - each block that builds worlds makes its
+    own, in its own fixture root, removed with it.
+    -> {"top": the project committed at its checkout's top, "down": the
+    project committed at `_GEN_MEMBER` below it - keyed by the `member`
+    dimension's values - "init": a directory holding a repository only
+    initialised}"""
+    made = {}
+    for member in ("top", "down"):
+        top = os.path.join(base, "templates", member)
+        _gen_project_files(os.path.join(top, _GEN_MEMBER) if member == "down"
+                           else top)
+        for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "c"]):
+            _harness.git(top, *argv, prefix=_harness.WORKTREE_PAIR_GIT,
+                         timeout=30)
+        made[member] = top
+    made["init"] = os.path.join(base, "templates", "init")
+    os.makedirs(made["init"])
+    _harness.git(made["init"], "init", "-q", prefix=_harness.WORKTREE_PAIR_GIT,
+                 timeout=30)
+    return made
+
+
+def _gen_copy(template, at):
+    """`template` copied to `at`, which must not exist yet, as a repository of
+    its own: each directory made and each file's bytes written anew, no mode
+    bit carried (the block above). A link in a template raises - following it
+    or copying it could each leave the copy sharing a file with the template,
+    so which one a copy makes is for whoever puts a link there to decide."""
+    for where, dirs, files in os.walk(template):
+        links = [n for n in dirs + files if os.path.islink(os.path.join(where, n))]
+        if links:
+            raise ValueError("a template holds a link a copy would share or "
+                             "follow: %s" % (os.path.join(where, links[0]),))
+        into = at if where == template else os.path.join(
+            at, os.path.relpath(where, template))
+        os.makedirs(into)
+        for name in files:
+            shutil.copyfile(os.path.join(where, name), os.path.join(into, name))
+
+
+def _gen_init(at, templates):
+    """A repository at `at`: the initialised template's git directory copied
+    in as `at/.git`."""
+    _gen_copy(os.path.join(templates["init"], ".git"), os.path.join(at, ".git"))
+
+
+def _gen_world_of(base, arr, templates):
     """`_gen_world` for the world dimensions of `arr`."""
-    return _gen_world(base, *[getattr(arr, n) for n in _GEN_WORLD_DIMS])
+    return _gen_world(base, templates,
+                      *[getattr(arr, n) for n in _GEN_WORLD_DIMS])
 
 
-def _gen_world(base, whose, folder, dest, present, member="top", place="top"):
+def _gen_world(base, templates, whose, folder, dest, present, member="top",
+               place="top"):
     """A repository at `base/proj` - the project there, or for a member
-    project at `base/proj/app` - and the tree whose config the family is
+    project at `base/proj/<_GEN_MEMBER>` - and the tree whose config the family is
     about, at its top or at the member's place in it as `place` says, its
     config folder arranged as `folder` says - a link's destination where
-    `dest` says - the config at the folder's destination when `present`.
+    `dest` says - the config at the folder's destination when `present`. The
+    checkout and every repository it initialises are copied from `templates`
+    (`gen_templates`); only a worktree is git's act here.
     -> {"base", "proj" (the project), "top" (its checkout's top), "owner",
     "trees" (every place this builder made that a loader could be handed: the
     project and its checkout's top, each worktree's top and member place,
@@ -2254,16 +2331,8 @@ def _gen_world(base, whose, folder, dest, present, member="top", place="top"):
     sub = _GEN_MEMBER if member == "down" else ""
     proj = os.path.join(top, sub) if sub else top
     store = os.path.join(base, "store")
-    os.makedirs(os.path.join(proj, "src"))
-    os.makedirs(os.path.join(proj, "docs", "audit"))
+    _gen_copy(templates[member], top)
     os.makedirs(store)
-    with open(os.path.join(proj, "src", "x.ts"), "w", encoding="utf-8") as fh:
-        fh.write("export const x = 1;\n")
-    with open(os.path.join(proj, "docs", "audit", "audit-plan.json"), "w",
-              encoding="utf-8") as fh:
-        json.dump(_GEN_PLAN, fh)
-    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "c"]):
-        _harness.git(top, *argv, prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
     trees = [top, proj] if sub else [proj]
     if whose == "project":
         owner = top
@@ -2281,7 +2350,7 @@ def _gen_world(base, whose, folder, dest, present, member="top", place="top"):
         # An unrelated repository, reached through a symlinked folder of the
         # project: it lies under the project as written and nowhere as resolved.
         os.makedirs(os.path.join(store, "vendor", "lib"))
-        _gen_init(os.path.join(store, "vendor", "lib"))
+        _gen_init(os.path.join(store, "vendor", "lib"), templates)
         os.symlink(os.path.join(store, "vendor"), os.path.join(proj, "vendor"))
         owner = os.path.join(proj, "vendor", "lib")
     if whose in ("session-tree", "linked-out", "nested-worktree"):
@@ -2302,7 +2371,7 @@ def _gen_world(base, whose, folder, dest, present, member="top", place="top"):
     if folder in _GEN_UNLINKED:
         os.makedirs(at)
         if folder == "repo":
-            _gen_init(at)
+            _gen_init(at, templates)
             trees.append(at)
         elif folder == "git-entry":
             # An empty git entry: no repository, and nothing to decide by.
@@ -2311,7 +2380,7 @@ def _gen_world(base, whose, folder, dest, present, member="top", place="top"):
         os.makedirs(target)
         if folder == "link-repo":
             # A dotfiles or shared-settings repository the folder links to.
-            _gen_init(target)
+            _gen_init(target, templates)
             trees.append(target)
         os.symlink(target, at)
     elif folder == "chain":
@@ -2459,8 +2528,9 @@ _GEN_WORLD_SKIPS = ("no-member-place", "nested-repo-has-no-member-place",
                     "project-is-owner")
 
 
-def gen_sweep(base, visit):
-    """Build each world once, and for every arrangement of it that no predicate
+def gen_sweep(base, visit, templates):
+    """Build each world once, its repositories copied from `templates`
+    (`gen_templates`), and for every arrangement of it that no predicate
     rules out call `visit(world, arr, path, cwd)`. -> (records, skipped by
     predicate name, ran by family - keyed (dimension, value) over
     `_GEN_FAMILY_DIMS` - the worlds by their `_GEN_WORLD_DIMS` values).
@@ -2476,7 +2546,7 @@ def gen_sweep(base, visit):
         if why is not None:
             skipped[why] += len(tails)
             continue
-        world = _gen_world(os.path.join(base, "g%d" % n), *key)
+        world = _gen_world(os.path.join(base, "g%d" % n), templates, *key)
         worlds[key] = world
         _config.forget_git_standing()
         for tail in tails:
@@ -2501,11 +2571,133 @@ def _gen_label(arr):
         "in-" + arr.session, "mcp" if arr.tool.startswith("mcp__") else arr.tool)
 
 
+def _gen_ask(at, *argv):
+    """git's stripped answer in `at`, or None where git refused - asked with no
+    optional lock, so a status refreshes no index and the asking writes
+    nothing."""
+    ok, out = _harness.attempt(_harness.git, at, "--no-optional-locks", *argv,
+                               prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    return out.strip() if ok else None
+
+
+def _gen_repo_state(at):
+    """(head, status, object files) of the repository at `at` - head None
+    where it names no commit."""
+    return (_gen_ask(at, "rev-parse", "--verify", "-q", "HEAD"),
+            _gen_ask(at, "status", "--porcelain"),
+            sum(len(f) for _w, _d, f in os.walk(os.path.join(at, ".git",
+                                                              "objects"))))
+
+
+def _gen_shared(copy, template):
+    """Files of `copy` that are some other file too: linked more than once,
+    or the very file - device and inode - of one in `template`."""
+    def ids(top):
+        for where, _d, files in os.walk(top):
+            for name in files:
+                full = os.path.join(where, name)
+                st = os.lstat(full)
+                yield full, st.st_nlink, (st.st_dev, st.st_ino)
+    theirs = set(key for _f, _n, key in ids(template))
+    return sorted(os.path.relpath(full, copy) for full, links, key in ids(copy)
+                  if links > 1 or key in theirs)
+
+
+def _gen_naming(copy, root):
+    """Files of `copy`'s git directory whose bytes name `root` - the fixture
+    every template and every other copy lies under - in either separator."""
+    needles = set(s.encode("utf-8") for s in (root, root.replace(os.sep, "/")))
+    named = []
+    for where, _d, files in os.walk(os.path.join(copy, ".git")):
+        for name in files:
+            with open(os.path.join(where, name), "rb") as fh:
+                body = fh.read()
+            if any(n in body for n in needles):
+                named.append(os.path.relpath(os.path.join(where, name), copy))
+    return sorted(named)
+
+
+def _gen_places_outside(copy):
+    """The places git names for `copy` - its top, its git directory and the
+    common one - that lie outside it."""
+    out = _gen_ask(copy, "rev-parse", "--show-toplevel", "--absolute-git-dir",
+                   "--git-common-dir")
+    if out is None:
+        return ["git named no place"]
+    mine = os.path.normcase(os.path.realpath(copy))
+    return [p for p in out.splitlines()
+            if not (os.path.normcase(os.path.realpath(os.path.join(copy, p)))
+                    + os.sep).startswith(mine + os.sep)]
+
+
+def _gen_template_case(check, base, templates):
+    """cf36e: copies of one template share nothing, and a world of each
+    project placement holds its checkout's committed project."""
+    template = templates["top"]
+    one, two = (os.path.join(base, "copy-" + n) for n in ("one", "two"))
+    for at in (one, two):
+        _gen_copy(template, at)
+    pairs = (("template", template), ("one", one), ("two", two))
+    made = dict((k, _gen_repo_state(at)) for k, at in pairs)
+    with open(os.path.join(one, "src", "y.ts"), "w", encoding="utf-8") as fh:
+        fh.write("export const y = 2;\n")
+    committed = all(_harness.attempt(_harness.git, one, *argv,
+                                     prefix=_harness.WORKTREE_PAIR_GIT,
+                                     timeout=30)[0]
+                    for argv in (["add", "-A"], ["commit", "-qm", "d"]))
+    now = dict((k, _gen_repo_state(at)) for k, at in pairs)
+    as_template = (made["template"][0] is not None and made["template"][1] == ""
+                   and made["one"] == made["template"] == made["two"])
+    # The allow side: the commit landed where it was made, so the comparison
+    # below can see a repository change - a reader answering the same for
+    # every state would pass `kept` and fail here.
+    moved = committed and now["one"][0] not in (None, made["one"][0])
+    kept = now["two"] == made["two"] and now["template"] == made["template"]
+    shared = dict((k, _gen_shared(at, template)) for k, at in pairs[1:])
+    naming = dict((k, _gen_naming(at, base)) for k, at in pairs[1:])
+    alternates = [k for k, at in pairs[1:] if os.path.lexists(
+        os.path.join(at, ".git", "objects", "info", "alternates"))]
+    outside = dict((k, _gen_places_outside(at)) for k, at in pairs[1:])
+    for at in (one, two):
+        _harness.attempt(_harness.remove_tree, at)
+    removed = not os.path.lexists(one) and not os.path.lexists(two)
+    placed = []
+    for member in ("top", "down"):
+        world = _gen_world(os.path.join(base, "copy-world-" + member), templates,
+                           "project", "real", "owner", False, member)
+        plan = os.path.relpath(os.path.join(world["proj"], "docs", "audit",
+                                            "audit-plan.json"), world["top"])
+        plan = plan.replace(os.sep, "/")
+        placed.append((member, plan, _gen_ask(world["top"], "ls-files",
+                                              "--error-unmatch", "--", plan)
+                       == plan))
+    check("cf36e two worlds' repositories copied from one template share "
+          "nothing with it or with each other - a commit made in one leaves "
+          "the other and the template as they were (head, status, object "
+          "files), no file of a copy is linked twice or is a file of the "
+          "template, no file of a copy's git directory names a path of the "
+          "fixture, git names every place of a copy inside it, and the "
+          "harness's remover removes each - and a world of each project "
+          "placement holds its project where its checkout commits it: copies "
+          "as the template %r, the commit landed in one %r, as made %r, now "
+          "%r, shared %r, naming %r, alternates %r, places outside %r, "
+          "removed %r, placements (member, plan, committed there) %r"
+          % (as_template, moved, made, now, shared, naming, alternates,
+             outside, removed, placed),
+          as_template and moved and kept and not any(shared.values())
+          and not any(naming.values()) and not alternates
+          and not any(outside.values()) and removed
+          and [p[2] for p in placed] == [True, True])
+
+
 def _generated_cases(check):
-    """cf36, cf36b, cf36c: the property over the generated arrangements."""
+    """cf36e: the worlds' copied repositories; cf36, cf36b, cf36c, cf36d: the
+    property over the generated arrangements."""
     label = ("cf36 over arrangements generated from named dimensions, the hook "
              "holds a write exactly when a loader then reads it")
     base = os.path.realpath(_harness.fixture_root("guard-edits-gen-"))
+    templates = gen_templates(base)
+    _gen_template_case(check, base, templates)
     probe = os.path.join(base, "probe-link")
     linked, why = _harness.attempt(os.symlink, base, probe)
     if not linked:
@@ -2521,7 +2713,7 @@ def _generated_cases(check):
         reads = _gen_reads(world, arr, path, cwd, "gen")
         return arr, sub, main, reads
 
-    seen, skipped, ran, worlds = gen_sweep(base, visit)
+    seen, skipped, ran, worlds = gen_sweep(base, visit, templates)
 
     def agrees(rec):
         arr, sub, main, reads = rec
@@ -3660,8 +3852,8 @@ def _topology_cases(check):
 # run starts one process per block, a few at a time, and replays their cases
 # in this order (`_harness.staged_main`); `--stage LABEL` runs only the blocks
 # it names, in this process. `ge-generated` is one case over the generated
-# arrangements and the three that read its sweep, so it is the heaviest block
-# and cannot be cut without cutting that case.
+# arrangements, the three that read its sweep and the one holding its copied
+# repositories apart, and cannot be cut without cutting the first.
 STAGES = (
     ("ge-core", "_cases"),
     ("ge-config", "_config_block_cases"),

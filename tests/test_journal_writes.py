@@ -2444,6 +2444,7 @@ def _generated_question_cases(check):
     os.remove(probe)
     G = TGE.M
     cfg = _config._deep_merge(_config.DEFAULTS, {})
+    templates = TGE.gen_templates(base)
 
     def visit(world, arr, path, cwd):
         data = {"tool_name": arr.tool, "session_id": "sess-oq5", "cwd": cwd,
@@ -2477,7 +2478,8 @@ def _generated_question_cases(check):
             return arr, None, None
         return visit(world, arr, path, cwd)
 
-    every, skipped, ran, _worlds = TGE.gen_sweep(base, visit_edit_tool)
+    every, skipped, ran, _worlds = TGE.gen_sweep(base, visit_edit_tool,
+                                                 templates)
     seen = [s for s in every if s[1] is not None]
     skipped["mcp-write-of-another-trees-config-leaves-no-row"] = (
         len(every) - len(seen))
@@ -2500,7 +2502,8 @@ def _generated_question_cases(check):
     for name, arr in TGE._GEN_MEASURED:
         if arr.tool != "Write" or arr.session != "project":
             continue
-        world = TGE._gen_world_of(os.path.join(base, "p-" + name), arr)
+        world = TGE._gen_world_of(os.path.join(base, "p-" + name), arr,
+                                  templates)
         path, _cwd = TGE._gen_spell(world, arr)
         # A member arrangement's row is read from the trail of every place
         # the fixture listed: a write lying in a worktree's member place is
@@ -4154,11 +4157,12 @@ def _machine_path_value_cases(check):
 # Every block, in replay order - the order the cases always printed in. A full
 # run starts one process per block, a few at a time, and replays their cases
 # in this order (`_harness.staged_main`); `--stage LABEL` runs only the blocks
-# it names, in this process. The switch-reading block keeps `sn0` as its label
-# because a block that raises is reported under its label, and `sn0` is the
-# name that report carried before the suite was staged. `jw-generated` is the
-# heaviest block, and nearly all of it is `oq5`, one case over the guard
-# suite's generated arrangements, which no cut of the block can divide.
+# it names, in this process. The switch-reading block's label is `sn0` because
+# a block that raises is reported as one failing case under its label, and
+# before the suite was staged that block was run under a label beginning `sn0`
+# (`sn0 the switch-reading cases`), so its failure keeps the id it had.
+# `jw-generated` holds `oq5`, one case over the guard suite's generated
+# arrangements, which no cut of the block can divide, and the cases beside it.
 STAGES = (
     ("jw-core", "_cases"),
     ("jw-machine-path", "_machine_path_value_cases"),
