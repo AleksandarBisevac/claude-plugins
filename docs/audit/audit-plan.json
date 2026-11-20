@@ -1455,7 +1455,8 @@
       "P169.24-6l3",
       "P169.26-6l3",
       "P169.27-6l3",
-      "P169.28-6l3"
+      "P169.28-6l3",
+      "P169.30-6l3"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1672,7 +1673,8 @@
       "P169.17-6l3",
       "P169.18-6l3",
       "P169.25-6l3",
-      "P169.26-6l3"
+      "P169.26-6l3",
+      "P169.29-6l3"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -2162,7 +2164,8 @@
       "P169.25-6l3",
       "P169.26-6l3",
       "P169.27-6l3",
-      "P169.28-6l3"
+      "P169.28-6l3",
+      "P169.30-6l3"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -5368,7 +5371,8 @@
       "P148.20-xpz"
     ],
     "plugins/audit/scripts/manifest/_manifest_merge.py": [
-      "P60.1"
+      "P60.1",
+      "P169.30-6l3"
     ],
     "plugins/audit/scripts/manifest/_manifest_phases.py": [
       "P22.4",
@@ -5801,7 +5805,8 @@
       "P131.2",
       "P148.5",
       "P169.18-6l3",
-      "P169.26-6l3"
+      "P169.26-6l3",
+      "P169.30-6l3"
     ],
     "plugins/audit/scripts/manifest/migrate-manifest.py": [
       "P10.3",
@@ -5902,7 +5907,8 @@
       "P138.2",
       "P169.16-6l3",
       "P169.21-6l3",
-      "P169.27-6l3"
+      "P169.27-6l3",
+      "P169.28-6l3"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -6819,7 +6825,8 @@
       "P131.1",
       "P131.2",
       "P161.5-toy",
-      "P169.16-6l3"
+      "P169.16-6l3",
+      "P169.28-6l3"
     ],
     "plugins/audit/scripts/usage/usage_ledger.py": [
       "P14.1",
@@ -9216,7 +9223,8 @@
       "P169.16-6l3",
       "P169.18-6l3",
       "P169.25-6l3",
-      "P169.26-6l3"
+      "P169.26-6l3",
+      "P169.29-6l3"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -13148,7 +13156,8 @@
       "P143.8-z9j"
     ],
     "tests/test__manifest_merge.py": [
-      "P131.1"
+      "P131.1",
+      "P169.30-6l3"
     ],
     "tests/test__manifest_phases.py": [
       "P131.1",
@@ -13646,7 +13655,8 @@
     ],
     "tests/test_audit_usage.py": [
       "P131.1",
-      "P161.5-toy"
+      "P161.5-toy",
+      "P169.28-6l3"
     ],
     "tests/test_audit_version.py": [
       "P131.1"
@@ -13975,7 +13985,8 @@
     "tests/test_merge_manifest.py": [
       "P131.1",
       "P169.18-6l3",
-      "P169.26-6l3"
+      "P169.26-6l3",
+      "P169.30-6l3"
     ],
     "tests/test_meter_usage.py": [
       "P131.1",
@@ -14193,7 +14204,8 @@
       "P131.1",
       "P138.2",
       "P169.21-6l3",
-      "P169.27-6l3"
+      "P169.27-6l3",
+      "P169.28-6l3"
     ],
     "tests/test_verify_invariants.py": [
       "P131.1"
@@ -14573,12 +14585,14 @@
       "P169.11-6l3",
       "P169.14-6l3",
       "P169.17-6l3",
-      "P169.25-6l3"
+      "P169.25-6l3",
+      "P169.29-6l3"
     ],
     "tools/check-browser-install.py": [
       "P169.14-6l3",
       "P169.17-6l3",
-      "P169.25-6l3"
+      "P169.25-6l3",
+      "P169.29-6l3"
     ]
   },
   "bugs": [

@@ -21,23 +21,33 @@ developer's machine, so a line added to the action must not be able to reach tha
 machine. The promise: a step's shell starts a program only by a bare name, and that
 name finds a stub or a real tool in `ALLOWED_TOOLS` - nothing else. PATH alone cannot
 hold that, because the shell has ways to start a program that never consult it. It
-is held twice, and the selftest shows each half red without the other:
+is held twice where a construction can hold it and by reading alone where none can,
+and the selftest shows which half holds what, each red without the other:
   * BY READING, before anything runs. `run_script` hands every script to
     `script_problems` first, and a script it refuses is not started at all; `sd8`
     reports the same reading for every step a case runs. The reader takes the shell
-    subset the action is written in and refuses every shape it does not read. Every
-    command word must be a bare name written out - a stub, an allowed tool, a
-    function the script defines, or a builtin on `BUILTINS` called in the one shape
-    its row allows - so a word holding a `/` (absolute, relative or built from a
-    variable), a word an expansion produces, and `command`, `exec`, `env`, `hash`,
-    `enable`, `source`, `.`, `builtin` and `trap` are refused for not being on the
-    list, not one spelling at a time. A script may assign only lowercase names, so
-    no `PATH=`, `IFS=`, `PS4=` or `LD_PRELOAD=`, and no assignment may prefix a
-    command. A redirection writes only to `/dev/null`, `"$GITHUB_OUTPUT"` or another
-    descriptor. Every form that evaluates text as code or starts what the reader
-    cannot follow is refused: arithmetic, an array subscript, `${x@P}`, `${!x}`,
-    process substitution, a backquote, a here-document, `&`. `sd7` adds that no
-    line names an absolute path but `/dev/null`.
+    subset the action is written in and refuses every shape it does not read. It
+    judges a word by the value bash hands on after quote removal, in one place
+    (`_bash_reading`), so a quoted `-v` is the option `-v` to it as it is to bash; a
+    word whose value reading cannot know - it carries an expansion, or an unquoted
+    character bash expands - is refused wherever a rule needs its value, unless the
+    rule allows exactly that expansion as the whole word. Every command word must be
+    a bare name - a stub, an allowed tool, a function the script defines, or a
+    builtin on `BUILTINS` called within the family of calls its row describes - so a
+    word holding a `/` (absolute, relative or built from a variable), a word an
+    expansion produces, and `command`, `exec`, `env`, `hash`, `enable`, `source`,
+    `.`, `builtin` and `trap` are refused for not being on the list, not one
+    spelling at a time; and no function may take a name on that list, because a
+    call written before the definition runs the builtin. A script may assign only
+    lowercase names, so no `PATH=`, `IFS=`, `PS4=` or `LD_PRELOAD=`, and no
+    assignment may prefix a command. A redirection writes only to `/dev/null`, to
+    `"$GITHUB_OUTPUT"` written as exactly that expansion, or to another descriptor.
+    Every form that evaluates text as code or starts what the reader cannot follow
+    is refused: arithmetic, an array subscript, `${x@P}`, `${!x}`, process
+    substitution, a backquote, a here-document, `&`, a `{name}` written against a
+    redirection, and an `eval` of anything but one double-quoted substitution of
+    the apt-config stub with nothing beside it. `sd7` adds that no line names an
+    absolute path but `/dev/null`.
   * BY CONSTRUCTION, for what does run (`_prelude`). PATH is the fixture's `bin/`
     and read-only, as is every other variable of the step's environment, so the
     variables the stubs read cannot be pointed elsewhere; `BASH_CMDS` and
@@ -48,14 +58,43 @@ is held twice, and the selftest shows each half red without the other:
     writes refuses a path outside the fixture root; stdin is closed. A refused
     request, and a name the shell cannot find, is written to the fixture's refusal
     ledger, and every case that runs a step is red when that ledger is not empty,
-    whatever the step did with the exit code (`_refusals`).
+    whatever the step did with the exit code (`_refusals`). Each `bk` row names the
+    prelude lines that hold it and runs again with them taken out, where it must
+    reach outside, so the line credited with a hold is the line shown holding, and
+    its label says which of those lines holds alone on the bash it ran on. On bash
+    3.2 `command -p` (`bk1`, `bk2`, `bk7`) is held by the disabled builtin and by
+    the read-only PATH, each alone, and the command hash array does not exist, so
+    `bk11` shows nothing there. On bash 5.2.21 (CI run 44684182939) only the
+    disabling line holds those three - for `bk7`, `enable -n enable` - and the
+    read-only PATH alone does not; `bk11` is held by the `unset` line and by the
+    read-only line, each alone, and reaches outside with both taken out (seen red
+    with both removed from the prelude, run 44684189710).
 What stays outside that, so a green run here says nothing about it. The list comes
 from reading the bash manual's sections on command search and execution, the
 builtins, the shell variables, the expansions and the restricted shell for every way
-to start a program or to evaluate text as code; each item is one neither half closes:
-  * the reader is not bash. It refuses every shape it does not read, `bp10` pins
-    what it refuses and `bp11` the shapes the action has, but a shape it accepts
-    that bash reads otherwise is not seen.
+to start a program or to evaluate text as code, and from the cases' own runs:
+  * the reader is not bash. `bp10` and `bq1` pin what it refuses, also under every
+    quoting `bq1` tries; `bp11` and `bq2` that it reads each shape the action has,
+    bare and respelled; `bq3` that bash, running those shapes, starts nothing off
+    the vocabulary. A shape neither table carries is not seen, and neither is a
+    quoting `bq1` does not try: it respells only a word written bare, so a reserved
+    word, an assignment, a function's name, a `for` name and a word holding an
+    expansion keep their spelling, and a backslash outside quotes is refused
+    outright rather than read.
+  * what reading alone holds, because no construction can: a command word naming a
+    program by a path (`bx7`, `bx8`), the text an `eval` runs (`bx12`, `bq5`,
+    `bq6`), a function defined after a call of the builtin it names (`bq7`), and
+    `printf -v` through a subscript (`bx13`, `bq4`). Past the reader `bq5`-`bq7`
+    start a program on bash 3.2 and on bash 5.2.21; on bash 3.2 `bq4` shows bash
+    taking the quoted `-v` as the option and refusing the subscripted name, and on
+    bash 5.2.21 it starts the program (CI run 44684182939). The prelude cannot stop
+    bash starting a program by its path; a restricted shell would, but it also
+    refuses the action's own
+    redirections (the manual's RESTRICTED SHELL section).
+  * `sd7` reads a line's text, not its words: a `/` written as a quoted piece of
+    its own is not an absolute path to it. Such a command word is still refused for
+    not being a bare name; such an argument reaches only a stub or an allowed tool,
+    which the item on what a tool is given to read covers.
   * `node`, which starts the real node on a harness evaluating the `-e` code in a
     `vm` context whose `require` returns JSON under the fixture root and nothing
     else. A `vm` context is not a security boundary: it stops an ordinary edit
@@ -98,8 +137,13 @@ that holds it to go red - so a case that could not fail is itself a red case her
 Its `bx` rows append a line reaching outside the fixture to a copy of the action and
 require the case red, refused by the half the row names, with the file outside
 untouched; its `bk` rows run a line past the reader, against the construction alone,
-and require that file untouched too. That file sits in a scratch directory of its
-own, so a check that lost its confinement touches nothing else.
+and require that file untouched too, and touched once the row's hold is taken out.
+Its `bq` rows hold the reader to bash's reading: every bare word of the reader's
+tables is respelled in quotings bash reads the same way (`bq1`, `bq2`), every shape
+the action has is run under bash's own trace (`bq3`), and each shape the reader once
+accepted while bash read it otherwise is run past the reader and as a step
+(`bq4`-`bq7`). That file sits in a scratch directory of its own, so a check that
+lost its confinement touches nothing else.
 
 WHAT THE STUBS CANNOT SEE, so a green run here says nothing about it:
   * apt's real resolution - versions, `Pre-Depends`, alternatives, multi-arch,
@@ -138,6 +182,7 @@ import io
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -790,18 +835,24 @@ SHELL_STUBS = ("sudo", "apt-config", "node")
 # before a step's first line (`_prelude`). A builtin that could start a program, read
 # a file as code or evaluate a value as code is absent from this list rather than
 # refused by name, and the ones here that take such an argument are held by the reader
-# to the one shape the action calls them in (`_builtin_call_problem`).
+# to the family of calls its row describes (`_builtin_call_problem`), asked of each
+# word's value after quote removal. No function may take one of these names.
 BUILTINS = (
     ("echo", "prints a step's log lines and the outputs it writes"),
-    ("printf", "formats a line; the reader holds its format to a single-quoted literal, "
-               "so it is never `-v`, which assigns through a name bash evaluates"),
+    ("printf", "formats a line; the reader holds its format to a value known by reading "
+               "that does not begin with `-`, however it is quoted, so it is never "
+               "`-v`, which assigns through a name bash evaluates"),
     ("exit", "ends a step with its status, as each of the action's failures does"),
     ("set", "sets the positional parameters the install step counts; the reader holds "
-            "it to `set --`, so no option turns on tracing or exporting"),
+            "it to a first word whose value is `--`, so no option turns on tracing or "
+            "exporting"),
     ("eval", "reads the system's list directory out of the apt-config stub; the reader "
-             "holds it to that stub's output, which is this file's own text"),
-    ("[", "tests a double-quoted operand with -z, -n or -d, or compares two with = or "
-          "!=, the shapes the reader holds it to, so no value becomes an operator"),
+             "holds it to one word that is exactly one double-quoted command "
+             "substitution calling that stub and nothing else, whose output is this "
+             "file's own text"),
+    ("[", "tests with -z, -n or -d, or compares with = or !=, each operator's value "
+          "known by reading and each operand a word bash cannot split, so no value "
+          "becomes an operator"),
     ("true", "a status: the dpkg-query of a package the image lacks is not a failure"),
 )
 
@@ -1021,14 +1072,21 @@ enable -n enable
 """
 
 
-def _prelude(env):
-    """The lines run before a step's script, for a step given `env`."""
+def _prelude(env, drop=()):
+    """The lines run before a step's script, for a step given `env`, less the lines
+    of `_PRELUDE` that `drop` names - each of which must be there once."""
     names = sorted(env)
     odd = [n for n in names if not re.match(r"[A-Za-z_][A-Za-z0-9_]*\Z", n)]
     if odd:
         raise ValueError("a step's environment names %r, which no shell variable is"
                          % (odd,))
-    return (_PRELUDE.replace("@ENV@", " ".join(names))
+    template = _PRELUDE
+    for line in drop:
+        if template.count(line) != 1:
+            raise ValueError("the prelude holds %r %d time(s), not once"
+                             % (line, template.count(line)))
+        template = template.replace(line, "")
+    return (template.replace("@ENV@", " ".join(names))
             .replace("@KEEP@", " ".join(n for n, _why in BUILTINS)))
 
 
@@ -1044,14 +1102,16 @@ def run_script(script, env, cwd):
     return _run_bash(script, env, cwd)
 
 
-def _run_bash(script, env, cwd):
+def _run_bash(script, env, cwd, drop=(), trace=False):
     """{"code", "out", "refused"} for one script under GitHub's bash flags, the
     prelude first and stdin closed, past the reader: the exit code (None when the
     step did not finish), the combined output, and every request a stub refused
-    or a name the shell did not find. Only `run_script` and the selftest's `bk`
-    rows, which show the construction holding without the reader, call this."""
+    or a name the shell did not find. Only `run_script` and the selftest call this:
+    the selftest's `bk` rows show the construction holding without the reader, and
+    take out the prelude's lines `drop` names to show the same line reaching past it;
+    its `bq` rows ask bash, by `trace`, which commands it started."""
     path = os.path.join(cwd, "step.sh")
-    _write(path, _prelude(env) + script)
+    _write(path, _prelude(env, drop) + ("set -x\n" if trace else "") + script)
     try:
         done = subprocess.run([shutil.which("bash")] + list(BASH_FLAGS) + [path],
                               env=env, cwd=cwd, stdin=subprocess.DEVNULL,
@@ -1081,12 +1141,26 @@ def _refusals(result):
 # with its text, never a script read as harmless. It finds every command word - at the
 # top, in a function body, inside each `$( )` - and what it reads is a positive rule:
 # a command word is a bare name on the vocabulary, a variable assigned is the
-# script's own (lowercase), a redirection goes where `_REDIRECT_OK` says.
+# script's own (lowercase), a redirection goes where `_redirection_problem` says.
+#
+# A WORD IS JUDGED BY WHAT BASH HANDS ON, not by how it is written. `_word` reads each
+# word into the parts bash reads it as - unquoted text, single-quoted text, a
+# double-quoted string, an expansion - and `_bash_reading` is the one place those parts
+# become what every rule asks about: the value left after quote removal, or None where
+# reading cannot know it (an expansion, or an unquoted character bash expands); the
+# one expansion the word is, when it is exactly that and nothing else; and whether it
+# can become more or fewer than one argument. A rule asks those, never the spelling,
+# so `'-v'` is the option `-v` to it as it is to bash. Only what bash itself recognises
+# by spelling is read by spelling (`plain`): a reserved word, an assignment, a
+# function's name and a `for` name are each recognised by bash only when written
+# unquoted, and the reader recognises them the same way. The selftest's `bq1` and
+# `bq2` respell every bare word of the reader's tables to hold that.
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _OWN_NAME = re.compile(r"[a-z_][a-z0-9_]*\Z")
 _BARE = re.compile(r"(?:\[|[A-Za-z0-9_][A-Za-z0-9_+-]*)\Z")
 _ASSIGNMENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=")
 _REDIRECTION = re.compile(r"([0-9]*)(>>|>&|>\||>|<<|<&|<>|<)")
+_FD_NAME = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}\Z")
 _WORD_END = " \t\n;&|()<>"
 _SPECIAL_PARAMS = "#*@?123456789"
 _OPENS = ("if", "while", "until", "{")
@@ -1099,51 +1173,74 @@ _TEST_UNARY = ("-z", "-n", "-d")
 _TEST_BINARY = ("=", "!=")
 
 
+# Inside double quotes a backslash is removed only before these; before any other
+# character bash keeps it, so `"\-v"` is the three characters `\-v`.
+_DQ_ESCAPES = '$`"\\'
+
+
 def _quoted_double(text, i):
-    """(substitutions, index after the closing quote, problem) for the `"` at i."""
-    subs, j = [], i + 1
+    """(pieces, index after the closing quote, problem) for the `"` at i. A piece is
+    ("lit", text after bash's backslash removal) or ("exp", expansion)."""
+    pieces, j = [], i + 1
     while j < len(text):
         char = text[j]
         if char == '"':
-            return subs, j + 1, None
+            return pieces, j + 1, None
         if char == "\\":
+            nxt = text[j + 1:j + 2]
+            if nxt != "\n":          # a backslash-newline is a line joined: both go
+                pieces.append(("lit", nxt if nxt and nxt in _DQ_ESCAPES else "\\" + nxt))
             j += 2
             continue
         if char == "$":
             got, j, problem = _dollar(text, j)
             if problem is not None:
-                return subs, j, problem
-            subs.extend(got)
+                return pieces, j, problem
+            pieces.append(("exp", got))
             continue
         if char == "`":
-            return subs, j, "a backquoted command substitution"
+            return pieces, j, "a backquoted command substitution"
         if char == "\n":
-            return subs, j, "a double-quoted string running past its line"
+            return pieces, j, "a double-quoted string running past its line"
+        pieces.append(("lit", char))
         j += 1
-    return subs, j, "a double-quoted string that never closes"
+    return pieces, j, "a double-quoted string that never closes"
+
+
+def _expansion(kind, name=None, operator=None, subs=()):
+    """An expansion as a word's parts carry it: "sub" (a `$( )`, its token list in
+    `subs`) or "param" (`name`, with `operator` None for `$name` and `${name}`), and
+    the token lists of every command substitution inside it."""
+    return {"kind": kind, "name": name, "operator": operator, "subs": list(subs)}
+
+
+def _pieces_subs(pieces):
+    return [s for kind, piece in pieces if kind == "exp" for s in piece["subs"]]
 
 
 def _braced(text, i):
-    """(substitutions, index after `}`, problem) for a `${` whose name starts at i:
+    """(expansion, index after `}`, problem) for a `${` whose name starts at i:
     `${name}`, `${name:-word}` or `${name:+word}` and nothing else, since every
     other operator either evaluates arithmetic or reads a value as a name."""
     name = _IDENT.match(text, i)
     if name is None:
-        return [], i, "a parameter expansion this reader does not read: %r" % (
+        return None, i, "a parameter expansion this reader does not read: %r" % (
             text[i - 2:i + 10],)
     j = name.end()
     if text[j:j + 1] == "}":
-        return [], j + 1, None
+        return _expansion("param", name.group(0)), j + 1, None
     if text[j:j + 2] not in (":-", ":+"):
-        return [], j, "a parameter expansion operator this reader does not read: %r" % (
+        return None, j, "a parameter expansion operator this reader does not read: %r" % (
             text[i - 2:j + 3],)
-    subs, j = [], j + 2
+    operator, subs, j = text[j:j + 2], [], j + 2
     while j < len(text) and text[j] != "}":
         char = text[j]
         if char == "$":
             got, j, problem = _dollar(text, j)
+            got = got["subs"] if got is not None else []
         elif char == '"':
             got, j, problem = _quoted_double(text, j)
+            got = _pieces_subs(got)
         elif char == "'":
             end = text.find("'", j + 1)
             got, j, problem = [], end + 1, (None if end > 0 and "\n" not in text[j:end]
@@ -1153,67 +1250,120 @@ def _braced(text, i):
         else:
             got, j, problem = [], j + 1, None
         if problem is not None:
-            return subs, j, problem
+            return None, j, problem
         subs.extend(got)
     if j >= len(text):
-        return subs, j, "a parameter expansion that never closes"
-    return subs, j + 1, None
+        return None, j, "a parameter expansion that never closes"
+    return _expansion("param", name.group(0), operator, subs), j + 1, None
 
 
 def _dollar(text, i):
-    """(substitutions, index after the expansion, problem) for the `$` at i. A
-    substitution is the token list of a `$( )`, which the parser reads as commands."""
+    """(expansion, index after it, problem) for the `$` at i. A command
+    substitution's token list is read by the parser as commands of their own."""
     nxt = text[i + 1:i + 2]
     if nxt == "(":
         if text[i + 2:i + 3] == "(":
-            return [], i, "an arithmetic expansion"
+            return None, i, "an arithmetic expansion"
         tokens, j, problem = _lex(text, i + 2, True)
-        return [tokens], j, problem
+        return _expansion("sub", subs=[tokens]), j, problem
     if nxt == "{":
         return _braced(text, i + 2)
     name = _IDENT.match(text, i + 1)
     if name is not None:
-        return [], name.end(), None
+        return _expansion("param", name.group(0)), name.end(), None
     if nxt and nxt in _SPECIAL_PARAMS:
-        return [], i + 2, None
-    return [], i, "a `$` this reader does not read: %r" % (text[i:i + 3],)
+        return _expansion("param", nxt), i + 2, None
+    return None, i, "a `$` this reader does not read: %r" % (text[i:i + 3],)
+
+
+def _expands_unquoted(unquoted):
+    """True when the word's unquoted characters (each quoted one written as NUL)
+    can make bash expand it - a pattern, a brace list, a home directory - so that no
+    value is known by reading. A `[` or `{` with nothing after it to close it is
+    left as it is by bash, which is how `[` stands as a command word."""
+    if any(c in unquoted for c in "*?~"):
+        return True
+    for opening, closing in ("[]", "{}"):
+        at = unquoted.find(opening)
+        if at >= 0 and closing in unquoted[at + 1:]:
+            return True
+    return False
+
+
+def _bash_reading(parts):
+    """What bash hands on for a word read into `parts` - ("lit", unquoted text),
+    ("sq", text), ("dq", pieces) or ("exp", expansion) - as {"value": the text after
+    quote removal, or None when an expansion or an unquoted character bash expands
+    makes it unknowable by reading; "sole": the expansion, when the word is exactly
+    one double-quoted expansion and nothing else; "split": True when bash can make
+    it more or fewer than one argument}. Every rule asks this, never the spelling."""
+    value, split = [], False
+    for kind, part in parts:
+        if kind == "exp":
+            value, split = None, True
+        elif kind == "dq":
+            if value is not None and all(k == "lit" for k, _p in part):
+                value.append("".join(p for _k, p in part))
+            else:
+                value = None
+        elif value is not None:
+            value.append(part)
+    if _expands_unquoted("".join(p if k == "lit" else "\0" for k, p in parts)):
+        value, split = None, True
+    sole = None
+    if len(parts) == 1 and parts[0][0] == "dq" and len(parts[0][1]) == 1 \
+            and parts[0][1][0][0] == "exp":
+        sole = parts[0][1][0][1]
+    return {"value": None if value is None else "".join(value), "sole": sole,
+            "split": split}
 
 
 def _word(text, i):
-    """(word, index after it, problem). A word is {"text", "plain": nothing but
-    literal characters, "quoted": "dq"/"sq" when it is one quoted string and
-    nothing else, "subs": the token lists of its command substitutions}."""
-    start, kinds, subs = i, [], []
+    """(word, index after it, problem). A word is `_bash_reading`'s answer for it,
+    plus {"text": its spelling, for messages; "plain": True when it is nothing but
+    unquoted literal characters, which is how bash itself recognises a reserved word,
+    an assignment and a function's name; "subs": the token lists of its command
+    substitutions}."""
+    start, parts = i, []
     while i < len(text) and text[i] not in _WORD_END:
         char = text[i]
         if char == "'":
             end = text.find("'", i + 1)
             if end < 0 or "\n" in text[i:end]:
                 return None, i, "a single quote that never closes on its line"
-            kinds.append("sq")
+            parts.append(("sq", text[i + 1:end]))
             i = end + 1
         elif char == '"':
             got, i, problem = _quoted_double(text, i)
             if problem is not None:
                 return None, i, problem
-            kinds.append("dq")
-            subs.extend(got)
+            parts.append(("dq", got))
         elif char == "$":
             got, i, problem = _dollar(text, i)
             if problem is not None:
                 return None, i, problem
-            kinds.append("exp")
-            subs.extend(got)
+            parts.append(("exp", got))
         elif char in "\\`":
             return None, i, ("a backslash outside quotes" if char == "\\"
                              else "a backquoted command substitution")
         else:
-            if not kinds or kinds[-1] != "lit":
-                kinds.append("lit")
+            if parts and parts[-1][0] == "lit":
+                parts[-1] = ("lit", parts[-1][1] + char)
+            else:
+                parts.append(("lit", char))
             i += 1
-    quoted = kinds[0] if kinds in (["dq"], ["sq"]) else None
-    return {"text": text[start:i], "plain": kinds == ["lit"], "quoted": quoted,
-            "subs": subs}, i, None
+    subs = [s for kind, part in parts
+            for s in (part["subs"] if kind == "exp"
+                      else _pieces_subs(part) if kind == "dq" else [])]
+    word = _bash_reading(parts)
+    word.update({"text": text[start:i], "plain": [k for k, _p in parts] == ["lit"],
+                 "subs": subs})
+    return word, i, None
+
+
+def _shown(word):
+    """A word as a message names it: its value when reading knows it."""
+    return word["text"] if word["value"] is None else word["value"]
 
 
 def _lex(text, i, nested):
@@ -1274,6 +1424,10 @@ def _lex(text, i, nested):
         word, i, problem = _word(text, i)
         if problem is not None:
             return tokens, i, problem
+        if text[i:i + 1] in ("<", ">") and _FD_NAME.match(word["text"]):
+            return tokens, i, ("a `%s` against a redirection, which bash 4.1 and later "
+                               "read as a descriptor assigned to that name (the bash "
+                               "manual's REDIRECTION section)" % (word["text"],))
         tokens.append(("word", word))
     if nested:
         return tokens, i, "a command substitution that never closes"
@@ -1286,12 +1440,19 @@ def _redirection_problem(fd, operator, target):
     read-only environment fixes."""
     if fd not in ("", "1", "2"):
         return "a redirection of descriptor %s" % (fd,)
-    if operator == ">&" and target["text"] in ("1", "2"):
+    if operator == ">&" and target["value"] in ("1", "2"):
         return None
-    if operator in (">", ">>") and target["text"] in ("/dev/null", '"$GITHUB_OUTPUT"'):
+    if operator in (">", ">>") and (target["value"] == "/dev/null"
+                                    or _is_param(target["sole"], "GITHUB_OUTPUT")):
         return None
     return "a redirection %s%s %s, which goes nowhere this reader allows" % (
         fd, operator, target["text"])
+
+
+def _is_param(expansion, name):
+    """True when `expansion` is the plain value of the parameter `name`."""
+    return (expansion is not None and expansion["kind"] == "param"
+            and expansion["name"] == name and expansion["operator"] is None)
 
 
 def _innermost(stack):
@@ -1355,7 +1516,8 @@ def _parse(tokens, nested=False):
             if text in _OPENS:
                 stack.append(text)
             continue
-        if reserved and text in _CLOSES or (state == "pattern" and text == "esac"):
+        if reserved and text in _CLOSES or (state == "pattern" and word["plain"]
+                                            and text == "esac"):
             if not stack or stack[-1] not in _CLOSES[text]:
                 problems.append("`%s` closing nothing it can close" % (text,))
             else:
@@ -1387,11 +1549,12 @@ def _parse(tokens, nested=False):
                                     % (assigned.group(1),))
                 state = "assign"
                 continue
-            if not (word["plain"] and _BARE.match(text)):
-                problems.append("a command word that is not a bare name: %r" % (text,))
+            if word["value"] is None or not _BARE.match(word["value"]):
+                problems.append("a command word that is not a bare name: %r"
+                                % (_shown(word),))
                 state, call = "args", None
                 continue
-            call = (text, [])
+            call = (word["value"], [])
             calls.append(call)
             state = "args"
             continue
@@ -1419,29 +1582,29 @@ def _parse(tokens, nested=False):
 
 
 def _builtin_call_problem(name, args):
-    """Why a call of a builtin on BUILTINS is refused, or None: the shape its
-    row allows, and only that."""
-    texts = [a["text"] for a in args]
-    if name == "set" and texts[:1] != ["--"]:
-        return "`set %s`, where only `set --` is read" % (" ".join(texts),)
-    if name == "printf" and (not args or args[0]["quoted"] != "sq"):
-        return "a `printf` whose format is not a single-quoted literal: %r" % (texts,)
+    """Why a call of a builtin on BUILTINS is refused, or None: the family its row
+    allows, asked of each word's `_bash_reading` and never of its spelling."""
+    shown = [_shown(a) for a in args]
+    values = [a["value"] for a in args]
+    if name == "set" and values[:1] != ["--"]:
+        return "`set %s`, where only `set --` is read" % (" ".join(shown),)
+    if name == "printf" and (not args or values[0] is None or values[0].startswith("-")):
+        return ("a `printf` whose format is not a value known by reading that cannot be "
+                "an option: %r" % (shown,))
     if name == "eval":
-        sub = args[0]["subs"] if len(args) == 1 and args[0]["quoted"] == "dq" else []
-        inner = _parse(sub[0]) if len(sub) == 1 else {"calls": [], "problems": ["x"]}
-        if not (texts[0].startswith('"$(') and texts[0].endswith(')"')
-                and [c[0] for c in inner["calls"]] == ["apt-config"]
-                and not inner["problems"]):
-            return "an `eval` of anything but the apt-config stub's output: %r" % (texts,)
+        sole = args[0]["sole"] if len(args) == 1 else None
+        inner = (_parse(sole["subs"][0]) if sole is not None and sole["kind"] == "sub"
+                 else {"calls": [], "problems": ["not one command substitution"]})
+        if not ([c[0] for c in inner["calls"]] == ["apt-config"] and not inner["problems"]):
+            return "an `eval` of anything but the apt-config stub's output: %r" % (shown,)
     if name == "[":
-        inner = args[:-1] if texts[-1:] == ["]"] else None
-        unary = (inner is not None and len(inner) == 2 and inner[0]["plain"]
-                 and inner[0]["text"] in _TEST_UNARY and inner[1]["quoted"] == "dq")
-        binary = (inner is not None and len(inner) == 3 and inner[1]["plain"]
-                  and inner[1]["text"] in _TEST_BINARY
-                  and inner[0]["quoted"] == inner[2]["quoted"] == "dq")
+        inner = args[:-1] if values[-1:] == ["]"] else None
+        unary = (inner is not None and len(inner) == 2 and values[0] in _TEST_UNARY
+                 and not inner[1]["split"])
+        binary = (inner is not None and len(inner) == 3 and values[1] in _TEST_BINARY
+                  and not inner[0]["split"] and not inner[2]["split"])
         if not (unary or binary):
-            return "a `[` test of a shape the reader does not read: %r" % (texts,)
+            return "a `[` test of a shape the reader does not read: %r" % (shown,)
     return None
 
 
@@ -1454,13 +1617,20 @@ def command_word_problems(script):
     got = _parse(tokens)
     tools = set(n for n, _why in ALLOWED_TOOLS)
     builtins = set(n for n, _why in BUILTINS)
-    known = set(STUBS) | set(SHELL_STUBS) | tools | builtins | set(got["defs"])
-    problems = list(got["problems"])
+    vocabulary = set(STUBS) | set(SHELL_STUBS) | tools | builtins
+    known = vocabulary | set(got["defs"])
+    # A function takes a name from the moment its definition runs, so a call written
+    # before it - or reached when the definition is not - still runs the builtin or the
+    # stub; no function may take a name the vocabulary holds, and a builtin's call is
+    # always held to its row.
+    problems = list(got["problems"]) + [
+        "a function named %r, a name a stub, an allowed tool or a builtin on BUILTINS "
+        "already holds" % (name,) for name in got["defs"] if name in vocabulary]
     for name, args in got["calls"]:
         if name not in known:
             problems.append("`%s` is not a stub, an allowed tool, a builtin on "
                             "BUILTINS or a function the script defines" % (name,))
-        elif name in builtins and name not in got["defs"]:
+        elif name in builtins:
             problem = _builtin_call_problem(name, args)
             if problem is not None:
                 problems.append(problem)
@@ -2162,22 +2332,62 @@ CONFINEMENT = [
 # THE CONSTRUCTION ALONE: each line is run past the reader (`_run_bash`) on a fixture
 # of its own and must leave the file outside as it was, so the prelude is shown
 # holding without the reader's help. Every line here is one the reader refuses too.
+# Each row names the prelude lines that hold it, and the same line is run again with
+# those taken out, where it must reach the file outside - so a row whose hold is not
+# the line it names, or whose escape this bash does not have, says so instead of
+# passing for a reason of its own. A row with a fifth field asks bash first whether
+# it has what the escape uses (a script that exits 0 when it does); on a bash without
+# it the control is not required to reach, and the row says that.
+_HOLD_DISABLE = '    *) enable -n "$b" ;;\n'
+_HOLD_READONLY = "readonly BASH_CMDS BASH_ALIASES @ENV@\n"
+_HOLD_UNSET = "unset BASH_CMDS BASH_ALIASES\n"
+_HOLD_ENABLE = "enable -n enable\n"
+_HAS_CMDS = 'BASH_CMDS[zz]=/x; [ "$(hash -t zz 2>/dev/null)" = /x ]'
 CONSTRUCTION = [
-    ("bk1", "`command -p`", 'command -p touch "{made}"'),
-    ("bk2", "`builtin command -p`", 'builtin command -p touch "{made}"'),
-    ("bk3", "`exec` of an absolute path", 'exec /usr/bin/touch "{made}"'),
+    ("bk1", "`command -p`", 'command -p touch "{made}"', (_HOLD_DISABLE, _HOLD_READONLY)),
+    ("bk2", "`builtin command -p`", 'builtin command -p touch "{made}"',
+     (_HOLD_DISABLE, _HOLD_READONLY)),
+    ("bk3", "`exec` of an absolute path", 'exec /usr/bin/touch "{made}"', (_HOLD_DISABLE,)),
     ("bk4", "`hash -p` pointing a stub's name at a real tool",
-     'hash -p /usr/bin/touch ls; ls "{made}"'),
-    ("bk5", "a `PATH=` assignment", 'PATH=/usr/bin:/bin; touch "{made}"'),
-    ("bk6", "a `PATH=` prefixing a command", 'PATH=/usr/bin:/bin touch "{made}"'),
-    ("bk7", "`enable` turning a builtin back on", 'enable command; command -p touch "{made}"'),
-    ("bk8", "`source` of a file outside", 'source "{sourced}"'),
-    ("bk9", "`.` of a file outside", '. "{sourced}"'),
-    ("bk10", "`trap` running text on exit", "trap 'echo x > \"{made}\"' EXIT"),
+     'hash -p /usr/bin/touch ls; ls "{made}"', (_HOLD_DISABLE,)),
+    ("bk5", "a `PATH=` assignment", 'PATH=/usr/bin:/bin; touch "{made}"',
+     (_HOLD_READONLY,)),
+    ("bk6", "a `PATH=` prefixing a command", 'PATH=/usr/bin:/bin touch "{made}"',
+     (_HOLD_READONLY,)),
+    ("bk7", "`enable` turning a builtin back on", 'enable command; command -p touch "{made}"',
+     (_HOLD_ENABLE, _HOLD_READONLY)),
+    ("bk8", "`source` of a file outside", 'source "{sourced}"', (_HOLD_DISABLE,)),
+    ("bk9", "`.` of a file outside", '. "{sourced}"', (_HOLD_DISABLE,)),
+    ("bk10", "`trap` running text on exit", "trap 'echo x > \"{made}\"' EXIT",
+     (_HOLD_DISABLE,)),
     ("bk11", "the command hash written through BASH_CMDS",
-     'BASH_CMDS[ls]=/usr/bin/touch; ls "{made}"'),
+     'BASH_CMDS[ls]=/usr/bin/touch; ls "{made}"', (_HOLD_UNSET, _HOLD_READONLY),
+     _HAS_CMDS),
     ("bk12", "a variable the sudo stub reads, pointed at the real tools",
-     'STUB_BIN=/usr/bin sudo touch "{made}"'),
+     'STUB_BIN=/usr/bin sudo touch "{made}"', (_HOLD_READONLY,)),
+]
+
+# THE SHAPES THE READER ONCE ACCEPTED WHILE BASH READ THEM OTHERWISE: (id, what, the
+# line, the problem the reader must refuse it for, or None - a line bash may print
+# instead of starting the program, which is still bash taking the shape the way the
+# escape needs). Each reaches outside by a relative path, never an absolute one, so
+# the reader cannot refuse it for the absolute-path line instead of the rule the row
+# is about; `_escape_cases` runs each past the reader and as a step.
+_TOUCH_OUT = '%susr/bin/touch "$HOME/../../{outside_name}/made"' % (_CLIMB,)
+ESCAPES = [
+    ("bq4", "a `printf` whose first word is a single-quoted `-v`, which bash takes as "
+     "the option, and a name whose subscript runs a program",
+     "printf '-v' 'a[$(%s)]' y" % (_TOUCH_OUT,), "a `printf` whose format",
+     "not a valid identifier"),
+    ("bq5", "an `eval` whose word is the allowed substitution with text after it inside "
+     "the same quotes", 'eval "$(apt-config shell s D/d); %s #)"'
+     % (_TOUCH_OUT.replace('"', '\\"'),), "an `eval` of anything but", None),
+    ("bq6", "an `eval` whose word is the allowed substitution followed by a variable",
+     "v='; %s #'\neval \"$(apt-config shell s D/d)$v)\"" % (_TOUCH_OUT,),
+     "an `eval` of anything but", None),
+    ("bq7", "a builtin called before a function of the same name is defined, which bash "
+     "runs as the builtin", "x='%s'\neval \"$x\"\neval() {{ true; }}" % (_TOUCH_OUT,),
+     "a function named", None),
 ]
 
 
@@ -2334,9 +2544,26 @@ _READER_REFUSED = (
     ("f() { x=1; }; IFS=y", "an assignment to IFS"),
     ("set -x", "`set -x`"),
     ("printf -v x y", "a `printf` whose format"),
+    ("printf '-v' x y", "a `printf` whose format"),
+    ("printf -- x", "a `printf` whose format"),
+    ('printf "$x" y', "a `printf` whose format"),
     ('eval "$x"', "an `eval` of anything but"),
+    ('eval "$(apt-config shell s D/d); rm x #)"', "an `eval` of anything but"),
+    ('eval "$(apt-config shell s D/d)$x"', "an `eval` of anything but"),
+    ('eval x"$(apt-config shell s D/d)"', "an `eval` of anything but"),
+    ('eval "$(apt-config shell s D/d)" x', "an `eval` of anything but"),
+    ("eval $(apt-config shell s D/d)", "an `eval` of anything but"),
+    ('eval "$(apt-config shell s D/d; rm x)"', "an `eval` of anything but"),
+    ("eval() { true; }", "a function named 'eval'"),
+    ("sudo() { true; }", "a function named 'sudo'"),
+    ("echo x {y}>/dev/null", "a `{y}` against a redirection"),
+    ("set -- x >'/tmp/y'", "a redirection >"),
+    ('echo x >"$HOME"', "a redirection >"),
+    ('echo x >"$GITHUB_OUTPUT"x', "a redirection >"),
     ('[ -v "$x" ]', "a `[` test"),
     ('[ $x = "y" ]', "a `[` test"),
+    ("[ -n x* ]", "a `[` test"),
+    ("[ -n {a,b} ]", "a `[` test"),
     ("echo $((1))", "an arithmetic expansion"),
     ('echo "${x@P}"', "a parameter expansion operator"),
     ('echo "${!x}"', "a parameter expansion this reader"),
@@ -2363,7 +2590,7 @@ _READER_READ = (
     '  [ "$s" = "y" ] || m="$m $p"\ndone',
     'x="${x:+$x and }the key\'s"',
     'f() {\n  sudo apt-get -o A="$d/x/" "$@"\n}\ng() {\n  sudo rm -rf "$d" &&\n'
-    '    eval "$(apt-config shell s D/d)" &&\n    f install\n}',
+    '    eval "$(apt-config shell s D/d)" &&\n    f install\n}\nd=x\ng',
     'if [ -d "$d" ] && ls "$d/"*_P* >/dev/null 2>&1; then\n'
     '  if ! u=$(sudo apt-get --print-uris $M); then\n    set -- $u\n    echo "$# $*"\n'
     '  fi\nelif [ -z "$w" ] && ! ls; then\n  echo y\nfi',
@@ -2387,6 +2614,294 @@ def _reader_cases(check):
                ((ln, command_word_problems(ln)) for ln in _READER_READ) if got]
     check("bp11 the reader reads, with no problem, a line of each shape the "
           "committed action has (refused: %r)" % (misread,), not misread)
+    _respelling_cases(check)
+
+
+# --- respelling the reader's tables -------------------------------------------------
+# A RULE WRITTEN AGAINST A WORD'S SPELLING is told apart from one written against its
+# value by writing the word again in a quoting bash reads the same way. Every field of
+# a table line that is written bare - at the top or inside a command substitution,
+# itself unquoted and unexpanded, made of characters no quoting changes the meaning
+# of - is respelled; a reserved word, an
+# assignment, a function's name, a `for` name and a descriptor written against a
+# redirection are not, because bash itself reads those by their spelling. The fields
+# are found by a scanner of this section's own, not by the reader's lexer, so a lexer
+# that misplaces a word does not also choose which words the case varies.
+_RESPELL_RESERVED = ("if", "then", "else", "elif", "fi", "do", "done", "case", "esac",
+                     "for", "while", "until", "in", "function", "select", "time",
+                     "coproc", "{", "}", "!", "[[", "]]")
+_RESPELL_FIELD = re.compile(r"(?:[A-Za-z0-9_.,:%+@/=!-]+|\[|\])\Z")
+_RESPELL_KINDS = ("sq", "dq", "pieces", "mixed")
+_DELIMITERS = " \t\n;&|()<>"
+
+
+def _respell(word, kind):
+    """`word` written again in `kind`'s quoting; bash's value for it is `word`."""
+    if kind == "sq":
+        return "'%s'" % (word,)
+    if kind == "dq":
+        return '"%s"' % (word,)
+    if kind == "pieces":
+        return "'%s''%s'" % (word[:1], word[1:])
+    if kind == "mixed":
+        return '%s"%s"' % (word[:1], word[1:])
+    return "\\" + word
+
+
+def _closing_brace(line, i):
+    """The index after the `}` closing a `${` whose body starts at i."""
+    depth, quote = 1, None
+    while i < len(line):
+        char, step = line[i], 1
+        if quote is not None:
+            if char == "\\" and quote == '"':
+                step = 2
+            elif char == quote:
+                quote = None
+        elif char in "'\"":
+            quote = char
+        elif char == "\\":
+            step = 2
+        elif line.startswith("${", i):
+            depth, step = depth + 1, 2
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += step
+    return len(line)
+
+
+def _fields_in(line, i, nested):
+    """([(start, end, bare)], index after them) for each field from i - to the `)`
+    closing a command substitution when `nested` - and each field inside every
+    `$( )` it meets, at any depth. A field is bare when no character of it is quoted,
+    escaped or expanded; an arithmetic `$(( ))` is passed over whole."""
+    fields, start, bare, quote, depth = [], None, True, None, 0
+    while i < len(line):
+        char = line[i]
+        if quote == "'":
+            quote, i = (None if char == "'" else quote), i + 1
+            continue
+        opened = line[i:i + 2] if line.startswith(("$(", "${"), i) else None
+        if line.startswith("$((", i):
+            end = line.find("))", i)
+            i, bare = (len(line) if end < 0 else end + 2), False
+            continue
+        if quote == '"':
+            if opened == "$(":
+                inner, i = _fields_in(line, i + 2, True)
+                fields += inner
+            elif opened == "${":
+                i = _closing_brace(line, i + 2)
+            else:
+                quote = None if char == '"' else quote
+                i += 2 if char == "\\" else 1
+            continue
+        if nested and char == ")" and depth == 0:
+            if start is not None:
+                fields.append((start, i, bare))
+            return fields, i + 1
+        if char in _DELIMITERS:
+            if start is not None:
+                fields.append((start, i, bare))
+            start, depth, i = None, depth + {"(": 1, ")": -1}.get(char, 0), i + 1
+            continue
+        if start is None and char == "#":
+            end = line.find("\n", i)
+            i = len(line) if end < 0 else end
+            continue
+        if start is None:
+            start, bare = i, True
+        if opened == "$(":
+            inner, i = _fields_in(line, i + 2, True)
+            fields, bare = fields + inner, False
+        elif opened == "${":
+            i, bare = _closing_brace(line, i + 2), False
+        elif char in "'\"":
+            quote, bare, i = char, False, i + 1
+        else:
+            bare = bare and char not in "\\$`"
+            i += 2 if char == "\\" else 1
+    if start is not None:
+        fields.append((start, len(line), bare))
+    return fields, len(line)
+
+
+def _respellable(line):
+    """[(start, end)] of each field of `line` a respelling may rewrite, in order."""
+    spans, before = [], None
+    for start, end, bare in sorted(_fields_in(line, 0, False)[0]):
+        word = line[start:end]
+        if (bare and _RESPELL_FIELD.match(word) and word not in _RESPELL_RESERVED
+                and not _ASSIGNMENT.match(word) and line[end:end + 1] not in ("(", "<", ">")
+                and before not in ("for", "select", "function")):
+            spans.append((start, end))
+        before = word
+    return spans
+
+
+def _respelled(line, kinds):
+    """[(word, kind, line)]: each respellable field of `line` respelled alone, once per
+    kind, then every respellable field at once, once per kind (word None)."""
+    spans = _respellable(line)
+    one = [(line[s:e], kind, line[:s] + _respell(line[s:e], kind) + line[e:])
+           for s, e in spans for kind in kinds]
+    whole = []
+    for kind in kinds:
+        text = line
+        for s, e in reversed(spans):
+            text = text[:s] + _respell(text[s:e], kind) + text[e:]
+        whole.append((None, kind, text))
+    return one + (whole if spans else [])
+
+
+def _respelling_cases(check):
+    tried, wrong = 0, []
+    for line, says in _READER_REFUSED:
+        for word, kind, text in _respelled(line, _RESPELL_KINDS + ("backslash",)):
+            tried += 1
+            want = (says, "a backslash outside quotes") if kind == "backslash" else (says,)
+            problems = command_word_problems(text)
+            if not any(w in p for p in problems for w in want):
+                wrong.append((text, says, problems))
+    check("bq1 each shape the reader refuses is still refused, for the reason given, "
+          "when a bare word of it is written in single quotes, double quotes, adjacent "
+          "quoted pieces or after a backslash - quotings bash reads the same way - so no "
+          "rule judges a word by its spelling (%d respellings; refused otherwise or not "
+          "at all: %r)" % (tried, wrong), tried and not wrong)
+    tried, wrong = 0, []
+    for line in _READER_READ:
+        for word, kind, text in _respelled(line, _RESPELL_KINDS):
+            tried += 1
+            problems = command_word_problems(text)
+            if problems:
+                wrong.append((text, problems))
+    check("bq2 each shape the action has is read with no problem, as it is bare, when a "
+          "bare word of it - or every bare word at once - is written in single quotes, "
+          "double quotes or adjacent quoted pieces (%d respellings; refused: %r)"
+          % (tried, wrong), tried and not wrong)
+
+
+_TRACE_KEYWORDS = ("case", "for")
+
+
+def _started(out, root):
+    """[(raw trace line, word)] for each command bash's trace shows it running, the
+    fixture root written ROOT; word is None for an assignment and the keyword for a
+    traced `case` or `for`."""
+    real = os.path.realpath(root)
+    rows = []
+    for line in out.replace(real, "ROOT").replace(root, "ROOT").splitlines():
+        traced = re.match(r"\++ (.*)", line)
+        if traced is None:
+            continue
+        body = traced.group(1)
+        if _ASSIGNMENT.match(body):
+            rows.append((line, None))
+            continue
+        try:
+            first = shlex.split(body)[:1]
+        except ValueError:
+            first = body.split(" ")[:1]
+        rows.append((line, first[0] if first else ""))
+    return rows
+
+
+def _traced(line, root):
+    """bash's own account of `line`, run after the prelude against the stubs: its
+    exit and the commands its trace shows it running."""
+    build_base(root)
+    env = _stub_env(root, {"GITHUB_OUTPUT": os.path.join(root, "github-output"),
+                           "SEED": "false", "M": "libA", "ImageOS": "ubuntu24"})
+    result = _run_bash(line + "\n", env, root, trace=True)
+    return result["code"], _started(result["out"], root)
+
+
+def _traced_read_cases(check):
+    """`bq3`: an accepted shape is a statement about bash, not about the reader."""
+    vocabulary = (set(STUBS) | set(SHELL_STUBS) | set(n for n, _w in ALLOWED_TOOLS)
+                  | set(n for n, _w in BUILTINS) | set(_TRACE_KEYWORDS))
+    outside, differs, runs = [], [], 0
+    for line in _READER_READ:
+        defined = set(re.findall(r"([a-z_][a-z0-9_]*)\(\)", line))
+        seen = None
+        for _word, kind, text in [(None, "bare", line)] + [
+                r for r in _respelled(line, _RESPELL_KINDS) if r[0] is None]:
+            root = tempfile.mkdtemp(prefix="browser-install-trace-")
+            try:
+                code, started = _traced(text, root)
+            finally:
+                shutil.rmtree(root)
+            runs += 1
+            outside += [(text, raw) for raw, word in started
+                        if word is not None and word not in vocabulary | defined]
+            # Sorted: the members of a pipeline start at once, so their trace lines
+            # interleave differently from run to run; what is compared is which
+            # commands ran, with which arguments, and how often.
+            got = (code, sorted(raw for raw, _w in started))
+            if seen is None:
+                seen = got
+            elif got != seen:
+                differs.append((kind, text, seen, got))
+    check("bq3 each shape the action has, and each respelling of it, run after the "
+          "prelude against the stubs: bash's own trace shows it starting nothing but a "
+          "stub, an allowed tool, a builtin on BUILTINS or a function it defines, and "
+          "each respelling runs the same commands to the same exit as the bare line "
+          "(%d runs; started outside that: %r; run differently: %r)"
+          % (runs, outside, differs), runs and not outside and not differs)
+
+
+def _bash_version():
+    done = subprocess.run([shutil.which("bash"), "--norc", "--noprofile", "-c",
+                           'echo "$BASH_VERSION"'], stdout=subprocess.PIPE,
+                          stdin=subprocess.DEVNULL)
+    return done.stdout.decode("utf-8", "replace").strip() or "unknown"
+
+
+def _escape_cases(check):
+    """ESCAPES' rows, each on two fixtures and two scratch directories of its own,
+    removed in `finally`: past the reader, where bash's reading is the row's, and
+    through `run_script`, where the reader refuses the line before it starts."""
+    version = _bash_version()
+    for cid, what, line, says, or_says in ESCAPES:
+        dirs = []
+        try:
+            outside, names = _outside_files()
+            dirs.append(outside)
+            root = tempfile.mkdtemp(prefix="browser-install-escape-")
+            dirs.append(root)
+            build_base(root)
+            script = line.format(**names) + "\n"
+            past = _run_bash(script, _stub_env(root), root)
+            reached = not _outside_intact(names)
+            outside2, names2 = _outside_files()
+            dirs.append(outside2)
+            root2 = tempfile.mkdtemp(prefix="browser-install-escape-")
+            dirs.append(root2)
+            build_base(root2)
+            script2 = line.format(**names2) + "\n"
+            gated = run_script(script2, _stub_env(root2), root2)
+            intact = _outside_intact(names2)
+            problems = script_problems(script2)
+            refused = any(says in p for p in problems)
+            bash_read = reached or (or_says is not None and or_says in past["out"])
+            if reached:
+                seen = ("starts the program on bash %s, so the construction does not "
+                        "hold it and the reader is its only hold" % (version,))
+            elif bash_read:
+                seen = ("says %r on bash %s: it takes the shape as the escape needs, "
+                        "and this bash starts nothing from it" % (or_says, version))
+            else:
+                seen = "starts nothing on bash %s, so the row shows no escape" % (version,)
+            check("%s %s: past the reader bash %s; the reader refuses it for %r and, "
+                  "run as a step, the file outside is as it was (refused: %r, outside "
+                  "intact: %r)" % (cid, what, seen, says, refused, intact),
+                  bash_read and refused and intact and gated["code"] is None,
+                  "past the reader:\n%s\nreader: %r" % (past["out"], problems))
+        finally:
+            for d in dirs:
+                shutil.rmtree(d)
 
 
 def _cases(check):
@@ -2422,6 +2937,8 @@ def _cases(check):
               "\n".join("%s: %s" % (r["id"], r["detail"]) for r in got))
     _confinement_cases(check, text, green)
     _construction_cases(check)
+    _traced_read_cases(check)
+    _escape_cases(check)
 
 
 def _outside_files():
@@ -2476,23 +2993,62 @@ def _confinement_cases(check, text, green):
             shutil.rmtree(outside)
 
 
+def _reaches(line, drop=()):
+    """({"code", "out"}, True when `line` - run past the reader on a fixture of its
+    own, the prelude less `drop` - changed the file outside), both scratch
+    directories removed in `finally`."""
+    outside, names = _outside_files()
+    root = tempfile.mkdtemp(prefix="browser-install-construction-")
+    try:
+        build_base(root)
+        result = _run_bash(line.format(**names) + "\n", _stub_env(root), root, drop)
+        return result, not _outside_intact(names)
+    finally:
+        shutil.rmtree(root)
+        shutil.rmtree(outside)
+
+
+def _bash_has(script):
+    """True when `script`, run by a plain bash, exits 0."""
+    return subprocess.run([shutil.which("bash"), "--norc", "--noprofile", "-c", script],
+                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL).returncode == 0
+
+
+def _hold_names(holds):
+    return " and ".join(repr(h.strip()) for h in holds)
+
+
 def _construction_cases(check):
-    """CONSTRUCTION's rows: each line run past the reader on a fixture of its own,
-    against a scratch directory of its own, both removed in `finally`."""
-    for cid, what, line in CONSTRUCTION:
-        outside, names = _outside_files()
-        root = tempfile.mkdtemp(prefix="browser-install-construction-")
+    """CONSTRUCTION's rows: each line run past the reader with the whole prelude,
+    where the file outside must stay as it was, and again with the lines the row
+    names as its hold taken out, where it must not."""
+    version = _bash_version()
+    for row in CONSTRUCTION:
+        cid, what, line, holds = row[:4]
+        has = _bash_has(row[4]) if len(row) > 4 else True
+        result, reached = _reaches(line)
         try:
-            build_base(root)
-            result = _run_bash(line.format(**names) + "\n", _stub_env(root), root)
-            intact = _outside_intact(names)
-            check("%s %s, run past the reader: the construction alone leaves the file "
-                  "outside the fixture as it was (exit %r)" % (cid, what, result["code"]),
-                  intact and result["code"] != 0 and script_problems(line),
-                  "%s\nreader: %r" % (result["out"], script_problems(line)))
-        finally:
-            shutil.rmtree(root)
-            shutil.rmtree(outside)
+            control, unheld = _reaches(line, holds)
+        except ValueError as exc:      # a hold the row names is not in the prelude
+            check("%s %s: the hold the row names is not in the prelude" % (cid, what),
+                  False, str(exc))
+            continue
+        alone = ("; each alone taken out, it reaches outside: %s" % ", ".join(
+            "%s %r" % (h.strip(), _reaches(line, (h,))[1]) for h in holds)
+            if len(holds) > 1 else "")
+        check("%s %s, run past the reader: the construction alone leaves the file "
+              "outside the fixture as it was (exit %r), and with %s taken out the same "
+              "line %s on bash %s%s"
+              % (cid, what, result["code"], _hold_names(holds),
+                 "reaches it" if unheld else (
+                     "reaches nothing either" if has else
+                     "reaches nothing, because this bash lacks what it uses"),
+                 version, alone),
+              not reached and result["code"] != 0 and script_problems(line)
+              and (unheld or not has),
+              "%s\nreader: %r\nwith the hold taken out:\n%s"
+              % (result["out"], script_problems(line), control["out"]))
 
 
 def _selftest():

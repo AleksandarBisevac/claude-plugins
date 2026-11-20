@@ -1,0 +1,46 @@
+{
+  "gates": {
+    "python3 tools/check-browser-install.py": "pass",
+    "python3 tools/check-browser-install.py --selftest": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "python3 tools/gate-parity.py --selftest": "pass",
+    "python3 tools/sweep-selftests.py tests/test__output_lints.py tests/test__deps.py tests/test__areas.py tools/check-browser-install.py tools/gate-parity.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py tests/test__areas.py tools/_suite.py tools/check-browser-install.py tools/gate-parity.py": "pass",
+    "python3 tools/check-rendered-artifacts.py --before-commit": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "ruff check plugins/audit tools tests .claude/hooks": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints": "pass",
+    "python3 tools/sweep-selftests.py (full)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-20T06:41:32Z",
+    "basis": "`python3 tools/check-browser-install.py --selftest` in a throwaway tree at HEAD exited 1 on \"NameError: name '_bash_version' is not defined\" (read as python), and the task introduces '_bash_version': absent from HEAD's tools/gate-parity.py, .github/actions/browser-install/action.yml, CONTRIBUTING.md, tools/check-browser-install.py and present in the working tree's tools/check-browser-install.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "tools/check-browser-install.py: every rule now asks one place, `_bash_reading(parts)`, for a word's value after quote removal (None when an expansion or an unquoted character bash expands makes it unknowable), the sole expansion the word is, and whether it can split; `_word` reads a word into bash's parts (dq backslash removal included) and the spelling-only `quoted` key is gone; command word, set, printf (value known, not starting with '-'), eval (exactly one double-quoted $( ) calling apt-config, nothing beside), [ (known operator, unsplittable operands) and redirection targets (/dev/null by value, >& 1/2 by value, $GITHUB_OUTPUT as the sole expansion) read only that. Third escape found and closed: a builtin called before a same-named function definition (no function may take a stub, tool or builtin name). `{name}` against a redirection refused (bash 4.1+ per the manual). New cases: bq1 (920 respellings of refused shapes), bq2 (324 respellings of the action's shapes), bq3 (each shape and its respellings run under bash's xtrace against the stubs: started commands on the vocabulary, same commands and exit as bare), bq4-bq7 (the three escapes, past the reader and as a step). Construction rows now name their hold lines and rerun with them removed, which must reach outside; this answers finding P169-R105: bk11 was seen red on bash 5.2.21 in CI run 44684189710 (K4, both lines removed), and on bash 5 the unset line and the read-only line each hold it alone (44684182939, 44684186240); on bash 3.2 there is no command hash array and bk11's label says so. Docstring restated (stays-outside list, reading-alone list, versions named; bk1/bk2/bk7 are held by both lines each alone on bash 3.2 but only by the disabling line on bash 5.2.21). BUILTINS reasons rewritten as families. CONTRIBUTING.md: one sentence. Mutation probe scratchpad/p169-29/mutations.py: run 2 saved file says 19 row(s), 0 not as expected (spelling-direction rows turn bq1/bq2 red, over-fire rows turn sd8/bp11 red). Full sweep 198/198 files ok, 19746 cases. Check CPU user+sys interleaved: head 6.22/6.51, final 6.53/6.63.",
+    "descriptive": "The browser install check's reader judges each word by the value bash hands on, so a quoted option, text beside eval's substitution, or a function shadowing a builtin can no longer pass, and a case fails by name if a rule reads spelling again."
+  },
+  "testsAdded": [
+    "bq1: each refused shape stays refused for its reason under single, double, adjacent-piece, mixed and backslash respellings of every bare word",
+    "bq2: each shape the action has is read with no problem under every respelling",
+    "bq3: each accepted shape and its respellings run under bash's trace start nothing off the vocabulary and run identically",
+    "bq4-bq7: printf with a quoted -v, eval with text after the substitution, eval with a variable after it, and a builtin called before a same-named function: bash's reading shown past the reader, refused by the reader, outside file intact as a step"
+  ],
+  "casesAdded": [
+    [
+      "bq1",
+      "bq2",
+      "bq3",
+      "bq4",
+      "bq5",
+      "bq6",
+      "bq7"
+    ]
+  ],
+  "claims": "claims:\n1 _bash_reading is the one place; rules in _parse (command word), _builtin_call_problem, _redirection_problem; function-name refusal in command_word_problems; {name} in _lex; hold check in _construction_cases\n2 red before the reader change (red-first-local.txt, 87/94); mutation run 2: 19 rows, 0 not as expected, both directions; bk11 seen red on bash 5.2.21 (run 44684189710)\n3 grep for spelling reads (\"quoted\", [\"plain\"], [\"text\"]): remaining hits are messages, bash's own spelling-based recognitions, the empty-target and {name} checks; the function-after-call escape is the same class and is closed\n4 n/a - no rule addressed to an agent\n5 check CPU two interleaved runs each side (head 6.22/6.51, final 6.53/6.63); bq3 six repeated runs all PASS\n6 decisions read bash's value and bq3 asks bash's trace; allow side bp11/bq2/sd8 green, over-fire rows O1-O4 turn them red\n7 no prose number; label counts computed at run time; each bash behaviour names the version it was seen on or cites the manual",
+  "stamp": "audit-stamp: {\"content\":\"sha256:37fadfd39ff89d8b906439090700ad7ae9801fadcb987ceb00945b687e44089b\",\"dirtyDigest\":\"sha256:22f01e6ede907cb41436d507a5831c0676252e4efb362254b3df5671658f7b8e\",\"dirtyPaths\":{\"CONTRIBUTING.md\":\"9a26613fea4a5ac4\",\"tools/check-browser-install.py\":\"73919cee4c1fdadf\"},\"head\":\"8219a27b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".github/actions/browser-install/action.yml\",\"CONTRIBUTING.md\",\"tools/check-browser-install.py\",\"tools/gate-parity.py\"],\"scopeDigest\":\"sha256:a606af3ac9b815050d25941e5ec086297f0f826cd7501f46f519c9b4929a0ed3\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
