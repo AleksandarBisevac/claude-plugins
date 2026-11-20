@@ -1455,6 +1455,11 @@ AUDITED_EXEMPTIONS = {
     # step's script names any longer, or one a stub serves too; the sentence beside
     # each entry is not compared against anything.
     "ALLOWED_TOOLS": ("live", "tools/check-browser-install.py bp8"),
+    # The builtins that install's shell keeps; every other is disabled before a
+    # step's first line. `bp9` reports an entry no step the check runs calls any
+    # longer, or one a stub or a tool serves too; the sentence beside each entry is
+    # not compared against anything.
+    "BUILTINS": ("live", "tools/check-browser-install.py bp9"),
     # The keys of a ledger row the plan's record does not carry: `rs2` reports an
     # entry naming a key `row_for` cannot write, so a row outliving its key is red;
     # the sentence beside each entry is not compared against anything.

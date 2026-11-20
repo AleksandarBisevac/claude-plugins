@@ -18,29 +18,57 @@ keep a ledger of who owns each path.
 
 WHAT A STEP CAN START. This runs in the lint slice and under the sweep, on a
 developer's machine, so a line added to the action must not be able to reach that
-machine. A step's PATH is the fixture's `bin/` and nothing else: the stubs, and the
-real tools in `ALLOWED_TOOLS` linked in by name from SYSTEM_PATH, each a reader that
-writes only its standard output. The `sudo` stub starts only a name it finds in
-`bin/`; every stub that writes refuses a path outside the fixture root; stdin is
-closed. A refused request, and a name the shell cannot find, is written to the
-fixture's refusal ledger, and every case that runs a step is red when that ledger is
-not empty, whatever the step did with the exit code (`run_script`, `_refusals`).
-What stays outside that, so a green run here says nothing about it:
-  * an executable named by its absolute path, which PATH cannot stop. `sd7` is the
-    static half: no script line may name an absolute path but `/dev/null`.
-  * bash's own builtins and redirections. `cd`, `>` and `>>` reach whatever path
-    they are given; one written as an absolute path is `sd7`'s, one built from a
-    variable (`> "$HOME/../x"`) is not seen.
-  * `$STUB_PY` and `$BASH`, which are absolute paths in a step's environment: a
-    script that runs either by its variable is not stopped.
+machine. The promise: a step's shell starts a program only by a bare name, and that
+name finds a stub or a real tool in `ALLOWED_TOOLS` - nothing else. PATH alone cannot
+hold that, because the shell has ways to start a program that never consult it. It
+is held twice, and the selftest shows each half red without the other:
+  * BY READING, before anything runs. `run_script` hands every script to
+    `script_problems` first, and a script it refuses is not started at all; `sd8`
+    reports the same reading for every step a case runs. The reader takes the shell
+    subset the action is written in and refuses every shape it does not read. Every
+    command word must be a bare name written out - a stub, an allowed tool, a
+    function the script defines, or a builtin on `BUILTINS` called in the one shape
+    its row allows - so a word holding a `/` (absolute, relative or built from a
+    variable), a word an expansion produces, and `command`, `exec`, `env`, `hash`,
+    `enable`, `source`, `.`, `builtin` and `trap` are refused for not being on the
+    list, not one spelling at a time. A script may assign only lowercase names, so
+    no `PATH=`, `IFS=`, `PS4=` or `LD_PRELOAD=`, and no assignment may prefix a
+    command. A redirection writes only to `/dev/null`, `"$GITHUB_OUTPUT"` or another
+    descriptor. Every form that evaluates text as code or starts what the reader
+    cannot follow is refused: arithmetic, an array subscript, `${x@P}`, `${!x}`,
+    process substitution, a backquote, a here-document, `&`. `sd7` adds that no
+    line names an absolute path but `/dev/null`.
+  * BY CONSTRUCTION, for what does run (`_prelude`). PATH is the fixture's `bin/`
+    and read-only, as is every other variable of the step's environment, so the
+    variables the stubs read cannot be pointed elsewhere; `BASH_CMDS` and
+    `BASH_ALIASES` are unset and read-only; and every builtin not on `BUILTINS` is
+    disabled before the script's first line, `enable` last, so `command -p`,
+    `exec`, `hash -p`, `enable -f`, `source` and `builtin` do not exist to be
+    called. The `sudo` stub starts only a name it finds in `bin/`; every stub that
+    writes refuses a path outside the fixture root; stdin is closed. A refused
+    request, and a name the shell cannot find, is written to the fixture's refusal
+    ledger, and every case that runs a step is red when that ledger is not empty,
+    whatever the step did with the exit code (`_refusals`).
+What stays outside that, so a green run here says nothing about it. The list comes
+from reading the bash manual's sections on command search and execution, the
+builtins, the shell variables, the expansions and the restricted shell for every way
+to start a program or to evaluate text as code; each item is one neither half closes:
+  * the reader is not bash. It refuses every shape it does not read, `bp10` pins
+    what it refuses and `bp11` the shapes the action has, but a shape it accepts
+    that bash reads otherwise is not seen.
   * `node`, which starts the real node on a harness evaluating the `-e` code in a
     `vm` context whose `require` returns JSON under the fixture root and nothing
     else. A `vm` context is not a security boundary: it stops an ordinary edit
     (`require('fs')`), not code written to escape it.
+  * what an allowed tool or a stub is given to read: each writes only its standard
+    output or under the fixture, but `ls "$HOME/../.."` lists a directory outside.
+  * a step that does not end: STEP_TIMEOUT ends the step's shell, not every process
+    the shell started.
   * on bash 3.2 (macOS's own), a name not found whose stderr the step discards:
     that bash has no `command_not_found_handle`, so the only channel there is its
     own "command not found" line, which `2>/dev/null` hides. The name still does
-    not run. bash 4 and later, which every runner has, record it either way.
+    not run, and the reader refuses it before the step starts. bash 4 and later,
+    which every runner has, record it either way.
 
 WHAT THE CASES HOLD, by id (the gate prints each):
   * `bi` - the system packages' step. A full hit asks the archive for nothing, index
@@ -61,14 +89,17 @@ WHAT THE CASES HOLD, by id (the gate prints each):
     same path and key as the restores, the plan reads their answers, every step
     after the plan installs only when the plan says so, the steps no case runs are
     where they must be, an image lacking nothing asks for no set, `seed` defaults to
-    false, and no script names an absolute path.
+    false, no script names an absolute path (`sd7`), and the reader refuses nothing
+    in a step a case runs (`sd8`).
 
 The selftest holds the parser of the action, runs every case over the committed
 action, and then breaks a copy of the action once per property and requires the case
 that holds it to go red - so a case that could not fail is itself a red case here.
 Its `bx` rows append a line reaching outside the fixture to a copy of the action and
-require the case red with the file outside untouched; that file sits in a scratch
-directory of its own, so a check that lost its confinement touches nothing else.
+require the case red, refused by the half the row names, with the file outside
+untouched; its `bk` rows run a line past the reader, against the construction alone,
+and require that file untouched too. That file sits in a scratch directory of its
+own, so a check that lost its confinement touches nothing else.
 
 WHAT THE STUBS CANNOT SEE, so a green run here says nothing about it:
   * apt's real resolution - versions, `Pre-Depends`, alternatives, multi-arch,
@@ -752,6 +783,28 @@ ALLOWED_TOOLS = (
     ("sha256sum", "a filter: the hash of the missing list in the system packages' key"),
 )
 
+# The stubs written as shell rather than served by STUBS, so a name the reader takes.
+SHELL_STUBS = ("sudo", "apt-config", "node")
+
+# THE BUILTINS A STEP MAY CALL, each with why, and every other builtin is disabled
+# before a step's first line (`_prelude`). A builtin that could start a program, read
+# a file as code or evaluate a value as code is absent from this list rather than
+# refused by name, and the ones here that take such an argument are held by the reader
+# to the one shape the action calls them in (`_builtin_call_problem`).
+BUILTINS = (
+    ("echo", "prints a step's log lines and the outputs it writes"),
+    ("printf", "formats a line; the reader holds its format to a single-quoted literal, "
+               "so it is never `-v`, which assigns through a name bash evaluates"),
+    ("exit", "ends a step with its status, as each of the action's failures does"),
+    ("set", "sets the positional parameters the install step counts; the reader holds "
+            "it to `set --`, so no option turns on tracing or exporting"),
+    ("eval", "reads the system's list directory out of the apt-config stub; the reader "
+             "holds it to that stub's output, which is this file's own text"),
+    ("[", "tests a double-quoted operand with -z, -n or -d, or compares two with = or "
+          "!=, the shapes the reader holds it to, so no value becomes an operator"),
+    ("true", "a status: the dpkg-query of a package the image lacks is not a failure"),
+)
+
 # sudo starts, as root, only a name it finds in the fixture's `bin/`; anything else
 # - a path, an option, a name that is neither a stub nor an allowed tool - is
 # refused, so `sudo` is never a way past the PATH.
@@ -941,23 +994,64 @@ def posix_problem():
 # inherits it. bash 3.2 (macOS's own) has no such hook, so there the only channel is
 # bash's own "command not found" line, which a step's `2>/dev/null` hides. The name
 # still does not run either way: PATH holds nothing but `bin/`.
+#
+# THEN THE SHELL IS NARROWED BEFORE THE SCRIPT'S FIRST LINE: every variable of the
+# step's environment is read-only (PATH among them, and the ones the stubs read), the
+# command hash's array is unset and read-only, and every builtin BUILTINS does not
+# name is disabled, `enable` last so none can be turned back on. A disabled builtin's
+# name is looked up in PATH like any other, finds nothing, and is a not-found line.
+# The handler ends with `(exit 127)` because `return` is one of the disabled.
 _PRELUDE = """\
 command_not_found_handle() {
   printf 'not found: %s\\n' "$1" >> "$STUB_REFUSED"
   printf 'check-browser-install: %s is neither a stub nor an allowed tool\\n' "$1" >&2
-  return 127
+  (exit 127)
 }
 export -f command_not_found_handle
+readonly -f command_not_found_handle
+unset BASH_CMDS BASH_ALIASES
+readonly BASH_CMDS BASH_ALIASES @ENV@
+for b in $(compgen -b); do
+  case " @KEEP@ enable " in
+    *" $b "*) ;;
+    *) enable -n "$b" ;;
+  esac
+done
+enable -n enable
 """
 
 
+def _prelude(env):
+    """The lines run before a step's script, for a step given `env`."""
+    names = sorted(env)
+    odd = [n for n in names if not re.match(r"[A-Za-z_][A-Za-z0-9_]*\Z", n)]
+    if odd:
+        raise ValueError("a step's environment names %r, which no shell variable is"
+                         % (odd,))
+    return (_PRELUDE.replace("@ENV@", " ".join(names))
+            .replace("@KEEP@", " ".join(n for n, _why in BUILTINS)))
+
+
 def run_script(script, env, cwd):
-    """{"code", "out", "refused"} for one step's script under GitHub's bash
-    flags with stdin closed: the exit code (None when the step did not finish),
-    the combined output, and every request a stub refused or a name the shell
-    did not find."""
+    """{"code", "out", "refused"} for one step's script: the reader's refusal,
+    with the script never started, or the run `_run_bash` reports."""
+    problems = script_problems(script)
+    if problems:
+        refused = ["unread: %s" % (p,) for p in problems]
+        return {"code": None, "refused": refused,
+                "out": "\n".join(["check-browser-install: the step was not run"]
+                                 + _refusals({"refused": refused}))}
+    return _run_bash(script, env, cwd)
+
+
+def _run_bash(script, env, cwd):
+    """{"code", "out", "refused"} for one script under GitHub's bash flags, the
+    prelude first and stdin closed, past the reader: the exit code (None when the
+    step did not finish), the combined output, and every request a stub refused
+    or a name the shell did not find. Only `run_script` and the selftest's `bk`
+    rows, which show the construction holding without the reader, call this."""
     path = os.path.join(cwd, "step.sh")
-    _write(path, _PRELUDE + script)
+    _write(path, _prelude(env) + script)
     try:
         done = subprocess.run([shutil.which("bash")] + list(BASH_FLAGS) + [path],
                               env=env, cwd=cwd, stdin=subprocess.DEVNULL,
@@ -975,7 +1069,411 @@ def run_script(script, env, cwd):
 
 def _refusals(result):
     """The refusals of one run, each worded as a reason the case is red."""
-    return ["the step reached what no stub serves: %s" % (r,) for r in result["refused"]]
+    return [("the reader refused the step, so it was not run: %s" % (r[len("unread: "):],))
+            if r.startswith("unread: ")
+            else "the step reached what no stub serves: %s" % (r,)
+            for r in result["refused"]]
+
+
+# --- reading a step's shell ---------------------------------------------------------
+# A READER FOR THE SHELL SUBSET THE ACTION IS WRITTEN IN, not a bash parser, for the
+# same reason as the YAML reader above: every shape it does not read is a problem
+# with its text, never a script read as harmless. It finds every command word - at the
+# top, in a function body, inside each `$( )` - and what it reads is a positive rule:
+# a command word is a bare name on the vocabulary, a variable assigned is the
+# script's own (lowercase), a redirection goes where `_REDIRECT_OK` says.
+_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_OWN_NAME = re.compile(r"[a-z_][a-z0-9_]*\Z")
+_BARE = re.compile(r"(?:\[|[A-Za-z0-9_][A-Za-z0-9_+-]*)\Z")
+_ASSIGNMENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=")
+_REDIRECTION = re.compile(r"([0-9]*)(>>|>&|>\||>|<<|<&|<>|<)")
+_WORD_END = " \t\n;&|()<>"
+_SPECIAL_PARAMS = "#*@?123456789"
+_OPENS = ("if", "while", "until", "{")
+_CLOSES = {"fi": ("if",), "done": ("for", "while", "until"), "}": ("{",),
+           "esac": ("case",)}
+_KEEP_CMD = ("then", "elif", "else", "do", "!")
+_NOT_READ = ("function", "select", "coproc", "time", "[[", "]]", "((", "))", "in",
+             "let", "declare", "typeset", "local")
+_TEST_UNARY = ("-z", "-n", "-d")
+_TEST_BINARY = ("=", "!=")
+
+
+def _quoted_double(text, i):
+    """(substitutions, index after the closing quote, problem) for the `"` at i."""
+    subs, j = [], i + 1
+    while j < len(text):
+        char = text[j]
+        if char == '"':
+            return subs, j + 1, None
+        if char == "\\":
+            j += 2
+            continue
+        if char == "$":
+            got, j, problem = _dollar(text, j)
+            if problem is not None:
+                return subs, j, problem
+            subs.extend(got)
+            continue
+        if char == "`":
+            return subs, j, "a backquoted command substitution"
+        if char == "\n":
+            return subs, j, "a double-quoted string running past its line"
+        j += 1
+    return subs, j, "a double-quoted string that never closes"
+
+
+def _braced(text, i):
+    """(substitutions, index after `}`, problem) for a `${` whose name starts at i:
+    `${name}`, `${name:-word}` or `${name:+word}` and nothing else, since every
+    other operator either evaluates arithmetic or reads a value as a name."""
+    name = _IDENT.match(text, i)
+    if name is None:
+        return [], i, "a parameter expansion this reader does not read: %r" % (
+            text[i - 2:i + 10],)
+    j = name.end()
+    if text[j:j + 1] == "}":
+        return [], j + 1, None
+    if text[j:j + 2] not in (":-", ":+"):
+        return [], j, "a parameter expansion operator this reader does not read: %r" % (
+            text[i - 2:j + 3],)
+    subs, j = [], j + 2
+    while j < len(text) and text[j] != "}":
+        char = text[j]
+        if char == "$":
+            got, j, problem = _dollar(text, j)
+        elif char == '"':
+            got, j, problem = _quoted_double(text, j)
+        elif char == "'":
+            end = text.find("'", j + 1)
+            got, j, problem = [], end + 1, (None if end > 0 and "\n" not in text[j:end]
+                                            else "a single quote that never closes")
+        elif char in "`\\\n":
+            got, problem = [], "%r inside a parameter expansion" % (char,)
+        else:
+            got, j, problem = [], j + 1, None
+        if problem is not None:
+            return subs, j, problem
+        subs.extend(got)
+    if j >= len(text):
+        return subs, j, "a parameter expansion that never closes"
+    return subs, j + 1, None
+
+
+def _dollar(text, i):
+    """(substitutions, index after the expansion, problem) for the `$` at i. A
+    substitution is the token list of a `$( )`, which the parser reads as commands."""
+    nxt = text[i + 1:i + 2]
+    if nxt == "(":
+        if text[i + 2:i + 3] == "(":
+            return [], i, "an arithmetic expansion"
+        tokens, j, problem = _lex(text, i + 2, True)
+        return [tokens], j, problem
+    if nxt == "{":
+        return _braced(text, i + 2)
+    name = _IDENT.match(text, i + 1)
+    if name is not None:
+        return [], name.end(), None
+    if nxt and nxt in _SPECIAL_PARAMS:
+        return [], i + 2, None
+    return [], i, "a `$` this reader does not read: %r" % (text[i:i + 3],)
+
+
+def _word(text, i):
+    """(word, index after it, problem). A word is {"text", "plain": nothing but
+    literal characters, "quoted": "dq"/"sq" when it is one quoted string and
+    nothing else, "subs": the token lists of its command substitutions}."""
+    start, kinds, subs = i, [], []
+    while i < len(text) and text[i] not in _WORD_END:
+        char = text[i]
+        if char == "'":
+            end = text.find("'", i + 1)
+            if end < 0 or "\n" in text[i:end]:
+                return None, i, "a single quote that never closes on its line"
+            kinds.append("sq")
+            i = end + 1
+        elif char == '"':
+            got, i, problem = _quoted_double(text, i)
+            if problem is not None:
+                return None, i, problem
+            kinds.append("dq")
+            subs.extend(got)
+        elif char == "$":
+            got, i, problem = _dollar(text, i)
+            if problem is not None:
+                return None, i, problem
+            kinds.append("exp")
+            subs.extend(got)
+        elif char in "\\`":
+            return None, i, ("a backslash outside quotes" if char == "\\"
+                             else "a backquoted command substitution")
+        else:
+            if not kinds or kinds[-1] != "lit":
+                kinds.append("lit")
+            i += 1
+    quoted = kinds[0] if kinds in (["dq"], ["sq"]) else None
+    return {"text": text[start:i], "plain": kinds == ["lit"], "quoted": quoted,
+            "subs": subs}, i, None
+
+
+def _lex(text, i, nested):
+    """(tokens, index after them, problem) from i to the end, or - `nested`, inside
+    a `$( )` - to the `)` closing it. A token is ("word", word), ("op", text),
+    ("redir", (fd, operator, target word)) or ("nl", "\\n")."""
+    tokens, depth = [], 0
+    while i < len(text):
+        char = text[i]
+        if char in " \t":
+            i += 1
+            continue
+        if char == "\n":
+            tokens.append(("nl", "\n"))
+            i += 1
+            continue
+        if char == "#":
+            end = text.find("\n", i)
+            i = len(text) if end < 0 else end
+            continue
+        redir = _REDIRECTION.match(text, i)
+        if redir is not None:
+            j = redir.end()
+            while j < len(text) and text[j] in " \t":
+                j += 1
+            target, j, problem = _word(text, j)
+            if problem is not None:
+                return tokens, j, problem
+            if not target["text"]:
+                return tokens, j, "a redirection with no target"
+            tokens.append(("redir", (redir.group(1), redir.group(2), target)))
+            i = j
+            continue
+        two = text[i:i + 2]
+        if text[i:i + 3] == ";;&" or two in (";&", "|&", "&>") or (char == "&"
+                                                                    and two != "&&"):
+            return tokens, i, "%r, a form this reader does not read" % (text[i:i + 3],)
+        if two in ("&&", "||", ";;"):
+            tokens.append(("op", two))
+            i += 2
+            continue
+        if char in ";|":
+            tokens.append(("op", char))
+            i += 1
+            continue
+        if char == "(":
+            depth += 1
+            tokens.append(("op", char))
+            i += 1
+            continue
+        if char == ")":
+            if nested and depth == 0:
+                return tokens, i + 1, None
+            depth -= 1
+            tokens.append(("op", char))
+            i += 1
+            continue
+        word, i, problem = _word(text, i)
+        if problem is not None:
+            return tokens, i, problem
+        tokens.append(("word", word))
+    if nested:
+        return tokens, i, "a command substitution that never closes"
+    return tokens, i, None
+
+
+def _redirection_problem(fd, operator, target):
+    """Why a redirection is refused, or None: only to another descriptor, to
+    `/dev/null`, or appended to the step's output file, whose path the step's
+    read-only environment fixes."""
+    if fd not in ("", "1", "2"):
+        return "a redirection of descriptor %s" % (fd,)
+    if operator == ">&" and target["text"] in ("1", "2"):
+        return None
+    if operator in (">", ">>") and target["text"] in ("/dev/null", '"$GITHUB_OUTPUT"'):
+        return None
+    return "a redirection %s%s %s, which goes nowhere this reader allows" % (
+        fd, operator, target["text"])
+
+
+def _innermost(stack):
+    """The construct opened last and not yet closed, or None."""
+    return stack[-1] if stack else None
+
+
+def _parse(tokens, nested=False):
+    """{"calls": [(name, [argument words])], "defs": [function names], "problems"}
+    for one token list, its substitutions read as command lists of their own."""
+    calls, defs, problems, stack = [], [], [], []
+    state, call, i = "cmd", None, 0
+
+    def read_subs(word):
+        for sub in word["subs"]:
+            got = _parse(sub, True)
+            calls.extend(got["calls"])
+            defs.extend(got["defs"])
+            problems.extend(got["problems"])
+
+    while i < len(tokens):
+        kind, value = tokens[i]
+        i += 1
+        if kind == "nl" or (kind == "op" and value in (";", "&&", "||", "|")):
+            if state == "pattern" and value in ("\n", "|"):
+                continue
+            if state in ("for_name", "for_in", "case_word", "case_in", "pattern") \
+                    or (state == "cmd" and value not in ("\n", ";")):
+                problems.append("%r where this reader expects a command or a word"
+                                % (value,))
+            state, call = "cmd", None
+            continue
+        if kind == "op" and value == ";;":
+            if _innermost(stack) == "case" and state in ("cmd", "args", "after",
+                                                         "assign"):
+                state, call = "pattern", None
+            else:
+                problems.append("`;;` outside a `case`")
+            continue
+        if kind == "op" and value == ")" and state == "pattern":
+            state = "cmd"
+            continue
+        if kind == "op":
+            problems.append("%r: a subshell or a parenthesis this reader does not read"
+                            % (value,))
+            continue
+        if kind == "redir":
+            fd, operator, target = value
+            read_subs(target)
+            problem = _redirection_problem(fd, operator, target)
+            if problem is None and state not in ("args", "after"):
+                problem = "a redirection before the command it belongs to"
+            if problem is not None:
+                problems.append(problem)
+            continue
+        word = value
+        read_subs(word)
+        text = word["text"]
+        reserved = word["plain"] and state == "cmd"
+        if reserved and text in _OPENS + _KEEP_CMD:
+            if text in _OPENS:
+                stack.append(text)
+            continue
+        if reserved and text in _CLOSES or (state == "pattern" and text == "esac"):
+            if not stack or stack[-1] not in _CLOSES[text]:
+                problems.append("`%s` closing nothing it can close" % (text,))
+            else:
+                stack.pop()
+            state = "after"
+            continue
+        if reserved and text in ("for", "case"):
+            if nested and text == "case":
+                problems.append("a `case` inside a command substitution")
+            stack.append(text)
+            state = "for_name" if text == "for" else "case_word"
+            continue
+        if reserved and text in _NOT_READ:
+            problems.append("`%s`, a form this reader does not read" % (text,))
+            continue
+        if state == "cmd" and tokens[i:i + 2] == [("op", "("), ("op", ")")]:
+            if word["plain"] and _OWN_NAME.match(text):
+                defs.append(text)
+            else:
+                problems.append("a function named %r, not a lowercase name" % (text,))
+            i += 2
+            continue
+        if state == "cmd":
+            assigned = _ASSIGNMENT.match(text)
+            if assigned is not None:
+                if not _OWN_NAME.match(assigned.group(1)):
+                    problems.append("an assignment to %s, a name the script does not "
+                                    "own (it assigns only lowercase names)"
+                                    % (assigned.group(1),))
+                state = "assign"
+                continue
+            if not (word["plain"] and _BARE.match(text)):
+                problems.append("a command word that is not a bare name: %r" % (text,))
+                state, call = "args", None
+                continue
+            call = (text, [])
+            calls.append(call)
+            state = "args"
+            continue
+        if state == "args":
+            if call is not None:
+                call[1].append(word)
+        elif state == "assign":
+            problems.append("an assignment prefixing the command %r" % (text,))
+            state, call = "args", None
+        elif state == "after":
+            problems.append("a word after a closing keyword: %r" % (text,))
+        elif state == "for_name":
+            if not (word["plain"] and _OWN_NAME.match(text)):
+                problems.append("a `for` over %r, not a lowercase name" % (text,))
+            state = "for_in"
+        elif state in ("for_in", "case_in"):
+            if text != "in":
+                problems.append("%r where `in` belongs" % (text,))
+            state = "for_words" if state == "for_in" else "pattern"
+        elif state == "case_word":
+            state = "case_in"
+    if stack:
+        problems.append("`%s` never closed" % (stack[-1],))
+    return {"calls": calls, "defs": defs, "problems": problems}
+
+
+def _builtin_call_problem(name, args):
+    """Why a call of a builtin on BUILTINS is refused, or None: the shape its
+    row allows, and only that."""
+    texts = [a["text"] for a in args]
+    if name == "set" and texts[:1] != ["--"]:
+        return "`set %s`, where only `set --` is read" % (" ".join(texts),)
+    if name == "printf" and (not args or args[0]["quoted"] != "sq"):
+        return "a `printf` whose format is not a single-quoted literal: %r" % (texts,)
+    if name == "eval":
+        sub = args[0]["subs"] if len(args) == 1 and args[0]["quoted"] == "dq" else []
+        inner = _parse(sub[0]) if len(sub) == 1 else {"calls": [], "problems": ["x"]}
+        if not (texts[0].startswith('"$(') and texts[0].endswith(')"')
+                and [c[0] for c in inner["calls"]] == ["apt-config"]
+                and not inner["problems"]):
+            return "an `eval` of anything but the apt-config stub's output: %r" % (texts,)
+    if name == "[":
+        inner = args[:-1] if texts[-1:] == ["]"] else None
+        unary = (inner is not None and len(inner) == 2 and inner[0]["plain"]
+                 and inner[0]["text"] in _TEST_UNARY and inner[1]["quoted"] == "dq")
+        binary = (inner is not None and len(inner) == 3 and inner[1]["plain"]
+                  and inner[1]["text"] in _TEST_BINARY
+                  and inner[0]["quoted"] == inner[2]["quoted"] == "dq")
+        if not (unary or binary):
+            return "a `[` test of a shape the reader does not read: %r" % (texts,)
+    return None
+
+
+def command_word_problems(script):
+    """[problem] for one script: [] when every command it can start is a bare name
+    on the vocabulary, called the way its row allows."""
+    tokens, _end, problem = _lex(script, 0, False)
+    if problem is not None:
+        return [problem]
+    got = _parse(tokens)
+    tools = set(n for n, _why in ALLOWED_TOOLS)
+    builtins = set(n for n, _why in BUILTINS)
+    known = set(STUBS) | set(SHELL_STUBS) | tools | builtins | set(got["defs"])
+    problems = list(got["problems"])
+    for name, args in got["calls"]:
+        if name not in known:
+            problems.append("`%s` is not a stub, an allowed tool, a builtin on "
+                            "BUILTINS or a function the script defines" % (name,))
+        elif name in builtins and name not in got["defs"]:
+            problem = _builtin_call_problem(name, args)
+            if problem is not None:
+                problems.append(problem)
+    return problems
+
+
+def script_problems(script):
+    """Why the reader refuses to run `script` - its command words, and every line
+    naming an absolute path (`sd7`'s reading) - or [] when nothing it can start
+    is outside the stubs and the allowed tools."""
+    absolute = ["a line naming an absolute path: %s" % (line,)
+                for _step, line in _absolute_path_lines([{"run": script}])]
+    return command_word_problems(script) + absolute
 
 
 # --- the cases ----------------------------------------------------------------------
@@ -1332,6 +1830,21 @@ def _case_sd7(action):
     return not found, "lines naming an absolute path: %r" % (found,)
 
 
+# The steps a case runs, which are what this check starts; the others are `sd4`'s.
+RUN_STEPS = ("pins", "sysdeps", "plan", "sysdeps-install")
+
+
+def _case_sd8(action):
+    bad = []
+    for sid in RUN_STEPS:
+        step = step_by_id(action["steps"], sid)
+        if step is None or "run" not in step:
+            bad.append("the action has no `%s` step with a `run:`" % (sid,))
+            continue
+        bad += ["%s: %s" % (sid, p) for p in command_word_problems(step["run"])]
+    return not bad, "; ".join(bad)
+
+
 # One row per case: (id, what it holds, the function judging the parsed steps). The
 # ids are what the gate and the selftest print first on each line.
 CASES = [
@@ -1418,8 +1931,12 @@ CASES = [
      _case_sd6),
     ("sd7", "no step's script names an absolute path (but /dev/null), so nothing is "
      "reached past the PATH the stubs confine", _case_sd7),
+    ("sd8", "every command word of every step a case runs is a bare name of a stub, an "
+     "allowed tool, a function the script defines or a listed builtin in the shape "
+     "its row allows, so the reader that gates each run refuses none of them",
+     _case_sd8),
 ]
-STRUCTURAL = ("sd1", "sd2", "sd3", "sd4", "sd5", "sd6", "sd7")
+STRUCTURAL = ("sd1", "sd2", "sd3", "sd4", "sd5", "sd6", "sd7", "sd8")
 
 
 def run_cases(text, only=None):
@@ -1505,7 +2022,7 @@ MUTATIONS = [
      [('--print-uris $MISSING); then\n', '--print-uris $MISSING) || [ -n "$d" ]; then\n')],
      ["bi1"], None),
     ("bm4", "no fallback", [('        if [ -n "$why" ]; then\n',
-                             '        if false; then\n')], ["bi6", "bi7"], None),
+                             '        if [ -n "" ]; then\n')], ["bi6", "bi7"], None),
     ("bm5", "the fallback fetching twice",
      [('          echo "the fallback installed the system packages from a fresh fetch"\n',
        '          fetch_all\n'
@@ -1591,21 +2108,76 @@ MUTATIONS = [
 # A STEP REACHING PAST THE STUBS, appended to a copy of the action. Each row's
 # `outside` is a file in a scratch directory of its own, beside the fixture roots and
 # in none of them, so even a check that lost its confinement could touch nothing but
-# that file. The row holds three things at once: the case named goes red, the file
-# outside is as it was, and the case is green on the committed action.
+# that file. The row holds four things at once: the case named goes red, the half
+# the row names refused it - the reader, with the problem the row quotes, before the
+# step started, or a stub while it ran - the file outside is as it was, and the case
+# is green on the committed action. Naming the half is what makes each row fail
+# when that half is weakened, rather than staying green on the other one.
+#
+# A command word built to reach a real tool climbs out of the fixture by more `..`
+# than any temporary directory is deep (one more at `/` stays at `/`), so a reader
+# that let it through would really start that tool, on the file outside.
 _APPEND_PINS = '        echo "version=v$BROWSER_CACHE_VERSION" >> "$GITHUB_OUTPUT"\n'
+_CLIMB = "../" * 24
+_OUT = '"$HOME/../../{outside_name}'
 CONFINEMENT = [
-    ("bx1", "an appended `sudo touch <outside>`", _APPEND_AT,
-     'sudo touch "{made}"', "bi1"),
-    ("bx2", "an appended `sudo rm -rf <outside>`", _APPEND_AT,
-     'sudo rm -rf "{victim}"', "bi1"),
+    ("bx1", "an appended `sudo touch` reaching outside by a relative path, which the "
+     "reader passes and the sudo stub refuses", _APPEND_AT,
+     'sudo touch %s/made"' % (_OUT,), "bi1", "stub", None),
+    ("bx2", "an appended `sudo rm -rf <outside>` naming an absolute path", _APPEND_AT,
+     'sudo rm -rf "{victim}"', "bi1", "reader", "a line naming an absolute path"),
     ("bx3", "an appended `sudo rm -rf` reaching outside by a relative path, which "
-     "sd7 cannot see", _APPEND_AT, 'sudo rm -rf "$HOME/../../{outside_name}/victim"',
-     "bi1"),
+     "the rm stub refuses", _APPEND_AT, 'sudo rm -rf %s/victim"' % (_OUT,), "bi1",
+     "stub", None),
     ("bx4", "an appended command that is neither a stub nor an allowed tool, its "
-     "failure swallowed", _APPEND_AT, 'touch "$HOME/unstubbed" || true', "bi1"),
-    ("bx5", "node asked to write outside", _APPEND_PINS,
-     'node -e "require(\'fs\').writeFileSync(\'{made}\', \'x\')"', "sk1"),
+     "failure swallowed", _APPEND_AT, 'touch "$HOME/unstubbed" || true', "bi1",
+     "reader", "`touch` is not a stub"),
+    ("bx5", "node asked to write outside, by a path the reader cannot see", _APPEND_PINS,
+     'node -e "require(\'fs\').writeFileSync([process.env.HOME, \'..\', \'..\', '
+     '\'{outside_name}\', \'made\'].join(\'/\'), \'x\')"', "sk1", "stub", None),
+    ("bx6", "an appended `command -p rm -rf <outside>`, which looks the name up in the "
+     "system's default path", _APPEND_AT, 'command -p rm -rf %s/victim"' % (_OUT,),
+     "bi1", "reader", "`command` is not a stub"),
+    ("bx7", "a command word naming a real tool by a relative path", _APPEND_AT,
+     '%susr/bin/touch %s/made"' % (_CLIMB, _OUT), "bi1", "reader",
+     "a command word that is not a bare name"),
+    ("bx8", "a command word built from a variable", _APPEND_AT,
+     '"$HOME/%susr/bin/touch" %s/made"' % (_CLIMB, _OUT), "bi1", "reader",
+     "a command word that is not a bare name"),
+    ("bx9", "an appended `exec`", _APPEND_AT, 'exec rm -rf %s/victim"' % (_OUT,), "bi1",
+     "reader", "`exec` is not a stub"),
+    ("bx10", "a `PATH=` line pointing a stub's name at the real tool", _APPEND_AT,
+     'PATH="$HOME/%susr/bin:$HOME/%sbin"; rm -rf %s/victim"' % (_CLIMB, _CLIMB, _OUT),
+     "bi1", "reader", "an assignment to PATH"),
+    ("bx11", "a redirection writing outside by a path built from a variable",
+     _APPEND_AT, 'echo x > %s/made"' % (_OUT,), "bi1", "reader", "a redirection >"),
+    ("bx12", "an `eval` of text naming a real tool by a relative path", _APPEND_AT,
+     'eval "%susr/bin/touch %s/made\\""' % (_CLIMB, _OUT.replace('"', '\\"')), "bi1",
+     "reader", "an `eval` of anything but"),
+    ("bx13", "`printf -v` through an array subscript, which bash evaluates as code",
+     _APPEND_AT, "printf -v 'a[$(%susr/bin/touch %s/made\")]' x" % (_CLIMB, _OUT),
+     "bi1", "reader", "a `printf` whose format"),
+]
+
+# THE CONSTRUCTION ALONE: each line is run past the reader (`_run_bash`) on a fixture
+# of its own and must leave the file outside as it was, so the prelude is shown
+# holding without the reader's help. Every line here is one the reader refuses too.
+CONSTRUCTION = [
+    ("bk1", "`command -p`", 'command -p touch "{made}"'),
+    ("bk2", "`builtin command -p`", 'builtin command -p touch "{made}"'),
+    ("bk3", "`exec` of an absolute path", 'exec /usr/bin/touch "{made}"'),
+    ("bk4", "`hash -p` pointing a stub's name at a real tool",
+     'hash -p /usr/bin/touch ls; ls "{made}"'),
+    ("bk5", "a `PATH=` assignment", 'PATH=/usr/bin:/bin; touch "{made}"'),
+    ("bk6", "a `PATH=` prefixing a command", 'PATH=/usr/bin:/bin touch "{made}"'),
+    ("bk7", "`enable` turning a builtin back on", 'enable command; command -p touch "{made}"'),
+    ("bk8", "`source` of a file outside", 'source "{sourced}"'),
+    ("bk9", "`.` of a file outside", '. "{sourced}"'),
+    ("bk10", "`trap` running text on exit", "trap 'echo x > \"{made}\"' EXIT"),
+    ("bk11", "the command hash written through BASH_CMDS",
+     'BASH_CMDS[ls]=/usr/bin/touch; ls "{made}"'),
+    ("bk12", "a variable the sudo stub reads, pointed at the real tools",
+     'STUB_BIN=/usr/bin sudo touch "{made}"'),
 ]
 
 
@@ -1722,6 +2294,100 @@ def _parser_cases(check):
           [ln for _s, ln in lines] == ["cd /tmp", '/usr/bin/sudo rm "$d"',
                                         "echo x >/etc/y", "printf '%s' /dev/nullx"])
 
+    called = set()
+    for sid in RUN_STEPS:
+        tokens, _end, _problem = _lex((step_by_id(real["steps"], sid) or {}).get("run", ""),
+                                      0, False)
+        called |= set(c[0] for c in _parse(tokens)["calls"])
+    spare = [n for n, _why in BUILTINS
+             if n not in called or n in STUBS or n in SHELL_STUBS
+             or n in dict(ALLOWED_TOOLS)]
+    check("bp9 every builtin BUILTINS keeps is one a step the cases run calls, and "
+          "none is also a stub or a tool - so the list shrinks when the action stops "
+          "calling one, and the prelude disables it again (unused or doubled: %r)"
+          % (spare,), BUILTINS and not spare)
+
+    _reader_cases(check)
+
+
+# THE READER'S TWO DIRECTIONS. Each refused line carries the problem it must be
+# refused for, so a line refused for some other reason is red here; each read line
+# is a shape the committed action has, so a rule widened until it fires on one of
+# them is red here too.
+_READER_REFUSED = (
+    ("command -p rm x", "`command` is not a stub"),
+    ("exec rm x", "`exec` is not a stub"),
+    ("env rm x", "`env` is not a stub"),
+    ("hash -p x rm", "`hash` is not a stub"),
+    ("enable -f x y", "`enable` is not a stub"),
+    ("source x", "`source` is not a stub"),
+    (". x", "not a bare name: '.'"),
+    ("builtin command x", "`builtin` is not a stub"),
+    ("trap 'x' EXIT", "`trap` is not a stub"),
+    ("../bin/rm x", "not a bare name"),
+    ('"$X/rm" x', "not a bare name"),
+    ("$X x", "not a bare name"),
+    ("$(echo rm) x", "not a bare name"),
+    ("BASH_CMDS[ls]=x", "not a bare name"),
+    ("PATH=x", "an assignment to PATH"),
+    ("x=1 rm y", "an assignment prefixing"),
+    ("f() { x=1; }; IFS=y", "an assignment to IFS"),
+    ("set -x", "`set -x`"),
+    ("printf -v x y", "a `printf` whose format"),
+    ('eval "$x"', "an `eval` of anything but"),
+    ('[ -v "$x" ]', "a `[` test"),
+    ('[ $x = "y" ]', "a `[` test"),
+    ("echo $((1))", "an arithmetic expansion"),
+    ('echo "${x@P}"', "a parameter expansion operator"),
+    ('echo "${!x}"', "a parameter expansion this reader"),
+    ("echo ${x[0]}", "a parameter expansion operator"),
+    ("rm <(x)", "a redirection with no target"),
+    ("echo `x`", "a backquoted"),
+    ("rm x &", "a form this reader does not read"),
+    ("echo x > y", "a redirection >"),
+    ("cat <<EOF", "a redirection <<"),
+    ("(rm x)", "a subshell"),
+    ("f() { /bin/rm x; }", "not a bare name"),
+    ("echo $(case x in a) rm;; esac)", "never closed"),
+    ("function f { rm; }", "`function`"),
+    ("[[ x ]]", "`[[`"),
+    ("if rm; then", "`if` never closed"),
+)
+_READER_READ = (
+    'v=$(node -e "require(\'./x.json\');process.exit(1)")',
+    'if [ -z "${ImageOS:-}" ]; then\n  echo "x" >&2\n  exit 1\nfi',
+    'echo "a ${v:-(none)} b" >> "$GITHUB_OUTPUT"',
+    'case "$out" in\n  *--x*) ;;\n  *) printf \'%s\\n\' "$out" >&2; exit 1 ;;\nesac',
+    "w=$(printf '%s\\n' \"$out\" | sed -n 's/.*--x//p' | tr -d '\"')",
+    'for p in $w; do\n  s=$(dpkg-query -W -f=\'${Status}\' "$p" 2>/dev/null || true)\n'
+    '  [ "$s" = "y" ] || m="$m $p"\ndone',
+    'x="${x:+$x and }the key\'s"',
+    'f() {\n  sudo apt-get -o A="$d/x/" "$@"\n}\ng() {\n  sudo rm -rf "$d" &&\n'
+    '    eval "$(apt-config shell s D/d)" &&\n    f install\n}',
+    'if [ -d "$d" ] && ls "$d/"*_P* >/dev/null 2>&1; then\n'
+    '  if ! u=$(sudo apt-get --print-uris $M); then\n    set -- $u\n    echo "$# $*"\n'
+    '  fi\nelif [ -z "$w" ] && ! ls; then\n  echo y\nfi',
+    'sudo chown -R "$(id -u):$(id -g)" "$d"',
+    'if [ "$SEED" != "true" ]; then\n  echo "install=true" >> "$GITHUB_OUTPUT"\n'
+    '  exit 0\nfi',
+)
+
+
+def _reader_cases(check):
+    wrong = []
+    for line, says in _READER_REFUSED:
+        problems = command_word_problems(line)
+        if not any(says in p for p in problems):
+            wrong.append((line, says, problems))
+    check("bp10 the reader refuses each shape that starts a program past the stubs or "
+          "evaluates text as code, for the reason given, and reads every shape the "
+          "action has (refused for another reason, or not at all: %r)" % (wrong,),
+          not wrong)
+    misread = [(line, got) for line, got in
+               ((ln, command_word_problems(ln)) for ln in _READER_READ) if got]
+    check("bp11 the reader reads, with no problem, a line of each shape the "
+          "committed action has (refused: %r)" % (misread,), not misread)
+
 
 def _cases(check):
     import _harness            # on sys.path once `_suite` is imported by `_selftest`
@@ -1755,36 +2421,77 @@ def _cases(check):
               red == list(expect) and set(expect) <= green and said,
               "\n".join("%s: %s" % (r["id"], r["detail"]) for r in got))
     _confinement_cases(check, text, green)
+    _construction_cases(check)
+
+
+def _outside_files():
+    """(scratch directory no fixture root contains, {"victim", "made", "sourced",
+    "outside_name"}): a file holding "kept", a path that must stay absent, and a
+    script that would write that path if anything ran it."""
+    outside = tempfile.mkdtemp(prefix="browser-install-outside-")
+    names = {"victim": os.path.join(outside, "victim"),
+             "made": os.path.join(outside, "made"),
+             "sourced": os.path.join(outside, "sourced.sh"),
+             "outside_name": os.path.basename(outside)}
+    _write(names["victim"], "kept")
+    _write(names["sourced"], 'echo x > "%s"\n' % (names["made"],))
+    return outside, names
+
+
+def _outside_intact(names):
+    if not os.path.isfile(names["victim"]) or os.path.lexists(names["made"]):
+        return False
+    with io.open(names["victim"], encoding="utf-8") as fh:
+        return fh.read() == "kept"
 
 
 def _confinement_cases(check, text, green):
     """CONFINEMENT's rows, each against a scratch directory of its own that no
     fixture root contains, removed in `finally` whatever the row did."""
-    for cid, what, anchor, line, case in CONFINEMENT:
-        outside = tempfile.mkdtemp(prefix="browser-install-outside-")
+    for cid, what, anchor, line, case, half, says in CONFINEMENT:
+        outside, names = _outside_files()
         try:
-            victim, made = os.path.join(outside, "victim"), os.path.join(outside, "made")
-            _write(victim, "kept")
-            appended = line.format(made=made, victim=victim,
-                                   outside_name=os.path.basename(outside))
+            appended = line.format(**names)
             broken, problem = mutate(text, [(anchor, anchor + "        %s\n" % (appended,))])
             if problem is not None:
                 check("%s %s: NOT APPLIED" % (cid, what), False, problem)
                 continue
             got = run_cases(broken, only=[case])
-            intact = os.path.isfile(victim) and not os.path.lexists(made)
-            if intact:
-                with io.open(victim, encoding="utf-8") as fh:
-                    intact = fh.read() == "kept"
+            intact = _outside_intact(names)
             red = [r["id"] for r in got if not r["ok"]]
-            refused = all("reached what no stub serves" in r["detail"]
-                          or "refused" in r["detail"] for r in got)
-            check("%s %s: %s goes red naming the refusal, green on the committed "
+            if half == "reader":
+                refused = all("the reader refused" in r["detail"] and says in r["detail"]
+                              for r in got)
+            else:
+                refused = all("reached what no stub serves" in r["detail"]
+                              and "the reader refused" not in r["detail"] for r in got)
+            check("%s %s: %s goes red, refused by the %s%s, green on the committed "
                   "action, and the file outside the fixture is as it was (red: %r, "
-                  "outside intact: %r)" % (cid, what, case, red, intact),
+                  "outside intact: %r)" % (cid, what, case, half,
+                                           "" if says is None else " saying %r" % (says,),
+                                           red, intact),
                   red == [case] and case in green and intact and refused,
                   "\n".join("%s: %s" % (r["id"], r["detail"]) for r in got))
         finally:
+            shutil.rmtree(outside)
+
+
+def _construction_cases(check):
+    """CONSTRUCTION's rows: each line run past the reader on a fixture of its own,
+    against a scratch directory of its own, both removed in `finally`."""
+    for cid, what, line in CONSTRUCTION:
+        outside, names = _outside_files()
+        root = tempfile.mkdtemp(prefix="browser-install-construction-")
+        try:
+            build_base(root)
+            result = _run_bash(line.format(**names) + "\n", _stub_env(root), root)
+            intact = _outside_intact(names)
+            check("%s %s, run past the reader: the construction alone leaves the file "
+                  "outside the fixture as it was (exit %r)" % (cid, what, result["code"]),
+                  intact and result["code"] != 0 and script_problems(line),
+                  "%s\nreader: %r" % (result["out"], script_problems(line)))
+        finally:
+            shutil.rmtree(root)
             shutil.rmtree(outside)
 
 
