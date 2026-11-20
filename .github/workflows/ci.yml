@@ -411,7 +411,8 @@ jobs:
   # `continue-on-error` - the failure is in the step's log and annotation only.
   #   gh run view 44550679481 --json jobs
   # Not seen: such a failure on a real verified push to main, a failure in any one
-  # install command (npm ci, the dry run, the download, apt), or a seed that saves.
+  # install command (npm ci, the dry run, the download, apt), or a failed seed that
+  # still saves an entry (the seed that saved, run 44426388905 above, had installed).
   # gate-parity.py (`_may_fail`) fails the build on a
   # `continue-on-error` that is not `false` on a step or job running verify.sh, so
   # the slice can never be the thing allowed to fail. A job past its bound is

@@ -54,8 +54,11 @@ description: >-
 # `lint` slice) executes the `pins`, `sysdeps`, `plan` and `sysdeps-install`
 # scripts out of this file against stubs of sudo, apt, dpkg and the set's
 # ownership, with nothing else on their PATH but a few read-only tools, and reads
-# the steps' keys for the seed's wiring; a script line naming an absolute path is
-# red there, because PATH cannot confine it. Its selftest breaks a copy of this file once
+# the steps' keys for the seed's wiring. It reads each of those scripts before it
+# runs one, and a script is red there and never started when a command word in it
+# is not the bare name of a stub, an allowed tool, a function the script defines or
+# a builtin the check lists, or when a line names an absolute path; its docstring
+# says what that holds and what it does not. Its selftest breaks a copy of this file once
 # per property by replacing a line it names, so an edit that moves such a line
 # turns that row red as "not applied" until the row names the new text.
 inputs:

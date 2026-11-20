@@ -635,32 +635,40 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py (base_waiting, base_gate, base_run's already-ran refusal, liveness)",
         "issue": "A base run whose recorded pid reads alive holds its red for ever, and the only advice printed names an answer the drive refuses. Probe: a base run killed and an unrelated live process's pid written into its launch record (what pid reuse looks like): every call prints wait-base with no age and no bound; `measure-base` and `block` answer that no decision is pending; running the printed run line again says the run already ran and to answer `measure-base`, the answer just refused; the hold ended only when the unrelated process exited. A pid whose state cannot be read (another user's process) reads alive the same way. The waiting code is as it was before this phase, but making a red wait for its base again makes it the only path for every red, and the misdirecting sentence is current.",
-        "resolution": "The wait has a way out the drive prints: a launch whose process started after it was launched, or that has waited past a bound read off the base's own recorded durations, is read as cut short and asks the base-unknown decision; and every sentence printed while waiting names only what is open at that moment. Cases for pid reuse and for an unreadable pid.",
-        "fixTask": "P169.24-6l3"
+        "resolution": "fixed in P169.24-6l3 (041864949f9e): The wait has a way out the drive prints: a launch whose process started after it was launched, or that has waited past a bound read off the base's own recorded durations, is read as cut short and asks the base-unknown decision; and every sentence printed while waiting names only what is open at that moment. Cases for pid reuse and for an unreadable pid.",
+        "fixTask": "P169.24-6l3",
+        "commit": "041864949f9e",
+        "status": "fixed"
       },
       {
         "id": "P169-R65",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py (the refusal over a base that never leaves a reading)",
         "issue": "A base run that dies on every measurement (killed, out of memory) is read as unknowable but measurable, so the answers that spend never open, and the bound that opens them counts only bases whose code moved: the person is left with measuring again (which dies again), rerun, block, or the owner's override, where before `resume` was still taken. And one shape was not staged end to end: a red whose record lacks the base's head while a kept base resolves, where measuring drops nothing and the next call asks the same refused decision.",
-        "resolution": "A base that stopped without a reading as many times as the bound allows counts toward it, and the decision then says the base was never measured and opens the spending answers; the unstaged shape is staged through its real producer and either reaches a way out or is fixed.",
-        "fixTask": "P169.24-6l3"
+        "resolution": "fixed in P169.24-6l3 (041864949f9e): A base that stopped without a reading as many times as the bound allows counts toward it, and the decision then says the base was never measured and opens the spending answers; the unstaged shape is staged through its real producer and either reaches a way out or is fixed.",
+        "fixTask": "P169.24-6l3",
+        "commit": "041864949f9e",
+        "status": "fixed"
       },
       {
         "id": "P169-R66",
         "severity": "low",
         "file": "tests/test_drive_phase.py (the hold's cases; the cost-line reading; the killed-base helper); PLUGIN-BUILD-GUIDE.md",
         "issue": "Four holes in the cases. The hold in the gate step itself is untested: narrowing it survived every block because a second check catches the same state, and what only the first adds (a red's follower recipes do not run over an unmeasured base) has no case, since no fixture has a follower. The reading that holds each rule line's cost words to the cost table cannot read the table's own word for a round: a rule line saying a resume spends no session round passes. The helper that kills a base in one block still lacks the wait the other helper gained, so the known unstable case stays unstable. The build guide's case ranges stop one short in two places.",
-        "resolution": "A case with a follower on the red asserting nothing runs while the drive waits; the cost reading built from the table's own words, failing on a clause that names an answer with a cost it cannot classify; one kill helper; the ranges read off the suite.",
-        "fixTask": "P169.24-6l3"
+        "resolution": "fixed in P169.24-6l3 (041864949f9e): A case with a follower on the red asserting nothing runs while the drive waits; the cost reading built from the table's own words, failing on a clause that names an answer with a cost it cannot classify; one kill helper; the ranges read off the suite.",
+        "fixTask": "P169.24-6l3",
+        "commit": "041864949f9e",
+        "status": "fixed"
       },
       {
         "id": "P169-R67",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py (ANSWER_SPENDS)",
         "issue": "The cost table is keyed by the answer's word alone, and one word has two costs: `resume` on the no-return ask resumes the agent and counts no round, while the table prices every `resume` as a session round, and the documents say so generally. Not reachable as a wrong refusal today; an inaccuracy in a table claimed to be the one statement of costs.",
-        "resolution": "The table is keyed by decision and answer, or that pair is an entry of its own, and the documents say which resume spends a round.",
-        "fixTask": "P169.24-6l3"
+        "resolution": "fixed in P169.24-6l3 (041864949f9e): The table is keyed by decision and answer, or that pair is an entry of its own, and the documents say which resume spends a round.",
+        "fixTask": "P169.24-6l3",
+        "commit": "041864949f9e",
+        "status": "fixed"
       },
       {
         "id": "P169-R68",
@@ -874,7 +882,10 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py (the launched-run read, run_by_launch over the subject's rows)",
         "issue": "When the run a drive launched is held only in a record that cannot be read, the drive reads 'no run carries it yet' and waits; nothing ends that wait or says the record is the reason. Found by the executor of the newest-or-unreadable task while sweeping the places that pick a subject's run; it is a wait, not an older answer.",
-        "resolution": "The wait names the unreadable record as what it is waiting on and has the exit the base wait is given, by the task that owns the drive's waits."
+        "resolution": "fixed in P169.24-6l3 (041864949f9e): The wait names the unreadable record as what it is waiting on and has the exit the base wait is given, by the task that owns the drive's waits.",
+        "fixTask": "P169.24-6l3",
+        "commit": "041864949f9e",
+        "status": "fixed"
       },
       {
         "id": "P169-R91",
@@ -964,9 +975,30 @@
         "file": "tests/_harness.py (skip); tools/sweep-selftests.py",
         "issue": "A platform-shaped case that cannot stage its precondition prints `PASS <label> SKIPPED HERE - <why>` and is counted among the passes: neither a suite's own tally nor the sweep's summary separates a skip from a pass, so a run's totals cannot say how many cases did not run. The skip itself is decided on a measured probe, not on the platform's name.",
         "resolution": "The suite's tally and the sweep's summary count skips apart from passes, and a skipped case is named in the loud form; or the decision not to is recorded with its reason."
+      },
+      {
+        "id": "P169-R102",
+        "severity": "med",
+        "file": "tools/check-browser-install.py:_builtin_call_problem (the `eval` branch, ~line 1253 of the working tree), and the docstring sentence 'a builtin on BUILTINS called in the one shape its row allows' / BUILTINS row for eval 'the reader holds it to that stub's output'",
+        "issue": "contradicts task clause 1 ('NOTHING the action's shell starts may be anything but a stub or an allow-listed tool'; hold it as a positive rule): the `eval` shape check accepts a double-quoted word that starts with `\"$(`, ends with `)\"`, has exactly one substitution and that substitution is `apt-config`, but it never checks the characters between. So `v='; ../../../../../../../../bin/echo ESCAPED #'` followed by `eval \"$(apt-config shell s D/d)$v)\"` has script_problems() == [] (I ran script_problems on that text with the module imported, no writes: it returned []), and the same text under plain bash started the real /bin/echo through a relative path (output ESCAPED). The reader reads the single-quoted assignment as a literal, the prelude disables no program started by a slash path and sd7 sees no absolute path, so both halves are passed and the docstring's claim that eval is held to the stub's output is false. bp10 only has `eval \"$x\"`, which is why the row stays green.",
+        "resolution": "Hold eval to the exact word, not to its first and last characters: accept only a text that matches a fixed shape such as `^\"\\$\\(apt-config [A-Za-z:/ ]+\\)\"$` (nothing between the substitution and the quotes, no `$`, backslash or quote inside), or have _word record that a dq word is one substitution and nothing else. Add bp10 rows for `eval \"$(apt-config shell s D/d)$v)\"` and `eval \"$(apt-config x) ; y\"`, and a bx row that appends the variable-assignment plus eval pair with the file outside, refused by the reader."
+      },
+      {
+        "id": "P169-R103",
+        "severity": "med",
+        "file": "tools/check-browser-install.py:_builtin_call_problem (the `printf` branch)",
+        "issue": "contradicts task clause 1: the printf rule is `args[0][\"quoted\"] == \"sq\"`, 'so it is never `-v`' (BUILTINS row, docstring). Quote removal happens before the builtin sees its arguments, so `printf '-v' 'a[$(../../../../../../../../usr/bin/touch x)]' y` has script_problems() == [] (ran it, no writes) while bash parses `'-v'` as the option. The subscript is single-quoted so the reader never reads the substitution it carries; on a bash that evaluates a printf -v subscript (the case bx13 was written for) that starts a real tool by a relative path. I did not run it on a bash 5; this finding rests on the reader accepting it, and on the executor's own reason for refusing `printf -v`. bx13 proves only the unquoted spelling.",
+        "resolution": "Require the format's decoded text, not its quoting, to be safe: accept printf only when args[0] is single-quoted AND its text does not start with `'-` (or require it to contain a `%` conversion and no leading dash), and add a bp10 row `printf '-v' x y` and a bx13 twin with the option quoted."
+      },
+      {
+        "id": "P169-R104",
+        "severity": "low",
+        "file": "tools/check-browser-install.py (docstring 'WHAT A STEP CAN START', 'What stays outside that')",
+        "issue": "The 'stays outside' list is stated as complete ('each item is one neither half closes') but findings 1 and 2 are two further shapes the reader accepts that bash reads otherwise; the first item ('a shape it accepts that bash reads otherwise is not seen') covers the class in general only, while the same docstring says the builtins are held 'in the one shape its row allows'. Once 1 and 2 are fixed the same over-claim remains for `[` and `set --`, which were checked by reading only.",
+        "resolution": "After fixing 1 and 2, re-read each remaining row of _builtin_call_problem for the same question (does the check look at the decoded argument, or at its first and last character), and say in the docstring which rows are held by exact match and which by shape."
       }
     ],
-    "outcome": "[findings: 101 - 7 high, 36 med, 58 low; 74 with a recorded fix commit]"
+    "outcome": "[findings: 104 - 7 high, 38 med, 59 low; 79 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6594,7 +6626,7 @@
     {
       "id": "P169.24-6l3",
       "title": "A wait for a base run has an exit the drive prints: a launch whose process cannot have been its own, or that has waited past a bound read off recorded runs, is cut short, and no sentence printed while waiting names an answer that is refused",
-      "status": "in_progress",
+      "status": "done",
       "description": "A red now waits for its base run again, and an independent review could not get anything decided or charged while it waits. What it found is the other side of that: the wait itself has no way out when the base run's process can never be read as ended, and the sentences printed meanwhile point at an answer the drive refuses. The phase's findings P169-R64 (medium) and R65 to R67 (lows) carry each with its probe; the reviewer's probes are named in the orchestrator's prompt.\n\nTHE RULE: every state the drive can wait in for a base run has an exit the drive itself prints, and every sentence printed while it waits names only what is open at that moment.\n\n1. R64, the wait. A launch whose recorded pid reads alive holds for ever: after a pid is reused by an unrelated process, or when the pid's state cannot be read (another user's process), `wait-base` repeats with no age and no bound; `measure-base` and `block` answer that no decision is pending; the printed run line, run again, says the run already ran and to answer `measure-base`, which was just refused. Required: (a) a launch is read as cut short, and the base-unknown decision asked, when the process holding its pid started AFTER the launch was recorded (read the process's start time where the platform gives it; say what each platform gives and what happens where it gives nothing), or when the wait has passed a bound derived from the base's own recorded durations (find how the drive already decides foreground against background from a recorded mean and how gates time out, and derive from that rather than inventing a number; say the bound's basis in the sentence that announces it); (b) `wait-base` says how long it has waited and when the bound falls; (c) the already-ran refusal names something open. Do not change what a healthy wait prints beyond the age, and prove a base run that is slow but alive is NOT cut short inside its bound.\n2. R65, a base that never leaves a reading. A base run that dies on every measurement stays \"unknowable but measurable\", so the answers that spend never open and the bound that opens them counts only bases whose code moved. Required: a base run that stopped without a reading counts toward that bound, and past it the decision says the base was never measured, by how many tries, and opens the spending answers. Also stage, through its real producer and not through stubs, the shape the review could not: a red whose record lacks the base's head while a kept base resolves (the review reads it as asking the same refused decision again after `measure-base`); it either reaches an exit or is fixed.\n3. R66, the cases. A case with a follower recipe on the red asserting nothing of it runs while the drive waits (today narrowing the gate step's own hold survives every block); the reading that holds each rule line's cost words to the cost table is built from the table's own words and fails on a clause naming an answer with a cost it cannot classify (today \"resume spends no session round\" passes); the base-killing helper used by case bq4 goes through the one helper that waits for the drive's liveness reading (that case has cost a gate run in three phases); the build guide's case ranges are read off the suite.\n4. R67, the cost table is keyed by decision and answer where one word has two costs (`resume` on the no-return ask resumes the agent and counts no round), and the documents say which resume spends a round.\n\nACCEPTANCE. Each point has a case red at the branch head and green after; the pid-reuse and unreadable-pid probes become cases through the drive's real liveness reading (a stub only for the clock and the process table, with the stubbed shapes taken from what the real reading returns on this platform); mutations on scratch copies outside every checkout, restored in the same command, each confirmed landed: the age bound removed; the start-time check inverted; a slow live base cut short; a stopped base not counted toward the bound; the hold in the gate step narrowed (must now go red by the follower case); a cost clause the reading cannot classify accepted. plugins/audit/reference/orchestrator.md has three bytes under its context ceiling: `python3 tools/measure-context.py --gate` stays green, and a signal or step you reword there does not grow. Full sweep green with no exception after the last edit.\n\nDEPENDANTS to answer for by name: `wait-base`, `dispatch-base`, `gate-red-base-unknown` and `measure-base` and every document naming them; the sweep of base trees and the release of a base launch's claim when a wait is cut short (no tree and no claim left behind: the killed-base cases already assert this for a killed run); the join of an earlier start's base (a joined wait is cut short by the same rule); the time record's base stage for a wait that was cut short; the cancelled-gate bound, which counts a different thing and must not be merged with this one; Windows, where the pid probe is another path (say what the case covers there and hand the orchestrator the command and expected output for a run on a Windows machine if a path cannot be exercised here).\n\nIf a file you need is outside your list, STOP BEFORE FILING and hand back the exact change with the reason: a return is filed once per start.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -6631,14 +6663,19 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "041864949f9e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: base_liveness is the one liveness reading of a base launch (base_running delegates): a recorded pid held by a process started after the write naming it (pidsAt; process_started reads /proc on Linux, ps -o lstart= in the C locale elsewhere, none on Windows) or a wait past boundSeconds (run_bound: red steps x STEP_TIMEOUT_SECONDS=3600, mirroring run-test-gate DEFAULT_TIMEOUT_SECONDS, + FOREGROUND_BOUND_MS/1000, from ranAt) reads the launch cut short; fold_reading keeps the reason as cutBy, cut_short says it, drop_progress releases the claim forced. Nothing is killed. wait-base says waited <age>, cut short at <deadline>, with a bound line carrying the basis (wait_words). The already-ran refusal names what is open (ran_open: measure-base only when the pending decision offers it, else next). R65: stopped_unread counts toward UNMEASURED_BOUND, stoppedBefore beside unmeasuredBefore, carried across measure-base by baseTried (tried_before); measured_reading asks the bound before the unknowable return; bound_said says never measured and by how many tries. R67: ANSWER_SPENDS[(no-executor-return, resume)]=None, answer_spends(answer, decision); rule lines reworded (retry spends an attempt; resume spends no attempt and no round). R90: new_gate_row returns UNREAD when no readable run carries the token and newest_or_unreadable names the subject's record; unread_launch waits naming it to the gate's own bound, then asks gate-cancelled/phase-gate-cancelled. tests: bz-block bz1-bz10, cost reading built from the table's words (_bx_costs/_bx_cost_claims/_bx_rule_reading) failing on an unclassifiable clause, bq4 kill through _run_base_until_measuring/_kill_base, _scripted_liveness stands in for base_liveness, rule-text pins dd3/rs1 updated. Docs: execute-task.md, PLUGIN-BUILD-GUIDE.md (ranges wb1-wb4, bh1-bh5, bz cases), CHANGELOG Fixed entry; orchestrator.md unchanged. Mutations (scratch copy, 9 rows) all killed; full sweep 198/198 files, 19715 cases, exit 0.",
+        "descriptive": "Every wait the drive has on a base run or a launched gate now has an exit it prints, a stopped base counts toward the per-start bound, and resume on no-executor-return is priced as free."
       },
       "startedAt": "2026-11-20T02:17:16Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-20T03:06:05Z",
+      "verifiedBy": [
+        "the base wait has a way out: pid reuse cut short, an unreadable present pid cut short only past its bound, a slow live base inside its bound waited on, the rerun run line names what is open, an unreadable gate record named and asked past its bound, the stand-ins held to the real reading's shapes",
+        "a base measurement that stops without a reading counts toward the bound and past it opens resume and retry",
+        "a red's follower recipe does not run while the drive waits on its base, and runs with the hold taken away",
+        "the cost reading is built from the table's words and fails on an unclassifiable clause; the table is keyed by (decision, answer) and both documents say which resume spends a round"
+      ],
       "notes": [
         {
           "at": "2026-11-19T11:02:57Z",
@@ -6701,6 +6738,24 @@
             "ms": 463016,
             "basis": "durationMs in run 2026-11-20T03:05:41Z.311ff6's record (run-test-gate --record)",
             "runId": "2026-11-20T03:05:41Z.311ff6"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-20T02:56:58Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 2376000,
+            "startedAt": "2026-11-20T02:17:22Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-20T03:05:41Z.311ff6",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-20T02:57:34Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 041864949f9e",
+            "kind": "commit",
+            "ms": 2382,
+            "startedAt": "2026-11-20T03:06:01Z"
           }
         ],
         "firstStartedAt": "2026-11-20T02:17:16Z"
@@ -6807,12 +6862,24 @@
         "runId": "2026-11-20T03:06:00Z.777d6f",
         "status": "passed",
         "at": "2026-11-20T03:06:00Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "041864949f9e",
+        "at": "2026-11-20T03:06:05Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-20T02:56:49Z",
+        "basis": "`python3 tests/test_drive_phase.py --selftest --stage bz-block` in a throwaway tree at HEAD exited 1 with 9 of 10 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests on HEAD's code failing only the unknown-stage check for `bz-block`, which the task's test files add - the stage is new at HEAD: its cases did not exist at HEAD, which is red for them), each passing with the working tree's implementation - bz10 (house FAIL), bz2 (house FAIL), bz1 (house FAIL), bz3 (house FAIL), bz4 (house FAIL), bz5 (house FAIL), bz7 (house FAIL), bz8 (house FAIL) and 1 more: SELFTEST FAILED: 1/10 cases passed; --case bz6 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P169.25-6l3",
       "title": "The browser install check holds its confinement against every way a shell starts a program, not PATH alone, and the seed comment says only what the recorded runs show",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The browser install check was rebuilt so that nothing the action's shell starts can be anything but a stub or an allow-listed tool. The task's reviewer found the one place the invariant falls short (the phase's finding P169-R70, medium, with its probe) and a sentence that contradicts runs the same comment records (P169-R71, low).\n\n1. R70. The confinement rests on PATH alone, and the shell has ways to start a program that do not consult PATH: `command -p` (it uses the system's default path: the reviewer ran `command -p touch` and `command -p ls /` under an empty PATH and the real tools ran), a command word holding a slash that is relative or built from a variable (`../../../bin/rm`, `\"$X/rm\"`: the static case's lookbehind excludes `.` and `$`), `exec`, a `PATH=` assignment inside the script, `env`, `hash -p`, `enable -f`, `source`/`.` of a file outside the fixture, and whatever else you find by reading the bash manual's sections on command search and on builtins that take a path (do the reading: this list is the reviewer's and mine, and the class has already been under-enumerated once). The property is the task's: NOTHING the action's shell starts may be anything but a stub or an allow-listed tool. Hold it as an invariant rather than as a longer deny-list where you can: prefer a positive rule over the script text (every command word of every `run:` line is a bare name that is a stub, an allow-listed tool, or a shell builtin on a table of builtins shown harmless, each with a reason; anything else is red by name) over refusing spellings one at a time; if a positive rule over shell text is not sound without a real parser, say exactly why, hold what can be held statically, and list the rest in the docstring as unguarded with the reason, so the docstring's \"stays outside\" list is true and complete. Rows, each proven red on scratch copies outside every checkout with an outside target inside your own scratch directory only: an appended `command -p rm -rf <outside>`, a relative-path and a variable-built command word, an `exec`, a `PATH=` line; and the allow direction: the committed action stays green and no row over-fires on a line the action really has.\n2. R71. The comment's \"Not seen: ... or a seed that saves\" contradicts the two runs the same comment and CONTRIBUTING.md record as a seed that missed and saved. Say what was meant (a FAILED seed that still saves has not been seen) in every place the sentence was written.\n\nACCEPTANCE. Each mutation row red when the property is broken and green on the committed tree, each confirmed landed and restored in the same command; `python3 tools/check-browser-install.py` and its selftest, `python3 tools/gate-parity.py` and its selftest exit 0; the check's CPU time before and after measured twice with a gap (it runs in the per-run lint slice; its CPU roughly doubled in the task before this one, so say what this adds); the full sweep green after the last edit.\n\nDEPENDANTS to answer for by name: the lint slice in tools/verify.sh and the ubuntu job that runs it, gate-parity's tables that audit the check's allow-list and exemptions, the sweep's isolation of a file under tools/, CONTRIBUTING.md and the guide's paragraphs about the seed and the check.\n\nIf a file you need is outside your list, STOP BEFORE EDITING IT and hand back the exact change with the reason.",
       "files": [
         "tools/check-browser-install.py",
@@ -6842,14 +6909,14 @@
         "P169.17-6l3",
         "P169.26-6l3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-20T03:06:07Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6913,7 +6980,142 @@
       "fixes": [
         "P169-R70",
         "P169-R71"
-      ]
+      ],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-20T04:21:05Z",
+            "ms": 13317,
+            "basis": "selectionMs in run 2026-11-20T04:28:41Z.287537's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-20T04:28:41Z.287537"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-20T04:21:19Z",
+            "ms": 441879,
+            "basis": "durationMs in run 2026-11-20T04:28:41Z.287537's record (run-test-gate --record)",
+            "runId": "2026-11-20T04:28:41Z.287537"
+          }
+        ],
+        "firstStartedAt": "2026-11-20T03:06:07Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-20T04:28:57Z.aa1ffc",
+        "status": "passed",
+        "durationMs": 247,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:ab50861ef7b9fcea510cd05bc55379152942e43568220b4d838be988c12ab91a",
+        "reuseKey": "1:sha256:b7bbee84e8be8adf206e174318dec6d15e15e38b2f7f2013dadcf27494338abd",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-20T04:28:41Z.287537",
+          "ts": "2026-11-20T04:28:41Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+        "selectionMs": 13420,
+        "at": "2026-11-20T04:28:57Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "attempt": 1,
+          "banners": [],
+          "durationMs": 441879,
+          "failed": [],
+          "gateDigest": "sha256:ab50861ef7b9fcea510cd05bc55379152942e43568220b4d838be988c12ab91a",
+          "gateReach": {
+            "gaps": []
+          },
+          "gateSource": "task",
+          "launch": "2026-11-20T04:21:05Z-93559cf2",
+          "observations": {
+            "countsBasis": "no step printed a summary this reader can count (python3 tools/gate-parity.py && python3 tools/sweep-selftests.py tools/check-browser-install.py tools/gate-parity.py and 1 more), so the size of this gate is not knowable from its output",
+            "coverage": [
+              ".github/workflows/ci.yml",
+              ".github/workflows/ci.yml",
+              "tools/check-browser-install.py",
+              "tools/check-browser-install.py",
+              "tools/gate-parity.py",
+              "tools/verify.sh"
+            ],
+            "coverageBasis": "the runner named 212 path(s); the work under test declares 9 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 195/195, 2/2 and 206 more; declared but not named by the run: .github/actions/browser-install/action.yml, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md; breadth: the run named 175 suite path(s) and this task declares 9 file(s), and 175 of them are suites the task neither declares nor is named after (test__deps.py, test__output.py, test_audit_task.py, test_close_phase.py, test_commit_task_work.py, test_drive_phase.py, test_stamp_verification.py and 168 more) - this gate asks more than the task changed; that is reported, not refused",
+            "ranTotal": null,
+            "treeBasis": "git described the tree before and after",
+            "treeMutated": []
+          },
+          "reuseKey": "1:sha256:b7bbee84e8be8adf206e174318dec6d15e15e38b2f7f2013dadcf27494338abd",
+          "runId": "2026-11-20T04:28:41Z.287537",
+          "selectionMs": 13317,
+          "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+          "startedAt": "2026-11-20T04:21:19Z",
+          "status": "passed",
+          "via": "cli",
+          "at": "2026-11-20T04:28:41Z",
+          "testedState": {
+            "dirtyBasis": "git described the tree before the run; 10 dirty path(s)",
+            "dirtyDigest": "sha256:ca04ad786aa43666fc38c4cfed72adebf3cbd991c0c5ed55a87cbeb337b1fb9e",
+            "head": "04186494",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeBasis": "7 declared file(s); 7 read, 0 missing",
+            "scopeDigest": "sha256:42519c3f9d26c168f818053bbed63b6f6c92517beab4056679e88355a36c0cc7",
+            "scopeListDigest": "sha256:65853eccffa26b2f2e96c5202a91aa4b604c480ed68e90ae14836f33775c6a88"
+          },
+          "steps": [
+            {
+              "command": "python3 tools/gate-parity.py && python3 tools/sweep-selftests.py tools/check-browser-install.py tools/gate-parity.py",
+              "durationMs": 51163,
+              "exit": 0,
+              "measured": "not-knowable",
+              "name": "python3 tools/gate-parity.py && python3 tools/sweep-selftests.py tools/check-browser-install.py tools/gate-parity.py",
+              "ran": null,
+              "suiteReader": "none"
+            },
+            {
+              "commandBytes": 5411,
+              "commandSha256": "7e1482238ffcdddaf7e7662cac323e154200f0b65da3f92b0d6a652b0367bc79",
+              "durationMs": 390557,
+              "exit": 0,
+              "measured": "not-knowable",
+              "name": "affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_io.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_run_test_gate.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "program": "python3",
+              "ran": null,
+              "suiteReader": "none"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-20T04:28:41Z.287537",
+            "launch": "2026-11-20T04:21:05Z-93559cf2",
+            "status": "passed",
+            "at": "2026-11-20T04:28:41Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-20T04:28:57Z.aa1ffc",
+        "status": "passed",
+        "at": "2026-11-20T04:28:57Z"
+      }
     },
     {
       "id": "P169.26-6l3",
