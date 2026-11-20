@@ -5633,8 +5633,10 @@ decided over what it left, and a run that stopped without a reading is read as c
 call (`cut_short`), its tree and claim removed, and asked as `gate-red-base-unknown`. THE
 INVARIANT behind it: while the base of a start's red is unmeasured, the drive accepts no answer
 that spends and charges the task nothing. What each answer spends is one table, `ANSWER_SPENDS`
-(`retry` an attempt, `resume` a session round, which `MAX_RESUME_ROUNDS` counts; every other answer
-none); the start's own mark carries `BASE_OPEN_KEY` while a red decided over it is unknown and its
+(`retry` an attempt, `resume` on a red a session round, which `MAX_RESUME_ROUNDS` counts; every other answer
+none), keyed by `(decision, answer)` where one word has a cost of its own there - `resume` on
+`no-executor-return` spends none, since it has the executor already dispatched run its submit
+block (`answer_spends`); the start's own mark carries `BASE_OPEN_KEY` while a red decided over it is unknown and its
 base can still be measured (`base_still_open`, `open_mark`: a base settled as unmeasurable, or a
 start past `UNMEASURED_BOUND`, carries none, and a green gate takes it off); and `apply_answer`, the
 one place an answer is applied, refuses before anything is written every answer that spends while
@@ -5648,10 +5650,29 @@ safe: the task's own suites (`own_red`), a kept base not read back (`kept_readin
 later start of the same task at a commit that task's earlier launch is still measuring joins it
 (`running_at`, `join_base`, `JOINED_KEY`) rather than starting a second run, its line saying whether
 that run has started, and waits on it. A kept base that cannot be read back falls to the
-measurement this start took, else to `gate-red-base-unknown` in the refusal's own words. `wb1`-`wb3`,
-`bq1` and `bh1`-`bh4` drive it; `bx1` walks the invariant over every task decision, every answer
-and each unmeasured base state, `bx2` holds every rule line's cost to the table, `bx4` and `bx6`
-hold the open-now predicate and its fail-closed reading, and `bw3`-`bw6` hold its sentences. A
+measurement this start took, else to `gate-red-base-unknown` in the refusal's own words. `wb1`-`wb4`,
+`bq1` and `bh1`-`bh5` drive it; `bx1` walks the invariant over every task decision, every answer
+and each unmeasured base state, `bx2` holds every rule line's cost to the table through a reading
+built from the table's own words that fails on a clause it cannot classify (`bz7` shows both),
+`bz8` holds the pair-keyed cost and the two documents' sentence, `bx4` and `bx6`
+hold the open-now predicate and its fail-closed reading, and `bw3`-`bw6` hold its sentences.
+
+EVERY WAIT FOR A BASE RUN HAS AN EXIT. A recorded pid reads present while its state cannot be read
+(`_locks.liveness`, unverified) and a pid is handed out again, so a run killed outright could hold
+its red until an unrelated process ended. `base_liveness` ends that wait two ways, each said as the
+reason on the mark (`cutBy`): a pid held by a process that started after the write naming it
+(`pidsAt`; `process_started` reads /proc on Linux and `ps -o lstart=` on other POSIX systems;
+Windows gives none, so a start decides nothing there), and a wait past the launch's bound
+(`boundSeconds` with its `boundBasis`, from `run_bound`: the red steps times the gate runner's step
+timeout, which `STEP_TIMEOUT_SECONDS` mirrors, plus the foreground bound, counted from `ranAt`). A
+launch read as cut short is read as a killed one - tree swept, its claim released forced, the
+base-unknown decision asked - and nothing is killed. The wait says how long it has waited and when
+the bound falls (`wait_words`); the `run:` line run again after its run ran names what is open
+(`ran_open`). A launched gate whose run can be held only in a record that cannot be read is waited
+on with that record named, to the bound its own gate steps set, then asked as `gate-cancelled`
+(`unread_launch`). `bz1`-`bz4` drive the base wait through the real liveness reading with the
+clock and the process table stood in for, `bz10` holds those stand-ins to the real reading's
+shapes, and `bz9` drives the unreadable record. A
 base measured under the bound still runs inside `next` and decides before any round. The
 drive's state file has one writer, `next`, and every write of it or of a run's record replaces the
 file whole (`write_json_atomic`), so neither a `next` running beside the base run nor a write cut
@@ -5663,8 +5684,9 @@ during it is not followed by a second measurement, and the next drive removes th
 per run per sweep: the reading the fold of the run's own record took (`fold_reading`) is the one
 the removal acts on, since a reading can flip between two asks and a fold that kept the record
 over a removal from the state alone lays the gone tree back on the mark. `bt1`-`bt4` drive the
-bound, the mark and the sweep, `bq1` and `bq4` the background run and its kill, and `bq6` and
-`bq7` a run read alive once and dead after. When the reading taken
+bound, the mark and the sweep, `bq1` and `bq4` the background run and its kill, `bq6` and
+`bq7` a run read alive once and dead after, and `bz6` a red's follower recipe held while the drive
+waits on its base. When the reading taken
 again is `base-only` the decision is `gate-red-base`, which sends no writer session and offers
 `block` and `rerun` - the owner's commit over the red is `commit-task-work.py --override-verdict`,
 their own act. `bm1`-`bm4` drive it. A base nobody can know - the run left no reading, failed, or
@@ -5679,13 +5701,16 @@ human before its `next:` - the commands' routing of `ask`; nothing in the drive 
 (`bi12` holds the verb). A later red of the same start whose own row finds no base run stops
 there too, unless the start's mark is one whose base could not be measured at all (`measurable`
 False): that mark is no mark to any red but its own (`unmeasurable_elsewhere`), so the later red is
-measured on its own, and the first such red goes to the writer as no-base. Only a base whose
-code moved counts toward a bound: the mark records that reason (`moved`, set when `code_moved`
-answered), and a red whose steps cannot be re-run at the base (`base_unrunnable`) never sets it,
-so it goes to the writer every time until the start reaches the bound below, bounded by the
-writer rounds. The start's mark counts the
-moved-code reds up to it (`unmeasuredBefore`, `unmeasured_before`), and a start that has reached
-`UNMEASURED_BOUND` of them (`unmeasurable_bound`) stops a red whose own reading names no base
+measured on its own, and the first such red goes to the writer as no-base. Only a base never
+measured counts toward a bound: one whose code moved (`moved`, set when `code_moved` answered) or
+whose measurement stopped without a reading (`stopped_unread`); a red whose steps cannot be re-run
+at the base (`base_unrunnable`) is neither, so it goes to the writer every time until the start
+reaches the bound below, bounded by the writer rounds. The start's mark counts them up to it
+(`unmeasuredBefore`, `unmeasured_before`; the stopped ones `stoppedBefore`), `measure-base`
+carries both counts across the mark it drops (`baseTried`, `tried_before`), and a start that has
+reached `UNMEASURED_BOUND` of them (`unmeasurable_bound`) is decided with a sentence saying the
+base was never measured and by how many tries (`bound_said`), its spending answers open (`bz5`),
+and stops a red whose own reading names no base
 run (`base_behind`) as `gate-red-base-unknown` rather than
 another gate or writer round, under `next` and under `auto` alike, so neither can loop on a HEAD
 that keeps moving. That one predicate is asked of a mark just decided and in the due branch before

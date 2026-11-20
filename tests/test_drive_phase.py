@@ -16059,8 +16059,8 @@ def _rerun_units(check):
           text.splitlines() == [
               "decide gate-red P1.1: recorded gate red ([run-test-gate] GATE "
               "RED: false); no run recorded with it",
-              "rerun spends no attempt (GATE COULD NOT RUN); retry spends one; "
-              "past maxAttempts, block and tell the human.",
+              "rerun spends no attempt (GATE COULD NOT RUN); retry spends an "
+              "attempt; past maxAttempts, block and tell the human.",
               "answer: next P1 --answer retry|rerun|block (block needs --reason)"]
           and len(text.encode("utf-8")) <= BOUND
           and said is None and calls == []
@@ -16091,8 +16091,8 @@ def _resume_units(check):
           text.splitlines() == [
               "decide no-executor-return P1.1: the executor was dispatched and "
               "filed no return for this start",
-              "recommended: resume - it spends no attempt; retry spends one and "
-              "recuts work that may be finished.",
+              "recommended: resume - it spends no attempt and no round; retry "
+              "spends an attempt and recuts work that may be finished.",
               "answer: next P1 --answer resume|retry|block (block needs "
               "--reason)"]
           and len(text.encode("utf-8")) <= BOUND)
@@ -21180,6 +21180,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("bdr-block", "_base_derived_cases"),
           ("bt-block", "_base_bound_cases"),
           ("bq-block", "_base_background_cases"),
+          ("bz-block", "_base_exit_cases"),
           ("brc-block", "_base_record_commit_cases"),
           ("bi-block", "_base_interleave_cases"),
           ("lc-block", "_base_claim_cases"),
@@ -23350,38 +23351,64 @@ def _bx_offered(line):
     return found.group(1).split("|") if found else None
 
 
-# What a rule line says an answer costs, by the two things the drive's table
-# prices: the words that say an attempt is or is not spent, and the words that
-# say a session round is or is not. Each is read free-first, since "no round
-# is spent" holds the words of "a round is spent".
-_BX_COSTS = (
-    ("attempt", re.compile(r"spends no attempt|no attempt is spent"
-                           r"|\bno attempt\b"),
-     re.compile(r"spends one\b|spends an attempt|\bone spent\b"
-                r"|an attempt spent")),
-    ("round", re.compile(r"no round is spent|spends no round|\bno round\b"),
-     re.compile(r"a round spent|spends a round|a round is spent")))
-
-
-def _bx_cost_claims(text):
-    """`[(kind, paid)]` the words of `text` claim, one per kind it names."""
+# What a rule line says an answer costs, READ IN THE TABLE'S OWN WORDS: each
+# cost the drive's table names (`SPENDS_ATTEMPT`, `SPENDS_ROUND`) is an article
+# and a noun, and the reading is built from them - the noun's last word, any
+# word before it optional ("a round spent" is "a session round" spent) - so a
+# word the table changes changes what is read. A clause that names one answer
+# and spends or spent beside a cost's last word, and that none of the shapes
+# below reads, is UNREAD, and the case holding the lines fails on it: a rule
+# line saying a cost in words the reading does not know is a cost nobody holds
+# to the table. Each is read free-first, since "no round is spent" holds the
+# words of "a round is spent".
+def _bx_costs(M):
+    """`[(kind, word, head, free, paid)]` for each cost the table names: its
+    kind, its words, the last word of its noun and the two readings."""
     out = []
-    for kind, free, paid in _BX_COSTS:
+    for kind, word in (("attempt", getattr(M, "SPENDS_ATTEMPT", "an attempt")),
+                       ("round", getattr(M, "SPENDS_ROUND", "a session round"))):
+        article, noun = word.split()[0], word.split()[1:]
+        head = noun[-1]
+        spelled = "".join("(?:%s )?" % (re.escape(w),)
+                          for w in noun[:-1]) + re.escape(head)
+        free = re.compile(r"\bspends no %s\b|\bno %s is spent\b|\bno %s\b"
+                          % (spelled, spelled, spelled))
+        paid = re.compile(r"\bspends (?:%s|a|an) %s\b|\b(?:%s|a|an) %s "
+                          r"(?:is )?spent\b" % (
+                              re.escape(article), spelled, re.escape(article),
+                              spelled))
+        out.append((kind, word, head, free, paid))
+    return out
+
+
+def _bx_cost_claims(M, text):
+    """`([(kind, paid)], unread)` - what the words of `text` claim, one per
+    kind they read, and the kinds `text` names beside spending in words
+    neither reading knows (`_bx_costs`)."""
+    out, unread = [], []
+    for kind, _word, head, free, paid in _bx_costs(M):
         if free.search(text):
             out.append((kind, False))
         elif paid.search(text):
             out.append((kind, True))
-    return out
+        elif re.search(r"\b%ss?\b" % (re.escape(head),), text) \
+                and re.search(r"\bspen(?:d|ds|t)\b", text):
+            unread.append(kind)
+    return out, unread
 
 
-def _bx_rule_claims(M):
-    """`[(decision, answer, kind, paid)]` - what each decide step's rule lines
-    say an answer of that decision costs, of an attempt and of a session round
-    (`_BX_COSTS`): a clause naming one answer and a cost, and an answer's own
-    parenthesis. A clause naming two answers, or no cost, says nothing here."""
-    out = []
+def _bx_rule_reading(M, steps=None):
+    """`(claims, unread)` - `claims` `[(decision, answer, kind, paid)]`, what
+    each decide step's rule lines (of `steps`, the drive's own when None) say
+    an answer of that decision costs, of an attempt and of a session round: a
+    clause naming one answer and a cost, and an answer's own parenthesis. A
+    clause naming two answers, or no cost, says nothing here. `unread`
+    `[(decision, answer, kind, clause)]` - a clause of one answer naming a
+    cost the reading cannot classify."""
+    steps = M.STEPS if steps is None else steps
+    out, unread = [], []
     for name, (options, _needs) in sorted(M.DECISIONS.items()):
-        step = M.STEPS.get("decide-%s" % (name,))
+        step = steps.get("decide-%s" % (name,))
         if not step or not options:
             continue
         alt = "|".join(re.escape(o) for o in sorted(options, key=len,
@@ -23390,26 +23417,43 @@ def _bx_rule_claims(M):
             for clause in re.split(r";|\. ", rule):
                 for answer, paren in re.findall(r"\b(%s) \(([^)]*)\)" % (alt,),
                                                 clause):
-                    out.extend((name, answer, kind, paid)
-                               for kind, paid in _bx_cost_claims(paren))
+                    said, lost = _bx_cost_claims(M, paren)
+                    out.extend((name, answer, kind, paid) for kind, paid in said)
+                    unread.extend((name, answer, kind, paren) for kind in lost)
                 bare = re.sub(r"\([^)]*\)", "", clause)
                 named = sorted(set(re.findall(r"(?<![\w-])(%s)(?![\w-])"
                                               % (alt,), bare)))
                 if len(named) == 1:
+                    said, lost = _bx_cost_claims(M, bare)
                     out.extend((name, named[0], kind, paid)
-                               for kind, paid in _bx_cost_claims(bare))
-    return out
+                               for kind, paid in said)
+                    unread.extend((name, named[0], kind, bare) for kind in lost)
+    return out, unread
+
+
+def _bx_rule_claims(M):
+    """`_bx_rule_reading`'s claims over the drive's own rule lines."""
+    return _bx_rule_reading(M)[0]
+
+
+def _bx_spends(M, decision, answer):
+    """What the drive's table says `answer` to `decision` spends, read through
+    its own `answer_spends` - keyed by the decision and the answer - and by
+    the answer alone where the drive asks for that alone."""
+    try:
+        return M.answer_spends(answer, decision)
+    except TypeError:
+        return (getattr(M, "ANSWER_SPENDS", None) or {}).get(answer)
 
 
 def _bx_claim_holds(M, claim):
     """Whether the rule line's `claim` says what the drive's table says of its
-    answer: an attempt spent exactly where the table prices one, a session
-    round exactly where it prices that."""
-    table = getattr(M, "ANSWER_SPENDS", None) or {}
+    answer to its decision: an attempt spent exactly where the table prices
+    one, a session round exactly where it prices that."""
     words = {"attempt": getattr(M, "SPENDS_ATTEMPT", "an attempt"),
              "round": getattr(M, "SPENDS_ROUND", "a session round")}
-    _name, answer, kind, paid = claim
-    return paid == (table.get(answer) == words[kind])
+    name, answer, kind, paid = claim
+    return paid == (_bx_spends(M, name, answer) == words[kind])
 
 
 # What an answer does, stood in for by the walk: each records its call and
@@ -23420,8 +23464,11 @@ _BX_STUBS = ("start_task", "resume_writer", "resume_said", "dispatch",
              "accept_scope", "rerun_alongside", "release_replaced",
              "_verb_with_text", "_verb_or_stop")
 # The calls that send a writer or an executor: a fresh attempt starts one, a
-# resume sends the recorded session a round, a dispatch names its role.
-_BX_SENDS = ("start_task", "resume_writer", "resume_said")
+# resume sends the recorded session a round, a dispatch names its role. The
+# no-return ask's `resume_said` is not one: it has the executor this start
+# already dispatched run its submit block, which sends nothing new and spends
+# nothing - its table entry is the pair (`no-executor-return`, `resume`).
+_BX_SENDS = ("start_task", "resume_writer")
 
 
 def _bx_recorder(name, calls):
@@ -23455,7 +23502,6 @@ def _bx_walk(M, root, mpath):
     `raised` when the decision could not be staged. The state file is put
     back after each answer."""
     names = sorted(d for d in M.DECISIONS if d not in M.PHASE_DECISIONS)
-    table = getattr(M, "ANSWER_SPENDS", None) or {}
     path = _fr.drive_state_path(os.path.join(root, ".claude", "state"), PHASE)
     with open(path, "rb") as fh:
         kept = fh.read()
@@ -23491,7 +23537,7 @@ def _bx_walk(M, root, mpath):
                         moved = fh.read() != kept
                     refused = isinstance(got, tuple) and got[:1] == (M.E_USAGE,)
                     rows.append({"decision": name, "answer": answer,
-                                 "spends": table.get(answer),
+                                 "spends": _bx_spends(M, name, answer),
                                  "refused": refused,
                                  "said": got[1] if refused else None,
                                  "calls": calls, "moved": moved,
@@ -23548,19 +23594,22 @@ def _base_answer_cases(check):
                          for a in options))
     unpriced = [a for a in answers if not isinstance(table, dict)
                 or a not in table]
-    claims = _bx_rule_claims(M)
+    claims, unread = _bx_rule_reading(M)
     wrong = [c for c in claims if not _bx_claim_holds(M, c)]
     check("bx2 THE COST OF AN ANSWER IS ONE TABLE, OF ATTEMPTS AND ROUNDS ALIKE: "
           "every answer DECISIONS offers has its row in ANSWER_SPENDS, which "
           "prices retry an attempt and resume a session round, and every rule "
           "line that says what an answer of its decision costs - an attempt or "
-          "a round, spent or not - says what the table says: unpriced %r / "
-          "disagreeing %r / read %r" % (unpriced, wrong, claims),
+          "a round, spent or not - says what the table says, in words the "
+          "reading built from the table reads: unpriced %r / disagreeing %r / "
+          "unread %r / read %r" % (unpriced, wrong, unread, claims),
           isinstance(table, dict) and unpriced == [] and wrong == []
-          and set(table) == set(answers)
+          and unread == []
+          and set(a for a in table if not isinstance(a, tuple)) == set(answers)
           and table.get("retry") == getattr(M, "SPENDS_ATTEMPT", None)
           and table.get("resume") == getattr(M, "SPENDS_ROUND", None)
-          and sorted(a for a in table if table[a]) == ["resume", "retry"]
+          and sorted(a for a in table if table[a]
+                     and not isinstance(a, tuple)) == ["resume", "retry"]
           and ("gate-red", "retry", "attempt", True) in claims
           and ("gate-red-writer", "retry", "attempt", True) in claims
           and ("gate-red-writer", "resume", "attempt", False) in claims
@@ -23613,7 +23662,7 @@ def _base_answer_cases(check):
 
     names = sorted(d for d in M.DECISIONS if d not in M.PHASE_DECISIONS)
     owed = sorted((d, a) for d in names for a in M.DECISIONS[d][0])
-    priced = sorted(set(a for _d, a in owed if (table or {}).get(a)))
+    priced = sorted(set(a for d, a in owed if _bx_spends(M, d, a)))
     rows = [(s, r) for s, walk in walks for r in walk]
     wrong = [(s,) + w for s, walk in walks for w in _bx_wrong(walk)]
     refused = sorted(set(r["answer"] for _s, r in rows if r["refused"]))
@@ -24332,27 +24381,22 @@ def _killed_base_run(M, prefix, k02, slow_ms):
     """A background base run started from the drive's own print and killed -
     its process and the gate run it started - once its mark names its tree and
     both pids: `(root, mpath, log, line, holder, built, pids)`, `built` whether
-    the tree stood on disk before the kill, `pids` those the mark named."""
+    the tree stood on disk before the kill, `pids` those the mark named.
+
+    THE ONE START AND THE ONE KILL the other killed-base cases use
+    (`_run_base_until_measuring`, `_kill_base`): the kill returns only once the
+    drive's own liveness reading of every pid the mark names says gone. A
+    killed grandchild is reaped by whoever adopts it, which under load is not
+    at once, and a drive asked before then reads the run as still measuring -
+    a wait, where the case reads the stop that follows the kill."""
     root, mpath, log, line, _block = _base_measure_repo(
         M, prefix, k02, k02, sleep=20, seed_ms=slow_ms)
     argv = _base_run_argv(M, root, mpath)
-    proc = _base_popen(root, argv) if argv else None
-    mark, deadline = {}, time.monotonic() + 30
-    while proc is not None and time.monotonic() < deadline:
-        mark = _base_mark(root, M)
-        if mark.get("tree") and len(mark.get("pids") or []) >= 2:
-            break
-        time.sleep(0.1)
+    proc, mark = _run_base_until_measuring(M, root, argv)
     holder = mark.get("tree") or ""
     built = bool(holder) and os.path.isdir(os.path.join(holder, "tree"))
     pids = list(mark.get("pids") or [])
-    for pid in pids + ([proc.pid] if proc else []):
-        try:
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
-        except OSError:
-            pass
-    if proc is not None:
-        proc.wait()
+    _kill_base(proc, mark, M, root)
     return root, mpath, log, line, holder, built, pids
 
 
@@ -24389,19 +24433,22 @@ def _scripted_liveness(M, readings):
     True departs from the truth, and that one is the reading `ps` gives when a
     pid exits between its kill probe and its own look, or when it times out:
     unverified, counted as alive. The real reading is not consulted, so a
-    loaded machine cannot flip a reading the case did not script. Returns the
-    readings taken, in order, as `(pids, answer)`."""
+    loaded machine cannot flip a reading the case did not script. The drive's
+    one reading is `base_liveness` - `base_running` and the fold both go
+    through it - so that is what is stood in for, a scripted reading never
+    read as cut short. Returns the readings taken, in order, as
+    `(pids, answer)`."""
     taken = []
 
     def _reading(held):
         pids = [p for p in (held or {}).get("pids") or [] if p != os.getpid()]
         if not pids:
-            return []
+            return [], None
         alive = bool(readings.pop(0)) if readings else False
         taken.append((pids, alive))
-        return pids if alive else []
+        return (pids if alive else []), None
 
-    M.base_running = _reading
+    M.base_liveness = _reading
     return taken
 
 
@@ -24484,6 +24531,423 @@ def _base_sweep_reading_case(check, k02, slow_ms):
           % ((said, _base_mark(root)),),
           len(said) == 1 and said[0].endswith(" already gone from disk")
           and not _base_mark(root).get("tree"))
+
+
+# --- every wait for a base run has an exit the drive prints ------------------------
+def _bz_moment(text):
+    """The epoch second a stamp names, None for none."""
+    return _evio.stamp_moment(text) if text else None
+
+
+def _bz_table(M, pids, state, started):
+    """Stand in for the process table the drive reads a base run's pids off:
+    every pid of `pids` reads present in `state` (`running`, or `unverified`
+    for a present pid whose state could not be read) through `_locks.liveness`,
+    in the shape the real reading gives, and was started at `started` - the
+    `(moment, basis)` `process_started` answers. Every other pid is read for
+    real. Returns the function that puts both back."""
+    real_live = M._locks.liveness
+    real_started = getattr(M, "process_started", None)
+    wanted = set(int(p) for p in pids)
+
+    def ours(pid):
+        try:
+            return int(pid) in wanted
+        except (TypeError, ValueError):
+            return False
+
+    def liveness(pid):
+        if not ours(pid):
+            return real_live(pid)
+        return {"alive": True, "state": state,
+                "basis": "pid %s read %s by the case" % (pid, state)}
+
+    def process_started(pid):
+        if not ours(pid) and real_started is not None:
+            return real_started(pid)
+        return started
+
+    M._locks.liveness = liveness
+    M.process_started = process_started
+
+    def put_back():
+        M._locks.liveness = real_live
+        if real_started is not None:
+            M.process_started = real_started
+    return put_back
+
+
+def _bz_at(M, now, fn, *args):
+    """`fn(*args)` with the drive's clock (`ci_now`) reading `now`."""
+    real = M.ci_now
+    M.ci_now = lambda: now
+    try:
+        return fn(*args)
+    finally:
+        M.ci_now = real
+
+
+def _bz_keep(M, root, keep, back=False):
+    """Copy the fixture's drive state and lock directory to `keep`, or with
+    `back` put the copies back over them."""
+    for name, live in (("state", os.path.join(root, ".claude", "state")),
+                       ("locks", M._locks.lock_dir(root))):
+        src, dst = ((os.path.join(keep, name), live) if back
+                    else (live, os.path.join(keep, name)))
+        if os.path.isdir(dst):
+            _harness.remove_tree(dst)
+        if os.path.isdir(src):
+            shutil.copytree(src, dst)
+
+
+def _base_exit_cases(check):
+    """EVERY WAIT FOR A BASE RUN HAS AN EXIT THE DRIVE PRINTS, and every
+    sentence printed while it waits names only what is open then. A launch
+    whose recorded pid reads present is not waited on for ever: the process
+    holding that pid started after the launch recorded it (a pid reused), or
+    the wait passed the bound the base's own steps set, and the launch is read
+    as cut short - its tree removed, its claim given back, the base-unknown
+    decision asked. The wait says how long it has waited and when that bound
+    falls, a slow run still inside it is waited on, and the base run's own
+    refusal when it already ran names only what is open."""
+    M, why = _load("drive_phase_base_exit", real_gate_choice=True)
+    if M is None:
+        check("bz1 the driver loads", False, why)
+        return
+    import test_run_test_gate as _rtg_cases
+    k02 = _rtg_cases.sweep_red(_rtg_cases.K03R_FAILS)
+    slow_ms = 10 * 60 * 1000
+
+    real_started = getattr(M, "process_started", None)
+    real_reading = M._locks.liveness(os.getpid())
+    try:
+        own = real_started(os.getpid()) if real_started else None
+    except Exception as exc:                                   # noqa: BLE001
+        own = "%s: %s" % (type(exc).__name__, exc)
+    shaped = (isinstance(own, tuple) and len(own) == 2
+              and isinstance(own[1], str)
+              and (own[0] is None if os.name == "nt" else (
+                  isinstance(own[0], (int, float))
+                  and 0 < own[0] <= time.time() + 2)))
+    check("bz10 THE SHAPES THE CASES STAND IN ARE THE REAL READING'S: this "
+          "process's own start, read off the process table, is a moment no "
+          "later than now beside its basis - none on Windows, which gives the "
+          "drive no start time - and the liveness reading is the alive, state "
+          "and basis the stand-in answers; and the bound the drive reads a "
+          "step by is the step timeout the gate runner holds it to: %r"
+          % ((own, sorted(real_reading),
+              getattr(M, "STEP_TIMEOUT_SECONDS", None)),),
+          shaped and sorted(real_reading) == ["alive", "basis", "state"]
+          and getattr(M, "STEP_TIMEOUT_SECONDS", None)
+          == _loader.load_script("run-test-gate.py", "rtg_bz10",
+                                 cache=False).DEFAULT_TIMEOUT_SECONDS)
+
+    if not hasattr(os, "killpg"):
+        for label in ("bz1", "bz2", "bz3", "bz4"):
+            _harness.skip(check, label, "os.killpg, to stop a base run's whole "
+                          "process group", True)
+    else:
+        _bz_wait_cases(check, M, k02, slow_ms)
+    _bz_stopped_cases(check, k02)
+    _bz_follower_cases(check, k02, slow_ms)
+    _bz_cost_cases(check)
+    _bz_unread_gate_cases(check, k02, slow_ms)
+
+
+def _bz_wait_cases(check, M, k02, slow_ms):
+    """bz1-bz4: one background base run, killed while it measures, its pids
+    then read present through a stood-in process table - reused, unreadable,
+    or its own and slow - at a stood-in clock. Each case starts from the same
+    killed state, put back between them."""
+    root, mpath, log, line, _block = _base_measure_repo(
+        M, "bz-wait", k02, k02, sleep=90, seed_ms=slow_ms)
+    argv = _base_run_argv(M, root, mpath)
+    _signal_next(M, root, mpath)
+    proc, mark = _run_base_until_measuring(M, root, argv)
+    holder = mark.get("tree") or ""
+    pids = list(mark.get("pids") or [])
+    _kill_base(proc, mark, M, root)
+    folded = _base_mark(root, M)
+    ran = _bz_moment(folded.get("ranAt")) or _bz_moment(folded.get("at")) or 0
+    pids_at = _bz_moment(folded.get("pidsAt")) or ran
+    bound = folded.get("boundSeconds") or (
+        getattr(M, "STEP_TIMEOUT_SECONDS", 3600)
+        + _evio.FOREGROUND_BOUND_MS // 1000)
+    att0 = _attempts(mpath, "P1.1")
+    keep = _harness.fixture_root("bz-keep-")
+    _bz_keep(M, root, keep)
+    seen = {}
+    try:
+        # A pid present but unreadable, inside the bound: waited on, the wait
+        # saying how long and when the bound falls.
+        put_back = _bz_table(M, pids, "unverified",
+                             (None, "the start could not be read (case)"))
+        try:
+            seen["in"] = _bz_at(M, ran + 60, _signal_raw, M, root, mpath)
+            seen["in_x"] = _bz_at(M, ran + 60, _explain_of, M, root, mpath,
+                                  "P1.1")
+            seen["in_pending"] = _drive_state(root).get("pending")
+            # ...and past it: read as cut short, the decision asked.
+            seen["out"] = _bz_at(M, ran + bound + 60, _signal_raw, M, root,
+                                 mpath)
+            seen["out_mark"] = _base_mark(root)
+            seen["out_x"] = _bz_at(M, ran + bound + 60, _explain_of, M, root,
+                                   mpath, "P1.1")
+            seen["out_claims"] = _base_claims(M, root)
+            seen["out_trees"] = _base_trees(root)
+        finally:
+            put_back()
+        _bz_keep(M, root, keep, back=True)
+        # A pid now held by a process started after the launch recorded it.
+        put_back = _bz_table(M, pids, "running",
+                             (pids_at + 30, "the start was read (case)"))
+        try:
+            seen["reused"] = _bz_at(M, pids_at + 60, _signal_raw, M, root,
+                                    mpath)
+            seen["reused_mark"] = _base_mark(root)
+            seen["reused_claims"] = _base_claims(M, root)
+        finally:
+            put_back()
+        _bz_keep(M, root, keep, back=True)
+        # The run's own process, slow and alive, inside its bound.
+        put_back = _bz_table(M, pids, "running",
+                             (pids_at - 1, "the start was read (case)"))
+        try:
+            seen["slow"] = _bz_at(M, ran + bound - 60, _signal_raw, M, root,
+                                  mpath)
+            seen["slow_pending"] = _drive_state(root).get("pending")
+        finally:
+            put_back()
+        # The printed run line run again while it waits: refused, naming
+        # only what is open.
+        seen["again"] = _play_base(root, argv) if argv else (None, "no line")
+    finally:
+        # Read for real once more, so the killed run's tree is removed here.
+        _bz_keep(M, root, keep, back=True)
+        _signal_raw(M, root, mpath)
+    in_code, waiting = seen["in"]
+    _c, in_x = seen["in_x"]
+    check("bz2 A PRESENT PID WHOSE STATE CANNOT BE READ IS WAITED ON ONLY TO A "
+          "BOUND: inside it the wait says how long it has waited and when the "
+          "bound falls, and its basis - the base's own red steps and the step "
+          "timeout - with no decision pending; past it the launch is read as "
+          "cut short, its tree and its claim gone, and the base-unknown "
+          "decision asked with the bound named, no attempt and no round "
+          "spent: %r"
+          % ((line, waiting, in_x[-400:], seen["in_pending"], seen["out"],
+              seen["out_mark"].get("said"), seen["out_claims"],
+              seen["out_trees"], holder),),
+          " dispatch P1.1" in (line or "") and in_code == 0
+          and " wait P1.1" in waiting and "waited 1m" in waiting
+          and "cut short at" in in_x and "step timeout" in in_x
+          and seen["in_pending"] is None
+          and seen["out"][0] == 0
+          and "gate-red-base-unknown" in seen["out"][1]
+          and "step timeout" in (seen["out_mark"].get("said") or "")
+          and seen["out_mark"].get("unknowable") is True
+          and seen["out_claims"] == [] and seen["out_trees"] == []
+          and bool(holder) and not os.path.exists(holder)
+          and _attempts(mpath, "P1.1") == att0 and _writer_resumes(root) == 0)
+    r_code, reused = seen["reused"]
+    check("bz1 A PID HELD BY A PROCESS STARTED AFTER THE LAUNCH RECORDED IT IS "
+          "NOT THE RUN'S: inside the bound, the launch is read as cut short at "
+          "once - the base-unknown decision asked, the mark saying the pid was "
+          "taken by a later process, and the launch's claim given back though "
+          "that process is present: %r"
+          % ((reused, seen["reused_mark"].get("said"), seen["reused_claims"]),),
+          r_code == 0 and "gate-red-base-unknown" in reused
+          and "started" in (seen["reused_mark"].get("said") or "")
+          and seen["reused_mark"].get("unknowable") is True
+          and seen["reused_claims"] == [])
+    s_code, slow = seen["slow"]
+    check("bz3 THE TWIN: the run's own process, slow and alive, started before "
+          "the launch recorded it and inside its bound, is waited on - wait-base "
+          "and no decision, the wait saying only how long it has waited and when "
+          "the bound falls: %r" % ((slow, seen["slow_pending"]),),
+          s_code == 0 and " wait P1.1" in slow and " decide " not in slow
+          and "gate-red-base-unknown" not in slow and "waited " in slow
+          and seen["slow_pending"] is None)
+    a_code, again = seen["again"]
+    check("bz4 THE PRINTED RUN LINE RUN AGAIN WHILE THE DRIVE WAITS is refused, "
+          "measuring nothing, and its words name what is open - the next call - "
+          "never an answer no decision offers: %r" % ((a_code, again[-400:]),),
+          a_code == M.E_USAGE and "already ran" in again
+          and "measure-base" not in again and ("next %s" % (PHASE,)) in again)
+
+
+def _bz_stopped_cases(check, k02):
+    """bz5: a base whose every measurement stops without a reading counts
+    toward the bound that opens the answers that spend."""
+    M, why = _load("drive_phase_base_stopped")
+    if M is None:
+        check("bz5 the driver loads", False, why)
+        return
+    real_bounded = M.run_verb_bounded
+
+    def _refused(ctx, script, args, *rest, **kw):
+        if "--base-of" in list(args):
+            return 2, "", "the base run answered nothing", None
+        return real_bounded(ctx, script, args, *rest, **kw)
+
+    M.run_verb_bounded = _refused
+    root, mpath, log, first, _b = _base_measure_repo(M, "bz-stopped", k02, k02)
+    att0 = _attempts(mpath, "P1.1")
+    _c, again = _signal_next(M, root, mpath, "--answer", "measure-base")
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    check("bz5 A BASE RUN THAT STOPS WITHOUT A READING COUNTS TOWARD THE BOUND: "
+          "the first stop asks with only what spends nothing open; measured "
+          "again and stopped again, the decision says the base was never "
+          "measured and by how many tries, and opens resume and retry - "
+          "nothing spent until one is answered: %r"
+          % ((first, again, block[-500:]),),
+          "gate-red-base-unknown" in (first or "")
+          and _bx_offered(first) == ["rerun", "measure-base", "block"]
+          and "gate-red-base-unknown" in (again or "")
+          and "retry" in (_bx_offered(again) or [])
+          and "resume" in (_bx_offered(again) or [])
+          and "never measured" in block and "2 measurement" in block
+          and _attempts(mpath, "P1.1") == att0 and _writer_resumes(root) == 0
+          and len(_stub_runs(log)) == 1)
+
+
+# The recipe of the follower a red's second run owes: it writes a file of its
+# own, so a recipe that ran is a file on disk. No absolute path in it - the
+# row a follower is recorded on scrubs machine paths - and a command and a
+# redirection both shells a recipe runs under read alike.
+_BZ_RECIPE = "git --version > bz-recipe-ran.txt"
+
+
+def _bz_follower_repo(M, prefix, k02, slow_ms):
+    """A red whose base is handed to the background, and - after the hand-out
+    - a gate that would now owe a follower with a recipe: `(root, mpath,
+    line)`, `line` the dispatch of the base."""
+    root, mpath, _log, line, _b = _base_measure_repo(M, prefix, k02, k02,
+                                                     seed_ms=slow_ms)
+    record = {"path": "docs/bz-map.txt", "owner": "bz", "recipe": _BZ_RECIPE}
+    _write_lf(os.path.join(root, "gate-out", "task.txt"),
+              k02 + "FOLLOWER-OWED %s\n" % (json.dumps(record),))
+    return root, mpath, line
+
+
+def _bz_follower_cases(check, k02, slow_ms):
+    """bz6: no follower recipe runs over a base still measuring."""
+    M, why = _load("drive_phase_base_follower", real_gate_choice=True)
+    if M is None:
+        check("bz6 the driver loads", False, why)
+        return
+    root, mpath, line = _bz_follower_repo(M, "bz-follow", k02, slow_ms)
+    _c, held = _signal_next(M, root, mpath)
+    state = _drive_state(root)
+    files = (tasks_of(mpath).get("P1.1") or {}).get("files") or []
+    ran = os.path.exists(os.path.join(root, "bz-recipe-ran.txt"))
+    # The twin: the gate step's own hold taken away, the same fixture runs the
+    # recipe - so the fixture's follower is one the drive would follow.
+    M2, why2 = _load("drive_phase_base_follower_open", real_gate_choice=True)
+    twin = None
+    if M2 is not None:
+        M2.base_gate = lambda *_a, **_k: (None, None)
+        t_root, t_mpath, _tl = _bz_follower_repo(M2, "bz-follow-open", k02,
+                                                 slow_ms)
+        _signal_next(M2, t_root, t_mpath)
+        twin = os.path.exists(os.path.join(t_root, "bz-recipe-ran.txt"))
+    check("bz6 A RED'S FOLLOWER RECIPE DOES NOT RUN OVER A BASE STILL "
+          "MEASURING: the base handed out, a gate that would owe a follower "
+          "with a recipe, and the next call waits - wait-base, no recipe run, "
+          "no follow marked, no file widened - where the same fixture with the "
+          "gate step's hold taken away runs the recipe: %r"
+          % ((line, held, ran, state.get("followed"), files, twin, why2),),
+          " dispatch P1.1" in (line or "") and " wait P1.1" in (held or "")
+          and not ran and not (state.get("followed") or {}).get("P1.1")
+          and "docs/bz-map.txt" not in files and twin is True)
+
+
+def _bz_cost_cases(check):
+    """bz7, bz8: the cost reading is the table's own words, and the table is
+    keyed by decision and answer where one word has two costs."""
+    M, why = _load("drive_phase_base_costs")
+    if M is None:
+        check("bz7 the driver loads", False, why)
+        return
+    probes = {}
+    for label, said in (("unread", "resume spends no writer round"),
+                        ("wrong", "resume spends no session round")):
+        steps = dict(M.STEPS)
+        entry = dict(steps["decide-gate-red-writer"])
+        entry["rule"] = tuple(entry["rule"]) + (said + ".",)
+        steps["decide-gate-red-writer"] = entry
+        claims, unread = _bx_rule_reading(M, steps)
+        probes[label] = (unread, [c for c in claims
+                                  if not _bx_claim_holds(M, c)])
+    check("bz7 THE COST READING IS BUILT FROM THE TABLE'S OWN WORDS AND FAILS ON "
+          "A CLAUSE IT CANNOT CLASSIFY: a rule line saying resume spends no "
+          "writer round is unread, and one saying resume spends no session "
+          "round is read and disagrees with the table: %r" % (probes,),
+          [u[:3] for u in probes["unread"][0]]
+          == [("gate-red-writer", "resume", "round")]
+          and ("gate-red-writer", "resume", "round", False)
+          in probes["wrong"][1])
+    spends = getattr(M, "answer_spends", None)
+    try:
+        pair = (spends("resume", "no-executor-return"),
+                spends("resume", "gate-red-writer"),
+                spends("retry", "no-executor-return"))
+    except Exception as exc:                                   # noqa: BLE001
+        pair = "%s: %s" % (type(exc).__name__, exc)
+    table = getattr(M, "ANSWER_SPENDS", None) or {}
+    docs = {}
+    for rel in ("plugins/audit/reference/execute-task.md",
+                "PLUGIN-BUILD-GUIDE.md"):
+        with open(os.path.join(_output.REPO_ROOT, *rel.split("/")),
+                  encoding="utf-8") as fh:
+            text = " ".join(fh.read().split())
+        docs[rel] = "`resume` on `no-executor-return` spends none" in text
+    check("bz8 THE TABLE IS KEYED BY DECISION AND ANSWER WHERE ONE WORD HAS TWO "
+          "COSTS: resume on the no-return ask resumes the agent and spends "
+          "nothing, resume on a red spends a session round, and both reference "
+          "documents say which resume spends a round: %r" % ((pair, docs),),
+          pair == (None, getattr(M, "SPENDS_ROUND", None),
+                   getattr(M, "SPENDS_ATTEMPT", None))
+          and ("no-executor-return", "resume") in table
+          and all(docs.values()))
+
+
+def _bz_unread_gate_cases(check, k02, slow_ms):
+    """bz9: a launched gate whose run can be held only in a record that cannot
+    be read is waited on naming that record, and to a bound."""
+    M, why = _load("drive_phase_gate_unread", real_gate_choice=True)
+    if M is None:
+        check("bz9 the driver loads", False, why)
+        return
+    root, mpath, _log, _l, _b = _base_measure_repo(
+        M, "bz-unread", k02, k02, play_gate=False, seed_ms=slow_ms)
+    d_code, dispatched = _signal_raw(M, root, mpath)
+    launched = (_drive_state(root).get("gateLaunched") or {}).get(
+        "P1.1", {}).get("value") or {}
+    with open(mpath, encoding="utf-8") as fh:
+        plan = json.load(fh)
+    plan["phases"][0]["tasks"][0]["lastRun"] = {"runId": 7}
+    _write_lf(mpath, json.dumps(plan, indent=2))
+    lost = _evio.read_rows(root, manifest_path=mpath).get(
+        "unreadableRecords") or []
+    at = _bz_moment(launched.get("at")) or 0
+    bound = getattr(M, "STEP_TIMEOUT_SECONDS", 3600) \
+        + _evio.FOREGROUND_BOUND_MS // 1000
+    w_code, waiting = _bz_at(M, at + 60, _signal_raw, M, root, mpath)
+    _c, w_x = _bz_at(M, at + 60, _explain_of, M, root, mpath, "P1.1")
+    o_code, out = _bz_at(M, at + bound + 60, _signal_raw, M, root, mpath)
+    _c, o_x = _bz_at(M, at + bound + 60, _explain_of, M, root, mpath, "P1.1")
+    check("bz9 A LAUNCHED GATE WHOSE RUN CAN BE HELD ONLY IN A RECORD THAT "
+          "CANNOT BE READ: the wait names that record and when its bound falls, "
+          "and past the bound the drive asks gate-cancelled naming the record, "
+          "no attempt spent: %r"
+          % ((dispatched, lost, waiting, w_x[-400:], out, o_x[-400:]),),
+          d_code == 0 and " dispatch P1.1" in dispatched
+          and bool(launched.get("at")) and len(lost) == 1
+          and w_code == 0 and " wait P1.1" in waiting
+          and "could not be read" in w_x and "cut short at" in w_x
+          and o_code == 0 and "gate-cancelled" in out
+          and "could not be read" in o_x
+          and _attempts(mpath, "P1.1") is not None)
 
 
 def _base_auto_case(check, k02):

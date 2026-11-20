@@ -309,6 +309,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   is named cannot bind, and the binding says so.
 
 ### Fixed
+- **Every wait for a base run has an exit.** A background base measurement whose recorded process
+  id read present - a process the drive may not inspect, or one the system had handed that id
+  again - was waited on for ever. The wait now says how long it has waited and when its bound
+  falls (the red steps times the gate runner's step timeout, plus the foreground bound), and the
+  launch is read as cut short past that bound, or at once when the process holding the id started
+  after the launch named it (read on Linux and macOS; Windows gives no start time, so the bound is
+  its exit): its tree is removed, its claim given back, and the base-unknown question asked.
+  Nothing is killed. Running the printed `base-run` line again after its run ran names what is
+  open instead of an answer no decision offers. A measurement that stops without a reading now
+  counts toward the per-start bound, across `measure-base`, so a second one asks with the base
+  said never measured and `resume` and `retry` open. A launched gate whose run can be held only
+  in a run record that will not read is waited on with that record named, to its bound, then
+  asked as `gate-cancelled`. `resume` on `no-executor-return` is priced as what it is - no
+  attempt and no round - and the decision rules say which answers spend.
 - **A subject whose own run record will not read is never answered from an older run.**
   `--reconcile` wrote an older ledger run over a malformed newer record, so the status gate's
   `failing-tests` condition passed over a red; it now refuses that subject - `REFUSED:` naming the

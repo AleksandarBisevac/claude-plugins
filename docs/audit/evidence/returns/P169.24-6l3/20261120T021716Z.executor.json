@@ -1,0 +1,41 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-20T02:56:49Z",
+    "basis": "`python3 tests/test_drive_phase.py --selftest --stage bz-block` in a throwaway tree at HEAD exited 1 with 9 of 10 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests on HEAD's code failing only the unknown-stage check for `bz-block`, which the task's test files add - the stage is new at HEAD: its cases did not exist at HEAD, which is red for them), each passing with the working tree's implementation - bz10 (house FAIL), bz2 (house FAIL), bz1 (house FAIL), bz3 (house FAIL), bz4 (house FAIL), bz5 (house FAIL), bz7 (house FAIL), bz8 (house FAIL) and 1 more: SELFTEST FAILED: 1/10 cases passed; --case bz6 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: base_liveness is the one liveness reading of a base launch (base_running delegates): a recorded pid held by a process started after the write naming it (pidsAt; process_started reads /proc on Linux, ps -o lstart= in the C locale elsewhere, none on Windows) or a wait past boundSeconds (run_bound: red steps x STEP_TIMEOUT_SECONDS=3600, mirroring run-test-gate DEFAULT_TIMEOUT_SECONDS, + FOREGROUND_BOUND_MS/1000, from ranAt) reads the launch cut short; fold_reading keeps the reason as cutBy, cut_short says it, drop_progress releases the claim forced. Nothing is killed. wait-base says waited <age>, cut short at <deadline>, with a bound line carrying the basis (wait_words). The already-ran refusal names what is open (ran_open: measure-base only when the pending decision offers it, else next). R65: stopped_unread counts toward UNMEASURED_BOUND, stoppedBefore beside unmeasuredBefore, carried across measure-base by baseTried (tried_before); measured_reading asks the bound before the unknowable return; bound_said says never measured and by how many tries. R67: ANSWER_SPENDS[(no-executor-return, resume)]=None, answer_spends(answer, decision); rule lines reworded (retry spends an attempt; resume spends no attempt and no round). R90: new_gate_row returns UNREAD when no readable run carries the token and newest_or_unreadable names the subject's record; unread_launch waits naming it to the gate's own bound, then asks gate-cancelled/phase-gate-cancelled. tests: bz-block bz1-bz10, cost reading built from the table's words (_bx_costs/_bx_cost_claims/_bx_rule_reading) failing on an unclassifiable clause, bq4 kill through _run_base_until_measuring/_kill_base, _scripted_liveness stands in for base_liveness, rule-text pins dd3/rs1 updated. Docs: execute-task.md, PLUGIN-BUILD-GUIDE.md (ranges wb1-wb4, bh1-bh5, bz cases), CHANGELOG Fixed entry; orchestrator.md unchanged. Mutations (scratch copy, 9 rows) all killed; full sweep 198/198 files, 19715 cases, exit 0.",
+    "descriptive": "Every wait the drive has on a base run or a launched gate now has an exit it prints, a stopped base counts toward the per-start bound, and resume on no-executor-return is priced as free."
+  },
+  "testsAdded": [
+    "the base wait has a way out: pid reuse cut short, an unreadable present pid cut short only past its bound, a slow live base inside its bound waited on, the rerun run line names what is open, an unreadable gate record named and asked past its bound, the stand-ins held to the real reading's shapes",
+    "a base measurement that stops without a reading counts toward the bound and past it opens resume and retry",
+    "a red's follower recipe does not run while the drive waits on its base, and runs with the hold taken away",
+    "the cost reading is built from the table's words and fails on an unclassifiable clause; the table is keyed by (decision, answer) and both documents say which resume spends a round"
+  ],
+  "casesAdded": [
+    [
+      "bz1",
+      "bz2",
+      "bz3",
+      "bz4",
+      "bz9",
+      "bz10"
+    ],
+    "bz5",
+    "bz6",
+    [
+      "bz7",
+      "bz8"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py base_liveness/process_started/run_bound/bound_deadline (block under '# --- every wait for a base run has an exit'), wait_words, ran_open, stopped_unread/tried_before/bound_said, answer_spends, unread_launch; each document sentence names the function that does it\n2 9 mutations on a scratch copy (scratchpad/p169-24/mutations.py, tree/): age bound removed -> bz2 red; start check inverted -> bz1,bz3,bz4; bound from hand-out -> bz2,bz3,bz4; stopped not counted -> bz5; hold narrowed -> bz1,bz2,bz3,bz6; unclassifiable clause accepted -> bz7; pair key dropped -> bz8; unreadable not looked for -> bz9; unforced release -> bz1,bz2; each anchor matched once, landed=True, restored=True, baseline and after 10/10\n3 grep base_running/pid_alive in the suite: _scripted_liveness stubbed base_running, bypassed by the new fold -> moved to base_liveness (bq6/bq7 red then 8/8); callers of base_wait_said/gate_wait_said (drive, test_drive_phase 2297/11960, test_drive_without_model 878) keep their signature, extra arg optional\n4 rules stated in execute-task.md and the build guide name the function enforcing them; no agent rule added\n5 n/a - no timing recorded as a property; the bound is derived, not measured\n6 decision reads process start from the process table and the clock against the recorded marks, not text\n7 3600 s carried beside STEP_TIMEOUT_SECONDS and pinned to run-test-gate DEFAULT_TIMEOUT_SECONDS by bz10; no count written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:21f51bb6aef1f2ce01f8c30d2ae6131d87173419a0a8248cfe188263ffc9af03\",\"dirtyDigest\":\"sha256:865d03851ab3f472ca5f29ec175f14be98b8da4644a7053042e5fd44d27a8458\",\"dirtyPaths\":{\"CHANGELOG.md\":\"b397e285b3423bd8\",\"PLUGIN-BUILD-GUIDE.md\":\"7d591d7baa345e26\",\"plugins/audit/reference/execute-task.md\":\"c770631277f73de6\",\"plugins/audit/scripts/governance/drive-phase.py\":\"ca376d91ecd72cfb\",\"tests/test_drive_phase.py\":\"9610c601ba7b0c94\"},\"head\":\"f7909a03\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:e01e49c6c3e32cc22d2038c3bdd80435bf7fe46eb067c68143b23ca7b1188e01\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

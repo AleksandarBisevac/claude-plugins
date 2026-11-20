@@ -697,74 +697,100 @@
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/merge-manifest.py (_stray_targets, resolve)",
         "issue": "The refusal that keeps a write made while a merge is stopped reads 'what git's merge left' off the index, and an ordinary command changes the index: once the person stages the file holding the stray write (`git add -u`, an editor's stage-all, routine during a conflict), resolve exits 0, rewrites the shard from git's commits and the record is gone without a word. Shown by a probe on the suite's own fixture; the unstaged case is refused correctly. The guide and the changelog state the property without that limit.",
-        "resolution": "The reference a target is compared with is one nothing the person runs during a merge can move: the clean merge's own result computed from the sides, or what resolve derives for that path, never the index. A case with the stray write staged, red before and green after; the documents say what is compared.",
-        "fixTask": "P169.26-6l3"
+        "resolution": "fixed in P169.26-6l3 (f7909a033881): The reference a target is compared with is one nothing the person runs during a merge can move: the clean merge's own result computed from the sides, or what resolve derives for that path, never the index. A case with the stray write staged, red before and green after; the documents say what is compared.",
+        "fixTask": "P169.26-6l3",
+        "commit": "f7909a033881",
+        "status": "fixed"
       },
       {
         "id": "P169-R73",
         "severity": "med",
         "file": "tools/lints/_deps.py (plan_writer_sites, _pw_sites, _pw_arg)",
         "issue": "The lint that classifies every function deciding a written path drops, silently, a call whose path argument it cannot locate: a path passed starred or as keywords, or omitted in favour of a default. Three shapes escape with no violation, one through the plugin's own atomic writer, and one already exists in the tree (a function calling its undo helper with a starred tuple is a writer in no table). The docstring calls a container-passed path conservative and never a hole, which holds for subscripts and attributes only, and the list of what the lint cannot see does not name these.",
-        "resolution": "What the lint cannot resolve is a decision it reports, never a call it drops: an unlocatable path argument of a resolved writer is a site of the calling function, with the reason said, and a default expression is read. The existing instance gets its row. Cases for each shape, and the docstring's list made true.",
-        "fixTask": "P169.26-6l3"
+        "resolution": "fixed in P169.26-6l3 (f7909a033881): What the lint cannot resolve is a decision it reports, never a call it drops: an unlocatable path argument of a resolved writer is a site of the calling function, with the reason said, and a default expression is read. The existing instance gets its row. Cases for each shape, and the docstring's list made true.",
+        "fixTask": "P169.26-6l3",
+        "commit": "f7909a033881",
+        "status": "fixed"
       },
       {
         "id": "P169-R74",
         "severity": "med",
         "file": "tools/lints/_deps.py (PLAN_WRITERS, OTHER_WRITERS rows)",
         "issue": "Classification is per function, so a classified function's NEW write is covered by its existing row: a shard write added to a function with a row for writing something else, a raw write added to the converter (its row's pattern admits any primitive), and a second save through the same callee from a read taken before the lock each produce no violation. A different callee is caught. And the seven rows of callers that go through the one locked helper name a case that checks line order inside the helper, not that the caller's change is computed from a read behind the lock: that case passes over the defect the two repairs had.",
-        "resolution": "A row covers the sites it names: rows of the other-writers table carry the callee pattern as plan rows do (or a site count), the converter's backup copy moves into a helper with its own row so its pattern admits no bare primitive, and each caller of the locked helper has an interleaving case of its own in the style of the verbs' cases, or a reason that claims only what its case shows.",
-        "fixTask": "P169.26-6l3"
+        "resolution": "fixed in P169.26-6l3 (f7909a033881): A row covers the sites it names: rows of the other-writers table carry the callee pattern as plan rows do (or a site count), the converter's backup copy moves into a helper with its own row so its pattern admits no bare primitive, and each caller of the locked helper has an interleaving case of its own in the style of the verbs' cases, or a reason that claims only what its case shows.",
+        "fixTask": "P169.26-6l3",
+        "commit": "f7909a033881",
+        "status": "fixed"
       },
       {
         "id": "P169-R75",
         "severity": "low",
         "file": "tools/lints/_deps.py (what the lint reads); plugins/audit/scripts/manifest/migrate-manifest.py (_changed_since); plugins/audit/scripts/governance/_evidence_io.py (unwritable_claim_reason, the busy sentence); plugins/audit/scripts/manifest/repair-tests-add.py; plugins/audit/commands/layout.md",
         "issue": "Lows from the two reviews of the plan-writers task. Unlisted escapes of the lint: a module-level write (and a forwarder whose only caller is module level), a primitive imported by bare name, and deletes or truncations of a plan file. The converter's stated window is the whole multi-file save, seconds wide on this repository's plan, described as holding no other step; and its row's claim holds only when the command's document takes the lock. The unwritable-claim sentence says nobody was found holding the lock when nobody was looked for; a holder that dies during the wait is worded as busy for one run; the drive matches the busy sentence as a substring of the runner's whole output, with a case fed hand-built text, so a gate's own output carrying the sentence could read as busy. The tests-add repair saves, journals an empty row and reports success when every row moved in the window, where the commits repair refuses. The task's gate does not run the merge suite. The layout command's document describes resolve's output without its refusal. One question left open: a repeat of a repeat whose first source is held only as a record carries no older run.",
-        "resolution": "Each escape is read or listed; the window sentence says the save, or the compare moves to just before each file; the sentences say only what was established; the drive reads the runner's own refusal line; the repair refuses on nothing applied, with a case per repair; the merge suite is in the gate of the task that fixes these; the document names the refusal; the chained repeat is settled by establishing whether the runner can produce one.",
-        "fixTask": "P169.26-6l3"
+        "resolution": "fixed in P169.26-6l3 (f7909a033881): Each escape is read or listed; the window sentence says the save, or the compare moves to just before each file; the sentences say only what was established; the drive reads the runner's own refusal line; the repair refuses on nothing applied, with a case per repair; the merge suite is in the gate of the task that fixes these; the document names the refusal; the chained repeat is settled by establishing whether the runner can produce one.",
+        "fixTask": "P169.26-6l3",
+        "commit": "f7909a033881",
+        "status": "fixed"
       },
       {
         "id": "P169-R76",
         "severity": "med",
         "file": "tools/lints/_deps.py:PLAN_WRITERS (the _PW_EV rows, write_ci, _record_run) citing tests/test__evidence_io.py:6144 lk2",
         "issue": "Read, not run: the seven helper-caller rows (_reconcile_subject, hold_full_run, keep_base, write_pointer, write_record, write_ci, _record_run) name `lk2` as the case showing each reads behind the lock. lk2 is an AST line-order check inside write_plan_file (read after acquire); it passes whatever a caller's `change(body)` returns, so a caller whose change closure returned a document read before the lock (the exact defect the two repairs had) would keep every one of these rows 'true'. The task asked for each row to carry the case that proves it, and the lint only checks that the case id exists in the suite.",
-        "resolution": "For the helper callers, cite a case per caller (or one parametrised interleaving case in the style of pa1-pa10) that lands a change between the caller's pre-lock work and its lock and asserts it survives; or word the row's reason as 'the helper reads behind the lock; the caller's change is derived from body (checked by <case>)' and add that case."
+        "resolution": "fixed in P169.26-6l3 (f7909a033881): For the helper callers, cite a case per caller (or one parametrised interleaving case in the style of pa1-pa10) that lands a change between the caller's pre-lock work and its lock and asserts it survives; or word the row's reason as 'the helper reads behind the lock; the caller's change is derived from body (checked by <case>)' and add that case.",
+        "fixTask": "P169.26-6l3",
+        "commit": "f7909a033881",
+        "status": "fixed"
       },
       {
         "id": "P169-R77",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/repair-tests-add.py:239-286",
         "issue": "When every row found before the lock has moved by the time the plan is re-read, `rewrite` returns [] and apply_repair still saves the plan, journals a `scope.repair` row with empty `changes` and answers ok with 'journaled', i.e. reports a successful repair that rewrote nothing. repair-commits.py:_clear_under_lock handles the same situation with an explicit refusal ('changed in the plan since it was read ... re-run to look again'). The two repairs now disagree, and neither window-miss branch (`_still_lost` returning [], `applied == []`) has a case: rc12/rt16 only cover the record landing in the window, not the entry/commit moving.",
-        "resolution": "Refuse in apply_repair when `applied` is empty, with the same sentence as repair-commits, and add one case per repair that changes the entry/commit inside the window."
+        "resolution": "fixed in P169.26-6l3 (f7909a033881): Refuse in apply_repair when `applied` is empty, with the same sentence as repair-commits, and add one case per repair that changes the entry/commit inside the window.",
+        "fixTask": "P169.26-6l3",
+        "commit": "f7909a033881",
+        "status": "fixed"
       },
       {
         "id": "P169-R78",
         "severity": "low",
         "file": "docs/audit/phases/P169.json (P169.18-6l3 tests.gate / tests.add)",
         "issue": "The task's tests.gate (tests__evidence_io, repair_commits, repair_tests_add, drive_phase, migrate_manifest, _deps) selects no case of merge-manifest.py, which the diff changed most (resolve's stray-target refusal, rw0-rw6); tests/test_merge_manifest.py and tests/test__deps.py's pw cases are also absent from tests.add. The recorded gate run therefore passed without exercising resolve at all; the executor's whole-tree sweep and red-first command did include it, but the declared gate does not.",
-        "resolution": "Add tests/test_merge_manifest.py (and test_close_phase/test_integrate_task if their files are in scope) to tests.gate and its rw cases to tests.add, so the recorded gate run covers the file the task changed."
+        "resolution": "fixed in P169.26-6l3 (f7909a033881): Add tests/test_merge_manifest.py (and test_close_phase/test_integrate_task if their files are in scope) to tests.gate and its rw cases to tests.add, so the recorded gate run covers the file the task changed.",
+        "fixTask": "P169.26-6l3",
+        "commit": "f7909a033881",
+        "status": "fixed"
       },
       {
         "id": "P169-R79",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:1310-1313; tests/test_drive_phase.py dl12",
         "issue": "The busy-lock reading is a substring match of INDEX_BUSY_HEAD over the runner's whole `out + err`, which also carries the gate's own failing lines; dl12 feeds a hand-built text, so nothing ties it to what run-test-gate.py:5681 really prints (`pointer:  NOT updated - <reason>`). A gate whose failing output quotes that sentence under an exit 3 would be read as a wait.",
-        "resolution": "Match on the pointer line (`NOT updated - ` + head) or have dl12 take its text from the runner's own renderer for a refused record; this keeps the rule bound to the runner's words."
+        "resolution": "fixed in P169.26-6l3 (f7909a033881): Match on the pointer line (`NOT updated - ` + head) or have dl12 take its text from the runner's own renderer for a refused record; this keeps the rule bound to the runner's words.",
+        "fixTask": "P169.26-6l3",
+        "commit": "f7909a033881",
+        "status": "fixed"
       },
       {
         "id": "P169-R80",
         "severity": "low",
         "file": "docs/audit/phases/P169.json (executor outcome.descriptive)",
         "issue": "The filed descriptive 'every plan writer ... now reads behind the index lock or refuses' overstates the layout converter: migrate-manifest.py:_changed_since narrows the window and its own docstring says a write landing between the re-read and the save is still lost; and the guide lists git's writes as outside the rule. The diff and guide are honest; the one-line claim is not.",
-        "resolution": "Say 'reads behind the lock, refuses on a change since its read, or is named as outside the rule'."
+        "resolution": "fixed in P169.26-6l3 (f7909a033881): Say 'reads behind the lock, refuses on a change since its read, or is named as outside the rule'.",
+        "fixTask": "P169.26-6l3",
+        "commit": "f7909a033881",
+        "status": "fixed"
       },
       {
         "id": "P169-R81",
         "severity": "med",
         "file": "tests/test_merge_manifest.py (rw4); tests/test__evidence_io.py (pa4, uw1); the code each exercises on Windows",
         "issue": "The plan-writers commit is red on Windows in CI (run 44578935890 on eba49be5, jobs 'selftests (windows, plain 1)' and '(windows, plain 2)'; every other job green; read it with gh run view 44578935890 --json jobs). Three cases: rw4, the resolver's allow case with no stray write (exit 0 and the renumbering are as expected in its printed output, so the failing conjunct is the files' spelling or the no-marker check, on a platform where git may check text out with other line endings; rw4b beside it passes); pa4, close-phase's merge stamp keeping a record landed as it asks for the lock (first conjunct False: the landed record is not kept, or the landing did not land it, on Windows); uw1, the unwritable lock directory, which reports COULD NOT RUN HERE because a directory's mode does not stop a write on Windows and is counted as a failure. The first two may be product behaviour on Windows (a write lost, or bytes compared across a line-ending conversion: the resolver's new comparison is the likeliest place), not only test shape.",
-        "resolution": "Each is settled by what the Windows runner shows, through a CI run on a disposable branch: the failing conjunct named, then either the product fixed (a comparison that survives git's line-ending conversion; the record kept) with the case green on Windows, or the case made to state a Windows-shaped precondition it cannot stage the way the suite's other platform-shaped cases do, never counted as a pass it did not earn."
+        "resolution": "fixed in P169.26-6l3 (f7909a033881): Each is settled by what the Windows runner shows, through a CI run on a disposable branch: the failing conjunct named, then either the product fixed (a comparison that survives git's line-ending conversion; the record kept) with the case green on Windows, or the case made to state a Windows-shaped precondition it cannot stage the way the suite's other platform-shaped cases do, never counted as a pass it did not earn.",
+        "fixTask": "P169.26-6l3",
+        "commit": "f7909a033881",
+        "status": "fixed"
       },
       {
         "id": "P169-R82",
@@ -862,7 +888,10 @@
         "severity": "low",
         "file": "tests/test__evidence_io.py (ug5); .claude/hooks/guard-release.py on Windows",
         "issue": "A fourth case is red on Windows only, from the malformed-records commit (CI run 44601012586 on 1af351fd, job 'selftests (windows, plain 5)'): ug5's row 'a value nested too deep to parse'. The hook exited 0 and printed a deny (its tail is the bypass sentence), so the command was refused, but the deny did not carry the words the case expects for a plan file that would not read: on Windows the deeply nested shard is refused through another path (unverified which: the parser may take a depth there that it refuses elsewhere, or the error may arrive as a different type). The other failures of that run are the three already recorded (rw4, pa4, uw1); every non-Windows job is green.",
-        "resolution": "Settled on a Windows runner with the three others: the full deny text read from the job, then the case asserts what is true on both platforms (a deny naming the file), with the platform difference stated where the depth is chosen."
+        "resolution": "fixed in P169.26-6l3 (f7909a033881): Settled on a Windows runner with the three others: the full deny text read from the job, then the case asserts what is true on both platforms (a deny naming the file), with the platform difference stated where the depth is chosen.",
+        "fixTask": "P169.26-6l3",
+        "commit": "f7909a033881",
+        "status": "fixed"
       },
       {
         "id": "P169-R93",
@@ -924,7 +953,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py (_under_lock, _locked_seed, cmd_seed)",
         "issue": "`audit-task.py seed` checks whether the plan exists BEFORE taking the index lock and saves without asking again behind it, so a plan another writer created in between is overwritten with exit 0. Found by the executor of the plan-writers repairs with a probe (the seed exits 0 and the other writer's plan is not kept byte for byte); the writers table's row for the seed cites only a call-order case, and no case in the suite is red for it. The file was outside that task.",
-        "resolution": "The existence check is asked again behind the lock and a plan found there is refused, with an interleaving case red before the change; the row names that case."
+        "resolution": "fixed in P169.26-6l3 (f7909a033881): The existence check is asked again behind the lock and a plan found there is refused, with an interleaving case red before the change; the row names that case.",
+        "fixTask": "P169.26-6l3",
+        "commit": "f7909a033881",
+        "status": "fixed"
       },
       {
         "id": "P169-R101",
@@ -934,7 +966,7 @@
         "resolution": "The suite's tally and the sweep's summary count skips apart from passes, and a skipped case is named in the loud form; or the decision not to is recorded with its reason."
       }
     ],
-    "outcome": "[findings: 101 - 7 high, 36 med, 58 low; 62 with a recorded fix commit]"
+    "outcome": "[findings: 101 - 7 high, 36 med, 58 low; 74 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -6562,7 +6594,7 @@
     {
       "id": "P169.24-6l3",
       "title": "A wait for a base run has an exit the drive prints: a launch whose process cannot have been its own, or that has waited past a bound read off recorded runs, is cut short, and no sentence printed while waiting names an answer that is refused",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A red now waits for its base run again, and an independent review could not get anything decided or charged while it waits. What it found is the other side of that: the wait itself has no way out when the base run's process can never be read as ended, and the sentences printed meanwhile point at an answer the drive refuses. The phase's findings P169-R64 (medium) and R65 to R67 (lows) carry each with its probe; the reviewer's probes are named in the orchestrator's prompt.\n\nTHE RULE: every state the drive can wait in for a base run has an exit the drive itself prints, and every sentence printed while it waits names only what is open at that moment.\n\n1. R64, the wait. A launch whose recorded pid reads alive holds for ever: after a pid is reused by an unrelated process, or when the pid's state cannot be read (another user's process), `wait-base` repeats with no age and no bound; `measure-base` and `block` answer that no decision is pending; the printed run line, run again, says the run already ran and to answer `measure-base`, which was just refused. Required: (a) a launch is read as cut short, and the base-unknown decision asked, when the process holding its pid started AFTER the launch was recorded (read the process's start time where the platform gives it; say what each platform gives and what happens where it gives nothing), or when the wait has passed a bound derived from the base's own recorded durations (find how the drive already decides foreground against background from a recorded mean and how gates time out, and derive from that rather than inventing a number; say the bound's basis in the sentence that announces it); (b) `wait-base` says how long it has waited and when the bound falls; (c) the already-ran refusal names something open. Do not change what a healthy wait prints beyond the age, and prove a base run that is slow but alive is NOT cut short inside its bound.\n2. R65, a base that never leaves a reading. A base run that dies on every measurement stays \"unknowable but measurable\", so the answers that spend never open and the bound that opens them counts only bases whose code moved. Required: a base run that stopped without a reading counts toward that bound, and past it the decision says the base was never measured, by how many tries, and opens the spending answers. Also stage, through its real producer and not through stubs, the shape the review could not: a red whose record lacks the base's head while a kept base resolves (the review reads it as asking the same refused decision again after `measure-base`); it either reaches an exit or is fixed.\n3. R66, the cases. A case with a follower recipe on the red asserting nothing of it runs while the drive waits (today narrowing the gate step's own hold survives every block); the reading that holds each rule line's cost words to the cost table is built from the table's own words and fails on a clause naming an answer with a cost it cannot classify (today \"resume spends no session round\" passes); the base-killing helper used by case bq4 goes through the one helper that waits for the drive's liveness reading (that case has cost a gate run in three phases); the build guide's case ranges are read off the suite.\n4. R67, the cost table is keyed by decision and answer where one word has two costs (`resume` on the no-return ask resumes the agent and counts no round), and the documents say which resume spends a round.\n\nACCEPTANCE. Each point has a case red at the branch head and green after; the pid-reuse and unreadable-pid probes become cases through the drive's real liveness reading (a stub only for the clock and the process table, with the stubbed shapes taken from what the real reading returns on this platform); mutations on scratch copies outside every checkout, restored in the same command, each confirmed landed: the age bound removed; the start-time check inverted; a slow live base cut short; a stopped base not counted toward the bound; the hold in the gate step narrowed (must now go red by the follower case); a cost clause the reading cannot classify accepted. plugins/audit/reference/orchestrator.md has three bytes under its context ceiling: `python3 tools/measure-context.py --gate` stays green, and a signal or step you reword there does not grow. Full sweep green with no exception after the last edit.\n\nDEPENDANTS to answer for by name: `wait-base`, `dispatch-base`, `gate-red-base-unknown` and `measure-base` and every document naming them; the sweep of base trees and the release of a base launch's claim when a wait is cut short (no tree and no claim left behind: the killed-base cases already assert this for a killed run); the join of an earlier start's base (a joined wait is cut short by the same rule); the time record's base stage for a wait that was cut short; the cancelled-gate bound, which counts a different thing and must not be merged with this one; Windows, where the pid probe is another path (say what the case covers there and hand the orchestrator the command and expected output for a run on a Windows machine if a path cannot be exercised here).\n\nIf a file you need is outside your list, STOP BEFORE FILING and hand back the exact change with the reason: a return is filed once per start.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -6597,14 +6629,14 @@
         "P169.23-6l3",
         "P169.26-6l3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-20T02:17:16Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6653,7 +6685,129 @@
         "P169-R65",
         "P169-R66",
         "P169-R67"
-      ]
+      ],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-20T02:57:34Z",
+            "ms": 23851,
+            "basis": "selectionMs in run 2026-11-20T03:05:41Z.311ff6's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-20T03:05:41Z.311ff6"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-20T02:57:58Z",
+            "ms": 463016,
+            "basis": "durationMs in run 2026-11-20T03:05:41Z.311ff6's record (run-test-gate --record)",
+            "runId": "2026-11-20T03:05:41Z.311ff6"
+          }
+        ],
+        "firstStartedAt": "2026-11-20T02:17:16Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-20T03:06:00Z.777d6f",
+        "status": "passed",
+        "durationMs": 192,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:540201968a8778097427844b2ff7845bf6aa4fb7457eb6529fb7229219c3bd35",
+        "reuseKey": "1:sha256:31cba570f0d64f24fc47f2cf9d8374ca61b9c49de4e291683da426099082c279",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-20T03:05:41Z.311ff6",
+          "ts": "2026-11-20T03:05:41Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+        "selectionMs": 16270,
+        "at": "2026-11-20T03:06:00Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "attempt": 1,
+          "banners": [],
+          "durationMs": 463016,
+          "failed": [],
+          "gateDigest": "sha256:540201968a8778097427844b2ff7845bf6aa4fb7457eb6529fb7229219c3bd35",
+          "gateReach": {
+            "gaps": []
+          },
+          "gateSource": "task",
+          "launch": "2026-11-20T02:57:34Z-efd1e263",
+          "observations": {
+            "countsBasis": "no step printed a summary this reader can count (python3 tools/sweep-selftests.py tests/test_drive_phase.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hook... (5518 more characters)), so the size of this gate is not knowable from its output",
+            "coverage": [
+              "tests/test_drive_phase.py",
+              "tests/test_drive_phase.py"
+            ],
+            "coverageBasis": "the runner named 207 path(s); the work under test declares 9 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 197/197 and 202 more; declared but not named by the run: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/execute-task.md, plugins/audit/reference/orchestrator.md and 1 more; breadth: the run named 175 suite path(s) and this task declares 9 file(s), and 173 of them are suites the task neither declares nor is named after (test__deps.py, test__output.py, test_audit_task.py, test_close_phase.py, test_commit_task_work.py, test_stamp_verification.py, tests/_harness.py and 166 more) - this gate asks more than the task changed; that is reported, not refused",
+            "ranTotal": null,
+            "treeBasis": "git described the tree before and after",
+            "treeMutated": []
+          },
+          "reuseKey": "1:sha256:31cba570f0d64f24fc47f2cf9d8374ca61b9c49de4e291683da426099082c279",
+          "runId": "2026-11-20T03:05:41Z.311ff6",
+          "selectionMs": 23851,
+          "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+          "startedAt": "2026-11-20T02:57:58Z",
+          "status": "passed",
+          "via": "cli",
+          "at": "2026-11-20T03:05:41Z",
+          "testedState": {
+            "dirtyBasis": "git described the tree before the run; 9 dirty path(s)",
+            "dirtyDigest": "sha256:c26e32c7f3c1eacef30e1b7dded3e059e0a2d79c5b34532a543ac93c15109df9",
+            "head": "f7909a03",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeBasis": "6 declared file(s); 6 read, 0 missing",
+            "scopeDigest": "sha256:e01e49c6c3e32cc22d2038c3bdd80435bf7fe46eb067c68143b23ca7b1188e01",
+            "scopeListDigest": "sha256:44d36e86d796f65e753f095ea1aedb12932bb8f57ca9197e39c69863ec6ecffd"
+          },
+          "steps": [
+            {
+              "commandBytes": 5463,
+              "commandSha256": "1d7a4609a7b755fd8fcc075ee2940b76805aafb2f61e7e7ce456b11fde5b528e",
+              "durationMs": 462959,
+              "exit": 0,
+              "measured": "not-knowable",
+              "name": "python3 tools/sweep-selftests.py tests/test_drive_phase.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_io.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_run_test_gate.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "program": "python3",
+              "ran": null,
+              "suiteReader": "none"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-20T03:05:41Z.311ff6",
+            "launch": "2026-11-20T02:57:34Z-efd1e263",
+            "status": "passed",
+            "at": "2026-11-20T03:05:41Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-20T03:06:00Z.777d6f",
+        "status": "passed",
+        "at": "2026-11-20T03:06:00Z"
+      }
     },
     {
       "id": "P169.25-6l3",
@@ -6764,7 +6918,7 @@
     {
       "id": "P169.26-6l3",
       "title": "A guard reports what it cannot decide: the plan merge resolver compares against a reference a person cannot move, the writers lint drops no call it cannot resolve, and a writer's row covers only the sites and the proof it names",
-      "status": "in_progress",
+      "status": "done",
       "description": "The task that put every plan writer behind the index lock and added a total lint over writers was read by two reviewers before it was committed: an independent one that tried to break it (probes named in the orchestrator's prompt) and the drive's own. Neither found a regression; both found places where the new guard claims more than it holds. The phase's findings P169-R72, R73, R74 (mediums) and R75 (lows), plus the findings the drive filed from its reviewer's return for that task, carry each in full; read them with the brief. This is what they amount to.\n\nTHE RULE FOR THE WHOLE TASK: a guard reports what it cannot decide; it never drops it. That holds for the resolver's comparison, for the lint's resolution of a call, and for what a table row is taken to cover.\n\n1. R72, the resolver loses a staged stray write. `resolve` compares each target with \"what git's merge left\" by reading the index, and the person moves the index with ordinary commands: after `git add` of the shard holding a write made while the merge was stopped, resolve exits 0 and rewrites it. Required: the reference is one that nothing a person runs during a merge can move (the clean merge's own result computed from the merge's sides, or what resolve derives for that path); state above the code which reference you chose, why it cannot be moved, and what git commands you checked against it (add, add -u, stash is refused mid-merge or not, checkout of a path, restore --staged, a second resolve). Cases: the stray write staged; staged then modified again; the allow cases already in the suite stay byte-identical. The guide and the changelog say what is compared.\n2. R73, the lint drops what it cannot resolve. A call to a resolved writer whose path argument cannot be located (starred, keywords, omitted for a default) is skipped: three shapes escape, one through the plugin's own atomic writer, and one already exists in the tree (a function passing a starred tuple to its undo helper). Required: an unlocatable path argument is a site of the CALLING function with the reason said; a default expression is read as the path; the existing instance gets a true row. Go through every `continue`, early return and `None` in the lint's resolution and decide each the same way: either it is shown harmless in a comment that says why, or it reports. Then the unlisted escapes of R75: a write at module level (and a forwarder whose only caller is module level), a primitive imported by bare name (`from os import replace`), and deletes or truncations of a plan file: read each or list it. The WHAT IT CANNOT SEE list must then be TRUE AND COMPLETE against the independent review's probe table (every probe either goes red by name or is on the list with the reason it is not read).\n3. R74, a row covers more than it names. (a) A classified function's new write is covered by its existing row: other-writers rows carry the callee pattern as plan rows do, so a new write through another callee is red by name; the converter's row admits any bare primitive: move its backup copy into a helper with a row of its own so no row's pattern is \"any write\". (b) The rows of callers that go through the one locked helper (`write_plan_file`) name a case that checks line order INSIDE the helper; it passes when a caller's change function returns a document read before the lock, the defect the repairs had. Each such caller gets an interleaving case of its own through the pause-at-acquire harness the verbs' cases already use (the record writers, the pointer writer, the base keeper, the reconcile path, the phase's CI record, the held full runs, the evidence-since stamp), and the row names that case. (c) The verbs' shared case proves call position only: say so in its reason, and add one behavioural case per MECHANISM the thirty verb rows share (they already have several: name which mechanism each stands for) rather than per verb.\n4. R75 and the drive reviewer's lows, in the same files: the converter's window is the whole multi-file save (seconds on a large plan): either the compare moves to just before each file is written, or the sentence says the save and the row's reason says the lock is taken by the command's document, not by the script; the unwritable-claim sentence says only what was established (no holder was looked for); a holder that dies during the wait is not worded as busy; the drive reads the busy sentence from the runner's own refusal line, not as a substring of all its output, and its case takes the text from the runner's renderer; the tests-add repair refuses when nothing is left to apply, as the commits repair does, with a case for each repair's window-miss branch; the layout command's document names resolve's refusal; settle by a probe whether the runner can record a repeat of a repeat, and either carry the chain or state that it cannot occur.\n\nACCEPTANCE. Each of points 1 to 3 has cases red at the branch head for the stated reason and green after; the independent review's probe shapes are cases of the lint's suite (red by name or listed); mutations on scratch copies outside every checkout, restored in the same command, each confirmed landed: the resolver's reference put back on the index; the unlocatable-argument branch dropped again; the callee pattern of other-writer rows ignored; a caller's interleaving case pointed at a pre-lock read (must be red). `python3 tools/prove-gates.py --only plan_writer` and `--list`, `python3 tools/gate-parity.py` exit 0. The lint's wall time measured twice with a gap (it was about three seconds; say what this adds). Full sweep green with no exception after the last edit.\n\nDEPENDANTS to answer for by name: every row of both writer tables (a row that changes shape changes for all); the proving table's rows for the lint; gate-parity's audit rows for the two tables; the guide's rule section and its list of writes outside the rule; the driver's conflict text and the layout command, which tell a person to run resolve; both repairs' report mode, exit codes and refusal texts; the drive's handling of each exit of the gate runner.\n\nIf a file you need is outside your list, STOP BEFORE EDITING IT and hand back the exact change with the reason.",
       "files": [
         "tools/lints/_deps.py",
@@ -6825,14 +6979,20 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f7909a033881",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R72: merge-manifest resolve compares each plan file with git's own answer for the merge (git merge-tree --write-tree read through checkout's filters), not the index; where git cannot answer it rebuilds the merge path by path (driver or git merge-file with the repository's conflict style and the file's conflict-marker-size), and that fallback may differ from git in exactly three named ways (labels, diff algorithm, merge base), each with its fixture (rw16). A marker line may differ only by a label git or the driver would write there (HEAD/MERGE_HEAD/merge-base revisions, the driver's labels); a typed note or trailing space is refused (rw19). Symlinked or unreadable plan files are refused; refusals name the commands that put each file back. R73/R74: tools/lints/_deps.py plan_writer_violations reports an unlocatable path argument at the caller, reads module-level units, star/aliased imports, importlib, os.renames, numeric os.open flags, Path open(mode=)/touch/rename, judges every forwarded parameter, keeps a parameter through str/os.fspath/abspath/realpath/normpath/expanduser/pathlib/join-of-carried-parts (point 1 of review read 2), counts OTHER_WRITERS entries as a multiset, ties a write to the plan by name or literal, and requires a plan row's case label to name its function (or the door case for a door). Rows: PLAN 55, OTHER 85 rows/110 entries -> 89/116 this last round; deciders 149 -> 153, sites 179 -> 184 (write_map is a comparison artifact). Lint time 3.39/3.29 s (round-3 lint) vs 3.65/3.45 s now, interleaved with a 30 s gap. tests/test__evidence_io.py: pa0b/pa0c derive the doors of audit-task._under_lock and close-phase.under_index_lock and mark only a handed lambda's body or a handed def's body as locked; pm4/pm5 for seed (a race-created plan, a pre-existing directory or dangling link, each named as what it is). R75: repair-tests-add refuses when nothing is left to apply (rt17), the commits repair's window-miss branch (rc13), busy vs dead holder vs unwritable lock wording (uw4-uw7), drive reads the busy sentence from the runner's refusal line (dl12b), docs (CHANGELOG, CONTRIBUTING, PLUGIN-BUILD-GUIDE, layout.md). WINDOWS: round 1 run 44619559382 - every job green but one windows shard, whose only red was case ug5 (a separator-sensitive expectation in the case on win32), fixed in the case with the guard untouched; round 2 run 44629743247 green; round 3 run 44643689529 green; round 4 run 44656258469 green on every job, on a probe commit of this exact tree (19 files, none outside the task's list). INDEPENDENT REVIEW read the unfiled tree twice. Read 1 (seven points) fixed: the conflicted-file reference and the answer withheld path, labels compared only where git writes them, every forwarded parameter recorded, OTHER rows counted and tied to the plan, the door's early reads and case-to-function tie, seed's recheck behind the lock, CRLF newline reading (rw12b), BOM and symlink refusals, live-vs-dead holder rejudging. Read 2 (two MED, five LOW) fixed: a writer transforming its path parameter hid its callers (carrier rule, pw19; new rows record_call_start, _mark_seen, reproduced, integrate-task.main, audit-journal.cmd_merge); only the handed body runs under the lock (pa0c); the count's blindness named (pw16c); a typed note on a marker line refused (rw19); conflict-marker-size and diff3/zdiff3 on both paths (rw20); seed's refusal says what it found (pm5). RESIDUES BY DECISION, named in the lint's or the check's docstring: a balanced swap and an in-place retarget of an OTHER write keep the count; a bare json.load of the plan in a door is not read as a plan read; the fallback's three allowed differences from git (labels, diff algorithm, merge base). VERIFICATION after the last edit: task gate exit 0 (7/7 files, 2117 cases); with tests/test_audit_task.py exit 0 (8/8); full sweep exit 0 (198/198 files, 19705 cases); prove-gates --only plan_writer exit 0 (16 of 16 red, 2 of 2 allow); check-example-ledgers, check-git-pipeline, check-committed-pii, check-rendered-artifacts --before-commit, measure-context --gate each exit 0; ruff 0; vermin 0. MUTATIONS on scratch copies, as the files show them: the full run (round4/mutations-full.txt) ran 32 rows, 31 RED and one (p6-seed-recheck-removed) whose anchor matched 0 times because this round rewrote the refusal it anchored on; re-anchored and rerun in its own file (round4/mutations-p6.txt), RED on pm4 and pm5. Reviewer probes probe3/probe4/pa0b rerun on a scratch copy, output under scratchpad/p169-26/round4/probes/.",
+        "descriptive": "The plan merge resolver compares against git's own answer and refuses anything else, and the writers lint reports every write it cannot place or resolve instead of dropping it."
       },
       "startedAt": "2026-11-19T21:15:02Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-20T02:17:13Z",
+      "verifiedBy": [
+        "merge resolver: rw7-rw20 - a staged stray write, edits inside a conflict block, CRLF, no driver, BOM, symlink, git's answer vs the rebuild, -X options, typed notes on marker lines, diff3/zdiff3/marker size",
+        "lint: pw10, pw10b, pw11 - an unlocatable path argument is a site of the caller",
+        "lint: pw13b-pw17 and pw16c - a row covers the sites and the proof it names, counted, tied to the plan",
+        "lint: pw12, pw13, pw18, pw19 - each escape shape read or listed, a path kept through path-preserving calls",
+        "evidence: pa0b, pa0c, pm4, pm5, uw4-uw7 - doors, seed, lock wording"
+      ],
       "notes": [
         {
           "at": "2026-11-19T17:34:19Z",
@@ -6919,6 +7079,24 @@
             "ms": 512743,
             "basis": "durationMs in run 2026-11-20T02:16:27Z.676d52's record (run-test-gate --record)",
             "runId": "2026-11-20T02:16:27Z.676d52"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-20T02:07:12Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 17525000,
+            "startedAt": "2026-11-19T21:15:07Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-20T02:16:27Z.676d52",
+            "kind": "wait",
+            "ms": 1000,
+            "startedAt": "2026-11-20T02:07:26Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit f7909a033881",
+            "kind": "commit",
+            "ms": 3943,
+            "startedAt": "2026-11-20T02:17:07Z"
           }
         ],
         "firstStartedAt": "2026-11-19T21:15:02Z"
@@ -7046,6 +7224,18 @@
         "runId": "2026-11-20T02:16:50Z.03af76",
         "status": "passed",
         "at": "2026-11-20T02:16:50Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "f7909a033881",
+        "at": "2026-11-20T02:17:13Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-20T02:07:10Z",
+        "basis": "`python3 tests/test_merge_manifest.py --selftest` in a throwaway tree at HEAD exited 1 with 9 of 59 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rw7 (house FAIL), rw11 (house FAIL): SELFTEST FAILED: 49/59 cases passed; --case rw19 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {

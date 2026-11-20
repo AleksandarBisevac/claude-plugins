@@ -532,7 +532,7 @@ STEPS = {
         "rule": (WRITER_RULE,)},
     "wait-base": {
         "line": "wait %(task)s: the base measurement was handed out "
-                "at %(since)s; no reading left since",
+                "at %(since)s; no reading left since%(waited)s",
         "rule": ("Started: wait for it to exit, then next. Not started: run "
                  "the run: line --explain prints, in the background.",)},
     "dispatch-reviewer-session": {
@@ -612,8 +612,9 @@ STEPS = {
                  "with the reason; the owner may commit over it with "
                  "commit-task-work.py --override-verdict and a reason.",
                  "resume (the recorded writer session, a round spent) and retry "
-                 "(a fresh attempt, one spent) are the way past a base that can "
-                 "never be measured, and are never recommended: nothing is sent "
+                 "(a fresh start, an attempt spent) are the way past a base "
+                 "that can never be measured, and are never recommended: "
+                 "nothing is sent "
                  "until one is answered, and both are refused while the base "
                  "can still be measured.")},
     "decide-gate-cancelled": {
@@ -631,7 +632,7 @@ STEPS = {
     "decide-gate-red": {
         "line": "decide gate-red %(task)s: recorded gate red (%(why)s)%(run)s",
         "rule": ("rerun spends no attempt (GATE COULD NOT RUN); retry spends "
-                 "one; past maxAttempts, block and tell the human.",)},
+                 "an attempt; past maxAttempts, block and tell the human.",)},
     "decide-writer-committed": {
         "line": "decide writer-committed %(task)s: the writer session committed "
                 "the task's files (%(why)s); nothing was filed",
@@ -679,8 +680,8 @@ STEPS = {
     "decide-no-executor-return": {
         "line": "decide no-executor-return %(task)s: the executor was dispatched "
                 "and filed no return for this start",
-        "rule": ("recommended: resume - it spends no attempt; retry spends one "
-                 "and recuts work that may be finished.",)},
+        "rule": ("recommended: resume - it spends no attempt and no round; retry "
+                 "spends an attempt and recuts work that may be finished.",)},
     "decide-scope-changed": {
         "line": "decide scope-changed %(task)s: the filing was made under a "
                 "different file list: %(why)s",
@@ -3443,10 +3444,164 @@ BASE_MEASURED = "baseMeasured"
 BASE_PROGRESS_DIRNAME = "base-runs"
 BASE_MEASURE_SECONDS = _evio.FOREGROUND_BOUND_MS // 1000
 BASE_RUN_VERB = "base-run"
-# The start's base mark counts the moved-code reds before its own here.
+# The start's base mark counts the bases before its own that were never
+# measured here - a red whose code moved under it, or a measurement that
+# stopped without a reading - and, of those, the ones that stopped.
 UNMEASURED_BEFORE = "unmeasuredBefore"
-# How many moved-code bases one start takes before it asks instead.
+STOPPED_BEFORE = "stoppedBefore"
+# How many such bases one start takes before it asks instead.
 UNMEASURED_BOUND = 2
+# What a start's measurements counted, carried across `measure-base`, which
+# drops the mark that held the count (`tried_before`).
+BASE_TRIED = "baseTried"
+
+
+# --- every wait for a base run has an exit ----------------------------------------
+# A LAUNCH WHOSE RECORDED PID READS PRESENT IS NOT WAITED ON FOR EVER. A pid is
+# a number the system hands out again, and a pid whose state cannot be read
+# (another user's process, a sandbox refusing `ps`) reads present
+# (`_locks.liveness`, "unverified"), so a run killed outright could hold its red
+# until an unrelated process exited. Two facts end that wait, each said as
+# the reason the launch is read as cut short (`base_liveness`):
+#
+#   the process holding a recorded pid started after the record named it
+#   (`process_started`, against `PIDS_AT`, the moment of the write that named
+#   the pids, with `START_SLACK_SECONDS` for the two clocks' granularity):
+#   it is not the run's. Linux gives the start in /proc, every other POSIX
+#   system through `ps -o lstart=`; Windows gives the drive none, and a start
+#   that cannot be read decides nothing - the bound below is the exit there;
+#
+#   the wait has passed the bound the run's own steps set (`run_bound`): the
+#   gate runner holds every step it runs to its step timeout
+#   (`STEP_TIMEOUT_SECONDS`), so a run of N red steps measures for at most N of
+#   them, and `_evidence_io.FOREGROUND_BOUND_MS` - the bound the drive already
+#   keeps a gate in the foreground by - is allowed for the tree it builds and
+#   removes around them. No mean decides it: the recorded mean is what sent
+#   the base to the background, and a bound under the runner's own would cut
+#   short a run that is slow and still measuring.
+#
+# A launch read as cut short is read as a killed one is: its tree removed, its
+# claim given back - forced, since the present pid holding the claim is not
+# the run's - and the base-unknown decision asked. Nothing is killed: a run
+# past the step timeout the runner holds it to is measuring nothing. The wait
+# says how long it has waited and when the bound falls (`base_wait_said`).
+STEP_TIMEOUT_SECONDS = 3600
+PIDS_AT = "pidsAt"
+RAN_AT = "ranAt"
+BOUND_KEY = "boundSeconds"
+BOUND_BASIS_KEY = "boundBasis"
+# Why a launch whose pids read present was read as cut short, on its mark.
+CUT_BY_KEY = "cutBy"
+START_SLACK_SECONDS = 1
+PS_SECONDS = 5
+
+
+def run_bound(steps, what="red"):
+    """`(seconds, basis)` - how long a run of `steps` gate steps (`what`
+    names them) can go on measuring before the runner's own step timeout has
+    stopped every one of them, and the sentence saying so."""
+    steps = max(1, int(steps or 0))
+    allowed = _evio.FOREGROUND_BOUND_MS // 1000
+    return (steps * STEP_TIMEOUT_SECONDS + allowed,
+            "%d %s step(s), each held to the gate runner's %d s step timeout, "
+            "and %d s - the foreground bound - for what runs around them"
+            % (steps, what, STEP_TIMEOUT_SECONDS, allowed))
+
+
+def process_started(pid):
+    """`(moment, basis)` - the epoch second the process holding `pid` started,
+    and what says so; `(None, why)` where the platform gives no start this
+    drive reads, or the reading failed. Linux: the start field of
+    /proc/<pid>/stat, in clock ticks after the boot time /proc/stat names.
+    Other POSIX systems: `ps -o lstart=` in the C locale. Windows: none."""
+    if os.name == "nt":
+        return None, "Windows gives this drive no process start time"
+    stat = os.path.join(os.sep, "proc", str(pid), "stat")
+    if os.path.isdir(os.path.join(os.sep, "proc", "self")):
+        try:
+            with open(stat, encoding="utf-8", errors="replace") as fh:
+                ticks = int(fh.read().rpartition(")")[2].split()[19])
+            with open(os.path.join(os.sep, "proc", "stat"),
+                      encoding="utf-8") as fh:
+                boot = [int(ln.split()[1]) for ln in fh
+                        if ln.startswith("btime ")][0]
+            return (boot + ticks / float(os.sysconf("SC_CLK_TCK")),
+                    "/proc/%s/stat" % (pid,))
+        except (OSError, ValueError, IndexError) as exc:
+            return None, "/proc/%s/stat could not be read (%s)" % (pid, exc)
+    try:
+        done = subprocess.run(["ps", "-o", "lstart=", "-p", str(int(pid))],
+                              capture_output=True, timeout=PS_SECONDS,
+                              env=dict(os.environ, LC_ALL="C", LANG="C"))
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        return None, "ps could not be run (%s)" % (exc,)
+    text = done.stdout.decode("utf-8", "replace").strip()
+    try:
+        return (time.mktime(time.strptime(" ".join(text.split()),
+                                          "%a %b %d %H:%M:%S %Y")),
+                "ps -o lstart= -p %s" % (pid,))
+    except ValueError:
+        return None, "ps -o lstart= -p %s answered %r (exit %d)" % (
+            pid, _clip(text, 60), done.returncode)
+
+
+def bound_deadline(held):
+    """The epoch second the bound of the base launch `held` falls - its
+    `BOUND_KEY` after the moment its run said it ran, else after its
+    hand-out - or None for a launch that recorded no bound, or whose run has
+    not started: a run nobody started is not measuring, and its `run:` line
+    is the way out."""
+    held = held if isinstance(held, dict) else {}
+    since = held.get(RAN_AT) or held.get("at")
+    moment = _evio.stamp_moment(since) if since else None
+    bound = held.get(BOUND_KEY)
+    if not held.get("ran") or moment is None \
+            or not isinstance(bound, (int, float)) or isinstance(bound, bool):
+        return None
+    return moment + bound
+
+
+def base_liveness(held):
+    """`(running, cut)` - the pids the base mark `held` names whose run may
+    still be going, and why a mark whose pids read present is read as cut
+    short (None when it is not): each pid but this process's that `_locks`
+    does not read as gone, less one whose process started after the write
+    that named it; and none once the launch's bound has fallen
+    (`bound_deadline`)."""
+    held = held if isinstance(held, dict) else {}
+    present = [pid for pid in held.get("pids") or []
+               if pid != os.getpid() and _locks.pid_alive(pid) is not False]
+    if not present:
+        return [], None
+    named = _evio.stamp_moment(held[PIDS_AT]) if held.get(PIDS_AT) else None
+    later = []
+    if named is not None:
+        for pid in present:
+            began, _basis = process_started(pid)
+            if began is not None and began > named + START_SLACK_SECONDS:
+                later.append((pid, began))
+    running = [pid for pid in present if pid not in dict(later)]
+    if not running:
+        return [], ("pid %s is held by a process started at %s, after the "
+                    "launch named it at %s, so it is not the run's" % (
+                        ", ".join("%s" % (p,) for p, _b in later),
+                        _utc_of(later[0][1]), held.get(PIDS_AT)))
+    deadline = bound_deadline(held)
+    if deadline is not None and ci_now() >= deadline:
+        return [], ("pid %s still reads present at %s, past the bound of "
+                    "%d s that fell at %s - %s - so the run is measuring "
+                    "nothing" % (", ".join("%s" % (p,) for p in running),
+                                 _utc_of(ci_now()), held.get(BOUND_KEY),
+                                 _utc_of(deadline),
+                                 held.get(BOUND_BASIS_KEY) or "its basis was "
+                                 "not recorded"))
+    return running, None
+
+
+def _utc_of(moment):
+    """The epoch second `moment` as the drive's stamps spell one."""
+    return datetime.datetime.fromtimestamp(
+        moment, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def base_measure_due(state, task, row, runs):
@@ -3516,11 +3671,16 @@ def base_measure_due(state, task, row, runs):
 
 
 # WHAT EACH ANSWER SPENDS of the task: an answer that starts the task again
-# (`start_task`) spends an attempt of `meta.maxAttempts`; a `resume` sends a
-# session round, which MAX_RESUME_ROUNDS counts rather than the attempts; every
-# other spends none. The rule lines of STEPS say the same in words, and the
-# drive's suite holds each such word to this table; the words are not built
-# from it, since each sits in a sentence about its own decision.
+# (`start_task`) spends an attempt of `meta.maxAttempts`; a `resume` of a red,
+# a refused proof or an unanswered clause sends the writer's session a round,
+# which MAX_RESUME_ROUNDS counts rather than the attempts; every other spends
+# none. Keyed by the answer, and by `(decision, answer)` where one word has a
+# cost of its own there: `resume` on `no-executor-return` has the executor
+# this start already dispatched run its submit block, and counts no round
+# (`answer_spends`). The rule lines of STEPS say the same in words, and the
+# drive's suite holds each such word to this table through a reading built
+# from these words; the lines are not built from it, since each sits in a
+# sentence about its own decision.
 SPENDS_ATTEMPT = "an attempt"
 SPENDS_ROUND = "a session round"
 ANSWER_SPENDS = {
@@ -3531,7 +3691,8 @@ ANSWER_SPENDS = {
     "not-reachable": None, "one-more-round": None, "re-review": None,
     "recheck": None, "redispatch": None, "redo": None, "rerun": None,
     "resume": SPENDS_ROUND, "retry": SPENDS_ATTEMPT, "sign-off": None,
-    "widen": None}
+    "widen": None,
+    ("no-executor-return", "resume"): None}
 # The key the start's base mark carries while a red decided over it is
 # unknown and its base can still be measured - stopped before a reading, or
 # measured for another red (`base_still_open`). A base settled as
@@ -3540,9 +3701,12 @@ ANSWER_SPENDS = {
 BASE_OPEN_KEY = "baseOpen"
 
 
-def answer_spends(answer):
-    """What `answer` spends of the task (`ANSWER_SPENDS`), None for nothing.
-    An answer the table does not hold raises KeyError."""
+def answer_spends(answer, decision=None):
+    """What `answer` to `decision` spends of the task (`ANSWER_SPENDS`), None
+    for nothing: the pair's own entry where the table holds one, else the
+    answer's. An answer the table does not hold raises KeyError."""
+    if (decision, answer) in ANSWER_SPENDS:
+        return ANSWER_SPENDS[(decision, answer)]
     return ANSWER_SPENDS[answer]
 
 
@@ -3576,7 +3740,7 @@ def base_refused(held, pending, answer):
     """Whether `answer` to `pending` is one the drive refuses: it spends, and
     the start's base mark `held` leaves the base unmeasured (`base_open_of`).
     The one predicate the refusal and the printed decision both ask."""
-    return answer_spends(answer) is not None \
+    return answer_spends(answer, (pending or {}).get("decision")) is not None \
         and base_open_of(held, pending) is not None
 
 
@@ -3635,7 +3799,8 @@ def base_refusal(state, pending, answer):
                 else ""))
     return ("--answer %s refused, nothing spent: it spends %s, and %s's red is "
             "not known to be the task's - %s. Open now: %s; %s opens %s" % (
-                answer, answer_spends(answer), pending.get("task"), stands,
+                answer, answer_spends(answer, pending.get("decision")),
+                pending.get("task"), stands,
                 "|".join(answers_open(mark, pending)), "|".join(later), when))
 
 
@@ -3916,32 +4081,76 @@ def moved_unmeasurable(held):
     return unmeasurable(held) and held.get("moved") is True
 
 
+def stopped_unread(held):
+    """Whether `held` is a finished measurement of a base that could be
+    measured and left no reading with a base run behind it - the run failed,
+    answered nothing, or was killed or cut short (`unknowable`)."""
+    return (isinstance(held, dict) and bool(held.get("done"))
+            and held.get("unknowable") is True
+            and held.get("measurable") is not False)
+
+
 def unmeasured_before(prior):
-    """How many reds of this start had a moved-code base (`moved_unmeasurable`)
-    up to and including the start's mark `prior`: what it counted before
-    itself (`UNMEASURED_BEFORE`), and itself when it was one. `_marked`
-    answers None for a mark of an earlier start, so a new start counts from
-    zero."""
+    """How many bases of this start were never measured, up to and including
+    the start's mark `prior`: what it counted before itself
+    (`UNMEASURED_BEFORE`), and itself when its code moved
+    (`moved_unmeasurable`) or its measurement stopped without a reading
+    (`stopped_unread`). `_marked` answers None for a mark of an earlier
+    start, so a new start counts from zero."""
     if not isinstance(prior, dict):
         return 0
     return (int(prior.get(UNMEASURED_BEFORE) or 0)
-            + (1 if moved_unmeasurable(prior) else 0))
+            + (1 if moved_unmeasurable(prior) or stopped_unread(prior) else 0))
+
+
+def stopped_before(prior):
+    """Of `unmeasured_before(prior)`, the measurements that stopped without a
+    reading (`STOPPED_BEFORE`, and `prior` itself)."""
+    if not isinstance(prior, dict):
+        return 0
+    return (int(prior.get(STOPPED_BEFORE) or 0)
+            + (1 if stopped_unread(prior) else 0))
+
+
+def tried_before(state, task):
+    """`{UNMEASURED_BEFORE, STOPPED_BEFORE}` for a new base mark of `task`'s
+    start: counted off the mark it replaces, or - once `measure-base` has
+    dropped that mark - off what the answer carried (`BASE_TRIED`), so a base
+    that stops on every measurement reaches the bound the owner's own
+    re-measuring would otherwise reset. A new start counts from zero."""
+    prior = _marked(state, BASE_MEASURED, task)
+    if isinstance(prior, dict):
+        return {UNMEASURED_BEFORE: unmeasured_before(prior),
+                STOPPED_BEFORE: stopped_before(prior)}
+    carried = _marked(state, BASE_TRIED, task)
+    carried = carried if isinstance(carried, dict) else {}
+    return {UNMEASURED_BEFORE: int(carried.get(UNMEASURED_BEFORE) or 0),
+            STOPPED_BEFORE: int(carried.get(STOPPED_BEFORE) or 0)}
 
 
 def unmeasurable_bound(held):
     """Whether the start whose mark is `held` has reached `UNMEASURED_BOUND`
-    moved-code bases (`unmeasured_before`): the drive then asks instead of
-    measuring again. The one predicate both the due branch and the decided
-    mark ask."""
+    bases never measured (`unmeasured_before`): the drive then asks instead
+    of measuring again, and opens the answers that spend. The one predicate
+    both the due branch and the decided mark ask."""
     return unmeasured_before(held) >= UNMEASURED_BOUND
 
 
 def bound_said(held):
-    """The unknown sentence of a start past `unmeasurable_bound`."""
-    return ("%s; the base of an earlier red of this start could not be "
-            "measured either, its code moved, so the drive asks rather than "
-            "running the gate again" % (
-                (held or {}).get("said") or "its base was not measured",))
+    """The unknown sentence of a start past `unmeasurable_bound`: the base was
+    never measured, and by how many tries of each kind."""
+    stopped = stopped_before(held)
+    moved = unmeasured_before(held) - stopped
+    tries = ["%d measurement(s) of it stopped without a reading" % (stopped,)
+             ] if stopped else []
+    if moved:
+        tries.append("%d red(s) of it had their code moved under the base"
+                     % (moved,))
+    return ("%s; this start's base was never measured - %s - so the drive "
+            "asks rather than measuring again, and the answers that spend "
+            "are open"
+            % ((held or {}).get("said") or "its base was not measured",
+               " and ".join(tries)))
 
 
 def unmeasurable_elsewhere(held, runs):
@@ -4127,10 +4336,9 @@ def base_behind(reading):
 
 
 def base_running(held):
-    """The pids the base mark `held` names whose run may still be going: every
-    one but this process's, unless it is known to be gone."""
-    return [pid for pid in (held or {}).get("pids") or []
-            if pid != os.getpid() and _locks.pid_alive(pid) is not False]
+    """The pids the base mark `held` names whose run may still be going
+    (`base_liveness`)."""
+    return base_liveness(held)[0]
 
 
 def base_waiting(held):
@@ -4153,7 +4361,9 @@ def take_base(ctx, phase, task, row, tree, keep, bound):
     mark keeps `cut`, the reason, for the caller to hand the base to the
     background. The outcome is `measure_base`'s."""
     pids = [os.getpid()]
-    keep(ran=True, done=False, said="measuring", pids=list(pids))
+    at = _utc_stamp()
+    keep(ran=True, done=False, said="measuring", pids=list(pids),
+         **{RAN_AT: at, PIDS_AT: at})
     got = measure_base(ctx, phase, row, tree,
                        placed=lambda holder: keep(tree=holder),
                        started=started_keeper(ctx, task["id"], keep, pids),
@@ -4195,7 +4405,9 @@ def started_keeper(ctx, task_id, keep, pids):
     def started(pid):
         pids.append(pid)
         try:
-            keep(pids=list(pids))
+            # The moment of the write that names it: a process holding one
+            # of these pids that started after it is not this run's.
+            keep(pids=list(pids), **{PIDS_AT: _utc_stamp()})
         except (OSError, ValueError) as exc:
             warn(ctx, "%s's base run pid %s was not recorded on its mark "
                       "(%s: %s); a drive killed now cannot name that process"
@@ -4269,16 +4481,22 @@ def fold_reading(ctx, task_id, held):
 
     A run seen dead is read once more after the death was seen: a run that
     wrote its answer and exited between the first read and the liveness
-    check left that answer in the file."""
+    check left that answer in the file. One whose pids read present and were
+    read as not its own, or past its bound (`base_liveness`), is final the
+    same way, the reason kept on the mark under `CUT_BY_KEY`."""
     if not (isinstance(held, dict) and held.get("background")) or held.get("done"):
         return held, None, None
     path = base_progress_path(ctx, task_id, launch_key(held))
     progress = read_base_progress(path)
     final, running = bool(progress.get("done")), None
     if not final and progress.get("ran"):
-        running = base_running(progress)
+        # Read over the mark and the record together: the bound is the
+        # launch's, the pids and the moments the run's.
+        running, cut = base_liveness(dict(held, **progress))
         if not running:
             progress = read_base_progress(path)
+            if cut is not None and not progress.get("done"):
+                progress = dict(progress, **{CUT_BY_KEY: cut})
             final = True
     return dict(held, **progress), (path if final else None), running
 
@@ -4295,21 +4513,25 @@ def base_mark(ctx, state, task):
     _mark(state, BASE_MEASURED, task, held)
     if final is not None:
         write_state(ctx, state)
-        drop_progress(ctx, final)
+        drop_progress(ctx, final, bool(held.get(CUT_BY_KEY)))
     return held
 
 
-def drop_progress(ctx, path):
+def drop_progress(ctx, path, cut=False):
     """Remove a base run's record once the drive's state holds what it said,
     and give back the claim on its launch (`claim_launch`) - a run killed
     after it recorded that it ran leaves one - through `_locks.release`,
-    which refuses a claim recording another process that still runs. One left
+    which refuses a claim recording another process that still runs. With
+    `cut` - the launch was read as cut short while its pids read present
+    (`CUT_BY_KEY`) - the release is forced: the process holding that pid is
+    not the run's, or the run is past the bound its steps set. One left
     behind is folded again and changes nothing."""
     try:
         os.remove(path)
     except OSError:
         pass
-    _locks.release(ctx["project"], base_lock_name(path), out=lambda _line: None)
+    _locks.release(ctx["project"], base_lock_name(path), force=bool(cut),
+                   out=lambda _line: None)
 
 
 def base_lock_name(path):
@@ -4390,17 +4612,21 @@ def launch_base(ctx, state, task, row, tree, why, cut=None):
     argv = base_argv(ctx, task)
     at = _utc_stamp()
     replaced = _marked_any_start(state, BASE_MEASURED, task)
-    held = {"of": row.get("runId"), "status": row.get("status"),
-            # The commit it measures, which a later start's red at that commit
-            # joins rather than measuring again (`running_at`).
-            "head": (row.get(_evio.BASE_RED_KEY) or {}).get("head"),
-            "said": "launched", "verdict": None,
-            "run": None, "atBase": [], "introduced": [], "background": True,
-            "at": at, "launch": "%s-%s" % (at, os.urandom(4).hex()),
-            "argv": argv, "memberTree": tree or None,
-            "ran": False, "done": False,
-            UNMEASURED_BEFORE: unmeasured_before(
-                _marked(state, BASE_MEASURED, task))}
+    # The bound the wait on it is held to: the red steps it re-runs, each to
+    # the runner's step timeout (`run_bound`).
+    bound, basis = run_bound(len(_evio.red_step_names(row)))
+    held = dict({"of": row.get("runId"), "status": row.get("status"),
+                 # The commit it measures, which a later start's red at that
+                 # commit joins rather than measuring again (`running_at`).
+                 "head": (row.get(_evio.BASE_RED_KEY) or {}).get("head"),
+                 "said": "launched", "verdict": None,
+                 "run": None, "atBase": [], "introduced": [],
+                 "background": True,
+                 "at": at, "launch": "%s-%s" % (at, os.urandom(4).hex()),
+                 "argv": argv, "memberTree": tree or None,
+                 "ran": False, "done": False,
+                 BOUND_KEY: bound, BOUND_BASIS_KEY: basis},
+                **tried_before(state, task))
     if cut is not None:
         held["cut"] = cut
     _mark(state, BASE_MEASURED, task, held)
@@ -4419,23 +4645,53 @@ def base_said(ctx, task_id, run_id, argv, why=None):
         "the base of run %s, measured in the background" % (run_id,), why)
 
 
-def base_wait_said(ctx, task_id, since, argv):
+def base_wait_said(ctx, task_id, since, argv, held=None):
     """The wait on a base measurement handed out at `since` - the moment the
     drive printed its dispatch, never a process it saw start - that has left
-    no reading yet, with its command printed again as the `run:` line."""
+    no reading yet, with its command printed again as the `run:` line. Given
+    the launch's mark `held`, it says how long it has waited and when the
+    bound falls past which the launch is read as cut short
+    (`bound_deadline`), with that bound's basis on a line of its own."""
+    waited, basis = wait_words(held, since)
+    lines = step_text("wait-base", task=task_id, since=since, waited=waited)
+    if basis:
+        lines = lines[:1] + [basis] + lines[1:]
     return background_wait(
-        "wait-base", task_id, step_text("wait-base", task=task_id, since=since),
-        "no base reading for %s since %s" % (task_id, since),
+        "wait-base", task_id, lines,
+        "no base reading for %s since %s%s" % (task_id, since, waited),
         "wait for the base run to exit, then next %s --signal"
         % (drive_target(ctx),), argv)
 
 
+def wait_words(held, since):
+    """`(clause, basis)` for a wait on the base launch `held` handed out at
+    `since`: how long it has waited and when its bound falls - or that no
+    bound runs, and why - and the line saying what the bound stands on.
+    `("", None)` with no mark to read, the wait's line as it was."""
+    if not isinstance(held, dict):
+        return "", None
+    age = age_words(since) or "an unknown time"
+    deadline = bound_deadline(held)
+    if deadline is not None:
+        return ("; waited %s, cut short at %s" % (age, _utc_of(deadline)),
+                "  bound: read as cut short at %s unless it leaves a reading "
+                "first - %d s after it started: %s" % (
+                    _utc_of(deadline), held.get(BOUND_KEY),
+                    held.get(BOUND_BASIS_KEY)))
+    if not held.get("ran"):
+        return "; waited %s, not started" % (age,), None
+    return "; waited %s, no bound recorded on this launch" % (age,), None
+
+
 def cut_short(ctx, state, task, held):
     """Close the start's mark of a base run that stopped before it left a
-    reading - killed, or never able to write its answer - as unknowable: no
-    reading charges the red to either side. The mark, as written."""
-    said = ("%s's base not measured: the run measuring it stopped before it "
-            "left a reading" % (task["id"],))
+    reading - killed, or never able to write its answer, or read as cut short
+    while its pids read present (`CUT_BY_KEY`, said as the reason) - as
+    unknowable: no reading charges the red to either side. The mark, as
+    written."""
+    said = ("%s's base not measured: %s" % (
+        task["id"], held.get(CUT_BY_KEY) or "the run measuring it stopped "
+        "before it left a reading"))
     ctx["did"].append(said)
     held = dict(held, done=True, unknowable=True, measurable=True, said=said)
     _mark(state, BASE_MEASURED, task, held)
@@ -4535,10 +4791,9 @@ def measured_reading(ctx, state, phase, task, row, reading, runs, tree=None):
             due, why = gate_in_background(ctx, _evio.red_step_names(row))
             if due:
                 return launch_base(ctx, state, task, row, tree, why), None, None
-            held = {"of": row.get("runId"), "verdict": None, "run": None,
-                    "atBase": [], "introduced": [],
-                    UNMEASURED_BEFORE: unmeasured_before(
-                        _marked(state, BASE_MEASURED, task))}
+            held = dict({"of": row.get("runId"), "verdict": None, "run": None,
+                         "atBase": [], "introduced": []},
+                        **tried_before(state, task))
             got = take_base(ctx, phase, task, row, tree,
                             mark_keeper(ctx, state, task, held),
                             BASE_MEASURE_SECONDS)
@@ -4551,7 +4806,7 @@ def measured_reading(ctx, state, phase, task, row, reading, runs, tree=None):
         return None, reading, None
     if base_waiting(held):
         return base_wait_said(ctx, task["id"], held.get("at"),
-                              held.get("argv") or []), None, None
+                              held.get("argv") or [], held), None, None
     if held.get("ran") and not held.get("done"):
         # Its processes were seen gone after the fold above was read: fold
         # again, since what such a run wrote last is final now.
@@ -4576,10 +4831,12 @@ def measured_reading(ctx, state, phase, task, row, reading, runs, tree=None):
                            "reading names no base run" % (
                                held.get("of"),
                                ", ".join(sorted(runs)) or "no run named"))
-    if held.get("unknowable") or cut_before_ran(held):
-        return None, use, held.get("said") or "no base reading was left"
+    # The bound first: a measurement that stopped without a reading counts
+    # toward it, and past it the decision says the base was never measured.
     if unmeasurable_bound(held):
         return None, use, bound_said(held)
+    if held.get("unknowable") or cut_before_ran(held):
+        return None, use, held.get("said") or "no base reading was left"
     return None, use, None
 
 
@@ -4643,7 +4900,7 @@ def base_gate(ctx, state, phase, task, tree=None):
         return None, None
     if base_waiting(held):
         return base_wait_said(ctx, task["id"], held.get("at"),
-                              held.get("argv") or []), None
+                              held.get("argv") or [], held), None
     run_id, status = ((held[JOINED_KEY], held.get(JOINED_STATUS_KEY))
                       if held.get(JOINED_KEY) else
                       (held.get("of"), red_status(ctx, held)))
@@ -4713,8 +4970,9 @@ def measure_launch(ctx, phase, task, launch):
                                       launch_key(held)))
     if held.get("ran"):
         return E_USAGE, ("%s %s: %s's base measurement already ran (%s); "
-                         "--answer measure-base takes it again" % (
-                             PREFIX, ctx["phase"], task_id, held.get("said")))
+                         "this run measures nothing - %s" % (
+                             PREFIX, ctx["phase"], task_id, held.get("said"),
+                             ran_open(ctx, task, held)))
     keep = fresh_keeper(ctx, task, launch)
     try:
         read = recorded_runs(ctx)
@@ -4734,6 +4992,31 @@ def measure_launch(ctx, phase, task, launch):
     got = take_base(ctx, phase, task, row, held.get("memberTree"), keep, None)
     code = E_OK if isinstance(got["reading"], dict) else E_STOPPED
     return code, "%s %s: %s" % (PREFIX, ctx["phase"], got["said"])
+
+
+def ran_open(ctx, task, held):
+    """What is open to the owner of a base launch `held` whose run already
+    ran, read off the drive's state as it is now: the pending decision's
+    `measure-base` where it offers that answer, else the next call, which
+    waits while that run may still be measuring and decides the red once it
+    has ended or is read as cut short. Never an answer no decision offers."""
+    try:
+        pending = read_state(ctx).get("pending") or {}
+    except (OSError, ValueError):
+        pending = {}
+    if pending.get("task") == task["id"] and pending.get("decision") in DECISIONS:
+        try:
+            open_now = answers_open(decision_mark(read_state(ctx), pending),
+                                    pending)
+        except (OSError, ValueError):
+            open_now = ()
+        if "measure-base" in open_now:
+            return "--answer measure-base takes it again"
+    deadline = bound_deadline(held)
+    return ("next %s reads what that run left: it waits while the run may "
+            "still be measuring%s, and asks once it has ended or is read as "
+            "cut short" % (drive_target(ctx), "" if deadline is None else
+                           " (to %s, its bound)" % (_utc_of(deadline),)))
 
 
 def sweep_base_trees(ctx, state):
@@ -4762,7 +5045,7 @@ def sweep_base_trees(ctx, state):
         value, final, running = fold_reading(ctx, task_id,
                                              (marks[task_id] or {}).get("value"))
         if final is not None:
-            spent.append(final)
+            spent.append((final, bool((value or {}).get(CUT_BY_KEY))))
             marks[task_id] = dict(marks[task_id], value=value)
             changed = True
         holder = value.get("tree") if isinstance(value, dict) else None
@@ -4796,8 +5079,8 @@ def sweep_base_trees(ctx, state):
         changed = True
     if changed:
         write_state(ctx, state)
-    for path in spent:
-        drop_progress(ctx, path)
+    for path, cut in spent:
+        drop_progress(ctx, path, cut)
     release_orphaned_launches(ctx, state)
 
 
@@ -7309,13 +7592,28 @@ def gate_said(ctx, subject, argv, phase_gate=False, why=None):
         "run-test-gate.py %s --record, in the background" % (scope,), why)
 
 
-def gate_wait_said(ctx, task_id, since, argv):
+def gate_wait_said(ctx, task_id, since, argv, unread=None):
     """The wait on a gate handed out at `since` - the moment the drive
     printed its dispatch, never a process it saw start - that has recorded no
-    row yet, with its command printed again as the `run:` line."""
+    row yet, with its command printed again as the `run:` line. `unread` is
+    `(sentence, deadline, bound, basis)` while the subject's own record
+    cannot be read (`unread_launch`): the wait then names that record and
+    when its bound falls."""
+    lines = step_text("wait-gate", task=task_id, since=since)
+    basis = "no gate row for %s since %s" % (task_id, since)
+    if unread is not None:
+        sentence, deadline, bound, why = unread
+        cut = ("asked as gate-cancelled - cut short at %s unless a run is read "
+               "first, %d s after the hand-out: %s" % (
+                   _utc_of(deadline), bound, why) if deadline is not None
+               else "no bound: the hand-out names no moment")
+        lines = lines[:1] + ["  waiting on: %s" % (sentence,),
+                             "  bound: %s" % (cut,)] + lines[1:]
+        basis += "; its record could not be read%s" % (
+            "" if deadline is None else ", cut short at %s" % (
+                _utc_of(deadline),))
     return background_wait(
-        "wait-gate", task_id, step_text("wait-gate", task=task_id, since=since),
-        "no gate row for %s since %s" % (task_id, since),
+        "wait-gate", task_id, lines, basis,
         "wait for the gate to exit, then next %s --signal" % (drive_target(ctx),),
         argv)
 
@@ -7385,9 +7683,10 @@ def new_gate_row(ctx, launched, key):
     if not token:
         return None, None
     try:
-        rows = recorded_runs(ctx)["rows"]
+        read = recorded_runs(ctx)
     except Exception as exc:                                   # noqa: BLE001
         return None, ledger_unread(exc)
+    rows = read["rows"]
     mine = [r for r in rows if _evio.subject_key(r) == key]
     found = _evio.run_by_launch(mine, token)
     if found and found.get("runId"):
@@ -7398,12 +7697,53 @@ def new_gate_row(ctx, launched, key):
     cut = _evio.launch_cut(mine, token, launched.get("at"))
     if cut is not None:
         return (None, REPLACED), (None, cut)
+    lost = _evio.newest_or_unreadable(rows, read.get("unreadableRecords"),
+                                      key[0], key[1])
+    if lost.get("unreadable"):
+        return (None, UNREAD), lost.get("sentence")
     return None, None
 
 
 # The status `new_gate_row` answers for a launched run another run's record
 # replaced with no ledger row of it left to read back.
 REPLACED = "replaced"
+# ...and for a launched run no readable run carries while the subject's own
+# record cannot be read (`_evidence_io.newest_or_unreadable`): the run may be
+# held there, so the wait names that record and is held to the bound the
+# gate's steps set (`unread_launch`), as a base launch's wait is.
+UNREAD = "unread"
+
+
+def unread_launch(ctx, state, phase, task, launched, sentence):
+    """The step for a launched gate - a task's, or the phase's with `task`
+    None - whose run no readable run carries while the subject's own record
+    cannot be read (`sentence` says which, and how to repair it): the wait
+    on it, naming that record, until the bound the gate's own steps set
+    (`run_bound`, from the launch's hand-out) falls; past it, the
+    `gate-cancelled` ask (`phase-gate-cancelled` for the phase), naming the
+    record and the bound. The counts on the launch mark are carried as they
+    are: no run was seen cancelled or replaced."""
+    manifest, current = load_phase(ctx)
+    if task is None:
+        steps = len(runnable_entries(manifest, _mio.gate_entries(current)[0]))
+    else:
+        left, _problem = _config_rules.phase_gate_only_setting(ctx.get("config"))
+        steps = len(task_gate_steps(manifest, current, task["id"], left)[0])
+    bound, basis = run_bound(steps, "gate")
+    at = launched.get("at")
+    moment = _evio.stamp_moment(at) if at else None
+    deadline = None if moment is None else moment + bound
+    subject = task["id"] if task else phase["id"]
+    if deadline is None or ci_now() < deadline:
+        return gate_wait_said(ctx, subject, at, launched.get("argv") or [],
+                              unread=(sentence, deadline, bound, basis))
+    name = "gate-cancelled" if task else "phase-gate-cancelled"
+    return decision(ctx, state, name, task, (
+        "launch %s has no run that can be read back, and its bound of %d s "
+        "fell at %s (%s): %s" % (launched.get("launch"), bound,
+                                 _utc_of(deadline), basis, sentence)),
+        {CANCELLED_BEFORE: int(launched.get(CANCELLED_BEFORE) or 0),
+         "runId": None})
 
 
 def replaced_gate(ctx, state, task, launched, replacement, relaunch):
@@ -7708,6 +8048,8 @@ def background_gate(ctx, state, phase, task, tree):
         return launch_gate(ctx, state, phase, task, tree,
                            launched.get("argv") or None), None
     found, why = new_gate_row(ctx, launched, ("task", task["id"]))
+    if found is not None and found[1] == UNREAD:
+        return unread_launch(ctx, state, phase, task, launched, why), None
     if found is not None and found[1] == REPLACED:
         return replaced_gate(
             ctx, state, task, launched, why,
@@ -10495,6 +10837,9 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         # what that run writes after is its own launch's record, which no mark
         # reads once its launch is gone (`fresh_keeper`).
         dropped = _marked_any_start(state, BASE_MEASURED, task)
+        # What this start's measurements counted outlives the mark, so a base
+        # that stops on every measurement still reaches `UNMEASURED_BOUND`.
+        _mark(state, BASE_TRIED, task, tried_before(state, task))
         _spend(state, BASE_MEASURED, task)
         write_state(ctx, state)
         release_replaced(ctx, task["id"], dropped)
@@ -12339,6 +12684,8 @@ def chosen_phase_gate(ctx, state, phase, head):
             return None, run_phase_gate(ctx, phase)
         return launch_phase_gate(ctx, state, phase, head, why=why), None
     found, why = new_gate_row(ctx, launched, ("phase", phase["id"]))
+    if found is not None and found[1] == UNREAD:
+        return unread_launch(ctx, state, phase, None, launched, why), None
     if found is not None and found[1] == REPLACED:
         return replaced_gate(
             ctx, state, None, launched, why,

@@ -271,7 +271,11 @@ verb writes and refuses, and what the run commands leave behind, is
         a row (`drive-phase.py`), it stops as
         `gate-cancelled` (`phase-gate-cancelled` for the phase's gate), an `ask`
         that stays open until answered: `rerun` launches it once more, `block`
-        (`decline` for the phase) stops it with the reason. A red with no comparable base run has
+        (`decline` for the phase) stops it with the reason. A launch no readable
+        run carries while its subject's own record cannot be read is waited on
+        with that record named, only to its gate steps times the gate runner's
+        step timeout plus the foreground bound, then asked the same way
+        (`unread_launch`). A red with no comparable base run has
         its base measured once per start, chosen the same way over its red steps:
         past the bound, unmeasured, or under `auto` it is `dispatch-base` (a
         `drive-phase.py base-run` in the background, which writes only a record of
@@ -279,9 +283,19 @@ verb writes and refuses, and what the run commands leave behind, is
         waits for its base, so no decision about it exists until that run ends, and
         the red's verdict is then read back from its recorded row as a background
         gate's is. A later start of the same task at that commit joins the running
-        base run rather than starting a second, and waits on it too. Where a decision is
+        base run rather than starting a second, and waits on it too. The wait says
+        how long it has waited and when its bound falls: the red steps times the
+        gate runner's step timeout plus the foreground bound, from the run's start
+        (`run_bound`). Past it, or once a recorded pid is held by a process that
+        started after the launch named it (Linux reads the start in /proc, other
+        POSIX systems through `ps`; Windows gives none, so only the bound ends its
+        wait), the launch is read as cut short - its tree removed, its claim given
+        back, nothing killed - and decided as a base nobody can know. The `run:`
+        line run again after its run ran measures nothing and names what is open.
+        Where a decision is
         answered, the drive refuses every answer that spends (`retry` an attempt,
-        `resume` a session round, as `ANSWER_SPENDS` prices them) while the start's
+        `resume` on a red a session round - `resume` on `no-executor-return`
+        spends none - as `ANSWER_SPENDS` prices them) while the start's
         own base mark says its base is unmeasured - running, stopped before a
         reading, or decided unknown while it can still be measured - nothing spent;
         the printed decision does not offer them, and the refusal names the answers
@@ -309,13 +323,16 @@ verb writes and refuses, and what the run commands leave behind, is
         its suites - or whose HEAD has since moved the code has no base reading and
         goes to the writer like any such red; that is not the unknown stop, and
         such a base decides no later red of the start, which is measured on its
-        own. Only a base whose code moved counts toward a stop - a red whose
+        own. Only a base never measured counts toward a stop - one whose code
+        moved, or whose measurement stopped without a reading; a red whose
         steps cannot be re-run goes to the writer every time, bounded by the
-        writer rounds: a second red of one start whose code moved under its base
-        too stops as `gate-red-base-unknown`, under `next` and `auto` alike,
-        never another gate round, and no base run is launched for a red after
-        it. The start's base mark counts them (`unmeasuredBefore`), and a new
-        start counts from zero. A base nobody can
+        writer rounds: the second such base of one start stops as
+        `gate-red-base-unknown`, under `next` and `auto` alike, saying the base
+        was never measured and by how many tries, with `resume` and `retry`
+        open; never another gate round, and no base run is launched for a red
+        after it. The start's base mark counts them (`unmeasuredBefore`,
+        `stoppedBefore`), `measure-base` carries the count (`baseTried`), and a
+        new start counts from zero. A base nobody can
         know - the base run left no reading, failed or was killed, or its reading
         was taken for another red run - stops as `gate-red-base-unknown`, with no
         session sent and no round spent: `measure-base` measures the base again,
