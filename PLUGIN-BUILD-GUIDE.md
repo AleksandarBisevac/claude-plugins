@@ -4289,12 +4289,28 @@ reconcile that could not finish reports the subjects it left behind rather than 
 number. A subject whose own record would not read is one of them: that record may hold its newest
 run, so it is refused, named with the record's file and field, and left exactly as it is - never
 caught up to an older ledger run - while every other subject is reconciled as before, and the
-refusal under the plan-file lock is the same (`nu1`-`nu7`). That answer is
-`newest_or_unreadable()`, the one function every reader of a subject's newest run asks whether the
-subject's own record read - the lookup's `run latest`, the doctor's pointer check, the verdict
-binding and the phase gate's last-failed suites among them; `nu6` derives them from what each
-function calls. The binding then picks among the runs of the work it binds (`_same_subject`, which
-keeps a task's run on its phase's gate the task's), less a base run a task's red keeps.
+refusal under the plan-file lock is the same (`nu1`-`nu7`).
+
+**The rule is a property of the read, not a list of the readers that ask it.** After
+`read_rows()`, a subject whose own record would not read has no row any reader can take as that
+subject's newest run, verdict or repeat, however it filters: the record stands as a row of its own
+(`unreadableRecord`, run id `unreadable-record:<scope>:<subject>`, no status, sorted newest by
+`oldest_first`), and every older run of that subject - matched by exact identity, so a full or base
+run is never touched - is kept with its `taskId`/`phaseId` moved under `withheldFrom`, so no filter
+by subject reaches it. A phase's record stands for each task whose gate falls back to the phase's
+too, since it may hold that task's newest run, and a phase record written over one that would not
+read carries the subjects still unread (`unreadHeld`) until each is measured again. The remedy the
+reader prints names the command that measures each subject again. `wh0`-`wh7` ask the read's rows
+with every filter a reader has been seen to write by hand; `bb0` and its siblings run every command
+that reads runs - derived from the tree, each listed in `_BB_ENTRIES` with its invocation or the
+reason it is not run, the table checked both ways - over a fixture whose newest red is held only as
+a malformed record beside an older green. `newest_or_unreadable()` is still the answer a function
+that reduces to one row asks, and `nu6` derives the functions that call a named picker; it cannot
+see a reader that filters by hand, which is why it no longer carries the rule. The binding picks
+among the runs of the work it binds through `own_runs()` - the one selection the member check at
+landing shares - and refuses when the newest of them stands for a record that would not read.
+A task's run on its phase's gate is held by the task: the phase's record keeps who ran it
+(`taskId`) and `record_row()` gives it back as the task's.
 
 **The plan-movement row is the second of C4's two events.** `task.testEvidence` /
 `phase.testEvidence` is written **only after the pointer lands**, naming both ends of the move; a

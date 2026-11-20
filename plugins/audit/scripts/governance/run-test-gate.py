@@ -3107,6 +3107,19 @@ def subject_ids(phase_id, task_id, source):
     return ids
 
 
+def pointer_said(source, ids, phase_id):
+    """What the pointer line says a recorded run is now named by: the task's
+    own record, the phase's - or, for a task whose gate falls back to its
+    phase's, the PHASE's record, which keeps the task that ran it: that is
+    where the run was written, and naming the task alone sent a reader to a
+    record that never changed."""
+    task = ids.get("taskId")
+    if source == "phase" and task:
+        return ("phase %s's record now names it, run by task %s on the "
+                "phase's gate" % (phase_id, task))
+    return "%s now names it" % (task or phase_id,)
+
+
 # --- whether a gate entry names a path the identity leaves out -------------------
 # THE RULE, IN TWO SENTENCES. An entry names a left-out path when its command's
 # text holds that path's last component as a whole name - no letter or digit
@@ -5672,7 +5685,14 @@ def _record_run(project, args, res, source, commands, manifest, out=print):
                                stages=stages, session_id=identity["sessionId"])
     log = _journal_io.repo_relative_or_token(project, recorded.get("path"))
     if pointer["written"]:
-        out("  pointer:  %s now names it" % (ids.get("taskId") or args.phase,))
+        out("  pointer:  %s" % (pointer_said(source, ids, args.phase),))
+        dropped = pointer.get("dropped")
+        if dropped:
+            out("  record:   task %s's own record (%s) is gone, with its "
+                "pointer - this run on the phase's gate is newer than the run "
+                "it held" % (ids.get("taskId"), "run %s" % (dropped["runId"],)
+                             if dropped.get("readable") else
+                             "which could not be read"))
     else:
         # THE RECORD IS THE ONLY COPY THE PLAN WILL KEEP, so a record that could
         # not be written is not a pointer to catch up later: it is exit 3, and

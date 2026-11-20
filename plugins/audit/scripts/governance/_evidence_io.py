@@ -2293,8 +2293,15 @@ def read_rows(project, config=None, *, manifest_path):
     `unreadablePlanFiles` names a plan file that would not read - and a
     record in one that is not the record's shape, whose run is then not read:
     `unreadableRecords` holds each such record as `unreadable_records` names
-    it (file, scope, subject, key, field, why), and `plan_read_sentence` is
-    the one sentence a reader prints for both.
+    it (file, scope, subject, phase, key, field, why, plan), and
+    `plan_read_sentence` is the one sentence a reader prints for both.
+
+    SUCH A RECORD IS IN `rows` TOO, where every reader already looks: a row
+    standing for it (`ROW_FROM_UNREADABLE`, `is_unreadable_row`), newest of
+    its subject, and every older run of that subject kept in place naming no
+    subject (`WITHHELD_KEY`) - `with_records`, the join every reader's rows
+    come through, says why. With nothing unreadable the rows are exactly the
+    ledger's rows and the records' runs, as they always were.
 
     `manifest_path` IS REQUIRED, and None is refused (`ValueError`): it is the
     plan whose records are read, and it is the caller's to say. A project may
@@ -2347,13 +2354,17 @@ def read_rows(project, config=None, *, manifest_path):
     bodies, lost_plan = plan_bodies(manifest_path, project)
     doc, schema_lost = record_schema()
     sources = [ROW_FROM_LEDGER] * len(rows)
-    rows, added = with_records(rows, records_of_bodies(bodies, doc))
+    plan = plan_said(project, manifest_path)
+    rows, added = with_records(rows, records_of_bodies(bodies, doc, plan=plan))
     row_files.extend(label for _row, label in added)
-    sources.extend(ROW_FROM_RECORD for _pair in added)
-    lost_plan, malformed = _plan_lost(bodies, lost_plan, doc, schema_lost)
+    sources.extend(ROW_FROM_UNREADABLE if is_unreadable_row(row)
+                   else ROW_FROM_RECORD for row, _label in added)
+    lost_plan, malformed = _plan_lost(bodies, lost_plan, doc, schema_lost,
+                                      plan=plan)
     return {"rows": rows, "rowFiles": row_files, "files": files,
             "unreadable": unreadable, "unreadableFiles": unreadable_files,
-            "rowSources": sources, "records": len(added),
+            "rowSources": sources,
+            "records": sum(1 for s in sources if s == ROW_FROM_RECORD),
             "unreadablePlanFiles": lost_plan, "unreadableRecords": malformed,
             "ledgerAbsent": absent}
 
@@ -3093,7 +3104,10 @@ RECORD_NOT_CARRIED = {
     "scope": "the record's place in the plan says it - a phase's own key or a "
              "task's - and `record_row` writes it back from there",
     "taskId": "the record's place in the plan says it - a phase's own key or a "
-              "task's - and `record_row` writes it back from there",
+              "task's - and `record_row` writes it back from there; but the "
+              "record of a run a task made on its phase's gate sits on the "
+              "phase, so that record keeps it (`_record_of`) and `record_row` "
+              "gives it back when it names a task of that phase",
     "phaseId": "the record's place in the plan says it - a phase's own key or "
                "a task's - and `record_row` writes it back from there",
     "treeMutated": "the same list as `observations.treeMutated`, which crosses "
@@ -3321,6 +3335,9 @@ def repeat_source(row, rows=(), replaced=None, scope=None, ids=None):
 _RECORD_SHAPED = ("at", "testedState", "steps", "stepsDropped")
 
 
+_STATE_NEVER_NULL = ("head", "dirtyDigest")
+
+
 def _record_of(row, lines=None, launch=None):
     """`run_record` with nothing carried from another run: every field of the
     row but `RECORD_NOT_CARRIED` and `RECORD_ONLY_KEYS`, its tested state and
@@ -3331,10 +3348,20 @@ def _record_of(row, lines=None, launch=None):
                   and key not in _RECORD_SHAPED
                   and key not in RECORD_ONLY_KEYS and value is not None)
     record["at"] = row.get("ts")
+    # WHO RAN IT, where the place cannot say: a task's run on its phase's
+    # gate is written onto the phase's record (the newest run of that gate),
+    # so the task it measured is kept beside it and read back as the task's.
+    if row.get("scope") == "phase" and row.get("taskId") is not None:
+        record["taskId"] = str(row["taskId"])
     state = row.get("testedState") if isinstance(row.get("testedState"),
                                                  dict) else {}
+    # A HEAD THAT COULD NOT BE TAKEN (a repository with no commit yet) is left
+    # out rather than written null: the published record types `head` and
+    # `dirtyDigest` as strings, and a record its own reader refuses would
+    # stand for an unreadable run, withholding every older run of its subject.
     tested = dict((k, v) for k, v in state.items()
-                  if k not in ("tree", RECORD_TREE_KEY))
+                  if k not in ("tree", RECORD_TREE_KEY)
+                  and not (v is None and k in _STATE_NEVER_NULL))
     tree = state.get("tree")
     if isinstance(tree, dict) and tree.get("key"):
         tested[RECORD_TREE_KEY] = tree["key"]
@@ -3601,7 +3628,9 @@ def write_record(project, manifest_path, scope, ids, record, stages=(),
     """Write `record` as the subject's `RECORD_KEY`, its pointer beside it and
     `stages` onto the task's timing - one read and one write of the shard,
     through `write_plan_file`. `{"written", "reason", "path", "releaseRefused",
-    "record"}`, `record` being what was written.
+    "record", "dropped"}`, `record` being what was written and `dropped`
+    None, or `{"runId", "readable"}` of a task's own record its run on the
+    phase's gate took out (`_put_record`).
 
     THE LOCK IS WAITED FOR, NOT SKIPPED. A pointer could be refused because the
     ledger row stood anyway; a record that is the only copy cannot. So a lock
@@ -3631,11 +3660,15 @@ def write_record(project, manifest_path, scope, ids, record, stages=(),
     if not got["written"]:
         return {"written": False, "reason": got["reason"], "path": None,
                 "releaseRefused": got["releaseRefused"]}
-    previous, written = got["answer"]
+    previous, written, dropped = got["answer"]
     _say_moved(project, path, scope, ids, previous,
                pointer_from_record(written), session_id, config)
     return {"written": True, "reason": None, "path": path,
-            "releaseRefused": got["releaseRefused"], "record": written}
+            "releaseRefused": got["releaseRefused"], "record": written,
+            "dropped": None if dropped is None else {
+                "runId": dropped.get("runId") if isinstance(dropped, dict)
+                else None,
+                "readable": readable_record(dropped) is not None}}
 
 
 def _put_record(body, scope, ids, sharded, record, stages=()):
@@ -3661,12 +3694,47 @@ def _put_record(body, scope, ids, sharded, record, stages=()):
     if gone:
         record = dict(record)
         record[REPLACED_KEY] = gone
+    phase = _holders(body, "phase", {"phaseId": ids.get("phaseId")},
+                     sharded)[0]
+    measured = ids.get("taskId") if task is not None else None
+    if subject is phase:
+        # THE RECORD REPLACED MAY HAVE HELD ANOTHER SUBJECT'S NEWEST RUN when
+        # it would not read - the phase's, or a task's on the phase's gate -
+        # and writing this one over it would hand that subject its older
+        # runs back. So which of them it may have held, less the subject this
+        # run measured, rides on the new record (`UNREAD_HELD_KEY`) until
+        # each has been measured again.
+        held = _less_measured(_unread_held(subject.get(RECORD_KEY), phase),
+                              measured)
+        if held is not None:
+            record = dict(record)
+            record[UNREAD_HELD_KEY] = held
+    elif phase is not None and readable_record(phase.get(RECORD_KEY)) \
+            is not None and phase[RECORD_KEY].get(UNREAD_HELD_KEY):
+        # ...and a task measured on its own gate is measured again too.
+        held = _less_measured(_unread_held(phase[RECORD_KEY], phase),
+                              measured)
+        phase[RECORD_KEY] = dict((k, v) for k, v in phase[RECORD_KEY].items()
+                                 if k != UNREAD_HELD_KEY)
+        if held is not None:
+            phase[RECORD_KEY][UNREAD_HELD_KEY] = held
     previous = subject.get(POINTER_KEY)
     subject[RECORD_KEY] = record
     subject[POINTER_KEY] = pointer_from_record(record)
+    # A TASK'S RUN ON ITS PHASE'S GATE lands on the phase's record, and the
+    # task's own record - written before this write, so holding only an older
+    # run of it - would otherwise stand beside it naming that older run: its
+    # pointer an older run than the task's newest, and, once it will not
+    # read, a record no run of the task's gate ever writes again. It goes,
+    # with its pointer, and the caller says so.
+    dropped = None
+    if subject is not task and task is not None \
+            and task.get(RECORD_KEY) is not None:
+        dropped = task.pop(RECORD_KEY)
+        task.pop(POINTER_KEY, None)
     if task is not None and stages:
         task["timing"] = _timing.append_run_stages(task, stages)
-    return body, None, (previous, record)
+    return body, None, (previous, record, dropped)
 
 
 def subject_records(manifest_path, project=None):
@@ -3709,8 +3777,192 @@ def readable_record(record):
 ROW_FROM_LEDGER = "ledger"
 ROW_FROM_RECORD = "record"
 
+# --- a record that would not read, in what the read returns ----------------------
+# THE PROPERTY IS THE READ'S, NOT ITS READERS'. A subject whose own record would
+# not read may have its newest run in that record, so no older run of it may be
+# its answer - and a rule that every reader must remember to ask was broken by
+# three readers in turn, each filtering the rows its own way. So the read itself
+# returns, for such a subject:
+#   * one row standing for the record (`UNREADABLE_ROW_KEY`, source
+#     `ROW_FROM_UNREADABLE`), placed where the record sits - its scope, task and
+#     phase - with no moment, no verdict word and no step, and ordered NEWEST by
+#     `oldest_first`, so every newest-run question about the subject is that
+#     row, which binds nothing and signs nothing off (a status that is not
+#     `passed` is red to `row_is_red` and to the binding);
+#   * every other run of the subject (`subject_key`) still in the list at its
+#     place, but naming no subject: its `taskId` and `phaseId` are moved under
+#     `WITHHELD_KEY`, so no filter on a subject's ids, the binding's included,
+#     and no repeat lookup can take it - while a tally, the boundary and every
+#     reader of the run by its id still see it, moment and steps unchanged.
+# A phase's record holds the newest run of the phase's gate, which a task whose
+# gate falls back to it may have made, so for a phase's record each such task -
+# and each task a withheld run of the phase names - gets a row of its own too.
+# A reader that wants a withheld run's subject asks `WITHHELD_KEY` for it, by
+# that name.
+#
+# A PHASE'S RECORD WRITTEN OVER ONE THAT WOULD NOT READ keeps the question open
+# for every other subject the lost record may have held: `UNREAD_HELD_KEY`
+# (`{"phase", "tasks", "field", "why"}`, `_put_record`) names them, each stands
+# as a row of its own exactly as above until it is measured again, and the
+# subject the writing run measured is struck off. Without it, recording the
+# phase again - the printed remedy - handed a task on the phase's gate its
+# older green back.
+ROW_FROM_UNREADABLE = "unreadable-record"
+UNREADABLE_ROW_KEY = "unreadableRecord"
+WITHHELD_KEY = "withheldFrom"
+UNREADABLE_RUN_PREFIX = "unreadable-record:"
+UNREAD_HELD_KEY = "unreadHeld"
 
-def record_row(record, scope, subject, phase_id):
+
+def unread_held(record):
+    """`record`'s `UNREAD_HELD_KEY` when it is that key's shape, else None."""
+    held = record.get(UNREAD_HELD_KEY) if isinstance(record, dict) else None
+    if isinstance(held, dict) and isinstance(held.get("phase"), bool) \
+            and isinstance(held.get("tasks"), list):
+        return held
+    return None
+
+
+def _unread_held(previous, phase):
+    """Which subjects the phase record `previous` - about to be replaced on
+    `phase` - may hold the newest run of while nobody can read it: every one
+    it could hold when it is not the record's shape, what it already carries
+    when it does, None when nothing is open."""
+    if previous is None:
+        return None
+    if readable_record(previous) is None:
+        found = record_problem(previous, record_schema()[0]) or {
+            "field": RECORD_KEY, "why": "not the record's shape"}
+        return {"phase": True, "tasks": _fallback_tasks(phase),
+                "field": str(found["field"]),
+                "why": _journal_io._clip(str(found["why"]))}
+    held = unread_held(previous)
+    return dict(held) if held is not None else None
+
+
+def _less_measured(held, task_id):
+    """`held` less the subject a run just measured - the task `task_id`, or
+    the phase when None - or None when nothing is left open."""
+    if held is None:
+        return None
+    out = dict(held)
+    if task_id is None:
+        out["phase"] = False
+    else:
+        out["tasks"] = [str(t) for t in held["tasks"] if str(t) != str(task_id)]
+    return out if out["phase"] or out["tasks"] else None
+
+
+def is_unreadable_row(row):
+    """Whether `row` stands for a record that would not read rather than for
+    a run (`UNREADABLE_ROW_KEY`)."""
+    return isinstance(row, dict) and isinstance(row.get(UNREADABLE_ROW_KEY),
+                                                dict)
+
+
+def stands_for_task_run(row):
+    """Whether `row` stands for a TASK's run a phase's lost record may hold
+    (`unreadable_row` with a task) - a question about that task alone. A
+    reader of the phase's newest run passes it over: where the phase's own
+    record is what was lost, a row stands for the phase's run too, and where
+    the phase has been measured since, its newest run is that one."""
+    return is_unreadable_row(row) and row.get("scope") == "phase" \
+        and row.get("taskId") is not None
+
+
+def unreadable_row(entry, task=None):
+    """The row standing for the unreadable record `entry` (`unreadable_records`'
+    shape, with `aliases`, the ids a task subject was moved from) - placed
+    where the record sits; `task` names a task whose fallback run a phase's
+    record may hold, and the row is then that task's run on the phase's
+    gate. A NEW dict."""
+    scope, subject = str(entry.get("scope")), str(entry.get("subject"))
+    run = "%s%s:%s%s" % (UNREADABLE_RUN_PREFIX, scope, subject,
+                         ":%s" % (task,) if task else "")
+    row = {"runId": run, "ts": None, "status": None, "scope": scope,
+           "phaseId": str(entry.get("phase")), "steps": [],
+           UNREADABLE_ROW_KEY: dict(entry)}
+    if scope == "task":
+        row["taskId"] = subject
+    elif task:
+        row["taskId"] = str(task)
+    return row
+
+
+def measured_ids(row):
+    """`{"taskId", "phaseId"}` - the work `row` measured, read from the row or,
+    for a run withheld from its subject (`WITHHELD_KEY`), from what it was
+    withheld from. For a reader that asks WHAT RAN rather than what a subject's
+    verdict is - a tally of reds, a history - and never for a verdict: a
+    withheld run is no answer for its subject."""
+    if not isinstance(row, dict):
+        return {"taskId": None, "phaseId": None}
+    held = row.get(WITHHELD_KEY) if isinstance(row.get(WITHHELD_KEY),
+                                               dict) else row
+    return {"taskId": held.get("taskId"), "phaseId": held.get("phaseId")}
+
+
+def _withheld_row(row, entry):
+    """`row`, a NEW dict naming no subject: its ids under `WITHHELD_KEY`
+    beside the record that withheld it."""
+    out = dict((k, v) for k, v in row.items() if k not in ("taskId",
+                                                         "phaseId"))
+    out[WITHHELD_KEY] = {"taskId": row.get("taskId"),
+                         "phaseId": row.get("phaseId"),
+                         "record": unreadable_record_label(entry)}
+    return out
+
+
+def _held_from(row, tasks, phases):
+    """The entry of the placeholder that withholds `row`, or None: a run of a
+    task one stands for (`tasks`, keyed by task id and every id it was moved
+    from) on any gate, or a phase's own run (no task) of a phase whose own
+    record one stands for (`phases`)."""
+    if not isinstance(row, dict) or is_unreadable_row(row) \
+            or row.get("scope") in (BASE_SCOPE, FULL_SCOPE):
+        return None
+    if row.get("taskId") is not None:
+        return tasks.get(str(row["taskId"]))
+    if row.get("scope") == "phase" and row.get("phaseId") is not None:
+        return phases.get(str(row["phaseId"]))
+    return None
+
+
+def _withholding(out, placeholders):
+    """`(rows, new placeholders)` - `out` with every run of a subject one of
+    `placeholders` stands for withheld (`_withheld_row`), in place, and the
+    rows a phase's own placeholder owes each task one of its withheld runs
+    names: a run of the phase's gate by a task whose gate is its own now may
+    still be that task's newest. A placeholder carried on a readable record
+    (`UNREAD_HELD_KEY`) owes none - it names its tasks itself."""
+    tasks, phases = {}, {}
+    for row in placeholders:
+        entry = row[UNREADABLE_ROW_KEY]
+        if row.get("taskId") is not None:
+            for task in [row["taskId"]] + list(entry.get("aliases") or []):
+                tasks.setdefault(str(task), entry)
+        else:
+            phases.setdefault(str(row.get("phaseId")), entry)
+    owed = []
+    for row in out:
+        if not isinstance(row, dict) or row.get("scope") != "phase" \
+                or row.get("taskId") is None or is_unreadable_row(row):
+            continue
+        entry = phases.get(str(row.get("phaseId")))
+        if entry is None or entry.get("carried") \
+                or str(row["taskId"]) in tasks:
+            continue
+        tasks[str(row["taskId"])] = entry
+        owed.append(unreadable_row(entry, task=str(row["taskId"])))
+    out = list(out)
+    for i, row in enumerate(out):
+        entry = _held_from(row, tasks, phases)
+        if entry is not None:
+            out[i] = _withheld_row(row, entry)
+    return out, owed
+
+
+def record_row(record, scope, subject, phase_id, tasks=None):
     """`record`, the record of the subject `(scope, subject)` in phase
     `phase_id`, in the shape of its run's ledger row - a NEW dict: every
     field the record kept, under the row's own names; `at` as `ts`; the
@@ -3727,7 +3979,19 @@ def record_row(record, scope, subject, phase_id):
     (`RECORD_ONLY_KEYS`) is dropped before the placement is applied, so a
     scope, a task id, a phase id or a moment written into a record by hand
     never names another subject or another moment; of the record's own keys,
-    only `RECORD_ONLY_READ` is given back."""
+    only `RECORD_ONLY_READ` is given back.
+
+    ...BUT A PHASE'S RECORD HOLDS THE NEWEST RUN OF THE PHASE'S GATE, which a
+    task whose gate falls back to it may have made, and the place cannot say
+    which. That record keeps the task (`taskId`, `_record_of`), and it is
+    given back when it names one of `tasks` - the ids of the tasks the phase
+    holds - on a record that says it was measured by the phase's gate
+    (`gateSource`), which every run a phase's record holds was: so the run is
+    the task's, as its ledger row is. Any other record is not read for it,
+    and the run is the phase's, as every record written before the key
+    existed is. A hand edit writing both keys moves the run to that task,
+    as a hand edit of `status` moves its verdict: the plan file is the
+    record, and nothing here can tell a writer from a hand."""
     record = resolved_shared(record if isinstance(record, dict) else {})
     row = dict((key, value) for key, value in record.items()
                if key not in RECORD_NOT_CARRIED and key not in _RECORD_SHAPED
@@ -3739,6 +4003,10 @@ def record_row(record, scope, subject, phase_id):
     row["scope"] = str(scope)
     if scope == "task":
         row["taskId"] = str(subject)
+    elif tasks is not None and record.get("taskId") is not None \
+            and record.get("gateSource") == "phase" \
+            and str(record["taskId"]) in tasks:
+        row["taskId"] = str(record["taskId"])
     row["phaseId"] = str(phase_id)
     if record.get("stepsDropped") is not None:
         row["stepsDropped"] = record["stepsDropped"]
@@ -3857,29 +4125,87 @@ def _plan_records(phase):
     return [(s, i, r) for s, i, r in held if r is not None]
 
 
-def unreadable_records(bodies, doc):
-    """`[{"file", "scope", "subject", "key", "field", "why"}]` - every record
-    the phase bodies `bodies` (`[(label, phase body)]`) hold that is not the
-    record's shape (`record_problem`), and every full run a phase holds that is
-    not the held run's (`held_runs_problems`), each named by the file holding
-    it, its subject and the field."""
+def unreadable_records(bodies, doc, plan=None):
+    """`[{"file", "scope", "subject", "phase", "key", "field", "why"[,
+    "plan"]}]` - every record the phase bodies `bodies` (`[(label, phase
+    body)]`) hold that is not the record's shape (`record_problem`), and every
+    full run a phase holds that is not the held run's (`held_runs_problems`),
+    each named by the file holding it, its subject, the phase it sits in and
+    the field; `plan` (the plan's path as a reader names it) is carried when
+    given, so the sentence can name the command that re-records it."""
     out = []
     for label, phase in bodies or []:
         if not isinstance(phase, dict):
             continue
+        pid = str(phase.get("id"))
         for scope, subject, record in _plan_records(phase):
             found = record_problem(record, doc)
             if found is not None:
-                out.append({"file": label, "scope": scope, "subject": subject,
-                            "key": RECORD_KEY, "field": found["field"],
-                            "why": found["why"]})
+                out.append(_record_entry(label, phase, scope, subject, found,
+                                         plan))
         for why in held_runs_problems(phase.get(FULL_GATE_RUNS_KEY)):
             why = _journal_io._clip(why)
-            out.append({"file": label, "scope": "phase",
-                        "subject": str(phase.get("id")),
-                        "key": FULL_GATE_RUNS_KEY,
+            out.append({"file": label, "scope": "phase", "subject": pid,
+                        "phase": pid, "key": FULL_GATE_RUNS_KEY,
                         "field": why.split(" ", 1)[0], "why": why})
+            if plan:
+                out[-1]["plan"] = str(plan)
     return out
+
+
+def _fallback_tasks(phase):
+    """The ids of the tasks of `phase` whose gate falls back to the phase's
+    (`_manifest_io.gate_entries`) - the tasks whose newest run the phase's
+    record may hold. A task the question raises on is counted among them."""
+    tasks = phase.get("tasks") if isinstance(phase.get("tasks"), list) else []
+    out = []
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        try:
+            falls_back = _mio.gate_entries(phase, task)[1] == "phase"
+        except Exception:                                      # noqa: BLE001
+            falls_back = True
+        if falls_back:
+            out.append(str(task.get("id")))
+    return out
+
+
+def _record_entry(label, phase, scope, subject, found, plan=None):
+    """`unreadable_records`' entry for the record of `(scope, subject)` in
+    `phase`, held in the file `label`, that is not the record's shape
+    (`found`, its `record_problem`): for a phase's record, `tasks` names each
+    task whose newest run it may hold (`_fallback_tasks`)."""
+    entry = {"file": label, "scope": scope, "subject": subject,
+             "phase": str(phase.get("id")), "key": RECORD_KEY,
+             "field": found["field"], "why": found["why"]}
+    if scope == "phase":
+        entry["tasks"] = _fallback_tasks(phase)
+    if plan:
+        entry["plan"] = str(plan)
+    return entry
+
+
+def rerecord_commands(entry):
+    """The commands that MEASURE every subject whose newest run the unreadable
+    record `entry` (`unreadable_records`' shape) may hold and write their
+    records anew - [] for an entry that is not a subject's record. A phase's
+    record may hold the run of a task on the phase's gate (`tasks`), and once
+    the phase alone is recorded again nothing says whose run the lost record
+    held, so each such task is measured too. A subject whose own record cannot
+    be read is never repeated from an older run (`with_records` withholds
+    them), so `--record` runs the gate."""
+    if not isinstance(entry, dict) or entry.get("key") != RECORD_KEY:
+        return []
+    plan = entry.get("plan") or "<plan>"
+    phase = entry.get("phase") or "<phase>"
+    if entry.get("scope") == "task":
+        return ["run-test-gate.py %s %s --task %s --record"
+                % (plan, phase, entry.get("subject"))]
+    mine = ["run-test-gate.py %s %s --record" % (plan, entry.get("subject"))] \
+        if entry.get("self", True) else []
+    return mine + ["run-test-gate.py %s %s --task %s --record"
+                   % (plan, phase, task) for task in entry.get("tasks") or []]
 
 
 def unreadable_record_label(entry):
@@ -3897,17 +4223,23 @@ def unreadable_records_sentence(entries):
     """THE ONE SENTENCE every reader prints for the unreadable records
     `entries` (`unreadable_records`' shape), bounded however many there are or
     however long a value is, or None for none."""
-    entries = list(entries or [])
+    entries = [e for e in (entries or []) if isinstance(e, dict)]
     if not entries:
         return None
+    commands = []
+    for entry in entries:
+        commands.extend(c for c in rerecord_commands(entry)
+                        if c not in commands)
     return ("%d run record(s) the plan holds could not be read, so the run "
-            "each holds is not counted - %s; re-record the subject's gate "
-            "(run-test-gate.py --record), or repair the field by hand and "
-            "check the plan with validate-manifest.py"
+            "each holds is not counted - %s; %sor repair the field by hand "
+            "and check the plan with validate-manifest.py"
             % (len(entries), _output.some_of(
                 entries, UNREADABLE_SAY_BUDGET, "; ",
                 lambda e: _journal_io._clip(unreadable_record_label(e),
-                                            limit=300))))
+                                            limit=300)),
+               "measure and record the subject again with `%s`, "
+               % (_output.some_of(commands, UNREADABLE_SAY_BUDGET // 2,
+                                  "`, `"),) if commands else ""))
 
 
 def plan_unreadable(manifest_path, project=None):
@@ -3916,16 +4248,26 @@ def plan_unreadable(manifest_path, project=None):
     alone, for a reader that reads no ledger: each plan file that would not
     read, and each record in one that is not the record's shape."""
     bodies, lost = plan_bodies(manifest_path, project)
-    lost, malformed = _plan_lost(bodies, lost, *record_schema())
+    lost, malformed = _plan_lost(bodies, lost, *record_schema(),
+                                 plan=plan_said(project, manifest_path))
     return {"unreadablePlanFiles": lost, "unreadableRecords": malformed}
 
 
-def _plan_lost(bodies, lost, doc, schema_lost):
+def plan_said(project, manifest_path):
+    """The plan's path as a command a person types names it: relative to
+    `project` when there is one, forward slashes."""
+    if not manifest_path:
+        return None
+    return (repo_relative_or_token(project, manifest_path) if project
+            else str(manifest_path)).replace(os.sep, "/")
+
+
+def _plan_lost(bodies, lost, doc, schema_lost, plan=None):
     """`(unreadablePlanFiles, unreadableRecords)` for the plan read as `bodies`
     with the files `lost` that would not read: those files, then each record
     that is not the record's shape, as `unreadable_record_label` names it -
     and why no record could be checked, when that is why they are named."""
-    malformed = unreadable_records(bodies, doc)
+    malformed = unreadable_records(bodies, doc, plan=plan)
     lost = list(lost) + [unreadable_record_label(e) for e in malformed]
     if schema_lost and malformed:
         lost.append(schema_lost)
@@ -3951,7 +4293,7 @@ def plan_read_sentence(read):
     return "; and ".join(said) if said else None
 
 
-def records_of_bodies(bodies, doc=None):
+def records_of_bodies(bodies, doc=None, plan=None):
     """`[(row, label)]` - every record the phase bodies `bodies` (`[(label,
     phase body)]`, a body as its file holds it) carry, each as `record_row`
     reads it, with the run it repeated (`REPEATED_RUN_KEY`) beside it and the
@@ -3959,7 +4301,12 @@ def records_of_bodies(bodies, doc=None):
     and every full run a phase holds (`FULL_GATE_RUNS_KEY`) as the scope-full
     row `held_run_row` gives - once per run. A record that is not the
     record's shape (`record_problem`, against `doc` - the published schema
-    when None) gives no run: `unreadable_records` names it.
+    when None) gives no run: `unreadable_records` names it, and it gives the
+    row that stands for it instead (`unreadable_row`) - with one for each task
+    of its phase whose gate falls back to the phase's when it is a phase's
+    record - which `with_records` reads as withholding every older run of
+    that subject. `plan` is the plan's path as `unreadable_records` carries
+    it, so the row names the command that measures the subject again.
 
     A GROUP MEMBER'S COPY IS ITS CARRIER'S RUN. Group sign-off copies the
     carrier's record onto each member naming the carrier in `gradedBy`; the
@@ -3972,12 +4319,25 @@ def records_of_bodies(bodies, doc=None):
         if not isinstance(phase, dict):
             continue
         pid = str(phase.get("id"))
+        held_tasks = [t for t in (phase.get("tasks") or [])
+                      if isinstance(t, dict)] \
+            if isinstance(phase.get("tasks"), list) else []
+        tasks = set(str(t.get("id")) for t in held_tasks)
         for scope, subject, record in _plan_records(phase):
-            if record_problem(record, doc) is not None:
+            found = record_problem(record, doc)
+            if found is not None:
+                carried.extend((row, label) for row in _unreadable_rows(
+                    label, phase, held_tasks, scope, subject, found, plan))
                 continue
             graded = record.get("gradedBy") if scope == "phase" else None
+            if scope == "phase" and not graded:
+                carried.extend((row, label) for row in _still_unread_rows(
+                    label, phase, record, plan))
             owner = str(graded) if graded else subject
             owner_phase = owner if scope == "phase" else pid
+            # Who ran a phase's record is asked of the tasks of the phase it
+            # sits in - never of a carrier's, whose copy this may be.
+            mine = tasks if not graded else None
             # THE RUN REPEATED IS READ FIRST, as the ledger appended it first:
             # `oldest_first` gives a tie of moments to the row read later, and
             # a repeat made within the second of its source must still be the
@@ -3985,8 +4345,10 @@ def records_of_bodies(bodies, doc=None):
             runs = []
             repeated = record.get(REPEATED_RUN_KEY)
             if isinstance(repeated, dict) and repeated.get("runId"):
-                runs.append(record_row(repeated, scope, owner, owner_phase))
-            runs.append(record_row(record, scope, owner, owner_phase))
+                runs.append(record_row(repeated, scope, owner, owner_phase,
+                                       tasks=mine))
+            runs.append(record_row(record, scope, owner, owner_phase,
+                                   tasks=mine))
             # A base run kept with a red's reading is read as the base-scope
             # row it was recorded as: a run of no subject (`keep_base`).
             reading = resolved_shared(record).get(BASE_RED_KEY)
@@ -4006,6 +4368,53 @@ def records_of_bodies(bodies, doc=None):
             seen.add(row["runId"])
             out.append((row, label))
     return out
+
+
+def _unreadable_rows(label, phase, held_tasks, scope, subject, found,
+                     plan=None):
+    """The rows standing for the record of `(scope, subject)` in `phase`
+    (held in the file `label`) that would not read (`found`, its
+    `record_problem`): the subject's own, and for a phase's record one per
+    task in `held_tasks` whose gate falls back to the phase's - the record
+    may hold that task's newest run. A task's row carries the ids the task
+    was moved from (`aliases`), less any a task of the phase holds now, so a
+    run recorded under an old id is withheld too."""
+    entry = _record_entry(label, phase, scope, subject, found, plan)
+    if scope == "task":
+        live = set(str(t.get("id")) for t in held_tasks)
+        task = [t for t in held_tasks if str(t.get("id")) == subject]
+        entry["aliases"] = [old for old in (_mio.moved_from_ids(task[0])
+                                            if task else [])
+                            if old not in live]
+        return [unreadable_row(entry)]
+    return [unreadable_row(entry)] + [unreadable_row(entry, task=task)
+                                      for task in entry["tasks"]]
+
+
+def _still_unread_rows(label, phase, record, plan=None):
+    """The rows standing for each subject the phase's readable `record` says
+    a record it replaced may have held, unread, and nobody has measured
+    since (`UNREAD_HELD_KEY`): the phase's own when it is open, one per task
+    named - carried, so they owe no others (`_withholding`)."""
+    held = unread_held(record)
+    if held is None:
+        return []
+    pid = str(phase.get("id"))
+    entry = {"file": label, "scope": "phase", "subject": pid, "phase": pid,
+             "key": RECORD_KEY, "field": str(held.get("field") or RECORD_KEY),
+             "why": "the record this one replaced could not be read (%s), and "
+                    "it may have held the newest run of %s, not measured since"
+                    % (_journal_io._clip(str(held.get("why") or ""), limit=200),
+                       _output.some_of((["phase %s" % (pid,)]
+                                        if held["phase"] else [])
+                                       + ["task %s" % (t,)
+                                          for t in held["tasks"]], 300)),
+             "tasks": [str(t) for t in held["tasks"]],
+             "self": bool(held["phase"]), "carried": True}
+    if plan:
+        entry["plan"] = str(plan)
+    return ([unreadable_row(entry)] if held["phase"] else []) + [
+        unreadable_row(entry, task=str(t)) for t in held["tasks"]]
 
 
 def walk_plan(index_path, read, label, join):
@@ -4117,7 +4526,14 @@ def with_records(rows, entries):
     and the `(row, label)` pairs that were added. A run both hold is the row
     already in `rows`, given the launch token and the replaced launches
     (`REPLACED_KEY`) its record carries when the row has none - a NEW dict, so
-    the caller's list is untouched."""
+    the caller's list is untouched.
+
+    A ROW STANDING FOR A RECORD THAT WOULD NOT READ (`is_unreadable_row`)
+    WITHHOLDS ITS SUBJECT'S OTHER RUNS, here, where every reader's rows are
+    joined: each of them, ledger row or record alike, stays at its index
+    naming no subject (`_withheld_row`), and a phase's row adds one for each
+    task a withheld run of the phase names. So `added` holds those rows too,
+    and the rows it holds are the ones in `rows`."""
     out = list(rows or [])
     at = dict((str(r.get("runId")), i) for i, r in enumerate(out)
               if isinstance(r, dict) and r.get("runId"))
@@ -4135,8 +4551,18 @@ def with_records(rows, entries):
             continue
         at[run] = len(out)
         out.append(row)
-        added.append((row, label))
-    return out, added
+        added.append((len(out) - 1, label))
+    placeholders = [out[i] for i, _l in added if is_unreadable_row(out[i])]
+    if placeholders:
+        labels = dict((r["runId"], label) for r, label in (
+            (out[i], label) for i, label in added) if is_unreadable_row(r))
+        out, owed = _withholding(out, placeholders)
+        for row in owed:
+            out.append(row)
+            added.append((len(out) - 1, labels.get(
+                "%s%s:%s" % (UNREADABLE_RUN_PREFIX, row["scope"],
+                             row["phaseId"]))))
+    return out, [(out[i], label) for i, label in added]
 
 
 def run_by_launch(rows, token):
@@ -4167,7 +4593,8 @@ REPLACED_KEEP = 8
 # ones a reader of runs asks by name (`RECORD_ONLY_READ`), each from the record
 # itself rather than from what a hand put beside it.
 RECORD_ONLY_KEYS = (REPEATED_RUN_KEY, REPEAT_UNREAD_KEY, RECORD_CUT_KEY,
-                    SHARED_KEY, SHARED_UNRESOLVED_KEY, REPLACED_KEY, "gradedBy")
+                    SHARED_KEY, SHARED_UNRESOLVED_KEY, REPLACED_KEY, "gradedBy",
+                    UNREAD_HELD_KEY)
 RECORD_ONLY_READ = (REPLACED_KEY, SHARED_UNRESOLVED_KEY, REPEAT_UNREAD_KEY)
 
 
@@ -4681,7 +5108,9 @@ def latest_by_subject(rows, aliases=None):
 
     A row missing the id its own scope needs is skipped rather than guessed at -
     it cannot be pointed at anything, and inventing a subject for it would put a
-    pointer on a task that never ran.
+    pointer on a task that never ran. So is a row standing for a task's run a
+    lost phase record may hold (`stands_for_task_run`): it answers about that
+    task, never about the phase it is keyed under.
 
     `aliases` is `subject_aliases(plan)`: a row recorded under a task's old id is
     keyed under the id the task holds now, so a moved task's runs still join it.
@@ -4692,7 +5121,7 @@ def latest_by_subject(rows, aliases=None):
     best = {}
     for row in oldest_first(rows):
         key = subject_key(row, aliases)
-        if key is None or not row.get("runId"):
+        if key is None or not row.get("runId") or stands_for_task_run(row):
             continue
         best[key] = row
     return best
@@ -4713,7 +5142,13 @@ def newest_or_unreadable(rows, unreadable, scope, subject, aliases=None,
 
     `latest`, `latest_by_subject(rows, aliases)` already computed, answers
     `row` from it for a caller asking of every subject at once; `rows` is
-    then None."""
+    then None.
+
+    NO LONGER THE ONLY THING STANDING BETWEEN A READER AND AN OLDER RUN: the
+    read itself withholds them (`with_records`), so a reader that never asks
+    this still finds the row standing for the record as the subject's newest.
+    That row, found here, is answered as the record it stands for - this is
+    the one sentence for it, and the one question a caller asks by name."""
     key = (aliases or {}).get((str(scope), str(subject)),
                               (str(scope), str(subject)))
     lost = [e for e in unreadable or [] if isinstance(e, dict)
@@ -4721,18 +5156,21 @@ def newest_or_unreadable(rows, unreadable, scope, subject, aliases=None,
             and (aliases or {}).get((str(e.get("scope")), str(e.get("subject"))),
                                     (str(e.get("scope")),
                                      str(e.get("subject")))) == key]
+    if latest is not None:
+        row, mine = latest.get(key), None
+    else:
+        mine = [r for r in rows or [] if subject_key(r, aliases) == key]
+        row = latest_by_subject(mine, aliases).get(key)
+    if not lost and is_unreadable_row(row):
+        lost = [dict((k, v) for k, v in row[UNREADABLE_ROW_KEY].items()
+                     if k != "aliases")]
     if lost:
         return {"row": None, "rows": [], "unreadable": lost,
                 "sentence": "%s %s's own record could not be read, so its "
                             "newest run is not established and no older run "
                             "stands for it - %s"
                             % (key[0], key[1], unreadable_records_sentence(lost))}
-    if latest is not None:
-        return {"row": latest.get(key), "rows": None, "unreadable": [],
-                "sentence": None}
-    mine = [r for r in rows or [] if subject_key(r, aliases) == key]
-    return {"row": latest_by_subject(mine, aliases).get(key), "rows": mine,
-            "unreadable": [], "sentence": None}
+    return {"row": row, "rows": mine, "unreadable": [], "sentence": None}
 
 
 def row_by_run(rows, run_id):
@@ -5279,8 +5717,26 @@ def merged_phase(phase):
     the doctor each call this rather than spelling their own reading, so the
     set of phases they grade cannot drift apart.
     """
-    return (isinstance(phase, dict) and bool(phase.get("mergedAt"))
-            and phase.get("id") is not None)
+    return merge_stamped(phase) and phase.get("id") is not None
+
+
+def merge_stamped(phase):
+    """Whether `phase` carries the merge stamp - a dict with a truthy
+    `mergedAt` - whatever its id: the one reading of the stamp that
+    `merged_phase` and `unnamed_merged_phases` share."""
+    return isinstance(phase, dict) and bool(phase.get("mergedAt"))
+
+
+def unnamed_merged_phases(phases):
+    """The places (`phases[i]`) of each phase in `phases` that carries the
+    merge stamp and no id a verdict could be named under - None, or not a
+    non-blank string. `merged_phase` asks nothing of such a phase, so a
+    reader that must account for every merge (the release guard) refuses
+    the plan by these places rather than read on past a merge it dropped."""
+    return ["phases[%d]" % (i,) for i, p in enumerate(
+        phases if isinstance(phases, list) else [])
+        if merge_stamped(p)
+        and not (isinstance(p.get("id"), str) and p["id"].strip())]
 
 
 _DATE_ONLY = "%Y-%m-%d"
@@ -5325,12 +5781,19 @@ def oldest_first(rows):
     fractional second sorts by its spelling rather than its moment. Undated
     rows go first so an unreadable `ts` never beats a readable one, and the
     sort is stable so a tie goes to the row read later.
+
+    A ROW STANDING FOR A RECORD THAT WOULD NOT READ (`is_unreadable_row`) GOES
+    LAST, after every dated row: it has no moment, and the record it stands
+    for may hold the subject's newest run, so it is the newest of every list
+    it is in - never passed over for a readable one.
     """
-    keyed = [(_ts_moment(r), r) for r in rows or [] if isinstance(r, dict)]
+    keyed = [(_ts_moment(r), r) for r in rows or [] if isinstance(r, dict)
+             and not is_unreadable_row(r)]
     dated = sorted([pair for pair in keyed if pair[0] is not None],
                    key=lambda pair: pair[0])
     return ([r for m, r in keyed if m is None]
-            + [r for _m, r in dated])
+            + [r for _m, r in dated]
+            + [r for r in rows or [] if is_unreadable_row(r)])
 
 
 def newest_row(rows):
@@ -6525,10 +6988,13 @@ def unplaced_stamps(rows):
 
     A row with no stamp is still a recorded run, and it may be the earliest
     one; leaving it out would let a ledger of such rows read as an empty one.
+    A row standing for a record that would not read is not a run, and the
+    read names that record as a plan file it lost, which a boundary already
+    counts as unknown.
     """
     out = []
     for row in rows or []:
-        if not isinstance(row, dict):
+        if not isinstance(row, dict) or is_unreadable_row(row):
             continue
         ts = row.get("ts")
         if isinstance(ts, str) and ts.strip():

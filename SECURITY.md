@@ -763,11 +763,18 @@ phase is held by PROVISIONAL — no full run yet recorded whose head contains wh
 into — and by UNKNOWN — a phase whose ancestry the evidence cannot ask at all, such as one with no
 `mergedHead`. A guard that cannot answer refuses, so an unknown phase holds the release exactly as a
 provisional one does, named with the basis `full_status` gave. A plan naming no third place
-(`meta.fullGate` absent) has no phase to hold, and the guard judges the bugs alone. A `meta.fullGate`
-the plugin's own reader would not take whole — not a list, or an entry that is not a key name —
-is not "absent": the phase list is UNKNOWN. So is a phase that records a `mergedHead` with no
-`mergedAt` a reader can place, which says it merged without saying when, and is never read as
-unmerged.
+(`meta.fullGate` absent) has no phase to hold, and the guard judges the bugs alone; so does one
+whose every entry is review-only, since it declares nothing runnable. A `meta.fullGate` the
+plugin's own reader would not take whole — present but not a list, or holding an entry that is not
+a non-blank string (`_evidence_io.full_gate_problem`) — is not "absent": the phase list is UNKNOWN.
+An entry naming no `meta.buildCommands` key is not such an entry: it is run as the literal command
+it spells. Once a runnable full gate is declared, the phase list is UNKNOWN as well for a phase that
+records a `mergedHead` and no `mergedAt` a reader can place — absent, or a stamp naming no moment —
+which says it merged without saying when, and is never read as unmerged; and for a phase carrying a
+`mergedAt` with an id that is null or blank (`_evidence_io.unnamed_merged_phases`), named by its
+place, since no verdict could be named for it and passing over it would drop a merge the plan
+records. A phase whose `mergedAt` names no moment and which records no `mergedHead` is not this
+case: `merged_phase` selects it, and it holds the release as unanswerable.
 
 Each list is read and reported on its own. A list the guard could not read is named UNKNOWN with the
 reason; the list it did read is still named by what it holds, so an unreadable bug list never hides
@@ -776,12 +783,36 @@ written twice in one object of the index or a shard, a `meta` that is not an obj
 is not a list, a phase, task or bug entry that is not an object, or a phase's `tasks` that is not a
 list is UNKNOWN, named by file and place, rather than read as a plan holding less. A `bugs` that is
 not a list, or a bug entry that is not an object, makes the bug list UNKNOWN; every other shape
-makes both lists UNKNOWN.
+makes both lists UNKNOWN. A plan with **no `bugs` key** carries no open bug: the schema requires only
+`meta` and `phases`, the verb that files the first bug is what creates the list, and every reader in
+the plugin reads an absent list as empty — so refusing it would refuse every plan nobody has filed a
+bug in. A key deleted by hand is no different from its entries deleted by hand; the guard reads what
+the plan holds, and the plan's history is git's and the journal's to tell. Both lists are answered
+from **one reading of the plan** per decision (`read_plan`), so a plan rewritten between two reads
+cannot answer one list from each version. The evidence reader the phase list asks still reads the
+plan's files for the runs they hold.
 
 A deny the guard cannot write on stdout — stdout closed when the hook starts included — is written
 on stderr when stderr takes it, and the hook exits 2, the code that blocks a PreToolUse call, either
 way. The arming message reads both lists through the guard's own reading and catches every kind of
 error that reading can end in, as the guard's entry point does, naming such a list UNKNOWN.
+
+**Fail-loud covers what the guard prints, not what it never gets to say.** A refusal the guard
+prints is a refusal. A guard still running when its `timeout` runs out is another matter, decided
+by Claude Code rather than by this file: its hooks documentation
+(<https://code.claude.com/docs/en/hooks>, read 2026-11-20) says a command hook past its timeout is
+cancelled and does not block, so the tool call goes on through the ordinary permission flow.
+`.claude/settings.json` registers this guard with a `timeout` of 10 seconds. On 2026-11-20 the
+guard took under half a second on a tag command over this repository's plan, and under a quarter
+of a second over a plan of 350 merged phases with a full gate declared, each read in two rounds a
+few minutes apart. Re-derive the first from the repository root, against today's plan:
+
+```sh
+time (printf '{"hook_event_name":"PreToolUse","tool_name":"Bash","session_id":"t","cwd":"%s","tool_input":{"command":"git tag v0"}}' "$PWD" \
+  | CLAUDE_PROJECT_DIR="$PWD" python3 .claude/hooks/guard-release.py > /dev/null)
+```
+
+The hook only decides; it runs nothing, so the tag is never created.
 
 The refusal names an UNKNOWN phase as **unanswerable**, beside the bugs and the provisional phases,
 with the remedy for its cause, told apart by whether the phase records a `mergedHead`. A phase with

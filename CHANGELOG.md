@@ -327,12 +327,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `--reconcile` wrote an older ledger run over a malformed newer record, so the status gate's
   `failing-tests` condition passed over a red; it now refuses that subject - `REFUSED:` naming the
   record's file and field - leaves its record and pointer exactly as they are, still reconciles
-  every other subject, and exits 1. The same rule answers `audit-lookup.py run latest` (a miss
-  naming the record, never the older run; a miss now names plan records that would not read),
-  `/audit:doctor`'s pointer check (the record is named instead of a dangling pointer or a
-  reconcile owed), the verdict binding, `derive-phase-gate.py` (refused, rather than learning the
-  last-failed suites from an older red) and `validate-manifest.py`'s suite check (said as not
-  established, never as "runs no suite").
+  every other subject, and exits 1. The rule is now held by the read itself rather than by the
+  readers that remember to ask: a subject whose own record will not read has, among the runs
+  any reader is given, a row standing for that record as its newest, and its older runs are no
+  longer that subject's - so a reader that filters runs by hand cannot answer from them either.
+  What that changes where you look: the gate's repeat no longer reuses the older green
+  (`run-test-gate.py` measures); a group member whose red is held only as a record that will not
+  read stops its landing; `audit-task.py done`, `/audit:status`, the panel, the report,
+  `audit-lookup.py run latest` (a miss naming the record, never the older run),
+  `/audit:doctor`'s pointer check, the verdict binding, `derive-phase-gate.py` and
+  `validate-manifest.py`'s suite check say the record rather than the older run. A phase's record
+  stands for each task whose gate falls back to the phase's, and re-recording the phase over such
+  a record keeps those tasks unanswered until each is measured again. The remedy printed names the
+  `run-test-gate.py ... --record` command that measures each subject again.
+- **A task's run on its phase's gate is the task's, read off the plan alone.** The phase's record
+  keeps which task ran it and gives the run back as that task's, so the phase is not bound by a
+  task's green and the task's red is seen by the task's binding with no ledger row; recording it
+  drops the task's own older record and pointer, and the recorder's line says the phase's record
+  now names it. The binding and the member check at landing choose a subject's runs through one
+  selection.
+- **A gate recorded in a repository with no commit yet writes a record its own reader reads.**
+  The record wrote the untaken head as `null`, which the published record refuses, so the run read
+  as an unreadable record; the head is now left out.
 - **A base run kept on a task's red is no longer read as its phase's verdict.** The verdict
   binding counted it among the phase's own runs, so a newer red base run refused a phase whose own
   run was green, and a newer green one could bind a phase whose own run was red; the phase's own

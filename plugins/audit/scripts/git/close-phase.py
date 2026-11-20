@@ -1942,10 +1942,11 @@ def branch_records(git_root, project, branch, phase_tree, manifest_path):
     notes += ["the plan file %s could not be read, so no record it holds was "
               "read" % (label,) for label in lost]
     doc = _evidence_io.record_schema()[0]
-    malformed = _evidence_io.unreadable_records(bodies, doc)
+    plan = _evidence_io.plan_said(project, manifest_path)
+    malformed = _evidence_io.unreadable_records(bodies, doc, plan=plan)
     if malformed:
         notes.append(_evidence_io.unreadable_records_sentence(malformed))
-    return (_evidence_io.records_of_bodies(bodies, doc), notes,
+    return (_evidence_io.records_of_bodies(bodies, doc, plan=plan), notes,
             list(lost) + malformed)
 
 
