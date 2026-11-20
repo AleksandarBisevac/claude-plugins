@@ -15916,7 +15916,26 @@ def _locked_seed(args, project, config, mpath, out):
     (there is no earlier version to read, allocate against or roll back to),
     then re-read and validated exactly like every other write in this file; a
     manifest this would leave invalid is REMOVED rather than kept, because
-    keeping an invalid file nobody asked for is worse than writing nothing."""
+    keeping an invalid file nobody asked for is worse than writing nothing.
+
+    The path is asked again here, behind the lock: `_under_lock` asked only
+    whether a regular file is there, so a plan another writer created in
+    between, a directory, or a symbolic link - dangling or not - would
+    otherwise be written over or through. The refusal says which it found."""
+    if os.path.lexists(mpath):
+        if os.path.islink(mpath):
+            found = "a symbolic link to %s%s" % (
+                os.readlink(mpath),
+                "" if os.path.exists(mpath) else ", which does not exist")
+        elif os.path.isdir(mpath):
+            found = "a directory"
+        else:
+            found = ("a file - a plan another writer created after seed looked "
+                     "and before it took the index lock")
+        out("[audit-task] REFUSED: %s is %s, so nothing was written - seed "
+            "writes only to a path nothing occupies. Use add/add-phase to "
+            "extend a plan that is there, or move it aside." % (mpath, found))
+        return E_USAGE
     contradiction = _gate_contradiction(args)
     if contradiction:
         out(contradiction)

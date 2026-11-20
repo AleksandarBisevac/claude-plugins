@@ -1,0 +1,74 @@
+{
+  "gates": {
+    "python3 tools/gate-parity.py && python3 tools/sweep-selftests.py tests/test__deps.py tests/test_merge_manifest.py tests/test_migrate_manifest.py tests/test__evidence_io.py tests/test_repair_tests_add.py tests/test_repair_commits.py tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-20T02:07:10Z",
+    "basis": "`python3 tests/test_merge_manifest.py --selftest` in a throwaway tree at HEAD exited 1 with 9 of 59 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rw7 (house FAIL), rw11 (house FAIL): SELFTEST FAILED: 49/59 cases passed; --case rw19 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "R72: merge-manifest resolve compares each plan file with git's own answer for the merge (git merge-tree --write-tree read through checkout's filters), not the index; where git cannot answer it rebuilds the merge path by path (driver or git merge-file with the repository's conflict style and the file's conflict-marker-size), and that fallback may differ from git in exactly three named ways (labels, diff algorithm, merge base), each with its fixture (rw16). A marker line may differ only by a label git or the driver would write there (HEAD/MERGE_HEAD/merge-base revisions, the driver's labels); a typed note or trailing space is refused (rw19). Symlinked or unreadable plan files are refused; refusals name the commands that put each file back. R73/R74: tools/lints/_deps.py plan_writer_violations reports an unlocatable path argument at the caller, reads module-level units, star/aliased imports, importlib, os.renames, numeric os.open flags, Path open(mode=)/touch/rename, judges every forwarded parameter, keeps a parameter through str/os.fspath/abspath/realpath/normpath/expanduser/pathlib/join-of-carried-parts (point 1 of review read 2), counts OTHER_WRITERS entries as a multiset, ties a write to the plan by name or literal, and requires a plan row's case label to name its function (or the door case for a door). Rows: PLAN 55, OTHER 85 rows/110 entries -> 89/116 this last round; deciders 149 -> 153, sites 179 -> 184 (write_map is a comparison artifact). Lint time 3.39/3.29 s (round-3 lint) vs 3.65/3.45 s now, interleaved with a 30 s gap. tests/test__evidence_io.py: pa0b/pa0c derive the doors of audit-task._under_lock and close-phase.under_index_lock and mark only a handed lambda's body or a handed def's body as locked; pm4/pm5 for seed (a race-created plan, a pre-existing directory or dangling link, each named as what it is). R75: repair-tests-add refuses when nothing is left to apply (rt17), the commits repair's window-miss branch (rc13), busy vs dead holder vs unwritable lock wording (uw4-uw7), drive reads the busy sentence from the runner's refusal line (dl12b), docs (CHANGELOG, CONTRIBUTING, PLUGIN-BUILD-GUIDE, layout.md). WINDOWS: round 1 run 44619559382 - every job green but one windows shard, whose only red was case ug5 (a separator-sensitive expectation in the case on win32), fixed in the case with the guard untouched; round 2 run 44629743247 green; round 3 run 44643689529 green; round 4 run 44656258469 green on every job, on a probe commit of this exact tree (19 files, none outside the task's list). INDEPENDENT REVIEW read the unfiled tree twice. Read 1 (seven points) fixed: the conflicted-file reference and the answer withheld path, labels compared only where git writes them, every forwarded parameter recorded, OTHER rows counted and tied to the plan, the door's early reads and case-to-function tie, seed's recheck behind the lock, CRLF newline reading (rw12b), BOM and symlink refusals, live-vs-dead holder rejudging. Read 2 (two MED, five LOW) fixed: a writer transforming its path parameter hid its callers (carrier rule, pw19; new rows record_call_start, _mark_seen, reproduced, integrate-task.main, audit-journal.cmd_merge); only the handed body runs under the lock (pa0c); the count's blindness named (pw16c); a typed note on a marker line refused (rw19); conflict-marker-size and diff3/zdiff3 on both paths (rw20); seed's refusal says what it found (pm5). RESIDUES BY DECISION, named in the lint's or the check's docstring: a balanced swap and an in-place retarget of an OTHER write keep the count; a bare json.load of the plan in a door is not read as a plan read; the fallback's three allowed differences from git (labels, diff algorithm, merge base). VERIFICATION after the last edit: task gate exit 0 (7/7 files, 2117 cases); with tests/test_audit_task.py exit 0 (8/8); full sweep exit 0 (198/198 files, 19705 cases); prove-gates --only plan_writer exit 0 (16 of 16 red, 2 of 2 allow); check-example-ledgers, check-git-pipeline, check-committed-pii, check-rendered-artifacts --before-commit, measure-context --gate each exit 0; ruff 0; vermin 0. MUTATIONS on scratch copies, as the files show them: the full run (round4/mutations-full.txt) ran 32 rows, 31 RED and one (p6-seed-recheck-removed) whose anchor matched 0 times because this round rewrote the refusal it anchored on; re-anchored and rerun in its own file (round4/mutations-p6.txt), RED on pm4 and pm5. Reviewer probes probe3/probe4/pa0b rerun on a scratch copy, output under scratchpad/p169-26/round4/probes/.",
+    "descriptive": "The plan merge resolver compares against git's own answer and refuses anything else, and the writers lint reports every write it cannot place or resolve instead of dropping it."
+  },
+  "testsAdded": [
+    "merge resolver: rw7-rw20 - a staged stray write, edits inside a conflict block, CRLF, no driver, BOM, symlink, git's answer vs the rebuild, -X options, typed notes on marker lines, diff3/zdiff3/marker size",
+    "lint: pw10, pw10b, pw11 - an unlocatable path argument is a site of the caller",
+    "lint: pw13b-pw17 and pw16c - a row covers the sites and the proof it names, counted, tied to the plan",
+    "lint: pw12, pw13, pw18, pw19 - each escape shape read or listed, a path kept through path-preserving calls",
+    "evidence: pa0b, pa0c, pm4, pm5, uw4-uw7 - doors, seed, lock wording"
+  ],
+  "casesAdded": [
+    [
+      "rw7",
+      "rw7b",
+      "rw8",
+      "rw9",
+      "rw10",
+      "rw11",
+      "rw11b",
+      "rw11c",
+      "rw12",
+      "rw12b",
+      "rw13",
+      "rw14",
+      "rw14b",
+      "rw15",
+      "rw16",
+      "rw17",
+      "rw18",
+      "rw19",
+      "rw20"
+    ],
+    [
+      "pw10",
+      "pw10b",
+      "pw11"
+    ],
+    [
+      "pw13b",
+      "pw14",
+      "pw14b",
+      "pw15",
+      "pw16",
+      "pw16b",
+      "pw16c",
+      "pw17"
+    ],
+    [
+      "pw12",
+      "pw13",
+      "pw18",
+      "pw19"
+    ]
+  ],
+  "claims": "claims:\n  comment-matches-code: the lint docstring's carrier list is the one _pw_same_path_call/_pw_carried read; the 'never a hole' sentence is replaced by the hole it has (a function deciding its own path hides its callers)\n  check-can-fail: every new case red under its mutation on a scratch copy (round4/mutations-full.txt, mutations-p6.txt) and prove-gates rows for pw19 both directions\n  class-not-instance: point 1 fixed as a rule (carrier fixpoint) with a sweep of every param-taking writer, 14 whole-path sites judged\n  rule-has-mechanism: residues named in docstrings and pinned by pw16c\n  measured-twice: lint timing interleaved twice with a 30 s gap\n  numbers-carry-basis: counts quoted here carry the file or command that printed them",
+  "stamp": "audit-stamp: {\"content\":\"sha256:376d8d2c0fa077934b0b0a53fbca4eec14594c61d28a28e9b05cba964906a9a5\",\"dirtyDigest\":\"sha256:1ffbc03118b86676d9d717bd5fab3794b400c6288fe9fb01b2a3d3ab00104a99\",\"dirtyPaths\":{\"CHANGELOG.md\":\"8b41fc74095499e4\",\"CONTRIBUTING.md\":\"0fdf4095fd308405\",\"PLUGIN-BUILD-GUIDE.md\":\"e6e4e6e700ff1648\",\"plugins/audit/commands/layout.md\":\"ed00a5e873783739\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"06551977620eba16\",\"plugins/audit/scripts/governance/drive-phase.py\":\"54d19d0e02835a5f\",\"plugins/audit/scripts/manifest/audit-task.py\":\"9fde4c6f38e744fd\",\"plugins/audit/scripts/manifest/merge-manifest.py\":\"0990b1ea18c23aff\",\"plugins/audit/scripts/manifest/migrate-manifest.py\":\"859f5452cbf80eb9\",\"plugins/audit/scripts/manifest/repair-tests-add.py\":\"c0c6eab0180bfbc9\",\"tests/test__deps.py\":\"63776ad6fb15d9f4\",\"tests/test__evidence_io.py\":\"f3c4f9a0da28f1d7\",\"tests/test_drive_phase.py\":\"af04aa161600dff4\",\"tests/test_merge_manifest.py\":\"3c9e4ae85c379c01\",\"tests/test_migrate_manifest.py\":\"62c4125774846219\",\"tests/test_repair_commits.py\":\"02b48e4c9f202e00\",\"tests/test_repair_tests_add.py\":\"82b9bc51b70b6fc5\",\"tools/lints/_deps.py\":\"8e48a0e6095281ea\",\"tools/prove-gates.py\":\"13399977d18dfb73\"},\"head\":\"c4ff8c71\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"CONTRIBUTING.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/commands/layout.md\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/scripts/manifest/merge-manifest.py\",\"plugins/audit/scripts/manifest/migrate-manifest.py\",\"plugins/audit/scripts/manifest/repair-commits.py\",\"plugins/audit/scripts/manifest/repair-tests-add.py\",\"tests/test__deps.py\",\"tests/test__evidence_io.py\",\"tests/test_audit_task.py\",\"tests/test_drive_phase.py\",\"tests/test_merge_manifest.py\",\"tests/test_migrate_manifest.py\",\"tests/test_repair_commits.py\",\"tests/test_repair_tests_add.py\",\"tools/gate-parity.py\",\"tools/lints/_deps.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:462dc0612df867dc1e8dee9eb9961beab2f08a521192a62403ee72c7ed72f381\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": [
+    "tests/test__deps.py: What the lint cannot resolve is a decision it reports, never a call it drops: an unlocatable path argument of a resolved writer is a site of the calling ... - not checked: the submit's command did not run `tests/test__deps.py`, so the ids bound to it were not compared with any printed label",
+    "tests/test__deps.py: A row covers the sites it names: rows of the other-writers table carry the callee pattern as plan rows do (or a site count), the converter's backup copy moves ... - not checked: the submit's command did not run `tests/test__deps.py`, so the ids bound to it were not compared with any printed label",
+    "tests/test__deps.py: Each escape is read or listed - not checked: the submit's command did not run `tests/test__deps.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

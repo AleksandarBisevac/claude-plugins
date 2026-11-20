@@ -5735,6 +5735,48 @@ def _uw_holder(root):
     return child, 0 if os.path.exists(os.path.join(ld, "index.lock")) else 1
 
 
+def _uw_rejudge_cases(check, root, mpath, ids, rec):
+    """(uw6, uw7) The dead-holder re-judging after the wait is for a holder the
+    wait did not report live, and its answer is used as read: a holder found
+    live again is the busy refusal, worded with the re-read's holder; a holder
+    live for the whole wait never reaches the re-judging at all. `root` holds a
+    live claim another session wrote (`_uw_holder`)."""
+    real_state, real_acquire = M.shard_lock_state, M._locks.acquire
+    asked = []
+
+    def counted(*args, **kwargs):
+        asked.append(True)
+        return real_state(*args, **kwargs)
+    M.shard_lock_state = counted
+    try:
+        got = M.write_record(root, mpath, "task", ids, rec, wait=0.2)
+    finally:
+        M.shard_lock_state = real_state
+    check("uw7 A HOLDER LIVE FOR THE WHOLE WAIT NEVER REACHES THE DEAD-HOLDER "
+          "RE-JUDGING: the lock's state is asked once, before the wait, and the "
+          "refusal is the busy one: %r" % ((len(asked), got.get("reason")),),
+          len(asked) == 1 and got.get("written") is False
+          and M.index_lock_busy(got.get("reason") or ""))
+
+    answers = [("held", "held by the opening read's holder"),
+               ("held", "held by a run that took it during the wait")]
+
+    def scripted(*_args, **_kwargs):
+        return answers.pop(0) if answers else ("held", "asked a third time")
+    M.shard_lock_state = scripted
+    M._locks.acquire = lambda *_a, **_k: M._locks.E_STALE
+    try:
+        again = M.write_record(root, mpath, "task", ids, rec, wait=0.2)
+    finally:
+        M.shard_lock_state, M._locks.acquire = real_state, real_acquire
+    reason = again.get("reason") or ""
+    check("uw6 A HOLDER THE WAIT DID NOT REPORT LIVE, FOUND HELD AGAIN BY THE "
+          "RE-READ, IS THE BUSY REFUSAL A CALLER WAITS ON, naming the re-read's "
+          "holder - never the stale lock's sentence: %r" % (reason,),
+          again.get("written") is False and M.index_lock_busy(reason)
+          and "took it during the wait" in reason and answers == [])
+
+
 def _unwritable_lock_cases(check):
     """(uw) A lock claim that cannot be WRITTEN is said as that, and refuses the
     work, for every writer through `write_plan_file`; a lock that is HELD is
@@ -5764,11 +5806,19 @@ def _unwritable_lock_cases(check):
         with io.open(spath, "rb") as fh:
             after = fh.read()
         if writable:
-            _harness.could_not_run(
+            # The precondition this case needs - a directory whose mode refuses
+            # this process a write - is MEASURED by the probe write above, the
+            # way the product meets it (a write that fails), and the skip is
+            # taken on that measurement alone, never on the platform's name: a
+            # machine whose probe is refused runs the case below. The Windows
+            # runner's probe write succeeded (its run printed this reason under
+            # COULD NOT RUN HERE), and so does a superuser's.
+            _harness.skip(
                 check, "uw1 an unwritable lock directory is refused with its "
-                "own sentence", "this process can write a directory whose "
-                "mode refuses it (a superuser, or a filesystem that ignores "
-                "the mode), so no claim can be made unwritable here")
+                "own sentence", "a write into a directory of mode 0500 "
+                "succeeded here (a superuser, or a filesystem that ignores the "
+                "mode, as Windows does), so no claim can be made unwritable",
+                writable)
         else:
             reason = got.get("reason") or ""
             check("uw1 A CLAIM THAT CANNOT BE WRITTEN HAS ITS OWN SENTENCE: the "
@@ -5801,6 +5851,41 @@ def _unwritable_lock_cases(check):
                                    "but --record stored no evidence row"),),
               not M.index_lock_busy("GATE NOT RECORDED: the gate itself passed, "
                                     "but --record stored no evidence row"))
+        # Asked of the sentence alone, so it runs where uw1 cannot make a
+        # directory unwritable: a claim that could not be written tells nothing
+        # about a holder, so the sentence may say a holder is not reported and
+        # not that none was found.
+        alone = M.unwritable_claim_reason(
+            ["[audit-lock] cannot write the claim: Permission denied"],
+            "nothing was written to the plan", "run it again")
+        check("uw4 THE UNWRITABLE-CLAIM SENTENCE SAYS ONLY WHAT WAS ESTABLISHED: "
+              "the claim could not be written and whether another run holds the "
+              "lock was not established - never that nobody was found holding "
+              "it: %r" % (alone,),
+              "could not be written" in alone and "Permission denied" in alone
+              and "was not established" in alone and "found" not in alone
+              and "nobody" not in alone and not M.index_lock_busy(alone))
+        # A holder alive when the write began and gone before the wait ends:
+        # the lock answers stale, and the refusal is the stale lock's sentence
+        # read then, never the busy one the opening read would have given.
+        import threading
+        root5, mpath5, spath5 = _lr_project(tmp, "dies")
+        dying, code5 = _uw_holder(root5)
+        # Reaped as well as killed: an unreaped child still answers a signal
+        # probe, and would read as live.
+        threading.Timer(0.6, lambda: (dying.kill(), dying.wait())).start()
+        got5 = M.write_record(root5, mpath5, "task", ids, rec, wait=4)
+        dying.wait()
+        reason5 = got5.get("reason") or ""
+        check("uw5 A HOLDER THAT DIES DURING THE WAIT IS NOT WORDED AS BUSY: the "
+              "record is refused, the refusal says the lock looks abandoned and "
+              "is not taken over, and neither the busy head nor 'held by another "
+              "live run' is in it: %r" % ((code5, got5.get("written"), reason5),),
+              code5 == 0 and got5.get("written") is False
+              and "looks abandoned" in reason5
+              and not M.index_lock_busy(reason5)
+              and "held by another live run" not in reason5)
+        _uw_rejudge_cases(check, root2, mpath2, ids, rec)
     except Exception as exc:                                   # noqa: BLE001
         check("uw0 the unwritable-lock block ran to its end (%s: %s)"
               % (type(exc).__name__, exc), False)
@@ -5840,17 +5925,41 @@ def _pa_record_window(root, mpath):
                           session_id="pa-window").get("written") is True
 
 
+_PA_NOTE = "the window's own note"
+
+
+def _pa_note_window(root, mpath):
+    """The real `note` verb on P1.1: a change to the shard in a field no record
+    writer touches, so a record writer under test and the window never write
+    one value."""
+    at = _loader.load_script("audit-task.py")
+    return at.main(["note", "P1.1", "--text", _PA_NOTE, "--project-dir", root],
+                   out=_pa_quiet) == 0
+
+
+_PA_WINDOWS = {"index": _pa_index_window, "record": _pa_record_window,
+               "note": _pa_note_window}
+
+
 def _pa_kept(window, mpath, spath):
     """Whether the window's change is still in the plan."""
     if window == "record":
         return (_rv_task(spath).get("lastRun") or {}).get("runId") == _PA_RUN
+    if window == "note":
+        # Searched in the whole assembled plan: a moved task keeps its notes
+        # under its new id.
+        return _PA_NOTE in json.dumps(_mio_load(mpath))
+    if callable(window):
+        return None
     meta = _lr_shard(mpath).get("meta") or {}
     return "pawindow" in (meta.get("buildCommands") or {})
 
 
 def _pa_run(root, mpath, spath, window, run):
     """`run()` with the window's change landed as the index lock is first
-    asked for -> (run's answer, whether the window wrote, whether it is kept)."""
+    asked for -> (run's answer, whether the window wrote, whether it is kept).
+    `window` names one of `_PA_WINDOWS`, or is a `(root, mpath)` callable whose
+    keeping the case judges itself (`kept` is then None)."""
     real = _locks.acquire
     seen = []
 
@@ -5859,8 +5968,8 @@ def _pa_run(root, mpath, spath, window, run):
             # Marked before the write: the window's own writer takes this lock
             # too, and its acquire must reach the real one.
             seen.append(None)
-            seen[0] = (_pa_index_window if window == "index"
-                       else _pa_record_window)(root, mpath)
+            seen[0] = (window if callable(window)
+                       else _PA_WINDOWS[window])(root, mpath)
         return real(project, name, *a, **k)
     _locks.acquire = acquire
     try:
@@ -5930,19 +6039,204 @@ def _pa_locked_bodies():
     return loose, total, order
 
 
+# The plan reads a door may make before its lock, each read for one question
+# the body does not take from it, and why.
+_PA_ONE_QUESTION = {
+    "_gate_build_keys": "reads only `meta.buildCommands`' key names, to tell "
+                        "whether a gate value is keys joined by commas; the body "
+                        "reads the plan again under the lock for all it writes",
+    "_stale_stub": "asks whether a phase's stub disagrees with its shard, only "
+                   "to skip the lock when nothing is owed; `_mirror_locked` "
+                   "reads both again under the lock and writes from that read"}
+_PA_PLAN_READS = ("load_manifest", "read_json", "load_manifest_at", "_read_json",
+                  "stale_stubs")
+# The modules whose verbs hand a body to a lock function, and that function.
+_PA_DOOR_MODULES = (("manifest/audit-task.py", "_under_lock"),
+                    ("git/close-phase.py", "under_index_lock"))
+# The writers that take the lock inline - no body handed to a lock function -
+# which the door check cannot read, each with what holds it today.
+_PA_INLINE_LOCKS = (
+    "`_panel_write.apply_composition`, whose first pass reads before the lock by "
+    "design and whose second reads again under it (pa11, and lu8 in "
+    "tests/test__panel_write.py)",
+    "`_proposals.run` (pa8)",
+    "`_invariants.write_baseline`, the baseline written under `index` (its own "
+    "row's reason; the baseline is not a plan file)")
+
+
+def _pa_handed_bodies(lock_call, fn):
+    """`set(id)` of the nodes a lock call RUNS UNDER THE LOCK: the body of every
+    lambda inside its arguments, and the body statements of a def of the door
+    handed to it by name. A lambda's defaults, a def's decorators and defaults,
+    and every other argument expression - a `functools.partial`'s bound
+    arguments among them - are evaluated in the door, before the lock."""
+    import ast
+    locked = set()
+    for node in ast.walk(lock_call):
+        if isinstance(node, ast.Lambda):
+            locked |= set(id(n) for n in ast.walk(node.body))
+    handed = set(a.id for a in list(lock_call.args)
+                 + [k.value for k in lock_call.keywords]
+                 if isinstance(a, ast.Name))
+    for sub in ast.walk(fn):
+        if isinstance(sub, ast.FunctionDef) and sub.name in handed:
+            for stmt in sub.body:
+                locked |= set(id(n) for n in ast.walk(stmt))
+    return locked
+
+
+def _pa_door_reads(modules=None):
+    """`(doors, readers, [(door, line, what)])` over the door modules: every DOOR
+    (a top-level function calling its module's lock function), every READER (a
+    function whose own calls reach `_manifest_io`'s plan reads, followed through
+    the module's own functions to a fixpoint), and each door that reads the plan
+    outside what runs under the lock (`_pa_handed_bodies`) or declares a
+    `global`, and each locked body declaring one - the ways a body could be
+    handed a read taken outside the lock. Another door it calls is judged as a
+    door itself. A plan read is a call of `_manifest_io`'s readers
+    (`_PA_PLAN_READS`), so a door opening the plan's path itself - a bare
+    `json.load(open(...))` - is not read as one, and this check passes it."""
+    import ast
+    doors_all, readers_all, found = [], set(), []
+    for rel, lock_fn in modules or _PA_DOOR_MODULES:
+        path = rel if os.path.isabs(rel) else os.path.join(_output.SCRIPTS_DIR,
+                                                           *rel.split("/"))
+        with io.open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        defs = dict((n.name, n) for n in tree.body if isinstance(n, ast.FunctionDef))
+        doors = sorted(n for n, fn in defs.items() if n != lock_fn
+                       and any(getattr(c.func, "id", None) == lock_fn
+                               for c in _pa_calls(fn)))
+        readers, grew = set(), True
+        while grew:
+            grew = False
+            for name, fn in defs.items():
+                if name not in readers and any(
+                        _pa_plan_read(c) or getattr(c.func, "id", None) in readers
+                        for c in _pa_calls(fn)):
+                    readers.add(name)
+                    grew = True
+        for door in doors:
+            fn = defs[door]
+            locked = set()
+            for c in _pa_calls(fn):
+                if getattr(c.func, "id", None) == lock_fn:
+                    locked |= _pa_handed_bodies(c, fn)
+            for c in _pa_calls(fn):
+                name = getattr(c.func, "id", None)
+                if id(c) in locked or name in doors or name in _PA_ONE_QUESTION:
+                    continue
+                if _pa_plan_read(c) or name in readers:
+                    found.append((door, c.lineno, name or c.func.attr))
+            found.extend((door, n.lineno, "global %s" % (", ".join(n.names),))
+                         for n in ast.walk(fn) if isinstance(n, ast.Global))
+        for name, fn in defs.items():
+            if name.startswith("_locked_") or name.endswith("_locked"):
+                found.extend((name, n.lineno, "global %s" % (", ".join(n.names),))
+                             for n in ast.walk(fn) if isinstance(n, ast.Global))
+        doors_all.extend("%s:%s" % (rel.split("/")[-1], d) for d in doors)
+        readers_all |= readers
+    return doors_all, readers_all, found
+
+
+# Doors handing a lock function their body, one per place a read can sit: in
+# the door before the call, in a lambda's default, as a `functools.partial`'s
+# bound argument, as a handed def's default - each evaluated BEFORE the lock -
+# and inside the lambda's body and the handed def's body, which run under it.
+_PA_DOOR_FIXTURE = (
+    "import functools\n"
+    "import _manifest_io as _mio\n\n\n"
+    "def _read(p):\n"
+    "    return _mio.read_json(p)\n\n\n"
+    "def _body(plan):\n"
+    "    return plan\n\n\n"
+    "def early_direct(p):\n"
+    "    plan = _read(p)\n"
+    "    return _under_lock(p, lambda: _body(plan))\n\n\n"
+    "def lambda_default(p):\n"
+    "    return _under_lock(p, lambda _e=_read(p): _body(_e))\n\n\n"
+    "def partial_arg(p):\n"
+    "    return _under_lock(p, functools.partial(lambda e: _body(e), _read(p)))\n\n\n"
+    "def def_default(p):\n"
+    "    def run(e=_read(p)):\n"
+    "        return _body(e)\n"
+    "    return _under_lock(p, run)\n\n\n"
+    "def in_lambda(p):\n"
+    "    return _under_lock(p, lambda: _body(_read(p)))\n\n\n"
+    "def in_def(p):\n"
+    "    def run():\n"
+    "        return _body(_read(p))\n"
+    "    return _under_lock(p, run)\n")
+
+
+def _pa_door_fixture_case(check):
+    """(pa0c) What `_pa_door_reads` counts as run under the lock, on a fixture."""
+    tmp = _harness.fixture_root("audit-evidence-doors-")
+    try:
+        path = os.path.join(tmp, "doors.py")
+        with io.open(path, "w", encoding="utf-8") as fh:
+            fh.write(_PA_DOOR_FIXTURE)
+        doors, _readers, early = _pa_door_reads(((path, "_under_lock"),))
+        flagged = sorted(set(d for d, _l, _w in early))
+        check("pa0c ONLY THE BODY HANDED TO THE LOCK RUNS UNDER IT: a read in the "
+              "door, in a lambda's default, as a `functools.partial` argument and "
+              "in a handed def's default is each a read before the lock, while a "
+              "read inside the lambda's body or the handed def's body is not: "
+              "%r of %r" % (flagged, doors),
+              flagged == ["def_default", "early_direct", "lambda_default",
+                          "partial_arg"] and len(doors) == 6)
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _pa_calls(node):
+    """Every Call under `node`."""
+    import ast
+    return [n for n in ast.walk(node) if isinstance(n, ast.Call)]
+
+
+def _pa_plan_read(call):
+    """True for a call of one of `_manifest_io`'s plan reads."""
+    import ast
+    f = call.func
+    return isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) \
+        and f.value.id in ("_mio", "_manifest_io") and f.attr in _PA_PLAN_READS
+
+
 def _behind_lock_cases(check):
     """(pa) Every plan writer the lint's table names reads the plan behind the
     index lock: a change landed as it asks for the lock survives its write."""
     tmp = _harness.fixture_root("audit-evidence-behind-lock-")
     try:
         loose, total, order = _pa_locked_bodies()
-        check("pa0 THE VERBS' DOOR: every call of an audit-task `_locked_*` body "
-              "sits inside an `_under_lock(...)` call or another locked body, "
-              "and `_under_lock` asks for the lock before it runs the body - "
-              "the body is where each verb reads the plan: loose=%r of %d, "
+        check("pa0 THE VERBS' DOOR, BY CALL POSITION ONLY: every call of an "
+              "audit-task `_locked_*` body sits inside an `_under_lock(...)` "
+              "call or another locked body, and `_under_lock` asks for the lock "
+              "before it runs the body - which says where each verb's read CAN "
+              "be, not that it is there; the pm cases run each write mechanism "
+              "the verbs share with a change in the window: loose=%r of %d, "
               "order=%r" % (loose, total, order),
               total > 0 and loose == [] and None not in order
               and order[0] < order[1])
+        doors, readers, early = _pa_door_reads()
+        check("pa0b NO VERB'S DOOR HANDS ITS BODY A PLAN READ TAKEN BEFORE THE "
+              "LOCK: no door of %s calls a plan reader outside what runs under "
+              "the lock - the body of a lambda it hands over, or of a def it "
+              "hands by name; a lambda's defaults and every other argument run "
+              "in the door - and no door or locked body declares a `global`; a "
+              "read for one question the body does not take is allowed by name "
+              "(%s). It cannot see a read through a callee it cannot name (a "
+              "method, `getattr`, a `_loader` sibling) or another module's "
+              "function, a plan file opened and parsed in the door itself, a "
+              "lambda called on the spot inside the lock call's arguments, nor "
+              "the writers that take the lock inline, which their own cases "
+              "hold: %s: %d doors, %d readers, early=%r"
+              % (" and ".join(m for m, _f in _PA_DOOR_MODULES),
+                 "; ".join("`%s` %s" % kv for kv in sorted(_PA_ONE_QUESTION.items())),
+                 "; ".join(_PA_INLINE_LOCKS), len(doors), len(readers), early),
+              len(doors) > 20 and "_read_plan" in readers
+              and "close-phase.py:stamp_merged" in doors and early == [])
+        _pa_door_fixture_case(check)
 
         at = _loader.load_script("audit-task.py")
         root, mpath, spath = _pa_project(tmp, "note")
@@ -5950,7 +6244,7 @@ def _behind_lock_cases(check):
             ["note", "P1.1", "--text", "the verb's own note",
              "--project-dir", root], out=_pa_quiet))
         notes = json.dumps(_rv_task(spath).get("notes") or "")
-        check("pa1 `note` THROUGH THE REAL VERB: a run record written as the "
+        check("pa1 `note` (`cmd_note`) THROUGH THE REAL VERB: a run record written as the "
               "verb asks for the lock is kept, and the verb's note landed: %r"
               % ((code, wrote, kept, "own note" in notes),),
               code == 0 and wrote and kept and "own note" in notes)
@@ -5962,7 +6256,8 @@ def _behind_lock_cases(check):
              "--project-dir", root], out=_pa_quiet))
         own = "own" in ((_lr_shard(mpath).get("meta") or {})
                         .get("buildCommands") or {})
-        check("pa2 AN INDEX WRITE THROUGH THE REAL VERB (`build-command`): a "
+        check("pa2 AN INDEX WRITE THROUGH THE REAL VERB (`build-command`, "
+              "`cmd_build_command`): a "
               "build command another writer put in the index as the verb asks "
               "for the lock is kept beside the verb's own: %r"
               % ((code, wrote, kept, own),),
@@ -5972,7 +6267,7 @@ def _behind_lock_cases(check):
         code, wrote, kept = _pa_run(root, mpath, spath, "index", lambda: sp.main(
             [mpath, "P1", "1", "--project-dir", root], out=_pa_quiet))
         stub = (_lr_shard(mpath).get("phases") or [{}])[0]
-        check("pa3 `set-priority`: an index change landed as it asks for the "
+        check("pa3 `set-priority` (`cmd_set`): an index change landed as it asks for the "
               "lock is kept, and the tier is written: %r"
               % ((code, wrote, kept, stub.get("priority")),),
               code == 0 and wrote and kept and stub.get("priority") == 1)
@@ -5981,12 +6276,19 @@ def _behind_lock_cases(check):
         root, mpath, spath = _pa_project(tmp, "stamp")
         got, wrote, kept = _pa_run(root, mpath, spath, "record", lambda: (
             cp.stamp_merged(mpath, "P1", project=root)))
-        check("pa4 close-phase's merge stamp: a run record landed as it asks "
+        # The written path is compared as a FILE, not as a spelling: close-phase
+        # joins the index's directory with the stub's `phases/P1.json`, and the
+        # fixture joins its path part by part. The two spellings differ on
+        # Windows - a Windows run printed the record writer's join of the same
+        # two parts as `...\docs\audit\phases/P1.json` (lr1) - so a string
+        # comparison was red there with the record kept.
+        check("pa4 close-phase's merge stamp (`_stamp_locked`): a run record landed as it asks "
               "for the lock is kept, and `mergedAt` is written: %r"
-              % ((got[0] == spath, wrote, kept,
+              % ((_same_file(got[0], spath), wrote, kept,
                   _lr_shard(spath).get("mergedAt") is not None),),
-              got[0] == spath and wrote and kept
-              and _lr_shard(spath).get("mergedAt") is not None)
+              _same_file(got[0], spath) and wrote and kept
+              and _lr_shard(spath).get("mergedAt") is not None,
+              "written %r, the shard %r, on %s" % (got[0], spath, sys.platform))
         body = _lr_shard(spath)
         body["tasks"][0].pop("lastRun", None)
         body["tasks"][0].pop("testEvidence", None)
@@ -5994,7 +6296,7 @@ def _behind_lock_cases(check):
             json.dump(body, fh)
         got, wrote, kept = _pa_run(root, mpath, spath, "record", lambda: (
             cp.record_merged_head(mpath, "P1", "a" * 40, project=root)))
-        check("pa5 close-phase's merged head: a run record landed as it asks "
+        check("pa5 close-phase's merged head (`_head_locked`): a run record landed as it asks "
               "for the lock is kept, and `mergedHead` is written: %r"
               % ((got[1], wrote, kept, _lr_shard(spath).get("mergedHead")),),
               got[1] == "a" * 40 and wrote and kept
@@ -6008,7 +6310,7 @@ def _behind_lock_cases(check):
         got, wrote, kept = _pa_run(root, mpath, spath, "index", lambda: (
             cp.mirror_stub(mpath, "P1", root)))
         stub = (_lr_shard(mpath).get("phases") or [{}])[0]
-        check("pa6 close-phase's stub mirror: an index change landed as it asks "
+        check("pa6 close-phase's stub mirror (`main`'s `_stamp`): an index change landed as it asks "
               "for the lock is kept, and the stub now mirrors its shard: %r"
               % ((got[0] == mpath, got[1], wrote, kept, stub.get("status")),),
               got[0] == mpath and wrote and kept
@@ -6025,7 +6327,8 @@ def _behind_lock_cases(check):
             [mpath, "P1", "--project-dir", root], out=said.append))
         derived = sorted(k for k in _lr_shard(spath)
                          if k in ("testGateDerived", "testGateBasis"))
-        check("pa7 `derive-phase-gate` (shadow mode, which writes the derived "
+        check("pa7 `derive-phase-gate` (`cmd_derive` and `_write_phase_fields`, "
+              "shadow mode, which writes the derived "
               "fields beside the wide gate): a run record landed as it asks for "
               "the lock is kept, and the derived fields are written: %r"
               % ((code, wrote, kept, derived),),
@@ -6047,7 +6350,8 @@ def _behind_lock_cases(check):
         got, wrote, kept = _pa_run(root, mpath, spath, "record", lambda: (
             _proposals.run(mpath, "materialize", ["PROP-1"])))
         phases = [p.get("id") for p in _mio_load(mpath)["phases"]]
-        check("pa8 a proposal materialized (`_proposals.run`, both doors): a "
+        check("pa8 a proposal materialized (`_proposals.run`, both doors: "
+              "materialize-proposal and `proposal_action`): a "
               "run record landed as it asks for the lock is kept, and the "
               "parked phase is in the plan: %r"
               % ((got[0], wrote, kept, phases),),
@@ -6066,7 +6370,7 @@ def _behind_lock_cases(check):
             [mpath, "--project-dir", root], out=_pa_quiet))
         with io.open(mpath, encoding="utf-8") as fh:
             respelled = fh.read() == _mio_document(_lr_shard(mpath))
-        check("pa9 `migrate-json-encoding`: a run record landed as it asks for "
+        check("pa9 `migrate-json-encoding` (`_locked_migrate`): a run record landed as it asks for "
               "the lock is kept, and the index is in the chosen escaping: %r"
               % ((code, wrote, kept, respelled),),
               code == 0 and wrote and kept and respelled)
@@ -6076,16 +6380,269 @@ def _behind_lock_cases(check):
             ["add", "A second task", "--phase", "P1", "--project-dir", root],
             out=_pa_quiet))
         ids = [t.get("id") for t in _lr_shard(spath).get("tasks") or []]
-        check("pa10 `add` (`_write_add`, which writes the shard itself): a run "
+        check("pa10 `add` (`cmd_add`, and `_write_add`, which writes the shard itself): a run "
               "record landed as the verb asks for the lock is kept, and the "
               "new task is in the shard: %r" % ((code, wrote, kept, ids),),
               code == 0 and wrote and kept and "P1.2" in ids)
+
+        pw = _loader.load_script("_panel_write.py")
+        root, mpath, spath = _pa_project(tmp, "panel-save")
+        got, wrote, kept = _pa_run(root, mpath, spath, "record", lambda: (
+            pw.apply_composition(root, {"tasks": {"P1.1": {"model": "opus"}}})))
+        model = _rv_task(spath).get("model")
+        check("pa11 the panel's save (`apply_composition`, writing through "
+              "`_write_back`): a run record landed in the shard as it asks for "
+              "the lock is kept, and the composition is saved: %r"
+              % ((got.get("ok"), wrote, kept, model),),
+              got.get("ok") is True and wrote and kept and model == "opus",
+              "%r" % (got,))
+        _plan_file_caller_cases(check, tmp)
+        _verb_mechanism_cases(check, tmp, at)
     except Exception as exc:                                   # noqa: BLE001
         import traceback
         check("pa-x the behind-the-lock block ran to its end (%s: %s)"
               % (type(exc).__name__, exc), False, traceback.format_exc()[-900:])
     finally:
         _harness.remove_tree(tmp)
+
+
+def _plan_file_caller_cases(check, tmp):
+    """(pf) Each caller of `write_plan_file`, run as its command runs it, with
+    another writer's change landed in the same plan file as it asks for the
+    lock: the helper reads behind the lock (lk2), and these hold that no caller
+    hands it a change computed from a read of its own taken before."""
+    stamp = "2026-11-19T11:00:00Z"
+
+    def shard_of(spath):
+        return _lr_shard(spath)
+
+    root, mpath, spath = _pa_project(tmp, "pc-record")
+    got, wrote, kept = _pa_run(root, mpath, spath, "note", lambda: M.write_record(
+        root, mpath, "phase", {"phaseId": "P1"},
+        M.run_record(dict(_lr_row("PC1", stamp), scope="phase"))))
+    own = (shard_of(spath).get(M.RECORD_KEY) or {}).get("runId")
+    check("pf1 `write_record` (a phase's record): a note landed in the shard "
+          "as it asks for the lock is kept, and the record is written: %r"
+          % ((got.get("written"), wrote, kept, own),),
+          got.get("written") is True and wrote and kept and own == "PC1",
+          got.get("reason"))
+
+    root, mpath, spath = _pa_project(tmp, "pc-pointer")
+    got, wrote, kept = _pa_run(root, mpath, spath, "note", lambda: M.write_pointer(
+        root, mpath, "phase", {"phaseId": "P1"},
+        {"runId": "PC2", "status": "passed", "ts": stamp}))
+    own = (shard_of(spath).get("testEvidence") or {}).get("runId")
+    check("pf2 `write_pointer` (a phase's pointer): a note landed in the shard "
+          "as it asks for the lock is kept, and the pointer is written: %r"
+          % ((got.get("written"), wrote, kept, own),),
+          got.get("written") is True and wrote and kept and own == "PC2",
+          got.get("reason"))
+
+    root, mpath, spath = _pa_project(tmp, "pc-base")
+    red = _rk_rows(root)["red"]
+    M.write_record(root, mpath, "task", _RK_TASK, M.run_record(red))
+    got, wrote, kept = _pa_run(root, mpath, spath, "note", lambda: M.keep_base(
+        root, mpath, red, _kb_base("PC3", "RK")))
+    held = json.dumps(_rv_task(spath).get(M.RECORD_KEY) or {})
+    check("pf3 `keep_base`: a note landed in the shard as it asks for the lock "
+          "is kept, and the base run is kept on the red's record: %r"
+          % ((got.get("written"), wrote, kept, "PC3" in held),),
+          got.get("written") is True and wrote and kept and "PC3" in held,
+          got.get("reason"))
+
+    root, mpath, spath = _pa_project(tmp, "pc-reconcile")
+    M.append_row(root, {"v": 1, "runId": "PC4", "ts": stamp, "scope": "phase",
+                        "phaseId": "P1", "status": "passed", "steps": []})
+    got, wrote, kept = _pa_run(root, mpath, spath, "note", lambda: M.reconcile(
+        root, mpath))
+    own = (shard_of(spath).get("testEvidence") or {}).get("runId")
+    check("pf4 `reconcile` (`_reconcile_subject`, which points the subject): a "
+          "note landed in the shard as it asks for the lock is kept, and the "
+          "phase now points at its newest run: %r"
+          % ((got.get("moved"), wrote, kept, own),),
+          wrote and kept and own == "PC4", got)
+
+    fg = _loader.load_script("full-gate.py", "fg_pc")
+    root, mpath, spath = _pa_project(tmp, "pc-ci")
+    record = {"runId": "905", "sha": "a" * 40, "at": stamp,
+              "conclusion": "success"}
+    got, wrote, kept = _pa_run(root, mpath, spath, "note", lambda: fg.write_ci(
+        root, mpath, "P1", record))
+    own = (shard_of(spath).get(fg.CI_KEY) or {}).get("runId")
+    check("pf5 full-gate's `write_ci`: a note landed in the shard as it asks "
+          "for the lock is kept, and the CI record is written: %r"
+          % ((got.get("written"), wrote, kept, own),),
+          got.get("written") is True and wrote and kept and own == "905",
+          got.get("reason"))
+
+    root, mpath = _fh_project(tmp, "pc-held", [_fh_started("P1")])
+    a = _fh_commit(root, "a")
+    b = _fh_commit(root, "b")
+    _fh_put(root, dict(_fh_started("P1", [a], status="done"),
+                       mergedAt="2026-01-01T00:00:00Z", mergedHead=a))
+    spath = _fh_shard(root, "P1")
+    green = _fh_row("pc-green", "2026-01-02T00:00:00Z", b, mpath)
+    got, wrote, kept = _pa_run(root, mpath, spath, "record", lambda: _fh_hold(
+        root, mpath, green))
+    held = [h.get("runId") for h in
+            (shard_of(spath).get(M.FULL_GATE_RUNS_KEY) or [])]
+    check("pf6 `hold_full_run`: a run record landed in the merged phase's shard "
+          "as it asks for the lock is kept, and the full run is held: %r"
+          % ((got.get("held"), wrote, kept, held),),
+          got.get("held") == ["P1"] and wrote and kept and held == ["pc-green"],
+          got)
+
+    root, mpath, spath = _pa_project(tmp, "pc-since")
+    # A run on the ledger: the boundary is dated from the first recorded run.
+    M.append_row(root, {"v": 1, "runId": "PF7", "ts": stamp, "scope": "phase",
+                        "phaseId": "P1", "status": "passed", "steps": []})
+    got, wrote, kept = _pa_run(root, mpath, spath, "index", lambda: (
+        M.write_evidence_since(root, mpath, "P1")))
+    since = (_lr_shard(mpath).get("meta") or {}).get("evidenceSince")
+    check("pf7 `write_evidence_since` (run-test-gate's `_record_run` dates the "
+          "plan through it): a build command landed in the index as it asks "
+          "for the lock is kept, and the plan's first recording is dated: %r"
+          % ((wrote, kept, since),),
+          wrote and kept and bool(since), got)
+
+
+def _verb_mechanism_cases(check, tmp, at):
+    """(pm) Each write mechanism the verbs' rows share beyond the ones pa1,
+    pa2 and pa10 run - `_locked_move`, `_park_phase`, `_locked_batch_add` and
+    `_locked_seed` - through the real verb, with a change in the window. For the
+    seed the change is the whole plan: another writer creates it as the seed
+    asks for the lock, after `_under_lock` found the path free."""
+    root, mpath, spath = _pa_project(tmp, "pm-move")
+    body = _lr_shard(spath)
+    body["tasks"][0]["status"] = "pending"      # `move` refuses a running task
+    with io.open(spath, "w", encoding="utf-8") as fh:
+        json.dump(body, fh)
+    index = _lr_shard(mpath)
+    index["phases"].append({"id": "P2", "title": "two",
+                            "shard": "phases/P2.json"})
+    with io.open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(index, fh)
+    with io.open(os.path.join(os.path.dirname(spath), "P2.json"), "w",
+                 encoding="utf-8") as fh:
+        json.dump({"id": "P2", "title": "two", "status": "pending",
+                   "testGate": [], "tasks": []}, fh)
+    said = []
+    code, wrote, kept = _pa_run(root, mpath, spath, "note", lambda: at.main(
+        ["move", "P1.1", "--to", "P2", "--project-dir", root], out=said.append))
+    moved = [t.get("id") for p in _mio_load(mpath)["phases"]
+             if p.get("id") == "P2" for t in p.get("tasks") or []]
+    check("pm1 `move` (`cmd_move`, `_locked_move`): a note landed on the task as the verb "
+          "asks for the lock is kept, under the task's new id: %r"
+          % ((code, wrote, kept, moved),),
+          code == 0 and wrote and kept and moved == ["P2.1"],
+          "\n".join(str(s) for s in said)[-600:])
+
+    root, mpath, spath = _pa_project(tmp, "pm-park")
+    said = []
+    code, wrote, kept = _pa_run(root, mpath, spath, "index", lambda: at.main(
+        ["add-phase", "Parked idea", "--outcome", "o", "--park",
+         "--project-dir", root], out=said.append))
+    parked = [p.get("name") for p in _lr_shard(mpath).get("proposals") or []]
+    check("pm2 `add-phase --park` (`cmd_phase_add`, `_park_phase`, which writes the index): a "
+          "build command landed in the index as the verb asks for the lock is "
+          "kept, and the proposal is parked: %r" % ((code, wrote, kept, parked),),
+          code == 0 and wrote and kept and parked == ["Parked idea"],
+          "\n".join(str(s) for s in said)[-600:])
+
+    root, mpath, spath = _pa_project(tmp, "pm-batch")
+    doc_path = os.path.join(root, "batch.json")
+    with io.open(doc_path, "w", encoding="utf-8") as fh:
+        json.dump({"request": "a batch", "openChoices": [],
+                   "phase": {"title": "Batched", "desiredOutcome": "o"},
+                   "tasks": [{"title": "bt", "files": ["src/b.ts"],
+                              "tests": {"mode": "gate-only"}}]}, fh)
+    said = []
+    code, wrote, kept = _pa_run(root, mpath, spath, "index", lambda: at.main(
+        ["add", "--from-file", doc_path, "--project-dir", root],
+        out=said.append))
+    titles = [p.get("title") for p in _mio_load(mpath)["phases"]]
+    check("pm3 `add --from-file` (`_cmd_batch_add`, `_locked_batch_add`): a build command landed "
+          "in the index as the verb asks for the lock is kept, and the batch's "
+          "phase is in the plan: %r" % ((code, wrote, kept, titles),),
+          code == 0 and wrote and kept and "Batched" in titles,
+          "\n".join(str(s) for s in said)[-600:])
+
+    root = os.path.join(tmp, "pm-seed")
+    _project(root, {"manifestPath": "docs/audit/audit-plan.json"})
+    _harness.git(None, "init", "-q", root, prefix=("git",))
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    theirs = json.dumps({"meta": {"version": 3}, "phases": []})
+
+    def seeded_first(_root, _mpath):
+        os.makedirs(os.path.dirname(mpath), exist_ok=True)
+        with io.open(mpath, "w", encoding="utf-8") as fh:
+            fh.write(theirs)
+        return True
+    said = []
+    code, wrote, _k = _pa_run(root, mpath, None, seeded_first, lambda: at.main(
+        ["seed", "--project-dir", root], out=said.append))
+    with io.open(mpath, encoding="utf-8") as fh:
+        now = fh.read()
+    check("pm4 `seed` (`cmd_seed`, `_locked_seed`): a plan another writer created as the seed "
+          "asks for the lock - the path was free at its door - is refused behind "
+          "the lock with nothing written, the plan kept byte for byte: %r"
+          % ((code, wrote, now == theirs),),
+          code != 0 and wrote and now == theirs
+          and any("nothing was written" in str(s) for s in said)
+          and any("another writer created after seed looked" in str(s)
+                  for s in said),
+          "\n".join(str(s) for s in said)[-600:])
+    _seed_occupant_case(check, tmp, at)
+
+
+def _seed_occupant_case(check, tmp, at):
+    """(pm5) What occupies the plan's path before seed starts is said as what it
+    is - never as a plan that appeared while seed waited."""
+    said_of = {}
+    for kind in ("dangling link", "directory"):
+        root = os.path.join(tmp, "pm-seed-" + kind.split()[0])
+        _project(root, {"manifestPath": "docs/audit/audit-plan.json"})
+        _harness.git(None, "init", "-q", root, prefix=("git",))
+        mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath), exist_ok=True)
+        outside = os.path.join(tmp, "pm-seed-elsewhere.json")
+        if kind == "directory":
+            os.makedirs(mpath)
+        else:
+            try:
+                os.symlink(outside, mpath)
+            except (OSError, NotImplementedError) as exc:
+                said_of[kind] = (None, "a symbolic link could not be made: %s" % (exc,))
+                continue
+        said = []
+        code = at.main(["seed", "--project-dir", root], out=said.append)
+        said_of[kind] = (code, " ".join(str(s) for s in said),
+                         os.path.lexists(outside))
+    link = said_of.get("dangling link")
+    if link and link[0] is None:
+        _harness.skip(check, "pm5 a dangling link at the plan's path is said as one",
+                      link[1], True)
+        link = None
+    check("pm5 A PATH OCCUPIED BEFORE SEED STARTS IS SAID AS WHAT OCCUPIES IT: a "
+          "directory and a dangling symbolic link are each refused with nothing "
+          "written through them, named as a directory / a link to a missing file, "
+          "and neither is called a plan that appeared while seed waited: %r"
+          % (said_of,),
+          said_of["directory"][0] != 0 and "a directory" in said_of["directory"][1]
+          and "appeared" not in said_of["directory"][1]
+          and "another writer" not in said_of["directory"][1]
+          and (link is None or (link[0] != 0 and "symbolic link" in link[1]
+                                and "does not exist" in link[1] and not link[2]
+                                and "another writer" not in link[1])))
+
+
+def _same_file(a, b):
+    """Whether two path spellings name one file - separators, case where the
+    platform folds it, and `..` normalized, never compared as strings."""
+    if not a or not b:
+        return False
+    return (os.path.normcase(os.path.normpath(os.path.abspath(a)))
+            == os.path.normcase(os.path.normpath(os.path.abspath(b))))
 
 
 def _mio_load(path):
@@ -7632,14 +8189,26 @@ def _guard_unreadable_cases(check):
         for label, text, named in others:
             _ug_write_shard(shards, text)
             code, reason, out, err = _ug_run(root, _ug_payload(root))
-            if code != 0 or reason is None or named not in reason \
+            # The file is matched in either separator: the guard names a plan it
+            # could not load by its `os.path.join` spelling, which on Windows
+            # read `docs\audit\audit-plan.json could not be read` in CI, while
+            # its structure check names the same file with `/`. Only the
+            # platform's own separator is folded, so a deny naming another
+            # file, or none, is still red.
+            said = (reason or "").replace(os.sep, "/")
+            if code != 0 or reason is None or named not in said \
                     or "Traceback" in err:
-                other_wrong.append((label, code, (reason or out)[-200:],
-                                    err[-200:]))
+                # The WHOLE deny and stderr, and the platform: a row that is red
+                # on one platform alone has to say which reader refused there.
+                other_wrong.append((label, code, named, reason or out,
+                                    err[-1500:]))
         check("ug5 A SHARD THAT IS NOT AN OBJECT, and one nested past what the "
               "parser takes, is a deny naming the plan file that would not "
               "read, exit 0: %r"
-              % (other_wrong,), other_wrong == [])
+              % ([row[:3] for row in other_wrong],), other_wrong == [],
+              "on %s (python %s, recursion limit %d): %r"
+              % (sys.platform, sys.version.split()[0], sys.getrecursionlimit(),
+                 other_wrong))
         _ug_write_shard(shards, pristine)
         ri_put_record(shards["P1"], "P1.1", dict(base, status="x" * 1000000))
         code, reason, _o, _e = _ug_run(root, _ug_payload(root))

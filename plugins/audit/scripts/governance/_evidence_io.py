@@ -2839,7 +2839,8 @@ def unwritable_claim_reason(said, outcome="", repair=""):
     first = [" ".join(str(s).split()) for s in said or [] if str(s).strip()]
     why = first[0] if first else "acquire answered exit %d" % (_locks.E_ERR,)
     return ("the %s lock's claim could not be written (%s): this is not a report "
-            "that the lock is held - nobody was found holding it - and a plan "
+            "that the lock is held - whether another run holds it was not "
+            "established - and a plan "
             "file is not written without it, so %s. Make the lock directory "
             "writable, then %s" % (
                 SHARD_LOCK_LABEL, why.replace("[audit-lock] ", ""),
@@ -2891,6 +2892,15 @@ def write_plan_file(project, path, change, note, session_id=None, wait=None,
                               session=session_id, out=said.append, wait=wait)
         if code == _locks.E_ERR:
             return _unwritten(unwritable_claim_reason(said, outcome, repair))
+        if not _locks.held(code) and code != _locks.E_LIVE:
+            # JUDGED AGAIN AFTER THE WAIT: the opening read named a live holder,
+            # and one that died while this waited is a stale lock to be said as
+            # stale - a human's call - never the busy refusal a caller waits on.
+            state, again = shard_lock_state(project, session_id=session_id,
+                                            outcome=outcome, repair=repair)
+            if state == "stale":
+                return _unwritten(again)
+            detail = again if state == "held" else detail
         if not _locks.held(code):
             bound = _locks.WAIT_SECONDS if wait is None else float(wait)
             return _unwritten("%s %gs (%s); %s" % (
@@ -3377,7 +3387,10 @@ def repeat_carried(record, source):
     A WHOLE repeat ran no step, so its steps are `source`'s, each naming the
     run it came from; a part repeat keeps its own steps, which already name
     theirs. `source`'s own record goes under `REPEATED_RUN_KEY` and carries no
-    older run - the run a repeat copies measured what it gives. A `source` that
+    older run - the run a repeat copies measured what it gives. No longer chain
+    occurs: `reusable_run` never hands out a whole repeat, and hands out a part
+    repeat only for steps that run measured itself (prt3), so a repeat of a
+    part repeat copies nothing that run copied. A `source` that
     is not the run `reusedFrom` names carries nothing: the record then says it
     could not read that run (`REPEAT_UNREAD_KEY`), which is what a repeat with no
     source says too."""

@@ -206,6 +206,13 @@ the plan (every shard too, in the sharded layout). It takes the index lock itsel
 output verbatim: it names each renumbering and the files it wrote, which the user then
 `git add`s. Anything still conflicted is a real disagreement, shown as marker blocks.
 
+It **refuses, writing nothing**, when a plan file holds bytes neither git's merge left there
+nor it would write - a write made while the merge was stopped, an edit inside a conflict's
+markers included. It compares against what git's merge left, as git itself answers it, so a
+`git add` does not hide the write. Show
+the refusal verbatim and let the user choose: its commands put each file back and **discard**
+what it holds, and nothing carries that write into the merged plan.
+
 **After a merge the driver ran.** A single-file plan is revalidated by the driver itself, and only a
 finding neither side had fails the merge. An index or shard cannot be validated alone, so after a
 sharded merge run `validate-manifest.py <manifestPath>` once the merge has finished.

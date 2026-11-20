@@ -237,13 +237,45 @@ def _cases(check):
         # survive. The window is opened by the fixture, not by a sleep: the
         # record is written from inside the acquire, before the real call.
         rc12 = _between_read_and_lock(tmp, "r3", _locks)
-        check("rc12 A RUN RECORD WRITTEN BETWEEN THE REPAIR'S READ AND ITS "
+        check("rc12 (repair-commits) A RUN RECORD WRITTEN BETWEEN THE REPAIR'S READ AND ITS "
               "LOCK SURVIVES --apply: the repair re-reads the plan inside its "
               "locked section, so the task's `lastRun` and its pointer are "
               "kept and the unreachable commit is still cleared: %r" % (rc12,),
               rc12["code"] == 0 and rc12["windowed"] is True
               and rc12["lastRun"] == "RW" and rc12["pointer"] == "RW"
               and rc12["commit"] is None)
+
+        # THE WINDOW TAKES THE WHOLE REPAIR: the one task found naming a lost
+        # commit is given a reachable one as the repair asks for the lock, so
+        # the fresh read holds nothing still lost.
+        repo4, mpath4, shas4 = _repo_with_orphan(tmp, name="r4")
+        seen4 = []
+        real4 = _locks.acquire
+
+        def miss(project, lock_name, *a, **k):
+            if lock_name == M.LOCK_NAME and not seen4:
+                seen4.append(None)
+                with open(mpath4, encoding="utf-8") as fh:
+                    doc = json.load(fh)
+                doc["phases"][0]["tasks"][0]["commit"] = shas4[0]
+                with open(mpath4, "w", encoding="utf-8") as fh:
+                    json.dump(doc, fh)
+                seen4[0] = True
+            return real4(project, lock_name, *a, **k)
+        _locks.acquire = miss
+        try:
+            out4, code4 = _harness._capture(M.main, [mpath4, "--apply"])
+        finally:
+            _locks.acquire = real4
+        with open(mpath4, encoding="utf-8") as fh:
+            held4 = json.load(fh)["phases"][0]["tasks"][0].get("commit")
+        check("rc13 NOTHING LEFT TO APPLY IS REFUSED: every commit found lost "
+              "was changed in the window, so --apply exits 1, says nothing was "
+              "written and why, and the task keeps the commit the other writer "
+              "gave it: %r" % ((code4, seen4, held4 == shas4[0], out4[-300:]),),
+              code4 == 1 and seen4 == [True] and held4 == shas4[0]
+              and "nothing was written" in out4
+              and "changed in the plan since it was read" in out4)
     finally:
         _harness.remove_tree(tmp)
 
