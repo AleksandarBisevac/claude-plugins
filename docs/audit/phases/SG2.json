@@ -86,9 +86,37 @@
         "file": "tests/test_build_shop.py:2090-2094,2132-2146",
         "issue": "esc70 hand-built runs give repeats None in _answered, the shape of the node child. The python child always sends a list (diag_windows_2025.txt: repeats [2134, 2]), so the growth fault the real python pass produces carries the suffix \", over [..] searches a length\" (timing_faults 1957-1960). esc70 builds its owed text without that suffix, so deleting the suffix, or breaking its formatting, leaves every case green: a branch of the growth fault the real pass uses is held by no case.",
         "resolution": "Let _answered take a repeats argument and give the cost at the 1.75 power a list as the python child sends it (for example [3, 2]); build the owed text with the suffix \", over [3, 2] searches a length\", so the whole growth fault the real python pass emits is compared."
+      },
+      {
+        "id": "SG2-R10",
+        "severity": "med",
+        "file": ".github/sweep-costs.json:blocks[tests/test_guard_edits.py], blocks[tests/test_journal_writes.py], costs[both]; tools/sweep-selftests.py:block_timeout, shard_units",
+        "issue": "The twenty block figures of the two suites (and the two file figures, which are their sums) are this machine's macOS seconds under `platform: windows-2025`. I confirmed they equal sg2.8/sweep-costs.after-local.json (platform darwin) entry for entry, and that the committed table is identical to sg2.8/after/sweep-costs.json, so nothing is hand-edited beyond the two recorded commands; the other block figures cannot be checked here and come from the windows logs by the executor's account. What the mixed table does: (a) block_timeout is max(300, ceil(3 x figure)). Every one of the twenty comes out at the 300 s floor, ge-generated 71.4 -> 215 -> 300, jw-generated 60.6 -> 182 -> 300. A windows-recorded figure for ge-generated (about 235 s or more) would give about 705 s, the same rule that gives ar18-block 706 s. So the one block that matters keeps the 300 s that killed the whole suite twice, with the other nine blocks' seconds removed from it and nothing else. (b) shard_units deals by slot-seconds, and these twenty are weighed on a scale roughly three times lighter than every neighbour: ge-generated at 71.4 sorts below drive_phase's ab-block (123.1), though its windows seconds are about the size of ar18-block's 235.1, so it is not dealt among the heaviest first and the part that gets it is under-counted by roughly 160 s per suite. (c) The runner's own comment above load_costs says a timeout reads the figure itself and a darwin figure under-states a windows one, which is exactly this. No case could have gone red: the table has one `platform` field and no per-entry origin, and swp4 only checks that the field names a windows family. The executor's choice of `--costs-from-log ... --platform windows-2025` over a bare local `--record-costs` was right (the local write set platform darwin, which swp4 refuses), but merge_costs then kept the local block figures under the new label. The task text's own premise ('the table's figures are this machine's') was wrong about the table.",
+        "resolution": "Before this closes as green on the windows leg, record the twenty blocks from the first windows logs that carry them (`--costs-from-log ... --platform windows-2025 --record-costs`), and until then say in the closing note that the twenty figures are macOS. If the coordinator wants the table to state only what it knows, leave the two suites' blocks out of `blocks` so block_figure answers 'untimed' and block_timeout gives each the largest timeout any entry gives (706 s) - an honest basis and more headroom than the floor, at the price of the deal using the median estimate. Do not hand-scale the figures."
+      },
+      {
+        "id": "SG2-R11",
+        "severity": "med",
+        "file": "tests/test_guard_edits.py:3665 (ge-generated, _generated_cases 2504); tests/test_journal_writes.py:4162 (jw-generated, _generated_question_cases)",
+        "issue": "contradicts task clause 6 ('If a single block is itself heavier than the others together ... say so and split it where the seam is; do not raise a timeout to make a slow file fit'). The executor says so and does not split. I checked the arithmetic: ge-generated 71.4 vs the other nine 23.5 (94.9 - 71.4), jw-generated 60.6 vs 34.2 (94.8 - 60.6): both right, both heavier than the rest together. Against the logs: guard 236.1 s windows plain 1 (ci2 run-44573316400.log line 7938) against 31.6 s linux plain 1 (line 6238); in ci4 job-136040228539.log line 365 the same suite is killed at 300.0 s and job-136040228761.log line 367 kills journal at 300.0 s. A kill is a lower bound, not a measurement. The executor's 'at 3.3x ... about 236 s and 200 s, 0.79 and 0.67 of the timeout' treats the lower bound of the ratio (300/92) as its value; a suite killed at 300 s has a generated block of at least about 0.78 x 300 = 234 s, and the same leg went from 236 s to 300 s or more between runs, so the margin under the 300 s block timeout is not demonstrated. The local 92 s itself was taken with two suites sharing a loaded machine (the executor's own load figures 2.6-6.8, fseventsd at 90-180 percent), against 31.6 and 42.1 s on linux CI. Whether the staging was worth doing: it is not pointless - it takes the other 22-33 percent of each suite out of the block that can be killed, runs the nine small blocks in parallel (wall 91.5 s to 73.8 s locally), and it is what lets the table calibrate the block once windows figures exist - but with finding 1 standing it buys only that 22-33 percent against an unchanged 300 s, so the next windows run can fail the same way. The fixture-cost option the executor lists as (b) (a template repository copied per world; his profile: 27.7 s of 73.3 s building 364 worlds with 1497 repository-tool calls, about 20 s in the hook's own calls) keeps every label and was not tried; the seam in gen_sweep (tests/test_guard_edits.py:2462, each world built and visited independently) exists but cf36's single label summarises the whole sweep, so a split that keeps labels needs an aggregation the harness does not offer.",
+        "resolution": "Close this task with the open item as a plan task of its own, not as prose in a return: cut the generated-arrangements sweep's fixture cost (template-copy worlds, or per-family cases with new ids and an agreed label change), acceptance a measured windows figure for ge-generated and jw-generated well under the block timeout, or a timeout calibrated from a windows figure (finding 1). Record the open item against the phase so sign-off sees it; do not raise the timeout."
+      },
+      {
+        "id": "SG2-R12",
+        "severity": "low",
+        "file": "tests/test_guard_edits.py:2712-2720 (_process_count_cases, cf37b at 2744)",
+        "issue": "Answer to question 2: (a) for what cf37b's label says, with a residue. I ran the executor's probe_listing.py in a scratch directory: a cold process's first ordinary decide lists scripts/, scripts/config, scripts/git and scripts/governance (os.scandir, found by _config.find_script's os.walk while _load_journal_lib loads _journal_io.py), the second call lists none, and after `_config.journal_lib()` the first lists none. guard-edits.py reaches that load on an ordinary write through `_config.in_journal` (guard-edits.py:461, tree inside the project), so the comment's claim is true: those listings are a lookup of the plugin's own code, not the config question (the registrations the cf29-cf37 family counts). Separating them is correct, and the assertion's condition is unchanged. But before the change cf37b had only ever measured a warm process by accident, and it now does so on purpose; the shipped hook is a fresh process per call and pays the four-folder walk on every ordinary write. No case anywhere asserts that cold figure, so a growth in it (a fifth folder, a second walk) would be green. The cost existed before this diff and the diff does not add it, which is why this is not med, but this diff is what makes the suite blind to it. The executor reported it in his outcome as a batch finding; nothing in the tree records it.",
+        "resolution": "Route it to sign-off as a finding: add one case that counts the listings of a cold hook process for an ordinary write (the hook as a subprocess, as cf37 already does for its processes) and pins the measured number with its basis, or give find_script a direct path for the journal library so the walk is not paid per call."
+      },
+      {
+        "id": "SG2-R13",
+        "severity": "low",
+        "file": "tests/test_journal_writes.py:4157-4160 (STAGES comment)",
+        "issue": "Two sentences claim more than the code shows. 'sn0 is the name that report carried before the suite was staged': before the change the raising block was reported as `sn0 the switch-reading cases` (the removed stage call labelled that way), now it is reported as `sn0`, so the name is shortened, not carried. 'nearly all of it is `oq5`' is a ratio with no basis in the file; its basis (a profile, oq5 50.5 s of 53.3 s) is only in the filed return.",
+        "resolution": "Say 'a label beginning sn0, as before' or drop the sentence, and either carry the basis (the command that profiled the block) or delete 'nearly all of it' and keep the pointer to oq5."
       }
     ],
-    "outcome": "[findings: 9 - 0 high, 2 med, 7 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 13 - 0 high, 4 med, 9 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -247,6 +275,10 @@
         {
           "at": "2026-11-20T00:48:00Z",
           "text": "30. plugins/audit/evals/build-shop.sh: the check before git init walks the list the block above it computed. If that whole block were lost the list would be empty and the check would ask nothing (the suite still goes red - esc45, esc46 - but the script itself would not refuse). One line: refuse at the check when the list is empty."
+        },
+        {
+          "at": "2026-11-20T02:31:04Z",
+          "text": "31. tests/test_build_shop.py esc70: the hand-built runs carry repeats None (node's shape), so the ', over [..] searches a length' ending of the growth fault that python's child always produces is held by no case; give one growth run a repeats list and compare the whole text. 32. One TRIPWIRE_CEILING serves both engines; node's longest search read 0.005 to 0.009 s on a windows-2025 runner (2026-11-20), so for node the ceiling catches nothing: derive one per engine, or say in the comment that the ceiling is python's and node is held by growth and the deadline."
         }
       ]
     },
@@ -779,7 +811,7 @@
     {
       "id": "SG2.8-xk1",
       "title": "The journal hook's and the edit guard's suites run as blocks, and the sweep's cost table holds what the suites of this line cost, so no file of it meets the per-file timeout on the slowest runner",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The second CI run over the skill-gates phase was red on windows because tests/test_journal_writes.py 'did not finish within 300s'. It is not a hang: read from the CI logs, the same suite printed its whole run on windows in 240.8 s in the run before the merge (run 44549802704, windows plain 4), and on linux takes between about 40 and 75 s. The sweep's cost table (.github/sweep-costs.json) holds 29.9 slot-seconds for it - a figure recorded before the skill-gates line added its cases - so the runner gave it the floor timeout and dealt it to a part as a light file.\n\nWHAT THE RUNNER ALREADY OFFERS (read tools/sweep-selftests.py before anything: the `blocks, not suites` comment above `work_items()`, the `shards` comment above `parse_shard()`, and how a timeout is calibrated). A suite whose `__main__` is `_harness.staged_main` over a `STAGES` table is run block by block, each block a job on one slot with its own timeout and its own figure in the cost table, then replayed once for the whole run's lines. tests/test_journal_writes.py is one unstaged file; its neighbours of comparable weight are staged (tests/test_guard_edits.py, tests/test_audit_task.py and others - read two before writing a table).\n\nTHE SAME RUN SHOWS THE NEXT ONE COMING: tests/test_guard_edits.py, also unstaged and also grown by this line, printed its run on windows in 236.1 s against the same 300 s. Every file's seconds on every leg of that run are in the file the orchestrator names in your prompt.\n\nTHE RULE TO BUILD.\n1. tests/test_journal_writes.py and tests/test_guard_edits.py each become a staged suite: its cases grouped into blocks along the seams it already has (its `_..._cases(check)` functions and the sections of its main body), each block able to run alone - whatever one block builds for another is built by each that needs it, or moved into a shared fixture function - and the whole run printing THE SAME CASE LINES IN THE SAME ORDER as before. Prove that last sentence by diffing the PASS/FAIL labels of a whole run before and after (ids and order; the summary line's count equal).\n2. No case is dropped, weakened, merged or renamed, and no assertion changes. The floor guard will read this diff and say that code outside the labelled checks moved; that is expected, and the return says why it is not a weakening, with the before/after label diff as the evidence.\n3. THE COST TABLE IS RE-RECORDED, not hand-edited, for the suites this line changed or added - the way the runner's own flag does it (`--record-costs`; read what it writes and for which files) - so each block of this suite and every file the skill-gates line added or grew has a measured figure and none is 'estimated'. Say in the return which files' figures moved by more than double, with both numbers and the command that printed them. The table's figures are this machine's; the timeout a runner applies is the floor or a multiple of the figure - say what that gives the heaviest block of this suite on a runner about six times slower than this machine (the ratio the two CI figures above show against a local run you take), and that it is under the per-job timeout.\n4. gate-parity's shard and time-bound rules stay green (`python3 tools/gate-parity.py`), the runner's own cases stay green (`python3 tools/sweep-selftests.py --selftest`), and the parts still cover the whole tree - the runner's cases pin that.\n5. List in the return every OTHER unstaged suite that took more than half the per-file timeout on any leg of that run, with its seconds - they are not this task's to stage, and the list goes to the phase's batch.\n6. If a single block is itself heavier than the others together (one case that builds many git fixtures), say so and split it where the seam is; do not raise a timeout to make a slow file fit.\n\nHOW TO PROVE. The label diff of rule 1. Each block run alone, in an order other than the table's, green (a block that needs another's leftovers shows here). The suite through the sweep (`python3 tools/sweep-selftests.py tests/test_journal_writes.py --jobs 4`), two runs with a gap, seconds before and after. A mutation probe the orchestrator can run from the worktree root: one block left out of the STAGES table (the suite's or the runner's own coverage rule must go red - find which, and if neither does, that is a finding to report, not to fix here); one case's assertion inverted in a block run alone (red in that block). Windows cannot be run locally: only CI confirms the seconds there.\n\nNOT in this task: the hook under test; any other suite's staging; the timing cases and the mask (other tasks).\n\nAcceptance:\n(1) Both suites are staged, every block runs alone, and a whole run prints the same case labels in the same order with the same count as before.\n(2) The cost table carries measured figures for both suites' blocks and for every file the skill-gates line added or grew, written by the runner's own flag.\n(3) gate-parity and the runner's own cases are green.",
       "files": [
         "tests/test_journal_writes.py",
@@ -803,16 +835,33 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-20T02:31:33Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-20T02:31:31Z",
+          "text": "the cost table is re-recorded by this file's own --record-costs and --costs-from-log, which write the comment text it quotes; the task changes figures through that writer and edits nothing in the table by hand",
+          "waives": "tools/sweep-selftests.py"
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-20T02:31:33Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-20T04:04:17Z.88d278",
+        "status": "passed",
+        "at": "2026-11-20T04:04:17Z"
+      }
     },
     {
       "id": "SG2.9-xk1",
@@ -1175,7 +1224,7 @@
     {
       "id": "SG2.12-xk1",
       "title": "The tripwire's growth judgement is held where it is wired into the real-engine pass, and its power is held on both sides",
-      "status": "in_progress",
+      "status": "done",
       "description": "The review of the task before this one found that tests/test_build_shop.py holds the whole-span growth judgement as a function and not as wiring. `span_growth` is driven directly by three cases (a recorded windows history, the same costs on a coarse clock, a synthetic quadratic), but the place the suite's real pass uses it - the branch of `timing_faults` that appends a fault when a run grew past its bound - is reached by no case that goes red without it: the only caller of `timing_faults` is the pass over the real engines, the rows that make the tripwire backtrack turn red by the child's deadline and not by growth, and by the reviewer's reading that branch can be deleted with every case green. The ceiling's wiring in the same function IS held (a ceiling of one millisecond turns the real pass red). So the judgement the task was about protects nothing between a pattern whose time grows with a power from 1.5 to about 1.9 and whose longest search stays under the ceiling - which neither the ceiling nor the deadline catches.\n\nTHE RULE TO BUILD.\n1. `timing_faults` is driven with hand-built runs, no engine and no clock: runs whose seconds are the recorded windows history give no fault; runs whose seconds grow as a power past TRIPWIRE_POWER give a growth fault naming the kind, what it grew and the bound; a run killed at its deadline, a run with no answer and a run over the ceiling each give their own fault and no growth fault. Red first by deleting the growth branch: the new case fails and nothing else does - show that run, since it is the reviewer's claim made into a measurement.\n2. THE POWER IS HELD ON BOTH SIDES. Today a quadratic is the only cost the cases call too fast, so a power of 1.9 would pass every case. Add a cost between the power and a quadratic that must fail (the reviewer names 1.75), and keep the recorded history as the cost that must pass, so TRIPWIRE_POWER cannot be raised or lowered far without a case going red. Say, from a run, the interval of powers the cases now hold.\n3. THE COMMENTS SAY WHAT WAS MEASURED. (a) The ceiling's headroom under load is argued from a busy-over-idle ratio read at a much shorter length in one CI log; the longest length has since been measured directly on a windows runner, idle and with one busy process per core (the orchestrator's prompt names the file) - use that figure and say where it came from. (b) The least room is stated as one number, while the suite's own run on that runner read a lower one than the recorded history's - state the room as what was read where, as dated history, and do not present a single figure as the floor. (c) A count of characters stands in the present tense with no command beside it: carry the command that prints it or drop the number. (d) Two labels claim more than the code does - a quadratic called 'the slowest a backtracking pattern grows' (it is the mildest polynomial the judgement must catch) and a coarse-clock estimate called what the series 'costs an idle windows runner' (it is an estimate from recorded costs; the measured figure exists). Reword each to what the case shows.\n4. Nothing else moves: lengths, power, ceiling, deadlines and the judgement are as the task before left them.\n\nHOW TO PROVE. The red-first run of rule 1. A mutation probe the orchestrator can run from the worktree root (copies of the working tree, each mutation asserted applied, never `git archive HEAD`): the growth branch of `timing_faults` deleted (the new case, and only it); the branch made to fire always (the allow half: the history's runs then fault); the power raised to 1.9 and lowered to 1.2 (a case red each way); the ceiling branch deleted (still caught, by which case). Suite case count and seconds before and after.\n\nAcceptance:\n(1) Deleting the growth branch of `timing_faults` turns a case red that needs no engine.\n(2) A cost growing as a power between TRIPWIRE_POWER and two fails the judgement and the recorded history passes it, and the interval of powers the cases hold is stated from a run.\n(3) Every figure in the timing section's comments is dated history naming where it was read, or carries the command that prints it; the two labels say what their cases show.",
       "files": [
         "tests/test_build_shop.py"
@@ -1198,16 +1247,59 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d14326d1793e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_build_shop.py only. (1) New _timing_faults_cases, called from _tripwire_cases after _span_judgement_cases: esc70 drives timing_faults with hand-built runs (one engine named hand, no engine and no clock) - the recorded windows times at TRIPWIRE_UNITS give no fault and the least room equals the bound-over-growth worked out independently in the case; a cost growing as the 1.75 power, ending at half TRIPWIRE_CEILING so growth is the only fault left to give, yields exactly one growth fault per kind, compared as a whole list with the 'name: grew Xx from L0 to L1 characters, bound Bx' text built in the case. esc70 also prints the highest power the history grew as (1.308). esc71: a run killed at its deadline, one with no answer, one whose series could not be measured and one over the ceiling within the bound each give exactly one fault of their own and no growth fault. (2) New TOO_FAST_POWERS = (1.75, 2.0); esc68 now holds both on the 1/64 s virtual clock. (3) New windows_at() shared by esc67 and esc70; import math. (4) Comments: the ceiling argued from the direct windows-2025 measurement (python 3.12.10, 2026-11-20: longest search 0.1875/0.2031 s idle, 0.2656 s with one busy process per core; ubuntu-24.04 python 3.12.16 at most 0.1485 s loaded), replacing the 800-unit busy/idle extrapolation; the least room stated as readings where read (2.87 history; 3.12/3.26 idle, 3.66 loaded, 2.83 the suite's bare run, windows-2025 3.12.10), not a floor; the 1883359-character count and the per-character extrapolation dropped; the 1/64 s step dated; the quadratic's figures put in the conditional past of the dated runs. Labels: esc67 'what the series costs an idle windows runner' -> 'an estimate on that clock from the recorded windows costs, not a measurement'; esc68 'the slowest a backtracking pattern grows' -> powers (1.75, 2.0), 'one between TRIPWIRE_POWER and a quadratic, and a quadratic, the mildest polynomial the judgement must catch'. Lengths, power, ceiling, deadlines and the judgement unmoved. Runs: suite 76 -> 78 cases; sweep 20.9 s wall before, 29.7 / 26.2 / 19.8 s after on a shared machine; the no-engine cases in-process 0.348/0.315 s before, 0.482/0.375 s after (two runs, 10 s gap). Power interval from a run (sg2.12/interval.py, in-process at a grid): no case red from 1.309 to 1.744; at 1.308 and below esc66, esc67, esc70 red; at 1.746 esc68 red (coarse clock), from 1.75 esc68 and esc70. Mutation probe (sg2.12/mutations.py, exit 0, 6 rows all caught): baseline 78/78; growth branch deleted -> esc70 only; growth always fires -> esc53, esc55, esc70, esc71; power 1.9 -> esc68, esc70; power 1.2 -> esc66, esc67, esc70; ceiling branch deleted -> esc71 only. Orchestrator gate run-test-gate.py SG2 --task SG2.12-xk1 unrecorded: GATE GREEN, exit 0. ruff and vermin clean; prose_number_claims and house_style_violations report nothing for the file. Dependants: plugins/audit/evals/bugfix/case.yaml and guard-stop/case.yaml - still correct, they reference the file by path and the tripwire pattern and grants are untouched; tests/test__output_lints.py - still correct, it uses _cases/_selftest and the file's path, unchanged; CHANGELOG.md - still correct, its entry (lines 203-205) describes the judgement, which did not change; PLUGIN-BUILD-GUIDE.md - still correct, it names the file for the fixture builds only.",
+        "descriptive": "The tripwire's growth fault is now held where the real-engine pass reports it, and TRIPWIRE_POWER is held on both sides (1.309 to 1.744 turn no case red), with the timing comments stating measured figures as dated readings."
       },
       "startedAt": "2026-11-20T02:01:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-20T02:31:02Z",
+      "verifiedBy": [
+        "esc70: timing_faults fed hand-built runs - the recorded windows history gives no fault and its least room, a cost at the 1.75 power under the ceiling gives exactly one growth fault per kind naming it, its growth and the bound",
+        "esc71: a killed run, a run with no answer, an unmeasured series and a run over the ceiling within the bound each give their own single fault and no growth fault",
+        "esc68 widened: a cost at the 1.75 power, between TRIPWIRE_POWER and a quadratic, fails the judgement on the 1/64 s clock beside the quadratic"
+      ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-20T02:19:50Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1087000,
+            "startedAt": "2026-11-20T02:01:43Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-20T02:24:37Z.fe55c1",
+            "kind": "wait",
+            "ms": 6000,
+            "startedAt": "2026-11-20T02:20:24Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-20T02:24:37Z.fe55c1, ending at its startedAt",
+            "kind": "selection",
+            "ms": 16806,
+            "runId": "2026-11-20T02:24:37Z.fe55c1",
+            "startedAt": "2026-11-20T02:20:30Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-20T02:24:37Z.fe55c1",
+            "kind": "gate",
+            "ms": 229273,
+            "runId": "2026-11-20T02:24:37Z.fe55c1",
+            "startedAt": "2026-11-20T02:20:47Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-20T02:30:47Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 226000,
+            "startedAt": "2026-11-20T02:27:01Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit d14326d1793e",
+            "kind": "commit",
+            "ms": 2304,
+            "startedAt": "2026-11-20T02:30:58Z"
+          }
+        ],
         "firstStartedAt": "2026-11-20T02:01:42Z"
       },
       "reviewPerTask": "signals",
@@ -1215,6 +1307,17 @@
         "runId": "2026-11-20T02:26:59Z.8ad2dd",
         "status": "passed",
         "at": "2026-11-20T02:26:59Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "d14326d1793e",
+        "at": "2026-11-20T02:31:02Z",
+        "return": "docs/audit/evidence/returns/SG2.12-xk1/20261120T020142Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false for this regression task, so no proof is owed; and the helper could not make one, since timing_faults lives in the test file itself, so HEAD with this test file copied over it is the fixed tree. The rule-1 red was watched as a mutation in a throwaway copy of the working tree (scratchpad sg2.12/mutations.py --only 'growth branch of timing_faults deleted'): on the suite as it stood (sg2.12/test_build_shop.before.py) the deletion left ALL PASS 76/76, red [] - the reviewer's claim, measured; on the changed suite it reads SELFTEST FAILED 77/78, red ['esc70'] and nothing else.",
+        "at": "2026-11-20T02:07:46Z"
       }
     }
   ],

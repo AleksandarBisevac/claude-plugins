@@ -15,7 +15,8 @@ module, which has no `record_plugin_write`, so `getattr`'s default hands back a 
 that returns None and the case passes without ever calling the hook. Measured: with
 the literal form restored, `j4` is still PASS with the production function DELETED.
 It now names the subject, `M.record_plugin_write(...)`, and drops the swallowing
-default so a vanished function raises and `_harness.run` reports it by name.
+default so a vanished function raises and `_harness.stage` reports its block by
+name.
 
 The other five shapes came back empty: no `vars()`, no bare `__file__`, no path built
 off the suite's own directory, no `split(a)[1].split(b)[0]`, and no `globals()` REBIND -
@@ -1699,7 +1700,8 @@ def _cases(check):
         # default hands back `lambda *a: None` - which returns None, so the case
         # passes while asking the hook nothing at all. Named on the subject, and
         # without the swallowing default: a vanished function is an AttributeError
-        # `_harness.run` reports as a failing case, which is what it should be.
+        # `_harness.stage` reports as this block failing, which is what it should
+        # be.
         check("j4 record_plugin_write never raises on garbage - it guards a "
               "PostToolUse hook",
               M.record_plugin_write(None, None, None, None) is None)
@@ -2085,16 +2087,6 @@ def _cases(check):
                   tmp_i, str(_cfg_i["stateDir"]), ".gitignore")))
     finally:
         shutil.rmtree(tmp_i, ignore_errors=True)
-
-    _machine_path_value_cases(check)
-    _call_mark_cases(check)
-    _one_question_cases(check)
-    _link_question_cases(check)
-    _generated_question_cases(check)
-    _topology_question_cases(check)
-    _slot_follows_file_cases(check)
-    _created_file_cases(check)
-    _harness.stage(check, "sn0 the switch-reading cases", _switch_reading_cases)
 
 
 # --- oq: the guard and the journal ask one function which file is the config ------
@@ -4159,13 +4151,29 @@ def _machine_path_value_cases(check):
         shutil.rmtree(wn, ignore_errors=True)
 
 
-def _selftest():
-    return _harness.run(_cases)
+# Every block, in replay order - the order the cases always printed in. A full
+# run starts one process per block, a few at a time, and replays their cases
+# in this order (`_harness.staged_main`); `--stage LABEL` runs only the blocks
+# it names, in this process. The switch-reading block keeps `sn0` as its label
+# because a block that raises is reported under its label, and `sn0` is the
+# name that report carried before the suite was staged. `jw-generated` is the
+# heaviest block, and nearly all of it is `oq5`, one case over the guard
+# suite's generated arrangements, which no cut of the block can divide.
+STAGES = (
+    ("jw-core", "_cases"),
+    ("jw-machine-path", "_machine_path_value_cases"),
+    ("jw-call-mark", "_call_mark_cases"),
+    ("jw-one-question", "_one_question_cases"),
+    ("jw-link-question", "_link_question_cases"),
+    ("jw-generated", "_generated_question_cases"),
+    ("jw-topology", "_topology_question_cases"),
+    ("jw-slot", "_slot_follows_file_cases"),
+    ("jw-created-file", "_created_file_cases"),
+    ("sn0", "_switch_reading_cases"),
+)
 
 
 if __name__ == "__main__":
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest())
-    sys.stderr.write("usage: test_journal_writes.py --selftest\n")
-    raise SystemExit(2)
+    raise SystemExit(_harness.staged_main(sys.argv[1:], STAGES, globals(),
+                                          "journal-writes-stages-"))

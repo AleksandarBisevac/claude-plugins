@@ -46,12 +46,12 @@ M = _loader.load(os.path.join(_harness.HOOKS_DIR, "guard-edits.py"),
 
 
 # --- cases --------------------------------------------------------------------
-def _cases(check):
-    tmp = _harness.fixture_root("guard-edits-selftest-")
-    # token identifier assembled at runtime so this SOURCE file never contains a
-    # literal logger-call-with-token (which the guard itself would flag).
-    tok = "access" + "Token"
-    cfg = _config._deep_merge(_config.DEFAULTS, {
+def _suite_cfg():
+    """The config the first blocks decide under - a custom rule under a path
+    prefix, and the token names the logging ban reads. Built by every block
+    that decides under it, so a block run alone decides under the config a
+    whole run gives it."""
+    return _config._deep_merge(_config.DEFAULTS, {
         "guardEdits": {
             "tokenVars": ["accessToken", "refreshToken", "idToken"],
             "customRules": [
@@ -63,6 +63,27 @@ def _cases(check):
             ],
         }
     })
+
+
+def _worktree_fixture(check):
+    """A main checkout and a linked worktree beside it (`worktree_pair`), or
+    None when git cannot build them - and then the failing `tf0` case says
+    why. Built by every block whose cases ask about a linked worktree, so a
+    block run alone has the trees it asks about, and a block whose build
+    failed is red rather than short of the cases that needed it."""
+    built, pair = _harness.attempt(_harness.worktree_pair, "guard-edits-wt-")
+    if not built:
+        check("tf0 the worktree fixture builds (%s)" % (pair,), False)
+        return None
+    return pair
+
+
+def _cases(check):
+    tmp = _harness.fixture_root("guard-edits-selftest-")
+    # token identifier assembled at runtime so this SOURCE file never contains a
+    # literal logger-call-with-token (which the guard itself would flag).
+    tok = "access" + "Token"
+    cfg = _suite_cfg()
 
     def _expect(name, expected, tool, path, text, cwd=tmp, use_cfg=None):
         """One case: run `decide` on a synthesised payload, compare the verdict.
@@ -325,10 +346,8 @@ def _cases(check):
     # started in the main checkout, an edit into a phase worktree's journal was
     # nobody's business - the one file the plugin promises is append-only,
     # rewritable by hand one tree over.
-    _tf_ok, _tf = _harness.attempt(_harness.worktree_pair, "guard-edits-wt-")
-    if not _tf_ok:
-        check("tf0 the worktree fixture builds (%s)" % (_tf,), False)
-    else:
+    _tf = _worktree_fixture(check)
+    if _tf is not None:
         _prev_tf = os.environ.get("CLAUDE_PROJECT_DIR")
         os.environ["CLAUDE_PROJECT_DIR"] = _tf["main"]
         try:
@@ -356,15 +375,18 @@ def _cases(check):
             else:
                 os.environ["CLAUDE_PROJECT_DIR"] = _prev_tf
 
-    _config_cases(check, cfg, tmp, _tf if _tf_ok else None)
-    _volume_pair_cases(check, cfg)
-    _link_cases(check)
-    _generated_cases(check)
-    _process_count_cases(check)
-    _registration_cases(check)
-    _member_cases(check)
-    _relative_registration_cases(check)
-    _topology_cases(check)
+
+def _config_block_cases(check):
+    """The audit config's cases, on a project directory and a worktree pair of
+    their own - the ones `_cases` builds are another block's."""
+    cfg = _suite_cfg()
+    tmp = _harness.fixture_root("guard-edits-selftest-")
+    _config_cases(check, cfg, tmp, _worktree_fixture(check))
+
+
+def _volume_pair_block_cases(check):
+    """The volume pair's cases, under the config a whole run decides them by."""
+    _volume_pair_cases(check, _suite_cfg())
 
 
 # --- cf: the audit config is the owner's, not an agent's ------------------------
@@ -2690,6 +2712,12 @@ def _process_count_cases(check):
                if not k.startswith("CLAUDE") and k != _DRIVE_MARK)
     env.update(extra)
     env["CLAUDE_PROJECT_DIR"] = proj
+    # The journal's library is loaded once per process, found by a walk of the
+    # plugin's scripts/ that lists its folders - a lookup of the plugin's own
+    # code, not the config question cf37b counts. When every block shared one
+    # process an earlier block had loaded it; run alone, this block loads it
+    # before anything is counted.
+    _config.journal_lib()
     counts, listed = [], []
     for name, cwd, tool, path in rows:
         hook = [_proc_count(log, lambda: _hook_verdict(
@@ -3628,13 +3656,27 @@ def _topology_cases(check):
                   for _t, _n, v, r, _h in twins))
 
 
-def _selftest():
-    return _harness.run(_cases)
+# Every block, in replay order - the order the cases always printed in. A full
+# run starts one process per block, a few at a time, and replays their cases
+# in this order (`_harness.staged_main`); `--stage LABEL` runs only the blocks
+# it names, in this process. `ge-generated` is one case over the generated
+# arrangements and the three that read its sweep, so it is the heaviest block
+# and cannot be cut without cutting that case.
+STAGES = (
+    ("ge-core", "_cases"),
+    ("ge-config", "_config_block_cases"),
+    ("ge-volume-pair", "_volume_pair_block_cases"),
+    ("ge-link", "_link_cases"),
+    ("ge-generated", "_generated_cases"),
+    ("ge-process-count", "_process_count_cases"),
+    ("ge-registration", "_registration_cases"),
+    ("ge-member", "_member_cases"),
+    ("ge-relative-registration", "_relative_registration_cases"),
+    ("ge-topology", "_topology_cases"),
+)
 
 
 if __name__ == "__main__":
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest())
-    sys.stderr.write("usage: test_guard_edits.py --selftest\n")
-    raise SystemExit(2)
+    raise SystemExit(_harness.staged_main(sys.argv[1:], STAGES, globals(),
+                                          "guard-edits-stages-"))
