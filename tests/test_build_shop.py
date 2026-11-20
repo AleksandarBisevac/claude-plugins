@@ -30,6 +30,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import hashlib
 import json
+import math
 import os
 import re
 import shlex
@@ -1716,25 +1717,28 @@ TRIPWIRE_TWIN = " ; git reset --hard HEAD~1"
 # doubling across the step read up to 8.66x on windows and 6.71x on linux with the
 # engine linear, and no stretch of lengths is past the step on every host, so a series
 # of doublings at any lengths can read a host's step as backtracking. Over the whole
-# span the step is one bounded factor. From 200 to 51200 units the length ratio was 244 to 334 by kind and the
-# bound 3803 to 6108; the most a time grew was 1978 (single-quoted arguments, bound
-# 6108), and the least room - bound over growth, in every kind, run and reading,
-# python's and node's - was 2.87 (a single quote left unpaired, windows, python
-# 3.14.10, processor time). Ending at 25600 units the least room was 1.94, under the
-# factor of two this span is held to, so the longest length is no shorter. A
-# quadratic search reads the length ratio squared, 59 to 112 thousand: 15.6 to 18.3
-# times its bound. The judgement reads the ends alone, so the lengths are the ends: a
-# middle one would be judged by nothing and cost a series at the clock's floor per kind
-# and twin. Both are asked for their verdict (esc54, esc56).
+# span the step is one bounded factor. In those runs, from 200 to 51200 units, the
+# length ratio was 244 to 334 by kind and the bound 3803 to 6108; the most a time grew
+# was 1978 (single-quoted arguments, bound 6108), and the least room - bound over
+# growth, in every kind, run and reading, python's and node's - was 2.87 (a single
+# quote left unpaired, windows, python 3.14.10, processor time). The room is a reading,
+# not a floor: on a windows-2025 runner, python 3.12.10, read 2026-11-20, a probe of
+# this pass read a least room of 3.12 and 3.26 idle and 3.66 with one busy process per
+# core, and the suite's own bare run there read 2.83 (esc53). Ending at 25600 units
+# the least room was 1.94, under the factor of two this span is held to, so the
+# longest length is no shorter. On those lengths a quadratic search would have grown
+# by the length ratio squared, 59 to 112 thousand: 15.6 to 18.3 times its bound. The
+# judgement reads the ends alone, so the lengths are the ends: a middle one would be
+# judged by nothing and cost a series at the clock's floor per kind and twin. Both are
+# asked for their verdict (esc54, esc56).
 TRIPWIRE_UNITS = (200, 51200)
 # The bounds. TRIPWIRE_POWER is the growth's; a time under TRIPWIRE_FLOOR is read as
 # the floor, below which a timer reads noise. TRIPWIRE_CEILING is the most one search
-# at the longest length may take: the longest text there is command substitutions and
-# the twin, 1883359 characters, and the highest cost per character any reading showed
-# at any length was 142.5 ns (windows, python 3.12.10, measured 2026-11-20) - 0.27 s.
-# The red windows run of 2026-11-19, a sweep on a busy runner, read its longest search
-# at 800 units as 0.0055 s, 2.35 times the most an idle run read there (0.00234 s,
-# measured once): about 0.63 s under such load, and the ceiling has 1.6 over that. A
+# at the longest length may take. The longest search in every pass read on a
+# windows-2025 runner, python 3.12.10, 2026-11-20, was command substitutions holding
+# escaped quotes, with the twin or without: 0.1875 s and 0.2031 s idle, and 0.2656 s
+# with one busy process per core - the ceiling was 3.8 times that loaded reading. An
+# ubuntu-24.04 runner, python 3.12.16, read at most 0.1485 s the same day, loaded. A
 # child still running at TRIPWIRE_DEADLINE is killed - a kill is a failure, never a
 # skip.
 TRIPWIRE_POWER = 1.5
@@ -1751,8 +1755,9 @@ TIMER_JOB = {"min_rounds": 3, "max_rounds": 40, "budget": 0.05}
 # on a shared runner reads the machine's other work as growth, while the work a
 # search does is what grows with its length. The searches of one length are
 # repeated until their total reaches the floor - at least TRIPWIRE_MIN_SECONDS,
-# and the helper's stated multiple of the clock's step, which on windows is
-# 1/64 s - and the least per-search time of TRIPWIRE_ROUNDS such batches is kept.
+# and the helper's stated multiple of the clock's step, which a windows-2025 runner
+# measured as 1/64 s (python 3.12.10, 2026-11-20) - and the least per-search time of
+# TRIPWIRE_ROUNDS such batches is kept.
 # A length the helper could not bring to the floor by TRIPWIRE_SERIES_DEADLINE is
 # a failure that names it, and the child is still killed at TRIPWIRE_DEADLINE.
 TRIPWIRE_MIN_SECONDS = 0.01
@@ -1782,6 +1787,11 @@ WINDOWS_SECONDS = (
 # process-time clock does.
 COARSE_STEP = 1.0 / 64
 CLOCK_READ = 1e-6
+# The powers of a search's length its cost may grow as that the judgement must fail:
+# one between TRIPWIRE_POWER and a quadratic, and a quadratic, the mildest polynomial
+# the judgement must catch. With the recorded windows times, which must pass, they hold
+# TRIPWIRE_POWER on both sides (esc66, esc68, esc70); esc70 prints the lower end.
+TOO_FAST_POWERS = (1.75, 2.0)
 # How long esc69's slow child runs: past any reading of it, so it is still running
 # when read, and short enough that a collector which never kills waits it out.
 EXITED_SLOW_SLEEP = 20.0
@@ -1998,6 +2008,12 @@ def windows_rows():
                                                            WINDOWS_SECONDS)]
 
 
+def windows_at():
+    """The indices into WINDOWS_UNITS of the lengths of TRIPWIRE_UNITS; shorter than
+    TRIPWIRE_UNITS when one of them has no recorded windows time."""
+    return [WINDOWS_UNITS.index(n) for n in TRIPWIRE_UNITS if n in WINDOWS_UNITS]
+
+
 def _span_judgement_cases(check):
     """The judgement fed the windows runner's own times, and a backtracking cost,
     with no engine: what it must pass and what it must fail."""
@@ -2018,7 +2034,7 @@ def _span_judgement_cases(check):
           len(rows) == len(TRIPWIRE_KINDS) and not stale and not over
           and max(doubled) > 2 ** TRIPWIRE_POWER)
 
-    at = [WINDOWS_UNITS.index(n) for n in TRIPWIRE_UNITS if n in WINDOWS_UNITS]
+    at = windows_at()
     if len(at) != len(TRIPWIRE_UNITS):
         check("esc67 every length of TRIPWIRE_UNITS %r has a windows time in "
               "WINDOWS_UNITS %r" % (TRIPWIRE_UNITS, WINDOWS_UNITS), False)
@@ -2037,28 +2053,120 @@ def _span_judgement_cases(check):
     check("esc67 ...and measured by the timing helper on a clock stepping 1/64 s, "
           "the python child's series at %r units of each kind stays within the bound "
           "(least room %s) and takes at most %.2fs of that clock's time, within "
-          "TRIPWIRE_SERIES_DEADLINE - %.1fs for every kind and its twin, what the "
-          "series costs an idle windows runner; %r"
+          "TRIPWIRE_SERIES_DEADLINE - %.1fs for every kind and its twin, an estimate "
+          "on that clock from the recorded windows costs, not a measurement; %r"
           % (TRIPWIRE_UNITS, "%.2f" % min(coarse) if coarse else "none", max(spent),
              2 * sum(spent), kept),
           not kept and len(coarse) == len(rows)
           and max(spent) < TRIPWIRE_SERIES_DEADLINE)
 
     caught = []
-    for label, lengths, _chars, secs in rows:
-        ends = [lengths[i] for i in at]
-        square = [secs[at[0]] * (n / float(ends[0])) ** 2 for n in ends]
-        got, _took = virtual_series(square, deadline=float("inf"))
-        if got["fault"] is not None or len(got["seconds"]) != len(at):
-            caught.append("%s: not measured: %s" % (label, got["fault"]))
-            continue
-        grew, bound = span_growth(ends, got["seconds"])
-        if grew <= bound:
-            caught.append("%s: grew %.0fx, bound %.0fx" % (label, grew, bound))
-    check("esc68 a search whose cost is quadratic in its length - the slowest a "
-          "backtracking pattern grows - fails the judgement over the span in every "
-          "kind, measured on the same clock with no deadline to fail it first; "
-          "passed or unmeasured %r" % (caught,), not caught)
+    for power in TOO_FAST_POWERS:
+        for label, lengths, _chars, secs in rows:
+            ends = [lengths[i] for i in at]
+            cost = [secs[at[0]] * (n / float(ends[0])) ** power for n in ends]
+            got, _took = virtual_series(cost, deadline=float("inf"))
+            if got["fault"] is not None or len(got["seconds"]) != len(at):
+                caught.append("%s, power %g: not measured: %s"
+                              % (label, power, got["fault"]))
+                continue
+            grew, bound = span_growth(ends, got["seconds"])
+            if grew <= bound:
+                caught.append("%s, power %g: grew %.0fx, bound %.0fx"
+                              % (label, power, grew, bound))
+    check("esc68 a search whose cost grows as each of the powers %r of its length - "
+          "one between TRIPWIRE_POWER and a quadratic, and a quadratic, the mildest "
+          "polynomial the judgement must catch - fails the judgement over the span in "
+          "every kind, measured on the same clock with no deadline to fail it first; "
+          "passed or unmeasured %r" % (TOO_FAST_POWERS, caught), not caught)
+
+
+def _hand_run(name, lengths, result):
+    """A run as tripwire_runs returns one, for one engine named `hand` whose child
+    gave `result` - built by hand, so no engine and no clock decide it."""
+    return (name, False, list(lengths), {"hand": result})
+
+
+def _answered(secs, fault=None):
+    """The result of a child that exited 0 and answered `secs`."""
+    return {"killed": False, "code": 0, "read": 0.0, "err": "",
+            "data": {"seconds": list(secs), "matched": [False] * len(TRIPWIRE_UNITS),
+                     "repeats": None, "fault": fault}}
+
+
+def _timing_faults_cases(check):
+    """`timing_faults` - what the real-engine pass reports from - fed hand-built runs:
+    the recorded windows times must give no fault, a cost growing past TRIPWIRE_POWER
+    must give a growth fault, and a run never judged, or over the ceiling, gives its
+    own fault and no growth fault."""
+    at = windows_at()
+    if len(at) != len(TRIPWIRE_UNITS):
+        check("esc70 every length of TRIPWIRE_UNITS %r has a windows time in "
+              "WINDOWS_UNITS %r" % (TRIPWIRE_UNITS, WINDOWS_UNITS), False)
+        return
+    ends = [([lengths[i] for i in at], [secs[i] for i in at])
+            for _label, lengths, _chars, secs in windows_rows()]
+    labels = [label for label, _make, _twin in TRIPWIRE_KINDS]
+    history = [_hand_run(label, lens, _answered(secs))
+               for label, (lens, secs) in zip(labels, ends)]
+    quiet, least, _longest = timing_faults(history, "hand")
+    # The power each recorded series grew as: any TRIPWIRE_POWER above the highest
+    # passes the history, and below it this case and esc66 fail it.
+    grown = [math.log(secs[-1] / secs[0]) / math.log(float(lens[-1]) / lens[0])
+             for lens, secs in ends]
+    room = min((float(lens[-1]) / lens[0]) ** TRIPWIRE_POWER / (secs[-1] / secs[0])
+               for lens, secs in ends)
+
+    # The cost past the power ends at half the ceiling: under it, so the growth
+    # judgement is the one thing left to fault it, as in the real pass.
+    power = TOO_FAST_POWERS[0]
+    fast, owed = [], []
+    for label, (lens, _secs) in zip(labels, ends):
+        name = "%s, at the %g power" % (label, power)
+        grow = [TRIPWIRE_CEILING / 2 * (float(n) / lens[-1]) ** power for n in lens]
+        fast.append(_hand_run(name, lens, _answered(grow)))
+        owed.append("%s: grew %.1fx from %d to %d characters, bound %.0fx" % (
+            name, grow[-1] / grow[0], lens[0], lens[-1],
+            (float(lens[-1]) / lens[0]) ** TRIPWIRE_POWER))
+    said = timing_faults(fast, "hand")[0]
+    check("esc70 timing_faults fed hand-built runs, no engine and no clock: the "
+          "recorded windows times at %r units give no fault (least room %s, against "
+          "%.2f worked out here; the fastest grew as the %.3f power of its length, so "
+          "a TRIPWIRE_POWER above it passes them), and a cost growing as the %g power "
+          "gives one growth fault per kind naming it, its growth and the bound; "
+          "history's faults %r, growth faults owed and not said %r, said and not "
+          "owed %r" % (
+              TRIPWIRE_UNITS, "none" if least is None else "%.2f" % least, room,
+              max(grown), power, quiet[:2],
+              [f for f in owed if f not in said][:2],
+              [f for f in said if f not in owed][:2]),
+          not quiet and least is not None and abs(least - room) < 1e-9
+          and said == owed)
+
+    lens, secs = ends[0]
+    bound = (float(lens[-1]) / lens[0]) ** TRIPWIRE_POWER
+    # Twice the ceiling at the longest, having grown half the bound: judged, and
+    # within it, so the ceiling alone has a fault to give.
+    over = [4 * TRIPWIRE_CEILING / bound, 2 * TRIPWIRE_CEILING]
+    unjudged = (
+        ("killed", {"killed": True, "code": -9, "read": TRIPWIRE_DEADLINE,
+                    "err": "", "data": None}, "killed at the"),
+        ("no answer", {"killed": False, "code": 1, "read": 0.0,
+                       "err": "Traceback: the child broke", "data": None},
+         "no answer (exit 1)"),
+        ("unmeasured", _answered(secs[:1], fault="a length never reached the floor"),
+         "could not be measured"),
+        ("over the ceiling, within the bound", _answered(over), "s at the longest"),
+    )
+    wrong = []
+    for name, result, says in unjudged:
+        got = timing_faults([_hand_run(name, lens, result)], "hand")[0]
+        if len(got) != 1 or not got[0].startswith(name + ": ") or says not in got[0]:
+            wrong.append("%s: owed one fault saying %r, got %r" % (name, says, got))
+    check("esc71 ...and a run killed at its deadline, one with no answer, one whose "
+          "series could not be measured and one over TRIPWIRE_CEILING within the "
+          "bound each give their own fault and no growth fault; wrong %r" % (wrong,),
+          not wrong)
 
 
 def _exited_child_case(check):
@@ -2097,6 +2205,7 @@ def _exited_child_case(check):
 
 def _tripwire_cases(check, root):
     _span_judgement_cases(check)
+    _timing_faults_cases(check)
     _exited_child_case(check)
     pattern = grader_field(case_text("guard-stop"), "no-destructive-git",
                            "input_match")

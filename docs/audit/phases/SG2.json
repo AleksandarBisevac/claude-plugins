@@ -79,9 +79,16 @@
         "file": "tests/test_build_shop.py:1731-1740,2141-2149",
         "issue": "One TRIPWIRE_CEILING serves both engines. Node longest search reads 0.005 to 0.009 s on the windows runner (diag4:158,214,254), so 1.0 s is 100 to 200 times its idle figure and catches for node nothing the deadline and the growth judgement (room about 15) do not; for python it catches only a search of about 1 to 2 s (past that, four searches exceed the 8 s series deadline first), a guard 5x over the idle 0.19-0.27 s.",
         "resolution": "Derive a ceiling per engine (for node from its own loaded 0.0093 s), or say in the comment that the ceiling is python and node is held by growth and the deadline."
+      },
+      {
+        "id": "SG2-R9",
+        "severity": "low",
+        "file": "tests/test_build_shop.py:2090-2094,2132-2146",
+        "issue": "esc70 hand-built runs give repeats None in _answered, the shape of the node child. The python child always sends a list (diag_windows_2025.txt: repeats [2134, 2]), so the growth fault the real python pass produces carries the suffix \", over [..] searches a length\" (timing_faults 1957-1960). esc70 builds its owed text without that suffix, so deleting the suffix, or breaking its formatting, leaves every case green: a branch of the growth fault the real pass uses is held by no case.",
+        "resolution": "Let _answered take a repeats argument and give the cost at the 1.75 power a list as the python child sends it (for example [3, 2]); build the owed text with the suffix \", over [3, 2] searches a length\", so the whole growth fault the real python pass emits is compared."
       }
     ],
-    "outcome": "[findings: 8 - 0 high, 2 med, 6 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 9 - 0 high, 2 med, 7 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1052,7 +1059,7 @@
     {
       "id": "SG2.11-xk1",
       "title": "The tripwire's growth is judged over a span of lengths wide enough that a host's change in per-character cost cannot read as backtracking, and a child that finished is never reported killed",
-      "status": "in_progress",
+      "status": "done",
       "description": "tests/test_build_shop.py esc53 was red on the windows runner in three CI runs out of three, before and after the timing helper of an earlier task (worst growth per doubling 5.38x, 5.68x, 5.98x against the 2 ** TRIPWIRE_POWER it allows), and green on linux and macOS every time. An earlier task read that as clock noise. It is not, and a scratch diagnostic on both runners measured why (the orchestrator's prompt names the two files; read them before anything else).\n\nWHAT WAS MEASURED, machine idle, single searches on the fine wall clock and batches on processor time agreeing with each other:\n- linux runner, python 3.12.16: every kind grows by about 1.8x to 2.4x per doubling from 200 to 3200 units. Linear.\n- windows runner, python 3.12.10: the cost per character is LOWER than linux's at the short lengths and several times HIGHER at the long ones, with the change spread over roughly a decade of length. One kind read 63, 168, 670, 1984, 4398 microseconds at 200 to 3200 units - 2.7x, 4.0x, 3.0x, 2.2x per doubling; another 8.3x at one doubling in one process and 2.8x for the same doubling in the next. From 1600 to 3200 units the kinds whose text is longest are back near 2.2x. The whole span 200 to 3200 units (16 times the length) grew between about 59 and 89 times.\nTHE ORCHESTRATOR'S READING, to prove or refute by a run of your own on the diagnostic's numbers: this is a cost that is linear in two pieces with a steeper second piece (how that python build's allocator serves the engine's working memory once it passes a size), not backtracking - which would multiply by four at EVERY doubling without settling. A three-point series across the change cannot tell the two apart; that is the defect of the case, on that host.\n- the same diagnostic: the python child alone takes between two and three seconds of wall on the windows runner for one kind, on an idle machine; in the red CI run the node child of the first kind was reported 'killed at the 10s deadline' although node alone answers in well under a second. `run_timers` starts both children together and gives each the time LEFT of one shared deadline, so a python child that used nearly all of it leaves node none, and on windows a `communicate` with no time left raises for a process that has already exited.\n\nTHE RULE TO BUILD.\n1. GROWTH IS JUDGED OVER THE WHOLE SPAN, NOT PER DOUBLING: the time at the longest length over the time at the shortest is at most (the ratio of the two lengths) ** TRIPWIRE_POWER - the same power, unmoved - over a span wide enough that a bounded change in per-character cost cannot reach that bound and backtracking cannot miss it. Derive the span from the measurements and write the derivation where the constants are: the steepest change the diagnostic shows, the bound's room over it, and what a quadratic reads over the same span. The room must be stated as a ratio a reader can check against the diagnostic's numbers, and it must hold for every kind on both runners' numbers with at least a factor of two to spare; if no span gives that at lengths the engines can be asked, stop and say so with the numbers rather than choosing a thinner one.\n2. The lengths are few (the cost of a series on a clock stepping 1/64 s is its number of lengths times its rounds), every engine is asked the same lengths, and the answers at every length are still judged (esc54, esc56). Check that node's engine answers at the longest length at all - a regular expression engine can refuse a long input in its own way - on the node this machine has, and say which node the runner has (the diagnostic prints it).\n3. The absolute ceiling at the longest length and 'no child killed at its deadline' keep their meaning; if the longest length moves, the ceiling is re-derived from the diagnostic's per-character costs and the return carries the arithmetic. A deadline is raised only with the measured wall time that requires it beside it.\n4. A CHILD THAT HAS EXITED IS NEVER 'KILLED'. Whatever time is left when its turn comes, a child that already finished is read, and only one still running at the deadline is killed and reported so. Each engine's deadline is its own or the shared one is honoured without starving the later child - choose, and hold the choice with a case that substitutes a slow first child and a fast second one and needs no real engine.\n5. The cases still catch what they were written for: the tripwire made to backtrack turns the growth case red in both engines, on the real clock and on the substituted 1/64 s clock, and a kinked-linear cost - a substituted engine or a substituted series whose per-length times are the windows runner's own numbers - stays green. That last one is the allow case that was missing; it is driven from the diagnostic's numbers written into the case as history (measured where and when), not re-measured.\n6. `_harness.growth_series` is not changed unless a run shows it must be; it is not among this task's files.\n\nHOW TO PROVE. Feed the present judgement the windows runner's measured series: red (as CI). Feed the new one the same: green, with the room printed. The backtracking mutation: red under the new judgement. Suite seconds before and after, two runs with a gap, and the series' cost on the substituted 1/64 s clock (that is what windows will pay). A mutation probe the orchestrator can run from the worktree root (a copy of the working tree, each mutation asserted applied, never `git archive HEAD`): the span narrowed back to the present three lengths; the power raised; the exited-child reading removed (the starved-child case goes red); the judgement made per doubling again (the windows-numbers allow case goes red). Say which lines only a windows run can confirm.\n\nNOT in this task: the builder and its own-repository cases (the task before this one changes them - read the file as it stands); cw8 and gw15, which passed on the windows runner in the last CI run.\n\nAcceptance:\n(1) The growth judgement is over the whole span at TRIPWIRE_POWER, the span derived in writing from the two runners' measurements with at least a factor of two of room.\n(2) The windows runner's measured series is green under it and a backtracking tripwire is red, in both engines.\n(3) A child that has exited is read and never reported killed, held by a case that needs no real engine.\n(4) No ceiling or deadline moved without the measurement that requires it.",
       "files": [
         "tests/test_build_shop.py",
@@ -1076,16 +1083,60 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7adbc79eafab",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_build_shop.py. (1) GROWTH OVER THE WHOLE SPAN: span_growth(lengths, secs) (line ~1918) returns time at the longest over time at the shortest and (length ratio in characters) ** TRIPWIRE_POWER; timing_faults judges grew > bound once per run and reports least room (bound/grew); tripwire_runs records each run's input lengths. TRIPWIRE_UNITS = (200, 51200) (was 200, 400, 800), TRIPWIRE_POWER unmoved at 1.5. Derivation written above the constant, from the wide measurement of 2026-11-20 (windows-2025 and ubuntu-24.04, python 3.12/3.14, two runs a job): over 200->51200 units the length ratio is 244-334 by kind, bound 3803-6108, largest time ratio 1978 (kind 2, bound 6108), LEAST ROOM 2.87 (windows python 3.14.10 run 1, processor time, a single quote left unpaired) over every file, run, kind and reading incl. node (node's least 14.9); ending at 25600 units the least room is 1.94 (< 2), so 51200 is the shortest end that holds; a quadratic reads L^2 = 59k-112k, 15.6-18.3x its bound. Two lengths only: the judgement reads the ends, a middle length would be judged by nothing and cost a series per kind and twin. (2) CEILING re-derived: TRIPWIRE_CEILING 0.25 -> 1.0 s. Longest text 1883359 characters (command substitutions + twin) x highest cost per character any reading showed, 142.5 ns (windows python 3.12.10) = 0.27 s idle; the red CI run read its longest at 800 units 2.35x the idle figure (0.0055 vs 0.00234 s, measured once) -> ~0.63 s loaded; 1.0 leaves 1.6 over that. (3) DEADLINES unmoved (TRIPWIRE_DEADLINE 10, TRIPWIRE_SERIES_DEADLINE 8): the new series costs at most 2.19 s a child on the 1/64 s clock at the windows numbers (31.8 s for every kind and twin), against 2.58 s / 40.7 s for the old three lengths (scratch sg2.11/cost.py), so nothing requires a raise. (4) EXITED CHILD: run_timers split into start_timers + collect_timers + child_output; child_output reads a child whose communicate timed out but which has exited (poll() not None) and kills only one still running; one deadline from the common start (each child's own, since they start together). Confirmed on this host that communicate(timeout=0) raises TimeoutExpired for an exited child on posix too. (5) NEW CASES: esc66 windows history (WINDOWS_UNITS 200/400/800/51200, WINDOWS_SECONDS, measured 2026-11-20 windows-2025 python 3.14.10 run 1, processor time) within the bound over the span in every kind (least room 2.87) while per doubling it reads up to 4.16x > 2.83, and the recorded lengths still equal the texts the suite builds; esc67 the same costs driven through _harness.growth_series by a substituted engine on a virtual clock stepping 1/64 s (virtual_series): green, least room 2.86, at most 2.17 s a child, 31.8 s for all, within TRIPWIRE_SERIES_DEADLINE; esc68 a quadratic cost on the same clock with no deadline fails the judgement in every kind; esc69 a slow child (sleeping EXITED_SLOW_SLEEP) and a fast one collected after the deadline: slow killed, fast read with its answer, not killed - no engine needed. esc53/esc55 wording now names the whole-span judgement and least room; the timing pass prints each engine's slowest child read time against TRIPWIRE_DEADLINE. (6) CHANGELOG.md [Unreleased]: the sentence saying the suite times at lengths 'each double the last' against TRIPWIRE_POWER was false after this change; rewritten to the whole-span judgement and the exited-child reading. CHANGELOG.md is outside the task's files; the plan gate allowed the edit. Suite: 72 -> 76 cases. Seconds here (macOS, python 3.14.7, node v24.14.1; a second session loads this machine), pass 1 / pass 2 after a 120 s gap: bare before 23.1/30.0, after 20.6/19.4; under the sweep before 23.0/25.9, after 26.0/40.2; the brief's gate run 78.2 s (busy machine). Mutation probe: 12 rows, all CAUGHT, exit 0 (backtracking rows 127 s and 138 s, red by the 10 s kill in python and node: 11 of 18 runs killed in each, the counted twins match at the start). DEPENDANTS: plugins/audit/evals/bugfix/case.yaml and guard-stop/case.yaml - read by path, unchanged, esc51 green; tests/test__output_lints.py - uses _cases/_selftest/the path, signatures unchanged, prose_number_claims and house_style_violations report nothing in the suite, gate green; CHANGELOG.md - changed, see (6); PLUGIN-BUILD-GUIDE.md - its sentence on the suite names no timing, still correct; tree_bytes (test_audit_task.py), write_hook (tools/reach-diff.py) - untouched. WINDOWS-ONLY LINES: child_output's read of an exited child after TimeoutExpired on windows (esc69 on the runner), the real series at (200, 51200) on windows (esc53 room, ceiling, slowest child read time under the sweep), node v22.23.4's answer at 51200 units for the twins; scratch sg2.11/windows_probe.py prints each.",
+        "descriptive": "The tripwire's growth is judged once from 200 to 51200 units against the length ratio to 1.5, which the windows and linux runners' measured cost steps fit with at least 2.87 of room while a quadratic overshoots 15x, and a child that already exited is read rather than reported killed."
       },
       "startedAt": "2026-11-20T00:48:02Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-20T02:00:58Z",
+      "verifiedBy": [
+        "esc66: the windows runner's measured times (history) stay within the bound over the whole span in every kind while per doubling they read as backtracking, and the history still describes the suite's texts",
+        "esc67: the same costs, measured by the timing helper on a substituted clock stepping 1/64 s, stay within the bound and within the series deadline, printing what the series costs a windows runner",
+        "esc68: a cost quadratic in length on the same clock fails the whole-span judgement in every kind",
+        "esc69: a slow child still running at the deadline is killed and reported so, and a fast child that exited before its turn is read, not reported killed"
+      ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-20T01:39:27Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 3083000,
+            "startedAt": "2026-11-20T00:48:04Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-20T01:44:22Z.7b29cd",
+            "kind": "wait",
+            "ms": 9000,
+            "startedAt": "2026-11-20T01:39:53Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-20T01:44:22Z.7b29cd, ending at its startedAt",
+            "kind": "selection",
+            "ms": 17096,
+            "runId": "2026-11-20T01:44:22Z.7b29cd",
+            "startedAt": "2026-11-20T01:40:02Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-20T01:44:22Z.7b29cd",
+            "kind": "gate",
+            "ms": 241438,
+            "runId": "2026-11-20T01:44:22Z.7b29cd",
+            "startedAt": "2026-11-20T01:40:20Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-20T02:00:33Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 443000,
+            "startedAt": "2026-11-20T01:53:10Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 7adbc79eafab",
+            "kind": "commit",
+            "ms": 2393,
+            "startedAt": "2026-11-20T02:00:55Z"
+          }
+        ],
         "firstStartedAt": "2026-11-20T00:48:02Z"
       },
       "reviewPerTask": "signals",
@@ -1108,6 +1159,62 @@
         "runId": "2026-11-20T01:53:08Z.a1726a",
         "status": "passed",
         "at": "2026-11-20T01:53:08Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7adbc79eafab",
+        "at": "2026-11-20T02:00:58Z",
+        "return": "docs/audit/evidence/returns/SG2.11-xk1/20261120T004802Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false and none is owed: the judgement and the child collection under change live in tests/test_build_shop.py itself, so HEAD with the test file copied over it IS the fix and cannot be red. The reds were watched by putting the old behaviour back in a throwaway copy of the working tree (scratch sg2.11/mutations.py, exit 0, 12 rows): exited-child reading removed -> esc69 FAIL (75/76); judgement per doubling again -> esc66 FAIL (75/76); span narrowed to (200, 400, 800) -> esc67 FAIL (75/76); and HEAD's own per-doubling judgement fed the four windows runs of the wide measurement is red on every one (scratch sg2.11/present.py, worst 4.11x to 8.66x per doubling against 2.83).",
+        "at": "2026-11-20, mutation probe on the final tree"
+      }
+    },
+    {
+      "id": "SG2.12-xk1",
+      "title": "The tripwire's growth judgement is held where it is wired into the real-engine pass, and its power is held on both sides",
+      "status": "in_progress",
+      "description": "The review of the task before this one found that tests/test_build_shop.py holds the whole-span growth judgement as a function and not as wiring. `span_growth` is driven directly by three cases (a recorded windows history, the same costs on a coarse clock, a synthetic quadratic), but the place the suite's real pass uses it - the branch of `timing_faults` that appends a fault when a run grew past its bound - is reached by no case that goes red without it: the only caller of `timing_faults` is the pass over the real engines, the rows that make the tripwire backtrack turn red by the child's deadline and not by growth, and by the reviewer's reading that branch can be deleted with every case green. The ceiling's wiring in the same function IS held (a ceiling of one millisecond turns the real pass red). So the judgement the task was about protects nothing between a pattern whose time grows with a power from 1.5 to about 1.9 and whose longest search stays under the ceiling - which neither the ceiling nor the deadline catches.\n\nTHE RULE TO BUILD.\n1. `timing_faults` is driven with hand-built runs, no engine and no clock: runs whose seconds are the recorded windows history give no fault; runs whose seconds grow as a power past TRIPWIRE_POWER give a growth fault naming the kind, what it grew and the bound; a run killed at its deadline, a run with no answer and a run over the ceiling each give their own fault and no growth fault. Red first by deleting the growth branch: the new case fails and nothing else does - show that run, since it is the reviewer's claim made into a measurement.\n2. THE POWER IS HELD ON BOTH SIDES. Today a quadratic is the only cost the cases call too fast, so a power of 1.9 would pass every case. Add a cost between the power and a quadratic that must fail (the reviewer names 1.75), and keep the recorded history as the cost that must pass, so TRIPWIRE_POWER cannot be raised or lowered far without a case going red. Say, from a run, the interval of powers the cases now hold.\n3. THE COMMENTS SAY WHAT WAS MEASURED. (a) The ceiling's headroom under load is argued from a busy-over-idle ratio read at a much shorter length in one CI log; the longest length has since been measured directly on a windows runner, idle and with one busy process per core (the orchestrator's prompt names the file) - use that figure and say where it came from. (b) The least room is stated as one number, while the suite's own run on that runner read a lower one than the recorded history's - state the room as what was read where, as dated history, and do not present a single figure as the floor. (c) A count of characters stands in the present tense with no command beside it: carry the command that prints it or drop the number. (d) Two labels claim more than the code does - a quadratic called 'the slowest a backtracking pattern grows' (it is the mildest polynomial the judgement must catch) and a coarse-clock estimate called what the series 'costs an idle windows runner' (it is an estimate from recorded costs; the measured figure exists). Reword each to what the case shows.\n4. Nothing else moves: lengths, power, ceiling, deadlines and the judgement are as the task before left them.\n\nHOW TO PROVE. The red-first run of rule 1. A mutation probe the orchestrator can run from the worktree root (copies of the working tree, each mutation asserted applied, never `git archive HEAD`): the growth branch of `timing_faults` deleted (the new case, and only it); the branch made to fire always (the allow half: the history's runs then fault); the power raised to 1.9 and lowered to 1.2 (a case red each way); the ceiling branch deleted (still caught, by which case). Suite case count and seconds before and after.\n\nAcceptance:\n(1) Deleting the growth branch of `timing_faults` turns a case red that needs no engine.\n(2) A cost growing as a power between TRIPWIRE_POWER and two fails the judgement and the recorded history passes it, and the interval of powers the cases hold is stated from a run.\n(3) Every figure in the timing section's comments is dated history naming where it was read, or carries the command that prints it; the two labels say what their cases show.",
+      "files": [
+        "tests/test_build_shop.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_build_shop.py: hand-built runs through timing_faults give a growth fault for a power past TRIPWIRE_POWER and none for the recorded windows history, and a cost between the power and a quadratic fails the judgement"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_build_shop.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-20T02:01:42Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-20T02:01:42Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-20T02:26:59Z.8ad2dd",
+        "status": "passed",
+        "at": "2026-11-20T02:26:59Z"
       }
     }
   ],

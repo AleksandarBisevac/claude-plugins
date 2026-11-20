@@ -1,0 +1,70 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_build_shop.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "tests.expectRedFirst is false for this regression task, so no proof is owed; and the helper could not make one, since timing_faults lives in the test file itself, so HEAD with this test file copied over it is the fixed tree. The rule-1 red was watched as a mutation in a throwaway copy of the working tree (scratchpad sg2.12/mutations.py --only 'growth branch of timing_faults deleted'): on the suite as it stood (sg2.12/test_build_shop.before.py) the deletion left ALL PASS 76/76, red [] - the reviewer's claim, measured; on the changed suite it reads SELFTEST FAILED 77/78, red ['esc70'] and nothing else.",
+    "at": "2026-11-20T02:07:46Z"
+  },
+  "outcome": {
+    "technical": "tests/test_build_shop.py only. (1) New _timing_faults_cases, called from _tripwire_cases after _span_judgement_cases: esc70 drives timing_faults with hand-built runs (one engine named hand, no engine and no clock) - the recorded windows times at TRIPWIRE_UNITS give no fault and the least room equals the bound-over-growth worked out independently in the case; a cost growing as the 1.75 power, ending at half TRIPWIRE_CEILING so growth is the only fault left to give, yields exactly one growth fault per kind, compared as a whole list with the 'name: grew Xx from L0 to L1 characters, bound Bx' text built in the case. esc70 also prints the highest power the history grew as (1.308). esc71: a run killed at its deadline, one with no answer, one whose series could not be measured and one over the ceiling within the bound each give exactly one fault of their own and no growth fault. (2) New TOO_FAST_POWERS = (1.75, 2.0); esc68 now holds both on the 1/64 s virtual clock. (3) New windows_at() shared by esc67 and esc70; import math. (4) Comments: the ceiling argued from the direct windows-2025 measurement (python 3.12.10, 2026-11-20: longest search 0.1875/0.2031 s idle, 0.2656 s with one busy process per core; ubuntu-24.04 python 3.12.16 at most 0.1485 s loaded), replacing the 800-unit busy/idle extrapolation; the least room stated as readings where read (2.87 history; 3.12/3.26 idle, 3.66 loaded, 2.83 the suite's bare run, windows-2025 3.12.10), not a floor; the 1883359-character count and the per-character extrapolation dropped; the 1/64 s step dated; the quadratic's figures put in the conditional past of the dated runs. Labels: esc67 'what the series costs an idle windows runner' -> 'an estimate on that clock from the recorded windows costs, not a measurement'; esc68 'the slowest a backtracking pattern grows' -> powers (1.75, 2.0), 'one between TRIPWIRE_POWER and a quadratic, and a quadratic, the mildest polynomial the judgement must catch'. Lengths, power, ceiling, deadlines and the judgement unmoved. Runs: suite 76 -> 78 cases; sweep 20.9 s wall before, 29.7 / 26.2 / 19.8 s after on a shared machine; the no-engine cases in-process 0.348/0.315 s before, 0.482/0.375 s after (two runs, 10 s gap). Power interval from a run (sg2.12/interval.py, in-process at a grid): no case red from 1.309 to 1.744; at 1.308 and below esc66, esc67, esc70 red; at 1.746 esc68 red (coarse clock), from 1.75 esc68 and esc70. Mutation probe (sg2.12/mutations.py, exit 0, 6 rows all caught): baseline 78/78; growth branch deleted -> esc70 only; growth always fires -> esc53, esc55, esc70, esc71; power 1.9 -> esc68, esc70; power 1.2 -> esc66, esc67, esc70; ceiling branch deleted -> esc71 only. Orchestrator gate run-test-gate.py SG2 --task SG2.12-xk1 unrecorded: GATE GREEN, exit 0. ruff and vermin clean; prose_number_claims and house_style_violations report nothing for the file. Dependants: plugins/audit/evals/bugfix/case.yaml and guard-stop/case.yaml - still correct, they reference the file by path and the tripwire pattern and grants are untouched; tests/test__output_lints.py - still correct, it uses _cases/_selftest and the file's path, unchanged; CHANGELOG.md - still correct, its entry (lines 203-205) describes the judgement, which did not change; PLUGIN-BUILD-GUIDE.md - still correct, it names the file for the fixture builds only.",
+    "descriptive": "The tripwire's growth fault is now held where the real-engine pass reports it, and TRIPWIRE_POWER is held on both sides (1.309 to 1.744 turn no case red), with the timing comments stating measured figures as dated readings."
+  },
+  "testsAdded": [
+    "esc70: timing_faults fed hand-built runs - the recorded windows history gives no fault and its least room, a cost at the 1.75 power under the ceiling gives exactly one growth fault per kind naming it, its growth and the bound",
+    "esc71: a killed run, a run with no answer, an unmeasured series and a run over the ceiling within the bound each give their own single fault and no growth fault",
+    "esc68 widened: a cost at the 1.75 power, between TRIPWIRE_POWER and a quadratic, fails the judgement on the 1/64 s clock beside the quadratic"
+  ],
+  "casesAdded": [
+    [
+      "esc70",
+      "esc71",
+      "esc68"
+    ]
+  ],
+  "claims": "claims:\n1 timing_faults growth branch is what esc70 reaches (mutation row: deleted -> esc70 red); esc68/esc67 labels reworded to what the cases compute (TOO_FAST_POWERS loop; virtual_series estimate)\n2 growth deleted -> esc70 only red (77/78), before-copy 76/76; over-fire twin always-fire -> esc53 esc55 esc70 esc71 red; power 1.9 -> esc68 esc70; 1.2 -> esc66 esc67 esc70; ceiling deleted -> esc71; restored byte for byte in a throwaway copy, pycache purged; mutations.py exit 0\n3 git grep for the old phrases and figures (slowest a backtracking, costs an idle windows, 1883359, 2.35 times, 0.63 s, 142.5, the least room, on windows is): remaining hits are two dated history lines in this section, an SVG coordinate in docs/demo-large.html and two sentences in other suites with no tripwire figure - left, not this section's claim\n4 n/a - no rule to an agent\n5 sweep twice with a 20 s gap (29.7 s, 26.2 s) and once more 19.8 s; in-process no-engine cases twice with a 10 s gap (0.482 s, 0.375 s after vs 0.348 s, 0.315 s before)\n6 n/a - no guard\n7 every figure in the section's comments is dated history naming the runner, python and date it was read on; the 1883359-character count dropped; the power interval's lower end printed by esc70",
+  "stamp": "audit-stamp: {\"content\":\"sha256:9942494d7afb1acff11b6f342ae7585a973a2667d4b12ab1f9d6a5ebbae4c54e\",\"dirtyDigest\":\"sha256:4ee7aa9534820a70c33324b9554c1a4edfa36bbf6e6c47225f44c0fddd67e53a\",\"dirtyPaths\":{\"tests/test_build_shop.py\":\"4b7614cfac71062f\"},\"head\":\"7adbc79e\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_build_shop.py\"],\"scopeDigest\":\"sha256:46d2126d13839193dd6b7ef5fda62a5a7be6af68794a22d4795e264a8ff01103\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 0 of the diff's 1 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 1 change(s) to tests the task declared by case; 1 file(s) that could hold a move not compared: tests/test_build_shop.py",
+    "findings": [],
+    "declared": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test_build_shop.py",
+        "line": 2058,
+        "side": "base",
+        "what": "labelled check `esc68 a search whose cost is quadratic in its length - the slowest ...` is gone from the tree copy",
+        "part": "gone"
+      }
+    ],
+    "renamed": [
+      {
+        "path": "tests/test_build_shop.py",
+        "from": "esc67 ...and measured by the timing helper on a clock stepping 1/64 s, the python child's series at %r units of each kind stays within the bound (least room %s) and takes at most %.2fs of that clock's time, within TRIPWIRE_SERIES_DEADLINE - %.1fs for every kind and its twin, what the series costs an idle windows runner; %r",
+        "to": "esc67 ...and measured by the timing helper on a clock stepping 1/64 s, the python child's series at %r units of each kind stays within the bound (least room %s) and takes at most %.2fs of that clock's time, within TRIPWIRE_SERIES_DEADLINE - %.1fs for every kind and its twin, an estimate on that clock from the recorded windows costs, not a measurement; %r",
+        "line": 2053
+      }
+    ],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "tests/test_build_shop.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 2021 (`at = [WINDOWS_UNITS.index(n) for n in TRIPWIRE_UNITS if n in WINDOW...`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "7adbc79eafab6328a263ebe799e6e344f9c48a67"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-20T02:19:50Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

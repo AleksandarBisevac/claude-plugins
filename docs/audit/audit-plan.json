@@ -14592,7 +14592,8 @@
       "SG2.6-xk1",
       "SG2.7-xk1",
       "SG2.10-xk1",
-      "SG2.11-xk1"
+      "SG2.11-xk1",
+      "SG2.12-xk1"
     ],
     "tests/test_sweep_selftests.py": [
       "SG1.23-ukq"
