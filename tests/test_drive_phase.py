@@ -5696,24 +5696,33 @@ def _lock_stop_cases(check):
     # The gate runner's exit 3 is a run whose record was not stored. When the
     # record was refused because the index lock stayed held past its wait, the
     # remedy is the verb's: wait and run next again - not the generic stop.
-    held = ("GATE NOT RECORDED: the gate itself passed and its evidence row is "
-            "in the ledger, but the plan holds no record of the run\n"
-            "  pointer:  NOT updated - %s 30s (held by another live run); "
-            "nothing was written to the plan\n" % (M._evio.INDEX_BUSY_HEAD,))
+    # The words are the runner's own: its recorder renders them, with the
+    # record's write answering the lock's busy refusal.
+    busy = ("%s 30s (held by another live run); nothing was written to the "
+            "plan" % (M._evio.INDEX_BUSY_HEAD,))
+    held = "\n".join(_runner_record_lines(busy)) + "\n"
     ctx = {"phase": PHASE}
     _code, said = M.relay_refusal(ctx, "run-test-gate.py", 3, held)
     rule = list((M.STEPS.get("stop-index-lock") or {}).get("rule") or ())
     check("dl12 THE RUNNER'S EXIT 3 ON A BUSY INDEX LOCK IS THE VERB'S WAIT "
           "RULE: the stop is `stop-index-lock` and its rule is printed under "
-          "the runner's own words: %r" % ((ctx.get("stop"), said),),
+          "the runner's own words, rendered by its recorder: %r"
+          % ((ctx.get("stop"), said),),
           ctx.get("stop") == "stop-index-lock" and rule
+          and any("pointer:  NOT updated" in line for line in held.splitlines())
           and all(line in said for line in rule) and held.rstrip("\n") in said)
+    unwritable = "\n".join(_runner_record_lines(
+        "the index lock's claim could not be written; nothing was written"))
     others = {}
     for label, text in (
-            ("unwritable", "  pointer:  NOT updated - the index lock's claim "
-                           "could not be written; nothing was written"),
+            ("unwritable", unwritable),
             ("ledger", "GATE NOT RECORDED: the gate itself passed, but "
-                       "--record stored no evidence row")):
+                       "--record stored no evidence row"),
+            # The busy sentence in the run's words, but not on the record's
+            # refusal line - a suite's own output quoting it, say - while the
+            # record was refused for a claim that could not be written.
+            ("quoted elsewhere", "FAIL lk9 the drive waits on '%s 30s'\n%s"
+             % (M._evio.INDEX_BUSY_HEAD, unwritable))):
         ctx = {"phase": PHASE}
         M.relay_refusal(ctx, "run-test-gate.py", 3, text)
         others[label] = ctx.get("stop")
@@ -5721,11 +5730,49 @@ def _lock_stop_cases(check):
     M.relay_refusal(ctx, "run-test-gate.py", 2, held)
     others["exit 2"] = ctx.get("stop")
     check("dl12b SECOND DIRECTION: an exit 3 that is not a busy lock - a claim "
-          "that could not be written, a ledger row not stored - and a busy-lock "
-          "text under another exit are the generic stop, never a wait for a "
-          "lock nobody holds: %r" % (others,),
+          "that could not be written, a ledger row not stored, the busy "
+          "sentence quoted anywhere but the record's refusal line - and a "
+          "busy-lock text under another exit are the generic stop, never a "
+          "wait for a lock nobody holds: %r" % (others,),
           others == {"unwritable": "stopped", "ledger": "stopped",
-                     "exit 2": "stopped"})
+                     "quoted elsewhere": "stopped", "exit 2": "stopped"})
+
+
+def _runner_record_lines(reason):
+    """The lines `run-test-gate.py`'s recorder (`_record_run`) prints for a run
+    whose record the plan refused with `reason` - its own renderer, with the
+    ledger write, the record write and the boundary stubbed to answer as a
+    refused record does, so the text is never a copy of the runner's."""
+    rtg = _loader.load_script("run-test-gate.py", "rtg_dl12")
+    ev = rtg._ev
+    stubs = {"record": lambda *a, **k: {"row": {"runId": "R1"},
+                                        "path": "docs/audit/evidence/r.jsonl"},
+             "write_record": lambda *a, **k: {"written": False,
+                                              "reason": reason,
+                                              "releaseRefused": None},
+             "write_evidence_since": lambda *a, **k: {"written": False,
+                                                      "at": None,
+                                                      "reason": "not asked"}}
+    own = {"_say_who_else_was_running": lambda *a, **k: None,
+           "_run_record_of": lambda *a, **k: ({}, [])}
+    kept = dict((k, getattr(ev, k)) for k in stubs)
+    kept_own = dict((k, getattr(rtg, k)) for k in own)
+    lines = []
+    try:
+        for k, v in stubs.items():
+            setattr(ev, k, v)
+        for k, v in own.items():
+            setattr(rtg, k, v)
+        args = types.SimpleNamespace(phase=PHASE, task=None, launch=None,
+                                     manifest="docs/audit/audit-plan.json")
+        rtg._record_run(os.getcwd(), args, {"startedAt": None}, "phase", [],
+                        {"phases": []}, out=lines.append)
+    finally:
+        for k, v in kept.items():
+            setattr(ev, k, v)
+        for k, v in kept_own.items():
+            setattr(rtg, k, v)
+    return [str(line) for line in lines]
 
 
 def _key_cases(check):

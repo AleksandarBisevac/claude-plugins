@@ -3920,8 +3920,8 @@ def _plan_writer_cases(check):
               not set(flagged) & set(["keep", "relay", "peek", "shard_name"]))
         rows = (("scripts/saver.py", "tidy", "<write>",
                  "tests/none.py pw0", _PW_REASON),)
-        other = (("scripts/saver.py", "carry", _PW_REASON),
-                 ("scripts/saver.py", "keep", _PW_REASON))
+        other = (("scripts/saver.py", "carry", "saver.keep", _PW_REASON),
+                 ("scripts/saver.py", "keep", "<write>", _PW_REASON))
         held = M.plan_writer_violations(tree, hooks, rows, other, (), repo=tree)
         said = " | ".join(w for _f, w in held)
         check("pw6 EACH ROW IS HELD TO THE CODE: a plan row whose callee "
@@ -3933,16 +3933,16 @@ def _plan_writer_cases(check):
               and "names case pw0 in tests/none.py, which cannot be read" in said
               and "OTHER_WRITERS row for keep() names no function" in said)
         twice = M.plan_writer_violations(
-            tree, hooks, (), (("scripts/saver.py", "tidy", _PW_REASON),
-                              ("scripts/saver.py", "carry", _PW_REASON)),
+            tree, hooks, (), (("scripts/saver.py", "tidy", "saver.keep", _PW_REASON),
+                              ("scripts/saver.py", "carry", "saver.keep", _PW_REASON)),
             (("scripts/saver.py", "tidy", _PW_REASON),), repo=tree)
         check("pw7 A WRITER IN TWO CLASSES IS REPORTED - an OTHER_WRITERS row "
               "for a function STATE_WRITERS already holds: %r" % (twice,),
               any("tidy() is in OTHER_WRITERS and STATE_WRITERS" in w
                   for _f, w in twice))
         short = M.plan_writer_violations(
-            tree, hooks, (), (("scripts/saver.py", "tidy", "writes"),
-                              ("scripts/saver.py", "carry", _PW_REASON)), (),
+            tree, hooks, (), (("scripts/saver.py", "tidy", "saver.keep", "writes"),
+                              ("scripts/saver.py", "carry", "saver.keep", _PW_REASON)), (),
             repo=tree)
         check("pw8 a row whose reason is a label is reported: %r" % (short,),
               any("has no reason" in w for _f, w in short))
@@ -3958,6 +3958,516 @@ def _plan_writer_cases(check):
               len(blind) == 1 and "looked at nothing" in blind[0][1])
     finally:
         shutil.rmtree(empty, ignore_errors=True)
+    _plan_writer_reach_cases(check)
+
+
+# What a resolved writer is handed when its path argument cannot be located:
+# starred, inside `**`, or left out for the default. Each caller is a decision
+# the lint has to report, never a call it drops.
+_PW_UNLOCATED_SRC = (
+    "import json\n"
+    "import os\n\n\n"
+    "def keep(p, doc):\n"
+    "    with open(p, 'w') as fh:\n"
+    "        json.dump(doc, fh)\n\n\n"
+    "def stash(doc, p=os.path.join('docs', 'audit', 'audit-plan.json')):\n"
+    "    with open(p, 'w') as fh:\n"
+    "        json.dump(doc, fh)\n\n\n"
+    "def starred(where, doc):\n"
+    "    keep(*(os.path.join(where, 'a.json'), doc))\n\n\n"
+    "def keyworded(where, doc):\n"
+    "    keep(**{'p': os.path.join(where, 'b.json'), 'doc': doc})\n\n\n"
+    "def defaulted(doc):\n"
+    "    stash(doc)\n\n\n"
+    "def named(where, doc):\n"
+    "    keep(doc=doc, p=os.path.join(where, 'c.json'))\n\n\n"
+    "def relay(p, doc):\n"
+    "    keep(p, doc)\n\n\n"
+    "def relay_kw(p, doc):\n"
+    "    keep(doc=doc, p=p)\n\n\n"
+    "def relay_default(doc, p):\n"
+    "    stash(doc, p)\n")
+
+# The escapes outside a function's own calls: a write at module level, a
+# forwarder whose one caller is module level, a primitive imported by bare name
+# (aliased, and through a star import), a path object's `open`, `os.open` with
+# a writing flag, and a link's destination.
+_PW_ESCAPES_SRC = (
+    "import os\n"
+    "from os import replace as swap\n"
+    "from shutil import *\n"
+    "from pathlib import Path\n\n\n"
+    "def put(p):\n"
+    "    with open(p, 'w') as fh:\n"
+    "        fh.write('{}')\n\n\n"
+    "def renamed(where):\n"
+    "    swap(where, os.path.join(where, 'z.json'))\n\n\n"
+    "def copied(where):\n"
+    "    copy2(where, os.path.join(where, 'y.json'))\n\n\n"
+    "def opened(where):\n"
+    "    with Path(os.path.join(where, 'o.json')).open('w') as fh:\n"
+    "        fh.write('{}')\n\n\n"
+    "def flagged(where):\n"
+    "    os.close(os.open(os.path.join(where, 'x.json'), os.O_WRONLY | os.O_CREAT))\n\n\n"
+    "def linked(where):\n"
+    "    os.link(where, os.path.join(where, 'w.json'))\n\n\n"
+    "def reads(where):\n"
+    "    with Path(where).open('r') as fh:\n"
+    "        return fh.read(), os.open(where, os.O_RDONLY)\n\n\n"
+    "open(os.path.join('docs', 'audit', 'audit-plan.json'), 'w').close()\n"
+    "put(os.path.join('docs', 'audit', 'phases', 'P2.json'))\n")
+
+# The shapes the lint does NOT read, each on its WHAT IT CANNOT SEE list: a
+# callee reached through a dict, through getattr and as a method; a delete and
+# a truncation of a plan path; a second write added to a classified function
+# through the callee its row already names.
+_PW_UNREAD_SRC = (
+    "import json\n"
+    "import os\n\n\n"
+    "def keep(p, doc):\n"
+    "    with open(p, 'w') as fh:\n"
+    "        json.dump(doc, fh)\n\n\n"
+    "SAVERS = {'keep': keep}\n\n\n"
+    "def tabled(where, doc):\n"
+    "    SAVERS['keep'](os.path.join(where, 'phases', 'P1.json'), doc)\n\n\n"
+    "def looked_up(where, doc):\n"
+    "    getattr(__import__('unread'), 'keep')(os.path.join(where, 'P1.json'), doc)\n\n\n"
+    "class Box:\n"
+    "    def save(self, p, doc):\n"
+    "        keep(p, doc)\n\n\n"
+    "def via_method(where, doc):\n"
+    "    Box().save(os.path.join(where, 'phases', 'P1.json'), doc)\n\n\n"
+    "def removed(where):\n"
+    "    os.remove(os.path.join(where, 'phases', 'P1.json'))\n\n\n"
+    "def truncated(where):\n"
+    "    os.truncate(os.path.join(where, 'phases', 'P1.json'), 0)\n\n\n"
+    "def listed(where, doc):\n"
+    "    keep(os.path.join(where, 'notes.json'), doc)\n"
+    "    keep(os.path.join(where, 'phases', 'P1.json'), doc)\n")
+
+
+def _pw_names(violations):
+    """`{function: [what is said of it]}` of a violation list."""
+    found = {}
+    for _f, w in violations:
+        found.setdefault(w.split("()")[0].split()[-1], []).append(w)
+    return found
+
+
+def _plan_writer_reach_cases(check):
+    """(pw10+) What the lint cannot resolve is reported, the escapes are read or
+    listed, and a row covers only the callees it names."""
+    tree = _ck_tree((("saver2.py", _PW_UNLOCATED_SRC),
+                     ("escapes.py", _PW_ESCAPES_SRC),
+                     ("unread.py", _PW_UNREAD_SRC)))
+    hooks = os.path.join(tree, "no-hooks-here")
+    try:
+        bare = M.plan_writer_violations(tree, hooks, (), (), (), repo=tree)
+        by = _pw_names([v for v in bare if v[0] == "scripts/saver2.py"])
+        check("pw10 A CALL WHOSE PATH ARGUMENT CANNOT BE LOCATED IS A SITE OF THE "
+              "CALLER, never dropped: the path passed starred and inside `**` are "
+              "each reported with the reason said, the path left to the callee's "
+              "default is read from that default, and a keyword path is located: "
+              "%r" % (by,),
+              sorted(by) == ["defaulted", "keyworded", "named", "starred"]
+              and "path not located: starred" in " ".join(by["starred"])
+              and "path not located: keywords" in " ".join(by["keyworded"])
+              and "saver2.stash" in " ".join(by["defaulted"])
+              and "LOOKS like a plan writer" in " ".join(by["defaulted"]))
+        check("pw10b SECOND DIRECTION: a forwarder handing its own parameter on - "
+              "by position, by keyword, and into the parameter whose default it "
+              "overrides - decides nothing and is not reported: %r" % (sorted(by),),
+              not set(by) & set(["relay", "relay_kw", "relay_default", "keep",
+                                 "stash"]))
+        esc = _pw_names([v for v in bare if v[0] == "scripts/escapes.py"])
+        check("pw12 EACH ESCAPE IS READ: a write at module level and a forwarder "
+              "whose one caller is module level (both `<module>`), a primitive "
+              "imported by bare name (aliased, and through a star import), a path "
+              "object's `open`, `os.open` with a writing flag and a link's "
+              "destination are each reported - and a read-mode `open` and an "
+              "`os.open` that only reads are not: %r" % (sorted(esc),),
+              sorted(esc) == ["<module>", "copied", "flagged", "linked", "opened",
+                              "renamed"]
+              and len(esc["<module>"]) == 1
+              and "via escapes.put" in esc["<module>"][0]
+              and "via <write>" in esc["<module>"][0])
+        unread = _pw_names([v for v in bare if v[0] == "scripts/unread.py"])
+        cannot = " ".join(M.plan_writer_violations.__doc__.split())
+        listed = dict((shape, word in cannot) for shape, word in (
+            ("a dict", "a dict"), ("getattr", "`getattr`"), ("a method", "a method"),
+            ("a delete", "a delete"), ("a truncation", "a truncation"),
+            ("the same callee", "through a callee its row already names")))
+        check("pw13 THE LIST OF WHAT IT CANNOT SEE IS TRUE: a callee reached "
+              "through a dict, through getattr, a delete and a truncation of a "
+              "plan path are not read - only `listed`, whose writes go through a "
+              "resolved callee, is reported - and each unread shape is named on "
+              "the docstring's list: %r %r" % (sorted(unread), listed),
+              sorted(unread) == ["listed"] and all(listed.values()))
+        row = (("scripts/unread.py", "listed", "unread.keep", _PW_REASON),)
+        counted = M.plan_writer_violations(tree, hooks, (), row, (), repo=tree)
+        planned = M.plan_writer_violations(
+            tree, hooks, (row[0][:3] + ("tests/none.py pw0", _PW_REASON),), (), (),
+            repo=tree)
+        counted = [w for _f, w in counted if "listed()" in w]
+        planned = [w for _f, w in planned if "listed()" in w]
+        check("pw13b ...and that last shape is why it is listed, FOR A PLAN ROW "
+              "ONLY: a PLAN_WRITERS row for `listed` naming `unread.keep` covers "
+              "its second write through the same callee (only its unreadable "
+              "case is said), while an OTHER_WRITERS row naming it once is a "
+              "count and the second write is red: %r %r" % (planned, counted),
+              len(planned) == 1 and "cannot be read" in planned[0]
+              and len(counted) == 1 and "line 40 via unread.keep" in counted[0])
+        sites = dict(((f, fn), s) for f, fn, s, _h in M.plan_writer_sites())
+        advance = sites.get(("scripts/git/_worktrees.py", "_advance"), [])
+        check("pw11 THE INSTANCE IN THE TREE: `_worktrees._advance` hands its "
+              "undo helper a starred tuple, and each such call is a site of "
+              "`_advance` with the reason said: %r" % (advance,),
+              len(advance) >= 1 and all(
+                  via == "_worktrees._undo (path not located: starred)"
+                  for _l, via in advance))
+    finally:
+        shutil.rmtree(tree, ignore_errors=True)
+    _row_cover_cases(check)
+
+
+def _row_cover_cases(check):
+    """(pw14+) A row covers the callees it names, in both tables."""
+    src = _PW_HELPER_SRC + (
+        "\n\ndef spill(where, doc):\n"
+        "    keep(os.path.join(where, 'notes.json'), doc)\n"
+        "    with open(os.path.join(where, 'phases', 'P1.json'), 'w') as fh:\n"
+        "        json.dump(doc, fh)\n")
+    tree = _ck_tree((("saver.py", src),))
+    hooks = os.path.join(tree, "no-hooks-here")
+    try:
+        other = (("scripts/saver.py", "tidy", "saver.keep", _PW_REASON),
+                 ("scripts/saver.py", "carry", "saver.keep", _PW_REASON),
+                 ("scripts/saver.py", "spill", "saver.keep", _PW_REASON))
+        held = M.plan_writer_violations(tree, hooks, (), other, (), repo=tree)
+        spill = [w for _f, w in held if w.startswith("OTHER_WRITERS row for spill()")]
+        check("pw14 AN OTHER-WRITERS ROW CARRIES ITS CALLEE: `spill`'s row says "
+              "it writes through `saver.keep`, and the raw write added beside "
+              "that call is red by name, while `tidy` and `carry`, whose only "
+              "writes go through the callee their rows name, are not: %r" % (held,),
+              len(spill) == 1 and "via <write>" in spill[0]
+              and not [w for _f, w in held if "tidy()" in w or "carry()" in w])
+    finally:
+        shutil.rmtree(tree, ignore_errors=True)
+    bare_plan = [r[:2] for r in M.PLAN_WRITERS
+                 if "<write>" in (r[2] if isinstance(r[2], tuple) else (r[2],))]
+    converter = [r for r in M.OTHER_WRITERS
+                 if r[:2] == ("scripts/manifest/migrate-manifest.py",
+                              "_keep_restore_point")]
+    check("pw14b NO PLAN ROW ADMITS ANY WRITE: no PLAN_WRITERS row's callee is a "
+          "bare primitive - the converter's restore-point copy is a helper with a "
+          "row of its own - so a raw write added to a plan writer is red by name: "
+          "%r %r" % (bare_plan, converter),
+          bare_plan == [] and len(converter) == 1 and converter[0][2] == "<write>")
+    _forward_and_count_cases(check)
+
+
+# A helper writing through TWO of its parameters: a caller handing its own path
+# in one slot and deciding the other is a decider whichever slot is its own.
+_PW_TWO_SRC = (
+    "import os\n\n\n"
+    "def _two(a, b, d):\n"
+    "    open(a, 'w').write(d)\n"
+    "    open(b, 'w').write(d)\n\n\n"
+    "def own_first(logp, root, d):\n"
+    "    _two(logp, os.path.join(root, 'plan.json'), d)\n\n\n"
+    "def own_second(root, logp, d):\n"
+    "    _two(os.path.join(root, 'plan.json'), logp, d)\n\n\n"
+    "def relay_both(a, b, d):\n"
+    "    _two(a, b, d)\n")
+
+# Writers an OTHER_WRITERS row has to count, and ones whose path is the plan's:
+# a function writing twice through one callee, one writing an event log and a
+# literal plan path, one writing a path held in `mpath`.
+_PW_COUNT_SRC = (
+    "import os\n\n\n"
+    "def keep(p, doc):\n"
+    "    with open(p, 'w') as fh:\n"
+    "        fh.write(doc)\n\n\n"
+    "def twice(where, doc):\n"
+    "    keep(os.path.join(where, 'a.log'), doc)\n"
+    "    keep(os.path.join(where, 'b.log'), doc)\n\n\n"
+    "def gate_event(root, doc):\n"
+    "    with open(os.path.join(root, 'events.jsonl'), 'a') as fh:\n"
+    "        fh.write(doc)\n"
+    "    with open(os.path.join(root, 'docs', 'audit', 'audit-plan.json'), 'w') as fh:\n"
+    "        fh.write(doc)\n\n\n"
+    "def to_plan(project, doc):\n"
+    "    mpath = os.path.join(project, 'm.json')\n"
+    "    keep(mpath, doc)\n\n\n"
+    "def door(where, doc):\n"
+    "    _under_lock(where)\n"
+    "    keep(os.path.join(where, 'd.json'), doc)\n\n\n"
+    "def main():\n"
+    "    keep(os.path.join('x', 'm.log'), '')\n")
+
+# The suites a fixture's plan rows cite: a label naming `twice`, one naming
+# nothing in the fixture, one naming the script (for `main`), and the door case.
+_PW_SUITE_SRC = (
+    "def cases(check):\n"
+    "    check('tx1 `twice` keeps both logs', True)\n"
+    "    check('tx2 a case about something else', True)\n"
+    "    check('tx3 counted, the script run whole', True)\n")
+_PW_DOOR_SUITE_SRC = (
+    "def cases(check):\n"
+    "    check('pa0b the doors, derived', True)\n")
+
+
+def _forward_and_count_cases(check):
+    """(pw15+) Every forwarded parameter is judged; an other-writers row is a
+    count and covers no plan path; a plan row's case is about its function."""
+    tree = _ck_tree((("two.py", _PW_TWO_SRC), ("counted.py", _PW_COUNT_SRC)))
+    hooks = os.path.join(tree, "no-hooks-here")
+    repo = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(repo, "tests"))
+        for name, src in (("test_x.py", _PW_SUITE_SRC),
+                          ("test__evidence_io.py", _PW_DOOR_SUITE_SRC)):
+            with open(os.path.join(repo, "tests", name), "w", encoding="utf-8") as fh:
+                fh.write(src)
+        bare = M.plan_writer_violations(tree, hooks, (), (), (), repo=repo)
+        two = _pw_names([v for v in bare if v[0] == "scripts/two.py"])
+        check("pw15 EVERY FORWARDED PARAMETER IS JUDGED AT THE CALL: `_two` writes "
+              "through `a` and `b`, so the caller handing its own path in `a` and "
+              "deciding `b`, and the one doing the reverse, are both deciders, "
+              "while the one handing both of its own on is not: %r" % (sorted(two),),
+              sorted(two) == ["own_first", "own_second"])
+
+        def held(rows, plan=()):
+            return [w for _f, w in M.plan_writer_violations(
+                tree, hooks, plan, rows, (), repo=repo) if "twice()" in w]
+        rows = [(("scripts/counted.py", "twice", via, _PW_REASON),)
+                for via in (("counted.keep",), ("counted.keep",) * 2,
+                            ("counted.keep",) * 3)]
+        once, exact, over = [held(r) for r in rows]
+        check("pw16 AN OTHER-WRITERS ROW IS A COUNT: `twice` writes through "
+              "`counted.keep` twice, so a row naming it once leaves the second "
+              "write red by line, a row naming it twice is clean, and a row "
+              "naming it three times names a write that is not there: %r"
+              % ((once, exact, over),),
+              len(once) == 1 and "line 11 via counted.keep" in once[0]
+              and exact == []
+              and len(over) == 1 and "more than its writes use" in over[0])
+        tied = M.plan_writer_violations(tree, hooks, (), (
+            ("scripts/counted.py", "gate_event", ("<write>", "<write>"), _PW_REASON),
+            ("scripts/counted.py", "to_plan", "counted.keep", _PW_REASON),
+            ("scripts/counted.py", "twice", ("counted.keep",) * 2, _PW_REASON)),
+            (), repo=repo)
+        said = dict((w.split("()")[0].split()[-1], w) for _f, w in tied
+                    if w.startswith("OTHER_WRITERS"))
+        check("pw16b AN OTHER-WRITERS ROW COVERS NO PLAN PATH, however many "
+              "entries it carries: the write of a literal `audit-plan` path "
+              "beside an event log, and a write of a path held in `mpath`, are "
+              "red as plan writes; `twice`, whose paths are logs, is not: %r"
+              % (said,),
+              sorted(said) == ["gate_event", "to_plan"]
+              and "line 17 via <write>, whose path is the plan's (audit-plan)"
+              in said["gate_event"]
+              and "(mpath)" in said["to_plan"])
+        moved = _ck_tree((("counted.py", _PW_COUNT_SRC.replace(
+            "keep(os.path.join(where, 'b.log'), doc)",
+            "keep(os.path.join(where, 'plan.json'), doc)")),))
+        try:
+            swapped = [w for _f, w in M.plan_writer_violations(
+                moved, hooks, (), (("scripts/counted.py", "twice",
+                                    ("counted.keep",) * 2, _PW_REASON),),
+                (), repo=repo) if "twice()" in w]
+        finally:
+            shutil.rmtree(moved, ignore_errors=True)
+        cannot = " ".join(M.plan_writer_violations.__doc__.split())
+        check("pw16c ...AND A COUNT IS ALL IT IS, as its docstring says: a write "
+              "retargeted in place to a path whose names tie nothing to the plan "
+              "keeps the count and is not reported, and the list of what it "
+              "cannot see names the retargeted and the swapped write: %r" % (swapped,),
+              swapped == [] and "write RETARGETED in place" in cannot
+              and "a write SWAPPED" in cannot)
+
+        def case_of(fn, case, via="counted.keep"):
+            row = ("scripts/counted.py", fn, via, case, _PW_REASON)
+            return [w for _f, w in M.plan_writer_violations(
+                tree, hooks, (row,), (), (), repo=repo)
+                if "PLAN_WRITERS row for %s()" % (fn,) in w]
+        tie = {"own label": case_of("twice", "tests/test_x.py tx1"),
+               "another label": case_of("twice", "tests/test_x.py tx2"),
+               "main by script": case_of("main", "tests/test_x.py tx3"),
+               "main by other": case_of("main", "tests/test_x.py tx1"),
+               "door": case_of("door", "tests/test__evidence_io.py pa0b"),
+               "not a door": case_of("twice", "tests/test__evidence_io.py pa0b")}
+        check("pw17 A PLAN ROW'S CASE IS ABOUT ITS FUNCTION: a case whose label "
+              "names the function (the script's name for `main`) is clean, one "
+              "naming something else is red, and the door case is cited by a "
+              "function that calls `_under_lock` and by nothing else: %r" % (tie,),
+              tie["own label"] == [] and tie["main by script"] == []
+              and tie["door"] == []
+              and len(tie["another label"]) == 1
+              and "does not name `twice`" in tie["another label"][0]
+              and len(tie["main by other"]) == 1
+              and "does not name `counted`" in tie["main by other"][0]
+              and len(tie["not a door"]) == 1
+              and "it is not a door" in tie["not a door"][0])
+    finally:
+        shutil.rmtree(tree, ignore_errors=True)
+        shutil.rmtree(repo, ignore_errors=True)
+    _shape_cases(check)
+
+
+# Shapes read since a review named them: a sibling's function through a star
+# import and through `importlib.import_module`, `os.renames`, numeric `os.open`
+# flags, a path object's `open(mode=...)`, `touch` and `rename`. And the reads
+# beside them, which are not writes.
+_PW_SHAPES_SRC = (
+    "import importlib\n"
+    "import os\n"
+    "from two import *\n"
+    "from pathlib import Path\n\n\n"
+    "def starred_sibling(where, d):\n"
+    "    _two(os.path.join(where, 'q.json'), os.path.join(where, 'r.json'), d)\n\n\n"
+    "def imported(where, d):\n"
+    "    importlib.import_module('two')._two(os.path.join(where, 'p.json'), where, d)\n\n\n"
+    "def moved_tree(where):\n"
+    "    os.renames(where, os.path.join(where, 'v.json'))\n\n\n"
+    "def numbered(where):\n"
+    "    os.close(os.open(os.path.join(where, 'u.json'), 1 | 64))\n\n\n"
+    "def keyword_mode(where):\n"
+    "    with Path(os.path.join(where, 'k.json')).open(mode='w') as fh:\n"
+    "        fh.write('{}')\n\n\n"
+    "def touched(where):\n"
+    "    Path(os.path.join(where, 't.json')).touch()\n\n\n"
+    "def path_renamed(where):\n"
+    "    Path(where).rename(os.path.join(where, 's.json'))\n\n\n"
+    "def reads(where):\n"
+    "    with Path(where).open(mode='r') as fh:\n"
+    "        return fh.read(), os.open(where, 0), where.replace('a', 'b')\n")
+
+
+# Writers that hand their path parameter on through a path-preserving call -
+# `str`, `os.fspath`, a re-bound `os.path.abspath`, `pathlib.Path`, a join of
+# parameters alone - and so FORWARD it, beside writers that make a path of their
+# own from a parameter (a suffix, a loop) and so decide it.
+_PW_CARRY_SRC = (
+    "import os\n"
+    "import pathlib\n\n\n"
+    "def atomic_write_text(path, text):\n"
+    "    target = str(path)\n"
+    "    d = os.path.dirname(target) or '.'\n"
+    "    tmp = os.path.join(d, '.%s.tmp' % os.path.basename(target))\n"
+    "    with open(tmp, 'w') as fh:\n"
+    "        fh.write(text)\n"
+    "    os.replace(tmp, target)\n\n\n"
+    "def _w(path, d):\n"
+    "    target = os.fspath(path)\n"
+    "    with open(target, 'w') as fh:\n"
+    "        fh.write(d)\n\n\n"
+    "def _abs(path, d):\n"
+    "    path = os.path.abspath(path)\n"
+    "    with open(path, 'w') as fh:\n"
+    "        fh.write(d)\n\n\n"
+    "def _joined(root, rel, d):\n"
+    "    with open(os.path.join(root, rel), 'w') as fh:\n"
+    "        fh.write(d)\n\n\n"
+    "def _suffixed(path, d):\n"
+    "    with open(path + '.bak', 'w') as fh:\n"
+    "        fh.write(d)\n\n\n"
+    "def _named_here(root, d):\n"
+    "    with open(os.path.join(root, 'fixed.json'), 'w') as fh:\n"
+    "        fh.write(d)\n\n\n"
+    "def via_named_here(root, d):\n"
+    "    _named_here(os.path.join(root, 'z'), d)\n\n\n"
+    "def _looped(paths, d):\n"
+    "    for path in paths:\n"
+    "        with open(path, 'w') as fh:\n"
+    "            fh.write(d)\n\n\n"
+    "def plan_save(root):\n"
+    "    atomic_write_text(os.path.join(root, 'docs', 'audit', 'audit-plan.json'), '{}')\n\n\n"
+    "def fix(root, d):\n"
+    "    _w(os.path.join(root, 'docs', 'audit', 'audit-plan.json'), d)\n\n\n"
+    "def fix_abs(root, d):\n"
+    "    _abs(os.path.join(root, 'x.json'), d)\n\n\n"
+    "def fix_join(root, d):\n"
+    "    _joined(root, 'plan.json', d)\n\n\n"
+    "def relay(path, text):\n"
+    "    atomic_write_text(pathlib.Path(path), text)\n\n\n"
+    "def via_suffix(root, d):\n"
+    "    _suffixed(os.path.join(root, 'y'), d)\n")
+# A hook directory: `_config`'s atomic writer, and a NEW hook whose only write
+# goes through it to the plan.
+_PW_HOOK_CONFIG_SRC = (
+    "import os\n\n\n"
+    "def atomic_write_text(path, text):\n"
+    "    target = str(path)\n"
+    "    tmp = os.path.join(os.path.dirname(target), '.t.tmp')\n"
+    "    with open(tmp, 'w') as fh:\n"
+    "        fh.write(text)\n"
+    "    os.replace(tmp, target)\n")
+_PW_NEW_HOOK_SRC = (
+    "import os\n"
+    "from _config import atomic_write_text\n\n\n"
+    "def main(root):\n"
+    "    atomic_write_text(os.path.join(root, 'docs', 'audit', 'audit-plan.json'), '{}')\n")
+
+
+def _carry_cases(check):
+    """(pw19) A path parameter handed on through a path-preserving call is still
+    that parameter: the writer forwards it, and each caller is a site."""
+    tree = _ck_tree((("wrap.py", _PW_CARRY_SRC),))
+    hooks = tempfile.mkdtemp()
+    try:
+        for name, src in (("_config.py", _PW_HOOK_CONFIG_SRC),
+                          ("zz-new-hook.py", _PW_NEW_HOOK_SRC)):
+            with open(os.path.join(hooks, name), "w", encoding="utf-8") as fh:
+                fh.write(src)
+        bare = M.plan_writer_violations(tree, hooks, (), (), (), repo=tree)
+        wrap = _pw_names([v for v in bare if v[0] == "scripts/wrap.py"])
+        hook = _pw_names([v for v in bare if v[0] == "hooks/zz-new-hook.py"])
+        check("pw19 A PATH HANDED ON THROUGH `str`, `os.fspath`, A RE-BOUND "
+              "`abspath`, `pathlib.Path` OR A JOIN OF PARAMETERS ALONE IS STILL "
+              "THE PARAMETER: those writers forward it, so every caller handing "
+              "them a path is a site - a plan path through `atomic_write_text` "
+              "among them, and a NEW hook whose only write goes through `_config`'s "
+              "- while a writer making its own path from a parameter (a suffix, a "
+              "loop, a join with a name of its own) decides it, and its caller is "
+              "not a site: %r %r" % (sorted(wrap), sorted(hook)),
+              sorted(wrap) == ["_looped", "_named_here", "_suffixed",
+                               "atomic_write_text", "fix", "fix_abs", "fix_join",
+                               "plan_save"]
+              and "LOOKS like a plan writer" in " ".join(wrap["plan_save"])
+              and "via wrap.atomic_write_text" in " ".join(wrap["plan_save"])
+              and sorted(hook) == ["main"]
+              and "via _config.atomic_write_text" in " ".join(hook["main"]))
+    finally:
+        shutil.rmtree(tree, ignore_errors=True)
+        shutil.rmtree(hooks, ignore_errors=True)
+
+
+def _shape_cases(check):
+    """(pw18) The shapes a review found unread are read, and the reads beside
+    them stay quiet; `replace` on a path object is named as unread."""
+    tree = _ck_tree((("two.py", _PW_TWO_SRC), ("shapes.py", _PW_SHAPES_SRC)))
+    hooks = os.path.join(tree, "no-hooks-here")
+    try:
+        bare = M.plan_writer_violations(tree, hooks, (), (), (), repo=tree)
+        shapes = _pw_names([v for v in bare if v[0] == "scripts/shapes.py"])
+        cannot = " ".join(M.plan_writer_violations.__doc__.split())
+        check("pw18 EACH SHAPE A REVIEW NAMED IS READ: a sibling's function "
+              "through a star import and through `importlib.import_module`, "
+              "`os.renames`, an `os.open` with numeric flags, a path object's "
+              "`open(mode='w')`, `touch` and `rename` are each a decider, the "
+              "read beside them (`open(mode='r')`, `os.open(p, 0)`, a string's "
+              "`replace`) is not, and a path object's `replace` is on the list "
+              "of what it cannot see: %r" % (sorted(shapes),),
+              sorted(shapes) == ["imported", "keyword_mode", "moved_tree",
+                                 "numbered", "path_renamed", "starred_sibling",
+                                 "touched"]
+              and "via two._two" in " ".join(shapes["starred_sibling"])
+              and "via two._two" in " ".join(shapes["imported"])
+              and "a path object's `replace(target)`" in cannot)
+    finally:
+        shutil.rmtree(tree, ignore_errors=True)
+    _carry_cases(check)
 
 
 def _with_function_replaced(source, name, replacement):

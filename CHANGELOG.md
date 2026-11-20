@@ -134,7 +134,41 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   proving it reads behind the index lock** (contributors). `_deps.plan_writer_violations()`
   fails a function that decides a path it writes and that no table classifies - a plan writer
   with its case, a writer the state lint holds, or a writer of something else saying what - so a
-  new save helper is caught at its caller whatever it is named.
+  new save helper is caught at its caller whatever it is named. Every row names the callees its
+  function writes through, so a write added through another one is red; a row for a writer of
+  something else counts its writes and may not cover one whose path is the plan's; a plan row's
+  case must name the function it proves; every parameter a helper forwards to a write is judged
+  at each call; a call whose path the lint cannot locate is reported at its caller with the
+  reason, never skipped; and each caller of the evidence module's locked write has a case of its
+  own landing another writer's change as it asks for the lock.
+- **`audit-task.py seed` refuses a plan another writer created while it waited for the lock**,
+  with nothing written, instead of writing over it; a directory or a symbolic link already at the
+  plan's path is refused too, and named as what it is.
+- **`merge-manifest.py resolve` refuses a write made while the merge was stopped even when that
+  file was staged, or was typed inside a conflict's marker block.** It compares each plan file
+  with what git's merge left there as git itself answers it (`git merge-tree --write-tree`, read
+  through checkout's filters), no longer with the index, which `git add` moves; before, a stray
+  write that was staged passed as what the merge left and was overwritten, and so did any edit to
+  a file that still held conflict markers. A conflicted file is now written over only as git left
+  it: a marker line may differ only by a label git would have written there (a name for the
+  commit that marker stands for), so a note typed on a marker line is refused too, and a
+  `conflict-marker-size` attribute or a `diff3`/`zdiff3` conflict style is read as git writes
+  it. Its refusal names, for each file, the commands that put it back,
+  which discard what it holds. Where git cannot answer (before 2.38 there is no `--write-tree`),
+  the merge is rebuilt from its commits instead, and the refusal says so: that rebuild cannot know
+  a merge base git built from several, merge-ort's histogram diff or an `-X` option, so a file
+  git merged otherwise is refused, never written over. With the driver configured, `git merge -X
+  ours` stops on the plan as without the option and `resolve` completes; without it the option
+  decides every hunk and the merge does not stop. A plan file replaced by a symbolic link is
+  refused rather than replaced, and a committed plan file that cannot be read (a byte order mark)
+  is refused with a sentence instead of a traceback.
+- **`repair-tests-add.py --apply` refuses when every entry it found changed in the plan before
+  its lock**, as `repair-commits.py --apply` does, instead of saving the plan unchanged and
+  reporting it repaired: exit 1 and `REFUSED: ... nothing was written - re-run to look again`.
+- **A plan write whose lock holder died while it waited says the lock looks abandoned**, with the
+  steps to release it, instead of saying the lock was not free; the drive waits only on the gate
+  runner's own record-refusal line naming a busy lock, not on that sentence anywhere in its
+  output.
 - **The bug a red CI run owes is filed in one place, and names the failed jobs.**
   `full-gate.py --ci-run` files it, titled with the branch, commit and run as before; the drive
   no longer files one itself. Reading the same run again files nothing: a bug with that title,
