@@ -1503,6 +1503,10 @@ NOT_AN_EXEMPTION = {
     "CLASS_MEANING": "what each content class of a recorded session's cost means, "
                      "printed beside the class's figures - a legend for a reader, "
                      "excusing nothing from any rule",
+    "TOOL_WRITTEN": "the entries a tool rather than an author writes into a pinned "
+                    "skill's directory, each with the remedy a mismatch stop prints "
+                    "beside it - every one is still counted in the digest, so a row "
+                    "makes the stop say more and leaves nothing out of the check",
 }
 
 # The reason has to be a SENTENCE. A one-word value is a label - `{"P1": "done"}` -

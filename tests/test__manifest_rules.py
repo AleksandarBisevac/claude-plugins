@@ -93,6 +93,62 @@ def _valid_manifest():
     }
 
 
+def _pin_skill(base, name, body):
+    """`<base>/<name>/SKILL.md` holding `body`; the skill's directory."""
+    folder = os.path.join(base, name)
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8",
+              newline="\n") as fh:
+        fh.write(body)
+    return folder
+
+
+def _pin_use_cases(record, good_pin):
+    """What a pin protects: a pin no level of the plan uses is a warning naming
+    it, and two pins that resolve to one directory with different digests are an
+    error - the second asked of the directories, so of a caller holding a tree."""
+    import copy
+    unused = copy.deepcopy(_valid_manifest())
+    unused["meta"]["skillPins"] = {"fo0": good_pin, "conv": good_pin,
+                                   "house:qual": good_pin}
+    unused["phases"][0]["tasks"][0]["skills"] = ["conv", "qual"]
+    f_un, w_un = M.validate(unused)
+    named = [x for x in w_un if "skillPins" in x]
+    record("spn6 a pin whose name no level of the plan uses is a WARNING naming it - "
+           "it protects nothing - while a pin the plan uses, under either spelling "
+           "of the name, draws none; never a finding",
+           f_un == [] and len(named) == 1 and "fo0" in named[0]
+           and "conv" not in named[0] and "qual" not in named[0], (f_un, w_un))
+    root = _harness.fixture_root("rules-pins-")
+    tree = os.path.join(root, "tree")
+    home = os.path.join(root, "home")
+    plugin = os.path.join(root, "plugin")
+    os.makedirs(os.path.join(plugin, ".claude-plugin"))
+    with open(os.path.join(plugin, ".claude-plugin", "plugin.json"), "w",
+              encoding="utf-8") as fh:
+        fh.write('{"name": "house"}')
+    _pin_skill(os.path.join(plugin, "skills"), "one-dir", "---\nname: one-dir\n---\n")
+    other = {"sha256": "e" * 64}
+    plan = copy.deepcopy(_valid_manifest())
+    plan["meta"]["skillPins"] = {"one-dir": good_pin, "house:one-dir": other}
+    agree = copy.deepcopy(plan)
+    agree["meta"]["skillPins"]["house:one-dir"] = good_pin
+    try:
+        clash = M.skill_pin_findings(plan, tree, home, plugin)
+        quiet = M.skill_pin_findings(agree, tree, home, plugin)
+        bare = M.skill_pin_findings(_valid_manifest(), tree, home, plugin)
+    except Exception as exc:                                   # noqa: BLE001
+        clash = quiet = bare = ("raised", "%s: %s" % (type(exc).__name__, exc))
+    record("spn7 two pins that resolve to one directory - the bare name and the "
+           "running plugin's qualified one - with different digests are a "
+           "validation ERROR naming both; ALLOW: the same digest under both, and a "
+           "plan with no key, are none",
+           isinstance(clash, list) and len(clash) == 1 and "one-dir" in clash[0]
+           and "house:one-dir" in clash[0]
+           and _output.finding_code(clash[0]) == "rules.meta.skill-pins"
+           and quiet == [] and bare == [], (clash, quiet, bare))
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(record):
     import copy
@@ -630,6 +686,7 @@ def _cases(record):
     m_spn = copy.deepcopy(_valid_manifest())
     m_spn["meta"]["skillPins"] = {"conv": good_pin, "house:conv": {
         "sha256": good_pin["sha256"]}}
+    m_spn["phases"][0]["tasks"][0]["skills"] = ["conv"]
     f_spn, w_spn = M.validate(m_spn)
     ok_spn = f_spn == [] and not [x for x in w_spn if "skillPins" in x]
     record("spn1 a well-formed meta.skillPins - a bare and a plugin-qualified name, "
@@ -646,6 +703,7 @@ def _cases(record):
     check("spn5 a pin carrying a key it does not have, or no sha256, is an ERROR",
           "meta.skillPins: conv", lambda m: m["meta"].update(
               skillPins={"conv": {"sha256": good_pin["sha256"], "sha": "x"}}))
+    _pin_use_cases(record, good_pin)
     check("sk6 a wrong-typed task.skills warns (and only warns) - it is use "
           "evidence, and resolution loads nothing from it", None,
           lambda m: m["phases"][0]["tasks"][0].update(skills="conv"),

@@ -36,6 +36,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -207,24 +208,63 @@ def loaded_verdict(entry, hit):
 #
 # THE DIGEST. SHA-256 over the sorted lines `<relative posix path> <sha256 of the
 # file>\n`, one per file under the directory, UTF-8 - the shape
-# docs/research/benchmark-design.md 4.2 gives the benchmark's skill set, with three
-# differences: one skill's directory rather than every copied directory at once,
-# paths written with `/` on every platform, and line ends read alike. A file holding
-# no NUL byte is hashed with each CRLF taken as LF, so a checkout that converted
-# line endings (`core.autocrlf`, `eol=crlf`) answers the digest the pinning checkout
-# did. The cost: a change that only adds or removes a CR before a LF is not seen,
-# in a text file or in a binary one that happens to hold no NUL byte. A lone CR is
-# kept, as git keeps it.
+# docs/research/benchmark-design.md 4.2 gives the benchmark's skill set, but for one
+# skill's directory rather than every copied directory at once, with paths written
+# with `/` on every platform, and with the line ends of the instruction files read
+# alike (below).
 #
-# NO DIGEST is the third answer, never a match: a file that cannot be read, a link
-# leading out of the directory, a link to a directory (its files would be counted
-# twice or not at all), a file name holding a line break (it would forge a line),
-# or more files or bytes than `MAX_SKILL_FILES`/`MAX_SKILL_BYTES` - a directory that
-# size is not a skill, and hashing it would stall every dispatch. Every file counts,
-# a `__pycache__` a skill's script left behind included: a cached module is code a
-# session can run.
-MAX_SKILL_FILES = 1000
+# THE READER LOOKS BEFORE IT READS, so what it does is bounded by the ceilings and
+# not by what the directory holds. Every entry is `lstat`ed first. Only a regular
+# file - or a link that stays inside the directory and leads to one - is opened,
+# without following a link and without blocking, its kind and identity checked
+# again on the open descriptor, and read in chunks; any other kind (a FIFO, whose
+# open blocks for ever, a socket, a device, a dangling link, a link to a directory,
+# whose files would be counted twice or not at all) makes the directory unreadable,
+# by name and kind, never opened. A file's size is compared with what is left of
+# `MAX_SKILL_BYTES` before it is opened, and the read stops past it whatever the
+# size said; every entry met - file, directory or link - counts toward
+# `MAX_SKILL_ENTRIES`, a directory's listing included. A name that cannot be written
+# as UTF-8 (possible on linux) or holds a line break (it would forge a line) is
+# unreadable too. A directory past a ceiling is not a skill, and hashing it would
+# stall every dispatch.
+#
+# LINE ENDINGS: AN ALLOW LIST, NOT A DENY LIST. A carriage return changes what a
+# script does - `cd dir\r` fails and the script carries on in its caller's
+# directory, `set -e\r` sets nothing - and a batch file needs CRLF, so the kinds of
+# file whose CR must be kept are unbounded and no list of them can be complete. So
+# only the instruction files have CRLF read as LF (`NORMALISED_SUFFIXES`, compared
+# without regard to case: Markdown, which is read by a model, where a CR before a
+# LF changes nothing it is told); every other file is hashed as its bytes, and a
+# lone CR is kept everywhere. The cost: a checkout that converts line endings
+# (`core.autocrlf`, `eol=crlf`) changes the digest of a skill that ships anything
+# but Markdown, and the remedy is the repository's own - mark the skill's directory
+# as not text for git, so no checkout converts it.
+#
+# NO DIGEST is the third answer, never a match. Every file counts, a `__pycache__` a
+# skill's script left behind included: a cache beside its source file is code
+# python runs in the source's place when the cache's header matches, so leaving
+# caches out of the digest would leave a hole. That is why the plugin's own session
+# runner starts its child unable to write one (`run-agent-session.py`), and why a
+# mismatch names the entries a tool rather than an author writes (`TOOL_WRITTEN`).
+# What the digest does not see: a file's mode (an executable bit), an empty
+# directory, and a CR before a LF in a Markdown file.
+MAX_SKILL_ENTRIES = 1000
 MAX_SKILL_BYTES = 32 * 1024 * 1024
+NORMALISED_SUFFIXES = (".md",)
+_CHUNK = 64 * 1024
+# What a read past the byte ceiling answers, worded once by `skill_digest`: a
+# value no reason sentence can be.
+_OVER = object()
+# The entries a tool rather than an author writes, by name at any depth, with what
+# to do about each. Each is still counted (above); a mismatch names the ones found.
+TOOL_WRITTEN = (
+    ("__pycache__", "a bytecode cache python writes when a script of the skill "
+                    "imports another - remove it, and run the skill's scripts with "
+                    "PYTHONDONTWRITEBYTECODE=1"),
+    (".DS_Store", "the folder settings macOS Finder writes - remove it"),
+    (".git", "a git checkout's own metadata, so the skill is a clone - copy its "
+             "files out of the clone instead"),
+)
 DIGEST = re.compile(r"^[0-9a-f]{64}$")
 PIN_KEYS = ("sha256", "source")
 # The reader's four answers for one pinned name.
@@ -237,8 +277,9 @@ class PinStop(ValueError):
     (`drive-phase.py one_next`), so a hand-out that raises it stops `next` there."""
 
 
-def _no_digest(problem, files=0):
-    return {"digest": None, "files": files, "problem": problem}
+def _no_digest(problem, files=0, tool_written=()):
+    return {"digest": None, "files": files, "problem": problem,
+            "toolWritten": list(tool_written), "kept": None}
 
 
 def _inside(path, root):
@@ -250,75 +291,204 @@ def _inside(path, root):
         return False
 
 
-def _file_line(full, rel, root):
-    """`(line, size, problem)` for one file of a skill's directory."""
+def _kind(mode):
+    """The kind of an entry whose mode is `mode`, in the words a refusal uses."""
+    for test, word in ((stat.S_ISREG, "regular file"), (stat.S_ISDIR, "directory"),
+                       (stat.S_ISLNK, "link"), (stat.S_ISFIFO, "FIFO"),
+                       (stat.S_ISSOCK, "socket"), (stat.S_ISCHR, "character device"),
+                       (stat.S_ISBLK, "block device")):
+        if test(mode):
+            return word
+    return "entry of a kind this reader does not know"
+
+
+def _name_problem(rel):
+    """Why `rel` cannot be a line of the digest, or None."""
     if "\n" in rel or "\r" in rel:
-        return None, 0, "the file name %r holds a line break" % (rel,)
-    if os.path.islink(full) and not _inside(os.path.realpath(full), root):
-        return None, 0, "%s is a link leading out of the directory, to %s" % (
-            rel, os.path.realpath(full))
+        return "the file name %r holds a line break" % (rel,)
     try:
-        with open(full, "rb") as fh:
-            raw = fh.read()
+        rel.encode("utf-8")
+    except UnicodeError:
+        return "the file name %r cannot be written as UTF-8" % (rel,)
+    return None
+
+
+def _is_normalised(rel):
+    """True for a file whose CRLF is read as LF: `NORMALISED_SUFFIXES`."""
+    return rel.lower().endswith(NORMALISED_SUFFIXES)
+
+
+def _read_file(path, rel, seen, budget, keep):
+    """`(sha256, size, kept bytes or None, problem)` for one regular file whose
+    `stat` was `seen`: opened without following a link and without blocking,
+    checked to be that same regular file, read in chunks and stopped past
+    `budget` bytes. With `keep` true the raw bytes are handed back too."""
+    flags = (os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+             | getattr(os, "O_BINARY", 0))
+    try:
+        fd = os.open(path, flags)
     except OSError as exc:
-        return None, 0, "%s could not be read: %s" % (rel, exc)
-    data = raw if b"\0" in raw else raw.replace(b"\r\n", b"\n")
-    return "%s %s\n" % (rel, hashlib.sha256(data).hexdigest()), len(raw), None
+        return None, 0, None, "%s could not be read: %s" % (rel, exc)
+    try:
+        now = os.fstat(fd)
+        if not stat.S_ISREG(now.st_mode) or not os.path.samestat(now, seen):
+            return None, 0, None, "%s changed while it was read" % (rel,)
+        sha, size, kept, carry = hashlib.sha256(), 0, [] if keep else None, b""
+        normalise = _is_normalised(rel)
+        while True:
+            chunk = os.read(fd, _CHUNK)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > budget:
+                return None, size, None, _OVER
+            if kept is not None:
+                kept.append(chunk)
+            if normalise:
+                # A CR that ends a chunk may be the first half of a CRLF.
+                chunk = carry + chunk
+                carry = b"\r" if chunk.endswith(b"\r") else b""
+                chunk = (chunk[:-1] if carry else chunk).replace(b"\r\n", b"\n")
+            sha.update(chunk)
+        sha.update(carry)
+    except OSError as exc:
+        return None, 0, None, "%s could not be read: %s" % (rel, exc)
+    finally:
+        os.close(fd)
+    return sha.hexdigest(), size, (b"".join(kept) if keep else None), None
 
 
-def skill_digest(folder, max_files=MAX_SKILL_FILES, max_bytes=MAX_SKILL_BYTES):
-    """`{"digest", "files", "problem"}` for a skill's directory: the digest
-    defined above, or None with the reason the directory has none."""
+def _file_target(full, rel, root, seen):
+    """`(path to read, its stat, problem)` for an entry that is no directory: a
+    regular file is itself, a link inside the directory to one is its target, and
+    anything else is the problem naming it and its kind - never opened."""
+    if stat.S_ISREG(seen.st_mode):
+        return full, seen, None
+    if not stat.S_ISLNK(seen.st_mode):
+        return None, None, "%s is a %s, not a regular file - it was not opened" % (
+            rel, _kind(seen.st_mode))
+    target = os.path.realpath(full)
+    if not _inside(target, root):
+        return None, None, "%s is a link leading out of the directory, to %s" % (
+            rel, target)
+    try:
+        led = os.stat(target)
+    except OSError:
+        return None, None, "%s is a link to %s, which is not there" % (rel, target)
+    if stat.S_ISDIR(led.st_mode):
+        return None, None, "%s is a link to a directory" % (rel,)
+    if not stat.S_ISREG(led.st_mode):
+        return None, None, ("%s is a link to %s, a %s, not a regular file - it was "
+                            "not opened" % (rel, target, _kind(led.st_mode)))
+    return target, led, None
+
+
+def _listing(here, met, max_entries):
+    """`(names, met, problem)`: the entries of directory `here`, sorted, with the
+    running count of entries met - read no further than the ceiling allows."""
+    names = []
+    try:
+        with os.scandir(here) as it:
+            for entry in it:
+                met += 1
+                if met > max_entries:
+                    return [], met, ("more than %d entries - files, directories "
+                                     "and links - more than a skill holds"
+                                     % (max_entries,))
+                names.append(entry.name)
+    except OSError as exc:
+        return [], met, "a directory under it could not be listed: %s" % (exc,)
+    return sorted(names), met, None
+
+
+def skill_digest(folder, max_entries=MAX_SKILL_ENTRIES, max_bytes=MAX_SKILL_BYTES,
+                 keep=None):
+    """`{"digest", "files", "problem", "toolWritten", "kept"}` for a skill's
+    directory: the digest defined above, or None with the reason it has none.
+    `toolWritten` is every `TOOL_WRITTEN` entry met, by relative path. `keep` is
+    the path of one file to hand back as `kept` - the raw bytes that were hashed,
+    so a caller showing that file shows what was hashed without reading it again;
+    None when it was not among the files read."""
     root = os.path.realpath(folder)
     if not os.path.isdir(root):
         return _no_digest("%s is not a directory" % (folder,))
-    lines, size, failed = [], 0, []
-    for here, dirs, files in os.walk(root, onerror=failed.append):
-        for name in sorted(dirs):
-            if os.path.islink(os.path.join(here, name)):
-                return _no_digest("%s is a link to a directory" % (os.path.relpath(
-                    os.path.join(here, name), root).replace(os.sep, "/"),), len(lines))
-        for name in sorted(files):
-            full = os.path.join(here, name)
-            line, raw, problem = _file_line(
-                full, os.path.relpath(full, root).replace(os.sep, "/"), root)
+    try:
+        wanted = os.stat(keep) if keep else None
+    except OSError:
+        wanted = None
+    lines, used, met, tool, kept, stack = [], 0, 0, [], None, [""]
+    marks = [name for name, _why in TOOL_WRITTEN]
+    while stack:
+        top = stack.pop()
+        names, met, problem = _listing(os.path.join(root, *top.split("/")) if top
+                                       else root, met, max_entries)
+        for name in names:
             if problem:
-                return _no_digest(problem, len(lines))
-            lines.append(line)
-            size += raw
-            if len(lines) > max_files:
-                return _no_digest("more than %d files - more than a skill holds"
-                                  % (max_files,), len(lines))
-            if size > max_bytes:
-                return _no_digest("more than %d bytes - more than a skill holds"
-                                  % (max_bytes,), len(lines))
-    if failed:
-        return _no_digest("a directory under it could not be listed: %s"
-                          % (failed[0],), len(lines))
+                break
+            rel = "%s/%s" % (top, name) if top else name
+            full = os.path.join(root, *rel.split("/"))
+            problem = _name_problem(rel)
+            if problem:
+                break
+            if name in marks:
+                tool.append(rel)
+            try:
+                seen = os.lstat(full)
+            except OSError as exc:
+                problem = "%s could not be read: %s" % (rel, exc)
+                break
+            if stat.S_ISDIR(seen.st_mode):
+                stack.append(rel)
+                continue
+            path, target, problem = _file_target(full, rel, root, seen)
+            if problem:
+                break
+            if target.st_size > max_bytes - used:
+                problem = _OVER
+                break
+            sha, size, raw, problem = _read_file(
+                path, rel, target, max_bytes - used,
+                wanted is not None and os.path.samestat(target, wanted))
+            if problem:
+                break
+            lines.append("%s %s\n" % (rel, sha))
+            used += size
+            kept = raw if raw is not None else kept
+        if problem:
+            return _no_digest("more than %d bytes - more than a skill holds"
+                              % (max_bytes,) if problem is _OVER else problem,
+                              len(lines), tool)
     joined = "".join(sorted(lines)).encode("utf-8")
     return {"digest": hashlib.sha256(joined).hexdigest(), "files": len(lines),
-            "problem": None}
+            "problem": None, "toolWritten": sorted(tool), "kept": kept}
 
 
-def pin_verdict(name, pin, tree, user_home, plugin_root, running):
-    """The one reader of one pin: `{"name", "answer", "path", "places", "pinned",
-    "found", "source", "problem"}`. `answer` is one of `PIN_ANSWERS`; `path` is the
-    SKILL.md `resolve_skill` found (None when not found), `places` every path looked
-    in, `found` the directory's digest (None unless it could be read whole) and
-    `problem` why there is none. A name the resolver cannot place - another
-    plugin's skill, one bundled with Claude Code - is `not-found`: a pin says the
-    skill is a reviewed copy on disk, and nothing here can read that one."""
+def pin_verdict(name, pin, tree, user_home, plugin_root, running, pinned_as=None):
+    """The one reader of one pin: `{"name", "pinnedAs", "answer", "path", "places",
+    "pinned", "found", "source", "problem", "toolWritten", "skillMd"}`. `answer` is
+    one of `PIN_ANSWERS`; `path` is the SKILL.md `resolve_skill` found for `name`
+    (None when not found), `places` every path looked in, `found` the directory's
+    digest (None unless it could be read whole) and `problem` why there is none.
+    `pinnedAs` is the spelling the pin is written under when it is not `name`'s
+    (`covering_pins`). `toolWritten` is every `TOOL_WRITTEN` entry the directory
+    holds, and `skillMd` the raw bytes of the SKILL.md that were hashed, so a
+    caller that shows the file shows exactly those. A name the resolver cannot
+    place - another plugin's skill, one bundled with Claude Code - is
+    `not-found`: a pin says the skill is a reviewed copy on disk, and nothing here
+    can read that one."""
     pin = pin if isinstance(pin, dict) else {}
     hit = resolve_skill(name, tree, user_home, plugin_root, running)
-    base = {"name": name, "path": hit["path"], "places": hit["places"],
+    base = {"name": name, "pinnedAs": pinned_as if pinned_as != name else None,
+            "path": hit["path"], "places": hit["places"],
             "pinned": pin.get("sha256"), "found": None, "source": pin.get("source"),
-            "problem": hit["problem"]}
+            "problem": hit["problem"], "toolWritten": [], "skillMd": None}
     if not hit["found"]:
         return dict(base, answer="not-found")
-    got = skill_digest(os.path.dirname(hit["path"]))
+    got = skill_digest(os.path.dirname(hit["path"]), keep=hit["path"])
     if got["digest"] is None:
         return dict(base, answer="unreadable", problem=got["problem"])
-    return dict(base, found=got["digest"],
+    return dict(base, found=got["digest"], toolWritten=got["toolWritten"],
+                skillMd=got["kept"],
                 answer="match" if got["digest"] == base["pinned"] else "mismatch")
 
 
@@ -328,15 +498,33 @@ _STOP_REMEDY = ("Restore the pinned bytes there, or review the diff and re-pin t
                 "skill to the reviewed digest in meta.skillPins; nothing was handed out.")
 
 
+def _tool_written_words(rels):
+    """The sentence naming the tool-written entries a changed directory holds, or
+    "" when it holds none."""
+    why = dict(TOOL_WRITTEN)
+    if not rels:
+        return ""
+    return (" Its directory holds entries a tool rather than an author writes, the "
+            "likely difference: %s. Each is still counted - a cache beside its source "
+            "is code python runs, and a checkout's metadata is bytes in the directory."
+            % ("; ".join("%s (%s)" % (rel, why[rel.rsplit("/", 1)[-1]])
+                         for rel in rels),))
+
+
 def stop_words(verdict):
-    """The stop for one verdict that is not a match: the skill, the path read (or
-    every place looked in), the pinned digest and the found one, and the remedy."""
+    """The stop for one verdict that is not a match: the skill (and the spelling it
+    is pinned under, when another), the path read (or every place looked in), the
+    pinned digest and the found one, the tool-written entries a changed directory
+    holds, and the remedy."""
     v = verdict
     source = " (pin source: %s)" % (v["source"],) if v.get("source") else ""
+    if v.get("pinnedAs"):
+        source = " (pinned as %s)%s" % (v["pinnedAs"], source)
     if v["answer"] == "mismatch":
         return ("the skill %s is pinned, and the copy an agent or a session would "
-                "load is not the bytes pinned: %s has digest %s, the plan pinned %s%s. %s"
-                % (v["name"], v["path"], v["found"], v["pinned"], source, _STOP_REMEDY))
+                "load is not the bytes pinned: %s has digest %s, the plan pinned %s%s."
+                "%s %s" % (v["name"], v["path"], v["found"], v["pinned"], source,
+                           _tool_written_words(v.get("toolWritten")), _STOP_REMEDY))
     if v["answer"] == "unreadable":
         return ("the skill %s is pinned to %s%s, and its directory at %s could not be "
                 "read whole (%s), so it has no digest: found none. %s"
@@ -384,29 +572,133 @@ def skill_pins(manifest):
     return meta.get("skillPins") if isinstance(meta, dict) else None
 
 
-def pin_stops(names, pins, tree, user_home, plugin_root):
-    """The verdicts that stop a hand-out of `names`: one per PINNED name among them
-    whose answer is not a match, in the order named. An unpinned name is not asked,
-    and neither is a pin for a name not among `names`."""
+# --- a pin is about a directory ------------------------------------------------------
+# A pin holds the DIRECTORY its name resolves to, not the name's spelling: the bare
+# name and the running plugin's `plugin:skill` reach one directory when no personal
+# or project copy shadows the bare one, and on a volume that folds case another
+# case of the name reaches it too. So the question asked of each name about to be
+# handed out is whether the directory it resolves to is one a pin's name resolves
+# to - compared by the file system's own identity of the two (`os.path.samestat`:
+# device and inode), which needs neither a spelling nor a real path that keeps
+# case. A pinned spelling that resolves nowhere still holds that same spelling, so
+# a hand-out of it is the pin's `not-found` stop, not a pass.
+def _directory_of(name, tree, user_home, plugin_root, running):
+    """The `stat` of the directory `name` resolves to, or None."""
+    hit = resolve_skill(name, tree, user_home, plugin_root, running)
+    if not hit["found"]:
+        return None
+    try:
+        return os.stat(os.path.dirname(hit["path"]))
+    except OSError:
+        return None
+
+
+def covering_pins(names, pins, tree, user_home, plugin_root, running=None):
+    """`[(name, pin name), ...]`: for each of `names`, in order and once, every
+    pin that holds it - written under the same spelling, or resolving to the
+    directory the name resolves to. An unpinned name has no row."""
+    if not isinstance(pins, dict) or not pins:
+        return []
+    if running is None:
+        running = plugin_name(plugin_root)
+    order = sorted(pins, key=str)
+    where = dict((p, _directory_of(p, tree, user_home, plugin_root, running))
+                 for p in order if is_skill_name(p))
+    out, seen = [], []
+    for name in names:
+        if name in seen:
+            continue
+        seen.append(name)
+        here = _directory_of(name, tree, user_home, plugin_root, running)
+        out.extend((name, p) for p in order
+                   if p == name or (here is not None and where.get(p) is not None
+                                    and os.path.samestat(here, where[p])))
+    return out
+
+
+def pin_verdicts(names, pins, tree, user_home, plugin_root):
+    """Every verdict a hand-out of `names` is owed: one per name and pin that
+    holds it (`covering_pins`), in the order named."""
     if not isinstance(pins, dict) or not pins:
         return []
     running = plugin_name(plugin_root)
-    asked = [n for i, n in enumerate(names) if n in pins and n not in names[:i]]
-    verdicts = [pin_verdict(n, pins[n], tree, user_home, plugin_root, running)
-                for n in asked]
-    return [v for v in verdicts if v["answer"] != "match"]
+    return [pin_verdict(name, pins[p], tree, user_home, plugin_root, running,
+                        pinned_as=p)
+            for name, p in covering_pins(names, pins, tree, user_home, plugin_root,
+                                         running)]
+
+
+def pin_stops(names, pins, tree, user_home, plugin_root):
+    """The verdicts that stop a hand-out of `names`: each `pin_verdicts` answer
+    that is not a match. An unpinned name is not asked, and neither is a pin no
+    name among `names` resolves to."""
+    return [v for v in pin_verdicts(names, pins, tree, user_home, plugin_root)
+            if v["answer"] != "match"]
+
+
+def pin_directory_problems(pins, tree, user_home, plugin_root):
+    """One sentence per directory that two or more pins resolve to with different
+    digests - one of them is not the reviewed bytes, whichever spelling a hand-out
+    uses; [] when there is none. Pins whose shape is wrong are
+    `pin_shape_problems`' to report and are not asked here."""
+    if not isinstance(pins, dict):
+        return []
+    running = plugin_name(plugin_root)
+    groups = []
+    for p in sorted(pins, key=str):
+        value = pins[p]
+        if not (is_skill_name(p) and isinstance(value, dict)):
+            continue
+        here = _directory_of(p, tree, user_home, plugin_root, running)
+        if here is None:
+            continue
+        for group in groups:
+            if os.path.samestat(group[0], here):
+                group[1].append((p, value.get("sha256")))
+                break
+        else:
+            groups.append((here, [(p, value.get("sha256"))]))
+    return ["meta.skillPins: %s resolve to one directory, %s, and pin different "
+            "digests (%s) - one of them is not the reviewed bytes"
+            % (" and ".join(p for p, _d in held),
+               os.path.dirname(resolve_skill(held[0][0], tree, user_home, plugin_root,
+                                             running)["path"]),
+               ", ".join("%s: %s" % (p, d) for p, d in held))
+            for _here, held in groups if len(set(d for _p, d in held)) > 1]
+
+
+def _bare(name):
+    """`skill` of `plugin:skill`, or the name itself."""
+    head, sep, tail = name.partition(":")
+    return tail if sep else head
+
+
+def unused_pins(pins, used):
+    """The pins of `pins` no name in `used` can be a spelling of, sorted. Judged by
+    the name alone - validation reads no file - and leaning to silence: a used
+    name with the same bare name, in any case and under any plugin, keeps a pin
+    from being called unused, so this misses a pin only another plugin's skill of
+    that name seems to use. Which DIRECTORY a hand-out reaches is judged by
+    `covering_pins`, never by this."""
+    if not isinstance(pins, dict):
+        return []
+    spoken = set(_bare(n).lower() for n in used if isinstance(n, str))
+    return [p for p in sorted(pins, key=str)
+            if isinstance(p, str) and _bare(p).lower() not in spoken]
 
 
 def require_pins(names, manifest, tree, user_home, plugin_root):
     """`names`, unchanged, when every pinned one among them is the bytes `manifest`
     pins; otherwise raises `PinStop` with each stop's words. A plan with no
-    `meta.skillPins` asks nothing. A malformed key stops too: the validator refuses
-    it, and a pin that cannot be read is no reason to hand the skill out."""
+    `meta.skillPins` asks nothing - no file is read for it. A malformed key stops
+    too: the validator refuses it, and a pin that cannot be read is no reason to
+    hand the skill out; so do two pins on one directory that disagree."""
     names = list(names)
     pins = skill_pins(manifest)
     if pins is None:
         return names
-    problems = pin_shape_problems(pins)
+    problems = pin_shape_problems(pins) or pin_directory_problems(
+        pins, tree, user_home, plugin_root)
     if problems:
         raise PinStop("meta.skillPins cannot be read, so no pinned skill is handed "
                       "out: %s" % ("; ".join(problems),))
@@ -416,13 +708,15 @@ def require_pins(names, manifest, tree, user_home, plugin_root):
     return names
 
 
-def pin_flags(names, manifest):
-    """`--skill-pin NAME=DIGEST` for each pinned name among `names`, in order - what
-    the session runner is handed beside its `--skill` flags. [] for a plan with no
-    pins, so its command is the one it always was."""
+def pin_flags(names, manifest, tree, user_home, plugin_root):
+    """`--skill-pin NAME=DIGEST` for each of `names` a pin holds (`covering_pins`),
+    in order, under the spelling handed out - what the session runner is handed
+    beside its `--skill` flags. [] for a plan with no pins, with no file read, so
+    its command is the one it always was."""
     pins = skill_pins(manifest)
-    if not isinstance(pins, dict):
+    if not isinstance(pins, dict) or not pins:
         return []
-    return [flag for i, n in enumerate(names)
-            if n in pins and n not in names[:i] and isinstance(pins[n], dict)
-            for flag in ("--skill-pin", "%s=%s" % (n, pins[n].get("sha256")))]
+    return [flag for name, p in covering_pins(names, pins, tree, user_home,
+                                              plugin_root)
+            if isinstance(pins[p], dict)
+            for flag in ("--skill-pin", "%s=%s" % (name, pins[p].get("sha256")))]

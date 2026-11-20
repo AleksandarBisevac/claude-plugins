@@ -19045,14 +19045,14 @@ def _plugin_sources():
 def _pin_digest(folder):
     """A skill directory's digest computed here, apart from the module under test:
     SHA-256 over the sorted lines `<relative posix path> <sha256 of its bytes>`,
-    CRLF read as LF in a file holding no NUL byte."""
+    CRLF read as LF in a Markdown file only."""
     lines = []
     for here, _dirs, files in os.walk(folder):
         for name in files:
             full = os.path.join(here, name)
             with open(full, "rb") as fh:
                 data = fh.read()
-            if b"\0" not in data:
+            if name.lower().endswith(".md"):
                 data = data.replace(b"\r\n", b"\n")
             rel = os.path.relpath(full, folder).replace(os.sep, "/")
             lines.append("%s %s\n" % (rel, hashlib.sha256(data).hexdigest()))
@@ -19072,7 +19072,8 @@ def _pin_skill_dir(root, name, body):
 
 
 def _skill_pin_cases(check):
-    """The pin is asked by every place that hands a skill name out; a pinned
+    """The pin is asked by every caller of the two skill resolvers - the callers
+    `spd1` derives from the code, which is what it can see of a hand-out; a pinned
     skill that does not match leaves `next` with no dispatch line on the
     subagent route and the session route alike, naming the skill, the path and
     both digests; a matching one, or a plan with no pins, dispatches as before."""
@@ -19152,7 +19153,7 @@ def _skill_pin_cases(check):
     for key in (("agent", "absent"), ("session", "absent")):
         code, text, digest, _found, _path = results[key]
         gone.append((key, code != 0, dispatched[key] == [], "pinned-drive" in text,
-                     digest in text, "none" in text))
+                     digest in text, "found none" in text))
     check("spd5 a pinned skill found nowhere its bytes can be read is a stop on "
           "both routes, never a dispatch: %r" % ((gone, shown),),
           [g[1:] for g in gone] == [(True,) * 5] * 2)
@@ -19228,6 +19229,50 @@ def _skill_pin_cases(check):
           % ((code_a, text_a[-200:], code_b, text_b[-400:]),),
           code_a != 0 and code_b == 0
           and "dispatch run-agent-session.py --role writer" in text_b)
+    _pin_load_cases(check, project, _pin_digest(
+        os.path.join(project, ".claude", "skills", "pinned-argv")))
+
+
+# The manifest loads one session-route dispatch made before a plan could pin a
+# skill: `writer_argv`'s `session_skills`, the one reading of the task's skills.
+# Counted on the parent of the change that added the key, by this case's own
+# counting run there - a figure of that code, not of a timing.
+_DISPATCH_LOADS = 1
+
+
+def _pin_load_cases(check, project, digest_argv):
+    """No key, no cost: one session-route dispatch of a plan with no
+    `meta.skillPins` loads the manifest no more often than it did before the key
+    existed, held by counting the loads rather than by timing them."""
+    L, why = _unit_driver("drive_phase_skill_pin_loads")
+    if L is None:
+        check("spd9 the driver loads", False, why)
+        return
+    loads = {}
+    for label, meta in (("no-key", {}),
+                        ("key", {"skillPins": {"pinned-argv": {"sha256": digest_argv}}})):
+        task_l = _step_task(skills=["pinned-argv"])
+        phase_l = _step_phase([task_l])
+        _step_rig(L, phase_l, meta=meta)
+        plan_l = L.load_phase(None)[0]
+        seen = []
+
+        def counted(ctx, rigged=L.load_phase, seen=seen):
+            seen.append(1)
+            return rigged(ctx)
+        L.load_phase = counted
+        ctx_l = _step_ctx(stateDir=os.path.join(project, "state-loads-" + label),
+                          project=project, gitRoot=project,
+                          config={"executor": dict(WRITER_EXECUTOR)})
+        said = _caught(L.advance, ctx_l, {}, plan_l, phase_l, task_l)
+        loads[label] = (len(seen), str(said)[:200])
+    check("spd9 a session-route dispatch of a plan with no skillPins loads the "
+          "manifest %d time(s), as before the key existed, and one carrying a pin "
+          "pays its one fresh pre-check load beside it - both dispatched: %r"
+          % (_DISPATCH_LOADS, loads),
+          loads["no-key"][0] == _DISPATCH_LOADS
+          and loads["key"][0] == _DISPATCH_LOADS + 1
+          and all("run-agent-session.py" in v[1] for v in loads.values()))
 
 
 def _vk_validation_argv(M, root, phase, meta, project=None, ctx_out=None):

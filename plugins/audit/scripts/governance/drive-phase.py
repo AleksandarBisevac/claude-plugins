@@ -360,7 +360,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
-import _skill_places  # noqa: E402  (resolve_skill: whether the session runner finds a skill; require_pins, pin_flags: a pinned skill is handed out only as the bytes pinned)
+import _skill_places  # noqa: E402  (resolve_skill: whether the session runner finds a skill; require_pins, pin_flags: a pinned skill is handed out only as the bytes pinned; skill_pins: whether a plan pins anything at all)
 import _loader  # noqa: E402  (script_path: every verb resolved by basename, never
 #                              loaded - the subprocess boundary is why no edge to
 #                              any of them is counted by `_deps`; load_hooks_config
@@ -2391,12 +2391,14 @@ def start_task(ctx, task):
     return stop
 
 
-def dispatch(ctx, state, phase, task, role, tree=None):
+def dispatch(ctx, state, phase, task, role, tree=None, manifest=None):
     """Write `role`'s brief through `audit-lookup.py` and hand back the dispatch:
     for the executor under `executor.writerModel`, the writer session's, run in
     `tree` when the task has one of its own - and never into a tree a move's
     copy stands beside (`unsettled_stop`): an agent's edits there are what the
-    next move reads as newer work and holds the tree over."""
+    next move reads as newer work and holds the tree over. `manifest` is the
+    plan the caller already loaded, when it has one: a plan holding no
+    `meta.skillPins` then asks no pin before the mark and loads nothing for it."""
     stop = unsettled_stop(ctx, task, tree)
     if stop is not None:
         return stop
@@ -2404,7 +2406,7 @@ def dispatch(ctx, state, phase, task, role, tree=None):
         "executor", "reviewer") else (None, None)
     if problem:
         return _stopped(ctx, problem)
-    if session:
+    if session and (manifest is None or _skill_places.skill_pins(manifest) is not None):
         # A session route hands the skills out after the dispatch is marked, so
         # a pin that does not match is asked here first (raises PinStop).
         session_skills(ctx, task)
@@ -2471,7 +2473,7 @@ def session_record(ctx, task, seq, role="writer"):
         "" if role == "writer" else role + ".", seq))
 
 
-def session_skills(ctx, task, phase_review=False):
+def session_skills(ctx, task, phase_review=False, plan=None):
     """The skills `task`'s session starts with: `_areas.resolve_skills` over the
     plan as it stands now - the one resolver, so the writer, the reviewer and the
     executor subagent are given the same names. A session reviewing at phase
@@ -2479,8 +2481,9 @@ def session_skills(ctx, task, phase_review=False):
     `_areas.resolve_review_skill` resolves, the one the phase brief names, when
     the session runner can find it (`runner_review_skill`); a per-task reviewer
     never does, since `mode: task` takes no review skill. A pinned skill that
-    is not the bytes pinned raises `_skill_places.PinStop` - the drive's stop."""
-    manifest, phase = load_phase(ctx)
+    is not the bytes pinned raises `_skill_places.PinStop` - the drive's stop.
+    `plan` is `load_phase`'s answer when the caller already holds it."""
+    manifest, phase = plan if plan is not None else load_phase(ctx)
     skills = _areas.resolve_skills(manifest, phase, task)
     if phase_review:
         review, _left_out = runner_review_skill(ctx, manifest, phase)
@@ -2531,11 +2534,14 @@ def writer_argv(ctx, task, writer, prompt, record, tree=None, resume=None,
     resolves to, which the runner discloses in the session's system prompt by
     name, description and checklist; the body is the Skill tool's to load.
     `phase_review` is `session_skills`'s, for a reviewer at phase scope. Each
-    pinned name rides with its `--skill-pin`, so the runner checks the copy its
-    own tree holds; a plan with no pins adds none."""
-    names = session_skills(ctx, task, phase_review)
+    pinned name rides with its `--skill-pin`, under the spelling handed out, so
+    the runner checks the copy its own tree holds; a plan with no pins adds none.
+    The plan is loaded once for both."""
+    plan = load_phase(ctx)
+    names = session_skills(ctx, task, phase_review, plan)
     skills = [flag for name in names for flag in ("--skill", name)]
-    skills += _skill_places.pin_flags(names, load_phase(ctx)[0])
+    skills += _skill_places.pin_flags(names, plan[0], ctx["project"],
+                                      _claude_home.claude_home(), _output.PLUGIN_ROOT)
     argv = ["python3", _loader.script_path(WRITER_RUNNER), "--role", role,
             "--task", task["id"],
             "--tree", member_project(ctx, tree) or ctx["project"],
@@ -6527,11 +6533,11 @@ def advance(ctx, state, manifest, phase, task, tree=None):
         # no attempt spent, rather than graded as one that returned nothing.
         ctx["did"].append("%s's brief issued again: its scope changed after "
                           "the last one was printed" % (task["id"],))
-        return dispatch(ctx, state, phase, task, "executor", tree)
+        return dispatch(ctx, state, phase, task, "executor", tree, manifest)
     if turn == "no-executor-return":
         return decision(ctx, state, "no-executor-return", task, "")
     if turn == "dispatch":
-        return dispatch(ctx, state, phase, task, "executor", tree)
+        return dispatch(ctx, state, phase, task, "executor", tree, manifest)
     # Before the gate mark is read: a gate recorded under the old scope does
     # not make the new one decided, and the close refuses a changed list
     # three steps later with a sentence about digests.
@@ -6588,7 +6594,7 @@ def advance(ctx, state, manifest, phase, task, tree=None):
         if stop is not None:
             return stop
     if review_turn == "dispatch":
-        return dispatch(ctx, state, phase, task, "reviewer", tree)
+        return dispatch(ctx, state, phase, task, "reviewer", tree, manifest)
     # `standing` writes the journal row of the approval's use, so it is read
     # only when no answer was given in advance.
     turn, said = _advance_plan("risk", {

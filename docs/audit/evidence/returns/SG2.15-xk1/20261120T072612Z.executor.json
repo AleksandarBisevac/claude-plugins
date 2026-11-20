@@ -1,0 +1,220 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py --jobs 4 tests/test__skill_places.py tests/test_run_agent_session.py tests/test__manifest_rules.py tests/test_drive_phase.py tests/test_audit_lookup.py": "pass",
+    "python3 tools/sweep-selftests.py --selftest": "pass",
+    "python3 tools/gate-parity.py": "fail",
+    "python3 tools/gate-parity.py --selftest": "fail",
+    "python3 tools/measure-context.py --gate": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass",
+    "ruff check plugins/audit tools tests .claude/hooks": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints": "pass",
+    "python3 tools/check-rendered-artifacts.py --before-commit": "pass",
+    "python3 tools/sweep-selftests.py --jobs 4 (18 dependant suites: test__floor_guard, test__config_rules, test__config_rules_lints, test__branch, test__manifest_vocab, test__manifest_phases, test__panel_page, test_guard_secrets_read, test_hooks, test__affected_tests, test__doctor_trail, test__refs, test__deps, test_gen_demo_manifest, test_validate_manifest, test__config, test__doctor_policy, test__output_lints)": "pass",
+    "python3 tools/check-committed-pii.py": "pass",
+    "python3 tools/check-committed-pii.py --selftest": "pass",
+    "python3 tools/check-git-pipeline.py": "pass",
+    "python3 tools/release.py --selftest": "pass",
+    "python3 tools/prove-gates.py --only <row> for hooks_rule_drift, sweep_glob_drift, red_first_drift, followed_anchor_drift, raw_url_pin_drift, config_vocab_drift, failmode_table_drift, schema_vocab_drift, commit_spelling_drift": "pass",
+    "run-test-gate.py docs/audit/audit-plan.json SG2 --task SG2.15-xk1 (the orchestrator's gate, not recorded)": "fail"
+  },
+  "redFirst": {
+    "at": "2026-11-20T08:28:12Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__skill_places.py tests/test_run_agent_session.py tests/test__manifest_rules.py` in a throwaway tree at HEAD exited 1 with 16 of 115 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - spn6 (house FAIL), spn7 (house FAIL), sp26 (house FAIL), sp40 (house FAIL), sp41 (house FAIL), sp42 (house FAIL), sp43 (house FAIL), sp44 (house FAIL) and 8 more: SELFTEST FAILED: 113/115 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) READER, plugins/audit/scripts/status/_skill_places.py skill_digest: a depth-first walk of sorted os.scandir listings; every entry met (file, directory, link) counts toward MAX_SKILL_ENTRIES (renamed from MAX_SKILL_FILES, since it now counts every entry) as it is listed; each name is checked first (_name_problem: not UTF-8, or a line break -> unreadable naming it); each entry is os.lstat'ed; a directory is pushed; anything else goes to _file_target: a regular file is itself, a link must stay inside and lead to a regular file, and a FIFO, socket, character or block device, dangling link, link out, link to a directory or link to a non-regular file is unreadable by name and kind and never opened; the file's size is compared with what is left of MAX_SKILL_BYTES BEFORE the open; _read_file opens O_RDONLY|O_NONBLOCK|O_NOFOLLOW(|O_BINARY), fstat must be the same regular file (else 'changed while it was read'), reads 64 KiB chunks, stops past the remaining budget, and hashes as it reads. (2) LINE ENDINGS: NORMALISED_SUFFIXES = ('.md',), compared without case, defined beside the digest with its cost (a checkout converting a non-Markdown file's line endings changes the digest; remedy: mark the skill directory not-text for git); CRLF is folded chunk-safely (a CR ending a chunk is carried). No case argued against '.md' alone. (3) A PIN IS ABOUT A DIRECTORY: covering_pins matches a handed name to every pin spelled the same or resolving to the same directory by os.path.samestat; pin_verdicts/pin_stops/pin_flags/require_pins all ask it; pin_directory_problems reports two pins on one directory with different digests, and require_pins refuses every hand-out over it; _manifest_rules: a warning rules.meta.skill-pin-unused (unused_pins, judged by bare name, lowercased, since validation reads no file; a plan with no pins walks nothing) and skill_pin_findings(manifest, tree, user_home, plugin_root) for the directory clash. validate-manifest.py does NOT call skill_pin_findings: that file is outside this task's files; the hand-out refusal holds meanwhile. (4) run-agent-session.py: NO_BYTECODE = ('PYTHONDONTWRITEBYTECODE', '1') set over the parent's value in _session_env, with the comment saying what it does not reach (a process that clears it; the subagent route's shell, Claude Code's). The mismatch stop names TOOL_WRITTEN entries (__pycache__, .DS_Store, .git) with remedies and says each is still counted. (5) ONE READ: skill_digest(keep=SKILL.md) hands back the hashed bytes; pin_verdict carries them as skillMd; the runner's new hashed_skills puts them on the skill and load_skills discloses them, with no second open; a pinned skill whose SKILL.md was not among the hashed bytes is refused; given_pins refuses one name pinned twice to different digests. (6) LOADS (count_loads.py over advance's session-route dispatch, rig from test_drive_phase): parent of the pin commit 1/1 (no key/key), HEAD 3/3, now 1/2. drive-phase.py diff kept to: dispatch(..., manifest=None) asking session_skills early only when the plan has a skillPins key, the three advance callers passing the loaded manifest, session_skills(..., plan=None), writer_argv loading once and passing tree/home/plugin to pin_flags. The dispatch call inside apply_answer was not touched (next task's), so that path still loads as HEAD did when it dispatches. No function split or moved. (7) DOCUMENTS: SECURITY.md pinned-skill section (directory holding every spelling; reader looks first; tool-written entries; caller-derivation worded as what spd1 derives; point 2 now both routes; new points 5-8: older plugin ignores key, what the digest does not see, runner checks only passed pins, only the plugin's own processes are kept from writing); COMPATIBILITY.md bullet (no extra load, unused-pin warning, older plugin, both routes, digest blind spots, runner by hand) - quoted sentences kept; CHANGELOG Unreleased entry (allow list, reader, directory, one read, PYTHONDONTWRITEBYTECODE, validation, limits; the 'every place that hands a skill out asks it' sentence reworded to what the case derives); plugins/audit/README.md skillPins row; schema skillPins.description; PLUGIN-BUILD-GUIDE.md sections for _skill_places, _manifest_rules, run-agent-session (env names, --skill-pin), drive-phase (no-key cost), and the module map regenerated with tools/lints/_deps.py --write-map (_manifest_rules -> _areas). (8) TESTS: 50 cases in test__skill_places (sp40-sp51 new, sp22/sp26/sp35/sp38 strengthened), rap7/rap8 new and rap4 strengthened, spn6/spn7 new, spd9 new and spd5 strengthened; each suite's second digest computation moved to the Markdown rule. Removed tests/ lines: 34, each accounted for (a case told to strengthen, or the second computation's rule). (9) RED: the working tree's test files over HEAD's implementation in a throwaway copy: test__skill_places 38/50 (sp26, sp40-sp47, sp49-sp51 red), test_run_agent_session 113/115 (rap7, rap8), test__manifest_rules 185/187 (spn6, spn7), test_drive_phase spn-block 8/9 (spd9), test_audit_lookup 215/215 - no traceback. Mutation probe: 39 rows, all applied, all caught, each deny with its allow twin named. End-to-end: SG2.14's drive probe copied and extended with step 5 (a bare pin with a wrong digest stops a hand-out of audit:audit-codebase, naming both spellings; 5b, the right digest computed apart from the plugin dispatches): all steps OK, exit 0. (10) GATES as listed. gate-parity FAILS, and is mine: TOOL_WRITTEN is a {subject: sentence} table and gate-parity's exemption audit (ea1, ea4-ea7) asks every such table to be classified. The fix is one NOT_AN_EXEMPTION row in tools/gate-parity.py, which is outside this task's files; it was not edited (no free file spent). Suggested row text: 'TOOL_WRITTEN': 'the entries a tool rather than an author writes into a pinned skill directory, each with the remedy a mismatch stop prints - every entry is still counted in the digest, so a row narrows nothing and excuses nothing'. Because ea1/ea4-ea6 were already red, prove-gates' failmode_table_drift row (which reads those cases) is no evidence here. The orchestrator's gate (run-test-gate.py ... SG2 --task SG2.15-xk1, not recorded, exit 1) named six failing checks: gate-parity ea1, ea4-ea7 (the TOOL_WRITTEN row above), and tests/test_drive_phase.py bq4 (a killed background base run's tree not yet removed) - bq4 is about base runs, not pins; it ran while the mutation probe loaded the machine, passed in two isolated runs of `--stage bq-block` (8/8 each) and in the final task sweep (5/5 files ok, 1631 cases, exit 0), so it is reported as not reproduced, not as fixed. PROOF COMMAND: submit's red-first runs `python3 tools/sweep-selftests.py tests/test__skill_places.py tests/test_run_agent_session.py tests/test__manifest_rules.py` (20.5 s here, measured once under load), narrowed from the brief's five-suite command because tests/test_drive_phase.py does not fit the helper's deadline; it leaves out spd9 (tests.add entry 3) and test_audit_lookup, which holds no case of this task; spd9's red on HEAD's implementation (8/9 in the spn-block) is the evidence for that entry. (11) NOT DONE / NOT PROVABLE HERE: sp44's non-UTF-8 file name is linux-only (this volume refuses the name; the reader's own name test is asked directly instead); sp49 holds only on a case-folding volume (true here); nothing ran on windows (O_NONBLOCK/O_NOFOLLOW are absent there and the kind check is what stands); validate-manifest.py wiring of skill_pin_findings; gate-parity row; _manifest_vocab.py's comment 'asked by every place that hands a skill out' carries the finding-7 over-claim and is outside these files. RULE SLIP: one edit to tests/test__skill_places.py (sp43's label and an assertion word, 'file'->'entry') was made by a python heredoc script rather than the Edit tool, against the order; every other edit used Edit.",
+    "descriptive": "A pin's reader now looks before it reads and stays inside its ceilings, normalises line endings only in Markdown, holds every spelling of the pinned directory; the session runner shows the bytes it hashed and its child writes no bytecode; a plan with no pins costs no extra load; and the documents say what a pin does not prove."
+  },
+  "testsAdded": [
+    "tests/test__skill_places.py sp40-sp44: a FIFO (under a 30 s deadline, in a child), a socket, a dangling link and a link to a FIFO are unreadable by name and kind and never opened, a link inside to a file is read and counted (ALLOW); a file past the byte ceiling or the entry ceiling is refused before it is opened (proved with an unopenable file); a name that is not UTF-8 or holds a line break is unreadable",
+    "tests/test__skill_places.py sp45 (+ sp22 rewritten as its ALLOW twin): a shell script with CRLF is another digest, a SKILL.md with CRLF the same; a Markdown-only skill converted to CRLF the same",
+    "tests/test__skill_places.py sp46: a mismatch names __pycache__, .DS_Store and .git with remedies and says they are still counted; ALLOW: a mismatch holding none names none",
+    "tests/test__skill_places.py sp47-sp51: a bare pin holds the running plugin's qualified spelling and back; ALLOW: a matching pin stops nothing in either spelling and a bare name shadowed by a personal copy does not carry the pin; another case on a folding volume is held; pin_flags rides under the spelling handed out; two pins on one directory with different digests are one problem naming both, refused by every hand-out, ALLOW same digest none",
+    "tests/test__skill_places.py sp26, sp35, sp38 strengthened: ceilings one over AND exactly at (ALLOW); stop words name a skill whose name is in no path, 'found none' for not-found and unreadable; require_pins' raise names the skill outside its path",
+    "tests/test_run_agent_session.py rap7: the child sees PYTHONDONTWRITEBYTECODE=1 though the parent set it empty; rap8: SKILL.md rewritten after it was hashed - the recorded skill sha256 is the hashed bytes'; rap4 strengthened to 'found none'",
+    "tests/test__manifest_rules.py spn6: a pin no plan level uses is a warning naming only it, no finding; spn7: skill_pin_findings reports two pins on one directory with different digests as one finding naming both, none for the same digest or no key",
+    "tests/test_drive_phase.py spd9: a session-route dispatch of a plan with no skillPins loads the manifest once (as the parent of the pin commit did), with pins twice; spd5 strengthened to 'found none'"
+  ],
+  "casesAdded": [
+    [
+      "sp40",
+      "sp41",
+      "sp42",
+      "sp43",
+      "sp44",
+      "sp45",
+      "sp46",
+      "sp47",
+      "sp48",
+      "sp49",
+      "sp50",
+      "sp51",
+      "sp22",
+      "sp26"
+    ],
+    [
+      "rap7",
+      "rap8"
+    ],
+    [
+      "spn6",
+      "spn7"
+    ],
+    [
+      "spd9"
+    ]
+  ],
+  "claims": "claims:\n1 reader looks first: _skill_places.py:436 (lstat), :443 (_file_target, the kind), :446 (size before open), :329 (O_NONBLOCK|O_NOFOLLOW open); allow list :253/:316; every spelling held: covering_pins :596; clash :639; unused warning _manifest_rules.py:281, finding :298; child env run-agent-session.py:272/:801; one read hashed_skills :386, used :1082; no-key cost drive-phase.py:2409, one load :2540, callers :6536/:6540/:6597. Reworded to what the code does: SECURITY/CHANGELOG/COMPATIBILITY/README/schema 'on the subagent route' -> both routes; 'every place that hands a skill out asks it' -> the callers of the two resolvers spd1 derives; runner 'one name is added' -> two names set.\n2 mutation probe (scratch sg2.15/mutations.py, a copy of the tree, anchors asserted once, pycache purged, restore verified byte for byte): 39 rows applied, 39 caught; deny/allow pairs: kind check gone (sp40,sp41) / every link refused (sp42); size after read (sp43) / >= at byte, read and entry ceilings (sp26); allow list widened (sp45) / emptied (sp22,sp45); by spelling (sp47,sp49,sp50) / every pin holds every name (sp48); clash never / always (sp51,spn7); unused warning gone / every pin (spn6); env dropped (rap7); tool words gone / always (sp46); second read (rap8) / every hashed skill refused (rap1,rap5); no-key short cut removed (spd9) / skipped for a plan with pins (spd8,spd9); writer loads twice (spd9); name dropped from each stop (sp35,sp38); 'found none' dropped (sp35,rap4,spd5). Red against HEAD's implementation in a copy: sp26,sp40-47,sp49-51; rap7,rap8; spn6,spn7; spd9; no traceback.\n3 class greps: 'found none'/bare 'none' asserts - sp35, rap4, spd5 strengthened; the NUL rule (`b\"\\0\" not in`) - 4 hits in tests (each suite's second digest) all moved to the Markdown rule, history in docs/audit left; 'subagent route' / 'asked by every' over the tree - SECURITY, COMPATIBILITY, CHANGELOG, README, schema, test_drive_phase docstring fixed; plugins/audit/scripts/manifest/_manifest_vocab.py:453 'asked by every place that hands a skill out' LEFT, outside this task's files; drive-phase.py:6672 and guard-secrets-read.py:2241 hits are other subjects.\n4 the runner's dependence on its caller's flags is stated in its own docstring and SECURITY point 7 ('checks only the pins its caller passes'), enforced for the drive's route by spd6 (flags carried) and nothing for a hand-typed run, which the sentence says. No rule to an agent added.\n5 load counts (count_loads.py, one run each, parent/HEAD/now 1-1 / 3-3 / 1-2) are counts, not timings, and spd9 re-derives them every run; the narrowed submit command took 20.5 s, measured once under load.\n6 the reader decides on the entry's lstat kind and the descriptor's fstat, never on a name or a suffix; the allow case (a link inside to a file, sp42) was green before the kind check widened to links; the pin decision reads the resolved directory's (st_dev, st_ino), never the spelling.\n7 no number written into prose: ceilings named by constant (MAX_SKILL_ENTRIES, MAX_SKILL_BYTES); _DISPATCH_LOADS in test_drive_phase says which run counted it (this case's counting, on the parent of the commit that added the key) and spd9 compares against it every run; prose-number lints run empty (doc_prose_numbers [], prose_number_claims []).",
+  "stamp": "audit-stamp: {\"content\":\"sha256:7eb9b3f9d2bf577cda098d3e03a03da3e66a3ccfc3761a347efe4da71ab1e292\",\"dirtyDigest\":\"sha256:55c04efc1bdae1c581f32b2e9aea14d1219fac05b4e13b97472791447a96a72a\",\"dirtyPaths\":{\"CHANGELOG.md\":\"447552669e04ed75\",\"COMPATIBILITY.md\":\"723d968fc24ebdc4\",\"PLUGIN-BUILD-GUIDE.md\":\"50a17c40390e79ea\",\"SECURITY.md\":\"9da6b19d82cfc92f\",\"plugins/audit/README.md\":\"9c07b8bdaa988d56\",\"plugins/audit/schema/audit-plan.schema.json\":\"d6cf2ced35226f08\",\"plugins/audit/scripts/governance/drive-phase.py\":\"7617c221026ca598\",\"plugins/audit/scripts/governance/run-agent-session.py\":\"c063b9b2b0d2a392\",\"plugins/audit/scripts/manifest/_manifest_rules.py\":\"fe13b6e91edff1d6\",\"plugins/audit/scripts/status/_skill_places.py\":\"371a0a61b892fc9c\",\"tests/test__manifest_rules.py\":\"48811f8137fb98a7\",\"tests/test__skill_places.py\":\"bdc3300b8b72bfef\",\"tests/test_audit_lookup.py\":\"a0a089c8f8bca01f\",\"tests/test_drive_phase.py\":\"9d4a2ccdae49a9fe\",\"tests/test_run_agent_session.py\":\"5da808ff8e3bfffa\"},\"head\":\"aa55ee10\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"COMPATIBILITY.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/README.md\",\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-agent-session.py\",\"plugins/audit/scripts/manifest/_manifest_rules.py\",\"plugins/audit/scripts/status/_skill_places.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__manifest_rules.py\",\"tests/test__skill_places.py\",\"tests/test_audit_lookup.py\",\"tests/test_drive_phase.py\",\"tests/test_run_agent_session.py\"],\"scopeDigest\":\"sha256:373844fd7810ae2574edb88260ae7d13c693f9b33d8e1fb93c910a502064ad02\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "6 move(s) that lower the bar across 15 file(s) of the diff; 2 change(s) to tests the task declared by case; 6 file(s) not read that cannot hold a move as read here: CHANGELOG.md, COMPATIBILITY.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md, plugins/audit/README.md, plugins/audit/schema/audit-plan.schema.json; 5 file(s) that could hold a move not compared: tests/test__manifest_rules.py, tests/test__skill_places.py, tests/test_audit_lookup.py, tests/test_drive_phase.py, tests/test_run_agent_session.py",
+    "findings": [
+      {
+        "move": "suppression-added",
+        "path": "tests/test__manifest_rules.py",
+        "line": 140,
+        "side": "tree",
+        "what": "suppression added (noqa BLE001, new to the file): except Exception as exc:                                   # noqa: BLE001"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test__skill_places.py",
+        "line": 377,
+        "side": "base",
+        "what": "labelled check `sp35 a stop names the skill, the path read (or the places looked in...` is gone from the tree copy",
+        "part": "gone"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test__skill_places.py",
+        "line": 440,
+        "side": "tree",
+        "what": "labelled check `sp38 `require_pins` raises the stop (a ValueError, the drive's stop...` differs from its base copy in its condition and arguments",
+        "part": "arguments"
+      },
+      {
+        "move": "suppression-added",
+        "path": "tests/test__skill_places.py",
+        "line": 476,
+        "side": "tree",
+        "what": "suppression added (noqa BLE001, new to the file): except Exception as exc:                                   # noqa: BLE001"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test_run_agent_session.py",
+        "line": 1236,
+        "side": "tree",
+        "what": "labelled check `rap4 a pinned name found nowhere refuses with the pin's words - the...` differs from its base copy in its condition and arguments",
+        "part": "arguments"
+      },
+      {
+        "move": "suppression-added",
+        "path": "tests/test_run_agent_session.py",
+        "line": 1312,
+        "side": "tree",
+        "what": "suppression added (noqa BLE001, new to the file): except Exception as exc:                                   # noqa: BLE001"
+      }
+    ],
+    "declared": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test__skill_places.py",
+        "line": 247,
+        "side": "base",
+        "what": "labelled check `sp22 a checkout that converted line endings answers the SAME digest...` is gone from the tree copy",
+        "part": "gone"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test__skill_places.py",
+        "line": 287,
+        "side": "base",
+        "what": "labelled check `sp26 a directory with more files, or more bytes, than a skill holds...` is gone from the tree copy",
+        "part": "gone"
+      }
+    ],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "COMPATIBILITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/schema/audit-plan.schema.json",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__manifest_rules.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was only added: every statement of the base copy outside them stands in the tree copy, in order and in place, and the first added one is at tree line 96 (`def _pin_skill(base, name, body):`); what it runs is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test__skill_places.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 208 (`if b\"\\0\" not in data:`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_audit_lookup.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 4095 (`if b\"\\0\" not in data:`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_drive_phase.py",
+        "move": "definition-changed",
+        "reason": "code outside its test definitions was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 19055 (`if b\"\\0\" not in data:`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_run_agent_session.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 80 (`STUB = r'''`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "aa55ee101180071549c5f11c857342d7df49c05a"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-20T08:28:19Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -1289,26 +1289,56 @@ directory as it was reviewed. Before the drive hands a pinned skill to an agent'
 (`drive-phase.py`'s `session_skills`, and `run-agent-session.py --skill-pin`, which
 checks the copy in the session's own tree before claude starts), it asks
 `_skill_places.require_pins` - one reader, over the copy `_skill_places.resolve_skill`
-finds, so a personal copy shadowing the project's is the copy judged. Any answer but a
-match - another digest, no copy found where its bytes can be read, a directory that cannot
-be read whole - composes no brief, starts no session and prints no dispatch line, naming
-the skill, the path or paths it read, the pinned digest and the one found (`found none`
-when there is none). That every hand-out site asks is held by a case that
-derives the callers from the code (`tests/test_drive_phase.py`, `spd1`).
+finds, so a personal copy shadowing the project's is the copy judged. A pin holds the
+DIRECTORY its name resolves to, so every spelling that reaches that directory - the bare
+name, the running plugin's `plugin:skill`, another case of the name on a volume that folds
+case - is held by it (`_skill_places.covering_pins`). Any answer but a match - another
+digest, no copy found where its bytes can be read, a directory that cannot be read whole -
+composes no brief, starts no session and prints no dispatch line, naming the skill, the
+path or paths it read, the pinned digest and the one found (`found none` when there is
+none). The reader looks at each entry before it reads it and stays within its ceilings
+(`_skill_places.MAX_SKILL_ENTRIES`, `MAX_SKILL_BYTES`): a FIFO, a socket, a device, a
+dangling link or a link leading out makes the directory unreadable by name, never opened,
+so no entry can hang a hand-out. A mismatch names the entries a tool rather than an author
+writes when the directory holds them - a bytecode cache, a `.DS_Store`, a clone's `.git` -
+and they are still counted, since a cache beside its source is code python runs; the
+headless runner starts its child with `PYTHONDONTWRITEBYTECODE=1`, so python in a session
+it starts writes no cache (point 8 says what that does not reach). That every hand-out site asks is held by a case that
+derives the callers from the code (`tests/test_drive_phase.py`, `spd1`): every caller of
+`_areas.resolve_skills` and `_areas.resolve_review_skill` asks the reader or is exempt with
+a reason. A route that read a plan's skill lists without either function would be outside
+what that case derives.
 
 What it does **not** hold, stated so nothing leans on it:
 
 1. **A pin proves the bytes are the ones pinned, not that they are safe.** Whoever
    pinned them reviewed them, or did not; the digest records which bytes, not a verdict.
-2. **On the subagent route it checks the copy the plugin's resolver finds, not the copy
-   Claude Code's Skill tool then loads.** The agent loads the skill itself, through a
-   lookup the plugin cannot see - an enterprise tier, another installed plugin, a copy
-   added between the check and the load all sit outside it. The headless route is closer:
-   the runner checks the tree the session runs in, and discloses the skill from that copy.
+2. **On both routes the plugin checks the copy its own resolver finds, at hand-out; what
+   then loads the skill is Claude Code, from wherever it resolves the name, later.** A
+   subagent and a headless session alike load a skill's body through Claude Code's own
+   Skill tool, through a lookup the plugin cannot see - an enterprise tier, another
+   installed plugin, a copy added between the check and the load all sit outside it. What
+   the headless runner itself puts in the session's prompt - each skill's description and
+   checklist - is taken from the SKILL.md bytes the check hashed, not read again.
 3. **An unpinned skill is not checked at all**, and neither is any other file the agent
    reads.
 4. **It is a check at hand-out time, not a lock.** A copy changed after the dispatch line
    was printed is not seen until the next hand-out.
+5. **A plugin that does not read the key ignores it.** A plugin from before the key was
+   read validates a plan carrying it with an unknown-key warning and hands every skill out
+   unchecked; which release first reads the key is the release notes' to say.
+6. **The digest does not see a file's mode, an empty directory, or a carriage return
+   before a line feed in a Markdown file.** An executable bit added, an empty directory
+   added, or a Markdown file converted to CRLF answers the same digest; every other file
+   is hashed as its bytes, so a checkout that converts the line endings of a script
+   changes the digest (the cost of keeping a script's carriage return visible).
+7. **`run-agent-session.py` checks only the pins its caller passes.** The drive passes
+   one `--skill-pin` for each pinned skill it hands out; a bare `run-agent-session.py
+   --skill X` started by hand checks nothing, whatever the plan pins.
+8. **Only the plugin's own processes are kept from writing into a skill's directory.**
+   The shell a subagent runs commands in is Claude Code's, not the plugin's to set, and a
+   process that clears `PYTHONDONTWRITEBYTECODE` writes caches again; the stop names what
+   it finds, and the remedy is still to remove it or re-pin.
 
 ## Known bypass classes (accepted, documented)
 

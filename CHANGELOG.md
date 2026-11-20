@@ -11,22 +11,38 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 - **A plan can pin the bytes of a skill it names (experimental).** The optional
   `meta.skillPins` maps a skill name to `{sha256, source?}`, the digest of the skill's whole
   directory: SHA-256 over the sorted `<relative posix path> <sha256>` lines of every file
-  under it, a file holding no NUL byte read with CRLF as LF so a checkout that converts line
-  endings answers the same digest. `_skill_places.require_pins` is the one reader, judging the
-  copy `_skill_places.resolve_skill` finds; every place that hands a skill out asks it - the
-  executor brief's Skills section, the phase brief's Review skill section, the skills a
-  headless writer, reviewer or validation session starts with, and `run-agent-session.py`,
-  which takes the pins as `--skill-pin NAME=DIGEST` and checks the copy in the session's own
-  tree. A pinned skill whose directory differs, that is found nowhere its bytes can be read,
-  or whose directory cannot be read whole composes no brief, starts no session and leaves
-  `next` with no dispatch line, naming the skill, the path it read, the pinned digest and the
-  one found (`found none` when there is none), with restoring
-  the bytes or re-pinning after a review as the way through. A pin naming no skill, or holding
-  no digest, is a validation finding. A plan without the key prints and dispatches exactly as
-  before, and an unpinned skill is never checked. The pin proves the bytes, not that they are
-  safe, and on the subagent route it cannot see which copy Claude Code's Skill tool loads;
-  `SECURITY.md` and `COMPATIBILITY.md` say so, and the key is not yet under the compatibility
-  promise.
+  under it, a Markdown file read with CRLF as LF and every other file hashed as its bytes, so
+  a script's carriage return - which changes what the script does - changes the digest. The
+  reader looks at each entry before it reads it: a FIFO, a socket, a device, a dangling link
+  or a link leading out makes the directory unreadable by name, never opened, and a file is
+  compared with the byte ceiling before it is opened and hashed in chunks, so no entry can
+  hang a hand-out or be read past `MAX_SKILL_BYTES`. `_skill_places.require_pins` is the one
+  reader, judging the copy `_skill_places.resolve_skill` finds, and a pin holds the directory
+  its name resolves to, so the bare name, the running plugin's `plugin:skill` and another
+  case of the name on a volume that folds case are each held by it. The callers of
+  `_areas.resolve_skills` and `_areas.resolve_review_skill`, which a case derives from the
+  code, each ask it - the executor brief's Skills section, the phase brief's Review skill
+  section, the skills a headless writer, reviewer or validation session starts with - and
+  `run-agent-session.py` takes the pins the drive passes as `--skill-pin NAME=DIGEST`,
+  checks the copy in the session's own tree, and discloses each pinned skill from the bytes
+  it hashed. A pinned skill whose directory differs, that is found nowhere its bytes can be
+  read, or whose directory cannot be read whole composes no brief, starts no session and
+  leaves `next` with no dispatch line, naming the skill, the path it read, the pinned digest
+  and the one found (`found none` when there is none), and any bytecode cache, `.DS_Store`
+  or `.git` the directory holds, with restoring the bytes or re-pinning after a review as the
+  way through. The headless runner's child starts with `PYTHONDONTWRITEBYTECODE=1`. A pin
+  naming no skill, or holding no digest, is a validation finding, and a pin no level of the
+  plan names is a validation warning; two pins that resolve to one directory with different
+  digests - the bare and the plugin-qualified spelling of one skill, say - are a finding of
+  `validate-manifest.py`, which resolves them against the project, the user's home and the
+  running plugin, and stop every hand-out; the same digest under both spellings is clean. A
+  plan without the key prints and dispatches exactly as before, loading the plan no more
+  often, and an unpinned skill is never checked. The pin proves the bytes, not that they are
+  safe; on either route it cannot see which copy Claude Code's Skill tool then loads; the
+  digest does not see a file's mode or an empty directory; a headless session started by
+  hand without `--skill-pin` checks nothing; and a plugin that does not read the key ignores
+  it. `SECURITY.md` and `COMPATIBILITY.md` say so, and the key is not yet under the
+  compatibility promise.
 - **A task can record where its wall time went.** The optional task key `timing` holds
   `firstStartedAt` and a list of `stages` - each a `kind` (writer, gate, selection, base,
   reviewer, commit or wait), a start, a length in milliseconds and the record the length was

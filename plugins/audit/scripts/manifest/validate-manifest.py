@@ -69,6 +69,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _claude_home  # noqa: E402  (claude_home: the user's skills, where a pinned name may resolve)
 import _evidence_io as _ev  # noqa: E402  (the ledger: suite_keys, project/config resolution)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR index+shards)
 import _manifest_rules  # noqa: E402  (the rules this command is a front end for)
@@ -192,6 +193,13 @@ def main(argv):
     project = _output.project_of_manifest(paths[0])
     warnings = warnings + _manifest_rules.directory_entry_warnings(
         manifest, lambda entry: os.path.isdir(os.path.join(project, entry)))
+    # Two pins on the directory one skill resolves to, with different digests: one
+    # of them is not the reviewed bytes, so this is a FINDING. Which directory a
+    # name resolves to is the file system's to say, read from the project, the
+    # user's home and the running plugin - the places a hand-out reads - and a plan
+    # with no `meta.skillPins` is asked nothing and reads no file for it.
+    findings = list(findings) + _manifest_rules.skill_pin_findings(
+        manifest, project, _claude_home.claude_home(), _output.PLUGIN_ROOT)
 
     # THE EVIDENCE ARM OF THE SAME 'RUNS NO SUITE' WARNING. `validate()` already
     # asked the CERTAIN arm with no evidence at all (`_manifest_rules._check_meta`

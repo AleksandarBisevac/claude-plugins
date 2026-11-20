@@ -401,15 +401,21 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   rather than under *Promised* until one vendored skill has been through a measured run:
   its shape, the digest it holds (`_skill_places.skill_digest`), the words a stop uses and
   that the key keeps being read may all still change. What holds today: a plan without the
-  key prints, composes and dispatches exactly as it did before the key existed, and an
-  unpinned skill is never checked. One narrowing is named rather than hidden: a plan that
-  carried a key of this name before any release read it, in a shape a pin does not have,
-  validated with an unknown-key warning and now draws a finding. **What a pin does not
-  prove:** that the pinned bytes are safe - only that they are the bytes pinned; on the
-  subagent route, which copy Claude Code's Skill tool loads - the plugin checks the copy its
-  own resolver finds (personal, then the project's, then the running plugin's), and the
-  agent's tool may resolve the name elsewhere; and anything about a skill the plan does not
-  pin.
+  key prints, composes and dispatches exactly as it did before the key existed, loading the
+  plan no more often, and an unpinned skill is never checked. One narrowing is named rather
+  than hidden: a plan that carried a key of this name before any release read it, in a
+  shape a pin does not have, validated with an unknown-key warning and now draws a
+  finding; a pin no level of the plan names draws a warning. A plugin that does not read
+  the key ignores it - it validates the plan with an unknown-key warning and checks no
+  hand-out - and which release first reads it is the release notes' to say. **What a pin
+  does not prove:** that the pinned bytes are safe - only that they are the bytes pinned;
+  which copy Claude Code's Skill tool then loads, on either route - the plugin checks, at
+  hand-out, the directory its own resolver finds (personal, then the project's, then the
+  running plugin's), and Claude Code loads the skill later from wherever it resolves the
+  name; a file's mode, an empty directory, or a carriage return before a line feed in a
+  Markdown file, which the digest does not see; a headless session started by hand
+  without `--skill-pin`, which checks nothing; and anything about a skill the plan does
+  not pin.
 
 ## 2. The config keys — `.claude/audit.config.json`
 

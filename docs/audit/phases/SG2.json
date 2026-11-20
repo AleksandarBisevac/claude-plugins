@@ -1522,7 +1522,7 @@
     {
       "id": "SG2.14-xk1",
       "title": "A skill the plan pins reaches an agent or a session only as the bytes that were pinned: one reader of meta.skillPins, asked by every place that hands out a skill name",
-      "status": "in_progress",
+      "status": "done",
       "description": "WHAT IS TRUE TODAY (read from the tree, name the lines again before building on them). A plan names skills by string (meta.defaultSkills, meta.areas[*].skills, task.skills, and the review skill at three levels). The headless session runner (run-agent-session.py find_skills / load_skills) records the sha256 of each SKILL.md it loaded AFTER the fact and nobody compares it with anything; the subagent route hands the names to an agent in a brief (audit-lookup.py skills_lines, review_skill_lines) and reads no bytes at all. So a skill that was reviewed when it was vendored into .claude/skills can be changed, or shadowed by a personal copy of the same name (the resolver prefers personal over project, as Claude Code does), and every session after that follows the new text with nothing on the record.\n\nTHE RULE TO BUILD.\n1. `meta.skillPins` (optional; a plan without the key behaves exactly as today, byte for byte in what it prints): an object keyed by skill name, each value `{\"sha256\": <digest>, \"source\": <free text, optional>}`. The schema, the manifest rules and validate-manifest.py know it; a pin for a name that is no skill name, or a digest that is not one, is a validation error.\n2. THE DIGEST IS OF THE SKILL'S DIRECTORY, not of SKILL.md alone: SHA-256 over the sorted lines `<relative posix path> <sha256 of the file>` of every file under the directory that holds the SKILL.md the resolver found (the algorithm docs/research/benchmark-design.md section 4.2 already states for the benchmark's skill set). A checkout that converts line endings must answer the same digest as the one that pinned it: decide how (and say it where the digest is defined), prove it with a case, and say what that costs. A directory that cannot be read whole (a file unreadable, a link leading out of the directory, a directory too large to be a skill) has NO digest - that is a third answer, never a match.\n3. ONE READER answers for one name: match / mismatch / not found in a place whose bytes can be read / could not be read, with the path it read and both digests. It lives beside `_skill_places.resolve_skill` and uses that resolver, so the copy judged is the copy a session would load. A pinned name the resolver cannot place (another plugin's skill, a skill bundled with Claude Code) cannot be verified, and a pin is a statement that the skill is a reviewed copy on disk - so that is a stop with its own words, not a pass.\n4. EVERY PLACE THAT HANDS A SKILL NAME TO AN AGENT OR A SESSION ASKS THAT READER FIRST, for each pinned name it is about to hand out, and hands out nothing when one does not match: the headless runner does not start the session (it already refuses over a skill it cannot find - same exit, the reason names the skill, the path, the pinned and the found digest); the brief for a subagent is not composed and the drive stops before the dispatch line with the same reason, so no agent is spawned. An unpinned skill in the same task is untouched. Find the places by the code, not from this list: every caller of `_areas.resolve_skills` and `_areas.resolve_review_skill` that leads to a brief, a dispatch or a session either asks the reader or is named in the suite with the reason it need not (a status line that prints names hands nothing out). Hold that with a case that DERIVES the callers and fails for one that is neither - so a route added later cannot skip the pin silently.\n5. A stop says what to do: restore the pinned bytes, or re-pin after reviewing the diff. It never offers to drop the pin as the way through.\n6. WHAT THE PIN DOES NOT PROVE is written where the key is documented (README's config/manifest section, COMPATIBILITY.md, SECURITY.md): it proves the bytes are the ones pinned, not that they are safe; on the subagent route it verifies the copy the plugin's resolver finds and cannot see which copy Claude Code's Skill tool then loads; an unpinned skill is not checked at all. COMPATIBILITY.md: the key is new; list it under what is deliberately NOT yet promised (experimental until one vendored skill has been through a measured run), rather than widening the promise.\n\nALLOW CASES, as explicit as the stops: no skillPins key; a pin for a skill this task does not use; a pinned skill whose directory matches; the same skill resolved from the project when no personal copy exists; a checkout with converted line endings.\n\nHOW TO PROVE. Red first for each stop (one changed byte in SKILL.md; one changed byte in a sibling file of the skill directory; a file added to the directory; a personal copy shadowing the pinned project copy; a pinned name found nowhere) on BOTH routes: the runner's exit and words, and the drive's `next` printing no dispatch line. A mutation probe the orchestrator can run from the worktree root (copy of the tree, each mutation asserted applied): the reader made to hash SKILL.md alone; the mismatch answer turned into a match; the runner's check removed; the brief's check removed; the caller-derivation case's exemption list widened to everything. Context ceilings (`python3 tools/measure-context.py --gate`) and the hook budget stay green; a new module, if any, gets its suite, layer and build-guide section (CLAUDE.md, Adding a .py).\n\nNOT in this task: a verb that writes a pin and the doctor's row (the next task); how to vendor a skill (the task after); whether an unpinned missing skill is said on the subagent route (another task).\n\nAcceptance:\n(1) A plan without meta.skillPins prints and dispatches exactly as before.\n(2) A pinned skill whose directory digest differs, or that is found nowhere its bytes can be read, starts no headless session and composes no subagent brief, and the reason names the skill, the path and both digests.\n(3) The digest covers every file of the skill's directory and is the same on a checkout that converted line endings.\n(4) Every caller that hands a skill name out asks the one reader, held by a case that derives the callers.\n(5) The documents say what a pin does not prove, and COMPATIBILITY.md lists the key as not yet promised.",
       "files": [
         "plugins/audit/schema/audit-plan.schema.json",
@@ -1566,14 +1566,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "aa55ee101180",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Optional meta.skillPins {name: {sha256, source?}} added to the schema, the vocabulary (KNOWN_META) and _manifest_rules._check_meta (finding rules.meta.skill-pins per malformed pin). One reader in plugins/audit/scripts/status/_skill_places.py beside resolve_skill: skill_digest (SHA-256 over the sorted '<relative posix path> <sha256>' lines of every file under the skill's directory; a file with no NUL byte has CRLF read as LF; no digest for an unreadable file, a link out of the directory, a link to a directory, a name holding a line break, more than MAX_SKILL_FILES files or MAX_SKILL_BYTES bytes), pin_verdict (match | mismatch | not-found | unreadable, each with the path read, the places looked in and both digests), stop_words (restore the pinned bytes, or review the diff and re-pin; dropping the pin is never offered), pin_shape_problems, pin_stops, require_pins (raises PinStop, a ValueError, so the drive's existing catch makes it a stop) and pin_flags. Every hand-out site asks it: audit-lookup.py skills_lines and review_skill_lines (write_brief turns PinStop into E_REFUSED with no brief written, so next relays a stop before any dispatch mark), drive-phase.py session_skills and runner_review_skill (dispatch() asks session_skills before the dispatch mark on the session route; writer_argv adds one --skill-pin NAME=DIGEST per pinned name handed out), and run-agent-session.py --skill-pin, checked against the session's own tree before claude starts, refusing with E_USAGE, the exit a missing skill gets. A plan without the key composes the same brief byte for byte past the timestamp line (spb1) and the session argv carries no --skill-pin (spd6). spd1 derives every function under scripts/ and hooks/ whose own body calls resolve_skills or resolve_review_skill and fails any that neither asks (require_pins/pin_stops in its own body) nor is exempt with a reason; spd2 proves it can fail. Documents: COMPATIBILITY.md lists the key under not-yet-promised (experimental) with the narrowing for a plan that already carried an unread key of that name; SECURITY.md gains a section of four limits; README meta table row; CHANGELOG Unreleased/Added; PLUGIN-BUILD-GUIDE.md sections and the regenerated module-map lines for the two new edges. Tests: test__skill_places 38/38, test_run_agent_session 113/113, test_audit_lookup 215/215, test__manifest_rules 185/185, test_drive_phase 1061 (spn-block 8/8); the task gate sweep exit 0, 5/5 files ok, 1614 cases. Mutation probe (scratchpad sg2.14/mutations.py, on a copy of the tree, anchors asserted to match once, __pycache__ purged): the five mutations the task names and an over-fire twin of each, all caught. End-to-end probe (sg2.14/drive_probe.py) on the real commands: next dispatches on a match, stops on one changed byte with the stop's words and no dispatch line, the runner refuses with exit 2 and the stub claude is never started, and after the bytes are restored next dispatches. Two files widened into the task's scope by the orchestrator: plugins/audit/scripts/manifest/_manifest_vocab.py (KNOWN_META gains skillPins - without it every plan carrying the key draws an unknown-key warning and the schema/vocab drift check reports the schema property unknown) and tools/demo/gen-demo-manifest.py (one SCHEMA_EXEMPTIONS row for meta.skillPins with its reason: experimental, read by no rendered surface, and a generated fixture has no skill directory to pin - the orchestrator's unrecorded gate had been red on tests/test_gen_demo_manifest.py for exactly that missing row; that suite is now green through the sweep, 138 cases, and check-rendered-artifacts.py --before-commit exits 0, so the row changes no generated byte). The proof command is narrowed to the four fast suites because the sweep runs only whole files and test_drive_phase whole exceeds the helper's deadline; spd1-spd8 were watched red by hand on HEAD's code (spd1, spd2, spd4-spd8 red, the allow case spd3 green) in the scratchpad's sg2.14/red_against_head.2.out, which also shows the strengthened rap6 red on HEAD's code.",
+        "descriptive": "A skill the plan pins in meta.skillPins is handed to an agent's brief or a headless session only when the copy the resolver finds is the pinned bytes; otherwise no brief, no session and no dispatch line, with words that say restore or re-pin."
       },
       "startedAt": "2026-11-20T06:01:33Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-20T07:11:15Z",
+      "verifiedBy": [
+        "test__skill_places sp21-sp39: the directory digest (subdirectory files, converted line endings, a NUL-holding file, one changed byte in a sibling, a file added, links, bounds, an absent directory, an unreadable file) and the reader's four answers with path and both digests, a personal copy shadowing the project copy, the stop's words and remedy, pin_stops asking only pinned names, require_pins raising PinStop, and pin_shape_problems",
+        "test_run_agent_session rap1-rap6: --skill-pin matching starts the session; one changed byte in SKILL.md, one in a sibling and an added file each refuse with E_USAGE before the stub claude starts; a personal copy shadowing refuses naming the personal path; a pinned name found nowhere refuses; an unpinned skill beside a pinned one is untouched; a malformed --skill-pin is refused with its own reason",
+        "test_drive_phase spd1-spd8: every caller of a skill resolver derived from the code asks the pin reader or is exempt with a reason, and that derivation can fail; next on the subagent route and the session route dispatches a matching pin and stops on a changed byte and on a pinned name found nowhere, printing no dispatch line; the session argv carries one --skill-pin per pinned name it hands out and none without the key; a pinned review skill the runner cannot find stops instead of being left out; a stopped session route leaves no dispatch mark behind",
+        "test_audit_lookup spb1-spb4: a matching pin composes the same executor brief as a plan with no key; a changed pinned skill composes no executor brief; the phase brief's review skill is refused over a changed pin; a pin the task does not use asks nothing",
+        "test__manifest_rules spn1-spn5: well-formed skillPins validates clean; a bad name, a bad digest, a non-object and an extra or missing key are each a validation error"
+      ],
       "notes": [
         {
           "at": "2026-11-20T06:01:31Z",
@@ -1670,7 +1676,40 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-20T06:56:35Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 3298000,
+            "startedAt": "2026-11-20T06:01:37Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-20T07:05:51Z.e0ef3b",
+            "kind": "wait",
+            "ms": 89000,
+            "startedAt": "2026-11-20T06:56:55Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-20T07:05:51Z.e0ef3b, ending at its startedAt",
+            "kind": "selection",
+            "ms": 25012,
+            "runId": "2026-11-20T07:05:51Z.e0ef3b",
+            "startedAt": "2026-11-20T06:58:24Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-20T07:05:51Z.e0ef3b",
+            "kind": "gate",
+            "ms": 420957,
+            "runId": "2026-11-20T07:05:51Z.e0ef3b",
+            "startedAt": "2026-11-20T06:58:50Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit aa55ee101180",
+            "kind": "commit",
+            "ms": 2286,
+            "startedAt": "2026-11-20T07:11:11Z"
+          }
+        ],
         "firstStartedAt": "2026-11-20T06:01:33Z"
       },
       "reviewPerTask": "signals",
@@ -1678,6 +1717,191 @@
         "runId": "2026-11-20T07:11:10Z.472d39",
         "status": "passed",
         "at": "2026-11-20T07:11:10Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "aa55ee101180",
+        "at": "2026-11-20T07:11:15Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-20T06:56:27Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__skill_places.py tests/test_run_agent_session.py tests/test_audit_lookup.py tests/test__manifest_rules.py` in a throwaway tree at HEAD exited 1 with 32 of 113 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - spn1 (house FAIL), spn2 (house FAIL), spn3 (house FAIL), spn4 (house FAIL), spn5 (house FAIL), sp21 (house FAIL), sp22 (house FAIL), sp23 (house FAIL) and 24 more: SELFTEST FAILED: 107/113 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "SG2.15-xk1",
+      "title": "A pin's reader is bounded before it reads, judges the directory a name resolves to rather than the name's spelling, and the documents say exactly what a pin does not prove",
+      "status": "in_progress",
+      "description": "An independent review of the commit that added meta.skillPins (the task before this one; the orchestrator's prompt names the review's file with each probe's output) found that the reader, the stops and the validation work as filed, and that the edges do not. Each item below was shown by a probe unless it says 'by reading'. They are one class - the reader trusts what it is handed (a directory's entries, a name's spelling, a second read of the same file) - so the fix is the rule, not the eleven places.\n\nWHAT THE REVIEW SHOWED.\n(a) THE DIGEST READS BEFORE IT CHECKS. `_file_line` opens and reads every entry whole and compares the byte ceiling afterwards. A FIFO in a pinned skill's directory blocks `open()` for ever (the probe was still blocked after 5 s), so `next` hangs holding the phase lock, the brief hangs and the runner hangs, each with no word; one huge file is read into memory before the ceiling refuses it. By reading: a file name that is not valid UTF-8 (possible on linux) raises at the `.encode` and reaches the user as a traceback, since the callers catch only the stop.\n(b) A PIN IS MATCHED BY SPELLING. With the running plugin named `house`, a pin on `foo` with a wrong digest stops a hand-out of `foo` and lets `house:foo` through, though both resolve to one directory; the same for a different-case spelling on a case-insensitive volume. A pin whose name nothing in the plan uses (a typo) is asked nothing and draws no finding.\n(c) EVERY FILE COUNTS, AND THE SKILL'S OWN USE ADDS FILES. A skill whose script imports a sibling module gains `__pycache__/` on its first run and changes digest; so does a directory Finder wrote `.DS_Store` into, or a personal skill that is a git clone. The stop then says 'review the diff and re-pin' over a file nobody wrote, and says nothing that would let the reader see that. Counting everything is right - a planted `.pyc` beside a source file is code python will prefer when its header matches, so leaving `__pycache__` out of the digest would be a hole - but then the plugin must not be the one that writes into the directory, and the stop must say what it can see.\n(d) LINE ENDINGS. The digest reads CRLF as LF in every file holding no NUL byte. A `scripts/go.sh` with CRLF has the same digest as with LF and behaves differently: `cd dir\\r` fails, the script carries on in the caller's directory, `set -e\\r` does not set errexit. A file mode change (an executable bit) and an empty directory are also invisible; those two are costs to state, not to fix.\n(e) THE RUNNER SHOWS BYTES IT DID NOT HASH. `run-agent-session.py` asks the reader, then resolves the skill again and reads SKILL.md again for the description and checklist it puts in the session's prompt.\n(f) THE DOCUMENTS CLAIM MORE THAN THE CODE DOES. Every 'what a pin does not prove' list confines the Skill-tool limit to the subagent route, but a headless session also loads the skill's body through Claude Code's own Skill tool - the runner hands over a description and a checklist only. Missing from every list: an older plugin ignores the key (the parent commit's validator on a plan carrying it exits 0 with an unknown-key warning, and every hand-out goes unchecked); what the digest does not see (mode, empty directories, whatever the line-ending rule leaves); that the runner checks only the pins its caller passes as flags (a bare `run-agent-session.py --skill X` checks nothing); and that 'every place that hands a skill out asks' is true of the callers the suite derives - callers of the two resolver functions - and says nothing of a route that reads the plan's lists directly.\n(g) COST WITHOUT THE KEY. Each session-route dispatch now loads the manifest two more times whether or not the plan pins anything (a load measured at 42 to 73 ms on this repository's plan, 2026-11-20). Output is unchanged.\n(h) CASES THAT CANNOT FAIL. sp35 and sp38 assert that the stop 'names the skill' by `\"pinned\" in words` with a fixture skill called `pinned`, and every stop sentence holds 'is pinned'; sp26 has no at-the-ceiling allow case, so `>=` for `>` survives; rap4 and spd5 accept any `none` substring where 'found none' is owed.\n\nTHE RULE TO BUILD.\n1. THE DIGEST LOOKS BEFORE IT READS. Every entry is `lstat`ed first. Only a regular file (or a link that stays inside the directory and leads to one) is read; any other kind - FIFO, socket, device, a link out, a link to a directory, a dangling link - makes the directory unreadable, by name and kind, without being opened. A file's size is compared with what is left of the byte ceiling BEFORE it is opened, and it is hashed in chunks, so the work the reader does is bounded by the ceilings and not by the directory. A name that cannot be written as UTF-8, or holds a line break, is unreadable too. No input reaches the user as a traceback or as a hang: prove the FIFO case under a deadline of your own so a regression fails the case instead of hanging the suite.\n2. LINE ENDINGS ARE NORMALISED ONLY WHERE A CARRIAGE RETURN CANNOT CHANGE BEHAVIOUR, AND THAT SET IS AN ALLOW LIST, NOT A DENY LIST. The kinds of file that run are unbounded (shell, batch files that REQUIRE CRLF, anything with an interpreter line), so naming the ones to leave alone cannot be complete. Instead: the instruction files - Markdown - have CRLF read as LF, and every other file is hashed as its bytes. Decide the exact allow list (`.md` alone is the recommendation; argue any addition), define it once beside the digest, and say there and in the documents what it costs: a checkout that converts line endings changes the digest of a skill that ships anything but Markdown, and the remedy is the repository's own (mark the skill directory as not text for git) - the vendoring page of a later task carries the how. If you find a reason the allow list is the wrong shape, say so with the case that shows it before building something else.\n3. A PIN IS ABOUT A DIRECTORY. The question asked for each name about to be handed out is whether the directory that name resolves to is one a pin covers - so every spelling that resolves to the pinned skill's directory is held by its pin (the bare name and the running plugin's qualified name; another case on a volume that folds case), compared as resolved real paths. Two pins that resolve to one directory with different digests are a validation error. A pin whose name resolves nowhere is already a stop when handed out; a pin whose name NO level of the plan uses (`_areas.plan_skill_refs` is the list) is a validation warning naming it, since it protects nothing - a warning, because a plan may pin ahead of use.\n4. THE PLUGIN DOES NOT CHANGE A DIRECTORY IT PINS, AND A STOP SAYS WHAT IT CAN SEE. The headless runner's child gets `PYTHONDONTWRITEBYTECODE=1` (say what else of the plugin's could write under a skill directory, and that the subagent route's own shell is not the plugin's to set). The mismatch stop names, when present in the directory, the entries a tool rather than an author writes - bytecode caches, `.DS_Store`, a `.git` - as the likely difference and what to do about each (remove it; it is still counted). The digest keeps counting everything; say why at its definition (a cache beside a source file is code).\n5. WHAT THE RUNNER SHOWS IS WHAT WAS HASHED. The reader's answer carries the per-file digests it computed (or the one for SKILL.md); the runner compares the bytes it is about to put in the prompt with that and refuses on a difference, or reads once and uses those bytes for both. One read is the better shape if the code allows it.\n6. NO KEY, NO COST. A plan without the key loads nothing more than before on any route: pass the manifest already loaded, and ask nothing when it holds no pins. Show the count of manifest loads for one session-route dispatch before and after, with and without the key, by counting calls in a case rather than by timing.\n7. THE DOCUMENTS SAY WHAT THE CODE DOES (SECURITY.md's pinned-skill section, README's row, COMPATIBILITY.md's bullet, CHANGELOG's entry, the schema's description, PLUGIN-BUILD-GUIDE.md): the Skill-tool limit on BOTH routes, stated as what the plugin checks (the directory its resolver finds, at hand-out) and what then loads the skill (Claude Code, from wherever it resolves, later); an older plugin ignores the key, with the version that first reads it left to the release and no number invented; what the digest does not see after this task; the runner's dependence on its caller's flags; and the caller-derivation claim worded as what the case derives. Leave every sentence another file quotes byte for byte (the task before this one lists them in its notes).\n8. THE CASES OF (h) are made able to fail: a fixture skill whose name appears nowhere else in a stop's words; allow cases exactly at each ceiling and deny cases one over; 'found none' asserted whole. New cases for 1 (each kind of entry, by `lstat`, skipping by name on a host that cannot make it), 2 (a CRLF shell script changes the digest; a CRLF Markdown file does not), 3 (both spellings, the case variant where the volume folds case, the unused pin's warning, two pins on one directory), 4 (the runner's child environment; the stop naming a cache), 5 (SKILL.md changed between the check and the read refuses), 6 (the load count).\n\nALLOW CASES, as explicit as the stops: an ordinary skill of Markdown and scripts with LF endings; a link inside the directory to a file inside it; a skill at exactly the ceilings; a Markdown-only skill checked out with CRLF; a pin on the bare name and a hand-out of the bare name; a plan with no key.\n\nHOW TO PROVE. Red first on the tree as it stands for (a) the FIFO, (b) the qualified spelling, (d) the CRLF shell script, (e) the changed SKILL.md, and (h) each case that could not fail (show the mutation it now catches). A mutation probe the orchestrator can run from the worktree root (copies of the working tree, each mutation asserted applied, bytecode caches purged, never `git archive HEAD`), each deny with its allow twin: the `lstat` check removed; the size compared after the read; the allow list widened to every NUL-free file; pins matched by spelling again; the runner's second read restored; the child environment's variable dropped; the no-key short cut removed. The end-to-end probe of the task before this one (the prompt names it) still answers as it did, extended by one step: a hand-out under the qualified spelling stops too.\n\nNOT in this task: anything in drive-phase.py beyond passing the loaded manifest and the no-key short cut (what a pin stop leaves behind in a wave or on a resume is the next task); a verb that writes a pin; the doctor; per-file pins.\n\nAcceptance:\n(1) No entry of a pinned skill's directory can hang the reader, be read past the ceilings, or reach the user as a traceback; each such directory is answered 'unreadable' naming the entry.\n(2) Every spelling that resolves to a pinned directory is held by its pin, an unused pin is a validation warning, and two pins on one directory with different digests are a validation error.\n(3) Only the allow-listed instruction files have their line endings normalised, the cost is stated where the digest is defined and in the documents, and a CRLF shell script changes the digest.\n(4) The runner's child cannot write bytecode into a skill directory, the mismatch stop names tool-written entries it finds, and the bytes the runner shows are the bytes that were hashed.\n(5) A plan without the key causes no additional manifest load, held by a count.\n(6) The documents' lists of what a pin does not prove match the code on both routes, and the cases named in (h) can fail.",
+      "files": [
+        "plugins/audit/scripts/status/_skill_places.py",
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "tests/test__skill_places.py",
+        "tests/test_run_agent_session.py",
+        "tests/test_drive_phase.py",
+        "tests/test_audit_lookup.py",
+        "tests/test__manifest_rules.py",
+        "plugins/audit/README.md",
+        "COMPATIBILITY.md",
+        "SECURITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/gate-parity.py",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "tests/test_validate_manifest.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__skill_places.py: an entry that is not a regular file is answered unreadable without being opened, a file past the ceiling is refused before it is read, only Markdown has its line endings normalised, and every spelling resolving to a pinned directory is held by its pin",
+          "tests/test_run_agent_session.py: the runner's child cannot write bytecode, and a SKILL.md changed between the check and the read refuses",
+          "tests/test__manifest_rules.py: an unused pin warns and two pins on one directory with different digests are an error",
+          "tests/test_drive_phase.py: a plan without the key causes no additional manifest load on a session-route dispatch"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__skill_places.py tests/test_run_agent_session.py tests/test__manifest_rules.py tests/test_drive_phase.py tests/test_audit_lookup.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-20T08:53:42Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "only the skillPins description in the schema is reworded; the enum this file quotes is not edited",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the task rewrites its own pinned-skill passages and leaves the sentence this file quotes byte for byte; the executor is told so and to run this reader",
+          "waives": "tests/test__floor_guard.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the task rewrites its own pinned-skill passages and leaves the sentence this file quotes byte for byte; the executor is told so and to run this reader",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the task rewrites its own pinned-skill passages and leaves the sentence this file quotes byte for byte; the executor is told so and to run this reader",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the task rewrites its own pinned-skill passages and leaves the sentence this file quotes byte for byte; the executor is told so and to run this reader",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the task rewrites its own pinned-skill passages and leaves the sentence this file quotes byte for byte; the executor is told so and to run this reader",
+          "waives": "tests/test__manifest_phases.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the task rewrites its own pinned-skill passages and leaves the sentence this file quotes byte for byte; the executor is told so and to run this reader",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the task rewrites its own pinned-skill passages and leaves the sentence this file quotes byte for byte; the executor is told so and to run this reader",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the task rewrites its own pinned-skill passages and leaves the sentence this file quotes byte for byte; the executor is told so and to run this reader",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the task rewrites its own pinned-skill passages and leaves the sentence this file quotes byte for byte; the executor is told so and to run this reader",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the task rewrites its own pinned-skill passages and leaves the sentence this file quotes byte for byte; the executor is told so and to run this reader",
+          "waives": "tests/test_hooks.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the task rewrites its own pinned-skill passages and leaves the sentence this file quotes byte for byte; the executor is told so and to run this reader",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the task rewrites its own pinned-skill passages and leaves the sentence this file quotes byte for byte; the executor is told so and to run this reader",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the fail-mode table this file reads is not edited; the task registers no hook",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "a research note quoting a section of SECURITY.md the task does not edit",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the task edits its own entry under the Unreleased heading and leaves the heading",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the task rewrites its own pinned-skill passages and leaves the sentence this file quotes byte for byte; the executor is told so and to run this reader",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the task rewrites its own pinned-skill passages and leaves the sentence this file quotes byte for byte; the executor is told so and to run this reader",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the task rewrites its own pinned-skill passages and leaves the sentence this file quotes byte for byte; the executor is told so and to run this reader",
+          "waives": "tests/test__refs.py"
+        },
+        {
+          "at": "2026-11-20T07:26:09Z",
+          "text": "the module map under the heading this file quotes is regenerated by this file's own writer if an import edge changes; the heading is not edited",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-20T08:29:35Z",
+          "text": "Scope widened after the executor's return was filed, by four files it named as needed and did not touch: tools/gate-parity.py (the new TOOL_WRITTEN table in _skill_places.py pairs an entry with a remedy, which gate-parity reads as a reason-carrying exemption table with no auditor; it excuses nothing - every entry is still counted - so it owes a NOT_AN_EXEMPTION row with that reason); plugins/audit/scripts/manifest/validate-manifest.py with tests/test_validate_manifest.py (the validator must call skill_pin_findings, or two pins on one directory with different digests are refused only at hand-out and the task's second acceptance clause is not met); plugins/audit/scripts/manifest/_manifest_vocab.py (its sentence that the reader is asked by every place that hands a skill out is the claim this task rewords everywhere else). The drive keeps the first return for a start, so the filed return does not carry these edits."
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-20T07:26:12Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-20T11:43:18Z.da292b",
+        "status": "passed",
+        "at": "2026-11-20T11:43:18Z"
       }
     }
   ],

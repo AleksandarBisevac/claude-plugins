@@ -37,6 +37,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import hashlib
+import io
 import json
 import os
 import re
@@ -91,7 +92,8 @@ record = {
     "skills_path": None,
     "env": {k: v for k, v in os.environ.items()
             if k.startswith(("CLAUDE", "AUDIT_"))
-            or k in ("PATH", "HOME", "ORCH_KEEP_Q81Z", "TEMP", "TMP")},
+            or k in ("PATH", "HOME", "ORCH_KEEP_Q81Z", "TEMP", "TMP",
+                     "PYTHONDONTWRITEBYTECODE")},
 }
 argv = sys.argv[1:]
 if "--agents" in argv:
@@ -1234,7 +1236,7 @@ def _pin_cases(check, M, root, bindir, pinned, user_dir, project_dir):
     check("rap4 a pinned name found nowhere refuses with the pin's words - the "
           "pinned digest and no found one - not as a pass: %r" % ((code, err[-400:]),),
           code == M.E_USAGE and rec is None and "ghost-pinned-q4" in err
-          and "a" * 64 in err and "none" in err)
+          and "a" * 64 in err and "found none" in err)
 
     path, digest = plant("pin-mixed")
     _write_skill(project_dir("pin-mixed"), "loose-skill",
@@ -1261,6 +1263,72 @@ def _pin_cases(check, M, root, bindir, pinned, user_dir, project_dir):
     check("rap6 a --skill-pin that is no digest, that pins a skill the session is not "
           "started with, or that has no `=` is a usage refusal naming it: %r" % (bad,),
           [b[1:] for b in bad] == [(M.E_USAGE, True, True)] * 3)
+    _pin_tail_cases(check, M, root, bindir, pinned, plant)
+
+
+def _pin_tail_cases(check, M, root, bindir, pinned, plant):
+    """What the runner itself does to a pinned skill's directory, and what it
+    shows of one: its child writes no bytecode cache, and the SKILL.md the
+    session is shown is the one that was hashed."""
+    # The parent carries the name EMPTY, which writes bytecode as an unset name
+    # does, so a runner that only passes an inherited value on is told apart.
+    plant("pin-env")
+    code, out, err, rec, _dirs = _run(root, bindir, "writer", tag="pin-env",
+                                      env_extra=dict(pinned, PYTHONDONTWRITEBYTECODE=""))
+    seen = (rec or {}).get("env") or {}
+    check("rap7 the session's child starts with PYTHONDONTWRITEBYTECODE=1, set over "
+          "whatever the parent carried, so nothing python the session runs writes a "
+          "cache into a pinned skill's directory: the child saw %r"
+          % (seen.get("PYTHONDONTWRITEBYTECODE"),),
+          code == 0 and seen.get("PYTHONDONTWRITEBYTECODE") == "1", repr(seen))
+
+    path, digest = plant("pin-once")
+    with open(path, "rb") as fh:
+        hashed = fh.read()
+    swapped = _skill_text("pinned-skill", "SWAPPED")
+    record = os.path.join(root, "record-pin-once.jsonl")
+    nobin = os.path.join(root, "bin-without-claude")
+    os.makedirs(nobin, exist_ok=True)
+    real = M._skill_places.skill_digest
+
+    def then_changed(*args, **kwargs):
+        """The digest as asked, and SKILL.md rewritten right after it was hashed -
+        the window between the check and a second read."""
+        got = real(*args, **kwargs)
+        _write_text(path, swapped)
+        return got
+    saved = dict((k, os.environ.get(k)) for k in ["PATH"] + sorted(pinned))
+    M._skill_places.skill_digest = then_changed
+    os.environ.update(dict(pinned, PATH=nobin))
+    try:
+        code = M.main(["--role", "writer", "--task", "P9.1",
+                       "--tree", os.path.join(root, "tree-pin-once"),
+                       "--scratch", os.path.join(root, "scratch-pin-once"),
+                       "--state-dir", os.path.join(root, "state-pin-once"),
+                       "--model", MODEL, "--effort", "high", "--budget-usd", "2.5",
+                       "--skill", "pinned-skill",
+                       "--skill-pin", "pinned-skill=" + digest, "--record", record],
+                      stdin=io.StringIO(PROMPT), out=lambda line: None)
+    except Exception as exc:                                   # noqa: BLE001
+        code = "raised %s: %s" % (type(exc).__name__, exc)
+    finally:
+        M._skill_places.skill_digest = real
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    shown = None
+    if os.path.isfile(record):
+        with open(record, encoding="utf-8") as fh:
+            shown = [s.get("sha256") for s in json.loads(fh.read().splitlines()[-1])
+                     .get("skills") or []]
+    check("rap8 a SKILL.md changed between the pin check and the read is never what "
+          "the session is shown: the runner reads the file once, and the bytes it "
+          "loads are the bytes it hashed (recorded %r, hashed %s, changed to %s; "
+          "exit %r)" % (shown, hashlib.sha256(hashed).hexdigest()[:12],
+                        hashlib.sha256(swapped.encode("utf-8")).hexdigest()[:12], code),
+          shown == [hashlib.sha256(hashed).hexdigest()])
 
 
 def _write_text(path, text):
@@ -1272,14 +1340,14 @@ def _write_text(path, text):
 def _dir_digest(folder):
     """A skill directory's digest computed here, apart from the module under test:
     SHA-256 over the sorted lines `<relative posix path> <sha256 of its bytes>`,
-    CRLF read as LF in a file holding no NUL byte."""
+    CRLF read as LF in a Markdown file only."""
     lines = []
     for here, _dirs, files in os.walk(folder):
         for name in files:
             full = os.path.join(here, name)
             with open(full, "rb") as fh:
                 data = fh.read()
-            if b"\0" not in data:
+            if name.lower().endswith(".md"):
                 data = data.replace(b"\r\n", b"\n")
             rel = os.path.relpath(full, folder).replace(os.sep, "/")
             lines.append("%s %s\n" % (rel, hashlib.sha256(data).hexdigest()))

@@ -450,8 +450,11 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               # shape check, called from `_manifest_phases._check_areas`.
               "defaultSkills",
               # The pinned bytes of a skill the plan names, by name:
-              # `_skill_places.require_pins` is the one reader, asked by every
-              # place that hands a skill out; `pin_shape_problems` its shape.
+              # `_skill_places.require_pins` is the one reader, asked by each
+              # caller of `_areas.resolve_skills` and `_areas.resolve_review_skill`
+              # that is not exempt with a reason (the callers
+              # `tests/test_drive_phase.py` spd1 derives from the code);
+              # `pin_shape_problems` its shape.
               "skillPins",
               # When this plan could first have recorded a test run at all, so a
               # plan adopted mid-flight reads its pre-recorder work as impossible

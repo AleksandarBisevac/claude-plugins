@@ -394,7 +394,7 @@ L5:
   _doctor_hygiene -> _branch, _locks, _output, _worktrees
   _evidence_view -> _evidence_io, _manifest_io, _output, _report_html, _status_facts
   _gate_derive -> _evidence_io, _manifest_io, _manifest_phases, _manifest_vocab, _output, _runner_collects
-  _manifest_rules -> _branch, _evidence_io, _json_schema, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output, _skill_places, _status_facts
+  _manifest_rules -> _areas, _branch, _evidence_io, _json_schema, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output, _skill_places, _status_facts
   _panel_discovery -> _help, _manifest_io, _output, _policy
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
   _panel_settings -> _config_rules, _loader, _output
@@ -475,7 +475,7 @@ L9:
   set-priority -> _claude_home, _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _claude_home, _evidence_io, _filed_returns, _invariants, _locks, _manifest_io, _output, _proc_group, _runner_output, _task_outputs, _tree_stamp, _worktrees
   validate-config -> _config_rules, _output
-  validate-manifest -> _evidence_io, _manifest_io, _manifest_rules, _output, _warning_groups
+  validate-manifest -> _claude_home, _evidence_io, _manifest_io, _manifest_rules, _output, _warning_groups
   verify-invariants -> _claude_home, _invariants, _manifest_io, _output
 ```
 
@@ -2547,7 +2547,14 @@ downward.
 **`_check_meta` refuses a `meta.skillPins` that is no set of pins** - a name that is no skill
 name, a value that is no object, a key a pin does not have, a digest that is not a lowercase
 SHA-256 hex digest - as findings, each `_skill_places.pin_shape_problems`' sentence: a pin the drive
-could not check is not a warning to scroll past.
+could not check is not a warning to scroll past. A pin whose name no level of the plan uses
+(`_areas.plan_skill_refs`, judged by `_skill_places.unused_pins`) is a WARNING naming it - it
+protects nothing, and a plan may pin ahead of use - and a plan with no pins walks nothing for
+it. Two pins that resolve to one directory with different digests need the file system, which
+`validate()` reads none of, so `skill_pin_findings(manifest, tree, user_home, plugin_root)`
+words them as findings for a caller that holds the tree - `validate-manifest.py`, which passes
+the project, the user's home and the running plugin (`vsp1`; the same digest under two spellings
+is clean, `vsp2`) - and `require_pins` refuses every hand-out over them.
 
 **`_check_muted` grades `meta.muted`.** A mute naming no bug, or a bug `bugs[]` does not hold, is a
 finding. A mute whose bug is closed by its effective status (`_closed_bugs`: the bug's
@@ -3409,6 +3416,10 @@ already lost what they are about: an index-only field in a shard body
 its shard (`_manifest_io.stale_stubs`). The second, like `_manifest_crossrefs._check_derived`'s
 stored-against-derived warning, names `audit-task.py settle` - a warning and never a finding,
 because every plan written before the verbs stored derived values carries some.
+One finding is asked here too, for the same reason in another form: two `meta.skillPins` entries
+that resolve to one skill directory with different digests (`_manifest_rules.skill_pin_findings`)
+need the file system, so this command passes the project, the user's home
+(`_claude_home.claude_home`) and the running plugin; a plan with no pins reads nothing for it.
 `--strict` moves every line the published schema raised (`rules.schema.*` from the whole-plan
 check, `crossrefs.bugs.schema-*` from the bug values) from the warnings to the findings, so the
 command rejects exactly where `ajv` rejects - the reading `COMPATIBILITY.md` announces for 4.0.0.
@@ -3827,21 +3838,41 @@ the home, tree and plugin root arrive as arguments. Its cases are in `tests/test
 It is also the one reader of `meta.skillPins`, beside the resolver so the copy judged is the copy
 a session loads. `skill_digest` hashes the skill's whole DIRECTORY - SHA-256 over the sorted
 `<relative posix path> <sha256>` lines, the shape `docs/research/benchmark-design.md` 4.2 gives
-the benchmark's skill set, with a file holding no NUL byte read with CRLF as LF so a checkout
-that converts line endings answers the same digest (the cost: a change confined to a CR before a
-LF is not seen). A directory it cannot read whole - an unreadable file, a link leading out, a
-link to a directory, more than `MAX_SKILL_FILES` files or `MAX_SKILL_BYTES` bytes - has no
-digest, a third answer and never a match. `pin_verdict` gives one name's answer - `match`,
-`mismatch`, `not-found` or `unreadable` - with the path read and both digests; `stop_words` is
-the stop, offering a restore or a re-pin after review and never the pin's removal;
-`require_pins` raises `PinStop` (a `ValueError`, which the drive turns into a stop) for any
-pinned name among the ones about to be handed out that is not a match, and asks nothing of an
-unpinned name or of a plan with no key. `pin_shape_problems` is the key's shape, which
-`_manifest_rules` reports as findings. Every function that calls `_areas.resolve_skills` or
+the benchmark's skill set. Line endings are read alike only in the files on an ALLOW list,
+`NORMALISED_SUFFIXES` (Markdown): a carriage return changes what a script does, the kinds of
+file that run are unbounded, so every other file is hashed as its bytes - the cost, stated at
+the definition, is that a checkout converting a script's line endings changes the digest, and
+the remedy is marking the skill's directory as not text for git. The reader LOOKS BEFORE IT
+READS: each entry is `lstat`ed, only a regular file (or a link inside the directory to one) is
+opened - without following a link, without blocking, checked again on the descriptor - its
+size compared with what is left of `MAX_SKILL_BYTES` first and the file hashed in chunks, and
+every entry met counts toward `MAX_SKILL_ENTRIES`. A directory it cannot read whole - a FIFO,
+a socket, a device, a dangling link, a link leading out or to a directory, a name that is not
+UTF-8 or holds a line break, a file that cannot be opened, a ceiling passed - has no digest, a
+third answer naming the entry and its kind, never a match and never a hang. Every file counts,
+bytecode caches included, since a cache beside its source is code; a mismatch names the
+`TOOL_WRITTEN` entries it finds (`__pycache__`, `.DS_Store`, `.git`) with what to do about
+each. The digest does not see a file's mode or an empty directory. `pin_verdict` gives one
+name's answer - `match`, `mismatch`, `not-found` or `unreadable` - with the path read, both
+digests, the tool-written entries and the SKILL.md bytes it hashed (`skillMd`, which the
+session runner discloses instead of reading the file again); `stop_words` is the stop,
+offering a restore or a re-pin after review and never the pin's removal. A pin is about a
+DIRECTORY: `covering_pins` holds a name by every pin that is spelled the same or resolves to
+the directory the name resolves to, compared by `os.path.samestat`, so the bare name, the
+running plugin's `plugin:skill` and another case on a volume that folds case are one pin;
+`pin_verdicts` and `pin_stops` ask it, and `pin_flags` writes the session runner's
+`--skill-pin` under the spelling handed out. `require_pins` raises `PinStop` (a `ValueError`,
+which the drive turns into a stop) for any pinned name among the ones about to be handed out
+that is not a match, or when two pins on one directory disagree (`pin_directory_problems`),
+and asks nothing - reads no file - of an unpinned name or of a plan with no key.
+`pin_shape_problems` is the key's shape, which `_manifest_rules` reports as findings;
+`unused_pins` is the pins no name of the plan can be a spelling of, which it reports as
+warnings. Every function that calls `_areas.resolve_skills` or
 `_areas.resolve_review_skill` either asks `require_pins` in its own body - `audit-lookup.py`'s
 `skills_lines` and `review_skill_lines`, `drive-phase.py`'s `session_skills` and
 `runner_review_skill` - or is listed in `tests/test_drive_phase.py` (`spd1`) with the reason it
-hands nothing out; the case derives the callers from the code.
+hands nothing out; the case derives the callers of those two functions from the code, and a
+route that read the plan's skill lists without them would be outside it.
 
 ### `plugins/audit/scripts/status/audit-lookup.py`
 One question, one answer, with the pointer that lets a reader check it — instead of the
@@ -6955,12 +6986,15 @@ usage error. A name found nowhere refuses to start — exit `2`, naming the skil
 looked and that only those places are searched — because a skill the plan declares and the session cannot find is exactly the defect that
 cannot be seen in a cost. A `SKILL.md` that exists and cannot be read is `io-error:`, not a missing
 skill. **`--skill-pin NAME=DIGEST`**, repeatable, is the plan's pin of a `--skill` (the drive's
-`writer_argv` adds one per pinned name it hands out, and none for a plan with no `meta.skillPins`):
-before the skills are searched, `given_pins` reads them - a value that is no digest, or pins a
-name not given with `--skill`, is a usage error - and `_skill_places.pin_stops` asks the one
-reader over the copy this tree's session would load. Any answer but a match refuses with the
-same exit `2`, naming the skill, the path, the pinned and the found digest; an unpinned
-`--skill` is not asked. What reaches the session of each skill is its name, its frontmatter description and its
+`writer_argv` adds one per pinned name it hands out, under the spelling handed out, and none for
+a plan with no `meta.skillPins`): before the skills are searched, `given_pins` reads them - a
+value that is no digest, pins a name not given with `--skill`, or pins one name twice to
+different digests, is a usage error - and `_skill_places.pin_verdicts` asks the one reader over
+the copy this tree's session would load. Any answer but a match refuses with the same exit `2`,
+naming the skill, the path, the pinned and the found digest; an unpinned `--skill` is not asked,
+and a run started without `--skill-pin` checks nothing - the runner knows only the pins its
+caller passes. A matching skill is disclosed from the SKILL.md bytes the reader hashed
+(`hashed_skills`, then `load_skills`), not from a second read. What reaches the session of each skill is its name, its frontmatter description and its
 `## Checklist` section when the file has one (`skill_disclosure`, the section cut at the next
 level-one or level-two heading outside a fence by `skill_checklist`), each wrapped as
 `<skill name="...">` after a preamble saying the Skill tool loads a skill's full instructions, in one
@@ -7012,7 +7046,10 @@ through `reviewer_dispatch`). A PINNED review skill is never left out that way: 
 and `session_skills` each ask `_skill_places.require_pins` over the project's copy, and `dispatch`
 asks `session_skills` before it marks a session route dispatched, so a pinned skill that is not
 the bytes pinned stops `next` with no dispatch line (`spd4`, `spd5`); `writer_argv` then adds a
-`--skill-pin` per pinned name it hands out (`spd6`). Its note of each session
+`--skill-pin` per pinned name it hands out (`spd6`). A plan with no `meta.skillPins` costs no
+load for any of it: `advance` hands `dispatch` the plan it loaded, which then asks nothing,
+and `writer_argv` loads the plan once for the skills and the pins (`spd9` counts the loads).
+Its note of each session
 (`session_note`, through `skills_said`) names a declared skill the session never invoked — a
 `plugin:skill` declaration is met by a call with the bare name — or says that no `skillsInvoked`
 was recorded to judge by. A resumed round is judged against the session it resumes
@@ -7042,11 +7079,14 @@ pid, effort, project directory and the plugin's lock tokens) are dropped by name
 under `CLAUDE_CODE_` (`PARENT_SESSION_PREFIXES`) is dropped by prefix, so a session variable a later
 CLI release exports needs no entry. A top-level session does start with the provider and
 credential switches, so those are kept (`KEEP_SESSION_VARS`, `KEEP_SESSION_PREFIXES`); the rest of
-the environment is passed on. One name is added, set over whatever the parent carried: the drive's
-mark (`DRIVE_SESSION_MARK`, `AUDIT_DRIVE_SESSION`). It is read by `guard-edits.py`
+the environment is passed on. Two names are set over whatever the parent carried. The drive's
+mark (`DRIVE_SESSION_MARK`, `AUDIT_DRIVE_SESSION`) is read by `guard-edits.py`
 (`_drive_started`), which refuses a marked session the audit config write as it refuses a
 subagent's, since a session the drive started is top-level, carries no agent id, and has nobody at
-its prompt; the sweep runner drops the name from every suite it starts (`SESSION_NAMES`). Its stream is saved under
+its prompt; the sweep runner drops the name from every suite it starts (`SESSION_NAMES`).
+`NO_BYTECODE` (`PYTHONDONTWRITEBYTECODE=1`) keeps python in the session from writing a bytecode
+cache into a pinned skill's directory, whose digest counts it (`rap7`); the subagent route's
+shell is Claude Code's and is not set by it. Its stream is saved under
 `<state-dir>/sessions/`, one file per run, with stderr beside it.
 
 **What it prints**: one line, `session=<id> subtype=<subtype> is_error=<is_error>

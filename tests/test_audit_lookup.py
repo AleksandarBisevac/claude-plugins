@@ -4085,14 +4085,14 @@ def _pin_project(root, name, manifest, skill_text):
 def _pin_digest(folder):
     """A skill directory's digest computed here, apart from the module under test:
     SHA-256 over the sorted lines `<relative posix path> <sha256 of its bytes>`,
-    CRLF read as LF in a file holding no NUL byte."""
+    CRLF read as LF in a Markdown file only."""
     lines = []
     for here, _dirs, files in os.walk(folder):
         for name in files:
             full = os.path.join(here, name)
             with open(full, "rb") as fh:
                 data = fh.read()
-            if b"\0" not in data:
+            if name.lower().endswith(".md"):
                 data = data.replace(b"\r\n", b"\n")
             rel = os.path.relpath(full, folder).replace(os.sep, "/")
             lines.append("%s %s\n" % (rel, hashlib.sha256(data).hexdigest()))

@@ -317,6 +317,7 @@ def _cases(record):
         _cases_never_raises(record, path2)
         _cases_directory_entries(record)
         _cases_default_skills(record, path2)
+        _cases_skill_pin_directories(record)
     finally:
         if os.path.exists(path2):
             os.unlink(path2)
@@ -1079,6 +1080,81 @@ def _cases_default_skills(record, path):
     record("dsk3 a list holding a non-string entry is refused (exit 1) too - the "
            "per-entry half of the rule, which dsk2 cannot reach: %r" % (out_num,),
            code_num == 1 and "meta.defaultSkills" in out_num)
+
+
+def _cases_skill_pin_directories(record):
+    """Two pins that resolve to ONE skill directory with different digests are a
+    FINDING of the command itself - one of them is not the reviewed bytes - while
+    pins on two directories, and two spellings of one directory pinned to the
+    same digest, are clean.
+
+    Run as a process, with the user's home pointed at an empty scratch directory
+    so no personal skill of the operator's shadows a name. The two spellings of
+    one directory are the running plugin's own skill: its bare name and its
+    `plugin:skill` name, which no project or personal copy shadows here."""
+    import shutil
+    import subprocess
+    root = tempfile.mkdtemp(prefix="validate-pins-")
+    try:
+        home = os.path.join(root, "home")
+        project = os.path.join(root, "proj")
+        os.makedirs(home)
+        os.makedirs(os.path.join(project, ".git"))
+        os.makedirs(os.path.join(project, "docs", "audit"))
+        for name in ("qzv-one", "qzv-two"):
+            folder = os.path.join(project, ".claude", "skills", name)
+            os.makedirs(folder)
+            with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as fh:
+                fh.write("---\nname: %s\ndescription: d\n---\nbody %s\n" % (name, name))
+        manifest = os.path.join(project, "docs", "audit", "audit-plan.json")
+        own = "audit-codebase"
+        qualified = "audit:" + own
+
+        def _validate(pins):
+            plan = _valid_manifest()
+            plan["meta"]["skillPins"] = pins
+            plan["phases"][0]["tasks"][0]["skills"] = sorted(pins)
+            with open(manifest, "w", encoding="utf-8") as fh:
+                json.dump(plan, fh)
+            env = dict((k, v) for k, v in os.environ.items()
+                       if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+            env["CLAUDE_CONFIG_DIR"] = home
+            done = subprocess.run(
+                [sys.executable, _loader.script_path("validate-manifest.py"),
+                 manifest, "--verbose"],
+                env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                universal_newlines=True, encoding="utf-8")
+            return done.returncode, done.stdout
+
+        code, out = _validate({own: {"sha256": "a" * 64},
+                               qualified: {"sha256": "b" * 64}})
+        found = [ln for ln in out.splitlines()
+                 if ln.startswith("FINDING: meta.skillPins: ")
+                 and "resolve to one directory" in ln]
+        record("vsp1 two pins - the bare and the plugin-qualified spelling of one "
+               "skill directory - with different digests are ONE finding of the "
+               "command (exit 1) naming both spellings and both digests: %r"
+               % ((code, found),),
+               code == 1 and len(found) == 1 and own in found[0]
+               and qualified in found[0] and "a" * 64 in found[0]
+               and "b" * 64 in found[0])
+        # The allow side, for the mutation that raises the finding over pins that
+        # agree: two directories, and one directory under two spellings with the
+        # SAME digest, are clean - no finding and no skillPins warning, since both
+        # spellings name the reviewed bytes and a hand-out under either is held.
+        apart_code, apart = _validate({"qzv-one": {"sha256": "c" * 64},
+                                       "qzv-two": {"sha256": "d" * 64}})
+        same_code, same = _validate({own: {"sha256": "e" * 64},
+                                     qualified: {"sha256": "e" * 64}})
+        record("vsp2 ALLOW: pins on two directories with different digests, and the "
+               "two spellings of one directory pinned to the SAME digest, draw no "
+               "finding and no skillPins warning (exit 0): %r"
+               % ((apart_code, apart, same_code, same),),
+               apart_code == 0 and same_code == 0
+               and "skillPins" not in apart and "skill-pins" not in apart
+               and "skillPins" not in same and "skill-pins" not in same)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def _selftest():

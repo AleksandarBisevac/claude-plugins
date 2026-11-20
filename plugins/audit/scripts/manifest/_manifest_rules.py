@@ -109,7 +109,8 @@ import _branch as _branch  # noqa: E402  (where a phase branches from, and its n
 import _evidence_io  # noqa: E402  (DERIVED_STEP_PREFIX: the name a gate entry may not take)
 import _status_facts  # noqa: E402  (CLOSED_BUG: the one reading of "not open", for a
 #                                    mute whose bug is closed)
-import _skill_places  # noqa: E402  (pin_shape_problems: what a meta.skillPins entry is)
+import _skill_places  # noqa: E402  (pin_shape_problems: what a meta.skillPins entry is; unused_pins, pin_directory_problems: what a pin protects)
+import _areas  # noqa: E402  (plan_skill_refs: every skill name the plan uses, for an unused pin)
 
 # --- the re-exported surface ------------------------------------------------------
 # ALIASES, NOT COPIES. Each name below is the SAME object the module beside it
@@ -271,7 +272,42 @@ def _check_meta(manifest):
     # `_skill_places.pin_shape_problems` is the one statement of the shape.
     f.extend(_output.finding("rules.meta.skill-pins", problem)
              for problem in _skill_places.pin_shape_problems(meta.get("skillPins")))
+    # A pin no level of the plan names protects nothing - a warning, not a
+    # finding, because a plan may pin ahead of use. Judged by the name, since this
+    # reads no file (`_skill_places.unused_pins` says how it leans). A plan with
+    # no pins walks nothing for it.
+    pins = meta.get("skillPins")
+    w.extend(_output.finding(
+        "rules.meta.skill-pin-unused",
+        "meta.skillPins: %s is pinned, but no level of the plan names it "
+        "(meta.defaultSkills, an area's skills, a task's skills, a review skill), "
+        "so the pin protects nothing" % (name,))
+        for name in (_skill_places.unused_pins(pins, _used_skill_names(manifest))
+                     if isinstance(pins, dict) and pins else []))
     return (f, w)
+
+
+def _used_skill_names(manifest):
+    """Every skill name the plan uses (`_areas.plan_skill_refs`), or [] when its
+    `phases` is no list - the walk's own finding, and nothing to read names from."""
+    if not isinstance(manifest.get("phases"), list):
+        return []
+    return [name for _where, name in _areas.plan_skill_refs(manifest)]
+
+
+def skill_pin_findings(manifest, tree, user_home, plugin_root):
+    """Findings for pins of `meta.skillPins` that resolve to one directory with
+    different digests (`_skill_places.pin_directory_problems`). WHICH directory a
+    name resolves to is the file system's to say, which `validate()` reads none
+    of, so this is asked by a caller that holds the tree, the user's home and the
+    running plugin; a key whose shape is wrong is `validate()`'s finding and is
+    not asked again here."""
+    pins = _skill_places.skill_pins(manifest)
+    if pins is None or _skill_places.pin_shape_problems(pins):
+        return []
+    return [_output.finding("rules.meta.skill-pins", problem)
+            for problem in _skill_places.pin_directory_problems(
+                pins, tree, user_home, plugin_root)]
 
 
 # --- the branch convention ---------------------------------------------------------

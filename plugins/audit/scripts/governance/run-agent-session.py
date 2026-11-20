@@ -56,12 +56,17 @@ WHAT THE ARGV CARRIES, AND WHY EACH ONE:
     that round's events alone, so its `skillsInvoked` names that round's calls
     alone; the reader joins the rounds of one session;
   * `--skill-pin NAME=DIGEST`, repeatable, is the plan's pin of a skill it hands
-    this session (`meta.skillPins`, passed by the drive). Before anything else
-    is read, each pinned name is put to `_skill_places.pin_stops` - the one
-    reader, over the copy this tree's session would load - and any answer but a
-    match refuses to start with the usage exit a missing skill gets, naming the
-    skill, the path, the pinned and the found digest. An unpinned `--skill` is
-    not asked; a pin for a name not given with `--skill` is a usage error;
+    this session (`meta.skillPins`, passed by the drive under the spelling it
+    hands out). Before anything else is read, each pinned name is put to
+    `_skill_places.pin_verdicts` - the one reader, over the copy this tree's
+    session would load - and any answer but a match refuses to start with the
+    usage exit a missing skill gets, naming the skill, the path, the pinned and
+    the found digest. A matching skill is disclosed from the SKILL.md bytes the
+    reader hashed, never from a second read, so what the session is shown is
+    what was checked. An unpinned `--skill` is not asked; a pin for a name not
+    given with `--skill`, or one name pinned twice to different digests, is a
+    usage error. The runner checks only the pins its caller passes: a bare
+    `--skill X` checks nothing, whatever the plan pins;
   * `--resume <session id>` continues a recorded session and changes nothing else;
     an id that is not a UUID is refused (`SESSION_ID`), so no flag rides in as one.
   * the budget must be a finite positive number - `float()` also reads `inf` and
@@ -105,10 +110,11 @@ session inherits (`KEEP_SESSION_VARS`, `KEEP_SESSION_PREFIXES` - a judgement,
 unverified against a CLI release). Any other `CLAUDE_CODE_` name is dropped on
 purpose, an exported configuration switch included; the comment above
 `PARENT_SESSION_VARS` says why, and how an operator keeps one. Everything else in
-the environment (PATH, HOME, credentials, provider switches) is passed on, and one
-name is added: the drive's mark (`DRIVE_SESSION_MARK`), by which the config hold
+the environment (PATH, HOME, credentials, provider switches) is passed on, and two
+names are set: the drive's mark (`DRIVE_SESSION_MARK`), by which the config hold
 in hooks/guard-edits.py refuses this session the config write instead of asking a
-prompt nobody is at.
+prompt nobody is at, and `NO_BYTECODE`, so no python the session runs writes a
+bytecode cache into a pinned skill's directory.
 
 THE STREAM IS SAVED under `<state-dir>/sessions/`, one file per run (a resumed
 session is a second stream, which is how a transcript re-price reads a session),
@@ -245,7 +251,7 @@ KEEP_SESSION_VARS = ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_API_KEY_HELPER_TTL_
                      "CLAUDE_CODE_SKIP_FOUNDRY_AUTH")
 KEEP_SESSION_PREFIXES = ("CLAUDE_CODE_USE_",)
 
-# THE ONE NAME THIS RUNNER ADDS: the mark that a session was started by the audit
+# THE MARK THIS RUNNER ADDS: that a session was started by the audit
 # drive. Such a session is top-level, so its tool calls carry no agent id and the
 # config hold in hooks/guard-edits.py would ask it - a prompt nobody is at. The
 # hook reads this name and refuses the write as it refuses a subagent's. Set over
@@ -253,6 +259,17 @@ KEEP_SESSION_PREFIXES = ("CLAUDE_CODE_USE_",)
 # again in the hook, which may not import this file, and written out in both
 # suites so a rename on either side goes red.
 DRIVE_SESSION_MARK = ("AUDIT_DRIVE_SESSION", "1")
+
+# THE OTHER NAME IT SETS: python in the session - a skill's script, a suite -
+# writes no bytecode cache. A pinned skill's digest counts every file, a cache
+# included (a cache beside its source is code python prefers), so a skill whose
+# script imports a sibling would otherwise change its own digest on first use.
+# Set over whatever the parent carried: any non-empty value turns the writing
+# off, and the empty one leaves it on. It reaches what the session starts as far
+# as each process passes its environment on; a process that clears it, and the
+# shell the subagent route's agent runs in - Claude Code's, not this runner's to
+# set - are outside it.
+NO_BYTECODE = ("PYTHONDONTWRITEBYTECODE", "1")
 
 ROLES = ("writer", "reviewer")
 REVIEWER = "audit-reviewer"
@@ -348,8 +365,8 @@ def find_skills(names, tree, user_home, plugin_root, running):
 
 def given_pins(given, names):
     """`(pins, problem)`: the `--skill-pin NAME=DIGEST` values as `{name:
-    {"sha256": digest}}`, the shape `_skill_places.pin_stops` reads, or the usage
-    problem naming the value at fault."""
+    {"sha256": digest}}`, the shape `_skill_places.pin_verdicts` reads, or the
+    usage problem naming the value at fault."""
     pins = {}
     for value in given:
         name, sep, digest = value.partition("=")
@@ -359,24 +376,53 @@ def given_pins(given, names):
         if name not in names:
             return None, ("--skill-pin %r pins %s, which this session is not started "
                           "with (no --skill %s)" % (value, name, name))
+        if pins.get(name, {}).get("sha256", digest) != digest:
+            return None, ("--skill-pin %r pins %s a second time, to another digest"
+                          % (value, name))
         pins[name] = {"sha256": digest}
     return pins, None
 
 
+def hashed_skills(found, verdicts):
+    """`found` with each skill a matching pin verdict judged carried as that
+    verdict's path and the SKILL.md bytes it hashed (`raw`), so `load_skills`
+    shows the session what was checked rather than reading the file again; an
+    unpinned skill is left as found. `(skills, problem)` - the problem when a
+    pinned skill's SKILL.md was not among the bytes hashed."""
+    hashed = dict((v["name"], v) for v in verdicts if v["answer"] == "match")
+    out = []
+    for skill in found:
+        v = hashed.get(skill["name"])
+        if v is None:
+            out.append(skill)
+        elif v.get("skillMd") is None:
+            return None, ("the skill %s's SKILL.md at %s was not among the bytes "
+                          "its pin was checked against, so what the session would be "
+                          "shown is not proven to be them" % (skill["name"], v["path"]))
+        else:
+            out.append(dict(skill, path=v["path"], raw=v["skillMd"]))
+    return out, None
+
+
 def load_skills(found):
-    """Each found skill with its text and the sha256 of the file's bytes. Raises
-    PreparationError, naming the path, for a file that cannot be read or is not
-    UTF-8 - a skill that is there and unreadable is not a missing one."""
+    """Each found skill with its text and the sha256 of the file's bytes - the
+    bytes a pin check hashed when the skill carries them (`raw`, from
+    `hashed_skills`), else the file's. Raises PreparationError, naming the path,
+    for a file that cannot be read or is not UTF-8 - a skill that is there and
+    unreadable is not a missing one."""
     loaded = []
     for skill in found:
         try:
-            with open(skill["path"], "rb") as fh:
-                raw = fh.read()
+            raw = skill.get("raw")
+            if raw is None:
+                with open(skill["path"], "rb") as fh:
+                    raw = fh.read()
             text = raw.decode("utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             raise PreparationError("could not read the skill %s from %s: %s"
                                    % (skill["name"], skill["path"], exc))
-        loaded.append(dict(skill, text=text, sha256=hashlib.sha256(raw).hexdigest()))
+        loaded.append({"name": skill["name"], "path": skill["path"], "text": text,
+                       "sha256": hashlib.sha256(raw).hexdigest()})
     return loaded
 
 
@@ -747,12 +793,13 @@ def _is_parent_session_var(name):
 
 def _session_env(tmpdir):
     """The child's environment: the parent's, less its Claude session variables
-    (`_is_parent_session_var`), with the session's own TMPDIR and the drive's
-    mark (`DRIVE_SESSION_MARK`)."""
+    (`_is_parent_session_var`), with the session's own TMPDIR, the drive's
+    mark (`DRIVE_SESSION_MARK`) and no bytecode writing (`NO_BYTECODE`)."""
     env = dict((k, v) for k, v in os.environ.items() if not _is_parent_session_var(k))
     for name in ("TMPDIR", "TEMP", "TMP"):
         env[name] = tmpdir
-    env[DRIVE_SESSION_MARK[0]] = DRIVE_SESSION_MARK[1]
+    for name, value in (DRIVE_SESSION_MARK, NO_BYTECODE):
+        env[name] = value
     return env
 
 
@@ -1021,9 +1068,10 @@ def _run(args, stdin, out, refuse, ran):
     if not prompt.strip():
         return refuse("the prompt is empty - it is read from stdin or --prompt-file")
     pins, problem = given_pins(args.skill_pins or [], args.skills or [])
-    stops = [] if problem else _skill_places.pin_stops(
+    verdicts = [] if problem else _skill_places.pin_verdicts(
         args.skills or [], pins, args.tree, _claude_home.claude_home(),
         _output.PLUGIN_ROOT)
+    stops = [v for v in verdicts if v["answer"] != "match"]
     if problem or stops:
         return refuse(problem or "\n".join(_skill_places.stop_words(v) for v in stops))
     searched = find_skills(args.skills or [], args.tree,
@@ -1031,8 +1079,11 @@ def _run(args, stdin, out, refuse, ran):
                            _skill_places.plugin_name(_output.PLUGIN_ROOT))
     if searched["problem"]:
         return refuse(searched["problem"])
+    found, problem = hashed_skills(searched["found"], verdicts)
+    if problem:
+        return refuse(problem)
     try:
-        loaded = load_skills(searched["found"])
+        loaded = load_skills(found)
     except PreparationError as exc:
         out("io-error: %s" % exc)
         return E_IO

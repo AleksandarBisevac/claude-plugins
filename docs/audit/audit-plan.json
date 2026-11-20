@@ -1492,7 +1492,8 @@
       "SG2.3",
       "SG2.10-xk1",
       "SG2.11-xk1",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1608,7 +1609,8 @@
       "SG1.24-ukq",
       "SG2.2-ukq",
       "SG2.3",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -2233,7 +2235,8 @@
       "SG1.58-ukq",
       "SG2.3",
       "SG2.10-xk1",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2359,7 +2362,8 @@
       "SG1.54-ukq",
       "SG1.55-ukq",
       "SG2.4-xk1",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -2829,7 +2833,8 @@
       "SG1.56-ukq",
       "SG1.57-ukq",
       "SG2.3",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -4194,7 +4199,8 @@
       "P167.7-fge",
       "SG1.6",
       "SG1.18-ukq",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -5590,7 +5596,8 @@
       "P131.15-dau",
       "P156.4",
       "SG1.6",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "plugins/audit/scripts/manifest/_manifest_vocab.py": [
       "P18.2",
@@ -5644,7 +5651,8 @@
       "P167.2",
       "SG1.6",
       "SG2.3",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -6024,7 +6032,8 @@
       "P130.23-ywo",
       "P131.1",
       "P131.2",
-      "P138.2"
+      "P138.2",
+      "SG2.15-xk1"
     ],
     "plugins/audit/scripts/panel/_panel_composition.py": [
       "P18.7",
@@ -6715,7 +6724,8 @@
       "SG1.24-ukq",
       "SG1.25-ukq",
       "SG2.3",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -9317,7 +9327,8 @@
       "SG1.25-ukq",
       "SG1.36-ukq",
       "SG1.45-ukq",
-      "SG1.50-ukq"
+      "SG1.50-ukq",
+      "SG2.15-xk1"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -11610,7 +11621,8 @@
       "SG1.22-ukq",
       "SG1.25-ukq",
       "SG2.3",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -13233,7 +13245,8 @@
       "P131.1",
       "P156.4",
       "SG1.6",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "tests/test__manifest_typos.py": [
       "P131.1",
@@ -13624,7 +13637,8 @@
       "SG1.22-ukq",
       "SG1.25-ukq",
       "SG2.3",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -13913,7 +13927,8 @@
       "SG1.20-ukq",
       "SG1.25-ukq",
       "SG2.3",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -14247,7 +14262,8 @@
     ],
     "tests/test_validate_manifest.py": [
       "P131.1",
-      "P138.2"
+      "P138.2",
+      "SG2.15-xk1"
     ],
     "tests/test_verify_invariants.py": [
       "P131.1"
@@ -14318,7 +14334,8 @@
       "P167.9-fge",
       "SG1.10-ukq",
       "SG1.23-ukq",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "tests/test_run_agent_session.py": [
       "P131.3",
@@ -14341,7 +14358,8 @@
       "SG1.10-ukq",
       "SG1.23-ukq",
       "SG2.3",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
       "P131.7",
@@ -14434,14 +14452,16 @@
       "P138.4-myr",
       "P138.5-myr",
       "P148.11-xpz",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "tests/test__skill_places.py": [
       "P138.4-myr",
       "P138.5-myr",
       "P148.2",
       "P148.11-xpz",
-      "SG2.14-xk1"
+      "SG2.14-xk1",
+      "SG2.15-xk1"
     ],
     "tests/test_verify_sh.py": [
       "P140.1"
