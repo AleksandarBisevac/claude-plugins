@@ -315,6 +315,7 @@ def _cases(record):
         _cases_success_line(record, path2)
         _cases_schema_parity(record, path2)
         _cases_run_record_schema(record, path2)
+        _cases_reader_rules(record)
         _cases_never_raises(record, path2)
         _cases_directory_entries(record)
         _cases_default_skills(record, path2)
@@ -624,6 +625,125 @@ def _cases_run_record_schema(record, path):
                for code, why, lines_ in said.values())
            and "`steps`" in said["both arms"][1]
            and "`status`" in said["a never-shared key"][1])
+
+
+# Each way a record breaks a rule of the reader's, planted in the plan's text,
+# beside one the schema itself refuses: (label, field the warning names, plant).
+_RU_SHAPES = (
+    ("at empty", "lastRun.at", lambda r: r.update(at="")),
+    ("at not a time", "lastRun.at", lambda r: r.update(at="not a time")),
+    ("at no such day", "lastRun.at",
+     lambda r: r.update(at="2026-13-45T99:00:00Z")),
+    ("a repeated run's at", "lastRun.repeatedRun.at",
+     lambda r: r.update(repeatedRun=dict(_rr_run("RU-SRC"),
+                                         at="not a time"))),
+    ("status written twice", "lastRun.status", None),
+    ("steps beside a share of them", "lastRun.sharedWithRepeated",
+     lambda r: r.update(sharedWithRepeated=["steps"],
+                        repeatedRun=_rr_run("RU-SRC"))),
+    ("steps not a list (the schema's)", "lastRun.steps",
+     lambda r: r.update(steps=5)))
+
+
+def _ru_project(root, plant):
+    """A git project at `root` whose one-file plan's task P1.1 - on its
+    phase's gate, a command that passes - holds a red record with `plant`
+    applied, or, with None, the record's `status` written twice."""
+    os.makedirs(os.path.join(root, ".claude"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    os.makedirs(os.path.join(root, "src"))
+    with open(os.path.join(root, "src", "a.py"), "w") as fh:
+        fh.write("A = 1\n")
+    rec = _rr_run("RU-RED", "failed")
+    if plant is not None:
+        plant(rec)
+    plan = {"meta": {"version": 2, "buildCommands": {
+                "chk": '"%s" -c "pass"' % (sys.executable,)}},
+            "phases": [{"id": "P1", "title": "One", "status": "in_progress",
+                        "testGate": ["chk"], "tasks": [
+                            {"id": "P1.1", "title": "t",
+                             "status": "in_progress", "files": ["src/a.py"],
+                             "lastRun": rec}]}],
+            "fileIndex": {"src/a.py": ["P1.1"]}}
+    text = json.dumps(plan)
+    if plant is None:
+        text = text.replace('"status": "failed"',
+                            '"status": "failed", "status": "passed"', 1)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    os.makedirs(os.path.dirname(mpath))
+    with open(mpath, "w") as fh:
+        fh.write(text)
+    _harness.git(None, "init", "-q", root)
+    _harness.git(root, "config", "user.name", "ru")
+    _harness.git(root, "config", "user.email", "ru@example.invalid")
+    _harness.git(root, "add", "-A")
+    _harness.git(root, "commit", "-q", "-m", "base")
+    return mpath
+
+
+def _cases_reader_rules(record):
+    """(ru) A record the plugin's reader refuses and the schema accepts - an
+    `at` that names no moment, a field written twice, a share that rewrites a
+    verdict - is a warning in the channel and the sentence a record the
+    schema refuses gets, naming its file and field; and the remedy the reader
+    prints, run as printed, records over it and takes the warning away."""
+    import subprocess                                              # noqa: E402
+    import _evidence_io as _ev                                     # noqa: E402
+    rtg = _loader.script_path("run-test-gate.py")
+    seen = []
+    for label, field, plant in _RU_SHAPES:
+        root = _harness.fixture_root("validate-reader-rules-")
+        try:
+            mpath = _ru_project(root, plant)
+            code, out = _run([mpath, "--verbose"])
+            said = [ln for ln in out.splitlines() if field in ln
+                    and "(a warning in 3.x)" in ln]
+            entries = _ev.plan_unreadable(mpath, root)["unreadableRecords"]
+            commands = [c for e in entries for c in _ev.rerecord_commands(e)]
+            ran = []
+            for command in commands:
+                argv = command.split()
+                env = dict((k, v) for k, v in os.environ.items()
+                           if k != "CLAUDE_PROJECT_DIR")
+                done = subprocess.run(
+                    [sys.executable, rtg] + argv[1:], cwd=root, env=env,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                ran.append((done.returncode,
+                            done.stdout.decode("utf-8", "replace")[-300:]))
+            after_code, after = _run([mpath, "--verbose"])
+            left = [ln for ln in after.splitlines() if "lastRun" in ln]
+            seen.append((label, code, said, commands, ran, after_code, left,
+                         _ev.plan_unreadable(mpath, root)
+                         ["unreadableRecords"]))
+        finally:
+            _harness.remove_tree(root)
+    wrong = [s for s in seen if not _ru_ok(s)]
+    record("ru1 RED-FIRST: each record the reader refuses is one warning, in "
+           "the channel and sentence a schema-refused record gets, naming its "
+           "file and field - an `at` that names no moment, a repeated run's, "
+           "a field written twice, a share beside the field it shares - and "
+           "the reader's own remedy, run as printed, records over it, after "
+           "which neither the validator nor the reader names a record: "
+           "wrong %r of %d shapes" % (wrong, len(seen)),
+           len(seen) == len(_RU_SHAPES) and wrong == [])
+
+
+def _ru_ok(seen):
+    """Whether one shape's run (`_cases_reader_rules`' row) is the answer:
+    one warning naming the file and field (the reader's spelling, or the
+    schema's for the shape it refuses), the one remedy, run and green, then
+    nothing said and nothing unreadable."""
+    label, code, said, commands, ran, after_code, left, lost = seen
+    field = dict((lab, f) for lab, f, _p in _RU_SHAPES)[label]
+    named = len(said) == 1 and (
+        ("docs/audit/audit-plan.json: task P1.1's %s" % (field,)) in said[0]
+        or ("phases[0].tasks[0].%s" % (field,)) in said[0])
+    return (code == 0 and named
+            and commands == ["run-test-gate.py docs/audit/audit-plan.json P1 "
+                             "--task P1.1 --record"]
+            and [r[0] for r in ran] == [0]
+            and after_code == 0 and left == [] and lost == [])
 
 
 def _cases_never_raises(record, path):

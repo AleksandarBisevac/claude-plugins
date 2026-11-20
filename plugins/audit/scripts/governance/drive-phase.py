@@ -7687,7 +7687,9 @@ def new_gate_row(ctx, launched, key):
     except Exception as exc:                                   # noqa: BLE001
         return None, ledger_unread(exc)
     rows = read["rows"]
-    mine = [r for r in rows if _evio.subject_key(r) == key]
+    # The subject that holds a run (`holder_key`): a task's run on its
+    # phase's gate is the task's, as its record is.
+    mine = [r for r in rows if _evio.holder_key(r) == key]
     found = _evio.run_by_launch(mine, token)
     if found and found.get("runId"):
         return (found.get("runId"), found.get("status")), None
@@ -11165,13 +11167,30 @@ def owes_rereview(phase, task, red):
 
 def gate_went_red(ctx):
     """The ids of the tasks whose recorded gate ever came back `failed` in
-    the project's evidence ledger, or None when the ledger cannot be read."""
+    the project's evidence ledger and the plan's records, or None when the
+    runs cannot be read whole.
+
+    A RUN WITHHELD FROM ITS TASK still ran: the question is whether the gate
+    ever went red, so a withheld red is the task's (`measured_ids`). A record
+    that would not read may hold a red, so its task is counted; and a ledger
+    line or a plan file lost whole may hold one for any task, which is None -
+    an unread red owes the review its look, as an unread ledger does."""
     try:
-        rows = recorded_runs(ctx)["rows"]
+        read = recorded_runs(ctx)
     except Exception:                                          # noqa: BLE001
         return None
-    return set(r.get("taskId") for r in rows if isinstance(r, dict)
-               and r.get("taskId") and r.get("status") == "failed")
+    records = set(_evio.unreadable_record_label(e)
+                  for e in read.get("unreadableRecords") or [])
+    if read.get("unreadable") or [f for f in read.get(
+            "unreadablePlanFiles") or [] if f not in records]:
+        return None
+    red = set()
+    for row in read["rows"]:
+        task = _evio.measured_ids(row)["taskId"]
+        if task and (row.get("status") == "failed"
+                     or _evio.is_unreadable_row(row)):
+            red.add(task)
+    return red
 
 
 def dispatch_phase_review(ctx, state, phase):

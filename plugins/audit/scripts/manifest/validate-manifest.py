@@ -134,30 +134,23 @@ def strict_split(findings, warnings):
             [w for w in warnings if not is_schema_line(w)])
 
 
-def share_warnings(manifest):
-    """A schema-coded warning for each run record whose share breaks a rule no
-    schema keyword here states (`_evidence_io.share_problem`) - the record the
-    plugin's own reader refuses, said here as that reader says it."""
-    out = []
-    phases = manifest.get("phases") if isinstance(manifest, dict) else None
-    for i, phase in enumerate(phases if isinstance(phases, list) else []):
-        if not isinstance(phase, dict):
-            continue
-        tasks = phase.get("tasks") if isinstance(phase.get("tasks"), list) else []
-        holders = [("phases[%d]" % (i,), phase)] + [
-            ("phases[%d].tasks[%d]" % (i, j), t) for j, t in enumerate(tasks)
-            if isinstance(t, dict)]
-        for where, holder in holders:
-            record = holder.get(_ev.RECORD_KEY)
-            why = _ev.share_problem(record, "%s.%s" % (where, _ev.RECORD_KEY)) \
-                if isinstance(record, dict) else None
-            if why:
-                out.append(_output.finding(
-                    _manifest_rules.SCHEMA_CODE_PREFIX + "share",
-                    "%s - the plugin's reader refuses this record; "
-                    "validate-manifest will refuse it from %s (a warning in "
-                    "3.x)" % (why, _manifest_rules.BUG_VALUE_REFUSAL_RELEASE)))
-    return out
+def record_rule_warnings(manifest_path, project=None):
+    """A schema-coded warning for each run record that breaks a rule of the
+    reader's no schema keyword here states (`_evidence_io.READER_RULES`: a
+    field written twice, a share that rewrites a verdict, a run whose `at`
+    names no moment) - the record the plugin's own reader refuses, said here
+    as that reader says it, naming its file and field, in the channel and
+    the sentence a record the schema refuses is said in. Read off the plan's
+    files as written (`_evidence_io.plan_bodies`), since a key written twice
+    is gone from the assembled manifest."""
+    bodies, _lost = _ev.plan_bodies(manifest_path, project)
+    return [_output.finding(
+        _manifest_rules.SCHEMA_CODE_PREFIX + entry["rule"],
+        "%s: %s %s's %s - the plugin's reader refuses this record; "
+        "validate-manifest will refuse it from %s (a warning in 3.x)"
+        % (entry["file"], entry["scope"], entry["subject"], entry["why"],
+           _manifest_rules.BUG_VALUE_REFUSAL_RELEASE))
+        for entry in _ev.reader_rule_problems(bodies)]
 
 
 def main(argv):
@@ -180,7 +173,8 @@ def main(argv):
     try:
         findings, warnings = validate(manifest, schema=schema)
         findings = list(unreadable) + findings
-        warnings = list(warnings) + share_warnings(manifest)
+        warnings = list(warnings) + record_rule_warnings(
+            paths[0], _output.project_of_manifest(paths[0]))
     except Exception as exc:  # defensive; validate() should never raise
         print("FINDING: internal validator error: %s" % exc)
         return 1

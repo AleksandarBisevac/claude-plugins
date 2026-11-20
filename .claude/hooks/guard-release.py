@@ -64,7 +64,10 @@ import sys
 import time
 
 STATE_REL = os.path.join(".claude", "state")
-MANIFEST_REL = os.path.join("docs", "audit", "audit-plan.json")
+_MANIFEST_PARTS = ("docs", "audit", "audit-plan.json")
+MANIFEST_REL = os.path.join(*_MANIFEST_PARTS)
+# The plan's name in a sentence, spelled the same on every platform.
+MANIFEST_LABEL = "/".join(_MANIFEST_PARTS)
 # The command that records a merged phase's `mergedHead` after the fact - the
 # remedy an unanswerable phase's refusal names.
 CLOSE_PHASE_REL = os.path.join("plugins", "audit", "scripts", "git",
@@ -782,7 +785,7 @@ def plan_structure_problem(project):
     (`tests/test__evidence_io.py`'s `gs` cases read them off it). A file that
     will not read at all is left to the plugin's loader, which names why."""
     index_path = os.path.join(project, MANIFEST_REL)
-    rel = MANIFEST_REL.replace(os.sep, "/")
+    rel = MANIFEST_LABEL
     index, twice = _raw_json(index_path)
     if twice:
         return ("%s holds the key `%s` more than once in one object, so which "
@@ -807,6 +810,13 @@ def plan_structure_problem(project):
                 return ("%s holds the key `%s` more than once in one object, "
                         "so which value the plan carries is not established"
                         % (where, twice[0]))
+            if body is None:
+                # NAMED BY THE SHARD, never by the index that points at it:
+                # the loader's own refusal of an unreadable shard carries
+                # the index's name, and the file to repair is this one.
+                return ("%s, the shard phases[%d] names, could not be read "
+                        "as JSON, so what that phase holds is not established"
+                        % (where, i))
             if not isinstance(body, dict):
                 continue
             holder, prefix = body, ""
@@ -845,14 +855,34 @@ def _read_plan(mio, project):
     try:
         data = mio.load_manifest(os.path.join(project, MANIFEST_REL))
     except Exception as exc:
-        return (None, "%s could not be read (%s)" % (MANIFEST_REL, exc))
+        return (None, "%s could not be read (%s)" % (MANIFEST_LABEL, exc))
     if not isinstance(data, dict):
-        return (None, "%s did not parse as a manifest object" % (MANIFEST_REL,))
+        return (None, "%s did not parse as a manifest object" % (MANIFEST_LABEL,))
     return (data, None)
 
 
-def read_bugs(project):
+def read_plan(project):
+    """`(mio, manifest, problem)` - the plugin's manifest module (None when it
+    cannot be loaded, the plan then unread), the assembled plan, or why it
+    could not be read.
+
+    READ ONCE PER DECISION: `tree_verdict` hands this one reading to both
+    `read_bugs` and `read_held_phases`, so the two lists are answered from
+    the same bytes - a plan written between two reads could otherwise give
+    one list's answer from each version - and the plan is assembled once
+    rather than twice on every publishing command. The evidence reader
+    `read_held_phases` asks still reads the plan's files for the runs they
+    hold; that read is its own."""
+    mio = _effective(project)
+    if mio is None:
+        return (None, None, None)
+    data, problem = _read_plan(mio, project)
+    return (mio, data, problem)
+
+
+def read_bugs(project, plan=None):
     """`(open_bugs, problem)` — the plan's open bugs, or why they are unknown.
+    `plan` is a `read_plan` reading of `project`, read here when not given.
 
     The two are returned apart because they are different answers. `([], None)`
     is a plan with nothing open; `(_, "…")` is a plan nobody could read, and
@@ -861,24 +891,30 @@ def read_bugs(project):
 
     "Open" is the EFFECTIVE status, which is the plugin's rule and not one of
     this file's own - see `_effective`.
+
+    NO `bugs` KEY IS A PLAN WITH NO BUG, never an unreadable one. The schema
+    requires only `meta` and `phases`, the verb that files the first bug is
+    what creates the key, and every reader in the plugin reads an absent list
+    as empty - so a plan nobody has filed a bug in carries none, and refusing
+    it would refuse every fresh plan. A key deleted by hand is no different
+    from its entries deleted by hand: the guard reads what the plan holds,
+    and the plan's history is git's and the journal's to tell. A `bugs`
+    that is present and not a list, or an entry that is not an object, is
+    still refused as a plan not of the schema's shape.
     """
-    mio = _effective(project)
+    mio, data, problem = plan if plan is not None else read_plan(project)
     if mio is None:
         return ([], "the plugin's own bug rule could not be loaded from "
                     "plugins/audit/scripts, so `open` cannot be decided here")
-    data, problem = _read_plan(mio, project)
     if problem:
         return ([], problem)
-    bugs = data.get("bugs")
-    if "bugs" in data and not isinstance(bugs, list):
-        return ([], _shape(MANIFEST_REL.replace(os.sep, "/"), "bugs", bugs,
-                           "array"))
+    bugs = data.get("bugs", [])
     if not isinstance(bugs, list):
-        return ([], "%s carries no `bugs` list" % (MANIFEST_REL,))
+        return ([], _shape(MANIFEST_LABEL, "bugs", bugs, "array"))
     for i, bug in enumerate(bugs):
         if not isinstance(bug, dict):
-            return ([], _shape(MANIFEST_REL.replace(os.sep, "/"),
-                               "bugs[%d]" % (i,), bug, "object"))
+            return ([], _shape(MANIFEST_LABEL, "bugs[%d]" % (i,), bug,
+                               "object"))
     try:
         by_id = mio.tasks_by_id(data)
     except Exception as exc:
@@ -896,12 +932,19 @@ def read_bugs(project):
     return (out, None)
 
 
-def read_held_phases(project):
+def read_held_phases(project, plan=None):
     """`(held, problem)` - every merged phase whose full-run answer holds a
     release, as `(phaseId, kind, basis, headRecorded)` - `kind` one of
     `HELD_PROVISIONAL` or `HELD_UNANSWERABLE`, `basis` `full_status`'s own,
     `headRecorded` whether the phase records a `mergedHead` - or why that
-    cannot be decided at all.
+    cannot be decided at all. `plan` is a `read_plan` reading of `project`,
+    read here when not given.
+
+    A MERGED PHASE WITH NO ID is a plan not of the schema's shape, refused
+    by place: `merged_phase` asks nothing of a phase no verdict could be
+    named under, so reading on would drop a merge the plan records. Which
+    phases those are is the plugin's `unnamed_merged_phases`, sharing
+    `merged_phase`'s one reading of the merge stamp.
 
     `headRecorded` IS WHAT TELLS THE TWO CAUSES OF UNKNOWN APART, read off the
     phase rather than parsed out of the basis prose: no `mergedHead` at all is
@@ -939,7 +982,7 @@ def read_held_phases(project):
     ones - means nothing is held and this returns `([], None)`; the guard
     then judges the bugs alone.
     """
-    mio = _effective(project)
+    mio, data, problem = plan if plan is not None else read_plan(project)
     if mio is None:
         return ([], "the plugin's own evidence rule could not be loaded from "
                     "plugins/audit/scripts, so a merged phase's full-run "
@@ -952,20 +995,28 @@ def read_held_phases(project):
     evidence_io, _worktrees, vocab = modules
     holding = {vocab.FULL_STATUS_PROVISIONAL: HELD_PROVISIONAL,
                vocab.FULL_STATUS_UNKNOWN: HELD_UNANSWERABLE}
-    data, problem = _read_plan(mio, project)
     if problem:
         return ([], problem)
     # A FULL GATE THE PLUGIN'S OWN READER WOULD PARTLY DROP is not the third
     # place the plan declares, so it is never read as none.
     problem = evidence_io.full_gate_problem(data)
     if problem:
-        return ([], "%s: %s" % (MANIFEST_REL.replace(os.sep, "/"), problem))
+        return ([], "%s: %s" % (MANIFEST_LABEL, problem))
     # THE RUNNABLE FULL GATE, the one list the runner records and every
     # reader counts against: a fullGate holding only review-only entries
     # holds nothing, exactly as no fullGate does.
     full_commands = evidence_io.full_gate_commands(data)
     if not full_commands:
         return ([], None)
+    phases = data.get("phases")
+    phases = phases if isinstance(phases, list) else []
+    nameless = evidence_io.unnamed_merged_phases(phases)
+    if nameless:
+        return ([], "%s holds a merged phase whose id is missing, blank or "
+                    "not a string at %s, so no verdict can be named for it "
+                    "and whether it holds the release is not established - "
+                    "give it its id"
+                    % (MANIFEST_LABEL, ", ".join(nameless[:5])))
     ledger = evidence_io.read_rows(
         project, manifest_path=os.path.join(project, MANIFEST_REL))
     if ledger.get("unreadable"):
@@ -978,8 +1029,6 @@ def read_held_phases(project):
         # names each file and record.
         return ([], evidence_io.plan_read_sentence(ledger))
     rows = ledger.get("rows") or []
-    phases = data.get("phases")
-    phases = phases if isinstance(phases, list) else []
     # A RECORDED MERGE HEAD WITH NO MERGE MOMENT a reader can place says the
     # phase merged without saying when, so it is unknown, never unmerged.
     unplaced = [p for p in phases if isinstance(p, dict) and p.get("mergedHead")
@@ -1155,8 +1204,9 @@ def tree_verdict(why, tree, project, session_id, now=None):
     one. The plan is read from `tree`, the slot from `project`: a release run
     from one tree can answer to another's plan.
     """
-    bugs, bug_problem = read_bugs(tree)
-    held, phase_problem = read_held_phases(tree)
+    plan = read_plan(tree)
+    bugs, bug_problem = read_bugs(tree, plan)
+    held, phase_problem = read_held_phases(tree, plan)
     if not (bugs or bug_problem or held or phase_problem):
         return (VERDICT_CLEAR,
                 "the plan carries no open bug and no held phase")
@@ -1777,23 +1827,40 @@ def _selftest():
               "provisional phase - it is not a publishing command",
               decide("git push origin main", tmp2, "s1") is None)
 
-        # WHICH PHASES ARE ASKED is the plugin's shared `merged_phase`, not a
-        # second reading of `mergedAt` spelled here: a phase carrying a merge
-        # stamp but no id has no name a verdict could be printed under, so
-        # no surface grades it. Read as provisional (no full run recorded),
-        # a local `mergedAt` check would hold this release over a phase
-        # named "?" - the value that tells the two readings apart.
+        # A PHASE CARRYING A MERGE STAMP BUT NO ID has no name a verdict could
+        # be printed under, so `merged_phase` asks nothing of it - and
+        # reading on would release over a merge the plan records. It is
+        # refused by its place, never named "?" or "None"; which phases those
+        # are is the plugin's `unnamed_merged_phases`, sharing the stamp's
+        # one reading with `merged_phase`. A null id and a blank one alike.
+        refused_nameless = []
+        for nameless in (None, "  ", 7):
+            write_plan({"fullGate": ["full"],
+                       "buildCommands": {"full": "echo full"}},
+                      [{"id": nameless, "title": "id-less", "status": "done",
+                        "mergedAt": "2026-01-01T00:00:00Z",
+                        "mergedHead": "a" * 40, "tasks": []}])
+            refused_nameless.append(decide("git tag -a v1 -m x", tmp2, "s1"))
+        check("gr35 RED-FIRST: a phase with a merge stamp and a null, blank "
+              "or non-string id is refused by its place, as a merge the plan "
+              "records that no verdict can be named for - never let through, "
+              "never named '?', and an id that is there never called "
+              "missing: %r" % (refused_nameless,),
+              len(refused_nameless) == 3
+              and all(isinstance(got, str) and "phases[0]" in got
+                      and "merged phase is UNKNOWN" in got
+                      and "not a string" in got and "with no id" not in got
+                      and "(?" not in got and "None (" not in got
+                      for got in refused_nameless))
+        # THE ALLOW DIRECTION, for an over-firing mutation that refuses any
+        # id-less phase: one carrying no merge stamp is no merge at all.
         write_plan({"fullGate": ["full"],
                    "buildCommands": {"full": "echo full"}},
-                  [{"title": "id-less", "status": "done",
-                    "mergedAt": "2026-01-01T00:00:00Z",
-                    "mergedHead": "a" * 40, "tasks": []}])
+                  [{"id": None, "title": "id-less", "status": "pending",
+                    "tasks": []}])
         got = decide("git tag -a v1 -m x", tmp2, "s1")
-        check("gr35 RED-FIRST: a phase with a merge stamp and NO id is not "
-              "asked about, on the plugin's shared `merged_phase` rather "
-              "than a local `mergedAt` check - the release goes through: %r"
-              % (got,),
-              got is None)
+        check("gr74 ALLOW: an id-less phase with no merge stamp is no merge, "
+              "and the release goes through: %r" % (got,), got is None)
 
         # RED-FIRST: an unreadable ledger is a PROBLEM, never "nothing
         # provisional" - fail-loud extended to this second list.
@@ -1973,13 +2040,47 @@ def _selftest():
               decide("git tag -a v1 -m x", tmp2, "s2") is not None)
         os.remove(slot2)
 
-        # EACH LIST IS REPORTED ON ITS OWN. A plan with no `bugs` list cannot
-        # answer the bug question while the phase question reads fine, and
-        # the refusal must say exactly that - calling both unknown hides the
-        # phase that really does hold the release.
+        # NO `bugs` KEY IS A PLAN WITH NO BUG: the schema does not require
+        # the list, and the verb filing the first bug is what creates it - a
+        # refusal here would refuse every plan nobody has filed a bug in.
+        # P2 still holds the release, and the bug list reads as read.
         with open(mpath2, "r", encoding="utf-8") as fh:
             plan = json.load(fh)
         del plan["bugs"]
+        with open(mpath2, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(plan, fh)
+        absent = (read_bugs(tmp2), decide("git tag -a v1 -m x", tmp2, "s1"))
+        check("gr75 RED-FIRST: a plan with no `bugs` key reads as one with no "
+              "open bug - not an unknown list - while P2 still holds the "
+              "release: %r" % (absent,),
+              absent[0] == ([], None) and bool(absent[1])
+              and "the plan carries no open bug" in absent[1]
+              and "open bug is UNKNOWN" not in absent[1] and "P2" in absent[1])
+
+        # ONE READING OF THE PLAN PER DECISION: both lists are answered from
+        # it, so a plan rewritten between two reads cannot answer one list
+        # from each version, and the plan is assembled once.
+        own = globals()
+        counted_read = own["_read_plan"]
+        reads = []
+
+        def counting(mio, project):
+            reads.append(project)
+            return counted_read(mio, project)
+        own["_read_plan"] = counting
+        try:
+            verdict = tree_verdict("creates a git tag", tmp2, tmp2, "s1")
+        finally:
+            own["_read_plan"] = counted_read
+        check("gr76 RED-FIRST: one decision reads the plan once, for both "
+              "lists: %d read(s), verdict %r" % (len(reads), verdict[0]),
+              len(reads) == 1 and verdict[0] == VERDICT_REFUSED)
+
+        # EACH LIST IS REPORTED ON ITS OWN. A `bugs` that is not a list cannot
+        # answer the bug question while the phase question reads fine, and
+        # the refusal must say exactly that - calling both unknown hides the
+        # phase that really does hold the release.
+        plan["bugs"] = "not a list"
         with open(mpath2, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(plan, fh)
         got = decide("git tag -a v1 -m x", tmp2, "s1")
@@ -1990,6 +2091,17 @@ def _selftest():
               bool(got) and "open bug is UNKNOWN" in got and "P2" in got
               and "no mergedHead is recorded" in got
               and "merged phase is UNKNOWN" not in got)
+        # A `bugs` WRITTEN AS null is present and not a list - not the absent
+        # key gr75 lets through, so not a plan with no bug.
+        plan["bugs"] = None
+        with open(mpath2, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(plan, fh)
+        got = decide("git tag -a v1 -m x", tmp2, "s1")
+        check("gr41b RED-FIRST: `bugs: null` is a bug list that is UNKNOWN, "
+              "named by the key, never read as the absent key's empty list: "
+              "%r" % (got,),
+              bool(got) and "open bug is UNKNOWN" in got and "`bugs`" in got
+              and "the plan carries no open bug" not in got)
         # ...and the mirror: the bugs readable with one open, the ledger torn.
         write_plan({"fullGate": ["full"], "nodePreamble": "export X=1",
                    "buildCommands": {"full": "echo full"}}, unanswerable,

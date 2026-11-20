@@ -1459,15 +1459,15 @@ def surviving_copy(manifest_path, project, git_root, observation, the_plan,
         # Both sides RESOLVED: git prints a worktree's real path, and a caller's
         # path through a symlinked prefix (`/var` for `/private/var`) would
         # otherwise read as outside the tree it is in.
-        rel = os.path.relpath(os.path.realpath(manifest_path), os.path.realpath(base))
+        rel = _tree_rel(base, manifest_path)
     except Exception as exc:
         return manifest_path, project, "%s" % (exc,)
-    if rel.startswith(".."):
+    if rel is None:
         # Outside the repository: there is no corresponding copy in the other tree,
         # so the caller's path is the only one there is. Named rather than silently
         # written, because the reader has to know the stamp may be about to vanish.
         return manifest_path, project, ""
-    moved = os.path.join(tree.get("path"), rel)
+    moved = os.path.join(tree.get("path"), *rel.split("/"))
     if not os.path.isfile(moved):
         return manifest_path, project, ""
     # ...AND IT HAS TO CARRY THE PHASE. The two trees hold two checkouts, and the
@@ -1846,8 +1846,8 @@ def tip_texts(git_root, branch, directory):
     """`(texts, why)` - the `.jsonl` files directly in `directory` as committed at
     `branch`'s tip, in `_verdict_binding.ledger_texts`' shape, or `(None, why)`
     when git could not be asked."""
-    rel = os.path.relpath(directory, git_root).replace(os.sep, "/")
-    if rel.startswith(".."):
+    rel = _tree_rel(git_root, directory)
+    if rel is None:
         return None, "%s is outside the repository" % (directory,)
     paths = _tip_paths(git_root, branch, rel)
     if paths is None:
@@ -1875,14 +1875,17 @@ def branch_texts(git_root, project, branch, phase_tree, directory):
     """
     tip, why = tip_texts(git_root, branch, directory)
     tree = _phase_project(git_root, project, phase_tree)
-    rel = os.path.relpath(directory, project)
-    local = (_vb.ledger_texts(tree, directory=os.path.join(tree, rel))
-             if tree else None)
+    # A directory outside the project is the one every checkout reads.
+    rel = _tree_rel(project, directory)
+    local = (_vb.ledger_texts(tree, directory=(
+        os.path.join(tree, rel) if rel is not None else directory))
+        if tree else None)
     # AN EMPTY LOCAL READING IS NOT A READING when the tip is lost too: a
     # directory missing or unlistable in the worktree lists nothing, and nothing
     # read is not the same answer as no run recorded.
     if tip is None and not local:
-        return [("%s:%s" % (branch, rel.replace(os.sep, "/")), None)], []
+        return [("%s:%s" % (branch, rel if rel is not None else directory),
+                 None)], []
     notes = ["the branch tip could not be read (%s), so only %s was" % (why, tree)
              ] if tip is None else []
     return (tip or []) + (local or []), notes
@@ -1897,7 +1900,7 @@ def _tip_json(git_root, branch, rel):
                                       "refs/heads/%s:%s" % (branch, rel)])
     if code != 0:
         return None
-    return json.loads(raw.decode("utf-8"))
+    return _evidence_io.plan_json_text(raw.decode("utf-8"))
 
 
 def tip_bodies(git_root, branch, manifest_path):
@@ -1907,8 +1910,8 @@ def tip_bodies(git_root, branch, manifest_path):
     a plan's files and its one rule for a file that will not read, the disk's
     `plan_bodies` being the other reader of it - or `([], why, [])` when the
     plan is not in the repository, or when git holds none of it there."""
-    rel = os.path.relpath(manifest_path, git_root).replace(os.sep, "/")
-    if rel.startswith(".."):
+    rel = _tree_rel(git_root, manifest_path)
+    if rel is None:
         return [], "%s is outside the repository" % (manifest_path,), []
     bodies, lost = _evidence_io.walk_plan(
         rel, lambda path: _tip_json(git_root, branch, path),
@@ -1920,7 +1923,8 @@ def tip_bodies(git_root, branch, manifest_path):
     return bodies, "", lost
 
 
-def branch_records(git_root, project, branch, phase_tree, manifest_path):
+def branch_records(git_root, project, branch, phase_tree, manifest_path,
+                   refs=()):
     """`(records, notes, unreadable)` - the records the plan holds as the
     landing judges it, in `_verdict_binding.plan_records`' shape: at the
     branch tip, unioned with the worktree holding the branch when there is
@@ -1929,23 +1933,45 @@ def branch_records(git_root, project, branch, phase_tree, manifest_path):
     too: a shard that will not read is never skipped in silence. So is a
     record that is not the record's shape: it gives no run, and it joins
     `unreadable` as `_evidence_io.unreadable_records` names it, so the
-    binding refuses the landing of the subject it belongs to."""
+    binding refuses the landing of the subject it belongs to.
+
+    THE TIP'S PLAN NOT READ IS ITS INDEX LOST. A plan git versions (or may:
+    `plan_versioned`, asked of `refs`, answering other than False) that the
+    tip holds none of, read by no worktree either, names the index in
+    `unreadable` (`_verdict_binding.subject_file_lost` matches it for every
+    subject), so the landing refuses with the reason in `notes` rather than
+    binding on a ledger row the records were never asked about. A plan
+    outside the repository is one file every checkout reads, and a plan git
+    never versions is in no commit, so its copy on disk is the record: the
+    records of either are read from that file. Inside or outside is asked of
+    real paths (`_tree_rel`), so a symlinked spelling of the project and a
+    relative plan read the plan the repository holds."""
     bodies, why, lost = tip_bodies(git_root, branch, manifest_path)
+    inside = _tree_rel(git_root, manifest_path)
     tree = _phase_project(git_root, project, phase_tree)
-    if tree:
+    if inside is not None and why and not tree \
+            and plan_versioned(git_root, manifest_path, refs)[0] is False:
+        inside = None
+    if inside is None:
+        bodies, lost = _evidence_io.plan_bodies(manifest_path, project)
+        why = ""
+    elif tree:
         local, local_lost = _evidence_io.plan_bodies(
-            os.path.join(tree, os.path.relpath(manifest_path, project)), tree)
+            os.path.join(phase_tree["path"], *inside.split("/")), tree)
         bodies = bodies + local
         lost = lost + local_lost
     notes = (["the plan's records could not be read at the branch tip (%s)"
               % (why,)] if why and not tree else [])
+    if why and not tree:
+        lost = list(lost) + ["%s:%s" % (branch, inside)]
     notes += ["the plan file %s could not be read, so no record it holds was "
               "read" % (label,) for label in lost]
     doc = _evidence_io.record_schema()[0]
-    malformed = _evidence_io.unreadable_records(bodies, doc)
+    plan = _evidence_io.plan_said(project, manifest_path)
+    malformed = _evidence_io.unreadable_records(bodies, doc, plan=plan)
     if malformed:
         notes.append(_evidence_io.unreadable_records_sentence(malformed))
-    return (_evidence_io.records_of_bodies(bodies, doc), notes,
+    return (_evidence_io.records_of_bodies(bodies, doc, plan=plan), notes,
             list(lost) + malformed)
 
 
@@ -1953,7 +1979,10 @@ def _phase_project(git_root, project, phase_tree):
     """The project directory inside the worktree that holds the branch, or None."""
     if not phase_tree or phase_tree.get("prunable") or not phase_tree.get("path"):
         return None
-    tree = os.path.join(phase_tree["path"], os.path.relpath(project, git_root))
+    rel = _tree_rel(git_root, project)
+    if rel is None:
+        return None
+    tree = os.path.join(phase_tree["path"], *rel.split("/"))
     return os.path.normpath(tree) if os.path.isdir(tree) else None
 
 
@@ -2199,7 +2228,7 @@ def _checked_out_bytes(path):
 
 
 def gate_answer(project, manifest_path, manifest, phase, git_root=None,
-                branch=None, phase_tree=None):
+                branch=None, phase_tree=None, parent=None):
     """`(answer, signed_without_run, notes)` - `_verdict_binding.phase_binding`
     for the phase about to land, in this command's words, and what its sign-off
     recorded about standing on no run.
@@ -2228,8 +2257,11 @@ def gate_answer(project, manifest_path, manifest, phase, git_root=None,
     carrier, members = _vb.group_of(manifest, phase or {})
     cid = str(carrier.get("id"))
     others = [str(m.get("id")) for m in members[1:]]
+    # The plan as a command typed in the project names it: asked of real
+    # paths, so a symlinked spelling of either side names the same file.
     record = ("run `run-test-gate.py %s %s%s --record` on the work, then land it"
-              % (_output.posix_rel(manifest_path, project), cid,
+              % (_tree_rel(project, manifest_path)
+                 or _output.posix_rel(manifest_path, project), cid,
                  "".join(" --also %s" % (o,) for o in others)))
     files = _vb.phase_files(members)
     config = _journal_io.load_config(project)
@@ -2245,7 +2277,10 @@ def gate_answer(project, manifest_path, manifest, phase, git_root=None,
         # and a shard there that will not read refuses the landing of the
         # phase it holds (`_verdict_binding.subject_file_lost`).
         records, record_notes, records_lost = branch_records(
-            git_root, project, branch, phase_tree, manifest_path)
+            git_root, project, branch, phase_tree, manifest_path,
+            refs=(parent or _branch.parent_branch(
+                (manifest or {}).get("meta") or {}, phase or {})["branch"],
+                  (phase or {}).get("baseRef")))
         notes = notes + record_notes
         journal, journal_notes = branch_texts(
             git_root, project, branch, phase_tree,
@@ -2638,9 +2673,8 @@ def returns_by_place(project, manifest_path, git_root, branch, phase_tree,
               "tree": tree, "home": home, "evidence": evidence,
               "branch": branch, "parent": parent, "returnsRel": None}
     folder = os.path.join(evidence, _fr.RETURNS_DIRNAME, str(phase_id))
-    rel = (os.path.relpath(folder, git_root).replace(os.sep, "/")
-           if git_root else "..")
-    if rel.startswith(".."):
+    rel = _tree_rel(git_root, folder) if git_root else None
+    if rel is None:
         return places
     places["returnsRel"] = rel
     if branch:
@@ -2996,8 +3030,7 @@ def _phase_key_applies(project, manifest_path, copies):
 def _plan_outside(project, manifest_path):
     """True when the plan lies outside the project directory - one file every
     checkout of the repository reads, rather than a copy per checkout."""
-    rel = os.path.relpath(os.path.abspath(manifest_path), os.path.abspath(project))
-    return rel == ".." or rel.startswith(".." + os.sep)
+    return _tree_rel(project, manifest_path) is None
 
 
 def worktree_phase(git_root, project, phase_tree, manifest_path, phase_id):
@@ -3011,8 +3044,7 @@ def worktree_phase(git_root, project, phase_tree, manifest_path, phase_id):
         return None
     if _plan_outside(project, manifest_path):
         return None
-    there = os.path.join(tree, os.path.relpath(os.path.abspath(manifest_path),
-                                               os.path.abspath(project)))
+    there = os.path.join(tree, *_tree_rel(project, manifest_path).split("/"))
     if os.path.realpath(there) == os.path.realpath(manifest_path) \
             or not os.path.isfile(there):
         return None
@@ -3477,7 +3509,8 @@ def main(argv, out=print):
     # cleans up must finish; it says the verdict and refuses nothing.
     gate, signed_without_run, gate_notes = gate_answer(
         project, args.manifest, manifest, phase, git_root=git_root,
-        branch=names["branch"], phase_tree=observation.get("phaseTree"))
+        branch=names["branch"], phase_tree=observation.get("phaseTree"),
+        parent=names["parent"])
     refused = _vb.close_refusal(gate, signed_without_run=signed_without_run)
     landing_due = observation["contained"]["answer"] != _wt.CONTAINED
     gate_view = {"state": gate.get("state"), "arm": gate.get("arm"),
