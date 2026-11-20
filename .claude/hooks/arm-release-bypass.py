@@ -134,6 +134,28 @@ def held_phases(project):
         return ([], _unread(exc))
 
 
+def read_lists(project):
+    """`(bug_read, held_read)` - `open_bugs`' and `held_phases`' pairs off
+    ONE reading of the plan, the guard's own `read_plan`, as the guard's
+    `tree_verdict` answers both lists from one: the message names what the
+    guard would refuse over at that moment, never one list from each of two
+    versions of the plan."""
+    guard = _load_guard()
+    if guard is None:
+        return (([], GUARD_UNLOADED), ([], GUARD_UNLOADED))
+    try:
+        plan = guard.read_plan(project)
+    except BaseException as exc:                # noqa: BLE001
+        return (([], _unread(exc)), ([], _unread(exc)))
+    out = []
+    for read in (guard.read_bugs, guard.read_held_phases):
+        try:
+            out.append(read(project, plan))
+        except BaseException as exc:            # noqa: BLE001
+            out.append(([], _unread(exc)))
+    return tuple(out)
+
+
 def arm(project, session_id):
     """Write the single-use slot. Returns the path, or None when it could not."""
     state = os.path.join(project, STATE_REL)
@@ -232,8 +254,7 @@ def main():
                      prompt):
         return 0
     project = project_dir()
-    bug_read = open_bugs(project)
-    held_read = held_phases(project)
+    bug_read, held_read = read_lists(project)
     armed = arm(project, str(payload.get("session_id") or ""))
     sys.stdout.write(json.dumps(
         {"systemMessage": message(bug_read, held_read, armed)}))
@@ -474,6 +495,49 @@ def _selftest():
               all(len(read) == 2 and all(r[0] == [] and name in str(r[1])
                                          for r in read)
                   for name, read in kinds))
+
+        # ONE READING OF THE PLAN FOR BOTH LISTS, the guard's own: the same
+        # pairs the single-list readers give, the plan read once, and a
+        # reading that raises named UNKNOWN for each list.
+        with open(mpath, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump({"meta": {"fullGate": ["full"],
+                               "buildCommands": {"full": "echo full"}},
+                      "phases": [{"id": "P9", "title": "p", "status": "done",
+                                 "mergedAt": "2026-01-01T00:00:00Z",
+                                 "mergedHead": "b" * 40, "tasks": []}],
+                      "bugs": [{"id": "BUG-2", "status": "open",
+                                "severity": "med", "title": "b"}]}, fh)
+        real = _load_guard()
+        reads = []
+
+        def read_plan(project):
+            reads.append(project)
+            return real.read_plan(project)
+        own["_load_guard"] = lambda: types.SimpleNamespace(
+            read_plan=read_plan, read_bugs=real.read_bugs,
+            read_held_phases=real.read_held_phases, BASIS_CAP=240)
+        try:
+            both = read_lists(tmp)
+        finally:
+            own["_load_guard"] = saved
+        apart = (open_bugs(tmp), held_phases(tmp))
+        own["_load_guard"] = lambda: types.SimpleNamespace(
+            read_plan=raising, read_bugs=real.read_bugs,
+            read_held_phases=real.read_held_phases, BASIS_CAP=240)
+        try:
+            torn = read_lists(tmp)
+        finally:
+            own["_load_guard"] = saved
+        check("rb22 RED-FIRST: both lists come off one reading of the plan, "
+              "the guard's own, answering as the single-list readers do - "
+              "BUG-2 and P9 - and a reading that raises is each list UNKNOWN "
+              "naming what was raised: %d read(s), %r, %r"
+              % (len(reads), both, torn),
+              len(reads) == 1 and both == apart
+              and [b[0] for b in both[0][0]] == ["BUG-2"]
+              and [p[0] for p in both[1][0]] == ["P9"]
+              and all(r[0] == [] and "RuntimeError" in str(r[1])
+                      for r in torn))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

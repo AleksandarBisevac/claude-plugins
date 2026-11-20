@@ -2378,7 +2378,9 @@ def _tipless_tracked_cases(check):
              "stands in for it"),
             ("ra11", "always", True,
              "ALLOW: the same unreadable tip merges when the task's key reads "
-             "`always`, where the property asks nothing")):
+             "`always`, where the property asks nothing - the gate's own "
+             "refusal of a tip whose records cannot be read (ra11b) "
+             "overridden, as a person can")):
         root = None
         try:
             root = _harness.fixture_root("closephase-tipless-%s" % (cid,))
@@ -2397,7 +2399,26 @@ def _tipless_tracked_cases(check):
             git("commit", "-q", "-m", "work")
             sha = git("rev-parse", "HEAD").stdout.decode().strip()
             git("checkout", "-q", "-f", "main")
-            code, text = _close(mpath, root)
+            if lands:
+                # THE TIP'S RECORDS UNREAD REFUSE THE GATE, whatever the
+                # property asks: the plan at the tip is named as the file
+                # that holds the phase's record, and nothing merges.
+                code, text = _close(mpath, root)
+                merged = git("merge-base", "--is-ancestor", sha,
+                             "main").returncode == 0
+                check("ra11b RED-FIRST: a branch whose tip holds no copy of "
+                      "the plan the parent tracks is refused by the gate - "
+                      "its records cannot be read there - while the property "
+                      "asks nothing of `always`: exit %r, %r"
+                      % (code, text[text.find("REFUSED"):][:700]),
+                      code == 1 and not merged
+                      and "audit/p1-demo:docs/audit/audit-plan.json" in text
+                      and "which holds P1's record" in text
+                      and "The parent's copy does not stand in" not in text)
+                code, text = _close(mpath, root, "--override-verdict",
+                                    "the tip drops the plan on purpose")
+            else:
+                code, text = _close(mpath, root)
             merged = git("merge-base", "--is-ancestor", sha, "main").returncode == 0
             ok = merged if lands else (
                 code == 1 and not merged and "audit/p1-demo" in text
@@ -2962,6 +2983,148 @@ def _plan_walker_cases(check):
               % (code, _landed(git), text[:500]),
               code == 1 and not _landed(git)
               and "audit/p1-demo:docs/audit/phases/P1.json" in text)
+    finally:
+        if root:
+            _harness.remove_tree(root)
+    _spelled_plan_cases(check)
+    _unresolved_ref_cases(check)
+
+
+def _pw_spelled(name, status, malformed=False, drop_index=False):
+    """`(exit, text)` of close-phase, dry, run as its own process from a
+    symlinked spelling of the project with the plan named relative to it.
+    The branch commits an older green in the ledger - the declared files'
+    digest beside it, so it would bind - and P1's newer run, `status`, as
+    the record its shard holds (not the record's shape when `malformed`);
+    `drop_index` takes the plan's index out of the tip, the disk keeping it."""
+    import tempfile
+    import _evidence_io as E
+    import _tree_stamp as T
+    root = link_dir = None
+    try:
+        root, mpath, git = _record_landing_fixture(name, [(1, status)],
+                                                   ("src.txt",))
+        digest = T.scope_digest(root, ["src.txt"])[0]
+        ev = E.evidence_dir(root)
+        os.makedirs(ev, exist_ok=True)
+        with open(os.path.join(ev, "2026-09.pw.jsonl"), "w") as fh:
+            fh.write(json.dumps({
+                "runId": "cr-0", "ts": "2026-09-01T00:00:00Z",
+                "scope": "phase", "phaseId": "P1", "status": "passed",
+                "gateSource": "phase", "steps": [{"name": "test"}],
+                "testedState": {"scopeDigest": digest}}) + "\n")
+        shard = os.path.join(root, "docs", "audit", "phases", "P1.json")
+        if malformed:
+            with open(shard) as fh:
+                body = json.load(fh)
+            body[E.RECORD_KEY]["steps"] = 5
+            with open(shard, "w") as fh:
+                json.dump(body, fh)
+        git("add", "-A")
+        git("commit", "-q", "-m", "runs")
+        if drop_index:
+            # The tip holds none of the index; the parent's checkout does.
+            git("rm", "-q", "docs/audit/audit-plan.json")
+            git("commit", "-q", "-m", "the index out of the tip")
+        moved = git("checkout", "-q", "main")
+        if moved.returncode != 0 or not os.path.isfile(mpath):
+            raise RuntimeError("the fixture did not reach main with the plan "
+                               "on disk: %r" % (moved.stderr,))
+        link_dir = tempfile.mkdtemp(prefix="closephase-spelled-")
+        spelled = os.path.join(link_dir, "project")
+        os.symlink(root, spelled)
+        env = dict((k, v) for k, v in os.environ.items()
+                   if k != "CLAUDE_PROJECT_DIR")
+        done = subprocess.run(
+            [sys.executable, M.__file__, "docs/audit/audit-plan.json", "P1",
+             "--project", spelled, "--dry-run", "--keep-branch"],
+            cwd=spelled, env=env, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT)
+        return done.returncode, done.stdout.decode("utf-8", "replace")
+    finally:
+        for path in (link_dir, root):
+            if path:
+                _harness.remove_tree(path)
+
+
+def _spelled_plan_cases(check):
+    """(pw5-pw8) The plan's place in the repository is asked of real paths:
+    a project named through a symlink, with the plan named relative to it,
+    reads the records the tip commits - and a tip whose plan cannot be read
+    refuses rather than binding on the ledger alone."""
+    refusal = _symlink_refusal()
+    labels = ("pw5", "pw6", "pw7", "pw8")
+    if refusal is not None:
+        for label in labels:
+            _harness.skip(check, label, "os.symlink cannot make a link here "
+                          "(%s)" % (refusal,), True)
+        return
+    red = _pw_spelled("closephase-spelled-red", "failed")
+    check("pw5 RED-FIRST: through a symlinked spelling with a relative plan, "
+          "the tip's newer red record refuses the landing naming it, never "
+          "the older green the ledger holds: exit %r, %r"
+          % (red[0], red[1][-500:]),
+          red[0] == 1 and "cr-1" in red[1] and "`failed`" in red[1]
+          and "bound to run" not in red[1])
+    lost = _pw_spelled("closephase-spelled-lost", "failed", malformed=True)
+    check("pw6 RED-FIRST: ...and the tip's record that will not read refuses "
+          "naming the record, never binding on the older green: exit %r, %r"
+          % (lost[0], lost[1][-500:]),
+          lost[0] == 1 and "could not be read" in lost[1]
+          and "bound to run" not in lost[1])
+    green = _pw_spelled("closephase-spelled-green", "passed")
+    check("pw7 ALLOW: ...and a newer green record there lands, bound to that "
+          "record's run, so the refusals above are about the red and the "
+          "unreadable record: exit %r, %r" % (green[0], green[1][-500:]),
+          green[0] == 0 and "bound to run cr-1" in green[1])
+    gone = _pw_spelled("closephase-spelled-noindex", "failed", drop_index=True)
+    check("pw8 RED-FIRST: a tip that holds none of the plan's index - the "
+          "disk still holding it - refuses naming the file, never binding on "
+          "the ledger's green the tip's records were not read beside: exit "
+          "%r, %r" % (gone[0], gone[1][-500:]),
+          gone[0] == 1 and "audit/p1-demo:docs/audit/audit-plan.json"
+          in gone[1] and "bound to run" not in gone[1])
+
+
+def _unresolved_ref_cases(check):
+    """(pw9) A ref git cannot resolve says nothing about whether the plan is
+    versioned: `plan_versioned` answers None, never False - and the tip's
+    unreadable records are then refused, never read off the disk's copy."""
+    root = None
+    try:
+        root, mpath, git = _record_landing_fixture(
+            "closephase-unresolved-ref", [(1, "failed")], ("src.txt",))
+        # The TIP's shard will not parse; the disk's copy, uncommitted, does.
+        shard = os.path.join(root, "docs", "audit", "phases", "P1.json")
+        with open(shard) as fh:
+            good = fh.read()
+        with open(shard, "w") as fh:
+            fh.write("{ not json")
+        git("add", "-A")
+        git("commit", "-q", "-m", "a shard that will not parse at the tip")
+        with open(shard, "w") as fh:
+            fh.write(good)
+        unknown = M.plan_versioned(root, mpath, ("no-such-parent",))
+        known = M.plan_versioned(root, mpath, ("audit/p1-demo",))
+        mixed = M.plan_versioned(root, mpath, ("no-such-parent",
+                                               "audit/p1-demo"))
+        rows, _notes, lost = M.branch_records(
+            root, root, "audit/p1-demo", None, mpath,
+            refs=("no-such-parent",))
+        check("pw9 RED-FIRST: a parent ref git cannot resolve leaves whether "
+              "the plan is versioned unanswered (None, never False), so a "
+              "tip whose shard will not parse is refused, naming the tip's "
+              "file, rather than read off the disk's copy: unknown %r, known "
+              "%r, mixed %r, rows %r, lost %r"
+              % (unknown, known[0], mixed[0],
+                 [r.get("runId") for r, _l in rows], lost[:2]),
+              unknown[0] is None and "no-such-parent" in unknown[1]
+              and known[0] is True and mixed[0] is True
+              and any(str(e).startswith("audit/p1-demo:") for e in lost)
+              and "cr-1" not in [r.get("runId") for r, _l in rows])
+    except Exception as exc:                                   # noqa: BLE001
+        check("pw9 the unresolved-ref case ran to its end (%s: %s)"
+              % (type(exc).__name__, exc), False)
     finally:
         if root:
             _harness.remove_tree(root)

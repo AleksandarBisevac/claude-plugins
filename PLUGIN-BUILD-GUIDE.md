@@ -4289,12 +4289,68 @@ reconcile that could not finish reports the subjects it left behind rather than 
 number. A subject whose own record would not read is one of them: that record may hold its newest
 run, so it is refused, named with the record's file and field, and left exactly as it is - never
 caught up to an older ledger run - while every other subject is reconciled as before, and the
-refusal under the plan-file lock is the same (`nu1`-`nu7`). That answer is
-`newest_or_unreadable()`, the one function every reader of a subject's newest run asks whether the
-subject's own record read - the lookup's `run latest`, the doctor's pointer check, the verdict
-binding and the phase gate's last-failed suites among them; `nu6` derives them from what each
-function calls. The binding then picks among the runs of the work it binds (`_same_subject`, which
-keeps a task's run on its phase's gate the task's), less a base run a task's red keeps.
+refusal under the plan-file lock is the same (`nu1`-`nu7`).
+
+**The rule is a property of the read, not a list of the readers that ask it.** After
+`read_rows()`, a subject whose own record would not read has no row a reader selecting by the
+subject's ids can take as that subject's newest run, verdict or repeat: the record stands as a row
+of its own (`unreadableRecord`, run id `unreadable-record:<scope>:<subject>`, no status, sorted
+newest by `oldest_first`), and every older run the subject holds - a task's on any gate, under its
+id or one it was moved from, a phase's own with no task; a full or base run is never touched - is
+kept with its `taskId`/`phaseId` moved under `withheldFrom`. A reader that looks a run up by its run
+id still finds it, and a tally that counts what ran reads it back under the work it measured
+(`measured_rows()`). The remedy the reader prints names the command that measures the subject
+again. `wh0`-`wh9` ask the read's rows with every filter a reader has been seen to write by hand;
+`bb0` and its siblings run every command that reads runs - derived from the tree, each listed in
+`_BB_ENTRIES` with its invocation or the reason it is not run, the table checked both ways, and
+the drive's own sites in `_BB_DRIVE_SITES` the same way - over a fixture whose newest red is held
+only as a malformed record beside an older green, malformed three ways. `newest_or_unreadable()` is
+still the answer a function that reduces to one row asks, and `nu6` derives the functions that call
+a named picker; it cannot see a reader that filters by hand, which is why it no longer carries the
+rule. The binding picks among the runs of the work it binds through `own_runs()` - the one
+selection the member check at landing shares - and refuses when the newest of them stands for a
+record that would not read.
+
+**A run is held by the subject it measured.** A task's run on its phase's gate is the task's record,
+saying so with `gateSource` "phase", and `record_row()` reads it back as its ledger row reads (scope
+`phase`, the task's id); the phase's record is written only by a run of the phase. Every reader
+groups runs by that holder (`holder_key()`), so a task's green never replaces the phase's newest.
+
+**A record reaches a reader only as its projection through `RECORD_GRAMMAR`.** The table names
+each field a record carries and the shape the writer gives it - an enumeration for a word
+(`status`, `gateSource`, `verdictSource`), the writer's own stamp for a moment, counts, lists, and
+a table of its own for each object, a run nested in the record read by the record's own table.
+`project_record()` is the one door: the share resolved, then every field through its grammar; a
+field that fails makes the record unreadable, named by its path, and a field the table does not
+name is not carried, so no reader can read it. The writer meets the same table at
+`finished_record()`, every write of a record's one egress, through `stored_record()`; `pj1` holds
+the writer's records equal to their projection over every situation the recorder meets, and reads
+each record the composer hands that egress before the table touches it, since a field the composer
+builds and the table omits would be dropped on both sides alike and stay equal. The shape
+is the writer's strictly - a bare date, a lowercase stamp, a word it never writes are refused - on
+purpose, since no released version ever wrote a run record. The runner's own words that this module
+only carries (a step's `measured` and `outcome`) are held as non-blank words, the shape this
+writer emits for them. **The ledger's rows do not come through this door**: released versions wrote
+them, and their shape is not today's writer's (rows of an older writer carry no `gateSource`), so a
+hand-edited row is read as written and only `verify`'s hash chain names it.
+
+**What makes a record unreadable is one list, `READER_RULES`, asked beside the schema**: a key its
+holder - the task, or the phase outside its tasks - writes twice (`holder_duplicate_problem()`, over
+`DuplicatedKeys` from `plan_json()`, the parse every read of a plan file a record is taken from goes
+through: the walk, the shard read under the lock, the branch tip), a share that would rewrite a
+verdict, and the projection. `_plan_records()` asks them for every reader, and `held_record()` for a
+writer under the lock; `write_plan_file()` refuses to rewrite a file that writes any key twice,
+naming the way out - delete the copy not meant by hand, then record again. `rf1` proves, over every
+`.py` under the plugin's `scripts/` and `hooks/` and `.claude/hooks/`, that every load of a record's
+key sits in a door `_RF_DOORS` names; it cannot see the key bound to another name, `getattr`, a walk
+over a holder's items, or a reader that is not Python. `rf2` breaks every leaf the table holds and
+fails when one is not named. The plan's other readers - `_manifest_io` among them - still take the
+last copy of a key written twice; the release guard refuses such a plan for itself.
+`validate-manifest.py` warns on each record `reader_rule_problems()` lists.
+
+**The subject's newest run decides whether anything is repeated.** `reusable_run()` repeats the
+newest measurement of an identity only while no newer run held by the same subject
+(`holder_key()`) stands under another identity or on the other gate.
 
 **The plan-movement row is the second of C4's two events.** `task.testEvidence` /
 `phase.testEvidence` is written **only after the pointer lands**, naming both ends of the move; a
