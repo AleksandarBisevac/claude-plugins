@@ -1010,14 +1010,13 @@ command_not_found_handle() {
 export -f command_not_found_handle
 readonly -f command_not_found_handle
 unset BASH_CMDS BASH_ALIASES
-readonly BASH_CMDS BASH_ALIASES @ENV@
+: @ENV@
 for b in $(compgen -b); do
   case " @KEEP@ enable " in
     *" $b "*) ;;
-    *) enable -n "$b" ;;
+    *) ;;
   esac
 done
-enable -n enable
 """
 
 
