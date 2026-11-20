@@ -32,6 +32,7 @@ arguments, and `_claude_home.claude_home()` is how a caller finds the first of t
 This module carries no `--selftest` of its own; its cases live in
 `tests/test__skill_places.py`.
 """
+import hashlib
 import json
 import os
 import re
@@ -78,15 +79,23 @@ def plugin_name(plugin_root):
 
 
 # --- where a name can live -------------------------------------------------------
+def is_skill_name(name):
+    """True for a bare skill name or `plugin:skill`, each half a `SKILL_NAME`."""
+    if not isinstance(name, str):
+        return False
+    head, sep, tail = name.partition(":")
+    return all(SKILL_NAME.match(p) for p in ([head, tail] if sep else [head]))
+
+
 def _labelled_places(name, tree, user_home, plugin_root, running):
     """`([(source, path), ...], problem)`: the SKILL.md paths for `name`, in the
     order they win, each beside the tier it belongs to - or the reason the name is no
     skill name at all."""
-    head, sep, tail = name.partition(":")
-    parts = [head, tail] if sep else [head]
-    if not all(SKILL_NAME.match(p) for p in parts):
+    if not is_skill_name(name):
         return [], "%r is not a skill name (letters, digits, '.', '_' and '-', "\
                    "optionally as plugin:skill)" % name
+    head, sep, tail = name.partition(":")
+    parts = [head, tail] if sep else [head]
     own = ("plugin", os.path.join(plugin_root, "skills", parts[-1], "SKILL.md"))
     if sep:
         return ([own] if head == running else []), None
@@ -187,3 +196,233 @@ def loaded_verdict(entry, hit):
                 "graded": "tier"}
     return {"travels": tier[0], "basis": tier[1] % (hit.get("path"),),
             "graded": "tier"}
+
+
+# --- the pinned bytes ------------------------------------------------------------
+# A plan may pin a skill it names (`meta.skillPins`): `{name: {"sha256": <digest>,
+# "source": <free text>}}`. The digest is of the skill's DIRECTORY - the one holding
+# the SKILL.md `resolve_skill` found, so the copy judged is the copy a session would
+# load - because a skill's scripts and references are as much its instructions as
+# its SKILL.md.
+#
+# THE DIGEST. SHA-256 over the sorted lines `<relative posix path> <sha256 of the
+# file>\n`, one per file under the directory, UTF-8 - the shape
+# docs/research/benchmark-design.md 4.2 gives the benchmark's skill set, with three
+# differences: one skill's directory rather than every copied directory at once,
+# paths written with `/` on every platform, and line ends read alike. A file holding
+# no NUL byte is hashed with each CRLF taken as LF, so a checkout that converted
+# line endings (`core.autocrlf`, `eol=crlf`) answers the digest the pinning checkout
+# did. The cost: a change that only adds or removes a CR before a LF is not seen,
+# in a text file or in a binary one that happens to hold no NUL byte. A lone CR is
+# kept, as git keeps it.
+#
+# NO DIGEST is the third answer, never a match: a file that cannot be read, a link
+# leading out of the directory, a link to a directory (its files would be counted
+# twice or not at all), a file name holding a line break (it would forge a line),
+# or more files or bytes than `MAX_SKILL_FILES`/`MAX_SKILL_BYTES` - a directory that
+# size is not a skill, and hashing it would stall every dispatch. Every file counts,
+# a `__pycache__` a skill's script left behind included: a cached module is code a
+# session can run.
+MAX_SKILL_FILES = 1000
+MAX_SKILL_BYTES = 32 * 1024 * 1024
+DIGEST = re.compile(r"^[0-9a-f]{64}$")
+PIN_KEYS = ("sha256", "source")
+# The reader's four answers for one pinned name.
+PIN_ANSWERS = ("match", "mismatch", "not-found", "unreadable")
+
+
+class PinStop(ValueError):
+    """A pinned skill about to be handed out is not the bytes pinned; the message
+    is the stop. A ValueError because that is what the drive turns into a stop
+    (`drive-phase.py one_next`), so a hand-out that raises it stops `next` there."""
+
+
+def _no_digest(problem, files=0):
+    return {"digest": None, "files": files, "problem": problem}
+
+
+def _inside(path, root):
+    """True when `path` is `root` or under it, both already real paths."""
+    try:
+        return os.path.commonpath([os.path.normcase(path),
+                                   os.path.normcase(root)]) == os.path.normcase(root)
+    except ValueError:
+        return False
+
+
+def _file_line(full, rel, root):
+    """`(line, size, problem)` for one file of a skill's directory."""
+    if "\n" in rel or "\r" in rel:
+        return None, 0, "the file name %r holds a line break" % (rel,)
+    if os.path.islink(full) and not _inside(os.path.realpath(full), root):
+        return None, 0, "%s is a link leading out of the directory, to %s" % (
+            rel, os.path.realpath(full))
+    try:
+        with open(full, "rb") as fh:
+            raw = fh.read()
+    except OSError as exc:
+        return None, 0, "%s could not be read: %s" % (rel, exc)
+    data = raw if b"\0" in raw else raw.replace(b"\r\n", b"\n")
+    return "%s %s\n" % (rel, hashlib.sha256(data).hexdigest()), len(raw), None
+
+
+def skill_digest(folder, max_files=MAX_SKILL_FILES, max_bytes=MAX_SKILL_BYTES):
+    """`{"digest", "files", "problem"}` for a skill's directory: the digest
+    defined above, or None with the reason the directory has none."""
+    root = os.path.realpath(folder)
+    if not os.path.isdir(root):
+        return _no_digest("%s is not a directory" % (folder,))
+    lines, size, failed = [], 0, []
+    for here, dirs, files in os.walk(root, onerror=failed.append):
+        for name in sorted(dirs):
+            if os.path.islink(os.path.join(here, name)):
+                return _no_digest("%s is a link to a directory" % (os.path.relpath(
+                    os.path.join(here, name), root).replace(os.sep, "/"),), len(lines))
+        for name in sorted(files):
+            full = os.path.join(here, name)
+            line, raw, problem = _file_line(
+                full, os.path.relpath(full, root).replace(os.sep, "/"), root)
+            if problem:
+                return _no_digest(problem, len(lines))
+            lines.append(line)
+            size += raw
+            if len(lines) > max_files:
+                return _no_digest("more than %d files - more than a skill holds"
+                                  % (max_files,), len(lines))
+            if size > max_bytes:
+                return _no_digest("more than %d bytes - more than a skill holds"
+                                  % (max_bytes,), len(lines))
+    if failed:
+        return _no_digest("a directory under it could not be listed: %s"
+                          % (failed[0],), len(lines))
+    joined = "".join(sorted(lines)).encode("utf-8")
+    return {"digest": hashlib.sha256(joined).hexdigest(), "files": len(lines),
+            "problem": None}
+
+
+def pin_verdict(name, pin, tree, user_home, plugin_root, running):
+    """The one reader of one pin: `{"name", "answer", "path", "places", "pinned",
+    "found", "source", "problem"}`. `answer` is one of `PIN_ANSWERS`; `path` is the
+    SKILL.md `resolve_skill` found (None when not found), `places` every path looked
+    in, `found` the directory's digest (None unless it could be read whole) and
+    `problem` why there is none. A name the resolver cannot place - another
+    plugin's skill, one bundled with Claude Code - is `not-found`: a pin says the
+    skill is a reviewed copy on disk, and nothing here can read that one."""
+    pin = pin if isinstance(pin, dict) else {}
+    hit = resolve_skill(name, tree, user_home, plugin_root, running)
+    base = {"name": name, "path": hit["path"], "places": hit["places"],
+            "pinned": pin.get("sha256"), "found": None, "source": pin.get("source"),
+            "problem": hit["problem"]}
+    if not hit["found"]:
+        return dict(base, answer="not-found")
+    got = skill_digest(os.path.dirname(hit["path"]))
+    if got["digest"] is None:
+        return dict(base, answer="unreadable", problem=got["problem"])
+    return dict(base, found=got["digest"],
+                answer="match" if got["digest"] == base["pinned"] else "mismatch")
+
+
+# The way through every stop: restore, or review and re-pin. Dropping the pin is
+# deliberately not offered - it is the one remedy that makes the check say nothing.
+_STOP_REMEDY = ("Restore the pinned bytes there, or review the diff and re-pin the "
+                "skill to the reviewed digest in meta.skillPins; nothing was handed out.")
+
+
+def stop_words(verdict):
+    """The stop for one verdict that is not a match: the skill, the path read (or
+    every place looked in), the pinned digest and the found one, and the remedy."""
+    v = verdict
+    source = " (pin source: %s)" % (v["source"],) if v.get("source") else ""
+    if v["answer"] == "mismatch":
+        return ("the skill %s is pinned, and the copy an agent or a session would "
+                "load is not the bytes pinned: %s has digest %s, the plan pinned %s%s. %s"
+                % (v["name"], v["path"], v["found"], v["pinned"], source, _STOP_REMEDY))
+    if v["answer"] == "unreadable":
+        return ("the skill %s is pinned to %s%s, and its directory at %s could not be "
+                "read whole (%s), so it has no digest: found none. %s"
+                % (v["name"], v["pinned"], source, v["path"], v["problem"],
+                   _STOP_REMEDY))
+    where = (", ".join(v["places"]) if v["places"] else
+             v["problem"] or "no place: a plugin-qualified name is read only from "
+             "the running plugin's own skills/")
+    return ("the skill %s is pinned to %s%s, and no copy is found where its bytes "
+            "can be read - looked in %s: found none. A pin says the skill is a "
+            "reviewed copy on disk. %s" % (v["name"], v["pinned"], source, where,
+                                           _STOP_REMEDY))
+
+
+def pin_shape_problems(pins):
+    """What makes `meta.skillPins` (`pins`) no set of pins, one sentence per pin at
+    fault; [] when it is absent (None) or well-formed."""
+    if pins is None:
+        return []
+    if not isinstance(pins, dict):
+        return ["meta.skillPins is not an object of skill name to pin"]
+    out = []
+    for name in sorted(pins, key=str):
+        value = pins[name]
+        if not is_skill_name(name):
+            out.append("meta.skillPins: %s is not a skill name" % (name,))
+        elif not isinstance(value, dict):
+            out.append("meta.skillPins: %s is not an object {sha256, source}" % (name,))
+        elif sorted(set(value) - set(PIN_KEYS)):
+            out.append("meta.skillPins: %s carries %s, which a pin does not have"
+                       % (name, ", ".join(sorted(set(value) - set(PIN_KEYS)))))
+        elif not (isinstance(value.get("sha256"), str)
+                  and DIGEST.match(value["sha256"])):
+            out.append("meta.skillPins: %s sha256 %r is not a SHA-256 hex digest "
+                       "(64 lowercase hex characters)" % (name, value.get("sha256")))
+        elif "source" in value and not isinstance(value["source"], str):
+            out.append("meta.skillPins: %s source is not text" % (name,))
+    return out
+
+
+def skill_pins(manifest):
+    """`meta.skillPins` as written, or None when the plan has no such key - the one
+    reading of the key."""
+    meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    return meta.get("skillPins") if isinstance(meta, dict) else None
+
+
+def pin_stops(names, pins, tree, user_home, plugin_root):
+    """The verdicts that stop a hand-out of `names`: one per PINNED name among them
+    whose answer is not a match, in the order named. An unpinned name is not asked,
+    and neither is a pin for a name not among `names`."""
+    if not isinstance(pins, dict) or not pins:
+        return []
+    running = plugin_name(plugin_root)
+    asked = [n for i, n in enumerate(names) if n in pins and n not in names[:i]]
+    verdicts = [pin_verdict(n, pins[n], tree, user_home, plugin_root, running)
+                for n in asked]
+    return [v for v in verdicts if v["answer"] != "match"]
+
+
+def require_pins(names, manifest, tree, user_home, plugin_root):
+    """`names`, unchanged, when every pinned one among them is the bytes `manifest`
+    pins; otherwise raises `PinStop` with each stop's words. A plan with no
+    `meta.skillPins` asks nothing. A malformed key stops too: the validator refuses
+    it, and a pin that cannot be read is no reason to hand the skill out."""
+    names = list(names)
+    pins = skill_pins(manifest)
+    if pins is None:
+        return names
+    problems = pin_shape_problems(pins)
+    if problems:
+        raise PinStop("meta.skillPins cannot be read, so no pinned skill is handed "
+                      "out: %s" % ("; ".join(problems),))
+    stops = pin_stops(names, pins, tree, user_home, plugin_root)
+    if stops:
+        raise PinStop("\n".join(stop_words(v) for v in stops))
+    return names
+
+
+def pin_flags(names, manifest):
+    """`--skill-pin NAME=DIGEST` for each pinned name among `names`, in order - what
+    the session runner is handed beside its `--skill` flags. [] for a plan with no
+    pins, so its command is the one it always was."""
+    pins = skill_pins(manifest)
+    if not isinstance(pins, dict):
+        return []
+    return [flag for i, n in enumerate(names)
+            if n in pins and n not in names[:i] and isinstance(pins[n], dict)
+            for flag in ("--skill-pin", "%s=%s" % (n, pins[n].get("sha256")))]

@@ -55,6 +55,13 @@ WHAT THE ARGV CARRIES, AND WHY EACH ONE:
     skill the session was shown from one it loaded. A resumed run's stream holds
     that round's events alone, so its `skillsInvoked` names that round's calls
     alone; the reader joins the rounds of one session;
+  * `--skill-pin NAME=DIGEST`, repeatable, is the plan's pin of a skill it hands
+    this session (`meta.skillPins`, passed by the drive). Before anything else
+    is read, each pinned name is put to `_skill_places.pin_stops` - the one
+    reader, over the copy this tree's session would load - and any answer but a
+    match refuses to start with the usage exit a missing skill gets, naming the
+    skill, the path, the pinned and the found digest. An unpinned `--skill` is
+    not asked; a pin for a name not given with `--skill` is a usage error;
   * `--resume <session id>` continues a recorded session and changes nothing else;
     an id that is not a UUID is refused (`SESSION_ID`), so no flag rides in as one.
   * the budget must be a finite positive number - `float()` also reads `inf` and
@@ -337,6 +344,23 @@ def find_skills(names, tree, user_home, plugin_root, running):
                     "problem": "the skill %s is not found - %s" % (name, where)}
         found.append({"name": name, "path": hit["path"]})
     return {"found": found, "problem": None}
+
+
+def given_pins(given, names):
+    """`(pins, problem)`: the `--skill-pin NAME=DIGEST` values as `{name:
+    {"sha256": digest}}`, the shape `_skill_places.pin_stops` reads, or the usage
+    problem naming the value at fault."""
+    pins = {}
+    for value in given:
+        name, sep, digest = value.partition("=")
+        if not sep or not _skill_places.DIGEST.match(digest):
+            return None, ("--skill-pin %r is not NAME=DIGEST with a SHA-256 hex digest"
+                          % (value,))
+        if name not in names:
+            return None, ("--skill-pin %r pins %s, which this session is not started "
+                          "with (no --skill %s)" % (value, name, name))
+        pins[name] = {"sha256": digest}
+    return pins, None
 
 
 def load_skills(found):
@@ -884,6 +908,10 @@ def build_parser():
                              "tree's .claude/skills, the user's, then this plugin's "
                              "(plugin:skill only from that plugin), and a name found "
                              "nowhere refuses to start")
+    parser.add_argument("--skill-pin", dest="skill_pins", action="append", default=None,
+                        metavar="NAME=DIGEST",
+                        help="the pinned digest of a --skill's directory, repeatable; "
+                             "a copy that is not those bytes refuses to start")
     parser.add_argument("--record", default=None,
                         help="also append the printed outcome and the exit code "
                              "to this file, one JSON line per run")
@@ -992,6 +1020,12 @@ def _run(args, stdin, out, refuse, ran):
         return refuse("the prompt could not be read: %s" % exc)
     if not prompt.strip():
         return refuse("the prompt is empty - it is read from stdin or --prompt-file")
+    pins, problem = given_pins(args.skill_pins or [], args.skills or [])
+    stops = [] if problem else _skill_places.pin_stops(
+        args.skills or [], pins, args.tree, _claude_home.claude_home(),
+        _output.PLUGIN_ROOT)
+    if problem or stops:
+        return refuse(problem or "\n".join(_skill_places.stop_words(v) for v in stops))
     searched = find_skills(args.skills or [], args.tree,
                            _claude_home.claude_home(), _output.PLUGIN_ROOT,
                            _skill_places.plugin_name(_output.PLUGIN_ROOT))

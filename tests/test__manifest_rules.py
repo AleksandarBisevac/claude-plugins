@@ -625,6 +625,27 @@ def _cases(record):
           lambda m: m["meta"].update(
               areas={"api": {"root": "src", "skills": ["conv"]}}),
           expect_warning="phase has no area tag")
+    # --- spn: meta.skillPins, the pinned bytes of a named skill ---
+    good_pin = {"sha256": "0123456789abcdef" * 4, "source": "vendored at abc123"}
+    m_spn = copy.deepcopy(_valid_manifest())
+    m_spn["meta"]["skillPins"] = {"conv": good_pin, "house:conv": {
+        "sha256": good_pin["sha256"]}}
+    f_spn, w_spn = M.validate(m_spn)
+    ok_spn = f_spn == [] and not [x for x in w_spn if "skillPins" in x]
+    record("spn1 a well-formed meta.skillPins - a bare and a plugin-qualified name, "
+           "`source` optional - validates with no finding and no warning",
+           ok_spn, "clean" if ok_spn else (f_spn, w_spn))
+    check("spn2 a pin for a name that is no skill name is a validation ERROR "
+          "naming it", "meta.skillPins: ../conv",
+          lambda m: m["meta"].update(skillPins={"../conv": good_pin}))
+    check("spn3 a pinned digest that is not a SHA-256 hex digest is an ERROR",
+          "meta.skillPins: conv",
+          lambda m: m["meta"].update(skillPins={"conv": {"sha256": "ABC"}}))
+    check("spn4 a skillPins that is not an object is an ERROR",
+          "meta.skillPins", lambda m: m["meta"].update(skillPins=["conv"]))
+    check("spn5 a pin carrying a key it does not have, or no sha256, is an ERROR",
+          "meta.skillPins: conv", lambda m: m["meta"].update(
+              skillPins={"conv": {"sha256": good_pin["sha256"], "sha": "x"}}))
     check("sk6 a wrong-typed task.skills warns (and only warns) - it is use "
           "evidence, and resolution loads nothing from it", None,
           lambda m: m["phases"][0]["tasks"][0].update(skills="conv"),

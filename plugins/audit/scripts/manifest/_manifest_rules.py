@@ -109,6 +109,7 @@ import _branch as _branch  # noqa: E402  (where a phase branches from, and its n
 import _evidence_io  # noqa: E402  (DERIVED_STEP_PREFIX: the name a gate entry may not take)
 import _status_facts  # noqa: E402  (CLOSED_BUG: the one reading of "not open", for a
 #                                    mute whose bug is closed)
+import _skill_places  # noqa: E402  (pin_shape_problems: what a meta.skillPins entry is)
 
 # --- the re-exported surface ------------------------------------------------------
 # ALIASES, NOT COPIES. Each name below is the SAME object the module beside it
@@ -265,6 +266,11 @@ def _check_meta(manifest):
     gap = phase_gate_suite_gap(manifest)
     if gap is not None:
         w.append(gap)
+    # meta.skillPins: a pin that names no skill, or whose digest is none, would be
+    # a check the drive cannot make - an error, not the schema's warning.
+    # `_skill_places.pin_shape_problems` is the one statement of the shape.
+    f.extend(_output.finding("rules.meta.skill-pins", problem)
+             for problem in _skill_places.pin_shape_problems(meta.get("skillPins")))
     return (f, w)
 
 

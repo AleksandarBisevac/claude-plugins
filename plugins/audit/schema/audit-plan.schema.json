@@ -174,6 +174,28 @@
             "type": "string"
           }
         },
+        "skillPins": {
+          "type": "object",
+          "description": "The reviewed bytes of a skill the plan names, by skill name (bare, or plugin:skill). Each pin's sha256 is the digest of the skill's whole directory - SHA-256 over the sorted lines '<relative posix path> <sha256 of the file>', a file holding no NUL byte read with CRLF as LF - as `_skill_places.skill_digest` computes it. Before a pinned skill is handed to an agent's brief or a headless session, the copy the plugin's resolver finds is compared with its pin, and any answer but a match (another digest, no copy found, a directory that cannot be read whole) stops the hand-out naming the skill, the path and both digests. ABSENT means nothing is checked, exactly as before the key existed; an unpinned skill is never checked. A pin proves the bytes are the ones pinned, not that they are safe, and on the subagent route it checks the copy the plugin's resolver finds, not the copy Claude Code's Skill tool then loads. Experimental: not yet under COMPATIBILITY.md's promise.",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "sha256"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "The digest of the skill's directory, 64 lowercase hex characters."
+              },
+              "source": {
+                "type": "string",
+                "description": "Free text: where the reviewed copy came from (a repository and commit, a release). Printed beside a stop; read for nothing else."
+              }
+            }
+          }
+        },
         "areas": {
           "type": "object",
           "description": "Registry of the areas a phase's `area` tag can name — the monorepo half of the plugin. Optional in both directions and back-compatible by construction: a tag with no entry here stays legal (the validator warns; nothing refuses), and an entry no phase uses is legal too. Registering a tag is what gives it properties: a root directory, a description, a default sign-off reviewer, default executor skills and an advisory owner. Resolution is phase.reviewSkill ?? areas[tag].reviewSkill ?? meta.reviewSkill for the reviewer, and meta.defaultSkills + area skills + task.skills (deduped, widest first) for the executor. When a phase carries several tags, WRITTEN ORDER decides — the first tag whose area declares the field answers.",

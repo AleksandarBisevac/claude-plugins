@@ -1015,6 +1015,13 @@ SCHEMA_EXEMPTIONS = {
         "a value carried here would be a lever nothing the demo shows reads, "
         "and stamping it would move the committed rendered artifacts. REVISIT "
         "when a rendered surface shows the resolved skill list.",
+    "meta.skillPins":
+        "the reviewed digest of a skill's directory, asked before a pinned skill "
+        "is handed to a brief or a session. It is experimental and changes no "
+        "figure the report or the panel renders, and a pin is only meaningful "
+        "against a skill directory on disk, which a generated fixture does not "
+        "have - so a value carried here would be a digest of nothing. REVISIT "
+        "when a rendered surface shows a pin, or the key leaves experimental.",
     # A planned test's former 'must fail if' line is retired: the schema still
     # accepts it so no plan that validated stops validating, and nothing reads
     # it any more - not the drive, not a rendered surface. Removing the key is

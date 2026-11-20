@@ -449,6 +449,10 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               # still resolves skills. `_areas.validate_default_skills` is the
               # shape check, called from `_manifest_phases._check_areas`.
               "defaultSkills",
+              # The pinned bytes of a skill the plan names, by name:
+              # `_skill_places.require_pins` is the one reader, asked by every
+              # place that hands a skill out; `pin_shape_problems` its shape.
+              "skillPins",
               # When this plan could first have recorded a test run at all, so a
               # plan adopted mid-flight reads its pre-recorder work as impossible
               # to evidence rather than as unevidenced. Written ONCE by

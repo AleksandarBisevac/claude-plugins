@@ -13,6 +13,7 @@ and not a miss (`al2`).
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -3400,6 +3401,7 @@ def _selftest():
         _harness.stage(check, "fgb-block", _floor_brief_cases)
         _harness.stage(check, "gfb-block", _green_brief_cases)
         _harness.stage(check, "rs-block", _return_section_cases)
+        _harness.stage(check, "spb-block", _skill_pin_brief_cases)
     return _harness.run(body)
 
 
@@ -3823,12 +3825,14 @@ def _conventions_order_cases(check):
     # none answered - the plan default included - and an opted-out task is
     # told it opted out rather than that the plan declares nothing.
     bare = {"meta": {}}
-    none_line = " ".join(M.skills_lines(bare, {"id": "P1"}, {"id": "P1.1"}))
+    nowhere = os.path.join(_output.REPO_ROOT, "no-such-project-co2")
+    none_line = " ".join(M.skills_lines(bare, {"id": "P1"}, {"id": "P1.1"},
+                                        nowhere))
     opted_line = " ".join(M.skills_lines(
         {"meta": {"defaultSkills": ["from-plan"]}}, {"id": "P1"},
-        {"id": "P1.1", "skills": None}))
+        {"id": "P1.1", "skills": None}, nowhere))
     listed = M.skills_lines({"meta": {"defaultSkills": ["from-plan"]}},
-                            {"id": "P1"}, {"id": "P1.1"})
+                            {"id": "P1"}, {"id": "P1.1"}, nowhere)
     check("co2 the brief's Skills section with nothing resolving names the "
           "plan default, the area default and the task's skills; an opted-out "
           "task is told it opted out; a resolving plan default is listed: %r"
@@ -4050,6 +4054,151 @@ def _owed_red_first_brief_cases(check):
           code_t == M.E_OK and len(submit_t) == 1
           and "-- <the command that runs your new test>" in submit_t[0]
           and "owes a test command" in owed)
+
+
+_PIN_SKILL = "pinned-lookup-q7"
+
+
+def _pin_project(root, name, manifest, skill_text):
+    """A project at `root/name` holding `manifest` as its plan and the project
+    skill `_PIN_SKILL` with `skill_text` as its SKILL.md and a sibling file:
+    `(project, plan path, the skill's directory)`."""
+    proj = os.path.join(root, name)
+    folder = os.path.join(proj, ".claude", "skills", _PIN_SKILL)
+    os.makedirs(os.path.join(folder, "scripts"))
+    with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8",
+              newline="\n") as fh:
+        fh.write(skill_text)
+    with open(os.path.join(folder, "scripts", "run.py"), "w", encoding="utf-8",
+              newline="\n") as fh:
+        fh.write("print('run')\n")
+    with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+    os.makedirs(os.path.dirname(mpath))
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh)
+    return proj, mpath, folder
+
+
+def _pin_digest(folder):
+    """A skill directory's digest computed here, apart from the module under test:
+    SHA-256 over the sorted lines `<relative posix path> <sha256 of its bytes>`,
+    CRLF read as LF in a file holding no NUL byte."""
+    lines = []
+    for here, _dirs, files in os.walk(folder):
+        for name in files:
+            full = os.path.join(here, name)
+            with open(full, "rb") as fh:
+                data = fh.read()
+            if b"\0" not in data:
+                data = data.replace(b"\r\n", b"\n")
+            rel = os.path.relpath(full, folder).replace(os.sep, "/")
+            lines.append("%s %s\n" % (rel, hashlib.sha256(data).hexdigest()))
+    return hashlib.sha256("".join(sorted(lines)).encode("utf-8")).hexdigest()
+
+
+def _pin_brief(proj, mpath, node_id, role, written):
+    """`(exit, stdout+stderr, the brief's text or None)` of one `brief`."""
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            code = M.main([mpath, "brief", node_id, "--role", role, "--project", proj])
+        except SystemExit as exc:
+            code = exc.code
+    path = os.path.join(proj, ".claude", "state", "briefs", node_id, written)
+    try:
+        with open(path, "r", encoding="utf-8", newline="") as fh:
+            text = fh.read()
+    except OSError:
+        text = None
+    return code, out.getvalue() + err.getvalue(), text
+
+
+def _skill_pin_brief_cases(check):
+    """No brief is composed for an agent handed a pinned skill whose directory
+    does not match its pin; a plan without `meta.skillPins` composes the brief it
+    always did."""
+    root = _harness.fixture_root("audit-lookup-spb-")
+    body = "---\nname: %s\ndescription: d\n---\nbody\n" % (_PIN_SKILL,)
+    executor = "20260101T000000Z.executor.md"
+    try:
+        def plan(pins=None, review=False):
+            manifest = _bf_signed_phase() if review else _bf_manifest()
+            if review:
+                manifest["meta"]["reviewSkill"] = _PIN_SKILL
+            else:
+                manifest["phases"][0]["tasks"][0]["skills"] = [
+                    "writing-python", _PIN_SKILL]
+            if pins is not None:
+                manifest["meta"]["skillPins"] = pins
+            return manifest
+
+        plain_proj, mpath, folder = _pin_project(root, "plain", plan(), body)
+        digest = _pin_digest(folder)
+        code_n, _said_n, plain = _pin_brief(plain_proj, mpath, "P1.1", "executor",
+                                            executor)
+        proj, mpath, folder = _pin_project(
+            root, "match", plan({_PIN_SKILL: {"sha256": digest}}), body)
+        code_m, _said_m, matched = _pin_brief(proj, mpath, "P1.1", "executor",
+                                              executor)
+        def steady(text, where):
+            """The brief with its one line naming the moment taken out and its
+            project's path written as one token: the rest is what the pin could
+            have changed."""
+            return [ln.replace(where, "<project>")
+                    for ln in (text or "").split("\n")
+                    if not ln.startswith("Computed by audit-lookup.py brief")]
+        check("spb1 ALLOW: a plan whose pinned skill matches composes the SAME brief, "
+              "byte for byte past the line naming the moment, as the plan with no "
+              "skillPins key - the key adds nothing to what a brief says: %r"
+              % ((code_n, code_m),),
+              code_n == code_m == M.E_OK and plain is not None
+              and len(steady(plain, plain_proj)) == len(plain.split("\n")) - 1
+              and steady(plain, plain_proj) == steady(matched, proj)
+              and ("- %s" % _PIN_SKILL) in plain and "skillPins" not in plain)
+
+        proj, mpath, folder = _pin_project(
+            root, "changed", plan({_PIN_SKILL: {"sha256": digest}}),
+            body.replace("body", "bodY"))
+        found = _pin_digest(folder)
+        code_c, said_c, changed = _pin_brief(proj, mpath, "P1.1", "executor",
+                                             executor)
+        skill_md = os.path.join(folder, "SKILL.md")
+        check("spb2 a pinned skill whose directory changed composes NO executor "
+              "brief: the refusal exit, no file written, and the reason names the "
+              "skill, the path and both digests: %r" % ((code_c, said_c[-500:]),),
+              code_c == M.E_REFUSED and changed is None and _PIN_SKILL in said_c
+              and skill_md in said_c and digest in said_c and found in said_c
+              and found != digest)
+
+        proj, mpath, folder = _pin_project(
+            root, "review-ok", plan({_PIN_SKILL: {"sha256": digest}}, review=True),
+            body)
+        code_r, said_r, phase_ok = _pin_brief(proj, mpath, "P1", "phase", "phase.md")
+        proj, mpath, folder = _pin_project(
+            root, "review-bad", plan({_PIN_SKILL: {"sha256": digest}}, review=True),
+            body + "x")
+        code_b, said_b, phase_bad = _pin_brief(proj, mpath, "P1", "phase",
+                                               "phase.md")
+        check("spb3 the phase brief, which hands out the review skill, is composed "
+              "over a matching pin and NOT over a changed one, the reason naming "
+              "the skill: %r" % ((code_r, code_b, said_b[-400:]),),
+              code_r == M.E_OK and phase_ok is not None
+              and code_b == M.E_REFUSED and phase_bad is None
+              and _PIN_SKILL in said_b and digest in said_b)
+
+        proj, mpath, folder = _pin_project(
+            root, "other-pin", plan({"some-other-skill": {"sha256": "f" * 64}}),
+            body + "changed but unpinned\n")
+        code_o, _said_o, other = _pin_brief(proj, mpath, "P1.1", "executor",
+                                            executor)
+        check("spb4 ALLOW: a pin for a skill this task does not use asks nothing, "
+              "and the task's own unpinned skill is untouched however it changed",
+              code_o == M.E_OK and other is not None)
+    finally:
+        _harness.remove_tree(root)
 
 
 if __name__ == "__main__":

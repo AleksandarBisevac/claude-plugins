@@ -126,7 +126,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
-import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
+import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one; claude_home: the user's skills, where a pinned name may resolve)
 import _manifest_io as _mio  # noqa: E402  (the loader, the id indexes)
 import _manifest_vocab as _vocab  # noqa: E402  (`_strip_line_suffix`, the one
 #                                             reading of a `files` entry's range suffix)
@@ -138,6 +138,7 @@ import _excerpt  # noqa: E402  (a red step's output is quoted both ends, never h
 import _loader  # noqa: E402  (the one way scripts/ loads hooks/_config as a library)
 import _clause_coverage as _cc  # noqa: E402  (task_clauses: the one numbering of a task's clauses)
 import _areas  # noqa: E402  (resolve_skills: the plan default, then the area's, then the task's; resolve_review_skill: the phase reviewer's)
+import _skill_places  # noqa: E402  (require_pins, PinStop: a pinned skill is handed out only as the bytes pinned)
 import _filed_returns as _fr  # noqa: E402  (where `submit` filed a return, and
 #                                            which tasks a phase review owes)
 import _config_rules  # noqa: E402  (review_per_task_mode: the config's reading now)
@@ -628,12 +629,17 @@ BIND_RULE = ("Return `casesAdded`: for each tests.add entry, by index, the case 
              "is reported as a gap. Your titles are free wording.")
 
 
-def skills_lines(manifest, phase, task):
+def skills_lines(manifest, phase, task, project):
     """The brief's Skills section: what `_areas.resolve_skills` loads, in its
     order, or - when nothing resolves - why, naming every level it read. A task
     that opted out (`skills: null`) is told so, since that stops the plan and
-    area defaults whatever they declare."""
-    skills = _areas.resolve_skills(manifest, phase, task)
+    area defaults whatever they declare. A pinned skill whose copy is not the
+    bytes pinned - judged where the agent's Skill tool would look: `project`,
+    the user's skills, this plugin's own - raises `_skill_places.PinStop`, and
+    `write_brief` composes no brief."""
+    skills = _skill_places.require_pins(
+        _areas.resolve_skills(manifest, phase, task), manifest, project,
+        _claude_home.claude_home(), _output.PLUGIN_ROOT)
     if skills:
         return (["Invoke each via the Skill tool before touching code, in "
                  "this order:"] + ["- %s" % (s,) for s in skills])
@@ -644,7 +650,7 @@ def skills_lines(manifest, phase, task):
             "(meta.defaultSkills), no area default and no task skill."]
 
 
-def review_skill_lines(manifest, phase):
+def review_skill_lines(manifest, phase, project):
     """The phase brief's Review skill section, or [] when no skill resolves.
 
     `_areas.resolve_review_skill` is the one reader of the three levels, so the
@@ -655,10 +661,13 @@ def review_skill_lines(manifest, phase):
     agent file, carries the `skillsInvoked` ask, its `skillUnavailable`
     alternative and why: `drive-phase.py submit`'s `skipped_review_skill` is
     what refuses a return with neither, and `unavailable_skill_finding` what
-    files the second with a finding for triage."""
+    files the second with a finding for triage. A pinned review skill that is
+    not the bytes pinned raises `PinStop`, as `skills_lines` does."""
     skill, basis = _areas.resolve_review_skill(manifest, phase)
     if not skill:
         return []
+    _skill_places.require_pins([skill], manifest, project,
+                               _claude_home.claude_home(), _output.PLUGIN_ROOT)
     return _section("Review skill", [
         "- %s (basis: %s, as _areas.resolve_review_skill resolves "
         "phase.reviewSkill, then each area tag's, then meta.reviewSkill)"
@@ -700,7 +709,7 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
     tree_lines = wave_tree_lines(ctx, phase, task)
     if tree_lines:
         lines += _section("Tree", tree_lines)
-    lines += _section("Skills", skills_lines(manifest, phase, task))
+    lines += _section("Skills", skills_lines(manifest, phase, task, ctx["project"]))
     lines += _section("Description (verbatim)",
                       _verbatim(task.get("description"),
                                 "The task records no description."))
@@ -2266,7 +2275,7 @@ def phase_brief_parts(manifest, phase, ctx):
              % (ctx["manifest"], ctx["at"], ctx["plugin"]),
              "head: %s" % (head,) if head else
              "head: not read - %s" % (head_why,)]
-    skill_lines = review_skill_lines(manifest, phase)
+    skill_lines = review_skill_lines(manifest, phase, ctx["project"])
     lines.append(
         "The rules and the return shape are agents/audit-reviewer.md's, and the "
         "Review skill section below adds `skillsInvoked` and `skillUnavailable` "
@@ -2604,7 +2613,17 @@ def brief_file(ctx, node_id, role, started_at=None, part=None):
 
 
 def write_brief(manifest, manifest_path, project_arg, node_id, role):
-    """`(code, message)` - compute one brief and write it, or why not."""
+    """`(code, message)` - compute one brief and write it, or why not. A skill
+    the brief would hand out whose pin does not match (`_skill_places.PinStop`,
+    raised while composing, before anything is written) is a refusal naming it,
+    which the drive relays as its stop."""
+    try:
+        return _write_brief(manifest, manifest_path, project_arg, node_id, role)
+    except _skill_places.PinStop as exc:
+        return E_REFUSED, "REFUSED: %s No brief written." % (exc,)
+
+
+def _write_brief(manifest, manifest_path, project_arg, node_id, role):
     target = brief_target(manifest, node_id, role)
     if target is None:
         return E_NOMATCH, ("no %s %r in this manifest"

@@ -311,6 +311,14 @@
         {
           "at": "2026-11-20T04:12:38Z",
           "text": "33. tests/test_guard_edits.py cf37b counts a decision's disk listings only after the journal library is loaded; a cold hook process lists four of the plugin's scripts folders on its first ordinary write (find_script's walk) and no case holds that figure - add a case counting a cold hook process's listings with its basis, or give find_script a direct path for the journal library so the walk is not paid on every call. 34. tools/sweep-selftests.py merge_costs/record_costs: the cost table carries one platform for all entries and a partial record keeps old block figures, so figures from two machines can sit under one label with no case red - record an origin per block or refuse the mix. 35. tests/test_guard_edits.py: cf37 and cf37b are skipped by name on windows, so the per-call process and listing counts are asserted on no windows leg."
+        },
+        {
+          "at": "2026-11-20T06:00:56Z",
+          "text": "36. .github/sweep-costs.json: ge-generated and jw-generated carry 300.0, the seconds they were allowed before being killed on windows, not a measurement; re-record the two suites' blocks from the windows cells of the first green CI run after the template change (--costs-from-log, --platform windows-2025). 37. tests/test_guard_edits.py cf36e puts its measured values (commit ids, counts, lists) in the case label, so the PASS line changes every run - move them to the detail. 38. tests/test_guard_edits.py: no case holds the initialised-only template; a copy of it carrying a commit turns nothing red - add it to cf36e. 39. tests/test_guard_edits.py, the comment above the template builder says a repository's index is the same bytes wherever git made them; the index holds stat data, stale in a copy and harmless only because status re-hashes - say that. 40. Candidate for the speed work, not a defect: on a windows-2025 runner (2026-11-20) the edit guard asked git about 4.7 rev-parse questions per fresh arrangement at about 28 ms each, and the journal hook one git config read per tree."
+        },
+        {
+          "at": "2026-11-20T06:27:10Z",
+          "text": "41. Measured, CI run 44684792267 (2026-11-20, commit 6e6756c3): on a full windows leg ge-generated took 318.1 s and jw-generated 233.0 s on one slot each - green only because the table gives them 900 s; ge-generated was the longest single block of its leg (the next was 169.4 s). Each is one case, so the sweep cannot spread it. When the table is re-recorded (note 36) check whether that block sets its leg's wall time; if it does, the seam is cf36 and oq5 run per family as cases of their own, which changes their ids."
         }
       ]
     },
@@ -1408,7 +1416,7 @@
     {
       "id": "SG2.13-xk1",
       "title": "A generated arrangement's repository is copied from a template made once, so the two generated blocks cost a windows runner what the hook under test costs it, and the cost table times their blocks from a windows log",
-      "status": "in_progress",
+      "status": "done",
       "description": "The task before this one staged tests/test_guard_edits.py and tests/test_journal_writes.py, and its review left two findings this task answers. (1) In each suite one block is a single case heavier than the other nine together - `ge-generated` (cf36 and the cases reading its sweep) and `jw-generated` (oq5) - and on the windows leg both were killed at the 300 s block timeout in the first CI run that carried the blocks (run 44672849174, windows plain 2: `ge-generated [300.0s]`, `jw-generated [300.0s]`, both DID NOT REPORT; every other block of both suites was green on every leg). (2) The cost table holds this machine's macOS seconds for the two suites' twenty blocks under `platform: windows-2025`, so `block_timeout` gave the two heavy blocks the 300 s floor where a windows figure would have calibrated it.\n\nWHAT WAS MEASURED (the orchestrator's prompt names the files; the probe is a script you can run here). Each generated block's function was run alone, with every child process timed by what it ran, on a windows-2025 and an ubuntu-24.04 runner and on this machine, 2026-11-20. On the windows runner, alone and idle: the guard block's function 213.5 s, of which 171.6 s in 3283 child processes and 121.5 s in `_gen_world` (364 worlds, 334 ms each); the journal block's 218.7 s, 188.6 s in 3321 child processes, 142.2 s in `_gen_world` (376 worlds). The same functions took 25.4 s and 12.7 s on the linux runner. Per git call on that windows runner: commit about 91 ms, init 59 ms, add 65 ms, worktree add 123 ms, rev-parse 25 ms, config 27 ms; on linux each is 1 to 6 ms. So the block is slow on windows because a world is built with a process per git act, and the fixture - not the hook under test - is the larger half: of the guard block's git calls, init, add and commit (1254 of them) build repositories whose content does not depend on where they stand, 243 are `worktree add`, and 1716 are the hook's own `rev-parse` questions. The same probe timed the alternative on the same runner: a world's repository by init+add+commit 0.208 s, by copying a template of the same repository 0.039 s (status clean, same head).\n\nTHE RULE TO BUILD.\n1. A REPOSITORY WHOSE CONTENT DOES NOT DEPEND ON ITS PATH IS BUILT ONCE AND COPIED. `_gen_world` and `_gen_init` (tests/test_guard_edits.py; the journal suite reaches them through `gen_sweep`) take each such repository from a template git made once in this process - one per distinct committed content (the member project commits a different tree from the top-level one; an initialised-only repository is a third) - and copy it into place. What stays a git call per world is only what records the world's own path (`worktree add`), plus whatever else you show cannot be copied; say which calls remain and why. The journal block makes several hundred `git config` calls of its own (379 on the windows runner): find where they come from and move into the template any whose effect is the same for every world.\n2. A COPY IS A REPOSITORY OF ITS OWN. Nothing may be shared between a world and the template or another world - no hard link, no alternates file, no path inside the copy naming the template - because the cases write into worlds, and `visit` is promised the world as it found it. Hold this with a permanent case that needs few git calls: two worlds copied from one template, a commit made in one, and the other and the template read back unchanged (head, status, object count); and the copy's own configuration and git directory naming no path outside itself. Red first by making the copy share (a link in place of a copy) - show that run.\n3. THE SWEEP'S ANSWERS DO NOT CHANGE. cf36's records - for every arrangement the verdict as a subagent, as the main session, and what a loader reads - and oq5's are dumped before and after (a probe, not a case) and compared whole with paths normalised to the world's base: identical, the same count ran per family and the same count skipped per predicate. The suites' case labels and their order are identical before and after (ids and order; the summary's count grows only by the cases rule 2 adds). No case is dropped, weakened, merged or renamed; cf36, cf36b-d and oq5 keep their ids and conditions.\n4. WORLDS STAY REAL WHERE THE CASES LOOK. A case in these blocks that decides by a property git alone gives a repository (a worktree's `.git` file and its registration, a repository's own `.git`, an empty git entry) still gets that property from git or from the same bytes git wrote; nothing writes git's internal files by hand. `forget_git_standing` and every other reset the sweep makes per world stay.\n5. THE COST TABLE TIMES THE TWO SUITES' BLOCKS FROM A WINDOWS LOG, through the runner's own flag and nothing typed: `--costs-from-log` over the windows cells of that CI run (the orchestrator's prompt names the joined log), with `--platform windows-2025`. Read `costs_from_render` and `block_costs_from_render` first and say what they record for a block that was killed (its line is in the log with the seconds it was allowed) and what timeout that gives each generated block on the next windows run; say also what the recorder writes as a staged suite's FILE figure when a log holds the suite in several parts, and whether that is the suite's cost or one part's. After this task the table must hold no figure for these two suites that came from this machine; a later run's log, with the cheaper fixture measured on windows, replaces the floor figures - that re-record is not yours (no such log exists yet) and you name it in the return as owed.\n6. THE STAGES COMMENT of tests/test_journal_writes.py says two things the code does not show (the review's low finding): that `sn0` is the name the report carried before staging (it was a longer label beginning `sn0`), and that the generated block is 'nearly all' one case, a ratio with no basis in the file. Say what is true or drop each; after this task the second is probably no longer true at all.\n\nHOW TO PROVE. The probe before and after, here: the block functions' seconds, the count of child processes by kind, and `_gen_world`'s seconds (two runs with a gap; another session works on this machine). From the per-call windows figures above, the arithmetic of what the remaining calls cost a windows runner for each block - an estimate, labelled as one; the orchestrator runs the probe on a windows runner afterwards and that reading is the fact. The record and label comparisons of rule 3. Each block of both suites alone, in reverse table order, green, counts summing to the whole run's (the script from the task before is named in the prompt). A mutation probe the orchestrator can run from the worktree root (copies of the working tree, each mutation asserted applied, bytecode caches purged, never `git archive HEAD`): the copy replaced by a link to the template (rule 2's case red); the template built without its commit (which case goes red, and it must be one); one family's worlds built from the wrong template (the member project given the top-level one - cf36 or the record comparison must tell). `python3 tools/gate-parity.py` and `python3 tools/sweep-selftests.py --selftest` green, and the cases of tests/test_stamp_verification.py that read the live cost table.\n\nNOT in this task: the hook under test and how many questions it asks git; splitting cf36 or oq5 into several cases; any other suite; the runner's merge of figures from two machines (the batch holds it); a timeout raised by hand.\n\nAcceptance:\n(1) A world's path-independent repositories are copied from templates made once per process, the copies share nothing with the template or each other, and a case holds that.\n(2) cf36's and oq5's records and both suites' case labels are identical before and after, apart from the cases this task adds.\n(3) The cost table's figures for the two suites' blocks come from a windows log through the runner's flag, and the return states the timeout each generated block gets on the next windows run.",
       "files": [
         "tests/test_guard_edits.py",
@@ -1433,14 +1441,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6e6756c3dcf9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) WHAT IS COPIED. tests/test_guard_edits.py: new section `# --- cf: a world's repositories, copied from templates git made once` (line 2232) with `_gen_project_files`, `gen_templates(base)` (line 2262: git init+add+commit of the project at the checkout's top and at `_GEN_MEMBER` below it, keyed by the `member` dimension's values 'top'/'down', plus an initialised-only repository 'init', all under `<fixture root>/templates`), `_gen_copy(template, at)` (line 2286: walks the template, makes every directory and writes every file's bytes with `shutil.copyfile` - no link, no mode bit - and raises on any link in a template). `_gen_world(base, templates, ...)` copies `templates[member]` to the checkout (line 2334) instead of writing the two files and running init/add/commit; `_gen_init(at, templates)` copies the init template's `.git` into `at/.git` (nested-repo, repo and link-repo folders). `gen_sweep(base, visit, templates)` and `_gen_world_of(base, arr, templates)` take the templates; `_generated_cases` makes them once per block (per process) in its own fixture root, removed with it at exit; tests/test_journal_writes.py makes its own once with `TGE.gen_templates(base)` in its fixture root and passes them to both. WHAT STAYS A GIT CALL PER WORLD: `worktree add` only (243 guard / 252 journal), because it writes the worktree's `.git` file naming its registration and the registration naming the worktree's path. The journal block's `git config` children were traced (<scratch>/sg2.13/config_source.py, .out): all 375 here come from `usage_ledger._ask_identity <- _identity <- resolve_author`, i.e. the journal hook's own `_author` read, one per project/tree root (memoised per realpath: 'b' 201, 'proj' 123, 'ext' 48, 'w1' 3) - the hook under test asking, not the fixture setting anything, so none can move into a template and none was. CHILD PROCESSES BY KIND (probe <scratch>/sg2.13/gen_probe.py, counts identical in both runs of each): guard before 4063 = rev-parse 2496, init 526, commit 364, add 364, worktree 243, python guard-edits.py 70; after 2834 = rev-parse 2504 (2496 + 8 of the new case), worktree 243, python 70, status 6, init 3, add 3, commit 3, ls-files 2. Journal before 3633 = rev-parse 1688, init 542, commit 376, add 376, config 375, worktree 252, python journal-writes.py 24; after 2346 = rev-parse 1688, config 375, worktree 252, python 24, init 3, add 2, commit 2. Copies made: guard 530 (`_gen_copy`), journal 542. (2) SECONDS HERE (macOS, git 2.53, another session on the machine; two runs each with a 150 s gap; before-run 1 overlapped one run of the ge-generated block of mine): guard block function before 67.0 / 67.5 s (_gen_world 28.0 / 28.2 s), after 51.4 / 52.3 s (_gen_world 12.7 / 13.0 s, _gen_copy 4.0 / 3.9 s, gen_templates 0.11 s, cf36e 0.24 / 0.30 s); journal before 56.3 / 56.5 s (_gen_world 29.8 / 30.1 s), after 40.5 / 40.3 s (_gen_world 13.5 / 13.9 s, _gen_copy 4.2 / 4.4 s). WINDOWS ESTIMATE, labelled as one (<scratch>/sg2.13/windows_estimate.py, .out): the in-process remainder measured there (function minus children) unchanged, plus the after-change call counts times the windows per-call seconds the probe read on 2026-11-20, plus the copies at the 0.039 s the windows probe timed for this 32-file repository (an 18-file init directory scaled by file count to 0.022 s): guard 41.9 + 85.2 (rev-parse 1724 x 0.0248 = 42.8, worktree 243 x 0.1233 = 30.0, python 70 x 0.1639 = 11.5, the rest 1.0) + 17.9 (368 x 0.039 + 162 x 0.022) = about 145 s alone and idle, against 213.5 s measured; journal 30.1 + 84.0 (rev-parse 1372 x 0.0261 = 35.8, worktree 252 x 0.1319 = 33.2, config 379 x 0.0268 = 10.2, python 24 x 0.1752 = 4.2, the rest 0.6) + 18.3 (376 x 0.039 + 166 x 0.022) = about 132 s, against 218.7 s. Of the guard's estimate the fixture is now worktree add + copies, about 48 s; the rest is the hook's own questions and the in-process work. The orchestrator's windows run of the probe is the fact. (3) RECORDS: <scratch>/sg2.13/dump_records.py dumps cf36's and oq5's gen_sweep results (records, skipped per predicate, ran per family, worlds with paths relative to each world's base) and both blocks' case lines with the fixture root and elapsed seconds masked; compare_records.py: cf36 5762/5762 records identical, 19 families identical, skipped per predicate identical, 364/364 worlds identical, case lines cf36-cf36d identical; oq5 the same (5762, 19, skipped incl. its own mcp count 2881, 364 worlds, oq5-oq5d identical); records.before.json and records.after.json byte-identical (3045058 bytes each, records.diff empty, diff exit 0); added only `PASS cf36e`. LABELS: labels.before/after.{guard,journal}.txt (whole --selftest runs): journal identical, 212/212 both; guard differs only by `PASS cf36e` inserted after cf35b and before cf36, tally 147/147 -> 148/148. (4) THE INDEPENDENCE CASE `cf36e` (`_gen_template_case`, line 2633, run first in the ge-generated block, before the symlink skip so it runs on every host): two copies of the top template; head/status/object files of template and both read with no optional lock; a file written and committed in one; the template and the other read back unchanged and the first moved (the allow side: a constant reader fails there); no file of a copy linked twice or the same (dev, inode) as a template file; no file under a copy's .git names the fixture root (either separator); no alternates file; git's top, git dir and common dir of each copy inside it; the harness's remover removes both; and a world of each member placement built by `_gen_world` has its plan where its checkout commits it (`git ls-files --error-unmatch`). Red first: see redFirst - the link mutation turns cf36e red. (5) COST TABLE: `python3 -B tools/sweep-selftests.py --costs-from-log <scratch>/sg2.13/windows-cells.two-suites.log --platform windows-2025 --workers 4 --record-costs .github/sweep-costs.json` -> `recorded 2 files' seconds and 20 blocks'`. The input is the joined windows cells log of run 44672849174 narrowed to the two suites' `ok`/`FAILED`/`block` lines (grep, figures untouched); the whole log would have rewritten 167 other file figures and 271 other block figures (previewed into a scratch copy), which is other suites' business, so it was not used. `--workers 4` is the `budget: 4 slots` line of those cells. What the recorder does: `block_costs_from_render` takes each `block` line's seconds - for a killed block that is the timeout it was allowed, 300.0, recorded like any finished block (`block_costs_from_rows` calls it a floor for its cost); `costs_from_render` reads each part's suite row and keeps the LONGEST across parts, which is one part's (guard 342.7 s, journal 323.1 s); then `merge_costs` replaces a staged suite's file figure with the sum of its block figures across all parts - guard 354.4, journal 385.6 (the ten blocks summed, replays not counted), so what the table holds is the suite's cost over its blocks, not one part's. Diff: only the two suites' ten block figures each and their two file figures changed; platform windows-2025 and workers 4 unchanged. Timeouts from the runner's own `unit_timeouts` (<scratch>/sg2.13/timeouts.py): ge-generated 300.0 -> 900 s and jw-generated 300.0 -> 900 s (TIMEOUT_PER_COST 3 x 300.0, basis block), every other block of both suites 300 s (the floor), each cut by what is left of the 1800 s CI deadline; before: all twenty 300 s. No figure for these two suites now comes from this machine. (6) EACH BLOCK ALONE (<scratch>/sg2.8/each_block_alone.py unchanged, reverse table order): all 20 blocks exit 0; journal blocks sum 212 = whole run 212; guard blocks sum 148 = whole run 148 (ge-generated 5 cases, was 4) - EACH BLOCK ALONE: ALL GREEN, COUNTS SUM. (7) MUTATIONS (<scratch>/sg2.13/mutations.py, .out; throwaway copy, each anchor asserted to match once, __pycache__ purged, byte-for-byte restore checked; command `tests/test_guard_edits.py --selftest --stage ge-generated`): baseline 5/5; DENY 1 copy replaced by a link to the template CAUGHT (FAIL cf36e, then the block's raise); ALLOW 1 copy by shutil.copytree with mode bits QUIET 5/5; DENY 1b files hard-linked CAUGHT (FAIL cf36e alone, 4/5); DENY 2 template without its commit CAUGHT (FAIL cf36e, then the block's raise as worktree add has no commit); ALLOW 2 template committed with another message QUIET 5/5; DENY 3 member worlds given the top-level template CAUGHT (FAIL cf36e - the placement half - then the block's raise); ALLOW 3 templates made in another directory of the fixture QUIET 5/5; exit 0. A first run had row 1 written without making the link's parent, so the block raised before cf36e reported (kept as mutations.first-run.out); the row was corrected to make the link the way a copy is made, and the rerun is the one above. (8) GATES: listed under gates, each exit 0: the task's sweep 2/2 files, 360 cases (guard 148, journal 212); gate-parity 14 slices / 7 jobs green; sweep --selftest 168/168; stamp_verification su-sweep-table + swd-block 17/17 incl. swd7 (committed table byte for byte what the recorder writes) and swp4 (table kept as CI's windows table); run-test-gate GATE GREEN; ruff, vermin clean. Comments: the journal STAGES comment now says what is true of `sn0` (before staging the block ran as `_harness.stage(check, \"sn0 the switch-reading cases\", ...)`, read with git grep at 8698a47e~1:tests/test_journal_writes.py:2097, and a staged block that raises is reported as one failing case under its label, _harness.py:451) and drops the 'nearly all' ratio and 'heaviest'; the guard STAGES comment drops 'heaviest' and names cf36e; `_gen_world`'s docstring said `base/proj/app`, now `<_GEN_MEMBER>`. Identical commit ids across worlds: no case in either generated block reads a head; the hook's memo `_STANDING` (hooks/_config.py:809) keys by resolved directory and checks the `.git` entry's device/inode and its config's inode/size/mtime, and the ledger's identity memo keys by realpath - none keyed by head, and worlds stand at distinct paths. Dependants: tests/test_journal_writes.py (import) changed in step - it passes templates to `gen_sweep` and `_gen_world_of`; `_cap`, `_cases`, `_gen_label`, `_gen_spell` untouched. .github/sweep-costs.json re-recorded as above; its readers tools/sweep-selftests.py (budget line now 'up to 900s'), scripts/governance/stamp-verification.py and tests/test_stamp_verification.py (17/17) green; ci.yml's recording comment is still correct as a procedure (this record took the two suites' lines of the log it describes); CHANGELOG.md, CLAUDE.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md quote no figure of these suites (git grep for both block labels outside the two suites: no hit). plugins/audit/hooks/guard-edits.py and hooks/journal-writes.py untouched. PLUGIN-BUILD-GUIDE.md, SECURITY.md, plugins/audit/README.md cite case ids (cf33-cf36c, oq1-oq4d, cf1-cf4, cq1-cq4) none of which was renamed or changed; tests/test__output.py and tests/test_guard_secrets_read.py reach the journal suite by basename / `_cases`, untouched. (9) OWED AFTER THIS TASK: re-record the two suites' blocks from the windows cells' log of the first CI run carrying this change (the 300.0 figures are kill floors, not measurements); only CI confirms that the copies of git's read-only objects (written without the bit here) and the commit cf36e makes in one copy are removed by the harness's remover on windows, that `_gen_copy`'s os.lstat device/inode reading tells a hard link apart there, that `--no-optional-locks` status in a copy reads clean on windows git, and the windows seconds themselves. Why this machine's hook asks more rev-parse than the runners' (2496 here, 1716 windows, 1326 linux; journal 1688 / 1372 / 1142) was not investigated.",
+        "descriptive": "The generated worlds copy three template repositories git makes once per block instead of running init/add/commit per world, cutting the two blocks' child processes by about a third with every record and label unchanged, a new case cf36e holds the copies independent, and the cost table times both suites' blocks from the windows log (ge-generated and jw-generated now 900 s)."
       },
       "startedAt": "2026-11-20T04:35:50Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-20T06:00:32Z",
+      "verifiedBy": [
+        "cf36e (tests/test_guard_edits.py, ge-generated block): two worlds' repositories copied from one template share nothing - a commit in one leaves the other and the template unchanged (head, status, object files), no file is hard-linked or the template's own, no file of a copy's git directory names the fixture, git places each copy inside itself, the remover removes both - and a world of each member placement holds its project where its checkout commits it"
+      ],
       "notes": [
         {
           "at": "2026-11-20T04:35:47Z",
@@ -1449,7 +1459,46 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-20T05:29:51Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 3240000,
+            "startedAt": "2026-11-20T04:35:51Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-20T05:40:07Z.4b35f6",
+            "kind": "wait",
+            "ms": 15000,
+            "startedAt": "2026-11-20T05:30:17Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-20T05:40:07Z.4b35f6, ending at its startedAt",
+            "kind": "selection",
+            "ms": 17594,
+            "runId": "2026-11-20T05:40:07Z.4b35f6",
+            "startedAt": "2026-11-20T05:30:32Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-20T05:40:07Z.4b35f6",
+            "kind": "gate",
+            "ms": 557397,
+            "runId": "2026-11-20T05:40:07Z.4b35f6",
+            "startedAt": "2026-11-20T05:30:50Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-20T06:00:01Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 294000,
+            "startedAt": "2026-11-20T05:55:07Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 6e6756c3dcf9",
+            "kind": "commit",
+            "ms": 2449,
+            "startedAt": "2026-11-20T06:00:29Z"
+          }
+        ],
         "firstStartedAt": "2026-11-20T04:35:50Z"
       },
       "reviewPerTask": "signals",
@@ -1457,6 +1506,178 @@
         "runId": "2026-11-20T05:55:05Z.f5f997",
         "status": "passed",
         "at": "2026-11-20T05:55:05Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6e6756c3dcf9",
+        "at": "2026-11-20T06:00:32Z",
+        "return": "docs/audit/evidence/returns/SG2.13-xk1/20261120T043550Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "None owed by the helper: tests.mode is regression with expectRedFirst false, and the case and the fixture it guards live in the same file (tests/test_guard_edits.py), so a HEAD tree with this test file copied over it is the fixed tree and could not go red. The red the description asks for was watched in a throwaway copy of the tree (never the shared tree, never git archive HEAD), by <scratch>/sg2.13/mutations.py row 1 and again by <scratch>/sg2.13/red_link_detail.py: with `_gen_copy` replaced by a link to the template, `tests/test_guard_edits.py --selftest --stage ge-generated` exited 1, `0/2 cases passed`, `FAIL cf36e ... as made {template, one, two: (f9d9bef..., '', 7)}, now {template: (ea3ab08..., '', 11), one: (ea3ab08..., '', 11), two: (ea3ab08..., '', 11)}, shared {'one': ['.git/COMMIT_EDITMSG', '.git/HEAD', ...` - the commit made in one moved the template and the other copy - then `FAIL ge-generated RAISED ...` (the sweep's worlds, built over one linked template, collide). Unmutated, the same command: exit 0, 5/5.",
+        "at": "2026-11-20T05:24:57Z (when the red_link_detail run ended; the mutations.py rerun ran just before it)"
+      }
+    },
+    {
+      "id": "SG2.14-xk1",
+      "title": "A skill the plan pins reaches an agent or a session only as the bytes that were pinned: one reader of meta.skillPins, asked by every place that hands out a skill name",
+      "status": "in_progress",
+      "description": "WHAT IS TRUE TODAY (read from the tree, name the lines again before building on them). A plan names skills by string (meta.defaultSkills, meta.areas[*].skills, task.skills, and the review skill at three levels). The headless session runner (run-agent-session.py find_skills / load_skills) records the sha256 of each SKILL.md it loaded AFTER the fact and nobody compares it with anything; the subagent route hands the names to an agent in a brief (audit-lookup.py skills_lines, review_skill_lines) and reads no bytes at all. So a skill that was reviewed when it was vendored into .claude/skills can be changed, or shadowed by a personal copy of the same name (the resolver prefers personal over project, as Claude Code does), and every session after that follows the new text with nothing on the record.\n\nTHE RULE TO BUILD.\n1. `meta.skillPins` (optional; a plan without the key behaves exactly as today, byte for byte in what it prints): an object keyed by skill name, each value `{\"sha256\": <digest>, \"source\": <free text, optional>}`. The schema, the manifest rules and validate-manifest.py know it; a pin for a name that is no skill name, or a digest that is not one, is a validation error.\n2. THE DIGEST IS OF THE SKILL'S DIRECTORY, not of SKILL.md alone: SHA-256 over the sorted lines `<relative posix path> <sha256 of the file>` of every file under the directory that holds the SKILL.md the resolver found (the algorithm docs/research/benchmark-design.md section 4.2 already states for the benchmark's skill set). A checkout that converts line endings must answer the same digest as the one that pinned it: decide how (and say it where the digest is defined), prove it with a case, and say what that costs. A directory that cannot be read whole (a file unreadable, a link leading out of the directory, a directory too large to be a skill) has NO digest - that is a third answer, never a match.\n3. ONE READER answers for one name: match / mismatch / not found in a place whose bytes can be read / could not be read, with the path it read and both digests. It lives beside `_skill_places.resolve_skill` and uses that resolver, so the copy judged is the copy a session would load. A pinned name the resolver cannot place (another plugin's skill, a skill bundled with Claude Code) cannot be verified, and a pin is a statement that the skill is a reviewed copy on disk - so that is a stop with its own words, not a pass.\n4. EVERY PLACE THAT HANDS A SKILL NAME TO AN AGENT OR A SESSION ASKS THAT READER FIRST, for each pinned name it is about to hand out, and hands out nothing when one does not match: the headless runner does not start the session (it already refuses over a skill it cannot find - same exit, the reason names the skill, the path, the pinned and the found digest); the brief for a subagent is not composed and the drive stops before the dispatch line with the same reason, so no agent is spawned. An unpinned skill in the same task is untouched. Find the places by the code, not from this list: every caller of `_areas.resolve_skills` and `_areas.resolve_review_skill` that leads to a brief, a dispatch or a session either asks the reader or is named in the suite with the reason it need not (a status line that prints names hands nothing out). Hold that with a case that DERIVES the callers and fails for one that is neither - so a route added later cannot skip the pin silently.\n5. A stop says what to do: restore the pinned bytes, or re-pin after reviewing the diff. It never offers to drop the pin as the way through.\n6. WHAT THE PIN DOES NOT PROVE is written where the key is documented (README's config/manifest section, COMPATIBILITY.md, SECURITY.md): it proves the bytes are the ones pinned, not that they are safe; on the subagent route it verifies the copy the plugin's resolver finds and cannot see which copy Claude Code's Skill tool then loads; an unpinned skill is not checked at all. COMPATIBILITY.md: the key is new; list it under what is deliberately NOT yet promised (experimental until one vendored skill has been through a measured run), rather than widening the promise.\n\nALLOW CASES, as explicit as the stops: no skillPins key; a pin for a skill this task does not use; a pinned skill whose directory matches; the same skill resolved from the project when no personal copy exists; a checkout with converted line endings.\n\nHOW TO PROVE. Red first for each stop (one changed byte in SKILL.md; one changed byte in a sibling file of the skill directory; a file added to the directory; a personal copy shadowing the pinned project copy; a pinned name found nowhere) on BOTH routes: the runner's exit and words, and the drive's `next` printing no dispatch line. A mutation probe the orchestrator can run from the worktree root (copy of the tree, each mutation asserted applied): the reader made to hash SKILL.md alone; the mismatch answer turned into a match; the runner's check removed; the brief's check removed; the caller-derivation case's exemption list widened to everything. Context ceilings (`python3 tools/measure-context.py --gate`) and the hook budget stay green; a new module, if any, gets its suite, layer and build-guide section (CLAUDE.md, Adding a .py).\n\nNOT in this task: a verb that writes a pin and the doctor's row (the next task); how to vendor a skill (the task after); whether an unpinned missing skill is said on the subagent route (another task).\n\nAcceptance:\n(1) A plan without meta.skillPins prints and dispatches exactly as before.\n(2) A pinned skill whose directory digest differs, or that is found nowhere its bytes can be read, starts no headless session and composes no subagent brief, and the reason names the skill, the path and both digests.\n(3) The digest covers every file of the skill's directory and is the same on a checkout that converted line endings.\n(4) Every caller that hands a skill name out asks the one reader, held by a case that derives the callers.\n(5) The documents say what a pin does not prove, and COMPATIBILITY.md lists the key as not yet promised.",
+      "files": [
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/status/_skill_places.py",
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "tests/test__skill_places.py",
+        "tests/test_run_agent_session.py",
+        "tests/test_drive_phase.py",
+        "tests/test_audit_lookup.py",
+        "tests/test__manifest_rules.py",
+        "plugins/audit/README.md",
+        "COMPATIBILITY.md",
+        "SECURITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "tools/demo/gen-demo-manifest.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__skill_places.py: the directory digest covers every file, answers the same for converted line endings, and has no answer for a directory it could not read whole; the pin reader's four answers",
+          "tests/test_run_agent_session.py: a pinned skill that does not match starts no session and the reason names skill, path and both digests; a matching or unpinned one starts as before",
+          "tests/test_drive_phase.py: next prints no dispatch line for a task whose pinned skill does not match, and every caller that hands a skill name out is derived and asks the reader",
+          "tests/test_audit_lookup.py: no brief is composed for a pinned skill that does not match; a plan without skillPins composes the same brief as before",
+          "tests/test__manifest_rules.py: a pin for a name that is no skill name or a digest that is not one is a validation error"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__skill_places.py tests/test_run_agent_session.py tests/test_drive_phase.py tests/test_audit_lookup.py tests/test__manifest_rules.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-20T06:01:33Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "the schema gains meta.skillPins; the enum this file quotes is not edited",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "the task adds a key and a section and does not edit the sentence this file quotes; the executor is told to leave it byte for byte and to run this reader",
+          "waives": "tests/test__floor_guard.py"
+        },
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "the task adds a key and a section and does not edit the sentence this file quotes; the executor is told to leave it byte for byte and to run this reader",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "the task adds a key and a section and does not edit the sentence this file quotes; the executor is told to leave it byte for byte and to run this reader",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "the task adds a key and a section and does not edit the sentence this file quotes; the executor is told to leave it byte for byte and to run this reader",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "the task adds a key and a section and does not edit the sentence this file quotes; the executor is told to leave it byte for byte and to run this reader",
+          "waives": "tests/test__manifest_phases.py"
+        },
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "the task adds a key and a section and does not edit the sentence this file quotes; the executor is told to leave it byte for byte and to run this reader",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "the task adds a key and a section and does not edit the sentence this file quotes; the executor is told to leave it byte for byte and to run this reader",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "the task adds a key and a section and does not edit the sentence this file quotes; the executor is told to leave it byte for byte and to run this reader",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "the task adds a key and a section and does not edit the sentence this file quotes; the executor is told to leave it byte for byte and to run this reader",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "the task adds a key and a section and does not edit the sentence this file quotes; the executor is told to leave it byte for byte and to run this reader",
+          "waives": "tests/test_hooks.py"
+        },
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "the task adds a key and a section and does not edit the sentence this file quotes; the executor is told to leave it byte for byte and to run this reader",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "the task adds a key and a section and does not edit the sentence this file quotes; the executor is told to leave it byte for byte and to run this reader",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "the fail-mode table this file reads is not edited; the task registers no hook",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "a research note quoting a section of SECURITY.md the task does not edit",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "the task adds one entry under the Unreleased heading this file reads and leaves the heading",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-20T06:01:31Z",
+          "text": "the task adds a key and a section and does not edit the sentence this file quotes; the executor is told to leave it byte for byte and to run this reader",
+          "waives": "tests/test__refs.py"
+        },
+        {
+          "at": "2026-11-20T06:50:08Z",
+          "text": "Scope widened by two files a new meta key owes, each refused to the executor first and handed back verbatim: plugins/audit/scripts/manifest/_manifest_vocab.py (KNOWN_META must name skillPins, or every plan carrying the key draws an unknown-key warning and the schema/vocabulary drift check reports the new property) and tools/demo/gen-demo-manifest.py (SCHEMA_EXEMPTIONS must carry a reasoned row for meta.skillPins, or tests/test_gen_demo_manifest.py is red: the generated fixture has no skill directory to pin)."
+        },
+        {
+          "at": "2026-11-20T06:58:15Z",
+          "text": "After the executor's return was filed the floor guard's answer named one existing label changed by accident (sk6 in tests/test__manifest_rules.py, a space lost when cases were inserted above it); the executor restored it and one comment's alignment in tests/test__skill_places.py to HEAD's bytes. The drive keeps the first return for this start, so the filed return does not mention the restore or why _skill_cases was split in tests/test_run_agent_session.py (the inserted pin cases left ras50, ras50b and ras46 after a return; _skill_tail_cases runs them unchanged). Both suites re-swept green after the restore."
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-20T06:01:33Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-20T07:11:10Z.472d39",
+        "status": "passed",
+        "at": "2026-11-20T07:11:10Z"
       }
     }
   ],

@@ -8,6 +8,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ### Added
 
+- **A plan can pin the bytes of a skill it names (experimental).** The optional
+  `meta.skillPins` maps a skill name to `{sha256, source?}`, the digest of the skill's whole
+  directory: SHA-256 over the sorted `<relative posix path> <sha256>` lines of every file
+  under it, a file holding no NUL byte read with CRLF as LF so a checkout that converts line
+  endings answers the same digest. `_skill_places.require_pins` is the one reader, judging the
+  copy `_skill_places.resolve_skill` finds; every place that hands a skill out asks it - the
+  executor brief's Skills section, the phase brief's Review skill section, the skills a
+  headless writer, reviewer or validation session starts with, and `run-agent-session.py`,
+  which takes the pins as `--skill-pin NAME=DIGEST` and checks the copy in the session's own
+  tree. A pinned skill whose directory differs, that is found nowhere its bytes can be read,
+  or whose directory cannot be read whole composes no brief, starts no session and leaves
+  `next` with no dispatch line, naming the skill, the path it read, the pinned digest and the
+  one found (`found none` when there is none), with restoring
+  the bytes or re-pinning after a review as the way through. A pin naming no skill, or holding
+  no digest, is a validation finding. A plan without the key prints and dispatches exactly as
+  before, and an unpinned skill is never checked. The pin proves the bytes, not that they are
+  safe, and on the subagent route it cannot see which copy Claude Code's Skill tool loads;
+  `SECURITY.md` and `COMPATIBILITY.md` say so, and the key is not yet under the compatibility
+  promise.
 - **A task can record where its wall time went.** The optional task key `timing` holds
   `firstStartedAt` and a list of `stages` - each a `kind` (writer, gate, selection, base,
   reviewer, commit or wait), a start, a length in milliseconds and the record the length was

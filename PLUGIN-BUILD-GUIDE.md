@@ -394,7 +394,7 @@ L5:
   _doctor_hygiene -> _branch, _locks, _output, _worktrees
   _evidence_view -> _evidence_io, _manifest_io, _output, _report_html, _status_facts
   _gate_derive -> _evidence_io, _manifest_io, _manifest_phases, _manifest_vocab, _output, _runner_collects
-  _manifest_rules -> _branch, _evidence_io, _json_schema, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output, _status_facts
+  _manifest_rules -> _branch, _evidence_io, _json_schema, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output, _skill_places, _status_facts
   _panel_discovery -> _help, _manifest_io, _output, _policy
   _panel_paths -> _config_rules, _loader, _manifest_io, _output, _status_facts
   _panel_settings -> _config_rules, _loader, _output
@@ -439,7 +439,7 @@ L9:
   audit-journal -> _claude_home, _evidence_io, _journal_io, _output
   audit-lock -> _claude_home, _locks, _output
   audit-logs -> _claude_home, _gate_feed, _output
-  audit-lookup -> _areas, _claude_home, _clause_coverage, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _impact, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _scoped_commit
+  audit-lookup -> _areas, _claude_home, _clause_coverage, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _impact, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _scoped_commit, _skill_places
   audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _task_timing, _ui_theme, _worktrees
   audit-task -> _affected_tests, _areas, _branch, _claude_home, _clause_coverage, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _impact, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _task_timing, _tree_stamp, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
@@ -2544,6 +2544,11 @@ import; a case pins every alias with `is`, so a pasted-back copy fails by name. 
 `_manifest_vocab`, and a consumer at the pieces' own layer is still not strictly
 downward.
 
+**`_check_meta` refuses a `meta.skillPins` that is no set of pins** - a name that is no skill
+name, a value that is no object, a key a pin does not have, a digest that is not a lowercase
+SHA-256 hex digest - as findings, each `_skill_places.pin_shape_problems`' sentence: a pin the drive
+could not check is not a warning to scroll past.
+
 **`_check_muted` grades `meta.muted`.** A mute naming no bug, or a bug `bugs[]` does not hold, is a
 finding. A mute whose bug is closed by its effective status (`_closed_bugs`: the bug's
 `_manifest_io.effective_bug_status` in `_status_facts.CLOSED_BUG`, the reading
@@ -3819,6 +3824,25 @@ a bare name only another installed plugin shipped resolved in doctor and was ref
 launcher; both callers now read the one answer. The module reads no environment -
 the home, tree and plugin root arrive as arguments. Its cases are in `tests/test__skill_places.py`.
 
+It is also the one reader of `meta.skillPins`, beside the resolver so the copy judged is the copy
+a session loads. `skill_digest` hashes the skill's whole DIRECTORY - SHA-256 over the sorted
+`<relative posix path> <sha256>` lines, the shape `docs/research/benchmark-design.md` 4.2 gives
+the benchmark's skill set, with a file holding no NUL byte read with CRLF as LF so a checkout
+that converts line endings answers the same digest (the cost: a change confined to a CR before a
+LF is not seen). A directory it cannot read whole - an unreadable file, a link leading out, a
+link to a directory, more than `MAX_SKILL_FILES` files or `MAX_SKILL_BYTES` bytes - has no
+digest, a third answer and never a match. `pin_verdict` gives one name's answer - `match`,
+`mismatch`, `not-found` or `unreadable` - with the path read and both digests; `stop_words` is
+the stop, offering a restore or a re-pin after review and never the pin's removal;
+`require_pins` raises `PinStop` (a `ValueError`, which the drive turns into a stop) for any
+pinned name among the ones about to be handed out that is not a match, and asks nothing of an
+unpinned name or of a plan with no key. `pin_shape_problems` is the key's shape, which
+`_manifest_rules` reports as findings. Every function that calls `_areas.resolve_skills` or
+`_areas.resolve_review_skill` either asks `require_pins` in its own body - `audit-lookup.py`'s
+`skills_lines` and `review_skill_lines`, `drive-phase.py`'s `session_skills` and
+`runner_review_skill` - or is listed in `tests/test_drive_phase.py` (`spd1`) with the reason it
+hands nothing out; the case derives the callers from the code.
+
 ### `plugins/audit/scripts/status/audit-lookup.py`
 One question, one answer, with the pointer that lets a reader check it — instead of the
 whole-plan render `audit-status.py` and the whole-journal render `audit-journal.py show`
@@ -3853,7 +3877,10 @@ said rather than read as "no such run". `brief <id> --role executor|reviewer|pha
 the WHOLE spawn brief to a file under `stateDir` (`briefs/<id>/<start>.<role>.md`, or
 `briefs/<phaseId>/phase.md`) and prints its path, so the agent is handed a path and the brief
 never passes through the main loop. The executor's carries the resolved skills (`meta.defaultSkills`, then
-`meta.areas[tag].skills`, then `task.skills`),
+`meta.areas[tag].skills`, then `task.skills`) - each pinned one only when
+`_skill_places.require_pins` finds it the bytes `meta.skillPins` holds, and otherwise no brief
+is written and `brief` refuses (exit 4) naming the skill, the path and both digests, as it does
+for the phase brief's review skill -
 the description verbatim, the files with their last declarer, the docs, the desired outcome,
 the gate resolved through `meta.buildCommands`, the `executor.runsGate` reading with its
 command, the filing command — one `drive-phase.py submit`, resolved against this plugin copy,
@@ -6927,7 +6954,13 @@ same-named project or user skill, and a name that could leave those directories 
 usage error. A name found nowhere refuses to start — exit `2`, naming the skill, every place
 looked and that only those places are searched — because a skill the plan declares and the session cannot find is exactly the defect that
 cannot be seen in a cost. A `SKILL.md` that exists and cannot be read is `io-error:`, not a missing
-skill. What reaches the session of each skill is its name, its frontmatter description and its
+skill. **`--skill-pin NAME=DIGEST`**, repeatable, is the plan's pin of a `--skill` (the drive's
+`writer_argv` adds one per pinned name it hands out, and none for a plan with no `meta.skillPins`):
+before the skills are searched, `given_pins` reads them - a value that is no digest, or pins a
+name not given with `--skill`, is a usage error - and `_skill_places.pin_stops` asks the one
+reader over the copy this tree's session would load. Any answer but a match refuses with the
+same exit `2`, naming the skill, the path, the pinned and the found digest; an unpinned
+`--skill` is not asked. What reaches the session of each skill is its name, its frontmatter description and its
 `## Checklist` section when the file has one (`skill_disclosure`, the section cut at the next
 level-one or level-two heading outside a fence by `skill_checklist`), each wrapped as
 `<skill name="...">` after a preamble saying the Skill tool loads a skill's full instructions, in one
@@ -6975,7 +7008,11 @@ at phase scope, also gets the review skill `_areas.resolve_review_skill` resolve
 resolver, finds it in the project — the runner refuses to start over a `--skill` it cannot find,
 so another plugin's skill is left out and the dispatch warns, naming it and the runner's reason
 (`runner_review_skill`, `vk1`, `vk2`, `vk4`) — and the per-task reviewer never does (`vk3`,
-through `reviewer_dispatch`). Its note of each session
+through `reviewer_dispatch`). A PINNED review skill is never left out that way: `runner_review_skill`
+and `session_skills` each ask `_skill_places.require_pins` over the project's copy, and `dispatch`
+asks `session_skills` before it marks a session route dispatched, so a pinned skill that is not
+the bytes pinned stops `next` with no dispatch line (`spd4`, `spd5`); `writer_argv` then adds a
+`--skill-pin` per pinned name it hands out (`spd6`). Its note of each session
 (`session_note`, through `skills_said`) names a declared skill the session never invoked — a
 `plugin:skill` declaration is met by a call with the bare name — or says that no `skillsInvoked`
 was recorded to judge by. A resumed round is judged against the session it resumes

@@ -397,6 +397,19 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   carries a `fetchedAt` and a `basis`, and deleting the block is always safe, because
   absent means "never fetched" and every reader is written to that. Do not build a
   tool on a cache's interior; re-run the command that writes it.
+- **`meta.skillPins`, while it is experimental.** The key is new, and it is listed here
+  rather than under *Promised* until one vendored skill has been through a measured run:
+  its shape, the digest it holds (`_skill_places.skill_digest`), the words a stop uses and
+  that the key keeps being read may all still change. What holds today: a plan without the
+  key prints, composes and dispatches exactly as it did before the key existed, and an
+  unpinned skill is never checked. One narrowing is named rather than hidden: a plan that
+  carried a key of this name before any release read it, in a shape a pin does not have,
+  validated with an unknown-key warning and now draws a finding. **What a pin does not
+  prove:** that the pinned bytes are safe - only that they are the bytes pinned; on the
+  subagent route, which copy Claude Code's Skill tool loads - the plugin checks the copy its
+  own resolver finds (personal, then the project's, then the running plugin's), and the
+  agent's tool may resolve the name elsewhere; and anything about a skill the plan does not
+  pin.
 
 ## 2. The config keys — `.claude/audit.config.json`
 

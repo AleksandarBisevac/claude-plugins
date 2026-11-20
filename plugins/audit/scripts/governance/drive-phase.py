@@ -360,7 +360,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
-import _skill_places  # noqa: E402  (resolve_skill: whether the session runner finds a skill)
+import _skill_places  # noqa: E402  (resolve_skill: whether the session runner finds a skill; require_pins, pin_flags: a pinned skill is handed out only as the bytes pinned)
 import _loader  # noqa: E402  (script_path: every verb resolved by basename, never
 #                              loaded - the subprocess boundary is why no edge to
 #                              any of them is counted by `_deps`; load_hooks_config
@@ -2404,6 +2404,10 @@ def dispatch(ctx, state, phase, task, role, tree=None):
         "executor", "reviewer") else (None, None)
     if problem:
         return _stopped(ctx, problem)
+    if session:
+        # A session route hands the skills out after the dispatch is marked, so
+        # a pin that does not match is asked here first (raises PinStop).
+        session_skills(ctx, task)
     writer = session if role == "executor" else None
     out, stop = _verb_or_stop(ctx, "audit-lookup.py", [
         ctx["manifest"], "brief", task["id"], "--role",
@@ -2474,13 +2478,15 @@ def session_skills(ctx, task, phase_review=False):
     scope (`phase_review`) also starts with the review skill
     `_areas.resolve_review_skill` resolves, the one the phase brief names, when
     the session runner can find it (`runner_review_skill`); a per-task reviewer
-    never does, since `mode: task` takes no review skill."""
+    never does, since `mode: task` takes no review skill. A pinned skill that
+    is not the bytes pinned raises `_skill_places.PinStop` - the drive's stop."""
     manifest, phase = load_phase(ctx)
     skills = _areas.resolve_skills(manifest, phase, task)
-    if not phase_review:
-        return skills
-    review, _left_out = runner_review_skill(ctx, manifest, phase)
-    return skills + [review] if review and review not in skills else skills
+    if phase_review:
+        review, _left_out = runner_review_skill(ctx, manifest, phase)
+        skills = skills + [review] if review and review not in skills else skills
+    return _skill_places.require_pins(skills, manifest, ctx["project"],
+                                      _claude_home.claude_home(), _output.PLUGIN_ROOT)
 
 
 def runner_review_skill(ctx, manifest, phase):
@@ -2494,10 +2500,14 @@ def runner_review_skill(ctx, manifest, phase):
     loadable by an Agent's Skill tool and not by the runner. So the question is
     put to `_skill_places.resolve_skill`, the runner's own resolver, with the
     runner's own home and plugin, and a skill it does not find is left out
-    rather than handed to a session that would never start."""
+    rather than handed to a session that would never start. A PINNED review
+    skill is never left out: one that is not the bytes pinned, or is found
+    nowhere, raises `_skill_places.PinStop`."""
     skill, _basis = _areas.resolve_review_skill(manifest, phase)
     if not skill:
         return None, None
+    _skill_places.require_pins([skill], manifest, ctx["project"],
+                               _claude_home.claude_home(), _output.PLUGIN_ROOT)
     hit = _skill_places.resolve_skill(
         skill, ctx["project"], _claude_home.claude_home(), _output.PLUGIN_ROOT,
         _skill_places.plugin_name(_output.PLUGIN_ROOT))
@@ -2520,9 +2530,12 @@ def writer_argv(ctx, task, writer, prompt, record, tree=None, resume=None,
     scratch and its stream under `stateDir`, and one `--skill` per skill the task
     resolves to, which the runner discloses in the session's system prompt by
     name, description and checklist; the body is the Skill tool's to load.
-    `phase_review` is `session_skills`'s, for a reviewer at phase scope."""
-    skills = [flag for name in session_skills(ctx, task, phase_review)
-              for flag in ("--skill", name)]
+    `phase_review` is `session_skills`'s, for a reviewer at phase scope. Each
+    pinned name rides with its `--skill-pin`, so the runner checks the copy its
+    own tree holds; a plan with no pins adds none."""
+    names = session_skills(ctx, task, phase_review)
+    skills = [flag for name in names for flag in ("--skill", name)]
+    skills += _skill_places.pin_flags(names, load_phase(ctx)[0])
     argv = ["python3", _loader.script_path(WRITER_RUNNER), "--role", role,
             "--task", task["id"],
             "--tree", member_project(ctx, tree) or ctx["project"],

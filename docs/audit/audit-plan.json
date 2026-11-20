@@ -1491,7 +1491,8 @@
       "SG1.58-ukq",
       "SG2.3",
       "SG2.10-xk1",
-      "SG2.11-xk1"
+      "SG2.11-xk1",
+      "SG2.14-xk1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1606,7 +1607,8 @@
       "SG1.15-ukq",
       "SG1.24-ukq",
       "SG2.2-ukq",
-      "SG2.3"
+      "SG2.3",
+      "SG2.14-xk1"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -2230,7 +2232,8 @@
       "SG1.57-ukq",
       "SG1.58-ukq",
       "SG2.3",
-      "SG2.10-xk1"
+      "SG2.10-xk1",
+      "SG2.14-xk1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2355,7 +2358,8 @@
       "SG1.53-ukq",
       "SG1.54-ukq",
       "SG1.55-ukq",
-      "SG2.4-xk1"
+      "SG2.4-xk1",
+      "SG2.14-xk1"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -2824,7 +2828,8 @@
       "SG1.55-ukq",
       "SG1.56-ukq",
       "SG1.57-ukq",
-      "SG2.3"
+      "SG2.3",
+      "SG2.14-xk1"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -4188,7 +4193,8 @@
       "P167.2",
       "P167.7-fge",
       "SG1.6",
-      "SG1.18-ukq"
+      "SG1.18-ukq",
+      "SG2.14-xk1"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -5583,7 +5589,8 @@
       "P131.2",
       "P131.15-dau",
       "P156.4",
-      "SG1.6"
+      "SG1.6",
+      "SG2.14-xk1"
     ],
     "plugins/audit/scripts/manifest/_manifest_vocab.py": [
       "P18.2",
@@ -5636,7 +5643,8 @@
       "P156.20-3st",
       "P167.2",
       "SG1.6",
-      "SG2.3"
+      "SG2.3",
+      "SG2.14-xk1"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -6706,7 +6714,8 @@
       "SG1.22-ukq",
       "SG1.24-ukq",
       "SG1.25-ukq",
-      "SG2.3"
+      "SG2.3",
+      "SG2.14-xk1"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -11600,7 +11609,8 @@
       "SG1.19-ukq",
       "SG1.22-ukq",
       "SG1.25-ukq",
-      "SG2.3"
+      "SG2.3",
+      "SG2.14-xk1"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -13222,7 +13232,8 @@
     "tests/test__manifest_rules.py": [
       "P131.1",
       "P156.4",
-      "SG1.6"
+      "SG1.6",
+      "SG2.14-xk1"
     ],
     "tests/test__manifest_typos.py": [
       "P131.1",
@@ -13612,7 +13623,8 @@
       "SG1.24-ukq",
       "SG1.22-ukq",
       "SG1.25-ukq",
-      "SG2.3"
+      "SG2.3",
+      "SG2.14-xk1"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -13900,7 +13912,8 @@
       "SG1.22-ukq",
       "SG1.20-ukq",
       "SG1.25-ukq",
-      "SG2.3"
+      "SG2.3",
+      "SG2.14-xk1"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -14258,7 +14271,8 @@
       "P165.5",
       "P167.2",
       "SG1.6",
-      "SG1.25-ukq"
+      "SG1.25-ukq",
+      "SG2.14-xk1"
     ],
     "tools/demo/gen-demo-usage.py": [
       "P131.2"
@@ -14303,7 +14317,8 @@
       "P167.6-fge",
       "P167.9-fge",
       "SG1.10-ukq",
-      "SG1.23-ukq"
+      "SG1.23-ukq",
+      "SG2.14-xk1"
     ],
     "tests/test_run_agent_session.py": [
       "P131.3",
@@ -14325,7 +14340,8 @@
       "P167.9-fge",
       "SG1.10-ukq",
       "SG1.23-ukq",
-      "SG2.3"
+      "SG2.3",
+      "SG2.14-xk1"
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
       "P131.7",
@@ -14417,13 +14433,15 @@
     "plugins/audit/scripts/status/_skill_places.py": [
       "P138.4-myr",
       "P138.5-myr",
-      "P148.11-xpz"
+      "P148.11-xpz",
+      "SG2.14-xk1"
     ],
     "tests/test__skill_places.py": [
       "P138.4-myr",
       "P138.5-myr",
       "P148.2",
-      "P148.11-xpz"
+      "P148.11-xpz",
+      "SG2.14-xk1"
     ],
     "tests/test_verify_sh.py": [
       "P140.1"

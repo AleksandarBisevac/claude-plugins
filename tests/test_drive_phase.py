@@ -18953,6 +18953,283 @@ def _skill_units(check):
     _skill_invoked_units(check, M)
 
 
+# --- a pinned skill reaches an agent or a session only as the bytes pinned -------
+# Every function under scripts/ and hooks/ that calls one of the plan's skill
+# resolvers either hands the names out - and then asks the pin reader in its own
+# body - or hands nothing out, with the reason here. `spd1` derives the callers
+# from the code, so a route added later lands in neither table and is red.
+_SKILL_RESOLVERS = ("resolve_skills", "resolve_review_skill")
+_PIN_READERS = ("require_pins", "pin_stops")
+_HANDOUT_ASKS = {
+    "audit-lookup.py:skills_lines": "the executor brief's Skills section",
+    "audit-lookup.py:review_skill_lines": "the phase brief's Review skill section",
+    "drive-phase.py:session_skills": "every --skill a headless session starts with",
+    "drive-phase.py:runner_review_skill": "the review skill a phase-scope session "
+                                          "starts with",
+}
+_HANDOUT_EXEMPT = {
+    "_areas.py:plan_skill_refs": "lists the names a plan uses for the doctor and the "
+                                 "status gate; it hands nothing to an agent",
+    "_help.py:_areas_topic": "a help topic's worked example over a fixed sample "
+                             "plan; nothing is started",
+    "_manifest_typos.py:_check_skills": "a validation warning about a task resolving "
+                                        "no skill",
+    "audit-status.py:_scope_line": "a status line printing the review skill's name",
+    "_doctor_policy.py:check_policy": "the doctor's capability-policy check over "
+                                      "the names; it starts nothing",
+    "drive-phase.py:review_due": "whether sign-off dispatches the phase reviewer; the "
+                                 "name reaches it only through the phase brief, "
+                                 "whose review_skill_lines asks",
+    "drive-phase.py:skipped_review_skill": "reads a filed return for the skill's name",
+    "drive-phase.py:unavailable_skill_finding": "files a finding about a filed return",
+}
+
+
+def _own_calls(fn):
+    """The names every call in `fn`'s own body reaches - a nested function's
+    calls are its own, a lambda's are `fn`'s."""
+    names, stack = set(), list(ast.iter_child_nodes(fn))
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if isinstance(node, ast.Call):
+            func = node.func
+            names.add(func.attr if isinstance(func, ast.Attribute)
+                      else getattr(func, "id", None))
+        stack.extend(ast.iter_child_nodes(node))
+    return names
+
+
+def _skill_callers(sources):
+    """`{"<basename>:<function>": the names its own body calls}` for every
+    function in `sources` (`[(basename, text)]`) whose own body calls a skill
+    resolver; a call outside any function is keyed `<basename>:<module>`."""
+    out = {}
+    for base, text in sources:
+        tree = ast.parse(text)
+        for fn in [n for n in ast.walk(tree)
+                   if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]:
+            calls = _own_calls(fn)
+            if calls & set(_SKILL_RESOLVERS):
+                out["%s:%s" % (base, fn.name)] = calls
+        top = _own_calls(tree)
+        if top & set(_SKILL_RESOLVERS):
+            out["%s:<module>" % (base,)] = top
+    return out
+
+
+def _handout_verdict(callers, asks, exempt):
+    """What the two tables leave open over `callers`: a caller in neither, a row
+    naming no caller, a row in both, and an asking row whose body never calls
+    the pin reader."""
+    return {"neither": sorted(k for k in callers if k not in asks and k not in exempt),
+            "stale": sorted(k for k in list(asks) + list(exempt) if k not in callers),
+            "both": sorted(k for k in asks if k in exempt),
+            "silent": sorted(k for k in asks if k in callers
+                             and not callers[k] & set(_PIN_READERS))}
+
+
+def _plugin_sources():
+    """`[(basename, text)]` of every `.py` under the plugin's scripts/ and hooks/."""
+    out = []
+    for base in (_harness.SCRIPTS_DIR, _harness.HOOKS_DIR):
+        for here, _dirs, files in os.walk(base):
+            for name in sorted(files):
+                if name.endswith(".py"):
+                    with open(os.path.join(here, name), encoding="utf-8") as fh:
+                        out.append((name, fh.read()))
+    return out
+
+
+def _pin_digest(folder):
+    """A skill directory's digest computed here, apart from the module under test:
+    SHA-256 over the sorted lines `<relative posix path> <sha256 of its bytes>`,
+    CRLF read as LF in a file holding no NUL byte."""
+    lines = []
+    for here, _dirs, files in os.walk(folder):
+        for name in files:
+            full = os.path.join(here, name)
+            with open(full, "rb") as fh:
+                data = fh.read()
+            if b"\0" not in data:
+                data = data.replace(b"\r\n", b"\n")
+            rel = os.path.relpath(full, folder).replace(os.sep, "/")
+            lines.append("%s %s\n" % (rel, hashlib.sha256(data).hexdigest()))
+    return hashlib.sha256("".join(sorted(lines)).encode("utf-8")).hexdigest()
+
+
+def _pin_skill_dir(root, name, body):
+    """The project skill `name` of `root`, SKILL.md holding `body` beside a
+    sibling file; its directory."""
+    folder = os.path.join(root, ".claude", "skills", name)
+    os.makedirs(folder, exist_ok=True)
+    for rel, text in (("SKILL.md", body), ("helper.py", "print('h')\n")):
+        with open(os.path.join(folder, rel), "w", encoding="utf-8",
+                  newline="\n") as fh:
+            fh.write(text)
+    return folder
+
+
+def _skill_pin_cases(check):
+    """The pin is asked by every place that hands a skill name out; a pinned
+    skill that does not match leaves `next` with no dispatch line on the
+    subagent route and the session route alike, naming the skill, the path and
+    both digests; a matching one, or a plan with no pins, dispatches as before."""
+    callers = _skill_callers(_plugin_sources())
+    seen = _handout_verdict(callers, _HANDOUT_ASKS, _HANDOUT_EXEMPT)
+    check("spd1 every function that calls a skill resolver is DERIVED from the "
+          "code and is either a hand-out that asks the pin reader in its own body "
+          "or exempt with a reason; no row is stale, none is in both tables: %r"
+          % ((sorted(callers), seen),),
+          len(callers) >= len(_HANDOUT_ASKS) and seen == {
+              "neither": [], "stale": [], "both": [], "silent": []}
+          and all(_HANDOUT_EXEMPT.values()))
+    planted = _skill_callers(_plugin_sources() + [(
+        "new-route.py", "import _areas\n"
+        "def hand_out(m, p, t):\n    return _areas.resolve_skills(m, p, t)\n"),
+        ("quiet-route.py", "import _areas\n"
+         "def asks(m, p):\n    return _areas.resolve_review_skill(m, p)\n")])
+    planted_seen = _handout_verdict(
+        planted, dict(_HANDOUT_ASKS, **{"quiet-route.py:asks": "x"}), _HANDOUT_EXEMPT)
+    check("spd2 THE POWER of spd1: a route added later that calls a resolver with "
+          "no row is reported by name, and a row claiming to ask whose body never "
+          "calls the reader is reported silent: %r" % (planted_seen,),
+          planted_seen["neither"] == ["new-route.py:hand_out"]
+          and planted_seen["silent"] == ["quiet-route.py:asks"])
+
+    # --- the subagent route: next composes no brief and prints no dispatch -----
+    M, why = _load("drive_phase_skill_pins")
+    if M is None:
+        check("spd3 the driver loads", False, why)
+        return
+    body = "---\nname: pinned-drive\ndescription: d\n---\nbody\n"
+    results = {}
+    for tag, executor in (("agent", None), ("session", dict(WRITER_EXECUTOR))):
+        for kind in ("match", "changed", "absent"):
+            root, mpath = _repo("spn-%s-%s" % (tag, kind), task_ids=TASKS[:1],
+                                per_task="phase", executor=executor)
+            folder = _pin_skill_dir(root, "pinned-drive", body)
+            digest = _pin_digest(folder)
+            if kind == "changed":
+                _pin_skill_dir(root, "pinned-drive", body.replace("body", "bodY"))
+            if kind == "absent":
+                shutil.rmtree(folder)
+            _harness.git(root, "add", "-A")
+
+            def edit(plan, pinned=digest):
+                plan["meta"]["skillPins"] = {"pinned-drive": {"sha256": pinned}}
+                plan["phases"][0]["tasks"][0]["skills"] = ["pinned-drive"]
+            _commit_plan(root, mpath, edit, "fixture: a pinned skill")
+            code, text = _next(M, root, mpath)
+            found = _pin_digest(folder) if os.path.isdir(folder) else None
+            results[(tag, kind)] = (code, text, digest, found,
+                                    os.path.join(folder, "SKILL.md"))
+    shown = dict((k, (v[0], v[1][-300:])) for k, v in results.items())
+    dispatched = dict((k, [ln for ln in v[1].splitlines()
+                           if ln.startswith("dispatch ")])
+                      for k, v in results.items())
+    check("spd3 ALLOW: a pinned skill whose directory matches dispatches the "
+          "executor Agent and the writer session as an unpinned one does: %r"
+          % ((shown[("agent", "match")], shown[("session", "match")]),),
+          results[("agent", "match")][0] == 0
+          and len(dispatched[("agent", "match")]) == 1
+          and "audit:audit-executor P1.1" in dispatched[("agent", "match")][0]
+          and results[("session", "match")][0] == 0
+          and len(dispatched[("session", "match")]) == 1
+          and "run-agent-session.py --role writer" in dispatched[("session", "match")][0])
+    stopped = []
+    for key in (("agent", "changed"), ("session", "changed")):
+        code, text, digest, found, path = results[key]
+        stopped.append((key, code != 0, dispatched[key] == [], "pinned-drive" in text,
+                        path in text, digest in text, bool(found) and found in text,
+                        found != digest))
+    check("spd4 one changed byte in the pinned skill: next prints NO dispatch line "
+          "on the subagent route nor on the session route, and the stop names the "
+          "skill, the path and both digests: %r" % ((stopped, shown),),
+          [s[1:] for s in stopped] == [(True,) * 7] * 2)
+    gone = []
+    for key in (("agent", "absent"), ("session", "absent")):
+        code, text, digest, _found, _path = results[key]
+        gone.append((key, code != 0, dispatched[key] == [], "pinned-drive" in text,
+                     digest in text, "none" in text))
+    check("spd5 a pinned skill found nowhere its bytes can be read is a stop on "
+          "both routes, never a dispatch: %r" % ((gone, shown),),
+          [g[1:] for g in gone] == [(True,) * 5] * 2)
+
+    # --- the session's argv carries the pin, and nothing without one ----------
+    U, why = _unit_driver("drive_phase_skill_pin_argv")
+    if U is None:
+        check("spd6 the driver loads", False, why)
+        return
+    project = os.path.realpath(_harness.fixture_root("drive-spn-argv-"))
+    folder = _pin_skill_dir(project, "pinned-argv", body)
+    digest = _pin_digest(folder)
+    writer = {"model": WRITER_MODEL, "budget": "2.5"}
+    task_u = _step_task(skills=["pinned-argv", "loose-argv"])
+    ctx = _step_ctx(stateDir=os.path.join(project, "state"), project=project)
+    _step_rig(U, _step_phase([task_u]))
+    plain = _caught(U.writer_argv, ctx, task_u, writer, "/p", "/r")
+    _step_rig(U, _step_phase([task_u]),
+              meta={"skillPins": {"pinned-argv": {"sha256": digest},
+                                  "unused-argv": {"sha256": "e" * 64}}})
+    pinned = _caught(U.writer_argv, ctx, task_u, writer, "/p", "/r")
+    check("spd6 the session's command carries one --skill-pin NAME=DIGEST for each "
+          "PINNED name it hands out - none for the unpinned name, none for a pin "
+          "the task does not use - and a plan with no skillPins carries no "
+          "--skill-pin at all: %r" % ((plain, pinned),),
+          "--skill-pin" not in plain and _skill_flags(plain) == ["pinned-argv",
+                                                                 "loose-argv"]
+          and [pinned[i + 1] for i, a in enumerate(pinned[:-1]) if a == "--skill-pin"]
+          == ["pinned-argv=" + digest]
+          and _skill_flags(pinned) == _skill_flags(plain))
+
+    # --- a pinned review skill is never quietly left out -----------------------
+    V, why = _unit_driver("drive_phase_skill_pin_review")
+    if V is None:
+        check("spd7 the driver loads", False, why)
+        return
+    vroot = _harness.fixture_root("drive-spn-review-")
+    gone_argv, gone_said = _vk_validation_argv(
+        V, vroot, _step_phase([_step_task()], title="pinned-gone"),
+        {"reviewSkill": "pinned-review-gone",
+         "skillPins": {"pinned-review-gone": {"sha256": "c" * 64}}}, project=project)
+    loose_argv, loose_said = _vk_validation_argv(
+        V, vroot, _step_phase([_step_task()], title="loose-gone"),
+        {"reviewSkill": "loose-review-gone"}, project=project)
+    check("spd7 a PINNED review skill the runner's resolver cannot find stops the "
+          "validation session's dispatch with the pin's words - it is not left out "
+          "with a warning, as an unpinned one still is: %r"
+          % ((gone_argv, str(gone_said)[:300], loose_argv is not None),),
+          gone_argv is None and "pinned-review-gone" in str(gone_said)
+          and "c" * 64 in str(gone_said) and "PinStop" in str(gone_said)
+          and loose_argv is not None and "loose-review-gone" not in _skill_flags(
+              loose_argv))
+
+    # --- a stopped session route leaves no dispatch behind ---------------------
+    root, mpath = _repo("spn-session-again", task_ids=TASKS[:1], per_task="phase",
+                        executor=dict(WRITER_EXECUTOR))
+    folder = _pin_skill_dir(root, "pinned-drive", body)
+    digest = _pin_digest(folder)
+    _pin_skill_dir(root, "pinned-drive", body.replace("body", "bodY"))
+    _harness.git(root, "add", "-A")
+
+    def edit_again(plan):
+        plan["meta"]["skillPins"] = {"pinned-drive": {"sha256": digest}}
+        plan["phases"][0]["tasks"][0]["skills"] = ["pinned-drive"]
+    _commit_plan(root, mpath, edit_again, "fixture: a pinned skill, changed")
+    code_a, text_a = _next(M, root, mpath)
+    _pin_skill_dir(root, "pinned-drive", body)
+    _harness.git(root, "commit", "-qam", "fixture: the pinned bytes restored")
+    code_b, text_b = _next(M, root, mpath)
+    check("spd8 the session route's stop leaves nothing dispatched behind it: with "
+          "the pinned bytes restored the next `next` hands the writer session out "
+          "as a first dispatch, not a wait on one that never ran: %r"
+          % ((code_a, text_a[-200:], code_b, text_b[-400:]),),
+          code_a != 0 and code_b == 0
+          and "dispatch run-agent-session.py --role writer" in text_b)
+
+
 def _vk_validation_argv(M, root, phase, meta, project=None, ctx_out=None):
     """The argv `validation_dispatch` starts the phase-scoped reviewer session
     with, over `phase` in a plan carrying `meta`, its state under `root` and
@@ -20828,6 +21105,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("oc-block", "_own_commit_cases"),
           ("up-block", "_advance_plan_cases"),
           ("ut-block", "_triage_plan_cases"),
+          ("spn-block", "_skill_pin_cases"),
           ("uq-block", "_pending_turn_cases"),
           ("uc-block", "_close_plan_cases"),
           ("us-block", "_signoff_unit_cases"),

@@ -1157,7 +1157,138 @@ def _skill_cases(check, M, root, bindir, e_io):
     _disclosure_cases(check, root, bindir, pinned, project_dir)
     _invoked_cases(check, M, root, bindir, pinned)
     _precedence_cases(check, M, root, bindir, pinned)
+    _skill_tail_cases(check, root, bindir, pinned, user_only, e_io)
+    _pin_cases(check, M, root, bindir, pinned, user_dir, project_dir)
 
+
+def _pin_cases(check, M, root, bindir, pinned, user_dir, project_dir):
+    """A skill pinned with `--skill-pin NAME=DIGEST` starts a session only as the
+    bytes pinned: every stop is the runner's usage exit before claude starts,
+    naming the skill, the path it read and both digests; the matching and the
+    unpinned skill start as before."""
+    sibling = "print('pinned')\n"
+
+    def plant(tag, extra=None):
+        """The pinned project skill of tree `tag`, with a sibling file, and the
+        digest of the bytes as planted - the pin."""
+        path = _write_skill(project_dir(tag), "pinned-skill",
+                            _skill_text("pinned-skill", "PINNED"))
+        folder = os.path.dirname(path)
+        with open(os.path.join(folder, "helper.py"), "w", encoding="utf-8",
+                  newline="\n") as fh:
+            fh.write(sibling)
+        for rel, text in sorted((extra or {}).items()):
+            with open(os.path.join(folder, rel), "w", encoding="utf-8",
+                      newline="\n") as fh:
+                fh.write(text)
+        return path, _dir_digest(folder)
+
+    def run(tag, flags):
+        return _run(root, bindir, "writer", tag=tag, env_extra=pinned, extra=flags)
+
+    path, digest = plant("pin-ok")
+    flags = ["--skill", "pinned-skill", "--skill-pin", "pinned-skill=" + digest]
+    code, out, err, rec, _dirs = run("pin-ok", flags)
+    check("rap1 ALLOW: a pinned skill whose directory matches starts the session "
+          "with it, as an unpinned one does: %r" % ((code, err[-300:]),),
+          code == 0 and rec is not None
+          and "PINNED-DESC-k3v9" in (rec.get("skills_file") or ""))
+
+    stops = []
+    for tag, change in (
+            ("pin-md", lambda p: _write_text(p, _skill_text(
+                "pinned-skill", "PINNED").replace("BODY-k3v9", "BODY-k3v8"))),
+            ("pin-sib", lambda p: _write_text(os.path.join(os.path.dirname(p),
+                                                            "helper.py"),
+                                               sibling.replace("pinned", "pinneD"))),
+            ("pin-add", lambda p: _write_text(os.path.join(os.path.dirname(p),
+                                                            "added.md"), "x\n"))):
+        path, digest = plant(tag)
+        change(path)
+        found = _dir_digest(os.path.dirname(path))
+        code, out, err, rec, _dirs = run(tag, ["--skill", "pinned-skill",
+                                               "--skill-pin", "pinned-skill=" + digest])
+        stops.append((tag, code, rec is None, "pinned-skill" in err, path in err,
+                       digest in err, found in err, found != digest))
+    check("rap2 one changed byte in SKILL.md, one in a sibling file and a file added "
+          "each refuse before claude starts - the usage exit a missing skill gets, "
+          "the stub recording nothing - and the reason names the skill, the path, "
+          "the pinned digest and the found one: %r" % (stops,),
+          [s[1:] for s in stops]
+          == [(M.E_USAGE, True, True, True, True, True, True)] * 3)
+
+    path, digest = plant("pin-shadow")
+    shadow = _write_skill(user_dir, "pinned-skill", _skill_text("pinned-skill", "MINE"))
+    try:
+        code, out, err, rec, _dirs = run("pin-shadow", [
+            "--skill", "pinned-skill", "--skill-pin", "pinned-skill=" + digest])
+    finally:
+        shutil.rmtree(os.path.dirname(shadow))
+    check("rap3 a personal copy shadowing the pinned project copy refuses, naming "
+          "the PERSONAL path - the copy the session would have loaded: %r"
+          % ((code, err[-400:]),),
+          code == M.E_USAGE and rec is None and shadow in err and digest in err)
+
+    code, out, err, rec, _dirs = run("pin-ghost", [
+        "--skill", "ghost-pinned-q4", "--skill-pin", "ghost-pinned-q4=" + "a" * 64])
+    check("rap4 a pinned name found nowhere refuses with the pin's words - the "
+          "pinned digest and no found one - not as a pass: %r" % ((code, err[-400:]),),
+          code == M.E_USAGE and rec is None and "ghost-pinned-q4" in err
+          and "a" * 64 in err and "none" in err)
+
+    path, digest = plant("pin-mixed")
+    _write_skill(project_dir("pin-mixed"), "loose-skill",
+                 _skill_text("loose-skill", "LOOSE"))
+    code, out, err, rec, _dirs = run("pin-mixed", [
+        "--skill", "pinned-skill", "--skill", "loose-skill",
+        "--skill-pin", "pinned-skill=" + digest])
+    check("rap5 ALLOW: an unpinned skill beside a matching pinned one is untouched "
+          "and both start: %r" % ((code, err[-300:]),),
+          code == 0 and rec is not None
+          and "LOOSE-DESC-k3v9" in (rec.get("skills_file") or ""))
+
+    bad = []
+    # The reason is read, not only the exit: an argument parser that does not know
+    # the flag refuses every one of these with the same exit, naming the value too.
+    for tag, pin, why in (("pin-shape", "pinned-skill=ABC", "is not NAME=DIGEST"),
+                          ("pin-other", "other-skill=" + digest,
+                           "which this session is not started with"),
+                          ("pin-noeq", "pinned-skill", "is not NAME=DIGEST")):
+        plant(tag)
+        code, out, err, rec, _dirs = run(tag, ["--skill", "pinned-skill",
+                                               "--skill-pin", pin])
+        bad.append((tag, code, rec is None, pin.split("=")[0] in err and why in err))
+    check("rap6 a --skill-pin that is no digest, that pins a skill the session is not "
+          "started with, or that has no `=` is a usage refusal naming it: %r" % (bad,),
+          [b[1:] for b in bad] == [(M.E_USAGE, True, True)] * 3)
+
+
+def _write_text(path, text):
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    return path
+
+
+def _dir_digest(folder):
+    """A skill directory's digest computed here, apart from the module under test:
+    SHA-256 over the sorted lines `<relative posix path> <sha256 of its bytes>`,
+    CRLF read as LF in a file holding no NUL byte."""
+    lines = []
+    for here, _dirs, files in os.walk(folder):
+        for name in files:
+            full = os.path.join(here, name)
+            with open(full, "rb") as fh:
+                data = fh.read()
+            if b"\0" not in data:
+                data = data.replace(b"\r\n", b"\n")
+            rel = os.path.relpath(full, folder).replace(os.sep, "/")
+            lines.append("%s %s\n" % (rel, hashlib.sha256(data).hexdigest()))
+    return hashlib.sha256("".join(sorted(lines)).encode("utf-8")).hexdigest()
+
+
+def _skill_tail_cases(check, root, bindir, pinned, user_only, e_io):
+    """The last of `_skill_cases`, run after its precedence cases: the note beside
+    the flag the skills ride on, and a skill file that cannot be decoded."""
     # `claude --help` does not list the flag the skills ride on; the file must say
     # it was probed, when, and on which build, beside the flag.
     with open(SCRIPT, encoding="utf-8") as fh:

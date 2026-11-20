@@ -1281,6 +1281,35 @@ A **malformed** `.claude/audit.config.json` falls back to defaults — meaning
 your custom secret patterns and rules are NOT applied — and is surfaced once
 per session (`detect-plan-skip`) and blocks `/audit` at preflight.
 
+## A pinned skill: what the pin proves, and what it does not
+
+A plan may pin a skill it names (`meta.skillPins`): the digest of the skill's whole
+directory as it was reviewed. Before the drive hands a pinned skill to an agent's brief
+(`audit-lookup.py`'s Skills and Review skill sections) or to a headless session
+(`drive-phase.py`'s `session_skills`, and `run-agent-session.py --skill-pin`, which
+checks the copy in the session's own tree before claude starts), it asks
+`_skill_places.require_pins` - one reader, over the copy `_skill_places.resolve_skill`
+finds, so a personal copy shadowing the project's is the copy judged. Any answer but a
+match - another digest, no copy found where its bytes can be read, a directory that cannot
+be read whole - composes no brief, starts no session and prints no dispatch line, naming
+the skill, the path or paths it read, the pinned digest and the one found (`found none`
+when there is none). That every hand-out site asks is held by a case that
+derives the callers from the code (`tests/test_drive_phase.py`, `spd1`).
+
+What it does **not** hold, stated so nothing leans on it:
+
+1. **A pin proves the bytes are the ones pinned, not that they are safe.** Whoever
+   pinned them reviewed them, or did not; the digest records which bytes, not a verdict.
+2. **On the subagent route it checks the copy the plugin's resolver finds, not the copy
+   Claude Code's Skill tool then loads.** The agent loads the skill itself, through a
+   lookup the plugin cannot see - an enterprise tier, another installed plugin, a copy
+   added between the check and the load all sit outside it. The headless route is closer:
+   the runner checks the tree the session runs in, and discloses the skill from that copy.
+3. **An unpinned skill is not checked at all**, and neither is any other file the agent
+   reads.
+4. **It is a check at hand-out time, not a lock.** A copy changed after the dispatch line
+   was printed is not seen until the next hand-out.
+
 ## Known bypass classes (accepted, documented)
 
 1. **Arbitrary Bash writes.** `sed -i`, `tee`, `>`/`>>` redirects (incl. heredoc
