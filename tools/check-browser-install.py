@@ -3047,7 +3047,8 @@ def _construction_cases(check):
 
 def _selftest():
     from _suite import run          # the house runner; tools/_suite.py says why here
-    return run(_cases)
+    run(_cases)
+    return 1
 
 
 if __name__ == "__main__":
