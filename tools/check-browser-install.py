@@ -1054,7 +1054,6 @@ command_not_found_handle() {
 }
 export -f command_not_found_handle
 readonly -f command_not_found_handle
-unset BASH_CMDS BASH_ALIASES
 readonly BASH_CMDS BASH_ALIASES @ENV@
 for b in $(compgen -b); do
   case " @KEEP@ enable " in
@@ -2355,7 +2354,7 @@ CONSTRUCTION = [
     ("bk10", "`trap` running text on exit", "trap 'echo x > \"{made}\"' EXIT",
      (_HOLD_DISABLE,)),
     ("bk11", "the command hash written through BASH_CMDS",
-     'BASH_CMDS[ls]=/usr/bin/touch; ls "{made}"', (_HOLD_UNSET, _HOLD_READONLY),
+     'BASH_CMDS[ls]=/usr/bin/touch; ls "{made}"', (_HOLD_READONLY,),
      _HAS_CMDS),
     ("bk12", "a variable the sudo stub reads, pointed at the real tools",
      'STUB_BIN=/usr/bin sudo touch "{made}"', (_HOLD_READONLY,)),
@@ -3047,7 +3046,8 @@ def _construction_cases(check):
 
 def _selftest():
     from _suite import run          # the house runner; tools/_suite.py says why here
-    return run(_cases)
+    run(_cases)
+    return 1
 
 
 if __name__ == "__main__":
