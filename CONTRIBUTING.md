@@ -241,8 +241,10 @@ the set's ownership - a hit that falls back to the archive is red there, where a
 shows it green with one warning - and its docstring says what runner behaviour the stubs
 cannot see. It runs on a developer's machine, so it reads each script before starting it
 and refuses one whose command words are not all bare names of a stub, an allowed tool, a
-function the script defines or a builtin it lists, and it narrows the shell itself before
-the script's first line; its docstring says what each half holds and what stays outside.
+function the script defines or a builtin it lists - each word judged by the value bash
+hands on after quote removal, not by how it is written - and it narrows the shell itself
+before the script's first line; its docstring says what each half holds, which escapes
+reading alone holds, and what stays outside.
 
 **`tools/gate-parity.py` holds the workflow to the list** - in the `lint` slice, with its
 own cases in the sweep: every slice a job names is one `--list` prints, every per-run
