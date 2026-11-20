@@ -24,6 +24,7 @@ is an actual repository and the "mutation" is an actual file appearing in it.
 """
 import ast
 import datetime
+import difflib
 import json
 import os
 import re
@@ -9392,16 +9393,173 @@ def _pgo_run(root, mp, evdir, *extra):
     return code, "\n".join(lines), (rows[-1] if rows else {})
 
 
+def _duration_probes():
+    """Milliseconds either side of every place `_fmt.human_duration` can change
+    shape or width: each power of ten and each sexagesimal unit, one below, at
+    and one above, from nothing to past a day. Values, not formats - the forms
+    are read off the formatter's answers to these."""
+    edges = [10 ** p for p in range(10)]
+    edges += [unit * k for unit in (1000, 60000, 3600000)
+              for k in (1, 10, 60, 100)]
+    return sorted(set(max(0, e + d) for e in edges for d in (-1, 0, 1)))
+
+
+def _duration_shapes():
+    """`{ms: shape}` - the regex of the form `_fmt.human_duration` printed for
+    each probe, its digits generalised. Derived from the formatter's answers,
+    never restated from its source, so a form added there is masked here
+    without an edit, and one this mask cannot see is a boundary `pgo9` meets."""
+    said = dict((ms, _rtg_fmt.human_duration(ms)) for ms in _duration_probes())
+    return dict((ms, re.sub(r"\d+", r"\\d+", re.escape(text)))
+                for ms, text in said.items() if text is not None)
+
+
+def _duration_re():
+    """One pattern for every form, with the run of spaces in front of it.
+
+    THE PADDING IS PART OF THE TOKEN. A step line right-justifies its duration
+    in a column, so a duration one digit longer is one space shorter in front:
+    masking the digits alone left two runs that took 56 and 156 ms - or 950 ms
+    and 1.1 s, a different unit too - printing texts that differ in nothing
+    but how long a step took. The longest form is tried first so a shorter one
+    never claims the head of a longer."""
+    forms = sorted(set(_duration_shapes().values()), key=len, reverse=True)
+    if not forms:
+        return None
+    return re.compile(r"( *)(?<![\w.])(?:%s)(?!\w)" % ("|".join(forms),))
+
+
+_DURATION_WORD = "<duration>"
+
+
+def _duration_word(match):
+    """The fixed word a duration becomes: a column's padding, however wide,
+    is one space, and a duration with none in front gains none."""
+    return (" " if match.group(1) else "") + _DURATION_WORD
+
+
 def _pgo_masked(root, text):
     """`text` with what differs between two fixtures of one shape - the
     fixture's path, run ids, stamps and durations - masked, so two runs of the
-    same gate compare byte for byte on everything else."""
+    same gate compare byte for byte on everything else.
+
+    NOTHING ELSE IS MASKED, digits included: an exit code, a check count or an
+    entry name that differs between the two runs is a difference the
+    comparison exists to see (`pgo10`)."""
     text = text.replace(root, "<root>")
     # A run id is a stamp followed by random characters, and a stamp alone
     # dates the boundary: both are masked whole, as one token.
     text = re.sub(r"\b\d{4}-\d\d-\d\dT\S+", "<stamp>", text)
     text = re.sub(r"\b[0-9a-f]{12,}\b", "<id>", text)
-    return re.sub(r"\d+", "N", text)
+    pattern = _duration_re()
+    return pattern.sub(_duration_word, text) if pattern is not None else text
+
+
+_DIFF_LINES = 12
+
+
+def _masked_diff(one, two):
+    """The lines two masked texts differ in - `-` the first's, `+` the
+    second's, no context and no hunk header - cut to `_DIFF_LINES` with what
+    was cut counted: what a failing comparison prints, so its reader sees the
+    difference rather than a line of what was equal."""
+    lines = [ln for ln in difflib.unified_diff(
+        one.splitlines(), two.splitlines(), "first", "second", lineterm="",
+        n=0)][2:]
+    lines = [ln for ln in lines if not ln.startswith("@@")]
+    if len(lines) <= _DIFF_LINES:
+        return lines
+    return lines[:_DIFF_LINES] + ["... %d more diff line(s)"
+                                  % (len(lines) - _DIFF_LINES,)]
+
+
+def _step_text(ms, name="sweep", code=0, ran=None, banner="GATE GREEN"):
+    """One step line as the gate prints it, through its own renderer, for a
+    step that took `ms`, with a banner line under it: no gate runs."""
+    said = []
+    M._render_steps({"steps": [{"name": name, "exit": code, "ran": ran,
+                                "durationMs": ms}]}, said.append, quiet=False)
+    measured = M.part_reuse_line({"steps": [{"name": name, "durationMs": ms}],
+                                  "reusedFrom": {"runId": "r", "ts": "t",
+                                                 "status": "passed"}})
+    return "\n".join(said + [measured, banner])
+
+
+def _duration_mask_cases(check):
+    """(pgo9-pgo11) The mask `pgo7` compares two runs under, held on its own
+    with no gate run: what varies with time alone masks to one text, and what
+    does not stays different."""
+    shapes = _duration_shapes()
+    probes = sorted(shapes)
+    # A boundary is two neighbouring probes whose printed form or printed width
+    # differs: where a right-justified column moves, or the unit changes.
+    def printed(ms):
+        return _rtg_fmt.human_duration(ms)
+    edges = [(a, b) for a, b in zip(probes, probes[1:])
+             if shapes[a] != shapes[b] or len(printed(a)) != len(printed(b))]
+    unequal = []
+    for a, b in edges:
+        one = _pgo_masked("<no root>", _step_text(a))
+        two = _pgo_masked("<no root>", _step_text(b))
+        # Twice: the step line's and the part-repeat line's, so a form the
+        # pattern does not take, left raw in both texts, is not "equal".
+        if one != two or one.count(_DURATION_WORD) != 2:
+            unequal.append((a, b, _masked_diff(one, two) or one))
+    widths = set(len(printed(ms)) for ms in probes)
+    check("pgo9 two step lines for durations either side of every boundary "
+          "`_fmt.human_duration` has - a digit more, a unit up - mask to one "
+          "text with the duration and its column padding one token, on the "
+          "step line and on the part-repeat line: forms=%r widths=%r "
+          "boundaries=%d unequal=%r"
+          % (sorted(set(shapes.values())), sorted(widths), len(edges),
+             unequal[:4]),
+          len(set(shapes.values())) >= 2 and len(widths) >= 3
+          and bool(edges) and not unequal)
+
+    # THE ALLOW HALF. Each pair differs in its duration AND in one thing that
+    # is not time; the mask must hide the first and keep the second. A mask
+    # widened past the duration - over the whole step line, or over every
+    # digit - turns this red, which pgo9 alone could not see.
+    base = dict(name="sweep", code=0, ran=3, banner="GATE GREEN")
+    kept = []
+    # (field, its other value, how the base prints it, how the other does);
+    # the other name is as long as the base's, since the name column pads.
+    for field, other, was, now in (
+            ("name", "lints", "sweep", "lints"),
+            ("code", 1, "exit 0", "exit 1"),
+            ("ran", 4, "3 check(s)", "4 check(s)"),
+            ("banner", "GATE RED", "GATE GREEN", "GATE RED")):
+        changed = dict(base)
+        changed[field] = other
+        one = _pgo_masked("<no root>", _step_text(56, **base))
+        two = _pgo_masked("<no root>", _step_text(1050, **changed))
+        # Unequal, and equal again once that one thing is put back: the
+        # difference the mask left is the thing that is not time, alone.
+        kept.append((field, one != two and two.replace(now, was) == one,
+                     _masked_diff(one, two)))
+    check("pgo10 THE ALLOW HALF: two texts whose durations differ AND which "
+          "differ in an entry name, an exit code, a check count or a word of a "
+          "banner still compare unequal under the mask, and the difference "
+          "left is that thing alone: %r" % (kept,),
+          all(ok for _f, ok, _d in kept))
+
+    rows = 30
+    many_one = "\n".join("line %d" % (i,) for i in range(rows))
+    many_two = "\n".join("line %d" % (i + 100,) for i in range(rows))
+    one = _pgo_masked("<no root>", _step_text(56, code=0))
+    two = _pgo_masked("<no root>", _step_text(56, code=1))
+    short = _masked_diff(one, two)
+    capped = _masked_diff(many_one, many_two)
+    check("pgo11 a failing comparison prints the lines that differ and no "
+          "line that agrees, bounded with what was cut counted: short=%r "
+          "capped=%r" % (short, capped),
+          len(short) == 2 and short[0].startswith("-")
+          and "exit 0" in short[0] and short[1].startswith("+")
+          and "exit 1" in short[1]
+          and len(capped) == _DIFF_LINES + 1
+          and capped[-1] == "... %d more diff line(s)"
+          % (2 * rows - _DIFF_LINES,)
+          and _masked_diff(one, one) == [])
 
 
 def _phase_gate_only_cases(check):
@@ -9496,10 +9654,15 @@ def _phase_gate_only_cases(check):
         code, text, row = _pgo_run(root, mp, evdir, "--task", "P1.1")
         said[repr(setting)] = (code, sorted(runs()), _pgo_masked(root, text),
                                sorted(row))
+    keys = [said[k][3] for k in ("None", "[]")]
     check("pgo7 with the setting ABSENT or EMPTY a task's run is the run it was "
           "before: both entries run, no row key lists anything as left out, "
-          "and the two print the same lines once ids and times are masked: %r"
-          % (dict((k, v[:2] + (v[3],)) for k, v in said.items()),),
+          "and the two print the same lines once ids, stamps and durations "
+          "are masked (pgo9-pgo11 hold the mask): exit/runs %r, row keys "
+          "%s, masked lines that differ (absent -, empty +) %r"
+          % (dict((k, v[:2]) for k, v in sorted(said.items())),
+             "equal" if keys[0] == keys[1] else "differ: %r" % (keys,),
+             _masked_diff(said["None"][2], said["[]"][2])),
           said["None"][:2] == (M.E_OK, ["browser", "sweep"])
           and said["None"] == said["[]"]
           and "leftToPhaseGate" not in said["None"][3]
@@ -9526,6 +9689,7 @@ def _phase_gate_only_cases(check):
                                "basis": "executor.phaseGateOnly",
                                "matched": "browser.py"}]
           and got["unheld"] == [])
+    _duration_mask_cases(check)
 
 
 _KILLERS = ("kill", "killpg", "terminate", "send_signal", "tear_down",

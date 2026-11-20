@@ -1,0 +1,64 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py --jobs 4 tests/test_run_test_gate.py": "pass",
+    "run-test-gate.py docs/audit/audit-plan.json SG2 --task SG2.9-xk1 (unrecorded, first run)": "fail",
+    "python3 tools/sweep-selftests.py --jobs 4 <the 15 suites that gate's affected selection joined>": "pass",
+    "run-test-gate.py docs/audit/audit-plan.json SG2 --task SG2.9-xk1 (unrecorded, second run)": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "Regression task with tests.expectRedFirst false, and the defect lived in the suite's own mask (tests/test_run_test_gate.py `_pgo_masked`), not in product code: HEAD's run-test-gate.py and _fmt.py are unchanged, so the helper's throwaway tree (HEAD's code plus this test file) can only run the fixed mask green. The red was watched outside the helper instead: the scratch probe sg2.9/red_probe.py drove pgo7's real two-fixture comparison with run-test-gate's `_elapsed_ms` substituted, against the PRE-CHANGE suite, and exited 1 for 56/156 ms, 950/1050 ms, 9/10 ms and 59900/60100 ms (masked step lines differing in padding and in unit); the same probe exited 0 after the change. Mutation rows m1 (mask back to digits alone) and m2 (padding left out of the token) turn pgo9/pgo10 red in a copy of the tree.",
+    "at": "not run through the helper; red probe run 2026-11-19 before the edit, on the working tree"
+  },
+  "outcome": {
+    "technical": "Only tests/test_run_test_gate.py changed (no behaviour of run-test-gate.py or _fmt.py). (a) RED FIRST: with the pre-change mask, substituting each step's duration (run-test-gate `_elapsed_ms` patched per fixture) made pgo7's two masked texts differ: 56 vs 156 ms -> `exit N        N ms` vs `exit N       N ms` (padding); 950 vs 1050 ms -> `N ms` vs `N.N s` (unit and padding); 9 vs 10 ms and 59900 vs 60100 ms likewise. The orchestrator's reading (column padding of `%10s` plus the unit) held; nothing else differed. (b) THE MASK: `_duration_shapes()` calls `_fmt.human_duration` over `_duration_probes()` (each power of ten and each sexagesimal unit, one below/at/above) and turns each answer into a regex with its digits generalised - the forms are read off the formatter, never restated; `_duration_re()` takes every form with the run of spaces in front of it as one token, and `_pgo_masked` replaces it with `<duration>` (one space kept when there was padding). The blanket `\\d+ -> N` step is GONE: it masked exit codes and check counts too, which the allow half must keep. Stamps, hex ids and the fixture root stay masked as before. (c) NEW CASES, no gate run: pgo9 renders a step line through `M._render_steps` and a part-repeat line through `M.part_reuse_line` for both durations of every boundary the probes find (a printed form or printed width change; 9 found here) and requires one masked text with exactly two `<duration>` tokens; pgo10 (allow half) pairs a duration change with a change of entry name, exit code, check count or banner word and requires the masked texts unequal and equal again once that one thing is swapped back; pgo11 holds `_masked_diff` (no context, no hunk header, `-`/`+` lines only, bounded at `_DIFF_LINES` with what was cut counted, empty for equal texts). pgo7's detail now prints exit/runs, whether the row keys are equal, and the bounded diff of the masked texts. (d) CLASS: grep of `re.sub(` with `\\d`, `.sub(`/`re.compile(` with time-ish shapes, and 'masked'/'byte for byte'/'the same lines'/'two runs' over tests/ and tools/: test_drive_phase.py `_normal_did` (w1; masks shas, a mergedAt stamp, a path - compares did-lines against a PINNED literal; drive-phase's own `step_seconds` duration appears only in a read-back clause the w1 drive does not produce, so no duration reaches it; left), test_audit_task.py ag8/sf14 (one line each, tense or task id masked, no duration printed; left), tools/check-rendered-artifacts.py and tools/check-committed-pii.py (a report's generation stamp; the artifact is re-rendered at the committed stamp, and the step durations a report prints are recorded data, identical in both renders; left), tools/measure-affected-miss.py CI_PREFIX (strips a CI log's line stamp to read it, compares no two runs; left). Only pgo7 needed the mask, so it stays in this suite and tests/_harness.py is untouched. (e) Suite: 693 cases before (pre-change copy swept in a scratch tree) and 696 after; two sweeps of the changed suite, a sweep of the before copy between them, each 62 s wall (62.3 s and 62.4 s as the sweep printed). Mutation probe sg2.9/mutations.py over a copy of the working tree: 10 rows, all caught (m1 digits-only -> pgo9,pgo10,pgo11; m2 padding outside the token -> pgo9; m3 whole step line swallowed -> pgo10 (+pgo9,pgo11); m4 always-firing split -> pgo7; m5 empty setting read as naming the browser check -> pgo7 printing the differing lines; m6 ALLOW an hours form added to _fmt -> nothing red; m7 that form with the suite's forms restated -> pgo9; m8 diff prints nothing -> pgo11; m9 diff unbounded -> pgo11; base ALLOW -> nothing red). THE ORCHESTRATOR'S GATE, unrecorded, as the session notes give it: the first run exited 1 after 9 m 45 s with `GATE RED` and the basis `the sweep's output named no failing check` - no file and no case named; the same 15 related/walk suites swept by me right after (`--jobs 4`) were 15/15 files ok, 3142 cases, exit 0, and test_run_test_gate.py was green on its own twice; a second gate run exited 0, `GATE GREEN`. The first red is not attributed to this change (nothing it touches is read by those suites, and the identical set went green twice), but its cause is unknown: the gate's line carried no failing case to read. ruff and vermin clean on the file; `_output_lints.prose_number_claims()` and `house_style_violations()` report nothing in it. DEPENDANTS: tests/test_commit_task_work.py, tests/test_drive_phase.py, tests/test_drive_without_model.py import names from this suite (_derived_base_repo, _excluded_cases, _follower_cases, _full_repo) - none of them changed, and no other file names `_pgo_masked` or any name added here (test_drive_phase.py's `_pgo_plan` is its own); .github/sweep-costs.json's figure for the suite stays a fair weight (the run measured 62 s, the added cases take about a second of it); run-test-gate.py, tools/affected.py, tools/verify.sh and COMPATIBILITY.md name the suite by path, and the path is unchanged.",
+    "descriptive": "pgo7's comparison of two gate runs masks a duration and its column padding as one token derived from the formatter, keeps every non-time difference including digits, and prints the differing lines when it fails."
+  },
+  "testsAdded": [
+    "pgo9: step lines and part-repeat lines for durations either side of every boundary human_duration has (digit count, unit) mask to one text, the forms derived from the formatter's answers; pgo10: the allow half - an entry name, exit code, check count or banner word that differs alongside a duration stays different, and is the only difference left; pgo11: a failing comparison prints only the differing lines, bounded, with what was cut counted"
+  ],
+  "casesAdded": [
+    [
+      "pgo9",
+      "pgo10",
+      "pgo11"
+    ]
+  ],
+  "claims": "claims:\n1 tests/test_run_test_gate.py `_duration_shapes` calls `_rtg_fmt.human_duration` over `_duration_probes()`; `_duration_re` builds `( *)(?<![\\w.])(?:forms)(?!\\w)`; `_pgo_masked` substitutes it and no longer masks bare digits; `_masked_diff` is what pgo7's detail prints\n2 sg2.9/mutations.py over a copy of the tree, anchors asserted to match once, __pycache__ purged per row: m1 digits-only -> pgo9,pgo10,pgo11 red; m2 padding outside -> pgo9; m3 over-fire (whole step line) -> pgo10; m4/m5 split made real -> pgo7; m7 restated forms + new form -> pgo9; m8/m9 -> pgo11; allow rows base and m6 (new formatter form) -> nothing red; restored byte for byte in finally\n3 grep of re.sub with \\d, time-shaped .sub/re.compile, and 'masked'/'byte for byte'/'the same lines'/'two runs' over tests/ and tools/: test_drive_phase.py _normal_did (left: compared against a pinned literal, no duration reaches the did-lines its drive prints), test_audit_task.py ag8/sf14 (left: no duration printed), tools/check-rendered-artifacts.py and tools/check-committed-pii.py stamps (left: re-render at the committed stamp, durations are recorded data), tools/measure-affected-miss.py CI_PREFIX (left: reads one log, compares no two runs); pgo7 fixed\n4 n/a - no rule to an agent\n5 suite timed twice with a gap (a sweep of the before copy between): 62.3 s and 62.4 s, the sweep's own figures; the red probe run once before and once after the change, each pair deterministic because the durations are substituted\n6 n/a - no guard\n7 numbers in the suite are code constants (_DIFF_LINES, the probes) or computed in the case detail; no number written into a comment or docstring",
+  "stamp": "audit-stamp: {\"content\":\"sha256:99e992b84ee9f5be7ddeb79feafd1b5f87d051f36c6905050075df709a40e6b5\",\"dirtyDigest\":\"sha256:3aea9daa0dfab914e829d783bd4651af97502ccbb4558986e7a1a54e8d6ef632\",\"dirtyPaths\":{\"tests/test_run_test_gate.py\":\"5d9df4431c7e7a51\"},\"head\":\"34056072\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:c6fb12ee66c564ba1431d352c746967fc4750a40269374c908da705691c2a303\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "1 move(s) that lower the bar across 1 file(s) of the diff; 1 file(s) that could hold a move not compared: tests/test_run_test_gate.py",
+    "findings": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test_run_test_gate.py",
+        "line": 9499,
+        "side": "base",
+        "what": "labelled check `pgo7 with the setting ABSENT or EMPTY a task's run is the run it wa...` is gone from the tree copy",
+        "part": "gone"
+      }
+    ],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "tests/test_run_test_gate.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 9404 (`return re.sub(r\"\\d+\", \"N\", text)`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "3405607207c1791c2b9f5babd8ce9b1ef2fca0c7"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-19T23:55:57Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

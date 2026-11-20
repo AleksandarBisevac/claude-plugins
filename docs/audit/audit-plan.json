@@ -1489,7 +1489,8 @@
       "SG1.56-ukq",
       "SG1.57-ukq",
       "SG1.58-ukq",
-      "SG2.3"
+      "SG2.3",
+      "SG2.10-xk1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2227,7 +2228,8 @@
       "SG1.56-ukq",
       "SG1.57-ukq",
       "SG1.58-ukq",
-      "SG2.3"
+      "SG2.3",
+      "SG2.10-xk1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -14571,7 +14573,8 @@
       "SG1.16-ukq",
       "SG1.21-ukq",
       "SG1.25-ukq",
-      "SG2.1-ukq"
+      "SG2.1-ukq",
+      "SG2.10-xk1"
     ],
     "tests/test_eval_scaffolds.py": [
       "SG1.9"
@@ -14586,7 +14589,9 @@
       "SG1.28-ukq",
       "SG2.5-xk1",
       "SG2.6-xk1",
-      "SG2.7-xk1"
+      "SG2.7-xk1",
+      "SG2.10-xk1",
+      "SG2.11-xk1"
     ],
     "tests/test_sweep_selftests.py": [
       "SG1.23-ukq"
