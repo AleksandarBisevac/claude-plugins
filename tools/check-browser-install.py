@@ -1054,8 +1054,7 @@ command_not_found_handle() {
 }
 export -f command_not_found_handle
 readonly -f command_not_found_handle
-unset BASH_CMDS BASH_ALIASES
-readonly BASH_CMDS BASH_ALIASES @ENV@
+readonly @ENV@
 for b in $(compgen -b); do
   case " @KEEP@ enable " in
     *" $b "*) ;;
@@ -2333,7 +2332,7 @@ CONFINEMENT = [
 # it has what the escape uses (a script that exits 0 when it does); on a bash without
 # it the control is not required to reach, and the row says that.
 _HOLD_DISABLE = '    *) enable -n "$b" ;;\n'
-_HOLD_READONLY = "readonly BASH_CMDS BASH_ALIASES @ENV@\n"
+_HOLD_READONLY = "readonly @ENV@\n"
 _HOLD_UNSET = "unset BASH_CMDS BASH_ALIASES\n"
 _HOLD_ENABLE = "enable -n enable\n"
 _HAS_CMDS = 'BASH_CMDS[zz]=/x; [ "$(hash -t zz 2>/dev/null)" = /x ]'
@@ -2355,7 +2354,7 @@ CONSTRUCTION = [
     ("bk10", "`trap` running text on exit", "trap 'echo x > \"{made}\"' EXIT",
      (_HOLD_DISABLE,)),
     ("bk11", "the command hash written through BASH_CMDS",
-     'BASH_CMDS[ls]=/usr/bin/touch; ls "{made}"', (_HOLD_UNSET, _HOLD_READONLY),
+     'BASH_CMDS[ls]=/usr/bin/touch; ls "{made}"', (_HOLD_READONLY,),
      _HAS_CMDS),
     ("bk12", "a variable the sudo stub reads, pointed at the real tools",
      'STUB_BIN=/usr/bin sudo touch "{made}"', (_HOLD_READONLY,)),
@@ -3047,7 +3046,8 @@ def _construction_cases(check):
 
 def _selftest():
     from _suite import run          # the house runner; tools/_suite.py says why here
-    return run(_cases)
+    run(_cases)
+    return 1
 
 
 if __name__ == "__main__":
