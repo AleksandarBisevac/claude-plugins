@@ -455,6 +455,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ### Fixed
 
+- **The eval fixture builder refuses before its first git write when git is pointed at another
+  repository, rather than noticing after.** `evals/build-shop.sh` cleared a list of names
+  written into it before building, and its only check came at the end of the build: with that line
+  lost, macOS's git committed into the repository `GIT_DIR` named before the check refused, and
+  a windows runner's `git init` turned that repository bare and the check never ran. The names
+  are now git's own answer (`git rev-parse --local-env-vars`), cleared the way git clears them
+  for a submodule - all but `GIT_CONFIG_PARAMETERS` and `GIT_CONFIG_COUNT`, the configuration
+  git hands on - and the environment is read again just before `git init`: a name still set,
+  empty or not, stops the build with exit 2 and nothing written in either repository. A git that
+  names no `GIT_DIR` is refused the same way. A clean environment, a workspace nested in another
+  checkout, git configuration pairs and names off git's list build exactly as before;
+  `GIT_NAMESPACE`, which is not on the list and changed nothing in the fixture, is no longer
+  cleared. The end-of-build check stays, for a repository that is not the workspace's own for
+  another reason.
 - **A task added before the project recorded how to run a subset gets the narrow gate once it
   does.** Such a task stored the phase's whole gate, saying no spelling was known, and recording
   the spelling later changed nothing for it, so it ran the whole gate on its turn. `/audit:phase

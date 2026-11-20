@@ -204,6 +204,10 @@
         {
           "at": "2026-11-19T16:01:33Z",
           "text": "27. From the fresh read of the merge's conflict resolutions (no code finding; every case id and block of both sides present once). MED, a document claim: CHANGELOG.md, Unreleased, Changed - the entry 'A brief's rules win over a skill's instruction, and the phase review is handed its review skill' still announces the review skill reaching the phase brief and the validation session, which the development branch released (its Fixed entry 'The configured review skill now runs at phase sign-off'), and says the session 'is started with that skill' with no condition where the merged code leaves it out and warns when the runner cannot load it (runner_review_skill). Cut the entry to the half that is new - the precedence rule in both agent bodies and the appended preamble - and retitle it. LOW: the same merge left a blank line after each of the four sub-headings of Unreleased where no other sub-heading of the file has one - remove them. LOW, a record and not a document: SG1.10's verifiedBy and red-first basis in the plan cite the session-runner case ids the merge renamed (now ras82, ras82b, ras83); the old ids name the development branch's timing cases - say so in a note on that task rather than rewriting its record."
+        },
+        {
+          "at": "2026-11-20T00:47:00Z",
+          "text": "28. tests/test_build_shop.py on windows depends on WHICH sh the host resolves. Measured 2026-11-20 on a windows-2025 runner, same tree: steps run from PowerShell resolve sh to Git's bin/sh.exe, a launcher that puts Git's own directories ahead of PATH, so a case that hides git (esc18a, esc18b) or substitutes one (esc63, esc65) meets the real git - four reds; steps run from bash resolve usr/bin/sh.exe and all four pass. CI runs from bash, so no leg is red; a developer running the suite from PowerShell is. Rule: the suite picks the sh that honours the PATH it is handed, or says which sh it found when a hidden tool is still found. 29. CHANGELOG.md's earlier Added entry on the eval builder says the redirecting names 'are unset before the first git call'; since the builder now asks git for the names first (a read), the clause wants 'before the first git call that can write'."
         }
       ]
     },
@@ -774,7 +778,7 @@
     {
       "id": "SG2.9-xk1",
       "title": "The gate suite's byte-for-byte comparison of two runs masks a duration as one token, so how long a step took cannot turn it red",
-      "status": "in_progress",
+      "status": "done",
       "description": "The second CI run over the skill-gates phase (after the development branch was merged in) was red in tests/test_run_test_gate.py pgo7 on two legs - linux plain and windows cp1252 - and green in the same suite on linux stress, windows plain and macOS in the same run. The development branch's own CI was green on the commit that was merged. The case came in with that merge; nothing of the skill-gates line touches it.\n\nWHAT THE CASE DOES (tests/test_run_test_gate.py, `_pgo_masked` and pgo7). It runs one task gate twice in two fixtures that differ only in a config value, masks 'ids, stamps and durations' out of what each printed, and wants the two texts equal. The mask's last step is `re.sub(r\"\\d+\", \"N\", text)`.\n\nTHE ORCHESTRATOR'S READING, not yet proven by a red run - prove or refute it first. A step line prints its duration through `_fmt.human_duration` (\"%d ms\" below a second, \"%.1f s\" from one second, \"%d m %02d s\" from a minute) right-justified in a column. Masking the digits alone leaves two things that differ with nothing but time: the PADDING before a duration (a two-digit and a three-digit number of milliseconds, right-justified in one column, mask to texts with a different count of spaces in front) and the UNIT (`N ms` against `N.N s`). On this machine both runs take a two-digit number of milliseconds, so the case has only ever been seen green here; on a loaded runner the two runs land either side of a power of ten. The failing CI line prints only the exit codes, the entries run and the row keys - all equal for both runs - so the difference was in the masked text, which the line does not show.\n\nTHE RULE TO BUILD.\n1. A duration is masked as ONE TOKEN WITH ITS PADDING, by what prints it: the mask recognises every form `_fmt.human_duration` can return (derive them from that function - call it over a range of values and build the expectation from its answers - rather than restating its three formats in the suite, so a fourth form added there is masked or turns a case red) and replaces the token and the column padding in front of it with one fixed word.\n2. THE MASK IS HELD BY ITS OWN CASE, which needs no gate run: two texts that are one step line printed for durations either side of each boundary the formatter has (one and two digits, two and three, under and over a second, under and over a minute) mask to the same text; and two texts that differ in something that is NOT time (an entry name, an exit code, a word of a banner) do not - the allow half, so the mask cannot be widened into one that hides a real difference.\n3. WHEN THE COMPARISON FAILS IT SHOWS THE DIFFERENCE: the failing line carries the differing lines of the two masked texts (a bounded unified diff), since a line that prints only what was equal sent a reader to the code.\n4. THE CLASS, NOT THE INSTANCE. Search tests/ and tools/ for every other comparison of two runs' printed output that masks or ignores digits, stamps or durations by a pattern of its own (the starting grep: `re.sub(` beside `\\\\d` in tests/, and the words 'masked', 'byte for byte', 'the same lines'); list each in the return with whether a duration can reach it. One that can is moved to the same mask. If more than one suite needs it the mask lives in tests/_harness.py with its cases there - but another task of this phase is adding a helper to tests/_harness.py right before this one, so read the file as it stands when you start.\n5. No behaviour of run-test-gate.py or _fmt.py changes.\n\nHOW TO PROVE. Red before, locally: drive pgo7's comparison with a step whose duration is substituted (the fixture's command made to sleep, or the duration field substituted where the line is printed) so the two runs take 56 ms and 156 ms, then 950 ms and 1050 ms - the PRESENT mask reports them different. Green after with the same substitution. A mutation probe the orchestrator can run from the worktree root (a copy of the tree, each mutation asserted applied, __pycache__ purged between rows): the mask reverted to digits alone; the padding left out of the token; the mask widened to swallow the whole step line (the allow half goes red); the config value's effect made real - an always-firing split - so pgo7 still catches what it was written for.\n\nNOT in this task: the growth-series timing cases (another task); the gate's own output.\n\nAcceptance:\n(1) Two runs whose steps took different numbers of digits of milliseconds, or fell either side of a second, compare equal under the mask; two that differ in anything else do not.\n(2) The forms the mask knows are derived from the formatter, held by a case that needs no gate run.\n(3) A failing comparison prints the differing lines.\n(4) Every other masked comparison of two runs in tests/ and tools/ is listed, and one a duration can reach uses the same mask.",
       "files": [
         "tests/test_run_test_gate.py"
@@ -797,16 +801,57 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f044fb57795b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Only tests/test_run_test_gate.py changed (no behaviour of run-test-gate.py or _fmt.py). (a) RED FIRST: with the pre-change mask, substituting each step's duration (run-test-gate `_elapsed_ms` patched per fixture) made pgo7's two masked texts differ: 56 vs 156 ms -> `exit N        N ms` vs `exit N       N ms` (padding); 950 vs 1050 ms -> `N ms` vs `N.N s` (unit and padding); 9 vs 10 ms and 59900 vs 60100 ms likewise. The orchestrator's reading (column padding of `%10s` plus the unit) held; nothing else differed. (b) THE MASK: `_duration_shapes()` calls `_fmt.human_duration` over `_duration_probes()` (each power of ten and each sexagesimal unit, one below/at/above) and turns each answer into a regex with its digits generalised - the forms are read off the formatter, never restated; `_duration_re()` takes every form with the run of spaces in front of it as one token, and `_pgo_masked` replaces it with `<duration>` (one space kept when there was padding). The blanket `\\d+ -> N` step is GONE: it masked exit codes and check counts too, which the allow half must keep. Stamps, hex ids and the fixture root stay masked as before. (c) NEW CASES, no gate run: pgo9 renders a step line through `M._render_steps` and a part-repeat line through `M.part_reuse_line` for both durations of every boundary the probes find (a printed form or printed width change; 9 found here) and requires one masked text with exactly two `<duration>` tokens; pgo10 (allow half) pairs a duration change with a change of entry name, exit code, check count or banner word and requires the masked texts unequal and equal again once that one thing is swapped back; pgo11 holds `_masked_diff` (no context, no hunk header, `-`/`+` lines only, bounded at `_DIFF_LINES` with what was cut counted, empty for equal texts). pgo7's detail now prints exit/runs, whether the row keys are equal, and the bounded diff of the masked texts. (d) CLASS: grep of `re.sub(` with `\\d`, `.sub(`/`re.compile(` with time-ish shapes, and 'masked'/'byte for byte'/'the same lines'/'two runs' over tests/ and tools/: test_drive_phase.py `_normal_did` (w1; masks shas, a mergedAt stamp, a path - compares did-lines against a PINNED literal; drive-phase's own `step_seconds` duration appears only in a read-back clause the w1 drive does not produce, so no duration reaches it; left), test_audit_task.py ag8/sf14 (one line each, tense or task id masked, no duration printed; left), tools/check-rendered-artifacts.py and tools/check-committed-pii.py (a report's generation stamp; the artifact is re-rendered at the committed stamp, and the step durations a report prints are recorded data, identical in both renders; left), tools/measure-affected-miss.py CI_PREFIX (strips a CI log's line stamp to read it, compares no two runs; left). Only pgo7 needed the mask, so it stays in this suite and tests/_harness.py is untouched. (e) Suite: 693 cases before (pre-change copy swept in a scratch tree) and 696 after; two sweeps of the changed suite, a sweep of the before copy between them, each 62 s wall (62.3 s and 62.4 s as the sweep printed). Mutation probe sg2.9/mutations.py over a copy of the working tree: 10 rows, all caught (m1 digits-only -> pgo9,pgo10,pgo11; m2 padding outside the token -> pgo9; m3 whole step line swallowed -> pgo10 (+pgo9,pgo11); m4 always-firing split -> pgo7; m5 empty setting read as naming the browser check -> pgo7 printing the differing lines; m6 ALLOW an hours form added to _fmt -> nothing red; m7 that form with the suite's forms restated -> pgo9; m8 diff prints nothing -> pgo11; m9 diff unbounded -> pgo11; base ALLOW -> nothing red). THE ORCHESTRATOR'S GATE, unrecorded, as the session notes give it: the first run exited 1 after 9 m 45 s with `GATE RED` and the basis `the sweep's output named no failing check` - no file and no case named; the same 15 related/walk suites swept by me right after (`--jobs 4`) were 15/15 files ok, 3142 cases, exit 0, and test_run_test_gate.py was green on its own twice; a second gate run exited 0, `GATE GREEN`. The first red is not attributed to this change (nothing it touches is read by those suites, and the identical set went green twice), but its cause is unknown: the gate's line carried no failing case to read. ruff and vermin clean on the file; `_output_lints.prose_number_claims()` and `house_style_violations()` report nothing in it. DEPENDANTS: tests/test_commit_task_work.py, tests/test_drive_phase.py, tests/test_drive_without_model.py import names from this suite (_derived_base_repo, _excluded_cases, _follower_cases, _full_repo) - none of them changed, and no other file names `_pgo_masked` or any name added here (test_drive_phase.py's `_pgo_plan` is its own); .github/sweep-costs.json's figure for the suite stays a fair weight (the run measured 62 s, the added cases take about a second of it); run-test-gate.py, tools/affected.py, tools/verify.sh and COMPATIBILITY.md name the suite by path, and the path is unchanged.",
+        "descriptive": "pgo7's comparison of two gate runs masks a duration and its column padding as one token derived from the formatter, keeps every non-time difference including digits, and prints the differing lines when it fails."
       },
       "startedAt": "2026-11-19T23:20:25Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-20T00:06:42Z",
+      "verifiedBy": [
+        "pgo9: step lines and part-repeat lines for durations either side of every boundary human_duration has (digit count, unit) mask to one text, the forms derived from the formatter's answers; pgo10: the allow half - an entry name, exit code, check count or banner word that differs alongside a duration stays different, and is the only difference left; pgo11: a failing comparison prints only the differing lines, bounded, with what was cut counted"
+      ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-19T23:55:57Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 2131000,
+            "startedAt": "2026-11-19T23:20:26Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-20T00:03:02Z.845909",
+            "kind": "wait",
+            "ms": 6000,
+            "startedAt": "2026-11-19T23:56:31Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-20T00:03:02Z.845909, ending at its startedAt",
+            "kind": "selection",
+            "ms": 17753,
+            "runId": "2026-11-20T00:03:02Z.845909",
+            "startedAt": "2026-11-19T23:56:37Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-20T00:03:02Z.845909",
+            "kind": "gate",
+            "ms": 366739,
+            "runId": "2026-11-20T00:03:02Z.845909",
+            "startedAt": "2026-11-19T23:56:55Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-20T00:06:22Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 169000,
+            "startedAt": "2026-11-20T00:03:33Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit f044fb57795b",
+            "kind": "commit",
+            "ms": 2805,
+            "startedAt": "2026-11-20T00:06:38Z"
+          }
+        ],
         "firstStartedAt": "2026-11-19T23:20:25Z"
       },
       "reviewPerTask": "signals",
@@ -814,12 +859,23 @@
         "runId": "2026-11-20T00:03:32Z.8a072c",
         "status": "passed",
         "at": "2026-11-20T00:03:32Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "f044fb57795b",
+        "at": "2026-11-20T00:06:42Z",
+        "return": "docs/audit/evidence/returns/SG2.9-xk1/20261119T232025Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Regression task with tests.expectRedFirst false, and the defect lived in the suite's own mask (tests/test_run_test_gate.py `_pgo_masked`), not in product code: HEAD's run-test-gate.py and _fmt.py are unchanged, so the helper's throwaway tree (HEAD's code plus this test file) can only run the fixed mask green. The red was watched outside the helper instead: the scratch probe sg2.9/red_probe.py drove pgo7's real two-fixture comparison with run-test-gate's `_elapsed_ms` substituted, against the PRE-CHANGE suite, and exited 1 for 56/156 ms, 950/1050 ms, 9/10 ms and 59900/60100 ms (masked step lines differing in padding and in unit); the same probe exited 0 after the change. Mutation rows m1 (mask back to digits alone) and m2 (padding left out of the token) turn pgo9/pgo10 red in a copy of the tree.",
+        "at": "not run through the helper; red probe run 2026-11-19 before the edit, on the working tree"
       }
     },
     {
       "id": "SG2.10-xk1",
       "title": "The eval builder refuses before its first git call when git is redirected to another repository, so a build that lost its unset writes nothing there on any host",
-      "status": "pending",
+      "status": "in_progress",
       "description": "plugins/audit/evals/build-shop.sh builds an eval fixture as a repository of its own. Its header states the hazard: git exports GIT_DIR to a hook, so a build started from one would re-initialise and commit into the repository that name points at. Its defence is one line that unsets seven names before the first git call, and a check at the END of the build (`built()`) that refuses, exit 3, a build whose repository is not the workspace's own.\n\nWHAT WAS MEASURED (2026-11-19 and -20; the orchestrator's prompt names the files). A copy of the builder with the unset line patched out, run with GIT_DIR naming another repository:\n- macOS, git 2.53: the build adds and commits INTO THE OTHER REPOSITORY, and only then does the end check refuse with exit 3. The check detects; it does not prevent.\n- windows runner, git 2.56.1.windows.1, GIT_DIR spelled as the host spells it (backslashes): the builder's `git init` REWRITES THE OTHER REPOSITORY'S CONFIG - `bare = false` becomes `bare = true` - and the next step fails with 'fatal: this operation must be run in a work tree', exit 2. The end check is never reached, and the other repository is left bare. With the same path spelled with forward slashes the init changes nothing and the add writes that repository's index and an object, as on macOS.\nSo on every host measured the second line of defence acts after the damage. The owner was asked and decided: the check moves ahead of the first write.\n\nTHE RULE TO BUILD.\n1. BEFORE ITS FIRST GIT CALL THAT CAN WRITE - which is `git init`, not the first add - the builder asks whether the git it is about to run is redirected away from the workspace, and refuses with NOTHING WRITTEN ANYWHERE when it is. The question is asked independently of the unset line, so that line being lost, shortened or reordered is what the check catches.\n2. WHICH NAMES REDIRECT GIT IS GIT'S ANSWER, NOT A LIST IN THE SCRIPT WHERE THAT CAN BE HAD: `git rev-parse --local-env-vars` prints the names git treats as repository-local. Decide, and say why in the header, between asking git for the names and keeping a written list - and note what that changes for the unset line itself, which today names seven and git's list is longer. ONE CONSTRAINT ON THAT: the suites run the builder with the sweep's own `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` pairs in the environment (they turn git's detached housekeeping off - CLAUDE.md, Tests), and `GIT_CONFIG_PARAMETERS` and `GIT_CONFIG_COUNT` are on git's list; a name that configures git without redirecting it to another repository must not be refused and must not be unset. State the rule that tells the two kinds apart rather than listing exceptions.\n3. THE EXIT AND THE WORDS follow the header's own table, which stays true after the change: say which exit a refusal with nothing written is, and keep 'does not hold its own repository' for the end check, which stays as the last line of defence for what the early one cannot see (a repository that is not the workspace's for another reason - the suite's esc58 drives one).\n4. tests/test_build_shop.py then asserts what the task before this one could not: for a builder that lost its unset, on every host, NOT exit 0 AND THE OTHER REPOSITORY BYTE FOR BYTE AND REF FOR REF WHAT IT WAS - unconditionally, with no 'unless the check refused' - and that the workspace was not written either. The cases added by the task before (esc47, esc57, esc58, esc59) are kept, tightened or folded as that requires; none is deleted without its assertion living on in another, and the return says where each went. The 'not reached on this host' line goes if no host can print it any more; say so.\n5. THE PATH SPELLING IS A CASE, not a footnote: GIT_DIR spelled with backslashes and with forward slashes are both driven where the host has both spellings, and where it has one the case says which ran. The substituted git of esc59 stays as the way a refusing git is driven on a host that has none.\n6. The shipped builder still builds both scenarios byte for byte as before when nothing redirects git: the committed ledgers and example fixtures derived from it do not change (`python3 tools/sweep-selftests.py tests/test_build_shop.py`, and the scaffolds' own cases).\n\nALLOW CASES, as explicit as the refusal: a clean environment; a workspace nested inside another checkout (git would discover the parent - the build makes its own repository and that is right); the sweep's GIT_CONFIG_* pairs present; `GIT_CEILING_DIRECTORIES` or another name that is not repository-local.\n\nHOW TO PROVE. Red first on the present builder: the new unconditional assertion fails on this host (the other repository's index and objects change). Green after. A mutation probe the orchestrator can run from the worktree root (a copy of the working tree, each mutation asserted applied, never `git archive HEAD`): the early check removed (the unconditional assertion goes red); the early check moved after `git init`; the early check asked through a wrapper that unset the names first (it can then never fire - the case that drives a lost unset goes red); the allow rows above each kept green under a check widened to refuse any GIT_ name. Say which lines only a windows run can confirm - the config rewrite cannot be reproduced here; describe how the case would catch it there.\n\nNOT in this task: the timing cases of the same suite (esc53, esc55 - another task, next); the scaffolds' content.\n\nAcceptance:\n(1) A builder that lost its unset, run with git redirected to another repository, exits non-zero and leaves that repository and the workspace unwritten, on every host and for either path spelling, asserted unconditionally.\n(2) The check sits before the first git call that can write and does not depend on the unset line.\n(3) A clean environment, a nested workspace, the sweep's git config pairs and a non-repository GIT_ name all build as before.\n(4) The header's exit table and its paragraph on the workspace's own repository say what the script now does.",
       "files": [
         "plugins/audit/evals/build-shop.sh",
@@ -843,22 +899,72 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-20T00:07:09Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
         {
           "at": "2026-11-19T23:35:21Z",
           "text": "CORRECTION to the description's windows measurement, found re-reading the diagnostic: its second round (forward slashes) ran on the SAME other repository after the first round, and compared against the state before the first. So what it shows is that the init with the forward-slash spelling rewrote the other repository's config BACK from bare = true to bare = false, and the add then wrote its index and an object - not that init 'changes nothing'. What init does to an untouched repository under the forward-slash spelling was not measured. The rule to build does not depend on it: either spelling writes the other repository at init on that host, which is the reason the check goes before init."
+        },
+        {
+          "at": "2026-11-20T00:07:07Z",
+          "text": "this task adds one entry under CHANGELOG.md's Unreleased heading and leaves the heading line this file quotes as it is",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-20T00:07:07Z",
+          "text": "this task edits only the build guide's paragraph on the eval fixture builder (evals/build-shop.sh) and its tree line; the text this file quotes sits in another section and is not edited",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-20T00:07:07Z",
+          "text": "this task edits only the build guide's paragraph on the eval fixture builder (evals/build-shop.sh) and its tree line; the text this file quotes sits in another section and is not edited",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-20T00:07:07Z",
+          "text": "this task edits only the build guide's paragraph on the eval fixture builder (evals/build-shop.sh) and its tree line; the text this file quotes sits in another section and is not edited",
+          "waives": "tests/test__floor_guard.py"
+        },
+        {
+          "at": "2026-11-20T00:07:07Z",
+          "text": "this task edits only the build guide's paragraph on the eval fixture builder (evals/build-shop.sh) and its tree line; the text this file quotes sits in another section and is not edited",
+          "waives": "tests/test__refs.py"
+        },
+        {
+          "at": "2026-11-20T00:07:07Z",
+          "text": "this task edits only the build guide's paragraph on the eval fixture builder (evals/build-shop.sh) and its tree line; the text this file quotes sits in another section and is not edited",
+          "waives": "tests/test_drive_phase.py"
+        },
+        {
+          "at": "2026-11-20T00:07:07Z",
+          "text": "this task edits only the build guide's paragraph on the eval fixture builder (evals/build-shop.sh) and its tree line; the text this file quotes sits in another section and is not edited; the generated module map is not touched, no module is added",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-20T00:07:07Z",
+          "text": "this task edits only the build guide's paragraph on the eval fixture builder (evals/build-shop.sh) and its tree line; the text this file quotes sits in another section and is not edited",
+          "waives": "tools/prove-gates.py"
         }
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-20T00:07:09Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-20T00:47:26Z.9d270c",
+        "status": "passed",
+        "at": "2026-11-20T00:47:26Z"
+      }
     },
     {
       "id": "SG2.11-xk1",

@@ -24,18 +24,38 @@
 # THE REPOSITORY IS THE WORKSPACE'S OWN. git exports GIT_DIR to a hook, so a build
 # started from one - a suite run by a hook included - would re-initialise and
 # commit into the repository that name points at, while the workspace got none.
-# The names that redirect git to another repository, work tree, index or object
-# store are unset before the first git call, and a build whose repository is not
-# the workspace's own .git, at the top level, is refused like an undiscriminating
-# fixture. Every git call passes the options that keep the host's hooks, hook
-# templates and line-ending conversion out of the fixture's commits.
+# Which names do that is git's answer, not a list kept here: `git rev-parse
+# --local-env-vars` prints the names git treats as belonging to one repository,
+# and a newer git may print more than this file could name. The builder clears
+# them the way git does when it runs a command in another repository (a
+# submodule): every name on that list but the configuration git hands on -
+# GIT_CONFIG_PARAMETERS and GIT_CONFIG_COUNT, which carry `git -c` and the
+# GIT_CONFIG_KEY_n/VALUE_n pairs and name no repository. A name off the list
+# (GIT_CEILING_DIRECTORIES, GIT_NAMESPACE) is git's to read and is left alone. A
+# git whose list holds no GIT_DIR is refused: what to clear is then unknown.
+#
+# THEN, BEFORE THE FIRST GIT CALL THAT CAN WRITE (`git init`), the environment is
+# read again - by the shell, not through git and not through the line that cleared
+# it - and while any of those names is still set, empty or not, the build is
+# refused with nothing written. Measured 2026-11-19 and -20 with that clearing
+# line removed: macOS's git 2.53 committed into the repository GIT_DIR named, and
+# a windows runner's git 2.56.1 rewrote that repository's config to `bare = true`
+# at `init`. A workspace nested in another checkout with none of the names set is
+# built: git would discover the checkout, but `git init .` makes the workspace a
+# repository of its own first. A build whose repository is still not the
+# workspace's own .git, at the top level, when it ends is refused like an
+# undiscriminating fixture - the last line, for what the environment cannot show.
+# Every git call passes the options that keep the host's hooks, hook templates and
+# line-ending conversion out of the fixture's commits.
 #
 # Exit codes: 0 built - 2 could not build: a missing tool, a workspace that is not
-# empty or a usage error, refused with nothing written, or a step that failed
-# mid-build (git init, add or commit, a file write, the canary), which leaves the
-# workspace half-built - 3 built, but refused: the fixture
-# in the directory cannot discriminate, or is not the workspace's own repository,
-# and must not be used.
+# empty, git pointed at a repository other than the workspace's, a git naming no
+# repository-local names, or a usage error, refused with nothing written; or a step
+# that failed mid-build (git init, add or commit, a file write, the canary), which
+# leaves the workspace half-built - 3 built, but refused: the fixture in the
+# directory cannot discriminate, or is not the workspace's own repository, and must
+# not be used. A refusal before the first write is 2, not 3, because 3 tells the
+# caller a fixture stands in the directory, and none does.
 #
 # POSIX sh, and nothing on PATH beyond git, python3, mkdir and cat.
 
@@ -48,8 +68,6 @@ refuse() {
   printf 'build-shop: fixture refused, it cannot discriminate - %s\n' "$*" >&2
   exit 3
 }
-
-unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_NAMESPACE
 
 scenario=${1:-}
 case "$scenario" in
@@ -69,6 +87,27 @@ print(names[0] if names else "")') || fail "could not list the working directory
 if [ -n "$held" ]; then
   fail "the working directory is not empty (it holds '$held'); refusing to build over somebody's files"
 fi
+
+# git answers this before it looks for a repository, so a GIT_DIR naming another
+# one is not read here. Globbing is off while the answer is split into names, and a
+# word that is not a plain name is refused rather than unset or evaluated below.
+set -f
+git_local=$(git rev-parse --local-env-vars 2>/dev/null) || git_local=""
+redirecting=""
+for name in $git_local; do
+  case "$name" in
+    *[!A-Z0-9_]*|[!A-Z]*) fail "git named '$name' among its repository-local names; nothing was written" ;;
+    GIT_CONFIG_PARAMETERS|GIT_CONFIG_COUNT) ;;
+    *) redirecting="$redirecting $name" ;;
+  esac
+done
+set +f
+case " $redirecting " in
+  *" GIT_DIR "*) ;;
+  *) fail "git named no GIT_DIR among its repository-local names (git rev-parse --local-env-vars), so what to clear is unknown; nothing was written" ;;
+esac
+
+unset $redirecting
 
 put() {
   case "$1" in
@@ -106,6 +145,19 @@ built() {
   printf 'build-shop: %s fixture built in %s\n' "$1" "$PWD"
   exit 0
 }
+
+# The check before the first git call that can write. It reads the environment
+# itself, so a clearing line above that is lost, shortened or moved below `init`
+# is what it catches; a git confused by the redirect cannot answer it. Set counts,
+# empty or not: git reads an empty value as a path rather than as no value -
+# `GIT_DIR= git init` stops on "The empty string is not a valid path", and an
+# empty GIT_INDEX_FILE had git 2.53 write a `.lock` file into the directory it ran
+# in (measured 2026-11-20).
+for name in $redirecting; do
+  if eval "[ -n \"\${$name+set}\" ]"; then
+    fail "$name is set, which points git away from this workspace; refused before the first git write, nothing was written"
+  fi
+done
 
 fixture_git -c init.defaultBranch=main init -q --template= . || fail "git init failed"
 

@@ -73,15 +73,23 @@ EXIT_REFUSED = 3
 BUILD_TIMEOUT = 120
 _IDENTITY_VARS = ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME",
                   "GIT_COMMITTER_EMAIL", "EMAIL")
-# The names that point git at another repository, work tree, index or object
-# store. git exports GIT_DIR to a hook, so a suite run from one inherits it; the
-# builder unsets exactly these before its first git call, and esc48 holds the
-# builder's list to this one.
+# Names that point git at another repository, work tree, index or object store,
+# dropped from the suite's own environment by `box_env` so a suite run from a git
+# hook - which exports GIT_DIR - starts every build clean. The builder holds no
+# copy of this: it asks git (`rev-parse --local-env-vars`), and esc46 drives every
+# name git answers.
 _GIT_REDIRECT_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE",
                       "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
                       "GIT_COMMON_DIR", "GIT_NAMESPACE")
-# A builder whose unset line is gone: the refusal after the build is what is left.
-REDIRECT_KEPT = ("\nunset GIT_DIR ", "\nunset GIT_NONE_OF_THESE ")
+# The names on git's repository-local list that git itself hands on to a command it
+# runs in ANOTHER repository instead of clearing: configuration given on its
+# command line or in GIT_CONFIG_COUNT pairs. The builder keeps these and clears
+# every other name git lists; esc48 measures this set on the host's own git.
+CONFIG_CARRIED = ("GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT")
+# A builder whose unset line is gone - any `unset` of git names, written out or
+# held in a variable; `unset SHOP_API_KEY` is the fixture's and is not matched.
+REDIRECT_KEPT = (re.compile(r"^unset (?:GIT_|\"?\$)[^\n]*$", re.M),
+                 "unset GIT_NONE_OF_THESE")
 
 GUIDE = os.path.join(os.path.dirname(_harness.TESTS_DIR), "PLUGIN-BUILD-GUIDE.md")
 
@@ -386,8 +394,9 @@ def tool_result(content, is_error=False, first="tool_use_id"):
 def make_box(root, patch=None, config=""):
     """A fresh box under `root`: `ws/` empty, `home/`, `tmp/`, a git global config
     (with `config` appended) and a copy of `evals/` - patched by
-    `(anchor, replacement)` when given. Returns `(box, anchor_hits)`;
-    `anchor_hits` is None when nothing was patched."""
+    `(anchor, replacement)` when given, the anchor a string or a compiled
+    pattern. Returns `(box, anchor_hits)`; `anchor_hits` is None when nothing was
+    patched."""
     box = tempfile.mkdtemp(prefix="box-", dir=root)
     for name in ("ws", "home", "tmp", "bin"):
         os.mkdir(os.path.join(box, name))
@@ -402,9 +411,13 @@ def make_box(root, patch=None, config=""):
         path = os.path.join(src, BUILDER)
         with open(path, "r", encoding="utf-8") as fh:
             body = fh.read()
-        hits = body.count(patch[0])
+        if hasattr(patch[0], "subn"):
+            body, hits = patch[0].subn(patch[1], body)
+        else:
+            hits = body.count(patch[0])
+            body = body.replace(patch[0], patch[1])
         with open(path, "w", encoding="utf-8") as fh:
-            fh.write(body.replace(patch[0], patch[1]))
+            fh.write(body)
     return box, hits
 
 
@@ -942,11 +955,36 @@ def make_victim(root, box):
 
 
 def victim_state(box, victim):
-    """What a build must not move in the victim: its log with every ref, its
-    status, its index and its object count."""
+    """What a build must not move in the victim, as git reads it: its log with
+    every ref, every ref by name, its status, its index and its object count. The
+    status is asked without optional locks, so the reading itself refreshes no
+    index; `tree_bytes` is the byte half."""
     return [git_in(box, victim, *argv) for argv in
-            (("log", "--all", "--format=%H %s"), ("status", "--porcelain"),
+            (("log", "--all", "--format=%H %s"),
+             ("for-each-ref", "--format=%(refname) %(objectname)"),
+             ("--no-optional-locks", "status", "--porcelain"),
              ("ls-files", "-s"), ("count-objects", "-v"))]
+
+
+def tree_bytes(path):
+    """{relpath: sha1, or 'dir'} of everything under `path`, `.git` included: the
+    other repository byte for byte, so a rewritten config is seen even where git
+    reads the repository back as unchanged."""
+    out = {}
+    for base, dirs, files in os.walk(path):
+        rel_base = os.path.relpath(base, path)
+        for d in dirs:
+            out[os.path.join(rel_base, d)] = "dir"
+        for f in files:
+            with open(os.path.join(base, f), "rb") as fh:
+                out[os.path.join(rel_base, f)] = hashlib.sha1(fh.read()).hexdigest()
+    return out
+
+
+def git_local_names(box):
+    """The names this host's git lists as repository-local, in its order."""
+    code, out = git_in(box, box, "rev-parse", "--local-env-vars")
+    return out.split() if code == 0 else []
 
 
 def own_repo(box):
@@ -963,48 +1001,105 @@ def own_repo(box):
 
 def redirect_env(victim, names):
     """Each of `names` pointed into `victim`, the way the caller's environment
-    would carry it."""
+    would carry it. A name git lists that this table does not know gets a path
+    inside the victim's `.git`, so a git newer than the table is still driven."""
     git_dir = os.path.join(victim, ".git")
     where = {"GIT_DIR": git_dir, "GIT_WORK_TREE": victim,
              "GIT_INDEX_FILE": os.path.join(git_dir, "index"),
              "GIT_OBJECT_DIRECTORY": os.path.join(git_dir, "objects"),
              "GIT_ALTERNATE_OBJECT_DIRECTORIES": os.path.join(git_dir, "objects"),
-             "GIT_COMMON_DIR": git_dir, "GIT_NAMESPACE": "victim"}
-    return dict((n, where[n]) for n in names)
+             "GIT_COMMON_DIR": git_dir, "GIT_NAMESPACE": "victim",
+             "GIT_CONFIG": os.path.join(git_dir, "config"),
+             "GIT_GRAFT_FILE": os.path.join(git_dir, "info", "grafts"),
+             "GIT_SHALLOW_FILE": os.path.join(git_dir, "shallow"),
+             "GIT_IMPLICIT_WORK_TREE": "1", "GIT_NO_REPLACE_OBJECTS": "1",
+             "GIT_REPLACE_REF_BASE": "refs/replace/", "GIT_PREFIX": "victim/"}
+    return dict((n, where.get(n, os.path.join(git_dir, n.lower()))) for n in names)
 
 
-def builder_unsets():
-    """The names the shipped builder's `unset` line lists, in order."""
-    with open(os.path.join(EVALS_DIR, BUILDER), "r", encoding="utf-8") as fh:
-        found = re.findall(r"^unset (GIT_[A-Z_ ]+?)\s*$", fh.read(), re.M)
-    return [n.split() for n in found]
+# What `git submodule foreach` is handed, per name, when the caller carried it:
+# a value the outer command itself can run under. The repository's own names are
+# set to the outer repository's own places, so the outer command is not moved.
+def _carry_probe_env(outer, gitconfig):
+    git_dir = os.path.join(outer, ".git")
+    return {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "gc.auto",
+            "GIT_CONFIG_VALUE_0": "0", "GIT_CONFIG_PARAMETERS": "'maintenance.auto=false'",
+            "GIT_DIR": git_dir, "GIT_WORK_TREE": outer,
+            "GIT_INDEX_FILE": os.path.join(git_dir, "index"),
+            "GIT_OBJECT_DIRECTORY": os.path.join(git_dir, "objects"),
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES": os.path.join(git_dir, "objects"),
+            "GIT_COMMON_DIR": git_dir, "GIT_CONFIG": gitconfig,
+            "GIT_GRAFT_FILE": os.path.join(git_dir, "info", "grafts"),
+            "GIT_SHALLOW_FILE": os.path.join(git_dir, "shallow"),
+            "GIT_IMPLICIT_WORK_TREE": "1", "GIT_NO_REPLACE_OBJECTS": "1",
+            "GIT_REPLACE_REF_BASE": "refs/replace/", "GIT_PREFIX": ""}
+
+
+def git_carried(root, box, listed):
+    """`(carried, unmeasured, detail)`: which of git's `listed` names reach a
+    command git runs in another repository - a submodule's `foreach` - when the
+    caller set them. GIT_DIR is git's own to set there, so it is read as
+    replaced. A listed name the probe has no safe value for is `unmeasured`."""
+    inner = tempfile.mkdtemp(prefix="carry-inner-", dir=root)
+    outer = tempfile.mkdtemp(prefix="carry-outer-", dir=root)
+    with open(os.path.join(inner, "f"), "w", encoding="utf-8") as fh:
+        fh.write("inner\n")
+    for where, argv in ((inner, ("init", "-q")), (inner, ("add", "f")),
+                        (inner, ("commit", "-q", "-m", "inner")),
+                        (outer, ("init", "-q")),
+                        (outer, ("-c", "protocol.file.allow=always", "submodule",
+                                 "add", "-q", inner.replace("\\", "/"), "s"))):
+        code, _out = git_in(box, where, *argv)
+        if code != 0:
+            return [], list(listed), "git %s failed in the probe" % (" ".join(argv),)
+    probe = _carry_probe_env(outer, os.path.join(box, "gitconfig"))
+    unmeasured = [n for n in listed if n not in probe]
+    env = box_env(box)
+    for name in list(env):
+        if name.startswith("GIT_CONFIG_KEY_") or name.startswith("GIT_CONFIG_VALUE_"):
+            del env[name]
+    env.update(probe)
+    done = subprocess.run(["git", "submodule", "foreach", "-q", "env"], cwd=outer,
+                          env=env, stdin=subprocess.DEVNULL, capture_output=True,
+                          timeout=BUILD_TIMEOUT)
+    seen = set(ln.split("=", 1)[0] for ln in
+               done.stdout.decode("utf-8", "replace").splitlines() if "=" in ln)
+    carried = [n for n in listed if n in probe and n != "GIT_DIR" and n in seen]
+    return carried, unmeasured, "foreach exit %r: %s" % (
+        done.returncode, quoted(done.stderr.decode("utf-8", "replace"), 300))
 
 
 def _redirect_cases(check, root):
-    unsets = builder_unsets()
-    check("esc48 the builder unsets, in one line, exactly the names the suite's "
-          "boxes drop: %r" % (unsets,), unsets == [list(_GIT_REDIRECT_VARS)])
+    box, _hits = make_box(root)
+    listed = git_local_names(box)
+    carried, unmeasured, detail = git_carried(root, box, listed)
+    check("esc48 of the names this host's git lists as repository-local, the ones "
+          "git itself hands on to a command it runs in another repository are "
+          "exactly the configuration names the builder keeps, %r; carried %r, "
+          "listed %r" % (CONFIG_CARRIED, carried, listed),
+          "GIT_DIR" in listed and not unmeasured
+          and sorted(carried) == sorted(CONFIG_CARRIED),
+          "not measured %r; %s" % (unmeasured, detail))
 
+    redirecting = tuple(n for n in listed if n not in CONFIG_CARRIED)
     for label, scenario, names in (
             ("esc45", "bugfix", ("GIT_DIR",)),
-            ("esc46", "guard-stop", _GIT_REDIRECT_VARS)):
-        box, _hits = make_box(root)
-        victim = make_victim(root, box)
-        before = victim_state(box, victim)
-        built = scaffold(box, scenario, extra_env=redirect_env(victim, names))
-        after = victim_state(box, victim)
+            ("esc46", "guard-stop", redirecting)):
+        run = redirected_build(root, lambda victim, n=names: redirect_env(victim, n),
+                               scenario=scenario)
+        owned = own_repo(run["box"])
         check("%s with %s naming another repository in the caller's environment, "
-              "the %s build leaves that repository as it was, holds its own "
-              "repository in the workspace, and exits 0"
+              "the %s build leaves that repository as it was, byte for byte and ref "
+              "for ref, holds its own repository in the workspace, and exits 0"
               % (label, " ".join(names), scenario),
-              before[0][0] == 0 and before[0][1] and before == after
-              and own_repo(box) and built["code"] == 0,
-              "exit %r; victim unchanged %r; own repository %r; %s"
-              % (built["code"], before == after, own_repo(box),
-                 quoted(built["err"], 400)))
+              names and run["victim_same"] and owned and run["built"]["code"] == 0,
+              "exit %r; victim changed %r; own repository %r; %s"
+              % (run["built"]["code"], run["victim_changed"], owned,
+                 quoted(run["built"]["err"], 400)))
 
-    _kept_gitdir_cases(check, root)
+    _lost_unset_cases(check, root, redirecting)
     _own_repo_check_case(check, root)
+    _allow_cases(check, root)
 
     hooks = os.path.join(root, "host-hooks")
     template = os.path.join(root, "host-template")
@@ -1035,26 +1130,34 @@ def _redirect_cases(check, root):
           built["code"] == 0 and not copied)
 
 
-# --- the own-repository check, on every git ------------------------------------
-# A builder that kept GIT_DIR is stopped by one of two things, and which one comes
-# first is the host git's business: where git lets it (macOS, seen), the build
-# lands in the other repository and the builder's own-repository check refuses
-# afterwards; a windows runner's git refused the first `add` with "this operation
-# must be run in a work tree", before the check. Why that git refuses there was not established, so no
-# case below depends on it. What must never happen is asserted on every git
-# (esc47); the check is asserted where it is reached (esc57) and printed as not
-# reached, with git's words, where git stops the build first; a git refusing the
-# way that runner's did is substituted here to drive that path on every host
-# (esc59); and esc58 reaches the check with no GIT_DIR at all.
+# --- a git pointed at another repository, before the first write ----------------
+# A builder that lost its unset line, run with git redirected to another
+# repository, has damaged that repository on every host measured, each in its own
+# way: macOS's git took the first `add` and `commit` into it, and a windows
+# runner's `git init` rewrote its config to `bare = true` when GIT_DIR was spelled
+# with backslashes. The builder's own-repository check at the end of a build saw
+# the first only after the damage and never ran in the second. So the builder asks
+# before its first git call that can write, and these cases assert the outcome
+# with no exception for any host: not exit 0, the other repository byte for byte
+# and ref for ref what it was, the workspace unwritten (esc47, both spellings of
+# the path where the host has both; esc60 with the names other than GIT_DIR;
+# esc61 with an empty value) - refused by the early check's words, never the end
+# check's (esc57). A git that rewrites the other repository's config at `init`, as
+# that runner's did, is substituted to drive that damage on every host (esc59).
+# The end check stays for a repository that is not the workspace's for another
+# reason (esc58). What the check must leave alone: esc62-esc64; and a git that
+# answers no names is refused rather than trusted (esc65).
 OWN_REPO_WORDS = "does not hold its own repository"
-# The builder's could-not-build line for a git step - the one reading under which
-# the check counts as not reached. An exit 0 is never that: it is the check failing.
-GIT_STOPPED = re.compile(r"^build-shop: git (?:init|add|commit) failed", re.M)
+# The early refusal's words, and the words of a git that named no repository-local
+# names - the builder's own, so a refusal is told from git failing on its own.
+REDIRECT_WORDS = "points git away from this workspace"
+LOCAL_NAMES_WORDS = "repository-local names"
 WINDOWS_WORDS = "fatal: this operation must be run in a work tree"
-# A git that refuses `add` with the windows runner's words while GIT_DIR is set,
-# and is the real git for every other call. Global options before the verb are
-# the builder's `-c name=value` pairs.
-REFUSING_GIT = """#!/bin/sh
+# A git that does at `init` what the windows runner's did while GIT_DIR named
+# another repository - turns that repository bare - and is the real git for every
+# other call, so the next `add` refuses there with the runner's own words. Global
+# options before the verb are the builder's `-c name=value` pairs.
+BARE_MAKING_GIT = """#!/bin/sh
 verb=""
 skip=0
 for arg in "$@"; do
@@ -1065,11 +1168,24 @@ for arg in "$@"; do
     *) verb=$arg; break ;;
   esac
 done
-if [ -n "${GIT_DIR:-}" ] && [ "$verb" = add ]; then
-  echo '%s' >&2
-  exit 128
+if [ -n "${GIT_DIR:-}" ] && [ "$verb" = init ]; then
+  exec '%(real)s' config core.bare true
 fi
-exec '%s' "$@"
+exec '%(real)s' "$@"
+"""
+# A git that answers `rev-parse --local-env-vars` with no names and is the real
+# git for every other call.
+NAMELESS_GIT = """#!/bin/sh
+if [ "$1" = rev-parse ] && [ "$2" = --local-env-vars ]; then
+  exit 0
+fi
+exec '%(real)s' "$@"
+"""
+# A git that records, per call, the configuration names it was handed, then runs
+# the real git.
+RECORDING_GIT = """#!/bin/sh
+printf '%%s|%%s\\n' "${GIT_CONFIG_COUNT-unset}" "${GIT_CONFIG_PARAMETERS-unset}" >> '%(log)s'
+exec '%(real)s' "$@"
 """
 # A builder whose build lands in the workspace (its unset line intact) and whose
 # check is then asked from a subdirectory of another repository it makes there.
@@ -1079,91 +1195,270 @@ CHECK_ELSEWHERE = ("built() {\n",
                    "cd deep || fail \"could not leave for another repository\"\n")
 
 
-def check_reached(built):
-    """False only when git stopped the build before the own-repository check: the
-    builder's could-not-build exit with its line naming a git step."""
-    return not (built["code"] == EXIT_NOT_BUILT
-                and GIT_STOPPED.search(built["err"]) is not None)
-
-
 def refused_by_check(built):
     return built["code"] == EXIT_REFUSED and OWN_REPO_WORDS in built["err"]
 
 
-def kept_gitdir_faults(built, hits, victim_same):
-    """What a GIT_DIR-keeping build did that no git may let it do, as sentences.
-    The other repository may have moved only when the check then refused: git
-    already wrote it by the time the check can ask, and the refusal is what stops
-    the fixture being used."""
+def path_spellings(root):
+    """`[(how, respell)]`: each spelling of a path this host has. A path spelled
+    with backslashes is driven with forward slashes too - the windows runner's
+    git answered the two differently; a host whose paths hold no backslash has
+    the one spelling, and the case says so."""
+    spellings = [("as the host spells it", lambda p: p)]
+    if "\\" in root:
+        spellings.append(("with forward slashes", lambda p: p.replace("\\", "/")))
+    return spellings
+
+
+def write_git(directory, template, **values):
+    """A substitute `git` in `directory`: `template` with the host's real git and
+    `values` filled in, each single-quoted for the shell. None when this host has
+    no git to stand behind it."""
+    real = shutil.which("git")
+    if real is None:
+        return None
+    fill = dict((k, v.replace("'", "'\\''")) for k, v in values.items())
+    fill["real"] = real.replace("'", "'\\''")
+    path = os.path.join(directory, "git")
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(template % fill)
+    os.chmod(path, 0o755)
+    return path
+
+
+def redirected_build(root, env_for, patch=None, git_template=None,
+                     scenario="bugfix"):
+    """One build in a fresh box with a fresh other repository, `env_for(victim)`
+    laid over the build's environment. `patch` goes on the builder's copy;
+    `git_template` puts a substitute git ahead of the build's PATH only, so every
+    reading of the other repository uses the host's git. The other repository is
+    read by git before and after, and hashed byte for byte between the readings,
+    so no reading of it can be what moved it."""
+    box, hits = make_box(root, patch)
+    victim = make_victim(root, box)
+    extra = env_for(victim)
+    fake = None
+    if git_template is not None:
+        fake = tempfile.mkdtemp(prefix="fake-git-", dir=root)
+        if write_git(fake, git_template) is None:
+            shutil.rmtree(fake, ignore_errors=True)
+            return None
+        extra["PATH"] = fake + os.pathsep + box_env(box)["PATH"]
+    readings = victim_state(box, victim)
+    before = tree_bytes(victim)
+    try:
+        built = scaffold(box, scenario, extra_env=extra)
+    finally:
+        if fake is not None:
+            shutil.rmtree(fake, ignore_errors=True)
+    after = tree_bytes(victim)
+    changed = sorted(k for k in set(before) | set(after)
+                     if before.get(k) != after.get(k))
+    same = (readings[0][0] == 0 and bool(readings[0][1]) and not changed
+            and victim_state(box, victim) == readings)
+    return {"box": box, "victim": victim, "built": built, "hits": hits,
+            "victim_same": same, "victim_changed": changed, "ws": ws_names(box)}
+
+
+def unwritten_faults(run):
+    """What a build that must refuse did anyway, as sentences - its effects alone,
+    asserted whoever stopped it and on every host."""
+    built = run["built"]
     faults = []
-    if hits != 1:
-        faults.append("the patch's anchor matched %r time(s)" % (hits,))
+    if run["hits"] is not None and run["hits"] != 1:
+        faults.append("the patch's anchor matched %r time(s)" % (run["hits"],))
     if built["code"] == 0:
         faults.append("the build exited 0")
-    elif built["code"] not in (EXIT_NOT_BUILT, EXIT_REFUSED):
-        faults.append("exit %r is none of the builder's documented failures"
-                      % (built["code"],))
-    if not victim_same and not refused_by_check(built):
-        faults.append("the other repository changed and the check did not refuse")
+    if not run["victim_same"]:
+        faults.append("the other repository changed: %r" % (run["victim_changed"],))
+    if run["ws"]:
+        faults.append("the workspace was written: %r" % (run["ws"],))
+    if built["outside"]:
+        faults.append("the box outside the workspace changed: %r"
+                      % (built["outside"],))
     return faults
 
 
-def kept_gitdir_build(root, extra_path=None):
-    """`(built, hits, victim_same)` of the GIT_DIR-keeping builder run with
-    GIT_DIR naming another repository; `extra_path` is put ahead of the build's
-    PATH only, so the repository readings around it use the host's git."""
-    box, hits = make_box(root, REDIRECT_KEPT)
-    victim = make_victim(root, box)
-    before = victim_state(box, victim)
-    extra = redirect_env(victim, ("GIT_DIR",))
-    if extra_path is not None:
-        extra["PATH"] = extra_path + os.pathsep + box_env(box)["PATH"]
-    built = scaffold(box, "bugfix", extra_env=extra)
-    after = victim_state(box, victim)
-    return built, hits, before[0][0] == 0 and bool(before[0][1]) and before == after
+def early_refusal_faults(built, names):
+    """Whether the early check is what refused: the could-not-build exit, its own
+    line naming one of `names`, and no word of the end check - which runs only
+    after git has written."""
+    faults = []
+    if built["code"] != EXIT_NOT_BUILT:
+        faults.append("exit %r is not the could-not-build exit" % (built["code"],))
+    said = re.findall(r"^build-shop: (GIT_[A-Z_]+) is set\b.*%s"
+                      % (re.escape(REDIRECT_WORDS),), built["err"], re.M)
+    if not [n for n in said if n in names]:
+        faults.append("no early refusal naming one of %r" % (list(names),))
+    if OWN_REPO_WORDS in built["err"]:
+        faults.append("the end check ran")
+    return faults
 
 
-def _kept_gitdir_cases(check, root):
-    built, hits, same = kept_gitdir_build(root)
-    detail = "exit %r: %s" % (built["code"], quoted(built["err"], 400))
-    faults = kept_gitdir_faults(built, hits, same)
-    check("esc47 a builder patched to keep GIT_DIR, run with GIT_DIR naming another "
-          "repository, never exits 0: it stops with a documented failure and leaves "
-          "that repository as it was unless its own-repository check refused the "
-          "build", not faults, "%s; %s" % ("; ".join(faults), detail))
-    reached_label = ("esc57 ...and where git lets that builder reach its "
-                     "own-repository check, the check refuses the build: exit 3 "
-                     "with its own words")
-    if check_reached(built):
-        check(reached_label, refused_by_check(built), detail)
-    else:
-        _harness.skip(check, reached_label, "the own-repository check was not "
-                      "reached on this host: git stopped the patched builder "
-                      "first (%s)" % (detail,), True)
+def _lost_unset_cases(check, root, redirecting):
+    spelled = []
+    for how, respell in path_spellings(root):
+        run = redirected_build(
+            root, lambda victim, r=respell: {"GIT_DIR": r(os.path.join(victim, ".git"))},
+            patch=REDIRECT_KEPT)
+        spelled.append((how, run))
+    hows = [how for how, _run in spelled]
+    lost = ["%s: %s; exit %r: %s" % (how, "; ".join(unwritten_faults(run)),
+                                      run["built"]["code"],
+                                      quoted(run["built"]["err"], 300))
+            for how, run in spelled if unwritten_faults(run)]
+    check("esc47 a builder whose unset line is lost, run with GIT_DIR naming another "
+          "repository, does not exit 0 and leaves that repository byte for byte and "
+          "ref for ref what it was and the workspace unwritten - on every host, "
+          "GIT_DIR spelled %s" % (" and ".join(hows),
+                                  ) + ("" if len(hows) > 1 else
+                                       ", the one spelling this host's paths have"),
+          not lost, " || ".join(lost))
+    wrong = ["%s: %s; exit %r: %s" % (how, "; ".join(early_refusal_faults(
+        run["built"], ("GIT_DIR",))), run["built"]["code"],
+        quoted(run["built"]["err"], 300))
+        for how, run in spelled if early_refusal_faults(run["built"], ("GIT_DIR",))]
+    check("esc57 ...and what refuses it is the check before the first git write: the "
+          "could-not-build exit (%r) with that check's own line naming GIT_DIR, and "
+          "never the end check's words" % (EXIT_NOT_BUILT,),
+          not wrong, " || ".join(wrong))
 
-    real = shutil.which("git")
-    if real is None:
-        _harness.could_not_run(check, "esc59 the build under a git refusing the "
-                               "way the windows runner's did",
+    others = tuple(n for n in redirecting if n != "GIT_DIR")
+    run = redirected_build(root, lambda victim: redirect_env(victim, others),
+                           patch=REDIRECT_KEPT)
+    faults = unwritten_faults(run) + early_refusal_faults(run["built"], others)
+    check("esc60 ...and the same with every other name git lists as repository-local "
+          "but its configuration, GIT_DIR unset - each pointed into the other "
+          "repository: refused before the first write, nothing written (%d names)"
+          % (len(others),), others and not faults,
+          "%s; exit %r: %s" % ("; ".join(faults), run["built"]["code"],
+                               quoted(run["built"]["err"], 400)))
+
+    # Set, not set-and-non-empty: git reads an empty GIT_DIR as a path, so a
+    # check that let an empty one through would leave git a repository to find.
+    run = redirected_build(root, lambda victim: {"GIT_DIR": ""}, patch=REDIRECT_KEPT)
+    faults = unwritten_faults(run) + early_refusal_faults(run["built"], ("GIT_DIR",))
+    check("esc61 ...and the same with GIT_DIR exported EMPTY: a name that is set is "
+          "refused whatever its value, nothing written",
+          not faults, "%s; exit %r: %s" % ("; ".join(faults), run["built"]["code"],
+                                           quoted(run["built"]["err"], 400)))
+
+    _bare_making_case(check, root)
+
+    run = redirected_build(root, lambda victim: redirect_env(victim, ("GIT_DIR",)),
+                           git_template=NAMELESS_GIT)
+    if run is None:
+        _harness.could_not_run(check, "esc65 the build under a git naming no "
+                               "repository-local names",
                                "no git on PATH to stand behind the substitute")
         return
-    fake = tempfile.mkdtemp(prefix="refusing-git-", dir=root)
-    try:
-        with open(os.path.join(fake, "git"), "w", encoding="utf-8",
-                  newline="\n") as fh:
-            fh.write(REFUSING_GIT % (WINDOWS_WORDS, real.replace("'", "'\\''")))
-        os.chmod(os.path.join(fake, "git"), 0o755)
-        built, hits, same = kept_gitdir_build(root, extra_path=fake)
-    finally:
-        shutil.rmtree(fake, ignore_errors=True)
-    faults = kept_gitdir_faults(built, hits, same)
-    check("esc59 under a git that refuses the add the way the windows runner's did, "
-          "the same builder holds esc47 - not exit 0, the other repository as it "
-          "was - and is read as stopped before its check, the reading that prints "
-          "esc57 as not reached",
-          not faults and WINDOWS_WORDS in built["err"] and not check_reached(built),
-          "%s; reached %r; exit %r: %s" % ("; ".join(faults), check_reached(built),
-                                          built["code"], quoted(built["err"], 400)))
+    built = run["built"]
+    faults = unwritten_faults(run)
+    check("esc65 the shipped builder under a git that answers no repository-local "
+          "names, GIT_DIR naming another repository, refuses with the "
+          "could-not-build exit (%r) saying so rather than building on an empty "
+          "list - nothing written" % (built["code"],),
+          not faults and built["code"] == EXIT_NOT_BUILT
+          and LOCAL_NAMES_WORDS in built["err"],
+          "%s; %s" % ("; ".join(faults), quoted(built["err"], 400)))
+
+
+def _bare_making_case(check, root):
+    """The windows runner's damage - `init` turning the other repository bare -
+    driven on every host by a substitute git, after proving the substitute does
+    it: run as the builder would run it, it makes the repository bare and the next
+    `add` refuses with that runner's words."""
+    label = "esc59 the build under a git that makes the other repository bare at init"
+    sh = shutil.which("sh")
+    probe = tempfile.mkdtemp(prefix="bare-probe-", dir=root)
+    box, _hits = make_box(root)
+    victim = make_victim(root, box)
+    if write_git(probe, BARE_MAKING_GIT) is None:
+        _harness.could_not_run(check, label, "no git on PATH to stand behind the "
+                               "substitute")
+        return
+    env = box_env(box)
+    env.update({"GIT_DIR": os.path.join(victim, ".git"),
+                "PATH": probe + os.pathsep + env["PATH"]})
+    empty = tempfile.mkdtemp(prefix="bare-cwd-", dir=root)
+    done = subprocess.run([sh, "-c", "git init -q . ; git add ."], cwd=empty, env=env,
+                          stdin=subprocess.DEVNULL, capture_output=True,
+                          timeout=BUILD_TIMEOUT)
+    shutil.rmtree(probe, ignore_errors=True)
+    _c, bare = git_in(box, victim, "config", "--get", "core.bare")
+    said = done.stderr.decode("utf-8", "replace")
+    if not (bare.strip() == "true" and WINDOWS_WORDS in said):
+        check(label + " - the substitute did not reproduce that runner's damage",
+              False, "core.bare %r: %s" % (bare.strip(), quoted(said, 300)))
+        return
+    run = redirected_build(root, lambda victim: redirect_env(victim, ("GIT_DIR",)),
+                           patch=REDIRECT_KEPT, git_template=BARE_MAKING_GIT)
+    faults = unwritten_faults(run) + early_refusal_faults(run["built"], ("GIT_DIR",))
+    check("esc59 under a git that turns the other repository bare at `init`, as the "
+          "windows runner's did (the substitute shown doing it first), the builder "
+          "that lost its unset leaves that repository as it was: the check precedes "
+          "`init`, not only `add`",
+          not faults, "%s; exit %r: %s" % ("; ".join(faults), run["built"]["code"],
+                                           quoted(run["built"]["err"], 400)))
+
+
+def _allow_cases(check, root):
+    """What the check must leave alone, each built by the SHIPPED builder."""
+    box, _hits = make_box(root)
+    listed = git_local_names(box)
+    git_in(box, box, "init", "-q")
+    built = scaffold(box, "bugfix")
+    owned = own_repo(box)
+    check("esc62 a workspace nested inside another checkout, no git name set, builds "
+          "its own repository and exits 0, the checkout around it untouched",
+          built["code"] == 0 and owned and built["outside"] == [],
+          "exit %r; own repository %r; outside %r: %s"
+          % (built["code"], owned, built["outside"], quoted(built["err"], 400)))
+
+    box, _hits = make_box(root)
+    record = tempfile.mkdtemp(prefix="record-", dir=root)
+    log = os.path.join(record, "calls.log")
+    fake = tempfile.mkdtemp(prefix="recording-git-", dir=root)
+    if write_git(fake, RECORDING_GIT, log=log) is None:
+        _harness.could_not_run(check, "esc63 the build under git configuration pairs",
+                               "no git on PATH to stand behind the recorder")
+        return
+    pairs = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "gc.auto",
+             "GIT_CONFIG_VALUE_0": "0",
+             "GIT_CONFIG_PARAMETERS": "'maintenance.auto=false'"}
+    extra = dict(pairs, PATH=fake + os.pathsep + box_env(box)["PATH"])
+    built = scaffold(box, "bugfix", extra_env=extra)
+    calls = []
+    if os.path.isfile(log):
+        with open(log, "r", encoding="utf-8") as fh:
+            calls = fh.read().splitlines()
+    want = "%s|%s" % (pairs["GIT_CONFIG_COUNT"], pairs["GIT_CONFIG_PARAMETERS"])
+    stray = sorted(set(c for c in calls if c != want))
+    owned = own_repo(box)
+    check("esc63 with git configuration in the environment - GIT_CONFIG_COUNT pairs "
+          "and GIT_CONFIG_PARAMETERS, the shape the sweep runs every suite under - "
+          "the build exits 0 and every one of its git calls (%d) was handed that "
+          "configuration unchanged" % (len(calls),),
+          built["code"] == 0 and owned and calls and not stray,
+          "exit %r; own repository %r; handed otherwise %r: %s"
+          % (built["code"], owned, stray, quoted(built["err"], 400)))
+
+    names = {"GIT_CEILING_DIRECTORIES": root, "GIT_NAMESPACE": "victim",
+             "GIT_TERMINAL_PROMPT": "0"}
+    on_list = sorted(n for n in names if n in listed)
+    box, _hits = make_box(root)
+    built = scaffold(box, "bugfix", extra_env=names)
+    owned = own_repo(box)
+    _c, head = git_in(box, os.path.join(box, "ws"), "symbolic-ref", "HEAD")
+    _c, refs = git_in(box, os.path.join(box, "ws"), "for-each-ref",
+                      "--format=%(refname)")
+    check("esc64 git names that are not repository-local - %s - reach the build, "
+          "which exits 0 with its own repository, HEAD on refs/heads/main and no "
+          "namespaced ref" % (" ".join(sorted(names)),),
+          listed and not on_list and built["code"] == 0 and owned
+          and head.strip() == "refs/heads/main" and "refs/namespaces/" not in refs,
+          "on git's list %r; exit %r; own repository %r; HEAD %r: %s"
+          % (on_list, built["code"], owned, head.strip(), quoted(built["err"], 400)))
 
 
 def _own_repo_check_case(check, root):
@@ -1174,7 +1469,7 @@ def _own_repo_check_case(check, root):
           "own-repository check is asked from inside another repository refuses: "
           "exit 3 with its own words, the workspace holding its own repository - "
           "no GIT_DIR anywhere, so no git's reading of it decides the case",
-          hits == 1 and owned and refused_by_check(built) and check_reached(built),
+          hits == 1 and owned and refused_by_check(built),
           "anchor matched %r time(s); own repository %r; exit %r: %s"
           % (hits, owned, built["code"], quoted(built["err"], 400)))
 
