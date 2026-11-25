@@ -1460,7 +1460,8 @@
       "P169.31-6l3",
       "P169.32-6l3",
       "P169.33-6l3",
-      "P169.34-6l3"
+      "P169.34-6l3",
+      "P169.35-6l3"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -4262,7 +4263,8 @@
       "P130.19-ywo",
       "P131.1",
       "P131.2",
-      "P165.4"
+      "P165.4",
+      "P169.35-6l3"
     ],
     "plugins/audit/scripts/config/_config_rules.py": [
       "P47.1",
@@ -4631,7 +4633,8 @@
       "P169.26-6l3",
       "P169.27-6l3",
       "P169.28-6l3",
-      "P169.32-6l3"
+      "P169.32-6l3",
+      "P169.34-6l3"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -5385,7 +5388,8 @@
       "P148.6",
       "P148.16-xpz",
       "P148.20-xpz",
-      "P169.32-6l3"
+      "P169.32-6l3",
+      "P169.36-6l3"
     ],
     "plugins/audit/scripts/manifest/_manifest_merge.py": [
       "P60.1",
@@ -6214,7 +6218,8 @@
       "P163.17-d6t",
       "P164.1",
       "P164.3-y2u",
-      "P164.2-y2u"
+      "P164.2-y2u",
+      "P169.35-6l3"
     ],
     "plugins/audit/scripts/report/_report_md.py": [
       "P51.9",
@@ -6711,7 +6716,8 @@
       "P169.2",
       "P169.16-6l3",
       "P169.19-6l3",
-      "P169.31-6l3"
+      "P169.31-6l3",
+      "P169.34-6l3"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -6773,7 +6779,8 @@
       "P115.5-4yc",
       "P125.56-0h5",
       "P131.2",
-      "P169.16-6l3"
+      "P169.16-6l3",
+      "P169.35-6l3"
     ],
     "plugins/audit/scripts/ui/panel/write-confirmation.js": [
       "P18.7",
@@ -6792,7 +6799,8 @@
     "plugins/audit/scripts/ui/report-css/badges.css": [
       "P32.7",
       "P80.15-rtb",
-      "P125.99-0h5"
+      "P125.99-0h5",
+      "P169.35-6l3"
     ],
     "plugins/audit/scripts/ui/report.css": [
       "P11.2"
@@ -11313,7 +11321,8 @@
       "P115.4-4yc",
       "P115.5-4yc",
       "P130.9",
-      "P131.2"
+      "P131.2",
+      "P169.35-6l3"
     ],
     "tools/measure-context.py": [
       "P117.1",
@@ -12655,7 +12664,8 @@
     ],
     "tools/bench-report.py": [
       "P130.9",
-      "P131.2"
+      "P131.2",
+      "P169.34-6l3"
     ],
     "tools/_usage_bench.py": [
       "P130.9",
@@ -13092,7 +13102,8 @@
       "P169.27-6l3",
       "P169.28-6l3",
       "P169.32-6l3",
-      "P169.33-6l3"
+      "P169.33-6l3",
+      "P169.34-6l3"
     ],
     "tests/test__evidence_view.py": [
       "P131.1",
@@ -13192,7 +13203,8 @@
       "P148.16-xpz",
       "P148.20-xpz",
       "P143.8-z9j",
-      "P169.32-6l3"
+      "P169.32-6l3",
+      "P169.36-6l3"
     ],
     "tests/test__manifest_merge.py": [
       "P131.1",
@@ -13356,7 +13368,8 @@
       "P164.2-y2u",
       "P165.1",
       "P165.5",
-      "P165.6-r5e"
+      "P165.6-r5e",
+      "P169.35-6l3"
     ],
     "tests/test__report_md.py": [
       "P131.1"
@@ -13456,7 +13469,8 @@
       "P167.7-fge",
       "P167.9-fge",
       "P169.2",
-      "P169.31-6l3"
+      "P169.31-6l3",
+      "P169.34-6l3"
     ],
     "tests/test__surface_digest.py": [
       "P131.1",
@@ -13476,7 +13490,8 @@
       "P131.1",
       "P131.2",
       "P109.1",
-      "P165.4"
+      "P165.4",
+      "P169.35-6l3"
     ],
     "tests/test__usage_bench.py": [
       "P131.1",
@@ -13628,7 +13643,8 @@
       "P169.2",
       "P169.19-6l3",
       "P169.31-6l3",
-      "P169.32-6l3"
+      "P169.32-6l3",
+      "P169.34-6l3"
     ],
     "tests/test_audit_task.py": [
       "P131.1",

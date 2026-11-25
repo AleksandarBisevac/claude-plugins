@@ -355,6 +355,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   default gate holds neither test condition, so its verdict is unchanged; a plan whose records
   all read renders and gates exactly as before. COMPATIBILITY.md section 1 records the new word
   as additive.
+- **The report and the panel give no passing word to a task or phase whose own run record
+  cannot be read.** The same subject still read `passed` on the other two surfaces, which took
+  the word from the pointer. The report now reads the plan's run records once, before it
+  prints a tests word, and hands that answer to both rollups and to the evidence load: the
+  subject's evidence cell in the page and its tests column in the Markdown twin read
+  `unreadable`, the cell's note is the reader's own sentence for the record (file, field, and
+  the step that gets out), its earlier runs are not listed, and the phase's roll-up counts it
+  under that word. The panel's state payload hands the same answer to its rollup, so the
+  subject is counted `unreadable` in `testEvidence.byStatus` and listed in `testEvidence.failing`
+  with the record's `file`, `field` and `why`. `/audit:status`, the report and the panel now ask
+  one door for the read (`_evidence_io.plan_unreadable_records`), and a check over every
+  `.py` under `scripts/` and `tools/` fails by file and line for a caller of the rollup that
+  does not hand it that answer. What is left, for a change to the page sources and their
+  browser gate: the panel's Overview badge still comes from the pointer and the ledger's run
+  (`overview.js`), neither page has a tint or a label of its own for the word
+  (`TEV_LABELS`, the badge CSS, `EVWORD`), and neither shows the reader's sentence as text on
+  the page - it is in the badge's tooltip in the report and in the state payload for the
+  panel. A plan whose records all read renders, and serves its payload, byte for byte as before.
 - **A run record merges as one value, so a merge never reads a red back as passed.** The plan's
   merge driver merged a run record field by field: with a red on the base, a green recorded on
   one branch and a newer red on the other, it conflicted on the run id, the moment and the

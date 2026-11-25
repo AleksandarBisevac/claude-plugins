@@ -4632,6 +4632,30 @@ def plan_unreadable(manifest_path, project=None):
     return {"unreadablePlanFiles": lost, "unreadableRecords": malformed}
 
 
+def plan_unreadable_records(manifest_path, project_dir=None):
+    """`plan_unreadable`'s answer for the plan at `manifest_path`, resolved the
+    way every reader resolves its project (`project_config_for`), and ALWAYS an
+    answer: the ONE read of the run records a plan holds that are not the
+    record's shape, asked by `/audit:status`, the report and the panel, so the
+    three name a subject whose own record cannot be read by the same entries.
+
+    When even the read raises, `unreadableRecords` holds ONE whole-plan entry
+    (scope `plan`, naming the cause) and never an empty list: no record was
+    read, and a reader given `[]` would take every subject for readable and
+    print the pointer's word for it, where the whole-plan entry turns each
+    subject that would carry a word into `unreadable`
+    (`_status_facts.evidence_row`)."""
+    try:
+        project, _config = project_config_for(manifest_path, project_dir)
+        return plan_unreadable(manifest_path, project)
+    except Exception as exc:                       # noqa: BLE001
+        return {"unreadablePlanFiles": [], "unreadableRecords": [{
+            "file": str(manifest_path), "scope": "plan",
+            "subject": "every record", "key": None, "field": None,
+            "why": "the plan's run records could not be read (%s: %s)"
+                   % (type(exc).__name__, exc)}]}
+
+
 def plan_said(project, manifest_path):
     """The plan's path as a command a person types names it: relative to
     `project` when there is one, forward slashes."""

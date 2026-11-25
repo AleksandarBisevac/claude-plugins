@@ -451,23 +451,6 @@ def full_run_block(manifest, manifest_path, project):
     return out
 
 
-def unreadable_records_block(manifest_path, project):
-    """`[{"file", "scope", "subject", "key", "field", "why"}]` - each run
-    record the plan's files hold that is not the record's shape, as
-    `_evidence_io.plan_unreadable` names it; one entry saying the plan's
-    files could not be walked when even that read raised."""
-    try:
-        project_root, _config = _evidence_io.project_config_for(
-            manifest_path, project)
-        return _evidence_io.plan_unreadable(
-            manifest_path, project_root)["unreadableRecords"]
-    except Exception as exc:                       # noqa: BLE001
-        return [{"file": str(manifest_path), "scope": "plan",
-                 "subject": "every record", "key": None, "field": None,
-                 "why": "the plan's run records could not be read (%s: %s)"
-                        % (type(exc).__name__, exc)}]
-
-
 def _full_run_unknown(manifest, basis):
     """Every MERGED phase answering UNKNOWN for `basis` - `full_status`'s own
     keys, so a reader of the block cannot tell a failed read from an ancestry
@@ -2601,7 +2584,8 @@ def main(argv):
     # to any reader. The read comes before the rollup, which counts each
     # subject it names by the read's word rather than its pointer's - the one
     # answer every tests word below is printed from, the gate's included.
-    unread = unreadable_records_block(manifest_path, project)
+    unread = _evidence_io.plan_unreadable_records(
+        manifest_path, project)["unreadableRecords"]
     summary = rollup(plan, findings, warnings,
                      usage=usage_summary(plan, manifest_path,
                                          full=(want_json or want_gate)),

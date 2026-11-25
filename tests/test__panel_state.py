@@ -804,12 +804,140 @@ def _trail_cases(check):
         _harness.remove_tree(root)
 
 
+# --- a subject whose own run record cannot be read ----------------------------
+# The fixture is shared: `test_render_report.py` builds the same plan and asks
+# the report where this file asks the panel, so the two surfaces answer for one
+# plan rather than for two look-alikes.
+UR_FILE = "docs/audit/phases/P1.json"
+# The shapes a record stops reading in. A key written twice is not among them:
+# the plan file holding it is refused whole by `_manifest_io`'s door, and a
+# plan that will not read is refused by every renderer.
+UR_SHAPES = (("moment", "lastRun.at"), ("steps", "lastRun.steps"))
+UR_SUBJECT_ID = {"task": "P1.1", "phase": "P1"}
+
+
+def _ur_row(run_id, ts, scope, task):
+    row = {"v": _evidence.ROW_VERSION, "runId": run_id, "ts": ts,
+           "scope": scope, "phaseId": "P1", "status": "passed",
+           "durationMs": 10, "selectionMs": 1, "startedAt": ts, "failed": [],
+           "reuseKey": "sha256:k", "gateDigest": "sha256:g",
+           "gateSource": scope,
+           "testedState": {"head": "abc123", "dirtyDigest": "sha256:d",
+                           "tree": "sha256:t", "scopeDigest": "sha256:s"},
+           "banners": [], "steps": [{
+               "name": "sweep", "exit": 0, "ran": 3, "measured": "measured",
+               "durationMs": 8, "outcome": "passed"}]}
+    if task:
+        row["taskId"] = task
+    return row
+
+
+def ur_project(root, shape, subject):
+    """The manifest path of a sharded plan under `root`: phase P1, done and
+    merged, of done tasks P1.1 and P1.2, every subject holding a green run
+    record, its pointer saying `passed` and the evidence ledger beside the plan
+    holding every run. `shape` (None for none) breaks the record of P1.1 when
+    `subject` is "task" and of P1 when it is "phase" - the pointer and the
+    ledger stay green, which is what a reader of either would print."""
+    os.makedirs(os.path.join(root, ".claude"))
+    _mio.atomic_write_json(os.path.join(root, ".claude", "audit.config.json"),
+                           {"manifestPath": "docs/audit/audit-plan.json"})
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    rows = [_ur_row("UR-P1.1", "2026-11-18T11:00:00Z", "task", "P1.1"),
+            _ur_row("UR-P1.2", "2026-11-18T11:01:00Z", "task", "P1.2"),
+            _ur_row("UR-P1", "2026-11-18T11:05:00Z", "phase", None)]
+
+    def held(body, row):
+        record = _evidence.run_record(row)
+        body[_evidence.RECORD_KEY] = record
+        body[_evidence.POINTER_KEY] = _evidence.pointer_from_record(record)
+        return body
+    tasks = [held({"id": tid, "title": "t", "status": "done",
+                   "completedAt": "2026-11-18T12:00:00Z",
+                   "tests": {"mode": "tdd", "gate": ["sweep"]}}, row)
+             for tid, row in (("P1.1", rows[0]), ("P1.2", rows[1]))]
+    shard = held({"id": "P1", "title": "one", "status": "done",
+                  "mergedAt": "2026-11-18T12:30:00Z", "testGate": ["sweep"],
+                  "tasks": tasks}, rows[2])
+    record = (shard if subject == "phase" else tasks[0]).get(
+        _evidence.RECORD_KEY)
+    if shape == "moment":
+        record["at"] = "not-a-moment"
+    elif shape == "steps":
+        record["steps"] = 5
+    _mio.atomic_write_json(os.path.join(root, UR_FILE), shard, indent=2)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    _mio.atomic_write_json(mpath, {
+        "meta": {"version": 3,
+                 "evidenceSince": {"at": "2026-01-01T00:00:00Z"}},
+        "phases": [{"id": "P1", "title": "one", "shard": "phases/P1.json"}]})
+    where = _evidence.evidence_dir(root)
+    os.makedirs(where)
+    with open(os.path.join(where, "manual.jsonl"), "w",
+              encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(json.dumps(row) + "\n")
+    return mpath
+
+
+def _unreadable_cases(check):
+    """A subject whose own newest run record cannot be read carries the read's
+    word in the panel's payload, never the pointer's `passed`."""
+    import tempfile
+    root = tempfile.mkdtemp(prefix="panel-state-unreadable-")
+    try:
+        ur_project(os.path.join(root, "ok"), None, "task")
+        te = (M.build_state(os.path.join(root, "ok")).get("rollup") or {}
+              ).get("testEvidence") or {}
+        check("ur1 ALLOW: a plan whose every run record reads green counts "
+              "three `passed` in the panel's rollup, lists nothing as failing "
+              "and names no unreadable record - what fails if the word starts "
+              "firing on a readable record",
+              te.get("byStatus") == {"passed": 3}
+              and te.get("failing") == [] and "unreadable" not in te,
+              "byStatus=%r failing=%r" % (te.get("byStatus"),
+                                          te.get("failing")))
+        built = {}
+        for shape, field in UR_SHAPES:
+            for subject in ("task", "phase"):
+                where = os.path.join(root, "%s-%s" % (shape, subject))
+                ur_project(where, shape, subject)
+                built[(shape, subject)] = (field, M.build_state(where))
+        bad = []
+        for (shape, subject), (field, state) in sorted(built.items()):
+            who = UR_SUBJECT_ID[subject]
+            te = (state.get("rollup") or {}).get("testEvidence") or {}
+            gone = [r for r in te.get("failing") or []
+                    if r.get("status") == "unreadable"]
+            said = (state.get("evidence") or {}).get("unreadablePlanSaid") or ""
+            ok = (te.get("byStatus") == {"passed": 2, "unreadable": 1}
+                  and len(gone) == 1 and gone[0].get("id") == who
+                  and gone[0].get("scope") == subject
+                  and gone[0].get("file") == UR_FILE
+                  and str(gone[0].get("field") or "").startswith(field)
+                  and gone[0].get("why") and gone[0]["why"] in said
+                  and te.get("unrecognised") == [])
+            if not ok:
+                bad.append(((shape, subject), te.get("byStatus"), gone))
+        check("ur2 RED-FIRST: the panel's rollup, each shape in `UR_SHAPES` on "
+              "a task and on a phase: the subject is counted `unreadable` and "
+              "listed in `failing` with the record's file, field and the "
+              "read's own reason (a substring of the sentence the evidence "
+              "block carries), the two readable subjects stay `passed`, and "
+              "the word is never `unrecognised`: %d plan(s), wrong %r"
+              % (len(built), bad[:2]),
+              len(built) == len(UR_SHAPES) * 2 and bad == [])
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _full_run_cases(check)
         _harness.stage(check, "pl", _live_copy_cases)
         _harness.stage(check, "ptr", _trail_cases)
+        _harness.stage(check, "ur", _unreadable_cases)
     return _harness.run(body)
 
 

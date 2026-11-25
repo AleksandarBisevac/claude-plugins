@@ -1100,9 +1100,98 @@ def _trail_view_cases(check):
         _harness.remove_tree(root)
 
 
+def _unreadable_cases(check):
+    """The views of a subject whose own run record the read could not read, and
+    the one read of the plan's records the callers share."""
+    root = _harness.fixture_root("evidence-view-unreadable")
+    try:
+        plan = _plan()
+        path = _write_project(root, plan, _rows())
+        lost = {"file": "docs/audit/phases/P1.json", "scope": "task",
+                "subject": "P1.1", "phase": "P1", "key": "lastRun",
+                "field": "lastRun.at", "why": "lastRun.at is \"x\", not a "
+                "moment"}
+        plain = M.load_evidence(plan, path, project_dir=root)
+        quiet = M.load_evidence(plan, path, project_dir=root, unreadable=[])
+        said = M.load_evidence(plan, path, project_dir=root, unreadable=[lost])
+        view = said["tasks"]["P1.1"]
+        check("eu1 ALLOW: with no unreadable record named - handed none, or "
+              "handed an empty list - every view is the one a plan with "
+              "readable records always had, and no key is `unreadable`",
+              quiet == plain and "unreadable" not in set(
+                  v["key"] for v in plain["tasks"].values()),
+              "keys=%r" % (sorted(set(v["key"] for v in plain["tasks"].values())),))
+        check("eu2 RED-FIRST: a subject the read names reads `unreadable`, "
+              "with no run behind it, no earlier runs and the read's own "
+              "sentence naming the file and the field - never the pointer's "
+              "`passed` - while the subjects it does not name keep their "
+              "words: %r" % ((view["key"], view["why"][:80]),),
+              view["key"] == "unreadable" and view["row"] is None
+              and view["history"] == [] and view["flags"] == []
+              and view["known"] is True
+              and _evidence_io.unreadable_records_sentence([lost])
+              == view["why"]
+              and lost["file"] in view["why"] and lost["field"] in view["why"]
+              and said["tasks"]["P1.2"] == plain["tasks"]["P1.2"]
+              and said["tasks"]["P1.3"] == plain["tasks"]["P1.3"]
+              and said["phases"]["P1"]["own"] == plain["phases"]["P1"]["own"])
+        check("eu3 the word is counted where the page counts words: the "
+              "phase's roll-up carries one `unreadable` and one fewer `passed` "
+              "than the plain load, and the filter keys name it",
+              dict((k, n) for k, _l, n in said["phases"]["P1"]["rollup"]
+                   )["unreadable"] == 1
+              and dict((k, n) for k, _l, n in said["phases"]["P1"]["rollup"]
+                       )["passed"]
+              == dict((k, n) for k, _l, n in plain["phases"]["P1"]["rollup"]
+                      )["passed"] - 1
+              and "unreadable" in said["keys"])
+        # The phase's own record, and the whole-plan entry (the read itself
+        # failed): the second turns only a subject that would carry a word.
+        mine = dict(lost, scope="phase", subject="P1", field="lastRun.steps")
+        pview = M.load_evidence(plan, path, project_dir=root,
+                                unreadable=[mine])
+        whole = M.load_evidence(plan, path, project_dir=root, unreadable=[{
+            "file": path, "scope": "plan", "subject": "every record",
+            "key": None, "field": None, "why": "the read raised"}])
+        check("eu4 a phase's own record names the phase's sign-off view and no "
+              "task's; a whole-plan entry turns every subject that carries a "
+              "word and leaves a subject with no pointer as it was",
+              pview["phases"]["P1"]["own"]["key"] == "unreadable"
+              and pview["tasks"]["P1.1"] == plain["tasks"]["P1.1"]
+              and whole["phases"]["P1"]["own"]["key"] == "unreadable"
+              and [k for k, v in sorted(whole["tasks"].items())
+                   if v["key"] == "unreadable"]
+              == [k for k, v in sorted(plain["tasks"].items())
+                  if v["key"] not in ("no-evidence", "no-gate")]
+              and whole["tasks"]["P1.5"] == plain["tasks"]["P1.5"],
+              "whole=%r" % (dict((k, v["key"])
+                                 for k, v in whole["tasks"].items()),))
+        # Handed none, the load reads the ledger read's own answer.
+        real = _evidence_io.read_rows
+
+        def _lost_read(project, config=None, manifest_path=None):
+            out = dict(real(project, config=config,
+                            manifest_path=manifest_path))
+            out["unreadableRecords"] = [lost]
+            return out
+        _evidence_io.read_rows = _lost_read
+        try:
+            own = M.load_evidence(plan, path, project_dir=root)
+        finally:
+            _evidence_io.read_rows = real
+        check("eu5 handed no answer, the load reads the ledger read's own "
+              "`unreadableRecords`, so a caller that passed none still prints "
+              "no passing word for a subject the read names",
+              own["tasks"]["P1.1"]["key"] == "unreadable"
+              and own["tasks"]["P1.2"] == plain["tasks"]["P1.2"])
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _harness.stage(check, "evt", _trail_view_cases)
+        _harness.stage(check, "evu", _unreadable_cases)
         _cases(check)
         _graded_cases(check)
         _full_run_cases(check)

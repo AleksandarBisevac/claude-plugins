@@ -2632,9 +2632,111 @@ def _newline_cases(check):
         shutil.rmtree(root, ignore_errors=True)
 
 
+def _tev_words(html):
+    """The `data-tev` word of each task row of the report's tables, in the
+    order the rows are written, read off the markup with the page's style and
+    script blocks cut away (a class name in the stylesheet is not a row)."""
+    body = re.sub(r"<script.*?</script>|<style.*?</style>", "", html or "",
+                  flags=re.S)
+    return re.findall(r'<tr class="task"[^>]*\bdata-tev="([^"]*)"', body)
+
+
+def _unreadable_cases(check):
+    """A subject whose own run record cannot be read gets no passing word in the
+    report: its evidence cell (HTML) and its tests column (Markdown) carry the
+    read's word, and the cell's note names the record."""
+    import shutil
+    import tempfile
+    import test__panel_state as fixture
+    root = tempfile.mkdtemp(prefix="render-report-unreadable-")
+    try:
+        def render(name, shape, subject):
+            proj = os.path.join(root, name)
+            mpath = fixture.ur_project(proj, shape, subject)
+            out = os.path.join(root, name + "-out")
+            code, err = _in_project(proj, [mpath, "--out-dir", out])
+            return (code, err, _read(os.path.join(out, "audit-report.html")),
+                    _read(os.path.join(out, "audit-report.md")))
+
+        code, err, html, md = render("ok", None, "task")
+        md_cells = [ln for ln in (md or "").splitlines()
+                    if ln.startswith(("| P1.1 ", "| P1.2 "))]
+        check("ur-r1 ALLOW: a plan whose every run record reads green renders "
+              "`passed` in both task rows and both Markdown rows and writes no "
+              "unreadable word anywhere - what fails if the word starts firing "
+              "on a readable record",
+              code == 0 and _tev_words(html) == ["passed", "passed"]
+              and len(md_cells) == 2
+              and all(" passed |" in ln for ln in md_cells)
+              and "unreadable" not in (md or "").replace(
+                  "ledger-unreadable", ""),
+              "code=%r words=%r md=%r err=%r"
+              % (code, _tev_words(html), md_cells, err))
+
+        built = {}
+        for shape, field in fixture.UR_SHAPES:
+            built[shape] = (field,) + render("t-" + shape, shape, "task")
+        bad = []
+        for shape, (field, code, err, html, md) in sorted(built.items()):
+            cells = [ln for ln in (md or "").splitlines()
+                     if ln.startswith(("| P1.1 ", "| P1.2 "))]
+            body = re.sub(r"<script.*?</script>|<style.*?</style>", "",
+                          html or "", flags=re.S)
+            note = re.findall(r'<span class="chip tev" data-tev="unreadable" '
+                              r'title="([^"]*)"', body)
+            ok = (code == 0 and _tev_words(html) == ["unreadable", "passed"]
+                  and len(cells) == 2 and " unreadable |" in cells[0]
+                  and " passed |" in cells[1]
+                  and note and all(fixture.UR_FILE in n and field in n
+                                   for n in note))
+            if not ok:
+                bad.append((shape, _tev_words(html), cells, note[:1]))
+        check("ur-r2 RED-FIRST: the report, each shape in `UR_SHAPES` on a task: "
+              "the subject's row carries `unreadable` in the page's table and "
+              "in the Markdown twin - never the pointer's `passed` - the "
+              "readable task beside it keeps `passed`, and every unreadable "
+              "badge's note names the record's file and field: %d plan(s), "
+              "wrong %r" % (len(built), bad[:2]),
+              len(built) == len(fixture.UR_SHAPES) and bad == [])
+
+        # A phase's own record: the phase's own badge is not a task row, so the
+        # page's phase block is read for the word instead.
+        _c, _e, phtml, pmd = render("p-moment", "moment", "phase")
+        pbody = re.sub(r"<script.*?</script>|<style.*?</style>", "",
+                       phtml or "", flags=re.S)
+        block = _html_phase_row(pbody, "P1")
+        phase_words = re.findall(r'<span class="chip tev" data-tev="([^"]*)"',
+                                 block)
+        check("ur-r3 RED-FIRST: the report, a phase whose own record cannot be "
+              "read: the phase row's evidence badge is `unreadable`, not "
+              "`passed`, and the readable tasks under it keep `passed`",
+              phase_words[:1] == ["unreadable"]
+              and _tev_words(phtml) == ["passed", "passed"],
+              "phase=%r tasks=%r" % (phase_words, _tev_words(phtml)))
+        # The evidence load's handoff, counted. (The rollups' is held for every
+        # caller in the tree by `test__status_facts.py`'s `rd` cases.) A load
+        # handed none reads the ledger read's own answer, so dropping the
+        # argument shows in no plan this file can build; the page and the
+        # verdicts resting on ONE read is what this call keeps.
+        import ast
+        calls = [n for n in ast.walk(ast.parse(_harness.module_source(M)))
+                 if isinstance(n, ast.Call)
+                 and getattr(n.func, "attr", getattr(n.func, "id", None))
+                 == "load_evidence"]
+        dropped = [n.lineno for n in calls
+                   if not any(k.arg == "unreadable" for k in n.keywords)]
+        check("ur-r4 every `load_evidence(` call `render-report.py` makes names "
+              "the read's answer (`unreadable=`), so the evidence cell and the "
+              "rollups rest on one read: %d call(s), without it at lines %r"
+              % (len(calls), dropped), len(calls) == 1 and dropped == [])
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _rl_stage(check):
     _live_copy_cases(check)
     _newline_cases(check)
+    _unreadable_cases(check)
 
 
 def _selftest():

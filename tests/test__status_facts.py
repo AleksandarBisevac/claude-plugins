@@ -2551,8 +2551,123 @@ def _trail_cases(check):
         _harness.remove_tree(tmp)
 
 
+# --- every caller of the rollup hands it the run-record read's answer ----------
+def _rollup_calls(tree):
+    """`[(line, passes)]` for every call of the status rollup in the parsed
+    `tree`, `passes` being whether the call names `unreadable=`; the calls
+    themselves are `_rollup_nodes`'.
+
+    THE ROLLUP IS REACHED UNDER MANY NAMES - the module imported as itself or
+    under an alias, `from _status_facts import rollup as r`, `rollup =
+    <module>.rollup`, and an object that merely holds the module (`lib`,
+    `as_`) - and no walk resolves the last of those, so a call counts when its
+    callee is an attribute named `rollup` on anything, or a bare name bound to
+    one by an import or an assignment in the same file. This repository has
+    one `rollup`; a second one would surface here as a conviction by file and
+    line, to be named or renamed, never as a silent pass. `**options` does not
+    count as passing: what it carries cannot be read from the call.
+    """
+    return sorted((n.lineno, any(k.arg == "unreadable" for k in n.keywords))
+                  for n in _rollup_nodes(tree))
+
+
+def _rollup_nodes(tree):
+    """The `ast.Call` nodes `_rollup_calls` reads, in the order the walk meets
+    them - the nodes themselves, so a case can cut a keyword off one and read
+    the file again (a line number alone names whichever call starts there)."""
+    bound = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            bound.update(a.asname or a.name for a in node.names
+                         if a.name == "rollup")
+        elif (isinstance(node, ast.Assign)
+              and isinstance(node.value, ast.Attribute)
+              and node.value.attr == "rollup"):
+            bound.update(t.id for t in node.targets
+                         if isinstance(t, ast.Name))
+    return [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+            and ((isinstance(n.func, ast.Attribute) and n.func.attr == "rollup")
+                 or (isinstance(n.func, ast.Name) and n.func.id in bound))]
+
+
+def _rollup_door_cases(check):
+    """(rd) Every caller of `_status_facts.rollup` under `plugins/audit/scripts/`
+    and `tools/` passes the run-record read's answer, derived from the tree: a
+    caller written tomorrow, under any import alias, is convicted by file and
+    line unless it names `unreadable=`."""
+    planted = {
+        "attr": "import _status_facts as sf\nsf.rollup(m, [], [])\n",
+        "held": "def f(lib):\n    return lib.rollup(m, [], [])\n",
+        "from-import": "from _status_facts import rollup as r\nr(m, [], [])\n",
+        "assigned": "import _status_facts\nroll = _status_facts.rollup\n"
+                    "roll(m, [], [])\n",
+        "options": "import _status_facts as sf\nsf.rollup(m, [], [], **o)\n",
+    }
+    quiet = dict((k, v.replace("[])", "[], unreadable=u)", 1)
+                  .replace("[], **o)", "[], unreadable=u, **o)", 1))
+                 for k, v in planted.items())
+    bad_planted = dict((k, _rollup_calls(ast.parse(v)))
+                       for k, v in planted.items())
+    ok_planted = dict((k, _rollup_calls(ast.parse(v)))
+                      for k, v in quiet.items())
+    check("rd1 RED-FIRST, A PLANTED NEW CALLER: a rollup call under each name "
+          "it is reached by (module attribute, a held module, an imported or "
+          "assigned alias, `**options`) that does not name `unreadable=` is "
+          "found and read as not passing it - and the same five naming it "
+          "are found and read as passing: %r" % (bad_planted,),
+          all(len(v) == 1 and v[0][1] is False for v in bad_planted.values())
+          and all(len(v) == 1 and v[0][1] is True
+                  for v in ok_planted.values())
+          and not _rollup_calls(ast.parse("tev_rollup(x)\nx.timing_rollup(y)\n")))
+
+    found, convicted, files = {}, [], []
+    roots = (_output.SCRIPTS_DIR, os.path.join(_output.REPO_ROOT, "tools"))
+    for root in roots:
+        for rel, path in _output.py_files(root):
+            with open(path, encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), path)
+            calls = _rollup_calls(tree)
+            if calls:
+                found[path] = (tree, calls)
+                files.append(os.path.basename(path))
+            convicted += ["%s:%d" % (os.path.relpath(path, _output.REPO_ROOT),
+                                     line) for line, ok in calls if not ok]
+    names = sorted(files)
+    check("rd2 THE TREE, DERIVED: every call of the status rollup in every "
+          ".py under `scripts/` and `tools/` names `unreadable=` - %d call(s) "
+          "in %r, convicted at %r. The walk is shown to have found the "
+          "callers this was written about, so an empty walk cannot read as "
+          "clean" % (sum(len(c) for _t, c in found.values()), names,
+                     convicted),
+          convicted == []
+          and set(["_panel_state.py", "audit-status.py", "bench-report.py",
+                   "render-report.py"]) <= set(names))
+
+    # Removing the argument at any ONE existing caller turns that caller, and
+    # only that one, into a conviction: the keyword is cut from the parsed
+    # tree, the file is read again, and the keyword is put back.
+    missed = []
+    for path, (tree, calls) in sorted(found.items()):
+        for node in [n for n in _rollup_nodes(tree)
+                     if any(k.arg == "unreadable" for k in n.keywords)]:
+            kept = node.keywords
+            node.keywords = [k for k in kept if k.arg != "unreadable"]
+            try:
+                after = _rollup_calls(tree)
+            finally:
+                node.keywords = kept
+            if [c for c in after if not c[1]] != [(node.lineno, False)]:
+                missed.append("%s:%d" % (os.path.basename(path), node.lineno))
+    check("rd3 RED-FIRST, AN EXISTING CALLER LOSING THE ARGUMENT: cutting "
+          "`unreadable=` from each real caller in turn convicts exactly that "
+          "call, and no other: %d caller(s), missed %r"
+          % (sum(len(c) for _t, c in found.values()), missed),
+          missed == [] and len(found) >= 4)
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "rd", _rollup_door_cases)
         _harness.stage(check, "st", _trail_cases)
         _harness.stage(check, "tt", _timing_cases)
         _harness.stage(check, "gx", _gate_exemption_cases)

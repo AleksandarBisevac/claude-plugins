@@ -1097,16 +1097,20 @@
         "severity": "high",
         "file": "plugins/audit/scripts/manifest/_manifest_io.py (read_json, save_plan_json) and every verb that saves a plan file through it",
         "issue": "A plan file that writes a key twice (the shape a keep-both merge resolution leaves) is parsed with the last copy winning and saved back with one copy, silently, by every verb that writes the plan (`audit-task.py note`, `done`, and the others that go through `read_json`/`save_plan_json`). With a task holding its newest red record and then a second copy of the key carrying an older green, an unrelated `note` rewrites the shard with the green alone; from then the lookup names the green, the gate reuses it and `done` closes bound to it, ledger on and off. The run-record reader refuses the shape now, and the one writer that asks it refuses too, but any other save destroys the evidence first.",
-        "resolution": "The plan is parsed through one door that notices a key written twice anywhere in a plan file, and no verb saves a file it read that way: it refuses with the file, the path of the key and the hand step that gets out. Every reader that answers from the plan either goes through that door or is named with why it cannot.",
-        "fixTask": "P169.32-6l3"
+        "resolution": "fixed in P169.32-6l3 (8bbfa87cc115): The plan is parsed through one door that notices a key written twice anywhere in a plan file, and no verb saves a file it read that way: it refuses with the file, the path of the key and the hand step that gets out. Every reader that answers from the plan either goes through that door or is named with why it cannot.",
+        "fixTask": "P169.32-6l3",
+        "commit": "8bbfa87cc115",
+        "status": "fixed"
       },
       {
         "id": "P169-R113",
         "severity": "high",
         "file": "plugins/audit/scripts/governance/_evidence_io.py (_record_holders); plugins/audit/scripts/manifest/validate-manifest.py",
         "issue": "A phase that writes its `tasks` key twice (one copy holding a task with its newest red record, the second the same task with an older green) is read from the last copy by every reader, silently: the lookup names the green, the gate reuses it, the validator says nothing, `done` closes bound to the green and rewrites the shard without the first copy. A container's duplicate is asked only of an object that itself holds a record.",
-        "resolution": "A key written twice on any object that holds records below it (`tasks`, `phases`, the index's phase list) makes every record under it unreadable and is named by the validator; the one-file and the sharded layouts both.",
-        "fixTask": "P169.32-6l3"
+        "resolution": "fixed in P169.32-6l3 (8bbfa87cc115): A key written twice on any object that holds records below it (`tasks`, `phases`, the index's phase list) makes every record under it unreadable and is named by the validator; the one-file and the sharded layouts both.",
+        "fixTask": "P169.32-6l3",
+        "commit": "8bbfa87cc115",
+        "status": "fixed"
       },
       {
         "id": "P169-R114",
@@ -1150,7 +1154,7 @@
         "resolution": "Treat the owner-dispatched CI run on the committed tree as the confirmation of the new shard deal and timeouts, and say in the outcome that 45601056962 predates the costs file."
       }
     ],
-    "outcome": "[findings: 118 - 12 high, 43 med, 63 low; 99 with a recorded fix commit]"
+    "outcome": "[findings: 118 - 12 high, 43 med, 63 low; 101 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2822,7 +2826,9 @@
         "P169.31-6l3",
         "P169.32-6l3",
         "P169.33-6l3",
-        "P169.34-6l3"
+        "P169.34-6l3",
+        "P169.35-6l3",
+        "P169.36-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -9145,7 +9151,7 @@
     {
       "id": "P169.32-6l3",
       "title": "The plan is parsed and saved through one door that refuses a key written twice anywhere in a plan file, so no verb keeps one copy silently",
-      "status": "in_progress",
+      "status": "done",
       "description": "A plan file that writes a key twice is the shape a keep-both merge resolution leaves, and the plugin reads it with the last copy winning and saves it back with one copy, silently. The run-record reader now refuses such a record and the gate's own writer refuses to rewrite the file, but every other verb that saves the plan (`audit-task.py note`, `done`, the drive's writes, close-phase, the merge resolver's output) parses through `_manifest_io.read_json` and saves through `save_plan_json`: one unrelated `note` rewrites the shard with the copy that happened to be last, and from then the lookup, the gate's reuse and `done` answer from an older green, ledger on and off. A phase that writes `tasks` twice is read from the last copy by every reader and is never named at all. The release guard already refuses a plan with a duplicate key for itself; the plugin's own doors do not.\n\nHold it at the one door through which the plan is parsed and saved. (1) `_manifest_io` parses every plan file with a duplicate-key check (one function, used by `read_json`, `load_manifest`, `load_manifest_at`, the shard reads and the tip reads), and the parse returns the places a key is written twice beside the document; a save of a file read that way refuses, naming the file, the key's path and the hand step that gets out, whatever verb asked. Derive the list of plan readers and writers from the code (the writers lint already tables every function that writes a plan path) and make a case fail when one parses or saves a plan file another way. (2) What a reader does with such a plan is stated per kind: a verb that writes refuses; a read-only renderer (status, report, panel, doctor, validate) says the file and the key in its own channel and reads nothing from the copies; the run-record reader keeps its stricter rule. Remove the duplicate checks that become redundant (the run-record reader's own parse, the gate writer's refusal) in favour of the one door, keeping their cases. (3) The validator names every duplicate in a plan file, any object, both layouts. (4) The merge resolver never writes a file with a key twice (its own output is checked by the same door before it is written). (5) COMPATIBILITY.md: a plan with a key written twice was read before and is refused now; say whether that is a promise broken (it is malformed JSON by RFC 8259's \"SHOULD be unique\", and no released writer produced one: verify the second half by reading the released writers) and record it as what it is. Cases: the keep-both shape on a task's record, on a phase's `tasks`, on the index's `phases`, on a title, on a bug; each verb refuses to save; each renderer names it; the hand step works; and a plan with no duplicate reads and saves byte for byte as before (this repository's plan, the example, the starter).\n\nThe cost to measure: the duplicate check runs on every plan read, including the plan gate on every Edit; measure the hook before and after, twice with a gap (`python3 tools/bench-hooks.py`), and keep it inside the budget the gate holds.",
       "files": [
         "plugins/audit/scripts/manifest/_manifest_io.py",
@@ -9204,14 +9210,24 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8bbfa87cc115",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "PHASE 1 is unchanged from the first hand-back. It added the door in _manifest_io: parse_json_text/parse_json_file, DuplicateKeyError, read_plan, read_json for plan-shaped documents, check_plan_text, written_twice, the save check in raw_atomic_write_json, and save_sharded asking every target first. It also routed _evidence_io, validate-manifest and merge-manifest through the door and added the docs in COMPATIBILITY/CHANGELOG/SECURITY/PLUGIN-BUILD-GUIDE.\n\nPHASE 2 (the coordinator's widened list):\n\n(1) hooks/_config.py:\n- New `_read_manifest_assembled(path)` returns (manifest, problem). It calls `_manifest_io.load_manifest`, loaded by path, so the hook stays importless. A ValueError or OSError from that load becomes `problem`. That covers a key written twice, a parse error from conflict markers, and a missing shard. Any other exception still returns {} with no problem, so a crash still relaxes the gate.\n- The fallback, used when `_manifest_io` cannot be loaded, is a stdlib json.loads with its own `_twice_hook`. It refuses a key written twice and names each pointer via `_twice_pointers`. It no longer keeps the last copy.\n- `_unreadable_plan` names the shard that fails to parse. `_load_manifest_assembled` is now `_read_manifest_assembled(...)[0]`.\n- `manifest_state` returns `dict(state, hasPhases=True, unreadable=problem)` for such a plan. The key exists only on such a state. The ladder gives that state the existing `nothing-running` step, which is deny. No new ladder step was added, because the ladder is mirrored in _panel_settings, the schema, _panel_runstate and _doctor_setup.\n- `plan_gate_cause` has a first branch for an unreadable state. It names the file, each pointer and the hand step, and says that an edit to the plan's own files stays allowed.\n- Pinned `planGate`/`enforce` tiers still outrank this.\n- Exempt plan paths are allowed before any of this, so the repair edit stays open.\n- Conflict markers are now covered too. They opened the gate on HEAD (gateprobe: HEAD+markers allowed src/c.py) and now deny.\n\nPer caller of `_load_manifest_assembled`:\n- `task_binding` uses `_read_manifest_assembled` and returns an error naming the problem. It no longer says 'the plan does not hold'. No case of mine holds this branch.\n- `active_area_tags` (guard-capabilities) gets {} and turns the area rules off. That is fail-open, and it is silent. Saying it needs guard-capabilities.py, which is not in my list. SECURITY.md now states this.\n- `in_progress_task_map` and `in_progress_outputs` get {} and []. That is moot, because the gate already denies through manifest_state.\n- `declaring_tasks` gets an empty map, so require-plan's message tail still says 'No task in X declares Y'.\n- `guard-history-rewrite.recorded_shas` gets {}, so there are no recorded SHAs and the guard is inert. That is fail-open as documented, and silent.\n\nThe require-plan.py deny TAIL is still not right for this state. It is outside my list, so here is the intended diff. In `_main_decision` (around line 1259), before the `_config.is_subagent(data)` branch, add `if state.get(\"unreadable\"): return (\"block\", \"Outside the running plan (%s): %s\\n%s\\n\" % (reason, rel, cause) + (\"STOP and report this to the orchestrator: the plan will not read, and repairing it is the orchestrator's.\" if _config.is_subagent(data) else \"Repair the plan file named above by hand (validate-manifest.py names every key written twice; a conflict is resolved as any merge conflict), then retry.\"))`. That drops `note[\"stated\"]` and the 'Start a phase' remedy for this state.\n\nTests:\n- test__config gu1-gu4 (418/418): door and fallback, twice and markers, and a clean state equal to the old dict.\n- test_require_plan ur1-ur4 (249/249): through `decide` on a sharded fixture with P1 in progress.\n- SECURITY.md: rewrote the duplicate-key paragraph (the gate denies; markers covered; the two silent advisory readers named) and added one sentence to the 'degrade to least aggressive' paragraph. PLUGIN-BUILD-GUIDE's door paragraph now says how the hooks read.\n\n(2) tests/test_audit_status.py:\n- Removed the `twice` shape from `_RU_SHAPES`, its branch in `_ru_project` and `_RU_DUP`.\n- Added ru9 (`_written_twice_case`). Plain, --json and --gate each exit 2 with the shard and `/title` on stderr and no P1.1 rendered. kt8 asserted only a nonzero exit, which is why I added ru9.\n- Result: 441/441.\n\n(3) ado-connect.py and check-ado-item.py:\n- Both read the index through `_mio.read_json`. `import _manifest_io as _mio` was added after the preamble.\n- Their OWED rows were removed from kt9's `_PARSED_OUTSIDE_DOOR`.\n- New cases c1c (test_ado_connect 49/49) and ci1c (test_check_ado_item 47/47): a duplicate `meta.version` exits 2, naming `/meta/version`.\n- PLUGIN-BUILD-GUIDE's generated module map gained `_manifest_io` on both rows, matching `python3 tools/lints/_deps.py --render` (test__deps g1). I applied it with Edit rather than --write-map.\n\n(4) .github/sweep-costs.json was not touched.\n\n(5) The PLUGIN-BUILD-GUIDE door paragraph now says why merge keeps its own `_write`: it writes text that may hold conflict markers, which no JSON saver can take, so it asks `check_plan_text` of each text before the first write. CHANGELOG's Breaking entry now covers the gate and the ado readers.\n\nRuns:\n- Task gate: 6/6 files ok, 2526 cases, exit 0 (scratchpad/gate-4.txt). The first run went red on test__deps g1 because of the stale map; it was fixed and rerun.\n- Full sweep `python3 tools/sweep-selftests.py`: 198/198 files ok, 19902 cases, exit 0 (scratchpad/sweep-full-2.txt).\n- `ruff check plugins/audit tools tests .claude/hooks`: exit 0.\n- `vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints`: exit 0, minimum 3.8.\n- Probe (scratchpad/probe-P169.32.py, git-archive export, pycache purged, anchors asserted): phase-1 rows M1-M19 killed 19 of 19 (probe-run-1/2.txt). New rows (probe-run-3.txt): G1 (unreadable branch off) red gu1 gu2 gu3; G1b red ur1 ur2; G2 (fallback marked-check off) red gu3; G3 (over-fire: clean plan marked unreadable) red gu4 plus others; G3b red ur4; G4 (over-fire: repair edit denied) red ur3; G5 red c1c; G6 red ci1c. G7 first SURVIVED: I had anchored it on the index read, but the duplicate sits in a shard. I re-anchored it on the shard read and it went red on ru9. Final: 9 of 9 rows killed.\n- Bench `python3 tools/bench-hooks.py` and `--gate`, HEAD export vs checkout, with a 150 s gap. require-plan edit: before 52.84 ms (2.25x) and 49.56 ms (2.32x); after 46.25 ms (2.01x) and 44.11 ms (2.06x). Every --gate exit was 0, with 11 hooks within budget, measured on 3.14.7 only.\n- This repo's own plan: `manifest_state('.', 'docs/audit/audit-plan.json')` has no `unreadable`, and runningPhase is P169. The acme-store example has no `unreadable` either.\n\nROUND 3 (require-plan.py added to the list):\n(1) require-plan.py: in the deny path, before `_declaration_note` and the audience branches, a state carrying `unreadable` returns a block of the head (reason, rel, cause) plus one tail. For the main loop the tail is the hand repair ('Repair the plan file named above by hand (validate-manifest.py names every key written twice; a conflict is resolved as any merge conflict), then retry.'). For a subagent it is 'YOU ARE A SUBAGENT: STOP, and report to the orchestrator that the plan will not read ...'. Neither says 'No task in', 'Start a phase', '/audit:phase add' or 'Two ways forward'. Cases ur5 (main loop, key twice and markers) and ur6 (subagent) in test_require_plan (251/251).\n(2) _config.task_binding's error branch: case tb10b in test__config (419/419). A marker over a phase tree whose plan writes a key twice, or holds a conflict, binds to an error naming the tree, the problem and '/phases/0/title' or 'cannot be read as a plan', with no scope and never 'does not hold'.\n(3) SECURITY.md now names BOTH silent readers as a list: `_config.active_area_tags` (guard-capabilities' area rules) and `guard-history-rewrite.recorded_shas` (the guard is inert). It also states the new remedy wording and task_binding's refusal. Both readers are left as they are.\nRed first: on HEAD (13:09:09Z) tb10b, ur5 and ur6 FAIL (test__config 414/419, test_require_plan 247/251). On the round-2 code, without the require-plan branch (13:09:27Z), ur5 and ur6 FAIL (249/251), so the tail cases see the new branch.\nProbe (scratchpad/probe-run-4.txt): G8 (the require-plan branch off) red ur5, ur6; G9 (the subagent arm off) red ur6; G10 (task_binding's problem branch off) red tb10b; G1b and G4 rerun, still red. 5 of 5 killed.\nRuns: task gate plus test__config and test_require_plan in one sweep call, exit 0, 8/8 files, 3196 cases (scratchpad/gate-5.txt). ruff exit 0, vermin exit 0. Full sweep `python3 tools/sweep-selftests.py`: exit 0, 198/198 files ok, 19905 cases (scratchpad/sweep-full-3.txt).\n\nROUND 4 (independent review: one regression, four user-facing findings, three SECURITY.md sentences):\nR1 (regression). The merge BASE is no longer a side. The driver's written-twice refusal is asked of ours and theirs only. The base reads through `_mio.without_written_twice`, so a key it writes twice is ABSENT there. That way a duplicate committed and then repaired on both branches blocks nothing: equal sides merge, and differing sides conflict instead of being decided by either copy. I chose this over 'last copy for the base' because the last copy would make the side that kept it look unchanged and hand the record to the other side silently; mk7 holds that difference. `resolve` reads the merge base with `load_manifest_at(..., as_base=True)`, which reads every file through `_mio.read_base_plan`. The cost, stated in `without_written_twice`'s docstring: a container key written twice (tasks/phases) reads as added on both sides. Cases: mk6 (base-only duplicate merges clean, rc 0, both phases), mk7 (sides settle it differently, so a conflict), mk8 (resolve over such a base renumbers, rc 0). The other direction is mk1: a side's duplicate still refuses. The reviewer's repro ($S/drv) now exits 0 with a clean %A.\nU1. Consumers of the tier functions, derived by grep of plan_gate_step/manifest_state/plan_gate_cause/plan_gate_mode under plugins/audit: require-plan, guard-secrets-read (through plan_gate_cause), guard-bash-writes (mode only, no wording), _panel_runstate._gate_block, _doctor_setup.check_plan_gate, and _help (a static table over synthetic states). The doctor's check_plan_gate now gives a WARNING carrying plan_gate_cause, with a repair hint, before its nothing-running branch. The panel's `_gate_block` has a nothing-running+unreadable source, and a pinned tier's source appends 'the plan ... cannot be read: ...'. Cases ds-ur1 and ds-ur3 (over-fire: a clean plan's row is unchanged), pr-ur1, pr-ur2 and pr-ur3.\nU2. plan_gate_cause appends 'The plan in X also cannot be read: <problem>. An edit to the plan's own files ...' to the planGate and enforce sentences, so require-plan's 'Repair the plan file named above' now names a file under a pin. Cases gu2b (cause level, both pins, plus a clean pinned cause unchanged) and ur7 (through decide, both pins). The reviewer's gate2.py repro now names the shard and /title under both pins.\nU3. _live_copy._tree_copy reads through `_mio.read_plan`, and _show_phase through `_mio.parse_json_text`. A key written twice is refused in the reader's `why` channel; the unused json import was dropped. Cases lr3 (the worktree file) and lr4 (the branch commit). kt9's reader scan now also ties a parse whose value is USED as a plan: passed to a callee named for phase/plan/manifest/shard, or read at phases/meta/fileIndex. It skips json.loads(json.dumps(x)) deep copies. It surfaced three readers, now rows: `_config._unreadable_plan` (the locator, exempt), `_invariants._materialize` (byte copy then the door, exempt) and `_invariants._committed_pointers` (OWED the door, outside my files). Probe U3c plants an untied shard-body reader (`_phase_body(json.load(fh), pid)` over a path named `where`) and kt9 goes red. Not reached: a function that only returns json.load(...) with no plan word in its path, used as a plan by a caller. That is interprocedural, and PLUGIN-BUILD-GUIDE states it.\nU4. The doctor's check_manifest hint follows the refusal class. For DuplicateKeyError it is 'delete by hand the copy that is not meant - validate-manifest.py names every key written twice in the plan'; a parse error keeps the shard hint. Cases ds-ur2 and ds-ur3.\nSECURITY.md. B1: the history is corrected. A conflict marker opened the gate before this change; a key written twice did NOT, because HEAD read the last copy and denied. The door would have opened it, and this change closes that in the same step. B2: the silent readers are listed without a count: active_area_tags, recorded_shas, meter-usage's session_start_check and meter, require-plan's _owner_note, journal-writes._read_json and guard-edits._touches_state, all advisory. B3: the fallback reads the index file alone, so a shard duplicate or a missing shard gives the warn step there. PLUGIN-BUILD-GUIDE's door paragraph states the base reading, the widened kt9 tie and the fallback's index-only read; CHANGELOG adds the live-copy reader and the base rule.\nRed first on HEAD (scratchpad/red-head-4.txt, 13:44:15Z): ds-ur1, ds-ur2 (117/119); pr-ur1, pr-ur2 (45/47); lr3, lr4 (9/11); gu2b (414/420); ur7 (247/252). mk6, mk7 and mk8 could not run on HEAD: the merge suite dies at mk0 on `parse_json_text`, a symbol this task introduces. They were proved by probe rows R1a, R1b and R1c.\nProbe (scratchpad/probe-run-5.txt): 16 of 16 killed. R1a (base back among the sides) red mk6; R1b (base read as its last copy) red mk7; R1c (resolve base not as_base) red mk8; R1d (no side refusal) red mk1; U1a red ds-ur1; U1b red pr-ur1; U1c red pr-ur2; U2a red gu2b; U2b red ur7; U4 red ds-ur2; U3a red lr3; U3b red lr4; U3c (planted untied reader) red kt9. M2, M3 and G7 were re-anchored on `read(...)` and still red.\nRuns: task gate plus the touched suites in one sweep call, exit 0, 12/12 files, 3819 cases (scratchpad/gate-6.txt). ruff exit 0, vermin exit 0. Full sweep: exit 0, 198/198 files ok, 19918 cases (scratchpad/sweep-full-4.txt). Doctor over the reviewer's proj/multi: the manifest FINDING carries the hand-delete hint, and the plan gate row is a WARNING naming the file, the key and the repair. Seen there and left for the low batch: the buildCommands and branch-naming rows say 'no manifest yet' for an unreadable plan.\n\nROUND 5 (a HIGH introduced by the R1 fix). The failure: the base writes `tasks` twice, ours and theirs are clean and differ only on P1.2's status. The R1 fix read the base's `tasks` as absent, so every task under it looked 'added on both sides'. The driver offered --renumber, and `resolve` wrote P1.2 -> P1.3: one task under two ids.\nRULE, now one for scalars and containers alike, stated in `_mio.without_written_twice`'s docstring: a key the base writes twice is UNKNOWN. It holds `_mio.UnknownInBase(pointer)`, which equals nothing, is falsy and iterates as empty. Under a container written twice the base therefore holds no record: no id there is ever counted as minted on both sides, and the record merge conflicts on the whole container. The driver's `_mark_base_unknown` rewords each conflict at or inside such a value: 'the merge base writes /phases/0/tasks twice, so what it held there is not established and the two sides differ - keep the one meant by hand (nothing is renumbered: ...)'. It never says 'added on both sides', and the --renumber advice is not printed. `resolve` finds no collision, so it refuses, naming the pointer, and writes nothing. `_collisions` needed no change of its own: a defensive re-marking I first added there was a check that could not fail (probe row H1b survived), so I removed it and left a comment saying why. Cost: where the sides differ under such a container, the whole container is one conflict block rather than one record.\nCases: mk9 (the driver, over the reviewer's drv2 shape: exit 1, conflict names /phases/0/tasks, no 'added on both sides', no --renumber) and mk10 (through a real git merge plus resolve --renumber theirs: exit 1, file unchanged, no P1.3, 'none is renumbered'). The reviewer's repro, replayed in a scratch copy (drv2/base.json committed, theirsA on `other`, oursA on main, `git merge other`, then resolve --renumber theirs): the conflict reads as above, resolve rc 1, file byte-identical, no P1.3. mk6, mk7 and mk8 still pass.\nRed: mk9 and mk10 cannot run on HEAD (the suite stops at mk0 on `parse_json_text`). They were proved by probe on this tree. H1a (the HIGH's shape restored: a list written twice read as []) turned mk9 and mk10 red; H1c (the driver's rewording removed) turned mk9 red. R1a-R1d rerun: all killed, R1b and R1c now also turning mk9/mk10 red (scratchpad/probe-run-6.txt, probe-run-7.txt).\nRuns: task gate plus test__manifest_merge and test_close_phase, exit 0, 8/8 files, 2878 cases (scratchpad/gate-7.txt; run before the final removal of the redundant line, which the full sweep then covered). Full sweep: exit 0, 198/198 files ok, 19920 cases (scratchpad/sweep-full-5.txt). ruff exit 0, vermin exit 0 after the last edit. The doctor's pinned-tier rows and the planGate warn text were left for the low batch, as told.\n\nROUND 6. (1) The merge driver's `_under` now also matches a conflict AROUND a value the base left unknown, not only one at or inside it. Example: a record holding the unknown value, deleted on one side and kept on the other. Such a conflict is worded like the other unknown-base conflicts: 'phases[P1] - the merge base writes /phases/0/tasks twice, so what it held there is not established and the two sides differ - keep the one meant by hand ...'. It no longer says 'deleted on one side and changed on the other'. Case mk11; the reviewer's case 2 (delta2/drv base.json, o2.json, t2.json) replayed: rc 1 with that wording. Probe H2 (the around-branch off) turns mk11 red (scratchpad/probe-run-8.txt). (2) The CHANGELOG Breaking entry and COMPATIBILITY.md, next to the duplicate-key paragraph, now state the price: a merge whose base writes a key twice can stop where 3.9.0 finished it clean; keep by hand the side meant and the merge completes. The record-count wording and the doctor's pinned-tier rows were left for the low batch. Runs: task gate plus test__manifest_merge, exit 0, 7/7 files, 2591 cases (scratchpad/gate-8.txt); test_merge_manifest 85/85; ruff exit 0; vermin exit 0; full sweep `python3 tools/sweep-selftests.py` exit 0, 198/198 files ok, 19921 cases (scratchpad/sweep-full-6.txt).",
+        "descriptive": "A plan file that writes a key twice is refused by every read and save through one door. The plan gate now denies on such a plan, or one holding a conflict, naming the file and key, while the repair edit stays allowed. The ado readers and status go through the same door."
       },
       "startedAt": "2026-11-25T11:38:25Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-25T14:49:28Z",
+      "verifiedBy": [
+        "test__manifest_io kt1-kt9: the door's parse, read and save refusals in both layouts, non-plan JSON untouched, over-fire guards, check_plan_text, the hand step, byte-for-byte reads and saves of the real plans, the renderers, and the derived one-door lint (ado rows no longer owed).",
+        "test__evidence_io kv1-kv6: verbs refuse after a keep-both merge with the shard unchanged; a phase's tasks or the index's phases written twice makes every record under it unreadable; a title written twice does not.",
+        "test_validate_manifest vd1-vd3, test_merge_manifest mk1-mk5 (phase 1, unchanged).",
+        "test__config gu1-gu4: manifest_state over a plan with a key written twice, or with conflict markers, carries `unreadable` and reaches the deny step with the file, pointer and hand step in the cause; the same holds through the fallback read with no _manifest_io; a clean plan's state is the old dict either way.",
+        "test_require_plan ur1-ur4: under a running phase, a shard writing a key twice or holding a conflict keeps the second uncovered file denied with the shard and key named; the shard edit is allowed; a clean plan answers as before.",
+        "test_audit_status ru9: status, --json and --gate each exit 2 naming the shard and pointer and render nothing.",
+        "test_ado_connect c1c, test_check_ado_item ci1c: a manifest writing a key twice exits 2 naming the pointer.",
+        "test_require_plan ur5/ur6: the refusal over an unreadable plan ends in the hand repair (main loop) or STOP-and-report (subagent), with no 'No task in'/'Start a phase'/'Two ways forward' text.",
+        "test__config tb10b: task_binding over a phase tree whose plan will not read errors naming the problem, never 'does not hold'."
+      ],
       "notes": [
         {
           "at": "2026-11-20T13:08:18Z",
@@ -9324,6 +9340,24 @@
             "ms": 443058,
             "basis": "durationMs in run 2026-11-25T14:48:52Z.0bb209's record (run-test-gate --record)",
             "runId": "2026-11-25T14:48:52Z.0bb209"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-25T14:40:37Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 10929000,
+            "startedAt": "2026-11-25T11:38:28Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-25T14:48:52Z.0bb209",
+            "kind": "wait",
+            "ms": 4000,
+            "startedAt": "2026-11-25T14:40:53Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 8bbfa87cc115",
+            "kind": "commit",
+            "ms": 2157,
+            "startedAt": "2026-11-25T14:49:24Z"
           }
         ],
         "firstStartedAt": "2026-11-25T11:38:25Z"
@@ -9443,6 +9477,18 @@
         "runId": "2026-11-25T14:49:12Z.ddbef4",
         "status": "passed",
         "at": "2026-11-25T14:49:12Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "8bbfa87cc115",
+        "at": "2026-11-25T14:49:28Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-25T14:40:35Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__manifest_io.py` in a throwaway tree at HEAD exited 1 with 10 of 206 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - kt1 (house FAIL), kt1b (house FAIL), kt2 (house FAIL), kt3 (house FAIL), kt4 (house FAIL), kt4b (house FAIL), kt5 (house FAIL), kt6 (house FAIL) and 2 more: SELFTEST FAILED: 196/206 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -9721,7 +9767,7 @@
     {
       "id": "P169.34-6l3",
       "title": "The panel and the report give no passing word to a subject whose own run record cannot be read",
-      "status": "pending",
+      "status": "in_progress",
       "description": "P169.31 (d2f6e199) made the status render and its gate read a subject whose own run record cannot be read as `unreadable` through _status_facts' one tests word (evidence_row, rollup taking the read's answer). Its executor reported, and I confirmed by reading the call sites, that the other two surfaces still print the pointer's `passed`: `_panel_state.py` and both `lib.rollup` calls in `render-report.py` do not pass the read's answer, and the panel's overview reads the pointer off the composition row. Same class as P169-R110 (med), on the surfaces P169.31's file list did not hold. Hold it where the word is produced: every caller of rollup passes the read's answer (make rollup's read argument required, so a caller written tomorrow cannot omit it, and list every caller the change reached), the panel's payload and the report's evidence cell carry the unreadable word with the read's own sentence (this also closes P169-R89 and P169-R99 if their scenarios are covered: read both and say), and a case per surface fails when it prints the pointer's word for such a subject. A plan with no unreadable record renders byte for byte as before (report HTML/MD and panel payload over this repository's plan, the example and the starter). If the panel's JavaScript (scripts/ui/panel/overview.js) must change, stop before filing and say so: it is outside this list and needs the browser gate.",
       "files": [
         "plugins/audit/scripts/panel/_panel_state.py",
@@ -9733,7 +9779,13 @@
         "tests/test__panel_composition.py",
         "tests/test__evidence_view.py",
         "CHANGELOG.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "tests/test__status_facts.py",
+        "tools/bench-report.py",
+        "tests/test__evidence_io.py",
+        "tests/test_audit_status.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -9755,6 +9807,230 @@
         "P169.31-6l3",
         "P169.32-6l3",
         "P169.33-6l3"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-25T14:49:50Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-25T14:49:48Z",
+          "text": "quotes render-report.py's 'parked proposal' text; this task changes how the evidence cell reads a run record, not the parked-proposal wording",
+          "waives": "tools/verify.sh"
+        },
+        {
+          "at": "2026-11-25T14:49:48Z",
+          "text": "reads the '## [Unreleased]' heading; this task adds one entry under it and keeps the heading",
+          "waives": "tools/release.py"
+        }
+      ],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-25T15:19:51Z",
+            "ms": 23921,
+            "basis": "selectionMs in run 2026-11-25T15:26:51Z.d67154's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-25T15:26:51Z.d67154"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-25T15:20:15Z",
+            "ms": 396313,
+            "basis": "durationMs in run 2026-11-25T15:26:51Z.d67154's record (run-test-gate --record)",
+            "runId": "2026-11-25T15:26:51Z.d67154"
+          }
+        ],
+        "firstStartedAt": "2026-11-25T14:49:50Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-25T15:27:11Z.7c0fbf",
+        "status": "passed",
+        "durationMs": 222,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:63103a2edea7bac30a9013270c3e5a900866be99efed4ed3cd83c76ebbcf9a76",
+        "reuseKey": "1:sha256:065a6bcc4fbb22b38670a51c6a95918d0e12f01cffdaa74e6b89f179b2eab488",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-25T15:26:51Z.d67154",
+          "ts": "2026-11-25T15:26:51Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+        "selectionMs": 17243,
+        "at": "2026-11-25T15:27:11Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "attempt": 1,
+          "banners": [],
+          "durationMs": 396313,
+          "failed": [],
+          "gateDigest": "sha256:63103a2edea7bac30a9013270c3e5a900866be99efed4ed3cd83c76ebbcf9a76",
+          "gateReach": {
+            "gaps": []
+          },
+          "gateSource": "task",
+          "launch": "2026-11-25T15:19:50Z-267a7880",
+          "observations": {
+            "countsBasis": "no step printed a summary this reader can count (python3 tools/sweep-selftests.py tests/test__panel_state.py tests/test_render_report.py tests/test__panel_composition.py tests/test__evidence_view.py tests/test... (5440 more characters)), so the size of this gate is not knowable from its output",
+            "coverage": [
+              "tests/test__evidence_io.py",
+              "tests/test__evidence_view.py",
+              "tests/test__panel_composition.py",
+              "tests/test__panel_state.py",
+              "tests/test__status_facts.py",
+              "tests/test_audit_status.py",
+              "tests/test_render_report.py"
+            ],
+            "coverageBasis": "the runner named 208 path(s); the work under test declares 16 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 195/195 and 203 more; declared but not named by the run: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/scripts/governance/_evidence_io.py, plugins/audit/scripts/panel/_panel_composition.py and 5 more; breadth: the run named 176 suite path(s) and this task declares 16 file(s), and 168 of them are suites the task neither declares nor is named after (test__deps.py, test__output.py, test_audit_task.py, test_close_phase.py, test_commit_task_work.py, test_drive_phase.py, test_stamp_verification.py and 161 more) - this gate asks more than the task changed; that is reported, not refused",
+            "ranTotal": null,
+            "treeBasis": "git described the tree before and after",
+            "treeMutated": []
+          },
+          "reuseKey": "1:sha256:065a6bcc4fbb22b38670a51c6a95918d0e12f01cffdaa74e6b89f179b2eab488",
+          "runId": "2026-11-25T15:26:51Z.d67154",
+          "selectionMs": 23921,
+          "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+          "startedAt": "2026-11-25T15:20:15Z",
+          "status": "passed",
+          "via": "cli",
+          "at": "2026-11-25T15:26:51Z",
+          "testedState": {
+            "dirtyBasis": "git described the tree before the run; 17 dirty path(s)",
+            "dirtyDigest": "sha256:024ba8ccd16d4e7f46500c0e74c8be68d5d9dc6c75fd9c30132a621e331c2a04",
+            "head": "8bbfa87c",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeBasis": "16 declared file(s); 16 read, 0 missing",
+            "scopeDigest": "sha256:18ce40e91d0e1b5db53863e4876e75539684894c8bbbf8badc240f53f02dc539",
+            "scopeListDigest": "sha256:53870e2d2a697c5fa58fa82d0c04e5bb83c7adedc9f7ae8bb24a6264d531d45f"
+          },
+          "steps": [
+            {
+              "commandBytes": 5391,
+              "commandSha256": "ffbbc5aa640fc36436f09a79f1910b8688998870203be799b22f347ca28081c2",
+              "durationMs": 396195,
+              "exit": 0,
+              "measured": "not-knowable",
+              "name": "python3 tools/sweep-selftests.py tests/test__panel_state.py tests/test_render_report.py tests/test__panel_composition.py tests/test__evidence_view.py tests/test__status_facts.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_io.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_run_test_gate.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "program": "python3",
+              "ran": null,
+              "suiteReader": "none"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-25T15:26:51Z.d67154",
+            "launch": "2026-11-25T15:19:50Z-267a7880",
+            "status": "passed",
+            "at": "2026-11-25T15:26:51Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-25T15:27:11Z.7c0fbf",
+        "status": "passed",
+        "at": "2026-11-25T15:27:11Z"
+      }
+    },
+    {
+      "id": "P169.35-6l3",
+      "title": "The Overview and the report page show an unreadable run record as unreadable, with the read's sentence as visible text",
+      "status": "pending",
+      "description": "Left by P169.34 (read its CHANGELOG line and hand-back): the panel payload and the report data now carry the word `unreadable` for a subject whose own run record cannot be read, but the page sources do not draw it. overview.js's evState reads the composition row's pointer plus evidence.runs[rid], so the Overview badge still draws `passed` when the ledger holds the older run; TEV_LABELS, TEV_ORDER, badges.css and the panel's EVWORD have no entry for the word, so there is no tint and the roll-up chip uses the fallback label; and the read's own sentence (file, subject, field, the --record step) is only in a title attribute, not visible text (P169-R89; read it and close it here). Fix at the source of each surface: the Overview reads rollup.testEvidence.failing rows with status unreadable; one label and one tint from _ui_theme for both surfaces; the sentence visible on both pages. Read the refactoring-the-assembled-ui and writing-javascript/writing-css skills first and print the pins with tools/count-ui-pins.py before editing. A plan with no unreadable record renders byte for byte as before. The vitest case runs with npx vitest run tools/ui-tests/overview-outcome.test.mjs; the browser gates (node tools/check-report-interactive.mjs, the panel gate) must stay green; the orchestrator runs them, not the executor (machine-wide capture lock), so hand back the commands. The owner sees the page before the phase lands (owner rule: green light before UI work ships).",
+      "files": [
+        "plugins/audit/scripts/ui/panel/overview.js",
+        "plugins/audit/scripts/ui/report-css/badges.css",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/_ui_theme.py",
+        "tests/test__report_html.py",
+        "tests/test__ui_theme.py",
+        "tools/ui-tests/overview-outcome.test.mjs",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/overview-outcome.test.mjs: a subject the rollup lists as unreadable draws the unreadable badge, never the pointer's passed",
+          "tests/test__report_html.py: the report's evidence cell for an unreadable record carries the read's sentence as visible text and the unreadable tint"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__report_html.py tests/test__ui_theme.py",
+          "npx vitest run tools/ui-tests/overview-outcome.test.mjs"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.34-6l3",
+        "P169.36-6l3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P169.36-6l3",
+      "title": "The door names a shard by the path the platform spells, so a refusal on Windows names the file the person opens",
+      "status": "pending",
+      "description": "CI release run 45638311139 on 8bbfa87c (P169.32) is red only on Windows (plain 5, cp1252 1): tests/test__manifest_io.py kt3 ('a shard') and kt4b fail because the refusal names the shard as 'C:\\\\...\\\\s-shard\\\\phases/P1.json' - _manifest_io joins the index directory with the stub's posix shard ref (os.path.join(base, stub['shard']) at the shard reads and the save), so the message mixes separators and is not the path the fixture (and a person) spells. Fix at the one place shard paths are built for the door's reads, saves and messages (join the ref's parts, or normpath, once, in one helper every site uses), so the refusal names the platform path; keep the posix ref wherever it is DATA (the index's shard field, journal rows). The cases must hold on Windows: build the expected path the way the platform does and compare exactly. This repository's own plan reads and saves byte for byte as before. I dispatch a CI run of the unfiled tree for the Windows legs before filing.",
+      "files": [
+        "plugins/audit/scripts/manifest/_manifest_io.py",
+        "tests/test__manifest_io.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test__manifest_io.py: the refusal for a shard that writes a key twice names the shard by the platform's own spelling of its path (no mixed separators)"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__manifest_io.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.34-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,

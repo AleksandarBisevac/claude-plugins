@@ -38,6 +38,7 @@ _output.install_path()
 
 import _loader  # noqa: E402  (loads render-report.py, a hyphenated entry point, as a library)
 import _manifest_io  # noqa: E402  (the manifest loader the render reads through)
+import _evidence_io  # noqa: E402  (plan_unreadable_records: the read the rollup is handed)
 import _usage_bench  # noqa: E402  (the one best-of-N timer both benches share)
 
 DEMO_DIR = os.path.join(_here, "demo")
@@ -133,6 +134,11 @@ def _bench_phases(manifest, manifest_path, project_dir):
     lib = R._load_status_lib()
     vm = R._manifest_rules
     out = {}
+    # The run-record read the report hands its rollup. Asked once here, with the
+    # manifest load, and not inside the `rollup` thunk: that phase times the
+    # rollup, and a file read in it would be a number about the disk.
+    unread = _evidence_io.plan_unreadable_records(
+        manifest_path, project_dir)["unreadableRecords"]
 
     def _validate():
         out["findings"], out["warnings"] = vm.validate(manifest)
@@ -140,7 +146,8 @@ def _bench_phases(manifest, manifest_path, project_dir):
 
     def _rollup():
         out["summary"] = lib.rollup(manifest, out.get("findings") or [],
-                                    out.get("warnings") or [])
+                                    out.get("warnings") or [],
+                                    unreadable=unread)
         return out["summary"]
 
     def _usage():

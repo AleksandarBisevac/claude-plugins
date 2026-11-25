@@ -387,7 +387,7 @@ L5:
   _ado_fetch -> _ado_drift, _excerpt, _output
   _doctor_ado -> _ado_drift, _ado_tracked, _doctor_report, _output
   _doctor_hygiene -> _branch, _locks, _output, _worktrees
-  _evidence_view -> _commit_trail, _evidence_io, _manifest_io, _output, _report_html, _status_facts
+  _evidence_view -> _commit_trail, _evidence_io, _manifest_io, _output, _report_html, _status_facts, _ui_theme
   _gate_derive -> _evidence_io, _manifest_io, _manifest_phases, _manifest_vocab, _output, _runner_collects
   _manifest_rules -> _branch, _evidence_io, _json_schema, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output, _status_facts
   _panel_discovery -> _help, _manifest_io, _output, _policy
@@ -4111,7 +4111,9 @@ run it carries, and each base run its red's reading keeps - against the publishe
 no run, `unreadable_records()` names it with its file, scope, subject and first wrong field under
 `unreadableRecords`, its label joins `unreadablePlanFiles`, and `plan_read_sentence()` is the one
 bounded sentence every surface prints for both (`plan_unreadable()` gives the two plan-side
-answers to a reader that reads no ledger). A writer replacing such a record reads it as no record
+answers to a reader that reads no ledger, and `plan_unreadable_records()` is the one door
+`/audit:status`, the report and the panel ask it through: it resolves the project as every reader
+does and, when the read itself raises, answers one whole-plan entry rather than an empty list). A writer replacing such a record reads it as no record
 (`readable_record()`). **Where a record sits is its identity**: `record_row()` drops every key
 `RECORD_NOT_CARRIED` and `RECORD_ONLY_KEYS` name before it applies the placement, giving back of
 the record's own keys only `RECORD_ONLY_READ`, and `_record_of()` leaves `RECORD_ONLY_KEYS` out of
@@ -7561,7 +7563,10 @@ What is left in this file after the split is `main()` — argument parsing, the 
 read, the theme resolve, the files it writes — plus `_verdict`, and the cases that
 read a report `main()` actually wrote into a temp directory. Those cases pin the emitted
 DOCUMENT (its markup, its emission order, the stylesheet, the embedded script), so they can
-live nowhere else: a fragment module cannot render one. Its `<manifest>` positional is optional
+live nowhere else: a fragment module cannot render one. It reads the plan's unreadable run
+records once (`_evidence_io.plan_unreadable_records`) before anything prints a tests word, and hands the
+answer to both rollups and the evidence load, so a subject whose own record cannot be read reads
+`unreadable` in the page and the Markdown twin. Its `<manifest>` positional is optional
 too, resolved through `_manifest_io.resolve_manifest` the same way the other first-contact
 commands are; `describe_unresolved` is what it prints to stderr, then exits 2, when neither the
 argument nor the config nor the default names a file that exists. `--selftest` (includes XSS
@@ -7687,6 +7692,16 @@ read), the badge's word is the trailer's, the view's `source` is `trailers` and 
 the commit and the run; the ledger row of that run still supplies its observations when it is
 there. A plan with no pointer at all earns the column when such a commit exists. Every other view's
 `source` is `ledger` when the plan points at a run.
+
+**A subject whose own run record cannot be read reads `unreadable`.** `_evidence_io.plan_unreadable_records()`
+is the one read of the run records a plan holds that are not the record's shape (one whole-plan
+entry when even that read raises, never an empty list that every subject would read as
+all-readable); `render-report.py` asks it once and hands the entries to its
+rollups and to `load_evidence(unreadable=)`, and the panel's `build_state` hands them to its
+rollup. `_view_for` asks `_status_facts.evidence_row` - the door the status render's tests word
+comes through - and a subject it answers `unreadable` gets a view with that key, the reader's own
+sentence for the record as its note, no run and no earlier runs. Handed none, the load reads its
+own ledger read's `unreadableRecords`.
 
 It also takes the **evidence boundary** as an argument and hands it, unread, to
 `_status_facts.evidence_gap` — the same function `rollup` buckets the `no-test-evidence` verdict
@@ -7919,7 +7934,9 @@ ONCE per request for all five of its manifest-derived fields. Every branch retur
 ### `plugins/audit/scripts/panel/_panel_state.py`
 The panel's READ side, moved out of `panel-server.py` and split six ways at U3.1. What is left
 is the journal, the help endpoints, the report export and `build_state`, which assembles one
-payload out of all of them; the six modules above are where the rest went. `render_report`
+payload out of all of them; the six modules above are where the rest went. Its rollup is handed
+the plan's unreadable run records (`_evidence_io.plan_unreadable_records`), so a subject whose own
+record cannot be read is counted `unreadable` in `testEvidence`, never by its pointer. `render_report`
 stays here deliberately — it runtime-loads the `render-report.py` entry point, an edge
 `_deps.KNOWN_LAYER_DEBT` records, and moving it into a lower module would have made that
 recorded edge span more layers than it does. Nothing here writes. It re-exports all 35 names

@@ -12076,6 +12076,50 @@ def _types_namespace(**kw):
     return types.SimpleNamespace(**kw)
 
 
+def _plan_door_cases(check):
+    """(pd) `plan_unreadable_records` - the ONE read of the run records a plan
+    holds that are not the record's shape - names the record `plan_unreadable`
+    names, resolves its project the way every reader does, and when the read
+    itself raises answers a whole-plan entry rather than an empty list."""
+    tmp = _harness.fixture_root("audit-evidence-plan-door-")
+    try:
+        root, mpath, shard = _wh_project(tmp, "bad", "task")
+        croot, cmpath, _c = _wh_project(tmp, "ok", "task", malformed=False)
+        said = M.plan_unreadable_records(mpath)
+        base = M.plan_unreadable(mpath, root)
+        clean = M.plan_unreadable_records(cmpath, croot)
+        check("pd1 the door answers `plan_unreadable`'s own entries for a plan "
+              "holding a record that will not read - with the project handed "
+              "or resolved from the manifest - and no entry for a plan whose "
+              "records all read: %r" % ([e.get("subject")
+                                         for e in said["unreadableRecords"]],),
+              said == base == M.plan_unreadable_records(mpath, root)
+              and [e["subject"] for e in said["unreadableRecords"]] == ["P1.1"]
+              and clean["unreadableRecords"] == [])
+        real = M.plan_unreadable
+
+        def _no_walk(manifest_path, project=None):
+            raise OSError("plan walk refused (fixture)")
+        M.plan_unreadable = _no_walk
+        try:
+            failed = M.plan_unreadable_records(mpath, root)
+        finally:
+            M.plan_unreadable = real
+        entries = failed["unreadableRecords"]
+        check("pd2 RED-FIRST: when the read cannot walk the plan the door "
+              "answers ONE whole-plan entry (scope `plan`) naming the cause - "
+              "never an empty list, which every reader would take for 'all "
+              "records readable' - and the read is the real one again once "
+              "the fixture's refusal is lifted: %r" % (entries,),
+              len(entries) == 1 and entries[0]["scope"] == "plan"
+              and "plan walk refused (fixture)" in entries[0]["why"]
+              and failed["unreadablePlanFiles"] == []
+              and M.unreadable_records_sentence(entries)
+              and M.plan_unreadable_records(mpath, root) == base)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 # A STAGED SUITE: each row is a block the sweep runs as a job of its own, on one
 # slot, and replays in this order (`_harness.staged_main`), so the case ids,
 # their order and the tally are a one-process run's. Run whole in one process,
@@ -12105,7 +12149,8 @@ STAGES = (("wh-block", "_withheld_cases"), ("rf-block", "_read_field_cases"),
           ("pc-block", "_project_config_cases"), ("mr-block", "_moment_reader_cases"),
           ("rfg-block", "_runnable_full_gate_cases"),
           ("kv-block", "_keep_both_verb_cases"),
-          ("kc-block", "_container_twice_cases"))
+          ("kc-block", "_container_twice_cases"),
+          ("pd-block", "_plan_door_cases"))
 # The prefix of the directory a full run's blocks report into.
 _STAGE_PREFIX = "evidence-io-stages-"
 

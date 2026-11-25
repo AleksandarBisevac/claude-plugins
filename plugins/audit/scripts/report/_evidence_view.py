@@ -64,6 +64,7 @@ import _evidence_io  # noqa: E402  (where a run's record lives, and how to read 
 import _manifest_io as _mio  # noqa: E402  (declared_gate_entries: the one reading of a gate)
 import _report_html  # noqa: E402  (the vocabulary and the view, decided once)
 import _status_facts  # noqa: E402  (evidence_gap: the ONE rule that says whether an absence is excused)
+import _ui_theme as _theme  # noqa: E402  (label: the word for a badge key the vocabulary has no entry for)
 
 
 # --- where this manifest's record lives ---------------------------------------
@@ -161,8 +162,26 @@ def _trail_view(read, by_run, configured):
     return view
 
 
+def _unreadable_view(view, entry):
+    """`view` with the word and the note of a subject whose own run record
+    cannot be read: the read's word (`_status_facts.UNREADABLE_EVIDENCE`), the
+    read's own sentence for the record (`unreadable_records_sentence`), and no
+    run - the pointer's and the commit's verdicts answer for an older run than
+    the record does, and the earlier runs are withheld as `with_records`
+    withholds them. What is true of the subject whatever its record says (the
+    carrier that graded it, the commits its review accepted) stays."""
+    out = dict(view)
+    out.pop("trail", None)
+    key = _status_facts.UNREADABLE_EVIDENCE
+    out.update({"key": key, "label": _theme.label(key), "known": True,
+                "flags": [], "row": None, "history": [],
+                "source": _status_facts.SOURCE_UNREADABLE,
+                "why": _evidence_io.unreadable_records_sentence([entry])})
+    return out
+
+
 def _view_for(holder, phase, scope, by_run, rows, boundary=None,
-              read_error=None, trail=None):
+              read_error=None, trail=None, unreadable=None):
     """One holder's view, with the runs before it attached.
 
     The current run is dropped from the history by RUN ID rather than by position:
@@ -183,6 +202,13 @@ def _view_for(holder, phase, scope, by_run, rows, boundary=None,
 
     `trail` is the verdict the subject's commit carries; whether it is read is
     `_status_facts.trail_verdict`'s decision, the one the status rollup takes.
+
+    `unreadable` is the run-record read's `unreadableRecords`. A subject it
+    names reads `_status_facts.UNREADABLE_EVIDENCE` whatever the pointer, the
+    ledger or the commit say, decided by `_status_facts.evidence_row` - the one
+    door the status render's tests word comes through - so a whole-plan entry
+    turns only a subject that would carry a word, as it does there. None is
+    nobody read the records, and every view is as it was.
     """
     pointer = _report_html.tev_pointer(holder)
     row = by_run.get(str(pointer.get("runId"))) if pointer else None
@@ -225,6 +251,10 @@ def _view_for(holder, phase, scope, by_run, rows, boundary=None,
         current = str((row or {}).get("runId") or "")
         view["history"] = [r for r in _rows_for(rows, scope, subject)
                            if str(r.get("runId") or "") != current]
+    lost = _status_facts.evidence_row(holder, scope, trail, unreadable)
+    if _status_facts.unreadable_evidence(lost):
+        return _unreadable_view(view, _status_facts.unreadable_entry(
+            unreadable, scope, holder.get("id")))
     return view
 
 
@@ -260,7 +290,7 @@ def _phase_full_row(raw, own_view):
 
 # --- the load -----------------------------------------------------------------
 def load_evidence(manifest, manifest_path, project_dir=None, boundary=None,
-                  full_run=None):
+                  full_run=None, unreadable=None):
     """Everything the report says about test execution, or None when it says none.
 
     `{"tasks", "phases", "keys", "flags", "rows", "files", "unreadable",
@@ -296,6 +326,13 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None,
     third state, not a default: a caller that computed no boundary excuses
     nothing, which is exactly what every caller rendered before this existed.
 
+    `unreadable` IS `_evidence_io.plan_unreadable_records`'s `unreadableRecords`, handed in for the
+    boundary's reason: the caller's rollup counted each subject it names as
+    `unreadable`, and the badge beside it has to rest on the SAME answer. None
+    is the third state here too, and it reads the ledger read's own answer
+    (`read_rows` names the same records), so a caller that handed none still
+    gives a subject whose own record cannot be read no passing word.
+
     `full_run` IS THE SAME KIND OF ARGUMENT, ONE FIELD OVER: render-report.py's own
     `{phaseId: {"answer", ...}}`, or None when it computed none (a plan naming no
     `meta.fullGate` at all). `None` and `{}` read the same here - no phase earns a
@@ -319,6 +356,8 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None,
     except Exception as exc:
         read, read_error = {"rows": []}, "%s" % (exc,)
     rows = [r for r in (read.get("rows") or []) if isinstance(r, dict)]
+    if unreadable is None:
+        unreadable = read.get("unreadableRecords") or []
     by_run = {}
     for row in rows:
         run = str(row.get("runId") or "")
@@ -330,7 +369,7 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None,
         if tid:
             task_views[str(tid)] = _view_for(task, phase, "task", by_run, rows,
                                              boundary, read_error,
-                                             trail.get(str(tid)))
+                                             trail.get(str(tid)), unreadable)
     phase_views = {}
     for phase in phases:
         pid = phase.get("id")
@@ -339,7 +378,7 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None,
         mine = [task_views[str(t.get("id"))] for t in (phase.get("tasks") or [])
                 if isinstance(t, dict) and str(t.get("id")) in task_views]
         own_view = _view_for(phase, phase, "phase", by_run, rows, boundary,
-                             read_error)
+                             read_error, unreadable=unreadable)
         entry = {"own": own_view, "rollup": _report_html.tev_rollup(mine)}
         full_row = _phase_full_row((full_run or {}).get(str(pid)), own_view)
         if full_row is not None:

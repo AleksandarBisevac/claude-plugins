@@ -462,16 +462,25 @@ def main(argv):
     live = lib.live_view(manifest, _live_copy.flight_for(
         manifest, manifest_path, _proj))
     plan = live["plan"]
+    # A RUN RECORD THE PLAN HOLDS THAT IS NOT THE RECORD'S SHAPE gives no run to
+    # a subject, so it is read BEFORE anything prints a tests word and handed to
+    # every consumer of one - both rollups and the evidence cell - which is the
+    # boundary's pattern: one read, so the verdict and the badge beside each
+    # subject cannot rest on two moments.
+    _unread = _evidence_io.plan_unreadable_records(manifest_path, _proj)
+    unread = _unread["unreadableRecords"]
     summary = lib.rollup(plan, findings, warnings, boundary=boundary,
-                         copies=live["copies"], own=live["own"])
+                         copies=live["copies"], own=live["own"],
+                         unreadable=unread)
     if live["note"]:
         summary["liveCopyError"] = live["note"]
-    gate_summary = (lib.rollup(manifest, findings, warnings, boundary=boundary)
+    gate_summary = (lib.rollup(manifest, findings, warnings, boundary=boundary,
+                               unreadable=unread)
                     if live["own"] is not None else None)
     usage = load_usage(manifest, manifest_path)
     full_run = _full_run_block(manifest, manifest_path, _proj)
     evidence = load_evidence(manifest, manifest_path, boundary=boundary,
-                             full_run=full_run)
+                             full_run=full_run, unreadable=unread)
 
     # th: resolve the look once — project theme, then the user's, then
     # the built-in — and hand the compiled sheet to every writer below. A theme
@@ -488,14 +497,7 @@ def main(argv):
     _port = stranded_marks(_proj, manifest, _cfg)
     if _tinfo.get("error"):
         sys.stderr.write("WARNING: theme not applied - %s\n" % _tinfo["error"])
-    # A run record the plan holds that is not the record's shape gives the
-    # report no run for its subject; the reader's one sentence says which.
-    try:
-        _unread = _evidence_io.plan_unreadable(manifest_path, _proj)
-    except Exception as exc:                       # noqa: BLE001
-        _unread = {"unreadablePlanFiles": [
-            "%s (its run records could not be walked: %s: %s)"
-            % (manifest_path, type(exc).__name__, exc)]}
+    # ...and the reader's one sentence says which, on stderr.
     _said = _evidence_io.plan_read_sentence(_unread)
     if _said:
         sys.stderr.write("WARNING: %s\n" % (_said,))

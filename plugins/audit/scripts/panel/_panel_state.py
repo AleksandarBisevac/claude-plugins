@@ -554,9 +554,16 @@ def build_state(project, run=None, full_run_cache=None, live=None):
             # count that only looks read from the commits.
             trail, trail_error = _commit_trail.plan_verdicts(
                 view["plan"], _git_root(project, config))
+            # A RUN RECORD THE PLAN HOLDS THAT IS NOT THE RECORD'S SHAPE gives
+            # no run to its subject, so the rollup counts each subject it names
+            # as `unreadable` rather than by the pointer - the one answer the
+            # status render and its gate read the same way.
+            unread = _evidence_io.plan_unreadable_records(
+                mpath, project)["unreadableRecords"]
             rollup = as_.rollup(view["plan"], m_findings, m_warn,
                                 boundary=boundary, copies=view["copies"],
-                                own=view["own"], trail=trail)
+                                own=view["own"], trail=trail,
+                                unreadable=unread)
             if view["note"]:
                 rollup["liveCopyError"] = view["note"]
             if trail is None:
