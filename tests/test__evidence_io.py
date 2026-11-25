@@ -4342,7 +4342,7 @@ def _tree_key_cases(check):
     # The alias above holds one name for one function; this holds the WRITE. A
     # run-test-gate that hashed locally at the write site while keeping the
     # alias would pass tk1 and disagree with every reader, so the key is read
-    # back off a row a real `--record --tree` run wrote and compared with the
+    # back off the record a real `--record --tree` run wrote and compared with the
     # reader's own function over the same directory. A second tree is measured
     # too, each in a project of its own so the second run is measured and not
     # a repeat of the first's verdict.
@@ -4381,14 +4381,16 @@ def _tree_key_cases(check):
         lines = []
         code = rtg.main([mpath, "P1", "--project-dir", project, "--record",
                          "--tree", tree], out=lines.append)
-        # The run's LEDGER row: a fixture repository with no commit gives a
-        # record whose `testedState.head` is null, which the reader refuses,
-        # so the read holds a row standing for that record beside the run.
-        got = M.read_rows(project, manifest_path=mpath)
-        rows = [r for r, src in zip(got["rows"], got["rowSources"])
-                if src == M.ROW_FROM_LEDGER]
-        written = ((rows[-1].get("testedState") or {}).get("tree") or {}
-                   ).get("key") if rows else None
+        # The run's RECORD, read off the plan as written: no row is written
+        # beside it, and a fixture repository with no commit gives a record
+        # whose `testedState.head` is null, which `read_rows` passes over.
+        with open(mpath, encoding="utf-8") as fh:
+            record = json.load(fh)["phases"][0].get(M.RECORD_KEY)
+        rows = [record] if isinstance(record, dict) else []
+        # A record keeps the key flat, under `RECORD_TREE_KEY`, where a row
+        # kept it as `tree.key` - the same value either way.
+        written = (rows[-1].get("testedState") or {}).get(
+            M.RECORD_TREE_KEY) if rows else None
         keys.append(written)
         shown.append((name, code, len(rows), written, M.tree_key(tree)))
         if name == "two" and linked:
@@ -10854,9 +10856,6 @@ _BB_ENTRIES = {
     "plugins/audit/scripts/governance/import-evidence.py": (
         "copies ledger rows from another tree; it names no subject's "
         "newest run, verdict or repeat"),
-    "plugins/audit/scripts/governance/record-outside-run.py": (
-        "records a suite that ran elsewhere; it reads runs only to place its "
-        "window beside them"),
     "plugins/audit/scripts/manifest/migrate-json-encoding.py": (
         "listed through an import whose readers it never calls: it rewrites "
         "the plan's encoding"),
@@ -11023,6 +11022,13 @@ def _bb_build(tmp, variant, phase, task, malformed):
         carrier = built[-1][2]
     built.append(_bb_gate(fx, phase, task))
     fx["green"] = built[-1][2]
+    # THE OLDER GREEN IN THE LEDGER is what a previous release left: no run
+    # writes a row now, so the fixture writes the one that release would
+    # have, the green as the reader gives it back, before the red replaces
+    # its record.
+    green_row = M.row_by_run(M.read_rows(root, manifest_path=mpath)["rows"],
+                             fx["green"])
+    M.append_row(root, dict(green_row))
     # A run is held by the subject it measured: a task's on the task, the
     # gate that measured it whichever.
     held_on = (phase, task)
@@ -12120,6 +12126,169 @@ def _plan_door_cases(check):
         _harness.remove_tree(tmp)
 
 
+# --- the upgrade: records replace rows, and the frozen rows read as before -------
+def _bu_ledger(root, rows):
+    """Write `rows` as the previous release left them - one chained file under
+    the evidence directory - and return that directory."""
+    evdir = M.evidence_dir(root)
+    os.makedirs(evdir, exist_ok=True)
+    name = "2026-11.previous-release.jsonl"
+    with io.open(os.path.join(evdir, name), "w", encoding="utf-8",
+                 newline="\n") as fh:
+        for linked in M.chain_file(rows, name):
+            fh.write(_journal_io.canonical(linked) + "\n")
+    return evdir
+
+
+def _bu_meta(mpath, change):
+    with io.open(mpath, encoding="utf-8") as fh:
+        body = json.load(fh)
+    change(body["meta"])
+    with io.open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(body, fh)
+
+
+def _bu_run(run_id, ts, task="P1.1"):
+    """A green run of `task` stamped `ts`, as the ledger row `row_for` builds."""
+    return M.row_for("/nowhere", {"status": "passed", "durationMs": 5,
+                                  "failed": [], "steps": [{"name": "sweep",
+                                                           "exit": 0}]},
+                     "task", {"taskId": task, "phaseId": "P1"},
+                     {"runId": run_id, "ts": ts, "startedAt": ts})
+
+
+def _bu_gate(mpath):
+    """`(exit, the GATE lines)` of audit-status's gate over the two conditions
+    a recorded run feeds - the exit and the lines that state the verdict."""
+    proc = subprocess.run(
+        [sys.executable, _loader.script_path("audit-status.py"), mpath,
+         "--gate", "--fail-on", "failing-tests,no-test-evidence"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        universal_newlines=True)
+    said = (proc.stdout + "\n" + proc.stderr).splitlines()
+    return proc.returncode, [ln for ln in said if ln.startswith("GATE ")]
+
+
+def _boundary_upgrade_cases(check):
+    """(bu) Across the upgrade that stops the rows: the evidence boundary never
+    moves later and a record's moment never dates it, and a plan and ledger of
+    the previous release answer the same - with the ledger there and with it
+    deleted."""
+    tmp = _harness.fixture_root("audit-evidence-upgrade-")
+    try:
+        t0, t2, t3, t5 = ("2026-11-01T08:00:00Z", "2026-11-02T08:00:00Z",
+                          "2026-11-03T08:00:00Z", "2026-11-05T08:00:00Z")
+        # --- a ledger row beside records that keep replacing each other ------
+        root = os.path.join(tmp, "replaced")
+        mpath, shards = ri_plan(root)
+        _bu_ledger(root, [_bu_run("R0", t0)])
+        ri_put_record(shards["P1"], "P1.1", M.run_record(_bu_run("R2", t2)))
+        first = M.evidence_boundary(root, mpath)
+        ri_put_record(shards["P1"], "P1.1", M.run_record(_bu_run("R3", t3)))
+        second = M.evidence_boundary(root, mpath)
+        check("bu1 THE BOUNDARY NEVER MOVES LATER AS RECORDS REPLACE EACH "
+              "OTHER: a plan with no key, a frozen ledger row at %s and a "
+              "record replaced by a newer one - the boundary is the frozen "
+              "row's moment before and after the replacement: %r / %r"
+              % (t0, first, second),
+              first["at"] == second["at"] == t0
+              and first["sources"] == second["sources"]
+              == {"key": None, "ledger": t0})
+
+        # --- a record alone dates nothing ----------------------------------
+        bare = os.path.join(tmp, "record-only")
+        bare_path, bare_shards = ri_plan(bare)
+        ri_put_record(bare_shards["P1"], "P1.1",
+                      M.run_record(_bu_run("R2", t2)))
+        alone = M.evidence_boundary(bare, bare_path)
+        check("bu2 A RECORD'S MOMENT NEVER FEEDS THE BOUNDARY: a plan holding "
+              "a record at %s and neither a key nor a ledger has no boundary - "
+              "the record is the subject's newest run, not when recording "
+              "began, and a later record would move it later: %r"
+              % (t2, alone),
+              alone["at"] is None
+              and alone["sources"] == {"key": None, "ledger": None})
+
+        # --- the previous release's plan and ledger -------------------------
+        prev = os.path.join(tmp, "previous")
+        pv_path, pv_shards = ri_plan(prev)
+        rows = ri_rows(prev)
+        _bu_ledger(prev, rows)
+        latest = M.latest_by_subject(rows)
+        with io.open(pv_shards["P1"], encoding="utf-8") as fh:
+            body = json.load(fh)
+        body["status"] = "done"
+        body[M.POINTER_KEY] = M.pointer_for(latest[("phase", "P1")])
+        for task in body["tasks"]:
+            task["status"] = "done"
+            if ("task", task["id"]) in latest:
+                task[M.POINTER_KEY] = M.pointer_for(latest[("task", task["id"])])
+        with io.open(pv_shards["P1"], "w", encoding="utf-8") as fh:
+            json.dump(body, fh)
+        _bu_meta(pv_path, lambda meta: meta.update(
+            {M.SINCE_KEY: M.since_from_rows(rows)}))
+        read = M.read_rows(prev, manifest_path=pv_path)
+        derived = dict(("%s %s" % k, M.pointer_for(v))
+                       for k, v in M.latest_by_subject(read["rows"]).items())
+        stored = dict([("phase P1", body[M.POINTER_KEY])] + [
+            ("task %s" % (t["id"],), t[M.POINTER_KEY])
+            for t in body["tasks"] if M.POINTER_KEY in t])
+        verified = M.verify(prev)
+        held_gate = _bu_gate(pv_path)
+        held_boundary = M.evidence_boundary(prev, pv_path)
+        _harness.remove_tree(M.evidence_dir(prev))
+        gone_gate = _bu_gate(pv_path)
+        gone_boundary = M.evidence_boundary(prev, pv_path)
+        check("bu4 A PLAN AND LEDGER OF THE PREVIOUS RELEASE: every pointer "
+              "the plan stores is the one the reader derives from the frozen "
+              "rows, and the ledger verifies: %r / %r / %r"
+              % (derived, stored, (verified.get("ok"), verified.get("rows"))),
+              derived == stored and len(stored) == 4
+              and verified.get("ok") is True
+              and verified.get("rows") == len(rows)
+              and read.get("records") == 0)
+        check("bu5 ...AND WITH THE LEDGER DELETED the two conditions a recorded "
+              "run feeds (failing-tests, no-test-evidence) answer as they did, "
+              "on the boundary the plan's key states - the gate is not vacuous, "
+              "the red task fails it both times: %r / %r / %r / %r"
+              % (held_gate, gone_gate, held_boundary["at"],
+                 gone_boundary["at"]),
+              held_gate == gone_gate and held_gate[0] == 1
+              and any("failing-tests" in ln for ln in held_gate[1])
+              and held_boundary["at"] == gone_boundary["at"]
+              == M.since_from_rows(rows)["at"])
+
+        # --- the one-time stamp: the run, and the frozen rows ---------------
+        stamped = os.path.join(tmp, "stamped")
+        st_path, _st = ri_plan(stamped)
+        st_ev = _bu_ledger(stamped, [_bu_run("R0", t0)])
+        got = M.write_evidence_since(stamped, st_path, "P1",
+                                     run=_bu_run("R5", t5))
+        _harness.remove_tree(st_ev)
+        after = M.evidence_boundary(stamped, st_path)
+        fresh = os.path.join(tmp, "fresh")
+        fr_path, fr_shards = ri_plan(fresh)
+        ri_put_record(fr_shards["P1"], "P1.2",
+                      M.run_record(_bu_run("R2", t2, task="P1.2")))
+        new = M.write_evidence_since(fresh, fr_path, "P1",
+                                     run=_bu_run("R5", t5))
+        again = M.write_evidence_since(fresh, fr_path, "P1",
+                                       run=_bu_run("R9", "2026-11-09T08:00:00Z"))
+        check("bu3 THE STAMP IS THE EARLIEST OF THE FROZEN ROWS AND THE RUN "
+              "BEING RECORDED: on a plan with no key the first run of this "
+              "release stamps the frozen row's moment (%s), not its own, so "
+              "with the ledger then deleted the boundary still stands there; "
+              "with no ledger the run stamps its own moment and no record's, "
+              "and a later run moves nothing: %r / %r / %r / %r"
+              % (t0, got, after, new, again),
+              got["written"] is True and got["at"] == t0
+              and after["at"] == t0 and after["sources"]["key"] == t0
+              and new["written"] is True and new["at"] == t5
+              and again["written"] is False and again["at"] == t5)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 # A STAGED SUITE: each row is a block the sweep runs as a job of its own, on one
 # slot, and replays in this order (`_harness.staged_main`), so the case ids,
 # their order and the tally are a one-process run's. Run whole in one process,
@@ -12150,7 +12319,8 @@ STAGES = (("wh-block", "_withheld_cases"), ("rf-block", "_read_field_cases"),
           ("rfg-block", "_runnable_full_gate_cases"),
           ("kv-block", "_keep_both_verb_cases"),
           ("kc-block", "_container_twice_cases"),
-          ("pd-block", "_plan_door_cases"))
+          ("pd-block", "_plan_door_cases"),
+          ("bu-block", "_boundary_upgrade_cases"))
 # The prefix of the directory a full run's blocks report into.
 _STAGE_PREFIX = "evidence-io-stages-"
 

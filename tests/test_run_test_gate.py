@@ -24,6 +24,7 @@ is an actual repository and the "mutation" is an actual file appearing in it.
 """
 import ast
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -1563,20 +1564,48 @@ def _force_kill(pid):
 
 
 def _recorded_rows(directory):
-    """Every row in the evidence directory, in the order they landed.
+    """Every run the plan beside `directory` holds, oldest first, as the one
+    reader gives it back (`_evidence_io.read_rows`): each subject's record,
+    each full run a phase holds, and the frozen rows of a ledger there.
 
-    Read off the DISK rather than through `_evidence_io.read_rows`, because the
-    question these cases put is what a reader of the committed file sees -- and a
-    reader that went through the writer's own module could not tell a field that
-    was never written from one the reader supplies.
+    `directory` is the evidence directory every fixture here leaves at its
+    default place beside its plan (`<manifest dir>/evidence`), so it names the
+    plan whose records are read. A recorded run writes no row into it - a case
+    asking whether the directory stayed untouched reads it with `_tree_bytes`.
+    A subject's record is its NEWEST run, so a run a later run of the same
+    subject replaced is not here.
     """
-    rows = []
-    for name in sorted(os.listdir(directory)):
-        with open(os.path.join(directory, name), encoding="utf-8") as fh:
-            for line in fh.read().splitlines():
-                if line.strip():
-                    rows.append(json.loads(line))
-    return rows
+    manifest = os.path.join(os.path.dirname(directory), "audit-plan.json")
+    read = _ev_io.read_rows(_output.project_of_manifest(manifest),
+                            manifest_path=manifest)
+    return _ev_io.oldest_first(read["rows"])
+
+
+def _task_run(directory, task_id):
+    """The newest run `_recorded_rows` holds for `task_id`, or {} for none.
+    By subject, never by position: runs a second apart share a stamp, and
+    the order of a tie says nothing about which ran last."""
+    rows = [r for r in _recorded_rows(directory) if r.get("taskId") == task_id]
+    return rows[-1] if rows else {}
+
+
+def _printed_run(directory, text):
+    """The run `text` (a recorded run's output) names on its `evidence:
+    recorded` line, as `_recorded_rows` holds it - {} when the output names
+    none or no record holds it."""
+    said = re.findall(r"evidence: recorded ([^\s;]+)", text or "")
+    if not said:
+        return {}
+    return next((r for r in _recorded_rows(directory)
+                 if r.get("runId") == said[-1]), {})
+
+
+def _phase_run(directory):
+    """The newest run of a phase's own gate (`scope` phase, no task) that
+    `_recorded_rows` holds, or {} for none."""
+    rows = [r for r in _recorded_rows(directory)
+            if r.get("scope") == "phase" and not r.get("taskId")]
+    return rows[-1] if rows else {}
 
 
 def _cases(check):
@@ -4932,14 +4961,16 @@ def _cases(check):
                   out=lines.append)
     text = "\n".join(lines)
     shard_after = json.loads(open(rshard).read())
-    ev_files = os.listdir(os.path.join(recroot, "docs", "audit", "evidence"))
-    check("rc1 THE BOUNDARY: recording writes the row, the journal and the "
-          "pointer during this invocation, and the gate still reports the tree "
-          "UNCHANGED. Move any of those writes above the post-run snapshot and "
-          "the runner accuses itself of the rewrite it exists to catch: exit=%r "
-          "green=%r" % (code, "GATE GREEN" in text),
+    ev_files = _tree_bytes(os.path.join(recroot, "docs", "audit", "evidence"))
+    check("rc1 THE BOUNDARY: recording writes the record, the pointer, the "
+          "boundary's stamp and its journal row during this invocation - and "
+          "no evidence row - and the gate still reports the tree UNCHANGED. "
+          "Move any of those writes above the post-run snapshot and the runner "
+          "accuses itself of the rewrite it exists to catch: exit=%r green=%r "
+          "evidence=%r" % (code, "GATE GREEN" in text, ev_files),
           code == M.E_OK and "GATE GREEN" in text
-          and "MUTATED" not in text and len(ev_files) == 1)
+          and "MUTATED" not in text and ev_files is None
+          and isinstance(shard_after.get("lastRun"), dict))
 
     check("rc2 ...and the pointer landed on the phase, naming the run just "
           "recorded - the two halves are asserted together because a recorded "
@@ -4970,7 +5001,7 @@ def _cases(check):
     two = []
     code_two = M.main([rmpath, "P1", "--task", "P1.2", "--project-dir", recroot,
                        "--record"], out=two.append)
-    row_two = _recorded_rows(evdir)[-1]
+    row_two = _task_run(evdir, "P1.2")
     check("at1 a task whose plan RECORDS attempts stamps that number on the row, "
           "beside the `via` no real run could carry it with before: exit=%r %r"
           % (code_two, (row_two.get("taskId"), row_two.get("attempt"),
@@ -4981,7 +5012,7 @@ def _cases(check):
     zero = []
     M.main([rmpath, "P1", "--task", "P1.3", "--project-dir", recroot,
             "--record"], out=zero.append)
-    row_zero = _recorded_rows(evdir)[-1]
+    row_zero = _task_run(evdir, "P1.3")
     check("at2 a RECORDED zero is a value and is written as one - the plan takes "
           "this count back down on a reverted increment and on a reset, so a row "
           "reading it as 'surely at least one' would report an attempt the plan "
@@ -4993,7 +5024,7 @@ def _cases(check):
     none = []
     M.main([rmpath, "P1", "--task", "P1.1", "--project-dir", recroot,
             "--record"], out=none.append)
-    row_none = _recorded_rows(evdir)[-1]
+    row_none = _task_run(evdir, "P1.1")
     check("at3 a task whose plan records NO attempts leaves the field off the "
           "row entirely. Absent means 'the plan does not say how many times this "
           "ran', and a 0 or a 1 invented here would be a claim with no basis - "
@@ -5003,9 +5034,9 @@ def _cases(check):
     check("at4 ...and a PHASE-scope run carries no attempt either, which is the "
           "plan being read correctly rather than a gap: `attempts` is a task "
           "field, so a phase has none to report: %r"
-          % (sorted(_recorded_rows(evdir)[0]),),
-          _recorded_rows(evdir)[0].get("scope") == "phase"
-          and "attempt" not in _recorded_rows(evdir)[0])
+          % (sorted(_phase_run(evdir)),),
+          _phase_run(evdir).get("scope") == "phase"
+          and "attempt" not in _phase_run(evdir))
 
     check("ms6 ...and the word reaches a row ON DISK, through `main` and the "
           "writer rather than through a helper called by hand. `true` prints no "
@@ -5031,9 +5062,8 @@ def _cases(check):
     own = []
     code_own = M.main([rmpath, "P1", "--task", "P1.4", "--project-dir", recroot,
                        "--record"], out=own.append)
-    row_own = _recorded_rows(evdir)[-1]
-    row_fell_back = [r for r in _recorded_rows(evdir)
-                     if r.get("taskId") == "P1.2"][-1]
+    row_own = _task_run(evdir, "P1.4")
+    row_fell_back = _task_run(evdir, "P1.2")
     check("gp1 a task measured by its OWN `tests.gate` records that, and a task "
           "measured by the PHASE's records that instead - two rows whose `steps` "
           "are byte-identical, told apart by the one field that says where the "
@@ -5061,9 +5091,9 @@ def _cases(check):
           "PHASE-scope run with no --task at all still records `phase` rather "
           "than leaving the field off. A writer that only stamped the fallback "
           "would pass gp1 and leave every sign-off run with no provenance at "
-          "all: %r" % (_recorded_rows(evdir)[0].get("gateSource"),),
-          _recorded_rows(evdir)[0].get("gateSource") == "phase"
-          and "taskId" not in _recorded_rows(evdir)[0])
+          "all: %r" % (_phase_run(evdir).get("gateSource"),),
+          _phase_run(evdir).get("gateSource") == "phase"
+          and "taskId" not in _phase_run(evdir))
 
     check("gp4 the SUBJECT is not recorded beside it, because the row can be "
           "read for it: it is the `taskId` when the gate was the task's and the "
@@ -5109,7 +5139,7 @@ def _cases(check):
                       out=bd1_lines.append)
     bd1_text = "\n".join(bd1_lines)
     bd_meta = json.loads(open(bdpath).read())["meta"]
-    bd_row = _recorded_rows(os.path.join(bdroot, "docs", "audit", "evidence"))[0]
+    bd_row = _phase_run(os.path.join(bdroot, "docs", "audit", "evidence"))
     check("bd1 a plan with no boundary and no ledger gets one from its FIRST "
           "recorded run: the key names that run, dates it from that run's own "
           "stamp, and carries the sentence that licenses it. Before this, "
@@ -5158,8 +5188,10 @@ def _cases(check):
           bd_meta2.get("evidenceSince") == bd_meta.get("evidenceSince")
           and bd_meta2.get("evidenceSince") is not None and len(bd_j2) == 1
           and "already stated by the plan" in "\n".join(bd2_lines)
-          and len(_recorded_rows(os.path.join(bdroot, "docs", "audit",
-                                              "evidence"))) == 2)
+          and _phase_run(os.path.join(bdroot, "docs", "audit", "evidence")).get(
+              "runId") in "\n".join(bd2_lines)
+          and _phase_run(os.path.join(bdroot, "docs", "audit", "evidence")).get(
+              "runId") != bd_row["runId"])
 
     # --- a run that was STOPPED, not answered ------------------------------
     # `cancelled` was a `testEvidence.status` member with NO WRITER: it sat in the
@@ -5956,7 +5988,7 @@ def _empty_and_retry_cases(check):
         plan = json.load(fh)
     t11 = plan["phases"][0]["tasks"][0]
     evdir = os.path.join(root, "docs", "audit", "evidence")
-    rows = _recorded_rows(evdir) if os.path.isdir(evdir) else []
+    rows = _recorded_rows(evdir)
     check("ce1 a cleared task's EMPTY answer under --record is RECORDED: an "
           "`empty-gate` row and a pointer the plan carries, the one word the "
           "enum has for 'no gate was configured' - so a reader never has to "
@@ -7115,12 +7147,12 @@ def _record_order_cases(check):
     except _CutOff:
         raised = True
     recorded_line = [ln for ln in seen if ln.startswith("  evidence: recorded")]
-    rows = _ev_io.read_rows(root, manifest_path=_ev_io.plan_file_of(root))["rows"]
-    check("dg22 THE ROW IS WRITTEN BEFORE THE BANNER: `_record_run` already "
+    rows = _ev_io.read_rows(root, manifest_path=mp)["rows"]
+    check("dg22 THE RECORD IS WRITTEN BEFORE THE BANNER: `_record_run` already "
           "runs before `render`, so a run cut off AT the first verdict "
           "banner still leaves `evidence: recorded <runId>` printed and the "
-          "row sitting in the ledger - never a run that answered and left "
-          "no trace of it: %r"
+          "run held as its record in the plan - never a run that answered "
+          "and left no trace of it: %r"
           % ((raised, len(recorded_line), len(rows)),),
           raised and len(recorded_line) == 1 and len(rows) == 1)
 
@@ -7390,7 +7422,7 @@ def _derived_gate_cases(check):
     lines3 = []
     M.main([mp3, "P1", "--project-dir", root3, "--no-reuse", "--record"],
           out=lines3.append)
-    rows3 = _ev_io.read_rows(root3, manifest_path=_ev_io.plan_file_of(root3))["rows"]
+    rows3 = _ev_io.read_rows(root3, manifest_path=mp3)["rows"]
     check("dg19 RED-FIRST: a WIDE run of a shadow-mode phase with two "
           "failing suites, one of them listed in `testGateDerived.tests`, "
           "records `shadow.missed` of one - the suite the derived gate "
@@ -7771,40 +7803,52 @@ def _unrecorded_cases(check):
 
     # --- a --record run that stored nothing --------------------------------
     first_code, _first = _run("P1", "--record", "--no-reuse")
-    check("ur4 SETUP: a first --record run stores its row and exits 0: %r"
-          % ((first_code, os.listdir(evdir) if os.path.isdir(evdir) else None),),
-          first_code == M.E_OK and os.path.isdir(evdir) and os.listdir(evdir))
-    for name in os.listdir(evdir):
-        with open(os.path.join(evdir, name), "ab") as fh:
-            fh.write(b"\xff\xfe not utf-8\n")
-    bad_code, bad = _run("P1", "--record", "--no-reuse")
-    check("ur5 THE FAULT: --record over a ledger file holding a non-UTF-8 byte "
-          "stores nothing, and the exit says so with the distinct code and "
-          "prints no GATE GREEN: %r" % ((bad_code, bad[-300:]),),
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json")) as fh:
+        first_record = json.load(fh).get("lastRun")
+    check("ur4 SETUP: a first --record run stores its record in the shard, "
+          "writes no evidence directory, and exits 0: %r"
+          % ((first_code, os.path.isdir(evdir), bool(first_record)),),
+          first_code == M.E_OK and not os.path.isdir(evdir)
+          and isinstance(first_record, dict))
+    # THE PLAN-FILE LOCK HELD PAST THE WAIT is what leaves a run unrecorded now:
+    # with no row written, the record is all `--record` stores.
+    import _locks
+    was_session = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    was_wait = getattr(_ev_io, "RECORD_WAIT_SECONDS", None)
+    os.environ["CLAUDE_CODE_SESSION_ID"] = "ur-gate-run"
+    _ev_io.RECORD_WAIT_SECONDS = 0.3
+    _locks.acquire(root, "index", session="ur-holder", out=lambda *_a: None)
+    try:
+        bad_code, bad = _run("P1", "--record", "--no-reuse")
+        plain_code, plain = _run("P1", "--no-reuse")
+        json_code, _json = _run("P1", "--record", "--no-reuse", "--json")
+        full_code, full = _run("P1", "--record", "--no-reuse", "--quiet")
+    finally:
+        _locks.release(root, "index", session="ur-holder", out=lambda *_a: None)
+        if was_session is None:
+            os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+        else:
+            os.environ["CLAUDE_CODE_SESSION_ID"] = was_session
+        if was_wait is None:
+            delattr(_ev_io, "RECORD_WAIT_SECONDS")
+        else:
+            _ev_io.RECORD_WAIT_SECONDS = was_wait
+    check("ur5 THE FAULT: --record whose record cannot be written stores "
+          "nothing, and the exit says so with the distinct code and prints no "
+          "GATE GREEN: %r" % ((bad_code, bad[-300:]),),
           bad_code == M.E_UNRECORDED and bad_code not in (M.E_OK, M.E_FAIL,
                                                           M.E_ASK)
           and "evidence: NOT recorded" in bad and "GATE GREEN" not in bad)
-    plain_code, plain = _run("P1", "--no-reuse")
     check("ur6 ...and the SAME run without --record is unchanged, exit 0 and "
           "green: %r" % ((plain_code, plain[-120:]),),
           plain_code == M.E_OK and "GATE GREEN" in plain)
-    json_code, _json = _run("P1", "--record", "--no-reuse", "--json")
     check("ur7 ...--json takes the same exit: %r" % (json_code,),
           json_code == M.E_UNRECORDED)
-    full_code, full = _run("P1", "--record", "--no-reuse", "--quiet")
     check("ur8 ...and --quiet does not fold the unrecorded green into a one-"
           "line success: %r" % ((full_code, full[-200:]),),
           full_code == M.E_UNRECORDED and "GATE GREEN" not in full)
 
     # --- a reused verdict repeats the banners the measured run printed -----
-    # The undecodable line is taken back out, so the ledger reads again.
-    for name in os.listdir(evdir):
-        path = os.path.join(evdir, name)
-        with open(path, "rb") as fh:
-            kept = [ln for ln in fh.read().splitlines(True)
-                    if b"not utf-8" not in ln]
-        with open(path, "wb") as fh:
-            fh.write(b"".join(kept))
     m_code, measured = _run("P2", "--record", "--no-reuse")
     rows = [r for r in _recorded_rows(evdir) if r.get("phaseId") == "P2"]
     check("ur9 SETUP: a measured run whose gate names nothing owned prints NO "
@@ -8712,12 +8756,15 @@ def _reuse_cases(check):
           and second.get("status") == first.get("status"))
 
     check("ru9 ...and it carries NO observation it did not make. Nothing ran, so "
-          "there are no steps, no tree comparison and no check count - and each "
-          "of those is null with the sentence that says why rather than the "
-          "empty list that would mean KNOWN CLEAN: %r"
+          "every step its record carries names the run that measured it and "
+          "none carries a duration of its own, there is no tree comparison and "
+          "no check count - and each of those is null with the sentence that "
+          "says why rather than the empty list that would mean KNOWN CLEAN: %r"
           % ({"steps": second.get("steps"),
               "treeMutated": second.get("treeMutated")},),
-          second.get("steps") == []
+          all((s.get("reusedFrom") or {}).get("runId") == first["runId"]
+              and "durationMs" not in s
+              for s in second.get("steps") or [])
           and second.get("treeMutated") is None
           and second["observations"]["ranTotal"] is None
           and "no command ran" in (second["observations"]["treeBasis"] or ""))
@@ -9140,19 +9187,35 @@ def _part_reuse_cases(check):
     def _plan(gate, title="one", meta=None):
         """The index and the shard; the manifest is outside the identity
         but for its meta, so a title change moves nothing a repeat is keyed
-        on, and `meta` - more keys for the meta block - does."""
+        on, and `meta` - more keys for the meta block - does.
+
+        An edit the way a person makes one: the keys the recorder wrote - the
+        phase's record and pointer, the boundary's stamp - are kept, since
+        the record is the only copy of the run a repeat is found from."""
+        shard = os.path.join(root, "docs", "audit", "phases", "P1.json")
+        kept_phase, kept_meta = {}, {}
+        if os.path.exists(shard):
+            with open(shard) as fh:
+                old = json.load(fh)
+            kept_phase = dict((k, old[k]) for k in ("lastRun", "testEvidence")
+                              if k in old)
+            with open(mp) as fh:
+                kept_meta = dict((k, v) for k, v in json.load(fh)["meta"].items()
+                                 if k == "evidenceSince")
         body = {"version": 3, "buildCommands": build}
         body.update(meta or {})
+        body.update(kept_meta)
         with open(mp, "w") as fh:
             json.dump({"meta": body,
                        "phases": [{"id": "P1", "title": title,
                                    "shard": "phases/P1.json"}]}, fh)
-        with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
-                  "w") as fh:
-            json.dump({"id": "P1", "title": title, "status": "in_progress",
-                       "testGate": gate, "tasks": [
-                           {"id": "P1.1", "title": "t", "status": "in_progress",
-                            "files": ["src/a.py"]}]}, fh)
+        phase = {"id": "P1", "title": title, "status": "in_progress",
+                 "testGate": gate, "tasks": [
+                     {"id": "P1.1", "title": "t", "status": "in_progress",
+                      "files": ["src/a.py"]}]}
+        phase.update(kept_phase)
+        with open(shard, "w") as fh:
+            json.dump(phase, fh)
 
     _plan(["tree", "plan"])
     _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
@@ -9177,7 +9240,7 @@ def _part_reuse_cases(check):
         lines = []
         code = M.main([mp, "P1", "--project-dir", root, "--record"]
                       + list(extra), out=lines.append)
-        return code, "\n".join(lines), _recorded_rows(evdir)[-1]
+        return code, "\n".join(lines), _printed_run(evdir, "\n".join(lines))
 
     def _step(row, name):
         return next((s for s in row.get("steps") or []
@@ -9279,13 +9342,14 @@ def _part_reuse_cases(check):
     _run()
     code_h, text_h, row_h = _run()
     check("pr8 a gate with NO plan-grading step repeats as a whole, as before: "
-          "the tree step runs once for two asks, the row is `reused` with no "
-          "steps, and the summary opens with the whole-run banner: runs=%r "
-          "exit=%r source=%r"
+          "the tree step runs once for two asks, the record is `reused` with "
+          "no step measured by this run (each it carries names the run it "
+          "repeated), and the summary opens with the whole-run banner: "
+          "runs=%r exit=%r source=%r"
           % (_runs(), code_h, row_h.get("verdictSource")),
           _runs() == (4, 6) and code_h == M.E_FAIL
           and row_h.get("verdictSource") == _ev_io.REUSED
-          and row_h.get("steps") == []
+          and all("reusedFrom" in s for s in row_h.get("steps") or [])
           and "GATE VERDICT REUSED" in text_h
           and "measured here:" not in text_h)
 
@@ -9388,8 +9452,7 @@ def _pgo_run(root, mp, evdir, *extra):
     lines = []
     code = M.main([mp, "P1", "--project-dir", root, "--record"] + list(extra),
                   out=lines.append)
-    rows = _recorded_rows(evdir) if os.path.isdir(evdir) else []
-    return code, "\n".join(lines), (rows[-1] if rows else {})
+    return code, "\n".join(lines), _printed_run(evdir, "\n".join(lines))
 
 
 def _pgo_masked(root, text):
@@ -9831,12 +9894,14 @@ def _interrupt_cases(check):
                               prefix=_PLAIN_GIT).strip()
     porcelain = _harness.git(sigroot, "status", "--porcelain", prefix=_PLAIN_GIT)
     check("is6 AND NOTHING WAS COMMITTED. The interrupt path writes and returns; "
-          "HEAD has not moved and the row is sitting in the working tree, which "
-          "is exactly the state the state commit sweeps at the next "
-          "/audit:resume. A commit made while stopping is the half-made one "
-          "nobody reviews: %r" % (head_after == head_before,),
+          "HEAD has not moved and the record is sitting in the working tree's "
+          "shard - and no evidence row beside it - which is exactly the state "
+          "the state commit sweeps at the next /audit:resume. A commit made "
+          "while stopping is the half-made one nobody reviews: %r"
+          % ((head_after == head_before, porcelain),),
           head_after == head_before and head_before
-          and "docs/audit/evidence" in porcelain)
+          and "docs/audit/phases/P1.json" in porcelain
+          and "docs/audit/evidence" not in porcelain)
 
     shard_sig = json.loads(open(os.path.join(sigroot, "docs", "audit",
                                              "phases", "P1.json")).read())
@@ -9991,13 +10056,15 @@ def _group_cases(check):
         with open(mpath, "w") as fh:
             json.dump(_gg, fh)
         reset()
-        M.main([mpath, "P1", "--also", "P2", "--project-dir", root, "--record",
-                "--no-reuse"], out=lambda *_a: None)
-        M.main([mpath, "P1", "--project-dir", root, "--record", "--no-reuse"],
-               out=lambda *_a: None)
-        _gg_rows = sorted(_recorded_rows(os.path.join(root, "docs", "audit",
-                                                      "evidence")),
-                          key=lambda r: str(r.get("ts") or ""))
+        _ev_dir = os.path.join(root, "docs", "audit", "evidence")
+        # Each run is read off its record before the next run of the same
+        # phase replaces it: the record is the only copy a run has.
+        _gg_rows = []
+        for _extra in (["--also", "P2"], []):
+            _said = []
+            M.main([mpath, "P1"] + _extra + ["--project-dir", root, "--record",
+                                             "--no-reuse"], out=_said.append)
+            _gg_rows.append(_printed_run(_ev_dir, "\n".join(_said)))
         _gg_with = [r.get("groupWith") for r in _gg_rows]
         check("gg5 a group run's ledger row names the members it owned, and a run "
               "for the carrier alone names none - the row is where a member's "
@@ -10019,19 +10086,20 @@ def _group_cases(check):
         with open(mpath, "w") as fh:
             json.dump(_gg, fh)
         reset()
-        _ev_dir = os.path.join(root, "docs", "audit", "evidence")
-        for _name in os.listdir(_ev_dir):
-            os.remove(os.path.join(_ev_dir, _name))
-        M.main([mpath, "P1", "--project-dir", root, "--record", "--no-reuse"],
-               out=lambda *_a: None)
-        M.main([mpath, "P1", "--also", "P2", "--project-dir", root, "--record"],
-               out=lambda *_a: None)
-        _gg7 = sorted(_recorded_rows(_ev_dir), key=lambda r: str(r.get("ts") or ""))
+        _gg7 = []
+        for _extra in ([], ["--also", "P2"]):
+            _said = []
+            M.main([mpath, "P1"] + _extra + ["--project-dir", root, "--record"]
+                   + ([] if _extra else ["--no-reuse"]), out=_said.append)
+            _gg7.append(_printed_run(_ev_dir, "\n".join(_said)))
         check("gg7 a group run over the same files as a solo run is MEASURED, not a "
               "repeat of it - the members a run owns are part of what it would have "
               "to match: %r" % ([(r.get("groupWith"), r.get(_ev_io.VERDICT_SOURCE))
                                  for r in _gg7],),
-              len(_gg7) == 2 and _gg7[-1].get("groupWith") == ["P2"]
+              _gg7[0].get("runId") and _gg7[-1].get("runId")
+              and _gg7[0]["runId"] != _gg7[-1]["runId"]
+              and "groupWith" not in _gg7[0]
+              and _gg7[-1].get("groupWith") == ["P2"]
               and _gg7[-1].get(_ev_io.VERDICT_SOURCE) != _ev_io.REUSED)
     finally:
         _harness.remove_tree(root)
@@ -11329,8 +11397,7 @@ def _affected_cases(check):
     lines = []
     code = M.main([mpath, "P1", "--task", "P1.2", "--project-dir", root,
                    "--record"], out=lines.append)
-    rows = _recorded_rows(os.path.join(root, "docs", "audit", "evidence"))
-    row = rows[-1] if rows else {}
+    row = _task_run(os.path.join(root, "docs", "audit", "evidence"), "P1.2")
     names = [s.get("name") for s in row.get("steps") or []]
     affected = [s for s in row.get("steps") or []
                 if s.get("name") == "affected/related: tests/smoke_test.sh"]
@@ -11356,7 +11423,7 @@ def _affected_cases(check):
     wide_lines = []
     M.main([mpath, "P1", "--task", "P1.3", "--project-dir", root, "--record"],
            out=wide_lines.append)
-    rows = _recorded_rows(os.path.join(root, "docs", "audit", "evidence"))
+    rows = [_task_run(os.path.join(root, "docs", "audit", "evidence"), "P1.3")]
     check("ag4 a task whose gate already IS the phase's wide gate adds nothing - "
           "the wide gate runs anyway: %r"
           % ([s.get("name") for s in rows[-1].get("steps") or []],),
@@ -11370,7 +11437,7 @@ def _affected_cases(check):
     failed_lines = []
     M.main([mpath, "P1", "--task", "P1.2", "--project-dir", root, "--record"],
            out=failed_lines.append)
-    rows = _recorded_rows(os.path.join(root, "docs", "audit", "evidence"))
+    rows = [_task_run(os.path.join(root, "docs", "audit", "evidence"), "P1.2")]
     check("ag5 a related listing that cannot answer WIDENS the task's run to the "
           "phase gate, recorded under its own arm, and the reason is printed - "
           "never an empty selection: %r"
@@ -11392,8 +11459,7 @@ def _affected_cases(check):
         json.dump(plan, fh)
     M.main([mpath, "P1", "--task", "P1.2", "--project-dir", root, "--no-reuse",
             "--record"], out=[].append)
-    rows = _recorded_rows(os.path.join(root, "docs", "audit", "evidence"))
-    timed = rows[-1] if rows else {}
+    timed = _task_run(os.path.join(root, "docs", "audit", "evidence"), "P1.2")
     steps = timed.get("steps") or []
     step_sum = sum(s.get("durationMs") or 0 for s in steps)
     took, chose = timed.get("durationMs"), timed.get("selectionMs")
@@ -11429,8 +11495,7 @@ def _affected_cases(check):
         wall_ms = int((time.monotonic() - began) * 1000)
     finally:
         M.reuse_identity = held_identity
-    rows = _recorded_rows(os.path.join(root, "docs", "audit", "evidence"))
-    again = rows[-1] if rows else {}
+    again = _task_run(os.path.join(root, "docs", "audit", "evidence"), "P1.2")
     took, chose = again.get("durationMs"), again.get("selectionMs")
     check("ag7 a REPEATED run's selectionMs and durationMs do not overlap: the "
           "selection holds the gathering's %d ms sleep, the duration the "
@@ -12395,7 +12460,9 @@ def _tree_cases(check):
         return M.main(base + list(extra), out=lines.append), lines
 
     code, lines = run("--record", "--tree", tree)
-    rows = _ev_io.read_rows(project, manifest_path=_ev_io.plan_file_of(project))["rows"]
+    # The plan the run was handed, which is not the one the config names: the
+    # record is the run's only copy, and it is in this plan.
+    rows = _ev_io.read_rows(project, manifest_path=mp)["rows"]
     row = rows[-1] if rows else {}
     state = row.get("testedState") or {}
     tree_digest = _tree_stamp.scope_digest(tree, ["tests/test_a.py"])[0]
@@ -12495,7 +12562,7 @@ def _wave_tree_cases(check):
 
     lines = []
     code = M.main(base + ["--task", "P1.1"], out=lines.append)
-    rows = _ev_io.read_rows(project, manifest_path=_ev_io.plan_file_of(project))["rows"]
+    rows = _ev_io.read_rows(project, manifest_path=mp)["rows"]
     state = (rows[-1].get("testedState") or {}) if rows else {}
     key = (state.get("tree") or {}).get("key")
     tree_digest = _tree_stamp.scope_digest(tree, ["tests/test_a.py"])[0]
@@ -12523,7 +12590,8 @@ def _wave_tree_cases(check):
 
     again = []
     acode = M.main(base + ["--task", "P1.1", "--tree", tree], out=again.append)
-    arows = _ev_io.read_rows(project, manifest_path=_ev_io.plan_file_of(project))["rows"]
+    arows = [r for r in _ev_io.read_rows(project, manifest_path=mp)["rows"]
+             if r.get("taskId") == "P1.1"]
     astate = (arows[-1].get("testedState") or {}) if arows else {}
     check("wt4 ALLOW: the same task WITH --tree is measured in it and records "
           "its key: %r" % ((acode, (astate.get("tree") or {}).get("key")),),
@@ -12724,9 +12792,7 @@ def _gate_reach_cases(check):
         lines = []
         code = M.main([mpath, "P1", "--task", task_id, "--project-dir", root,
                        "--record"] + list(extra), out=lines.append)
-        rows = [r for r in _recorded_rows(evidence)
-                if r.get("taskId") == task_id] if os.path.isdir(evidence) else []
-        return code, lines, (rows[-1] if rows else {})
+        return code, lines, _task_run(evidence, task_id)
 
     def gap_paths(reach):
         return [g.get("path") for g in (reach or {}).get("gaps") or []
@@ -12928,7 +12994,9 @@ def _gate_reach_cases(check):
         for owner, name in ((M, "affected_steps"), (M, "gate_reach")):
             real_fn = getattr(owner, name)
             setattr(owner, name, stopped)
-            rows_before = len(_recorded_rows(evidence))
+            # A run recorded would REPLACE P1.1's record, so what moved is
+            # whether the record still names the run it named before.
+            rows_before = _task_run(evidence, "P1.1").get("runId")
             got = []
             try:
                 code_s = M.main([mpath, "P1", "--task", "P1.1",
@@ -12940,7 +13008,8 @@ def _gate_reach_cases(check):
                 setattr(owner, name, real_fn)
             told = [ln for ln in got if "SIGTERM" in ln]
             outcomes.append((name, code_s, told,
-                             len(_recorded_rows(evidence)) - rows_before,
+                             int(_task_run(evidence, "P1.1").get("runId")
+                                 != rows_before),
                              signal.getsignal(signal.SIGTERM) == before))
         check("grh11 a stop during the gathering or the reach reading ends the "
               "run as a stop does - exit 1, one line naming the signal and "
@@ -13985,7 +14054,12 @@ def _last_run_record_cases(check):
           and len(last[2]) - len(first[2]) <= max(width, 0) + 32)
 
     # --- the same, at task scope: the stages the recorder appends ----------
-    task_runs = [_run("--task", "P1.1") for _i in range(5)]
+    # Each run's record is read before the next run replaces it - the record is
+    # the only copy a run has.
+    task_runs, each = [], []
+    for _i in range(5):
+        task_runs.append(_run("--task", "P1.1"))
+        each.append(_task_run(evdir, "P1.1"))
     _raw, body = _lr_read(shard)
     task = _lr_subject(body, "P1.1")
     gates = [s for s in (task.get("timing") or {}).get("stages") or []
@@ -13993,7 +14067,7 @@ def _last_run_record_cases(check):
     picks = [s for s in (task.get("timing") or {}).get("stages") or []
              if s.get("kind") == "selection"]
     printed = [r for _c, _t, r in task_runs]
-    rows = dict((r.get("runId"), r) for r in _recorded_rows(evdir))
+    rows = dict((r.get("runId"), r) for r in each)
     check("lr2 ...and at task scope the recorder appends each run's gate and "
           "selection stage to the task's timing itself, once per run, with the "
           "run's own figures - the record names only the newest run, the "
@@ -14004,11 +14078,12 @@ def _last_run_record_cases(check):
           and (task.get("lastRun") or {}).get("runId") == printed[-1]
           and [g.get("runId") for g in gates] == printed
           and [p.get("runId") for p in picks] == printed
+          and sorted(rows) == sorted(printed)
           and all(g["ms"] == rows[g["runId"]]["durationMs"]
                   and g["startedAt"] == rows[g["runId"]]["startedAt"]
-                  for g in gates if g.get("runId") in rows)
+                  for g in gates)
           and all(p["ms"] == rows[p["runId"]].get("selectionMs")
-                  for p in picks if p.get("runId") in rows))
+                  for p in picks))
     keys = [rows[r].get("reuseKey") for r in printed if r in rows]
     status = subprocess.run(
         ["git", "status", "--porcelain", "--untracked-files=all"], cwd=root,
@@ -14033,7 +14108,6 @@ def _last_run_record_cases(check):
     _raw, body = _lr_read(shard)
     green = _lr_subject(body, "P1.1").get("lastRun") or {}
     red = _lr_subject(body, "P1.2").get("lastRun") or {}
-    rows = dict((r.get("runId"), r) for r in _recorded_rows(evdir))
     check("lr4 EXIT 0 OR 1 IMPLIES THE RECORD: the green run's exit 0 and the "
           "red run's exit 1 each have their subject's record naming the runId "
           "printed and the status the exit stands for, and the launch token a "
@@ -14047,17 +14121,12 @@ def _last_run_record_cases(check):
           and red.get("status") == "failed"
           and _lr_subject(body, "P1.2").get("testEvidence")
           == {"runId": r_id, "status": "failed", "at": red.get("at")})
-    check("lr5 THE EVIDENCE ROW IS STILL WRITTEN, under the same runId as the "
-          "record, carrying none of the record's own keys - and the launch "
-          "token on it as on the record, since the record is replaced by the "
-          "subject's next run and the row is not; a run launched with no "
-          "token carries none: %r"
-          % ((sorted(rows.get(g_id) or {}), (rows.get(r_id) or {}).get("launch")),),
-          g_id in rows and r_id in rows
-          and rows[g_id].get("status") == "passed"
-          and rows[g_id].get("launch") == "tok-green"
-          and "launch" not in rows[r_id]
-          and not any(k in rows[g_id] for k in ("lastRun", "machine")))
+    check("lr5 NO EVIDENCE ROW IS WRITTEN BESIDE THE RECORD: after every run "
+          "above the project has no evidence directory at all, and a run "
+          "launched with no token carries none on its record: %r"
+          % ((_tree_bytes(evdir), red.get("launch")),),
+          _tree_bytes(evdir) is None and "launch" not in red
+          and green.get("launch") == "tok-green")
 
     # --- a lock held past the wait: exit 3, the log named, the shard unchanged
     import _locks
@@ -14081,20 +14150,244 @@ def _last_run_record_cases(check):
         else:
             _ev_io.RECORD_WAIT_SECONDS = was_wait
     held_after, _a = _lr_read(shard)
-    logs = sorted(os.listdir(evdir))
-    named = [n for n in logs if n in h_text]
     check("lr6 THE PLAN-FILE LOCK (`index`, the one every verb takes) HELD "
           "PAST THE WAIT is exit 3 on a green run AND on a red one - never 0 or "
-          "1 without the record - the output names the ledger file the run's "
-          "row went to and the repair (re-run this gate once the index lock is "
-          "free), and the shard is byte for byte what it was: %r"
-          % ((h_code, hr_code, h_id, named, h_text[-500:]),),
+          "1 without the record - the output names the lock and the repair "
+          "(re-run this gate once the plan file can be written), claims no run "
+          "recorded, and the shard is byte for byte what it was: %r"
+          % ((h_code, hr_code, h_id, h_text[-500:]),),
           h_code == M.E_UNRECORDED and hr_code == M.E_UNRECORDED
-          and h_id is not None and named
+          and h_id is None
           and held_after == held_before
           and "GATE GREEN" not in h_text
           and "index lock" in h_text and "phase lock" not in h_text
           and "re-run this gate" in hr_text)
+
+
+# --- a recorded run writes its record and nothing beside it ---------------------
+def _tree_bytes(directory):
+    """`{path under directory: sha256}` of every file there, or None when there
+    is no such directory - so "absent" and "present but empty" read apart."""
+    if not os.path.isdir(directory):
+        return None
+    out = {}
+    for base, _dirs, names in os.walk(directory):
+        for name in names:
+            path = os.path.join(base, name)
+            with open(path, "rb") as fh:
+                out[os.path.relpath(path, directory).replace(os.sep, "/")] = (
+                    hashlib.sha256(fh.read()).hexdigest())
+    return out
+
+
+def _anchors(root):
+    """`(anchor rows, every row)` counted over `root`'s journal: the anchor is
+    the row a recorded run once wrote naming its ledger file."""
+    every = []
+    for path in _journal_io.journal_files(_journal_io.journal_dir(root)):
+        rows, _torn = _journal_io.read_file(path)
+        every.extend(r for r in rows if isinstance(r, dict))
+    return ([r for r in every if r.get("action") == _ev_io.ACTION_RECORDED],
+            every)
+
+
+def _frozen_ledger(root):
+    """Write a ledger as the previous release left it: one chained row of a
+    run of P1.1, in its own file under the evidence directory."""
+    evdir = _ev_io.evidence_dir(root)
+    os.makedirs(evdir)
+    row = _ev_io.row_for(root, {"status": "passed", "durationMs": 5,
+                                "failed": [], "steps": [{"name": "ok",
+                                                         "exit": 0}]},
+                         "task", {"taskId": "P1.1", "phaseId": "P1"},
+                         {"runId": "2026-01-02T03:04:05Z.frozen",
+                          "ts": "2026-01-02T03:04:05Z", "via": "cli"})
+    name = "2026-01.previous-release.jsonl"
+    with open(os.path.join(evdir, name), "w", encoding="utf-8",
+              newline="\n") as fh:
+        for linked in _ev_io.chain_file([row], name):
+            fh.write(_journal_io.canonical(linked) + "\n")
+    return evdir
+
+
+def _no_row_runs(mp, root):
+    """`[(scope, exit, printed run id, text)]` for a recorded run of every
+    subject scope the fixture of `_lr_repo` has: the green task, the red task
+    and the phase."""
+    out = []
+    for scope, extra in (("task green", ["--task", "P1.1"]),
+                         ("task red", ["--task", "P1.2"]),
+                         ("phase", [])):
+        lines = []
+        code = M.main([mp, "P1", "--project-dir", root, "--record",
+                       "--no-reuse"] + extra, out=lines.append)
+        text = "\n".join(lines)
+        said = re.findall(r"evidence: recorded (\S+)", text)
+        out.append((scope, code, said[-1] if said else None, text))
+    return out
+
+
+def _no_row_cases(check):
+    """(nrw) A recorded task, phase or base run appends no evidence row, writes
+    no journal anchor for one and chains nothing: its record in the plan is the
+    only copy, a ledger the previous release left is never touched, and exit 3
+    means the record was not written. A full run is the one scope that still
+    appends its row - the second direction, so a recorder that stopped every
+    write is told apart from one that stopped the right ones."""
+    root, mp, shard = _lr_repo()
+    old_root, old_mp, _old_shard = _lr_repo()
+    full_root, full_mp, _head = _full_repo("nr-full")
+    fails = {"tests/test_other.py": ("FAIL c1 a case the base fails too",)}
+    red = sweep_red(fails)
+    base_root, base_mp, _plan, base_row = _derived_base_repo(
+        "rtg-nr-base-", red, red, gate=_LONE_GATE)
+    # A second red of its own, so its base is measured afresh rather than
+    # answered from the base the first fixture keeps.
+    lone_root, lone_mp, _lone_plan, lone_row = _derived_base_repo(
+        "rtg-nr-base-busy-", red, red, gate=_LONE_GATE)
+    try:
+        evdir = _ev_io.evidence_dir(root)
+        old_evdir = _frozen_ledger(old_root)
+        before_old = _tree_bytes(old_evdir)
+        verified_before = _ev_io.verify(old_root)
+        anchors_before = len(_anchors(root)[0]), len(_anchors(old_root)[0])
+
+        fresh = _no_row_runs(mp, root)
+        frozen = _no_row_runs(old_mp, old_root)
+        _raw, body = _lr_read(shard)
+        held = {"task green": _lr_subject(body, "P1.1").get("lastRun") or {},
+                "task red": _lr_subject(body, "P1.2").get("lastRun") or {},
+                "phase": body.get("lastRun") or {}}
+        full_lines = []
+        full_code = M.main([full_mp, "--full", "--project-dir", full_root,
+                            "--record"], out=full_lines.append)
+        base_code, base_answer, _base_lines = _base_of_answer(
+            base_root, base_mp, base_row.get("runId"))
+        full_said = re.findall(r"evidence: recorded (\S+)",
+                               "\n".join(full_lines))
+        full_rows = _ev_io.read_rows(full_root, manifest_path=full_mp)
+        # The ledger's own rows, told from the records by the read's sources.
+        full_ledger = [r.get("runId") for r, src in zip(
+            full_rows["rows"], full_rows["rowSources"])
+            if src == _ev_io.ROW_FROM_LEDGER]
+        check("nrw1 NO ROW, NO DIRECTORY: in a project that never had a ledger, "
+              "a recorded run of the green task, the red task and the phase "
+              "each exits on its verdict and prints the run its record in the "
+              "shard names, a base run exits 0 kept on the red's record - and "
+              "no evidence directory comes into being for any of them; a full "
+              "run, the one scope that still appends, exits 0 and its row is "
+              "the one row its project's ledger holds: %r"
+              % (([(s, c, r, held[s].get("runId")) for s, c, r, _t in fresh],
+                  full_code, full_said, full_ledger, base_code,
+                  base_answer.get("recorded"), _tree_bytes(evdir),
+                  _tree_bytes(_ev_io.evidence_dir(base_root))),),
+              [(s, c) for s, c, _r, _t in fresh]
+              == [("task green", M.E_OK), ("task red", M.E_FAIL),
+                  ("phase", M.E_OK)]
+              and all(r and held[s].get("runId") == r
+                      for s, _c, r, _t in fresh)
+              and full_code == M.E_OK and len(full_said) == 1
+              and full_ledger == full_said
+              and base_code == M.E_OK and base_answer.get("recorded") is True
+              and _tree_bytes(evdir) is None
+              and _tree_bytes(_ev_io.evidence_dir(base_root)) is None)
+        verified_after = _ev_io.verify(old_root)
+        check("nrw2 A LEDGER OF THE PREVIOUS RELEASE IS NEVER TOUCHED: the same "
+              "three runs in a project holding one leave every byte under its "
+              "evidence directory as it was - no file added, none grown - and "
+              "the ledger still verifies, holding the one row it held: %r"
+              % ((before_old, _tree_bytes(old_evdir),
+                  [(s, c) for s, c, _r, _t in frozen],
+                  verified_before.get("rows"), verified_after.get("ok"),
+                  verified_after.get("rows"), verified_after.get("findings")),),
+              before_old is not None and len(before_old) == 1
+              and _tree_bytes(old_evdir) == before_old
+              and [(s, c) for s, c, _r, _t in frozen]
+              == [("task green", M.E_OK), ("task red", M.E_FAIL),
+                  ("phase", M.E_OK)]
+              and verified_before.get("ok") is True
+              and verified_after.get("ok") is True
+              and verified_after.get("rows") == verified_before.get("rows") == 1)
+        anchors_after = len(_anchors(root)[0]), len(_anchors(old_root)[0])
+        check("nrw3 NO JOURNAL ANCHOR: the journal of either project gains no "
+              "row anchoring a ledger file for any of those runs, while the "
+              "runs did write their records: %r"
+              % ((anchors_before, anchors_after,
+                  [r for _s, _c, r, _t in fresh + frozen]),),
+              anchors_after == anchors_before == (0, 0)
+              and all(r for _s, _c, r, _t in fresh + frozen))
+
+        # --- exit 3: the record could not be written, and nothing stands in --
+        import _locks
+        held_before, _b = _lr_read(shard)
+        was_session = os.environ.get("CLAUDE_CODE_SESSION_ID")
+        was_wait = getattr(_ev_io, "RECORD_WAIT_SECONDS", None)
+        os.environ["CLAUDE_CODE_SESSION_ID"] = "nr-gate-run"
+        _ev_io.RECORD_WAIT_SECONDS = 0.3
+        lone_shard = os.path.join(lone_root, "docs", "audit", "phases",
+                                  "P1.json")
+        lone_before, _lb = _lr_read(lone_shard)
+        _locks.acquire(root, "index", session="nr-holder", out=lambda *_a: None)
+        _locks.acquire(lone_root, "index", session="nr-holder",
+                       out=lambda *_a: None)
+        try:
+            refused = []
+            for task in ("P1.1", "P1.2"):
+                lines = []
+                code = M.main([mp, "P1", "--project-dir", root, "--record",
+                               "--no-reuse", "--task", task],
+                              out=lines.append)
+                refused.append((code, "\n".join(lines)))
+            lone_code, lone_answer, lone_lines = _base_of_answer(
+                lone_root, lone_mp, lone_row.get("runId"))
+        finally:
+            _locks.release(root, "index", session="nr-holder",
+                           out=lambda *_a: None)
+            _locks.release(lone_root, "index", session="nr-holder",
+                           out=lambda *_a: None)
+            if was_session is None:
+                os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+            else:
+                os.environ["CLAUDE_CODE_SESSION_ID"] = was_session
+            if was_wait is None:
+                delattr(_ev_io, "RECORD_WAIT_SECONDS")
+            else:
+                _ev_io.RECORD_WAIT_SECONDS = was_wait
+        held_after, _a = _lr_read(shard)
+        check("nrw4 EXIT 3 MEANS THE SHARD RECORD WAS NOT WRITTEN: with the "
+              "plan-file lock held past the wait a green and a red run each "
+              "exit 3, the shard is byte for byte what it was, no evidence "
+              "directory stands in for the record, and the output says the "
+              "record was not written - claiming no run recorded and naming "
+              "no ledger file: %r"
+              % ([(c, t[-400:]) for c, t in refused],),
+              [c for c, _t in refused] == [M.E_UNRECORDED, M.E_UNRECORDED]
+              and held_after == held_before
+              and _tree_bytes(evdir) is None
+              and all("NOT written" in t or "NOT recorded" in t
+                      for _c, t in refused)
+              and not any(re.search(r"evidence: recorded \S", t)
+                          for _c, t in refused)
+              and not any(".jsonl" in t for _c, t in refused)
+              and all("GATE GREEN" not in t for _c, t in refused))
+        lone_after, _la = _lr_read(lone_shard)
+        lone_text = "\n".join(lone_lines)
+        check("nrw5 ...AND A BASE RUN THE PLAN COULD NOT KEEP IS EXIT 3 TOO: "
+              "with the plan-file lock held past the wait, `--base-of` "
+              "measures the base and exits 3, answers that nothing was kept, "
+              "the red's shard is byte for byte what it was, and no evidence "
+              "directory stands in for the record: %r"
+              % ((lone_code, lone_answer.get("recorded"),
+                  lone_answer.get("keptOn"), lone_text[-300:]),),
+              lone_code == M.E_UNRECORDED
+              and lone_answer.get("recorded") is False
+              and (lone_answer.get("keptOn") or {}).get("written") is False
+              and lone_after == lone_before
+              and _tree_bytes(_ev_io.evidence_dir(lone_root)) is None
+              and not re.search(r"evidence: recorded \S", lone_text))
+    finally:
+        for path in (root, old_root, full_root, base_root, lone_root):
+            _harness.remove_tree(path)
 
 
 def _record_repeat_gate_cases(check):
@@ -14254,13 +14547,14 @@ def _record_part_reuse_cases(check):
 
         def ask():
             """One recorded ask with no ledger to read: the evidence directory
-            goes first, so the row this run writes is the only one in it."""
+            goes first (no run writes one, so it is gone already - the removal
+            holds that whatever a run did), and the run is read off its
+            record."""
             _harness.remove_tree(evdir)
             lines = []
             code = M.main([mp, "P1", "--project-dir", root, "--record"],
                           out=lines.append)
-            rows = _recorded_rows(evdir) if os.path.isdir(evdir) else []
-            return code, "\n".join(lines), (rows[-1] if rows else {})
+            return code, "\n".join(lines), _printed_run(evdir, "\n".join(lines))
 
         def source(row, name):
             step = next((s for s in row.get("steps") or []
@@ -14740,6 +15034,7 @@ def _selftest():
         _harness.stage(check, "bp-block", _both_places_cases)
         _harness.stage(check, "lg-block", _ledger_gone_cases)
         _harness.stage(check, "lr-block", _last_run_record_cases)
+        _harness.stage(check, "nrw-block", _no_row_cases)
         _harness.stage(check, "rpt-block", _record_repeat_gate_cases)
         _record_wording_cases(check)
         _harness.stage(check, "rpr-block", _record_part_reuse_cases)

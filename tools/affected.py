@@ -1825,7 +1825,7 @@ def _cases(check):
     # A module nothing else imports or runs, so the listing is narrower than the
     # full one and a17's comparison means something: `_output.py` is reached by
     # every suite through the harness, and its listing IS the full one.
-    narrow = "plugins/audit/scripts/governance/record-outside-run.py"
+    narrow = "plugins/audit/scripts/manifest/migrate-json-encoding.py"
     related_lines, related_exit = _run_lines(["--list-related", narrow])
     scanner_suites = [_suite_path(rel[len(TESTS) + 1:])
                       for rel in graph["scanners"] if _is_suite(rel)]
@@ -1842,7 +1842,7 @@ def _cases(check):
           % (related_lines,),
           related_exit == 0
           and set(related_lines) == pushed_paths - blanket_all
-          and _suite_path("test_record_outside_run.py") in related_lines)
+          and _suite_path("test_migrate_json_encoding.py") in related_lines)
     # Assembled, because `_refs` reads a module filename written under `tools/`
     # as a reference to a file that must exist.
     fixture = "tools/x." + "py"
@@ -1965,7 +1965,7 @@ def _cases(check):
           "here rather than silently unchecked: %r" % (retired,),
           not retired and len(RETIRED_MISSES) > 0)
 
-    leaf = "plugins/audit/scripts/governance/record-outside-run.py"
+    leaf = "plugins/audit/scripts/manifest/migrate-json-encoding.py"
     leaf_sel = sel(leaf)
     every = _all_suite_paths()
     check("a19 THE OTHER DIRECTION: a module nothing imports, runs or reads by name "
@@ -1973,7 +1973,7 @@ def _cases(check):
           "full set would pass them all and select nothing. Selected %d suites of "
           "the %d the full set runs" % (len(leaf_sel["suites"]), len(every)),
           not leaf_sel["full"]
-          and "test_record_outside_run.py" in leaf_sel["suites"]
+          and "test_migrate_json_encoding.py" in leaf_sel["suites"]
           and len(leaf_sel["suites"]) < len(every))
 
     # --- a path assembled from literal pieces is read as the literal it spells ---

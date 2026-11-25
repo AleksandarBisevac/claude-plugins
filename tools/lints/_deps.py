@@ -928,16 +928,6 @@ LAYERS = (
      # It reaches `_manifest_io` for the loader, the phase resolver and `TERMINAL`,
      # and `_journal_io` for the row.
      "record-risk-confirmation",
-     # `record-outside-run` is the writer that makes the gate's own
-     # contested-verdict question answerable at all: a suite can run where this
-     # plugin cannot see it - a pre-push hook, a second terminal - taking the same
-     # cores, ports and scratch directories, and until a row said so a red that
-     # such a run had caused was recorded and read as the gate's verdict on the
-     # work. An entry point for this layer's usual reason, and DECLARED rather
-     # than sniffed: guessing an outside suite from the spelling of a command is
-     # the class this product keeps being repaired for. It reaches `_evidence_io`
-     # for the row and the ledger and `_manifest_io` for the loader.
-     "record-outside-run",
      # `import-evidence` is the same question one machine LATER: a CI runner
      # made its own gate run and recorded its own ledger file, and until now the
      # only way that file reached a clone was a hand copy nothing verified - a

@@ -7,46 +7,43 @@ gate change the tree, and did anything actually run -- and then throws every one
 of those answers away: `run-test-gate.py` performs no disk I/O at all. This module
 is the memory it never had.
 
-WHY NOT THE JOURNAL. `_journal_io.DETAILS_KEYS` is an allow-list, and the three
-tests it states for a new key are that the key names A FIELD OF THE PLAN that
-moved, that it is bounded, and that it exposes nothing new. An exit code, a
-duration and a check count fail the first outright -- they are things the plugin
-OBSERVED ABOUT THE MACHINE -- and `MAX_DETAILS_BYTES` would clip a multi-step run
-besides. So the runs live here and the journal ANCHORS them: one row per recorded
-run naming its `runId`, which is a plan field and passes all three.
+WHERE A RUN LIVES NOW: ITS RECORD IN THE PLAN. A recorded task or phase run is
+one record in its subject's shard (`RECORD_KEY`, written by `write_record`), and
+a base run is kept on the red's record (`keep_base`). No evidence row is
+appended for either, and no journal row anchors one: the record is the only
+copy, and a run whose record was not written is held nowhere.
 
-WHY NOT THE USAGE LEDGER'S HOME EITHER. `<ledgerDir>` is local scratch that writes
-its own `.gitignore`; this is evidence for an audit somebody hands to a client, so
-it sits beside the manifest and is COMMITTED, exactly like the journal. The two
-differ in what they are for, not in where they belong.
+THE ONE SCOPE THAT STILL APPENDS IS `full`. A full run is held by the phases it
+certifies (`FULL_GATE_RUNS_KEY`), but a red or dirty one certifies none, and
+what learns from a red full run reads it back off its row - so `record` still
+appends a full run's row and anchors it, until a full run's record in the plan
+carries what that learning reads.
 
-FILE LAYOUT
+THE REST OF THE EVIDENCE DIRECTORY IS FROZEN HISTORY. Releases before this one
+appended a row per recorded run of every scope, and the journal anchored each
+file it wrote. Those rows are never rewritten, migrated or deleted here; they are
+read beside the records (`read_rows`), they keep verifying (`verify`), and
+`evidence.dir` stays the key that says where they are. Their layout, which a full
+run's row still takes:
+
     <evidence dir>/<YYYY-MM>.<writerId>.jsonl     (default <manifest dir>/evidence)
     <evidence dir>/<YYYY-MM>.<writerId>.wt-<key>.jsonl   (in a linked worktree)
 
-One file per writer per month, which is the journal's argument and not a
-decoration: two sessions in two git worktrees append at the same time, and a
-single shared file would conflict on every merge -- the one thing the sharded
-manifest layout exists to avoid. The writer id and the month come from
-`_journal_io`, so the two records name the same writer the same way.
+EVERY ROW IS HASH-CHAINED, using the trail's own chain and not a second one.
+`append_row` links each row onto its file's tail and `verify()` reads the links
+back; both spell the chain with `_journal_io`'s `row_hash`, `genesis_prev`
+and `canonical`. What that covers, what the journal anchor covers beside it,
+and what a row written before the chain existed is graded as, are all at the
+section marked `the chain, and what each layer covers` -- read it before trusting
+any of them for something it does not do.
 
-EVERY ROW IS HASH-CHAINED, using the trail's own chain and not a second one. The
-row that records a MEASUREMENT was the last unchained file this plugin committed,
-and a plain string replace could turn a recorded `failed` into a recorded `passed`
-with nothing reporting a finding. `append_row` links each row onto the file's tail
-and `verify()` reads the links back; both spell the chain with `_journal_io`'s
-`row_hash`, `genesis_prev` and `canonical`. What that covers, what the journal
-anchor covers instead of it, and what a row written before the chain existed is
-graded as, are all at the section marked `the chain, and what each layer covers`
--- read it before trusting any of the three for something it does not do.
-
-EVERY ANCHOR ROW HERE GOES THROUGH `_journal_io.append_from_cli`, not
-`append`. `run-test-gate.py` is the only caller of the functions here that write
-one, and it is a script the operator runs from Bash: nothing else can claim the
-journal file the append dirties -- the journal-writes hook files its claim under a
-session id no script is handed, and the panel files under its own -- so an
-unclaimed row made the NEXT Bash command draw `guard-bash-writes`' notice about a
-write this plugin had just made itself.
+EVERY JOURNAL ROW HERE GOES THROUGH `_journal_io.append_from_cli`, not `append`.
+The rows written here - a full run's anchor, the boundary's stamp, a ledger's
+merge, a pointer moved, a plan write's redactions - are written for scripts the
+operator runs from Bash: nothing else can claim the journal file the append dirties -- the
+journal-writes hook files its claim under a session id no script is handed, and
+the panel files under its own -- so an unclaimed row made the NEXT Bash command
+draw `guard-bash-writes`' notice about a write this plugin had just made itself.
 
 This module carries no `--selftest` of its own; its cases live in
 `tests/test__evidence_io.py` -- see `tests/_harness.py`.
@@ -422,6 +419,8 @@ def recorded_paths(project, manifest_path, config=None):
 # through the trail's redactor on the way in, so no path a runner printed reaches
 # a committed file raw.
 ROW_VERSION = 1
+# The journal action `record` anchors a ledger file under - a full run's file
+# now, every scope's in the releases before this one.
 ACTION_RECORDED = "test.evidence.recorded"
 
 # WHERE A VERDICT CAME FROM, WHICH IS NOT WHAT THE VERDICT IS. `status` says what
@@ -463,7 +462,9 @@ STEP_REUSED_KEY = "reusedFrom"
 # red that a concurrent outside suite had caused was recorded, rendered and read
 # as the gate's own verdict on the work. Recording the outside run does not make
 # the red go away -- nothing here can -- but it is the difference between a
-# verdict and a verdict with a rival in the same window.
+# verdict and a verdict with a rival in the same window. Nothing records one
+# now: an outside suite has no subject to hold a record, so the outside rows
+# are the ones earlier releases' recorder appended, still read here.
 #
 # ABSENT MEANS THE GATE, and no back-fill is owed: every row written before this
 # field existed was made by the wrapper, so a missing key is the true answer for
@@ -1341,16 +1342,27 @@ def keep_base(project, manifest_path, red, base, session_id=None, wait=None,
         if problem is not None:
             return None, problem, None
         record = readable_record(subject, task)
-        reading = (record or {}).get(BASE_RED_KEY)
+        # A REPEAT OF THE RED IS THE SAME RED: a newest record that repeated
+        # it carries the measured run whole (`REPEATED_RUN_KEY`), and the
+        # reading a reader asks of it is that run's (`measured_row`) - so the
+        # base is kept there, beside the reading it answers.
+        carried = (record or {}).get(REPEATED_RUN_KEY)
+        repeat = (isinstance(carried, dict) and (red or {}).get("runId")
+                  and carried.get("runId") == red.get("runId"))
+        run = carried if repeat else record
+        reading = (run or {}).get(BASE_RED_KEY)
         if not isinstance(reading, dict) or not same_head(reading.get("head"),
                                                            at):
             return None, ("%s's newest run (%s) reads no red against base %s, "
                           "so the base run %s is kept on no record"
                           % (ids["taskId"], (record or {}).get("runId"), at,
                              kept.get("runId"))), None
-        written = finished_record(dict(record, **{
+        read_against = dict(run, **{
             BASE_RED_KEY: with_kept_bases(reading, kept_bases(reading)
-                                          + [kept])}), RECORD_MAX_BYTES)
+                                          + [kept])})
+        written = finished_record(
+            dict(record, **{REPEATED_RUN_KEY: read_against}) if repeat
+            else read_against, RECORD_MAX_BYTES)
         subject[RECORD_KEY] = written
         return body, None, written
     got = write_plan_file(
@@ -1678,8 +1690,7 @@ def row_for(project, result, scope, ids, identity, published=None):
         row[LAUNCH_KEY] = str(identity[LAUNCH_KEY])
     # WRITTEN ONLY WHEN THE RUN MEASURED ITS SELECTION, and only as a duration:
     # a written zero for a run that never timed it would read as a selection
-    # that took no time. On the row before `append_row` hashes it, like every
-    # key above.
+    # that took no time.
     selection = selection_ms(result)
     if selection is not None:
         row[SELECTION_KEY] = selection
@@ -1839,7 +1850,10 @@ def stored_verdict_moved(rows, run_id, now):
 #                       compared only against the NEWEST trail row naming the
 #                       file (so the next recorded run re-anchors rewritten bytes
 #                       and the warning goes), and a row written through
-#                       `append_row` alone is anchored by nothing at all.
+#                       `append_row` alone is anchored by nothing at all. Only a
+#                       full run is recorded through `record()` now; a file no
+#                       full run appends to again keeps the anchor it last got,
+#                       and its bytes still hash to it.
 #   git                 the committed copy, and the one absence neither layer
 #                       above can be asked about: a file the index holds and the
 #                       working tree does not. Both of those read rows, and a
@@ -1853,9 +1867,10 @@ def stored_verdict_moved(rows, run_id, now):
 # red in every project that upgrades -- a check whose opening verdict is a wall of
 # findings nobody intends to act on is one its reader learns to skip, which costs
 # more than the rows it would have caught. They are reported as a COUNTED WARNING
-# naming what is not protected, and the gap closes itself: `link_after` hashes an
-# unchained row to make the `prev` of whatever follows it, so the next recorded
-# run puts every row before it under the chain.
+# naming what is not protected. `link_after` hashes an unchained row to make the
+# `prev` of whatever follows it, so a row appended after them puts them under the
+# chain - which only a full run's row does now, so a file no full run appends to
+# again stays as it is.
 #
 # WHAT IS A FINDING IS AN UNCHAINED ROW AFTER A CHAINED ONE. Without that the
 # chain is opt-out: delete two keys from a row and it is "legacy" again. The two
@@ -1968,8 +1983,9 @@ def verify_rows(rows, basename):
         out["warnings"].append(
             "%s: %d recorded run(s) at the head of this file carry no chain and "
             "nothing protects them -- they were written before the ledger was "
-            "chained. They are not evidence of tampering. The next run recorded "
-            "into this file links onto them and closes the gap"
+            "chained. They are not evidence of tampering. A full run recorded "
+            "into this file links onto them and closes the gap; no other run "
+            "appends to a ledger file any more"
             % (basename, out["unchained"]))
     return out
 
@@ -2149,6 +2165,9 @@ def scrubbed_ledger_row(project, row):
 
 def append_row(project, row, session_id=None, config=None, writer=None):
     """Append one row, chained onto the file's tail; return the file it landed in.
+
+    A FULL RUN'S ROW IS THE ONE A COMMAND STILL APPENDS (through `record`); a
+    task, phase or base run's only copy is its record in the plan.
 
     THE LOCK IS THE CHAIN'S, and it is why this is no longer the bare O_APPEND the
     usage ledger gets away with. `prev` is read off the last row in the file, so
@@ -2657,6 +2676,11 @@ def record(project, result, scope, ids, identity, published=None, config=None,
            writer=None):
     """Append the row, then anchor it in the journal. Returns both outcomes.
 
+    ONLY A FULL RUN CALLS THIS NOW (`run-test-gate.py`'s `_record_full_run`).
+    A task, phase or base run's only copy is its record in the plan; a full
+    run no phase can hold has no record, and what learns from it reads it
+    back off this row.
+
     ORDER IS THE POINT. The ledger row is written FIRST and the journal row
     second, so the only reachable partial state is the harmless one: a run that
     happened with nothing yet pointing at it. The reverse would put a claim in a
@@ -2704,12 +2728,13 @@ def record(project, result, scope, ids, identity, published=None, config=None,
     return {"row": row, "path": path, "appended": appended}
 
 
-# --- the pointer: a cache the manifest keeps ----------------------------------
-# THE LEDGER IS THE SOURCE OF TRUTH AND THIS IS A CACHE, which is what makes the
-# write below the one allowed to fail. `COMPATIBILITY.md` already states that
-# contract for `meta.ado`'s caches: deleting the block is always safe, absent
-# means "never recorded", and every reader is written to that. So a refusal here
-# costs a reader one lookup, never a fact.
+# --- the pointer: what the plan names a subject's run by ----------------------
+# THE POINTER NAMES A RUN AND IS NOT ITS COPY: the subject's record beside it
+# (`RECORD_KEY`), or for a pointer the previous releases wrote, the frozen row
+# its run id names. `COMPATIBILITY.md` states the contract it shares with
+# `meta.ado`'s caches: deleting the block is always safe, absent means "never
+# recorded", and every reader is written to that. So a refusal here costs a
+# reader one lookup, never a fact.
 POINTER_KEY = "testEvidence"
 ACTION_MOVED = {"task": "task.testEvidence", "phase": "phase.testEvidence"}
 # What a refused pointer leaves, and what to run - said in that order.
@@ -3059,9 +3084,8 @@ def _say_moved(project, path, scope, ids, previous, pointer, session_id, config)
     ONLY AFTER THE WRITE. This row says the PLAN moved, and it is written after
     the move rather than beside the attempt: a refused write returns before
     reaching here, so the chain can never assert a transition that did not
-    happen. That is the whole reason this is a second action and not the row
-    `record()` already wrote -- that one's subject is the evidence file and it
-    was true the moment it was written. The pointer moved is the one
+    happen. It is its own action, never the anchor row `record()` writes for
+    a full run: that one's subject is the evidence file. The pointer moved is the one
     `_holders` placed: a task's, whenever `ids` names a task."""
     scope = "task" if ids.get("taskId") is not None else scope
     details = {"runId": pointer.get("runId"), "field": POINTER_KEY,
@@ -3085,9 +3109,8 @@ def _say_moved(project, path, scope, ids, previous, pointer, session_id, config)
 # caches its verdict; `lastRun` holds what a reader of that run needs - its
 # moments, its verdict and where the verdict came from, the identity it was
 # measured under, the state it tested, what it printed beside the verdict, and
-# each step - so no ledger row is needed to read it. The ledger row is still
-# written beside it, unchanged; the record is the copy a later reader will take
-# instead of the row.
+# each step - so no ledger row is needed to read it. No row is written beside
+# it: the record is the run's only copy.
 #
 # REPLACED, NEVER APPENDED: one record per subject, the newest. So the shard's
 # size is bounded by one record per task and per phase, and a record's own size
@@ -4743,10 +4766,14 @@ def records_of_bodies(bodies, doc=None, plan=None):
                 runs.append(record_row(repeated, scope, owner, owner_phase))
             runs.append(record_row(record, scope, owner, owner_phase))
             # A base run kept with a red's reading is read as the base-scope
-            # row it was recorded as: a run of no subject (`keep_base`).
-            reading = record.get(BASE_RED_KEY)
-            runs.extend(record_row(base, BASE_SCOPE, None, pid)
-                        for base in kept_bases(reading))
+            # row it was recorded as: a run of no subject (`keep_base`) - the
+            # record's own reading's, and the repeated run's, where a base of
+            # a red the record repeats is kept.
+            for holder in (repeated, record):
+                reading = (holder.get(BASE_RED_KEY)
+                           if isinstance(holder, dict) else None)
+                runs.extend(record_row(base, BASE_SCOPE, None, pid)
+                            for base in kept_bases(reading))
             (copies if graded else carried).extend((r, label) for r in runs)
         # The full runs the phase holds, each as the scope-`full` row it was
         # recorded as; a run two phases hold is read once, below.
@@ -5208,7 +5235,7 @@ def chain_ordered(rows, one, other, seams=None, index=None):
     cannot produce, so the pair is not ordered.
 
     NOT ORDERED EITHER, each for its own reason:
-      * an OUTSIDE run - its row is written by this plugin, but the suite ran
+      * an OUTSIDE run - its row was written by this plugin, but the suite ran
         where no chain watched it;
       * a row inside a re-chained stretch of a merged ledger (`chain_index`) -
         there `prev` is the timestamp order a merge chose between two
@@ -7320,6 +7347,10 @@ def selection_miss(steps, phases, head, git_root, earlier_rows, full_commands,
 #
 #     boundary = min( meta.evidenceSince.at , the earliest ts in the ledger )
 #
+# THE LEDGER HERE IS ITS ROWS ALONE, never the plan's records (`ledger_rows`):
+# a task or phase run writes no row any more, so on a plan that never had a
+# ledger the key is the one source, stamped once by the first run recorded.
+#
 # EXCUSED WORK IS BEFORE THE BOUNDARY, SO THE EARLIER VALUE IS THE SAFER ONE, and
 # that is the whole reason this is a `min` rather than either source alone. A
 # boundary that moved LATER would silently widen the excuse, which is the failure
@@ -7335,18 +7366,19 @@ def selection_miss(steps, phases, head, git_root, earlier_rows, full_commands,
 SINCE_KEY = "evidenceSince"
 ACTION_SINCE = "meta.evidenceSince"
 # The sentence the block carries about itself. It is written ONLY on the path that
-# derives `at` from the earliest row in the ledger, so it is true of every block
-# this module writes; a second derivation would owe a second sentence rather than
-# reusing this one.
+# derives `at` from the earliest of the frozen rows and the run being recorded,
+# so it is true of every block this module writes; a second derivation would owe
+# a second sentence rather than reusing this one.
 SINCE_BASIS = ("the first run this plan recorded; work completed before it "
                "could not carry evidence")
 # ...and what a refused stamp costs, which is not what a refused POINTER costs.
-# `--reconcile` re-derives pointers from the ledger and does not touch this key,
-# so naming it here would send a human to a repair that cannot make the write.
-# Nothing has to: the ledger row is already standing, the boundary still derives
-# from it, and the next recorded run with the lock free writes the key down.
-SINCE_HINT = ("nothing is lost - the ledger still dates the boundary, and the "
-              "next --record taken with the lock free writes the key")
+# `--reconcile` re-derives pointers and does not touch this key, so naming it
+# here would send a human to a repair that cannot make the write. The next
+# recorded run with the lock free writes the key down; until it does, frozen
+# ledger rows date the boundary where a ledger is, and nothing does where none is.
+SINCE_HINT = ("the next --record taken with the lock free writes the key; until "
+              "then the frozen ledger rows, where there are any, date the "
+              "boundary")
 
 
 def since_block(manifest):
@@ -7504,8 +7536,25 @@ def boundary_of(block, ledger_at, unknown=None):
             "basis": basis, "unknown": unknown}
 
 
+def ledger_rows(read):
+    """The rows of `read_rows`' answer `read` that came from the ledger -
+    written once and never rewritten, a full run's among them - without the
+    runs the plan's records added beside them.
+
+    WHAT DATES THE BOUNDARY. A record is its subject's NEWEST run and is
+    replaced by the next one, so the earliest record moves LATER as runs are
+    recorded - and once the ledger is gone it would be the only source left,
+    widening the excuse with every run. Only a frozen row, which nothing
+    rewrites, and the plan's own key may say when recording began.
+    """
+    return [row for row, source in zip(read.get("rows") or [],
+                                       read.get("rowSources") or [])
+            if source == ROW_FROM_LEDGER]
+
+
 def evidence_boundary(project, manifest_path, config=None):
-    """The boundary, read from the plan and the ledger. Never raises.
+    """The boundary, read from the plan's key and the frozen ledger rows (never
+    from a record: `ledger_rows` says why). Never raises.
 
     The door `boundary_of` sits behind: this is the one that touches disk, so a
     surface asking "may this subject be excused" gets an answer on a repository
@@ -7526,16 +7575,13 @@ def evidence_boundary(project, manifest_path, config=None):
         unknown.append("%d ledger row(s) could not be parsed, and one of them may "
                        "carry an earlier run than any that could"
                        % (read["unreadable"],))
-    if read.get("unreadablePlanFiles"):
-        unknown.append("plan file(s) %s could not be read, and a record there "
-                       "may carry an earlier run than any that could"
-                       % (", ".join(read["unreadablePlanFiles"]),))
-    ledger_at = earliest_recorded(read["rows"])
+    frozen = ledger_rows(read)
+    ledger_at = earliest_recorded(frozen)
     # A row whose ts names no moment - or that carries none - is passed over
     # by `earliest_recorded`, and it may be the earliest run. Named here, so
     # the boundary says it may be later than the truth; the one stamp
     # `boundary_of` is handed as `ledger_at` it names itself.
-    unplaced = [u for u in unplaced_stamps(read["rows"]) if u != ledger_at]
+    unplaced = [u for u in unplaced_stamps(frozen) if u != ledger_at]
     if unplaced and stamp_moment(ledger_at) is not None:
         unknown.append("ledger row(s) carry a ts that names no moment (%s), so "
                        "where they fall is unknown and one of them may be an "
@@ -7654,8 +7700,16 @@ def _refused(reason, at=None):
 
 
 def write_evidence_since(project, manifest_path, phase_id=None, session_id=None,
-                         config=None, wait=None):
+                         config=None, wait=None, run=None):
     """Stamp `meta.evidenceSince` the first time this plan records a run.
+
+    THE MOMENT IS THE EARLIEST OF THE FROZEN LEDGER ROWS AND `run`, the run
+    being recorded now (its `row_for` shape, None when it holds no record) -
+    never a record's: a record is its subject's newest run, so it says when that
+    subject last ran and not when recording began (`ledger_rows`). On a plan the
+    previous releases recorded into, the frozen rows keep the stamp where they
+    put it; on a plan that never had a ledger, the first run recorded stamps
+    its own moment.
 
     `{"written", "reason", "at", "path"}`, plus `releaseRefused` -- the sentences
     for a lock that declined to be given back, which says another session took
@@ -7673,7 +7727,7 @@ def write_evidence_since(project, manifest_path, phase_id=None, session_id=None,
     Every `written: False` is a designed
     outcome carrying a sentence -- an already-stamped plan, a plan with nothing to
     date the boundary from, a lock another session is holding -- and none of them
-    is an error path, because the ledger row is standing in every one of them.
+    is an error path: the next run recorded with the lock free stamps the key.
 
     WRITTEN ONCE, AND NEVER RE-DERIVED. A key already present is left exactly as
     it is: re-deriving it every run would make the boundary a value that MOVES,
@@ -7700,8 +7754,10 @@ def write_evidence_since(project, manifest_path, phase_id=None, session_id=None,
         return _refused("%s already states %s; a boundary is derived once and "
                         "never moved" % (SINCE_KEY, stated_at(standing)),
                         at=stated_at(standing))
-    derived = since_from_rows(read_rows(project, config=config,
-                                       manifest_path=manifest_path)["rows"])
+    derived = since_from_rows(
+        ledger_rows(read_rows(project, config=config,
+                              manifest_path=manifest_path))
+        + ([run] if isinstance(run, dict) else []))
     if derived is None:
         # THE BASIS IS THE THING THAT IS MISSING, so this is what gets said. A
         # stamp taken from the wall clock here would date the boundary from the

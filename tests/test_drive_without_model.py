@@ -986,19 +986,22 @@ def _auto_base_cases(check):
                          os.path.join(stubs, "runs.jsonl"), dp.WRITER_COSTS[1],
                          edit={"src/f1.txt": "changed again by the writer\n"})
         code2, text2, _ran2 = _auto_of(M2, dp, root2, mpath2)
-        gates = len(dp._red_rows(root2))
+        # One run per subject: the second red replaced the first, and a
+        # third gate would replace it in turn under an id of its own.
+        gates = [r.get("runId") for r in dp._red_rows(root2)]
         code3, text3, _ran3 = _auto_of(M2, dp, root2, mpath2)
     finally:
         M2.take_base = real_take
+    after = [r.get("runId") for r in dp._red_rows(root2)]
     check("dm86 auto over a second red of one start whose base cannot be "
           "measured either surfaces the gate-red-base-unknown ask and ends "
           "there, and auto again runs no third gate: %r"
-          % ((first[-200:], code2, text2[-600:], gates,
-              len(dp._red_rows(root2)), code3, moves["n"]),),
+          % ((first[-200:], code2, text2[-600:], gates, after, code3,
+              moves["n"]),),
           "gate-red-writer" in first
           and code2 == M2.AUTO_NEEDS_MODEL and "gate-red-base-unknown" in text2
           and "gate-red-writer" not in text2
-          and gates == 2 and len(dp._red_rows(root2)) == 2
+          and len(gates) == 1 and after == gates
           and code3 == M2.AUTO_NEEDS_MODEL and "gate-red-base-unknown" in text3
           and moves["n"] == 2)
 

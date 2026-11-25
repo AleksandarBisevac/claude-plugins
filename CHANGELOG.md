@@ -33,6 +33,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   no longer imports `tempfile`, so with calls not recorded the journal hook imports nothing
   beyond what loading it already imported.
 
+### Breaking — a recorded task or phase run writes no evidence row
+- **`run-test-gate.py --record` keeps a task, phase or base run only as its record in the
+  plan.** It appends no row to the evidence directory, writes no `test.evidence.recorded` row
+  into the journal and chains nothing; `evidence: recorded <runId>` is printed once the record
+  is in the shard. Exit 3 now means that record was not written, and the line beside it says
+  no file holds the run. A `--full` run still appends its row and its journal anchor, so a red
+  full run is still there for `full-gate.py --learn-from` and a selection miss's remedy.
+  Rows an earlier release wrote are never rewritten or deleted, are still read beside the
+  records and keep verifying. `testEvidence` is the pointer to the subject's record (or, for a
+  done task, the run its commit names) rather than a cache of the evidence file; deleting the
+  block is still safe. A count over recorded runs sees one run per task and per phase from this
+  release on. The evidence boundary is dated by the evidence directory's rows and the plan's
+  stamp, never by a record, so it never moves later across the upgrade.
+- **`record-outside-run.py` is removed.** Nothing invoked it but a manual step in the
+  orchestrator reference, and an outside suite has no subject to hold a record. Outside rows
+  an earlier release wrote are still read by the `machine:` and `claimed:` lines.
+- **What reads recorded runs follows the one run a subject keeps.** The `evidence-committed`
+  invariant counts a pointer as backed when its holder's own committed record names the run,
+  as well as when a committed older row does, so sign-off no longer reports every recorded run
+  as a pointer to nothing. `commit-task-work.py` binds the newest recorded run: a red record
+  refuses the commit, and a record that replaced the red is what is bound. A task commit in a
+  project with no evidence directory prints no `degraded:` line about it, since a project that
+  never had a ledger is the ordinary state now. The drive measures the base of the red the
+  subject holds now - the record, or the run it repeats - never of a red id a later record
+  replaced, and a base measured for a red the newest record repeats is kept on that record.
+
 ### Breaking — a plan file that writes a key twice is refused
 - **Every plan file is now parsed through one door, which refuses a key written twice
   anywhere in it; no verb keeps one copy silently any more.** A merge resolved by keeping

@@ -259,6 +259,18 @@ JOURNAL_LABEL = "the journal directory"
 EVIDENCE_LABEL = "the evidence directory"
 DECLARED_LABEL = "the task's declared file"
 
+
+def absent_is_normal(label, config):
+    """True when the record directory `label` names being absent is no skip
+    worth a line. A journal that is on is created by the row the commit
+    writes and carried from there. An evidence directory holds only rows an
+    earlier release wrote or a `--full` run appended - a task or phase run
+    keeps its record in the plan - so a project that never had one is the
+    ordinary state, not a degraded commit."""
+    if label == JOURNAL_LABEL:
+        return _journal_io.enabled(config)
+    return label == EVIDENCE_LABEL
+
 # The action the trail records for this commit. LOCAL to this file, unlike
 # `_invariants.ACTION_STATE_COMMITTED` and `ACTION_INDEX_COMMITTED`, and the
 # difference is a fact about the readers rather than an inconsistency: those two
@@ -425,9 +437,7 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
 
     for rel, label, absolute in record_rels:
         if not os.path.exists(absolute):
-            # A journal that does not exist yet is created by the row this
-            # commit writes and carried from there, so it is not a skip.
-            if not (label == JOURNAL_LABEL and _journal_io.enabled(config)):
+            if not absent_is_normal(label, config):
                 skipped.append("%s does not exist yet, so there is nothing of it "
                                "to stage" % (label,))
             continue
@@ -1424,9 +1434,10 @@ def state_targets(phase, manifest_path, project, git_root, config=None):
     THE LIST IS THE SAFETY PROPERTY. Nothing downstream widens it but the index
     (`state_index`) and the row naming the commit - so a file a task owns has no
     route into the commit even while it sits modified in the working tree.
-    A skip is REPORTED and never silent. A journal directory that does not exist
-    yet is not a skip while the journal is on: the row this commit writes
-    creates it.
+    A skip is REPORTED and never silent. A record directory whose absence is
+    ordinary is not a skip (`absent_is_normal`): a journal that is on, which
+    the row this commit writes creates, and an evidence directory, which no
+    task or phase run writes.
     """
     config = _journal_io.load_config(project) if config is None else config
     _index_abs, phase_file_abs = _invariants.manifest_files(manifest_path, phase)
@@ -1441,7 +1452,7 @@ def state_targets(phase, manifest_path, project, git_root, config=None):
                            "committed - proceeding without it" % (label,))
             continue
         if not os.path.exists(absolute):
-            if not (label == JOURNAL_LABEL and _journal_io.enabled(config)):
+            if not absent_is_normal(label, config):
                 skipped.append("%s does not exist yet, so there is nothing of it "
                                "to stage" % (label,))
             continue

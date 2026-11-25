@@ -4868,16 +4868,35 @@ def settle_mark(ctx, state, task):
         decided_mark(ctx, state, task, held)
 
 
-def red_status(ctx, held):
+def red_run_row(rows, run_id, task_id):
+    """The row a base launched for red run `run_id` of task `task_id` measures:
+    that run's own (`measured_row` for a repeat), else - a later record of the
+    task replaced it, since a task keeps one run - the task's newest run when
+    it is red, the red the subject holds now. None when the task's newest run
+    is not red, or there is none: never a lookup by an id the record replaced.
+    """
+    row = _evio.row_by_run(rows, run_id)
+    if row is not None:
+        return _evio.measured_row(rows, row) or row
+    mine = [r for r in rows if isinstance(r, dict)
+            and r.get("taskId") == task_id and r.get("scope") == "task"]
+    newest = mine[-1] if mine else None
+    if newest is None or not _evio.row_is_red(newest):
+        return None
+    return _evio.measured_row(rows, newest) or newest
+
+
+def red_status(ctx, held, task_id=None):
     """The status of the red run a base launch was measured for: the one the
-    launch recorded, else the ledger row's - None when neither says."""
+    launch recorded, else the recorded run's (`red_run_row`) - None when
+    neither says."""
     if held.get("status"):
         return held["status"]
     try:
         rows = recorded_runs(ctx)["rows"]
     except Exception:                                          # noqa: BLE001
         return None
-    return (_evio.row_by_run(rows, held.get("of")) or {}).get("status")
+    return (red_run_row(rows, held.get("of"), task_id) or {}).get("status")
 
 
 def base_gate(ctx, state, phase, task, tree=None):
@@ -4903,7 +4922,7 @@ def base_gate(ctx, state, phase, task, tree=None):
                               held.get("argv") or [], held), None
     run_id, status = ((held[JOINED_KEY], held.get(JOINED_STATUS_KEY))
                       if held.get(JOINED_KEY) else
-                      (held.get("of"), red_status(ctx, held)))
+                      (held.get("of"), red_status(ctx, held, task["id"])))
     return None, read_back(ctx, run_id, status,
                            lambda verbose: record_gate(ctx, phase, task, tree,
                                                        verbose=verbose),
@@ -4983,8 +5002,7 @@ def measure_launch(ctx, phase, task, launch):
         why = "the red run is not found - %s" % (_evio.run_not_found(
             ctx["project"], read, ctx["manifest"], held.get("of"),
             ctx["config"]),)
-    row = _evio.row_by_run(rows, held.get("of"))
-    row = _evio.measured_row(rows, row) or row
+    row = red_run_row(rows, held.get("of"), task_id)
     if row is None:
         said = "%s's base not measured: %s" % (task_id, why)
         keep(ran=True, done=True, unknowable=True, measurable=True, said=said)

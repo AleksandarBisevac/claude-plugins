@@ -384,7 +384,7 @@ are the table in [SECURITY.md](../../SECURITY.md#fail-modes-by-design).
 | A referentially broken manifest cannot pass as valid | `scripts/manifest/validate-manifest.py` | exit 0 valid / 1 findings / 2 unreadable. The checker is deterministic; *running it after each write* is the invariant below |
 | *(after)* A task commit staged only paths its `files` cover (an entry covers itself and everything under it, with or without a trailing slash), its phase's manifest file and the two records beside it — the journal **and** the evidence directory — and **never** the index | `scripts/governance/verify-invariants.py` — `commit-scope` | exit **1**, naming the commit and the path. A recorded SHA git no longer has is `no-basis`, not a pass |
 | *(after)* An audit-state commit — the one that keeps a failed run's record where no task commit will — carried the record and none of the work | same — `audit-state-scope` | exit **1**, naming the commit and the path: a file the task owns is implementation reaching git on a run nothing signed off, and the shared index gets its own sentence because it is what parallel phases would conflict on. **Not-applicable** where the journal records no such commit for the phase |
-| *(after)* A committed `testEvidence` pointer names a run the repository actually holds | same — `evidence-committed` | exit **1**, naming the subject and the `runId` — read from HEAD, so the question is what a **clone** receives rather than what this working tree happens to have. **Not-applicable** where the evidence directory sits outside the git root and cannot be committed at all |
+| *(after)* A committed `testEvidence` pointer names a run the repository actually holds | same — `evidence-committed` | exit **1**, naming the subject and the `runId` when neither the subject's own committed record nor a committed older row carries it — read from HEAD, so the question is what a **clone** receives rather than what this working tree happens to have. **Not-applicable** where the evidence directory sits outside the git root and cannot be committed at all |
 | *(after)* No `push` reached a remote from the phase branch | same — `branch-history` | exit **1**, naming the remote-tracking ref (and the reflog's `update by push` when it is still there). Only THIS clone is read, which the basis says |
 | *(after)* No forced update and no `git stash` touched the phase branch | same — `branch-history` | exit **1**. A force is caught by **ancestry** (the tip moved where the old tip cannot reach), not by matching reflog words. The two standing limits — one clone only, and a DROPPED stash leaving no reflog — are printed in the check's basis, so a `clean` here says what it rests on |
 | *(after)* A `risk: "high"` task ran on neither a declared nor a metered `haiku` | same — `high-risk-model` | exit **1** from either source: `task.model` in the shard, or the ledger's `model` for that `taskId`. With no ledger the check reports `partial`, never `clean` |
@@ -412,16 +412,16 @@ a guarantee.
 | The plan is written only through its verbs, each of which re-runs `validate-manifest.py` and rolls back on a finding, and never edited by hand to get past a refusal | step `stopped` | **partly checked**: `verify-invariants.py`'s `manifest-revalidated` reassembles the manifest at every commit the phase recorded and re-runs the validator on it, and counts the journal rows whose `stateHash` names bytes no commit preserved. A write between two commits, and that the validator ran *at the time*, remain unrecorded |
 | `attempts` increments per execution, and `attempts >= maxAttempts` sets `status = "blocked"` and surfaces to the human | step `decide-gate-red` | **post-hoc**, from the shard: `attempts`, `maxAttempts` and `status` are all recorded |
 | An infrastructure failure — gates could not run — is measured again (`rerun`) instead of burning a retry | step `decide-gate-red` | **post-hoc**, partly: a `rerun` is a second gate row under one start, a `retry` a second start with its attempt spent - both recorded. Whether the red was the runner's or the work's is the decision itself, and that is recorded nowhere |
-| A gate whose run was cancelled before a verdict is launched again with no attempt spent, and once `CANCELLED_BOUND` runs of it in a row were cancelled the drive asks instead of launching it again | step `decide-gate-cancelled` | **post-hoc**, partly: each cancelled run is a ledger row and a record with status `cancelled` and its own launch token, and `attempts` stays as it was. The count itself is on the launch mark in the drive's state, which is not committed |
+| A gate whose run was cancelled before a verdict is launched again with no attempt spent, and once `CANCELLED_BOUND` runs of it in a row were cancelled the drive asks instead of launching it again | step `decide-gate-cancelled` | **post-hoc**, partly: each cancelled run is a record with status `cancelled` and its own launch token, and `attempts` stays as it was. The count itself is on the launch mark in the drive's state, which is not committed |
 | An executor that ended without running its submit block is resumed (`resume`, no attempt spent), not retried | step `decide-no-executor-return` | **post-hoc**: `resume` leaves `attempts` as it was, a `retry` is a second start with its attempt spent - both visible in the shard |
-| Test discipline follows `tests.mode` — `tdd` proves red first, `regression` locks the corrected behaviour, `gate-only` keeps the gate green | `audit-executor.md` → **Test discipline** | **partly checked**: the gate run itself is recorded. `run-test-gate.py --record` appends the run to the evidence ledger and points `task.testEvidence` at it, so *that a gate ran for this task, when, and what it answered* is a record — `--fail-on failing-tests` and `--fail-on no-test-evidence` are what read it. **The red-first run is recorded only through `submit`**: on a `tdd` task `drive-phase.py submit` runs `stamp-verification.py red` in a throwaway tree and files the helper's block, which `done --from-return` puts on `task.redFirst`. Nothing refuses a return filed through `audit-task.py file-return` directly, carrying the executor's own word, and the orchestrator's recorded run, made after the subagent returns, still shows only the green. `task.verifiedBy` names the tests added, which stays a claim. See [Test evidence](#test-evidence) |
-| The gate that becomes evidence is the orchestrator's own, run through `run-test-gate.py --record` rather than by hand | `audit-executor.md` → **Run the reading of `executor.runsGate`** | **partly checked**: a run made through the script leaves a ledger row and a pointer, and a `done` task or phase carrying no pointer is what `--fail-on no-test-evidence` names. A gate somebody ran by hand instead leaves no row at all, which reads exactly like a subject nobody gated |
+| Test discipline follows `tests.mode` — `tdd` proves red first, `regression` locks the corrected behaviour, `gate-only` keeps the gate green | `audit-executor.md` → **Test discipline** | **partly checked**: the gate run itself is recorded. `run-test-gate.py --record` writes the run as the task's record and points `task.testEvidence` at it, so *that a gate ran for this task, when, and what it answered* is a record — `--fail-on failing-tests` and `--fail-on no-test-evidence` are what read it. **The red-first run is recorded only through `submit`**: on a `tdd` task `drive-phase.py submit` runs `stamp-verification.py red` in a throwaway tree and files the helper's block, which `done --from-return` puts on `task.redFirst`. Nothing refuses a return filed through `audit-task.py file-return` directly, carrying the executor's own word, and the orchestrator's recorded run, made after the subagent returns, still shows only the green. `task.verifiedBy` names the tests added, which stays a claim. See [Test evidence](#test-evidence) |
+| The gate that becomes evidence is the orchestrator's own, run through `run-test-gate.py --record` rather than by hand | `audit-executor.md` → **Run the reading of `executor.runsGate`** | **partly checked**: a run made through the script leaves a record and a pointer, and a `done` task or phase carrying no pointer is what `--fail-on no-test-evidence` names. A gate somebody ran by hand instead leaves no record at all, which reads exactly like a subject nobody gated |
 | The subagent does not commit; the orchestrator does | `audit-executor.md` → **You never commit** | **nothing**: the commit's author is the same either way |
 | The main loop dispatches only the agents `next` printed - one task at a time in id order at width 1, together only as a wave of disjoint tasks, each in its own tree | step `dispatch-executor`, step `dispatch-wave` | **post-hoc**: two tasks sharing a file with overlapping `startedAt`/`completedAt` windows outside a recorded wave (`wave.start`/`wave.done` rows) |
 | A test a task declares in `tests.add` is collected by the runner of its gate, checked before an executor is spent: a definite miss stops at the decision with `widen` or `block`, and a runner that cannot be read prints one line and runs | step `decide-scope-gap` | **post-hoc**: `widen` writes the runner config into the task's `files` and a `task.scope` journal row; a `block` is a recorded status. A miss the reading cannot see (a config it does not parse) is `could not tell` and is not stopped |
 | A phase lock held by a live run is never taken over, and an abandoned one only with a human's yes | step `stop-lock` | *taking* it is not enforced; **writing against a live holder is** (first table). `scripts/governance/audit-lock.py status` reports what is held, with the basis per verdict |
 | The plan's index lock held by a live run (`audit-task.py` exit 3) is waited out, never taken over or edited around | step `stop-index-lock` | *waiting* is not enforced; **writing against a live holder is** (first table). The driver gives the phase lock back on that stop, so none is left held for `audit-lock.py status` to read as abandoned |
-| Sign-off runs in strict order: review → the fix tasks its findings become → the full `phase.testGate` → the invariant check → `/audit:phase signoff` records the verdict (the status itself is derived) | step `decide-triage` | **performed by the driver** on its own path: it runs the phase gate only once the triage is answered `sign-off`, after the fix tasks it added have closed. A gate run by hand before the review is not refused and leaves only a superseded ledger row, so **nothing** records the order kept by hand. The gate step is recorded: sign-off records its own run, so `phase.testEvidence` says the phase's gate ran and what it answered, and a phase that reached `done` with none is what `--fail-on no-test-evidence` names. `phase.review.status` and `phase.summary` record the other outcomes, not the sequence |
+| Sign-off runs in strict order: review → the fix tasks its findings become → the full `phase.testGate` → the invariant check → `/audit:phase signoff` records the verdict (the status itself is derived) | step `decide-triage` | **performed by the driver** on its own path: it runs the phase gate only once the triage is answered `sign-off`, after the fix tasks it added have closed. A gate run by hand before the review is not refused and leaves only a record the sign-off run replaces, so **nothing** records the order kept by hand. The gate step is recorded: sign-off records its own run, so `phase.testEvidence` says the phase's gate ran and what it answered, and a phase that reached `done` with none is what `--fail-on no-test-evidence` names. `phase.review.status` and `phase.summary` record the other outcomes, not the sequence |
 | The sign-off merge is `--ff-only` into the resolved parent, never a rebase — and when that parent is not the development branch, the report says the work has not landed there | step `done` | **post-hoc**, from the merge shape and `phase.mergedAt` against the parent branch. That the *report* said so is not recorded |
 | Git runs as `git -C <gitRoot>`; gate commands run verbatim from the project directory | `audit-executor.md` → **Run the reading of `executor.runsGate`** | **nothing** — both spellings agree whenever the layout is flat, which is why this one drifts quietly |
 | The executor is spawned with a `description` starting with the task id, so metering is per-task | step `dispatch-executor` | **post-hoc**: ledger rows fall back to phase level when the id is absent, so the gap shows in `/audit:usage` |
@@ -1446,8 +1446,13 @@ recorded can say which ones a source change reaches. Each joins as a step named
 with the reason printed, never to an empty selection; the phase's own sign-off gate stays the
 wide one.
 
-Two things are written, and the difference between them is the design. First a row in the
-**evidence ledger**, which is the source of truth:
+A task or phase run is written once, as its **record in the plan**: `lastRun` on the task or
+the phase, in its shard - the run whole, its steps, the state it tested and what it observed -
+with the `testEvidence` pointer below beside it, in one locked write. No row is appended to the
+evidence ledger for it and no journal row anchors one; the record is the run's only copy, and
+it is replaced by the subject's next run. A `--full` run is the one scope that still appends a
+row to the **evidence ledger**, which also keeps every row an earlier release wrote - never
+rewritten, migrated or deleted, and still read beside the records:
 
 ```
 docs/audit/evidence/2026-08.<writerId>.jsonl       # one file per writer per month
@@ -1469,8 +1474,8 @@ findings — so a recorded `failed` edited into a `passed` is a FINDING rather t
 rewrite of the thing a green gate points at. Tamper-**evident**, not tamper-proof, exactly
 as the trail is; [SECURITY.md](../../SECURITY.md) has what that does and does not cover. A
 ledger written before this shipped has rows carrying neither key: those are reported as a
-counted warning naming what is unprotected, never as tampering, and the next recorded run
-links onto them.
+counted warning naming what is unprotected, never as tampering, and a full run recorded into
+that file links onto them.
 
 Then a `testEvidence` pointer on the task or the phase that ran:
 
@@ -1478,10 +1483,11 @@ Then a `testEvidence` pointer on the task or the phase that ran:
 "testEvidence": {"runId": "…", "status": "passed", "at": "2026-08-10T09:12:44Z"}
 ```
 
-The pointer is a **cache**. Deleting it is always safe — the ledger still holds the run and
-the next one writes it back; `runId` is **opaque**, so look the run up by it and never parse
-it; and anything worth counting or comparing is read from the ledger rather than from a
-second copy free to disagree with it. [COMPATIBILITY.md](../../COMPATIBILITY.md) is where
+The pointer **names a run and is not its copy**: the subject's record beside it, or for a done
+task the run its commit's trailers name. Deleting it is always safe — the record still holds
+the run and the next one writes it back; `runId` is **opaque**, so look the run up by it and
+never parse it; and anything worth counting or comparing is read from the record (or a row an
+earlier release wrote) rather than from a second copy free to disagree with it. [COMPATIBILITY.md](../../COMPATIBILITY.md) is where
 that promise is written down.
 
 **Absent means no run was recorded. It never means failed.** A manifest written before the
@@ -1533,22 +1539,21 @@ committed and a stack frame names the machine that produced it.
   would receive, where it is a gate rather than a warning.
 
 **A refused record is a designed state, and a loud one.** Another live writer may hold the
-plan's index lock past the record's wait, and then the run's ledger row is written while the
-plan is not moved — so the two outcomes are printed apart rather than folded into one word,
-and the run exits 3 with a line saying to re-run the gate once the lock is free. When the
-run's ledger row was written, `run-test-gate.py --reconcile` also catches the plan up from
-it — the pointer and the record beside it — without running a test.
+plan's index lock past the record's wait, and then nothing holds the run — no row is written
+beside a record — so the run exits 3 with a line saying no file holds it and to re-run the
+gate once the lock is free.
 
-**A failed run needs a commit of its own.** A task commit stages the evidence directory, so
-a run that fails on one attempt and passes on the next is durable either way. What is not
-durable is a run whose task or phase never subsequently commits — a red gate leaves the task
+**A failed run needs a commit of its own.** A task commit stages the task's shard, which
+holds its newest run; a run a later run of the same task replaced is not kept. What is not
+durable at all is a run whose task or phase never subsequently commits — a red gate leaves the task
 `in_progress` and commits nothing at all. `scripts/governance/commit-task-work.py
 <manifestPath> <phaseId> --state` makes that record durable **without staging any of the work**; it
 is idempotent and safe to call when nothing is wrong, and `verify-invariants.py`'s
 `audit-state-scope` grades what it staged.
 
 Do not add the evidence directory to `.gitignore`, for the journal's reason one noun over: a
-row that is not committed is a pointer that will not travel with the plan a clone receives.
+row that is not committed - an earlier release's, or a full run's - is a pointer that will not
+travel with the plan a clone receives.
 `evidence.dir` moves the directory; unset keeps it beside `manifestPath`.
 
 **What it does not prove.** That a gate ran and what it answered — not that a `tdd` task's

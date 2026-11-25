@@ -442,7 +442,6 @@
   "tests/test_propose_gates.py": 0.3,
   "tests/test_py_launch.py": 2.2,
   "tests/test_read_ado_links.py": 0.3,
-  "tests/test_record_outside_run.py": 0.4,
   "tests/test_record_risk_confirmation.py": 1.2,
   "tests/test_remind_tdd.py": 1.1,
   "tests/test_render_report.py": 5.8,

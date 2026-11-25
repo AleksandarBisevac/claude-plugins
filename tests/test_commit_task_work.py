@@ -675,14 +675,16 @@ def _declared_cases(check, repos):
     off_targets = M.stage_targets(off_manifest, off_phase, off_task,
                                   off["manifest"], off["root"], off["root"])
     check("ctw20 ...and a record directory that does not exist yet is "
-          "REPORTED as skipped rather than silently dropped: 'it is outside "
-          "the repository' and 'it is not there yet' leave the same commit "
-          "behind while being different things to know. The journal is the "
-          "exception while it is on - the row this commit writes creates it "
-          "and is carried from there - and the pair is the same journal "
-          "turned off, where nothing will: %r / %r"
+          "REPORTED as skipped rather than silently dropped - the journal "
+          "turned off, where nothing will create it - except where its "
+          "absence is the ordinary state: a journal that is on, which the "
+          "row this commit writes creates, and an evidence directory, which "
+          "no task or phase run writes any more, so a project that never had "
+          "a ledger commits with no line about one: %r / %r"
           % (targets["skipped"], off_targets["skipped"]),
-          any(M.EVIDENCE_LABEL in line for line in targets["skipped"])
+          not any(M.EVIDENCE_LABEL in line for line in targets["skipped"])
+          and not any(M.EVIDENCE_LABEL in line
+                      for line in off_targets["skipped"])
           and not any(M.JOURNAL_LABEL in line for line in targets["skipped"])
           and any(M.JOURNAL_LABEL in line
                   for line in off_targets["skipped"]))
@@ -1683,25 +1685,40 @@ def _kept_deletion_hook_cases(check, repos):
 
 @_own_repos
 def _retired_red_cases(check, repos):
-    # A RED, THEN THE GATE CLEARED, THEN RECORDED: the empty-gate row is the
-    # newest row, and it must not retire the red.
+    # THE BINDING FOLLOWS THE NEWEST RECORDED RUN. A task keeps one run - its
+    # record - so a red is retired by the record that replaces it; while the
+    # red IS the newest record, it refuses.
     fx = repos.make()
     _dirty_work(fx)
     _set_task(fx, gate=["false"])
     _gate(fx)
+    red = _newest_row(fx)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw73b a NEWEST red record refuses the commit: the task's one "
+          "recorded run is red, and nothing is committed over it without an "
+          "override and its reason: %r / %r" % (red.get("status"), text),
+          red.get("status") == "failed" and code == 1
+          and _head(fx) == before)
+    # ...A RED, THEN THE GATE CLEARED, THEN RECORDED: the empty-gate record
+    # replaced the red, so the red is no run of this task any more, and the
+    # commit binds the newest - the cleared gate, said as such.
     _set_task(fx, gate=[], basis="cleared")
     _gate(fx)
     newest = _newest_row(fx)
-    before = _head(fx)
+    held = [r.get("runId") for r in _evidence_io.read_rows(
+        fx["root"], manifest_path=_evidence_io.plan_file_of(fx["root"]))["rows"]
+        if r.get("taskId") == TASK]
     code, text = _run(fx)
-    check("ctw73 a red, then the gate cleared, then `--record`, then the commit "
-          "is REFUSED - the empty-gate row is the newest row, and a red recorded "
-          "under entries after the last green is retired only by a green or by "
-          "an override with its reason: %r / %r"
-          % (newest.get("status"), text),
+    check("ctw73 a red, then the gate cleared, then `--record`: the empty-gate "
+          "record REPLACED the red - the task holds the one run - and the "
+          "commit binds that newest run and is made, saying the gate was "
+          "cleared: %r / %r / %r" % (newest.get("status"), held, text),
           newest.get("status") == _const("VERDICT_EMPTY_GATE")
-          and code == 1 and "after the last green" in text
-          and _head(fx) == before)
+          and held == [newest.get("runId")]
+          and red.get("runId") not in held
+          and code == 0 and _head(fx) != before
+          and _const("CLEARED_GATE").split("%s")[0] in text)
     # ...AND A RED THAT A GREEN ALREADY RETIRED.
     fx = repos.make()
     _dirty_work(fx)
@@ -1865,9 +1882,30 @@ def _ledger_file_with(fx, needle):
 
 
 def _rewrite_row(fx, run_id, edit):
-    """Rewrite the ledger row `run_id` through `edit(row)`, or drop it when
-    `edit` returns None. The chain is not re-hashed: the reader under test does
-    not verify it, and the cases are about what the committer reads."""
+    """Rewrite the run `run_id` through `edit(row)`, or drop it when `edit`
+    returns None - where it lives: a recorded task run's only copy is its
+    record in the shard (`lastRun`), and a ledger row is one an earlier
+    release wrote. A run in neither - one a later record replaced, kept only
+    inside a repeat's record - is already gone, and is left so. The chain is
+    not re-hashed: the reader under test does not verify it, and the cases are
+    about what the committer reads."""
+    directory = os.path.join(fx["root"], "docs", "audit", "evidence")
+    in_ledger = os.path.isdir(directory) and any(
+        run_id in (_read(os.path.join(directory, n)) or "")
+        for n in os.listdir(directory))
+    if not in_ledger:
+        shard = _mio.read_json(fx["shard"])
+        task = [t for t in shard["tasks"] if t.get("id") == TASK][0]
+        record = task.get(_evidence_io.RECORD_KEY)
+        if not (isinstance(record, dict) and record.get("runId") == run_id):
+            return
+        kept = edit(record)
+        if kept is None:
+            task.pop(_evidence_io.RECORD_KEY, None)
+        else:
+            task[_evidence_io.RECORD_KEY] = kept
+        TI._write_json(fx["shard"], shard)
+        return
     path, lines = _ledger_file_with(fx, run_id)
     out = []
     for line in lines:
@@ -1936,9 +1974,15 @@ def _compared_fields(row):
 
 
 def _append_ledger(fx, text):
-    """Append raw `text` to the newest ledger file."""
+    """Append raw `text` to the newest ledger file - to a ledger file an
+    earlier release would have written, made here when the project has none,
+    since no task or phase run writes one now."""
     directory = os.path.join(fx["root"], "docs", "audit", "evidence")
-    path = os.path.join(directory, sorted(os.listdir(directory))[-1])
+    if not os.path.isdir(directory):
+        os.makedirs(directory)
+    names = sorted(n for n in os.listdir(directory) if n.endswith(".jsonl"))
+    path = os.path.join(directory, names[-1] if names
+                        else "2026-01.previous-release.jsonl")
     with io.open(path, "a", encoding="utf-8") as fh:
         fh.write(text)
     return path
@@ -2290,12 +2334,16 @@ def _branch_cases(check, repos):
           "and the output says it was not needed: %r / %r" % (code, text),
           code == 0 and "not needed" in text and rows == [])
 
-    # AN IGNORED RECORD PATH.
+    # AN IGNORED RECORD PATH: the evidence directory an earlier release left,
+    # holding a row of another task, which git is told to ignore.
     fx = repos.make()
     _write(os.path.join(fx["root"], ".gitignore"), "docs/audit/evidence/\n")
     TI._git(fx["root"], "add", "--", ".gitignore")
     TI._git(fx["root"], "commit", "-q", "-m", "fixture: ignore the evidence",
             "--", ".gitignore")
+    _append_ledger(fx, '{"v":1,"runId":"OLD-1","scope":"task","taskId":"P9.9",'
+                       '"phaseId":"P9","status":"passed",'
+                       '"ts":"2026-01-01T00:00:00Z"}\n')
     _dirty_work(fx)
     _gate(fx, set_apart=False)
     before = _head(fx)
@@ -2373,7 +2421,12 @@ def _success_line_cases(check, repos):
     check("sl3 a refused commit - no gate verdict binds the work - prints in "
           "full, the same with `--verbose`: the deny twin of sl1: %r"
           % (refused[1][:200],),
-          refused[0] != 0 and len(refused[1].splitlines()) > 1
+          # The refusal and its remedy, whole - not a headline cut to the
+          # success line's bound. A project with no ledger prints no other
+          # line beside it, so a line count would measure that, not this.
+          refused[0] != 0
+          and "[commit-task-work] REFUSED: no gate verdict" in refused[1]
+          and "run-test-gate.py" in refused[1]
           and refused == _cli(rfx, "--subject", "the work", "--verbose"))
 
 

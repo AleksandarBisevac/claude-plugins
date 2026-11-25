@@ -454,8 +454,20 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
         if evidence_pointer == "phase":
             shard["testEvidence"] = {"runId": "RUN-2", "status": "passed",
                                      "at": "2026-08-26T11:00:00Z"}
+        # The shape a recorded run leaves now: the pointer's run is the task's
+        # own record in the shard, and no ledger exists at all. Its twin holds
+        # a record of ANOTHER run, so a pointer naming neither that record nor
+        # any committed row is still unbacked.
+        if evidence_pointer in ("record", "record-other", "record-other-row"):
+            # Built by the recorder's own constructor, so the record is one its
+            # reader reads.
+            shard["tasks"][0][_evidence_io.RECORD_KEY] = _evidence_io.run_record({
+                "runId": "RUN-1" if evidence_pointer == "record" else "RUN-9",
+                "ts": "2026-08-26T10:00:00Z", "scope": "task",
+                "taskId": "P1.1", "phaseId": "P1", "status": "failed",
+                "steps": []})
         _write_json(shard_path, shard)
-        if evidence_pointer != "orphan":
+        if evidence_pointer not in ("orphan", "record", "record-other"):
             evdir = os.path.join(audit, "evidence")
             os.makedirs(evdir, exist_ok=True)
             rows = ['{"runId":"RUN-1","scope":"task","taskId":"P1.1","v":1}']
@@ -1235,9 +1247,10 @@ def _cases(check):
 
         # --- evidence-committed -------------------------------------------
         # C3's other half. `audit-state-scope` grades what a commit STAGED;
-        # this grades what the committed plan POINTS AT. A pointer is a cache at
-        # a row in the ledger, so a committed pointer whose row no clone holds is
-        # a plan referring to evidence that does not travel with it.
+        # this grades what the committed plan POINTS AT. A pointer names its
+        # holder's own record, or a row an earlier release committed; one whose
+        # run neither carries is a plan referring to evidence that does not
+        # travel with it.
         paired = repos.get(evidence_pointer="paired")
         ec = _check(_phase_answer(paired), "evidence-committed")
         check("iv61 a committed pointer whose row is committed beside it is "
@@ -1264,6 +1277,35 @@ def _cases(check):
               "the one a working-tree reader would call fine: %r"
               % (ec["breaches"],),
               ec["verdict"] == M.BREACH and "RUN-1" in ec["breaches"][0])
+
+        own = repos.get(evidence_pointer="record")
+        ec = _check(_phase_answer(own), "evidence-committed")
+        check("iv69 a committed pointer naming its holder's OWN committed "
+              "record is clean with no ledger in the repository at all - the "
+              "record is the run's only copy now, and a reader of rows alone "
+              "would call every recorded run unbacked: %r"
+              % ((ec["verdict"], ec["examined"], ec["breaches"]),),
+              ec["verdict"] == M.CLEAN and ec["examined"] == 1
+              and ec["breaches"] == [])
+
+        other = repos.get(evidence_pointer="record-other")
+        ec = _check(_phase_answer(other), "evidence-committed")
+        check("iv70 THE OVER-FIRE TWIN: a holder whose committed record is of "
+              "ANOTHER run, and no committed row for the pointer's run, is "
+              "still a breach naming the run - a record backs the pointer that "
+              "names it, never any pointer of the same subject: %r"
+              % (ec["breaches"],),
+              ec["verdict"] == M.BREACH and len(ec["breaches"]) == 1
+              and "RUN-1" in ec["breaches"][0] and "P1.1" in ec["breaches"][0])
+
+        older = repos.get(evidence_pointer="record-other-row")
+        ec = _check(_phase_answer(older), "evidence-committed")
+        check("iv71 ...and the same holder with the pointer's run in a "
+              "COMMITTED OLDER ROW is clean: the second arm, a plan an earlier "
+              "release wrote, still resolves through the ledger it committed: "
+              "%r" % ((ec["verdict"], ec["examined"], ec["breaches"]),),
+              ec["verdict"] == M.CLEAN and ec["examined"] == 1
+              and ec["breaches"] == [])
 
         plain_repo = repos.get()
         ec = _check(_phase_answer(plain_repo), "evidence-committed")

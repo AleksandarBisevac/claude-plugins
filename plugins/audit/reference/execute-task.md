@@ -378,9 +378,9 @@ verb writes and refuses, and what the run commands leave behind, is
      (`_output.project_of_manifest`) — from whatever directory it is run, with or without a
      session behind it.
 
-     Exit codes: `0` passed, `1` failed, `2` usage, **`3` passed but no evidence row was stored**
-     (`GATE NOT RECORDED`) — that is not a pass, so repair the ledger the `evidence: NOT recorded`
-     line names and run again.
+     Exit codes: `0` passed, `1` failed, `2` usage, **`3` the task's record was not written into
+     its shard** (`GATE NOT RECORDED`, on a green or a red) — that is not a pass, and no file holds
+     the run, so do what the `evidence: NOT recorded` line says and run again.
 
      **The run is the task's own gate plus every suite its change can break.** It reads what the
      task changed (a rename counts as both its paths) and adds the suites `_affected_tests` selects,
@@ -477,18 +477,17 @@ verb writes and refuses, and what the run commands leave behind, is
      schema default begins taking effect can type-check impeccably. The entry that asks the
      behaviour question belongs in every gate that could pass.
 
-     **Read the two lines it prints ABOVE the verdict block.** `evidence: recorded <runId>` is the row;
-     `pointer:` is whether the plan now names it. A pointer can be **refused** — another live
-     writer may hold the plan's index lock past the record's wait — and then the gate exits 3
-     and says to re-run it once the lock is free: do what that line says. When the run's
-     ledger row was written, `--reconcile` also catches the plan up from it without running a
-     test.
+     **Read the two lines it prints ABOVE the verdict block.** `evidence: recorded <runId>` is the
+     task's record in its shard, the run's only copy - no evidence row is written beside it;
+     `pointer:` says the plan now names it. The record can be **refused** — another live writer
+     may hold the plan's index lock past the record's wait — and then nothing holds the run, the
+     gate exits 3 and says to re-run it once the lock is free: do what that line says.
 
      **A gate expected to outlast the Bash tool's foreground bound runs under
-     `run_in_background`, and its verdict is read from the ledger, never from a truncated
+     `run_in_background`, and its verdict is read from its record, never from a truncated
      terminal.** The command above is unchanged; what changes is that you do not wait on its own
      terminal to scroll to the end. `evidence: recorded <runId>` is written **before** the banner
-     prints, so the row is durable the moment the background job has one to show — read it back
+     prints, so the record is durable the moment the background job has one to show — read it back
      with `scripts/status/audit-lookup.py <manifestPath> run <runId>` (the id off that line) or
      `run latest --task <taskId>` when the id was not kept, exactly as
      `reference/orchestrator.md`'s **Answering one question about the trail** describes.
@@ -643,8 +642,8 @@ verb writes and refuses, and what the run commands leave behind, is
        happened and what word it got, and nothing else.
      - the gate's own output if this session printed it — `GATE RED: <entries>`, and the
        per-step `exit` and check-count lines above the banner. On a resumed session that
-       output is gone, and the ledger row under `evidence.dir` keyed by that `runId` is
-       where it still is.
+       output is gone, and the task's record (`lastRun`) - or, for a run an earlier release
+       recorded, the ledger row under `evidence.dir` keyed by that `runId` - is where it still is.
      - `task.redFirst` when it is set, so a proof that could not be MADE is not walked into
        the same refusal twice.
      - the `raw log:` path the last attempt's own `--own` run printed, when this session still
@@ -756,7 +755,7 @@ verb writes and refuses, and what the run commands leave behind, is
         done <id> --no-change --reason`. `done --commit` asks the same two of the commit it names.
 
         **The commit is bound to the gate you recorded above, and the script enforces it.** It
-        reads the task's newest evidence row — the rows carrying its task id, so a task measured
+        reads the task's newest recorded run — the runs carrying its task id, so a task measured
         by its phase's gate under `--task` counts and a sign-off run does not — and refuses unless
         that row is `passed`, was measured under the gate the task declares now (the row's steps
         and the count of steps it dropped, against `tests.gate` or the phase's, and the row's

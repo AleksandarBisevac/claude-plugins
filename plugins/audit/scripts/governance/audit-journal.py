@@ -15,7 +15,9 @@ Exit codes: 0 healthy (warnings allowed) - 1 findings (the chain does not hold,
 or a merge refused) - 2 usage error.
 
 `verify` READS BOTH CHAINED RECORDS beside the manifest -- the trail, and the
-evidence ledger `_evidence_io.py` writes a row into for every recorded gate run.
+evidence ledger: the rows `_evidence_io.py` appends for a recorded `--full` run,
+and the rows earlier releases appended for every recorded gate run (a task or
+phase run now keeps its record in the plan, and writes no row here).
 The ledger carried no chain at all until it was given the trail's, so the record
 of the MEASUREMENT -- the file a green gate points at -- was the one file here a
 string replace could edit with nothing reporting a finding. Each record prints its
