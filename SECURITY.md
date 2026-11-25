@@ -157,11 +157,23 @@ The table below is **per hook and event**, not per script and not per
 registration: a script registered on several matchers of one event fails the same
 way on each, while `require-plan` on `PreToolUse` (decide) and on `PostToolUse`
 (commit that decision) fail differently, which is what the split is for. The
-authority is `hooks/hooks.json`, and it prints the full wiring:
+authority is the registration: `hooks/hooks.json`, and `hooks/failure-hooks.json`,
+which `.claude-plugin/plugin.json` names because a host older than its one event
+refuses the whole file naming it. This prints the full wiring of both:
 
 ```bash
-python3 -c "import json;d=json.load(open('plugins/audit/hooks/hooks.json'));[print(e,b.get('matcher','-'),[t for t in h['command'].split() if t.endswith('.py')][-1].split('/')[-1],h['command'].split()[-1] if h['command'].split()[-1] in ('ask','open') else 'open') for e,bs in d['hooks'].items() for b in bs for h in b['hooks']]"
+python3 -c "import json;[print(e,b.get('matcher','-'),[t for t in h['command'].split() if t.endswith('.py')][-1].split('/')[-1],h['command'].split()[-1] if h['command'].split()[-1] in ('ask','open') else 'open') for f in ('hooks.json','failure-hooks.json') for e,bs in json.load(open('plugins/audit/hooks/'+f))['hooks'].items() for b in bs for h in b['hooks']]"
 ```
+
+**The `PostToolUseFailure` rows are the pass after for a call that failed** - a command that
+wrote and then exited non-zero, an MCP tool that wrote and then returned an error. Without them
+such a write left no journal row and drew no shell-write notice, including on the deny tier.
+They need Claude Code 2.0.56 or later; an older host logs that it could not load
+`failure-hooks.json` and runs every other row here (`COMPATIBILITY.md`). **A call the user
+cancels fires no pass after at all**, so it is the case left with no row and no notice; the
+trail check may still warn that a plan or config file moved, and for a switch the call turned
+off it does not. `PLUGIN-BUILD-GUIDE.md`'s `failure-hooks.json` section holds the table of which
+pass-after hook a failed call owes, and why.
 
 It prints the fail mode as a fourth column, and it reads the hook name off the
 `.py` argument rather than by counting back from the end. That is not tidying:
@@ -183,9 +195,9 @@ commit and the command above does not.
 | `require-plan` | PreToolUse edits + MCP | **ask** | allow |
 | `guard-capabilities` | PreToolUse Skill/Task/Agent/MCP | **ask** | allow |
 | `require-plan` (state commit) | PostToolUse edits + MCP | silent | no-op |
-| `guard-bash-writes` | PostToolUse Bash + edits | silent | no-op |
+| `guard-bash-writes` | PostToolUse Bash + edits, PostToolUseFailure Bash | silent | no-op |
 | `remind-tdd` | PostToolUse edits | silent | no-op |
-| `journal-writes` | PreToolUse edits **+ Bash** + MCP, PostToolUse edits + Bash + MCP | silent | no-op |
+| `journal-writes` | PreToolUse edits **+ Bash** + MCP, PostToolUse edits + Bash + MCP, PostToolUseFailure edits + Bash + MCP | silent | no-op |
 | `detect-plan-skip` | UserPromptSubmit | silent | no-op |
 | `drive-without-model` | UserPromptSubmit | silent | no-op |
 | `meter-usage` | Stop / SubagentStop / SessionEnd / SessionStart | silent | no-op |

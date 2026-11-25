@@ -564,6 +564,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ### Fixed
 
+- **A tool call that failed still gets the pass after.** A command that wrote and then exited
+  non-zero - `sed -i ... file; false`, a script that edits the plan or the config and fails on
+  a later line - and an MCP tool that wrote and then returned an error reach the host as a
+  failed call, which gets `PostToolUseFailure` instead of `PostToolUse`. Nothing was registered
+  on that event, so the journal wrote no row for a plan or config file such a call changed
+  (a switch-off included, the one move the trail check does not warn about later) and the
+  shell-write notice - a block on the deny tier - was never given. The journal's sweep and the
+  shell-write notice now run on that event too, from a second hooks file,
+  `hooks/failure-hooks.json`, which `plugin.json` names: Claude Code 2.0.55 refuses a
+  `hooks.json` naming an event it does not know as a whole, guards included, and the second
+  file fails there alone (`COMPATIBILITY.md` names 2.0.56 as the first host that runs it). The
+  pass reads no `tool_response`, which a failed call does not carry; it runs once per call when
+  a host sends both events; a failed edit-tool call is asked of the file and leaves no row when
+  nothing moved; and a call the user cancels fires neither event, the one case that leaves no
+  row and no notice. `PLUGIN-BUILD-GUIDE.md` holds the table of which pass-after hook a failed
+  call owes, and `tests/test_hooks.py` holds the table to the registration; the fail-mode
+  parity check reads both files.
 - **A step the drive stops writes nothing the next step reads as done.** A wave stepped its
   members in id order and let each mark its own dispatch, so a later member's stop ended the
   step with an earlier member marked as handed out and never printed: the next `next` told the

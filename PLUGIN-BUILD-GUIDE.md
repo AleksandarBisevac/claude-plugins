@@ -99,6 +99,7 @@ claude-plugins/                           # this repo (personal, public)
         guide.md                          # answers questions about the plugin (Read/Grep/Glob, haiku)
       hooks/
         hooks.json                        # wires the hooks to events (${CLAUDE_PLUGIN_ROOT})
+        failure-hooks.json                # the pass after for a failed call (PostToolUseFailure), named by plugin.json
         py-launch.sh                      # interpreter launcher: python3→python→py, fail-loud guards
         _config.py                        # shared config loader + path/manifest helpers
         require-plan.py                   # plan-first gate, graded on evidence (observe/warn/deny; Pre decides, Post commits state)
@@ -294,7 +295,9 @@ Claude Code plugin mechanics used here (all confirmed against the plugin docs):
   `/audit:phase`, `/audit:init`, … (this Claude Code version has no bare `/audit`; each verb is its
   own command file so nothing is invoked as the awkward `/audit:audit`).
 - `hooks/hooks.json` — hook wiring; scripts self-reference with **`${CLAUDE_PLUGIN_ROOT}`** and
-  read the consuming repo via **`${CLAUDE_PROJECT_DIR}`**.
+  read the consuming repo via **`${CLAUDE_PROJECT_DIR}`**. Loaded by the host without being
+  named; `plugin.json`'s `hooks` field names any FURTHER file (`hooks/failure-hooks.json`), and
+  naming `hooks.json` there too is reported as a duplicate.
 - `.claude-plugin/marketplace.json` — marketplace root listing `plugins[].source`.
 
 ---
@@ -566,6 +569,9 @@ Maps events → scripts, every entry running through
 - PostToolUse `Bash` → `guard-bash-writes.py` (the diff check), `journal-writes.py` (the `dangerouslyDisableSandbox` row **and** the digest sweep that catches a manifest written by a shell command; both **open**)
 - UserPromptSubmit → `detect-plan-skip.py`, `drive-without-model.py` (**open**; the second with `timeout` long enough for a drive, and no `onFailure`, so a hook that cannot start never blocks a prompt)
 
+The pass after for a call that FAILED is not in this file; `failure-hooks.json`, below, says
+why and what it registers.
+
 `py-launch.sh` resolves `python3` → `python` → `py` with shell builtins only and
 runs the script (stdin passes through once, exit code propagates). It does not
 `exec`: after an `exec` nothing is left to notice that the interpreter never
@@ -596,6 +602,51 @@ either; the observable half is the not-beside-the-launcher case above, and the
 reader for the other half is `/audit:doctor`, which reports hooks that have never
 fired. `tests/test_py_launch.py` drives all of this against real
 shims on `PATH`.
+
+### `plugins/audit/hooks/failure-hooks.json`
+The pass after for a call that failed: a command that wrote and then exited non-zero, an MCP
+tool that wrote and then returned an error result. The host sends such a call
+`PostToolUseFailure` in place of `PostToolUse`, with the call's `tool_name`, `tool_input` and
+`tool_use_id`, an `error` text and no `tool_response` (the host's hooks reference, read
+2026-11-25; Claude Code 2.1.332's own input schema for the event carries the same fields), so a
+hook registered on the pass after alone never ran for it: the journal's sweep wrote no row for a
+plan or config file the command changed, and the shell-write notice was never given.
+
+**It is a second file because of the oldest host, not by taste.** `.claude-plugin/plugin.json`'s
+`hooks` field names it; the host loads `hooks/hooks.json` by itself and the named file in
+addition. Claude Code 2.0.56 is the first release whose bundle names the event, and 2.0.55,
+driven live with a probe plugin, refused a `hooks.json` naming it whole - every guard with it -
+while the same entry in a second file failed alone, the debug log saying so and every other hook
+loading. `COMPATIBILITY.md` states the floor. `tests/test_hooks.py`'s `fx1` holds the layout:
+`hooks.json` names only events 2.0.55 knows, and the failed-call event sits in this file, alone.
+
+**Every hook registered for the pass after is asked once whether a failed call owes its work, and
+this table is the answer** - `fx2` reads it against both files and fails a pass-after hook with
+no row, a row that contradicts the registration, or a row naming nothing the pass after runs:
+
+| Hook | Pass after on | Failed call | Why |
+|---|---|---|---|
+| `journal-writes` | `Bash` | **owes** | A command can write and then exit non-zero. The sweep asks the file what moved, so a failed command that moved nothing leaves nothing. |
+| `journal-writes` | `mcp__.*` | **owes** | An MCP tool can write and then return an error result; the same sweep. |
+| `journal-writes` | `Edit\|Write\|MultiEdit\|NotebookEdit` | **owes** | The hooks reference does not say a failed edit tool wrote nothing, so it stays registered. On a failed call the edit lane asks the file, as the sweep does, and records only a move. |
+| `guard-bash-writes` | `Bash` | **owes** | The `git status` diff is the shell-write notice, and a command that wrote outside the running task's scope before failing owes it. |
+| `guard-bash-writes` | `Edit\|Write\|MultiEdit\|NotebookEdit` | not owed | Its edit branch EXEMPTS the path from the next shell notice. A failed edit earns no exemption, and the plan gate graded the edit at PreToolUse. |
+| `require-plan` | `Edit\|Write\|MultiEdit\|NotebookEdit` | not owed | Its pass after commits the PreToolUse decision (it spends the single-use bypass) and repeats a warn. Its `main()` reads any event but the pass after as the Pre pass, so registered here it would print a PreToolUse decision; a failed edit leaves the bypass armed for the next one. |
+| `require-plan` | `mcp__.*` | not owed | The same pass, for an MCP write. |
+| `remind-tdd` | `Edit\|Write\|MultiEdit\|NotebookEdit` | not owed | The nudge is about a source edit. A failed edit reaches the model as its own error, and the next edit that lands draws the nudge. |
+
+**Once per call, whichever event carried it.** The hooks reference documents a managed-settings
+hook running its pass after on some failed calls, so a host may send both events for one call.
+The sweep's first pass leaves its baseline equal to the file and the second finds nothing moved;
+the edit lane marks the slot it refreshes with the call's id and the second pass writes nothing;
+the shell-write notice diffs `git status` against the session's last look, which the first pass
+moved. `tests/test_journal_writes.py`'s `fq3` and `tests/test_guard_bash_writes.py`'s `gf2` send
+both, in both orders.
+
+**A call the user cancels fires neither event,** the hooks reference says, and it is the case
+that leaves no row and no notice: nothing runs for it. The trail check (`audit-journal verify`)
+may still warn about a plan or config file that moved with no row to explain it; for a switch
+the call turned off, it does not.
 
 ### `plugins/audit/hooks/_config.py`
 Shared, dependency-free config loader. `repo_root(data)` resolves the consuming repo

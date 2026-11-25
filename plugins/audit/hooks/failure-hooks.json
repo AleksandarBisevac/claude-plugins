@@ -1,0 +1,41 @@
+{
+  "hooks": {
+    "PostToolUseFailure": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py-launch.sh\" journal-writes.py open",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py-launch.sh\" guard-bash-writes.py open",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py-launch.sh\" journal-writes.py open",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py-launch.sh\" journal-writes.py open",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -598,6 +598,23 @@ is still true of a nested key.
   is the design, and `/audit:doctor` is what reports it.
 - **That warning text is stable**, for the same reason as above.
 
+## The Claude Code a hook registration needs
+
+Not a contract on your files - a fact about the host, stated so that an older one is not
+mistaken for a broken install.
+
+- **`hooks/hooks.json` names only events Claude Code 2.0.55 knows.** That host refuses a hooks
+  file naming an event it does not know, the WHOLE file, so one newer event there would take
+  every guard with it on an older host. `tests/test_hooks.py`'s `fx1` holds the file to that
+  list.
+- **`hooks/failure-hooks.json`, which `.claude-plugin/plugin.json` names, needs 2.0.56 or
+  later.** It registers the pass after for a call that failed (`PostToolUseFailure`), which
+  2.0.56 is the first release to name. On 2.0.55 the debug log records that the file could not
+  be loaded and every hook in `hooks.json` loads as before - observed on 2.0.55 with a probe
+  plugin laid out the same way. So on such a host a command that writes and then exits non-zero
+  leaves no journal row and draws no shell-write notice, as on every release before this
+  registration.
+
 ## Outside this document entirely
 
 Named rather than left ambiguous, because a promise without a boundary is not one.

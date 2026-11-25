@@ -2,7 +2,14 @@
 """
 Journal recorder -- registered at PreToolUse and PostToolUse on the edit tools,
 on Bash AND on `mcp__.*`, branching on `hook_event_name` the way require-plan.py
-does.
+does. The pass after runs for a FAILED call too, on the same three matchers
+(`failure-hooks.json`, named by plugin.json): a command that wrote and then
+exited non-zero, or an MCP tool that wrote and then returned an error, moved the
+file all the same. Its payload carries an `error` text and no `tool_response`,
+and neither pass reads either. It runs once per call whichever event carried
+it (`_AFTER_KEY`). A call the user cancels fires no pass after at all, and is
+the one case that leaves no row; the trail check may still warn that the file
+moved, and for a switch the call turned off it does not.
 
 AND THE MCP LANE NEEDED NO WRITE TEST AT ALL, which is why it is the sweep lane
 rather than a third branch. The two PreToolUse guards beside this hook have to
@@ -149,7 +156,7 @@ WHAT IT CANNOT SEE, stated here rather than discovered later:
   * a write while the plugin is disabled. Nothing in Claude Code can outlive the
     user's own switch, and SECURITY.md says so.
 
-CONTRACT: PostToolUse, mode `open`, NO stdout. A recorder that talks turns every
+CONTRACT: PostToolUse and PostToolUseFailure, mode `open`, NO stdout. A recorder that talks turns every
 manifest edit into a line of transcript nobody asked for, and additionalContext is
 context the model then has to read. Failure is silent by design — a journal that
 cannot be written must never break the write it was recording. ALWAYS exits 0.
@@ -209,6 +216,20 @@ CREATED_NOT_DERIVED = ("created by this call, so no completion record "
 # read the switch as on while the config on disk now says off - the last will.
 # `_append_rows` reads it and drops it; it never reaches the trail.
 _ON_BEFORE = "_journalOnBeforeCall"
+
+# The pass after for a call that FAILED: a command that exited non-zero, an MCP
+# tool that returned an error, an edit tool that threw. Registered in
+# `failure-hooks.json`, which plugin.json names, and not in hooks.json, because
+# a host older than the event refuses the whole file that names it. Its payload
+# has no `tool_response`, only an `error` text, and nothing here reads either.
+FAILED_CALL_EVENT = "PostToolUseFailure"
+
+# The key a pass after writes into the slot it refreshes: the `tool_use_id` of
+# the call it served. A host may send both events for one call, and the edit
+# lane writes a row for any edit the payload names, so the second pass reads
+# this and writes nothing. The sweep lane needs no key: its first pass leaves
+# the slot equal to the file, and the second finds nothing moved.
+_AFTER_KEY = "afterCall"
 
 
 # --- helpers ------------------------------------------------------------------
@@ -414,7 +435,7 @@ def _snapshot(path):
         return None, None
 
 
-def _write_slot(root, cfg, data, rel, call=None):
+def _write_slot(root, cfg, data, rel, call=None, after=None):
     """Snapshot `rel` into its (session, target) slot, overwriting whatever was
     there. Returns the slot path, or None when it could not be written.
 
@@ -428,7 +449,8 @@ def _write_slot(root, cfg, data, rel, call=None):
     beside it so that call's Post - and no other - reads the slot's `ts` as the
     moment its call began (`_slot_start`). A slot written without one - a
     Post's refresh, or the sweep lane's Pre seed (`_pre_seed_sweep`) - is tied
-    to no call."""
+    to no call. `after` is the id of the call whose pass after refreshed the
+    slot (`_AFTER_KEY`), which a second pass for that call reads."""
     try:
         slot = _slot_path(root, cfg, data, rel)
         sha, text = _snapshot(os.path.join(str(root), rel))
@@ -437,6 +459,8 @@ def _write_slot(root, cfg, data, rel, call=None):
                 "sha256": sha, "content": text}
         if call is not None:
             body[_config.CALL_ID_KEY] = call
+        if after is not None:
+            body[_AFTER_KEY] = after
         with open(slot, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(body, fh)
         return slot
@@ -485,6 +509,30 @@ def _own_slot(pre, data):
     call = _tool_use_id(data)
     return (call is not None and isinstance(pre, dict)
             and pre.get(_config.CALL_ID_KEY) == call)
+
+
+def _failed_call(data):
+    """Is this the pass after for a call that failed?"""
+    return (data or {}).get("hook_event_name") == FAILED_CALL_EVENT
+
+
+def _served(slot, data):
+    """Has a pass after for this very call already refreshed `slot`? Only a
+    payload naming its `tool_use_id` can tell; one naming none is never
+    taken for a call already served."""
+    call = _tool_use_id(data)
+    return (call is not None and isinstance(slot, dict)
+            and slot.get(_AFTER_KEY) == call)
+
+
+def _moved(pre, root, rel):
+    """Did `rel` move away from the state `pre` noted? False when either
+    side cannot be read: a failed call is credited with a write only when the
+    file shows one."""
+    if not isinstance(pre, dict) or pre.get("sha256") is None:
+        return False
+    now = _snapshot(os.path.join(str(root), rel))[0]
+    return now is not None and now != pre.get("sha256")
 
 
 def _slot_start(pre, data):
@@ -1530,6 +1578,12 @@ def post_rows(data, *, cfg=None, root=None):
         if action is None:
             return []
         root = troot
+        call = _tool_use_id(data)
+        # ONCE PER CALL, whichever event carried the pass: a host may send the
+        # pass after and the failed-call pass for one call, and this lane
+        # writes a row for any edit the payload names.
+        if _served(_read_preimage(root, cfg, data, rel), data):
+            return []
         now_on = _config.journal_enabled(cfg)
         own = None
         if rel == _config.CONFIG_REL:
@@ -1539,6 +1593,14 @@ def post_rows(data, *, cfg=None, root=None):
         # own reading: the writer's slot is per path, and another call of this
         # writer on the same path may have rewritten it since this call began.
         pre = own if own is not None else _read_preimage(root, cfg, data, rel)
+        if _failed_call(data) and not _moved(pre, root, rel):
+            # An edit tool that failed is asked of the FILE, as the sweep lane
+            # asks every call: no baseline, or the file as it stood, is no
+            # write to record. The slot is marked served all the same, so a
+            # pass after arriving for this call too records nothing either.
+            if now_on:
+                _write_slot(root, cfg, data, rel, after=call)
+            return []
         old_obj = _parse_preimage(pre)
         # REFRESHED, NOT CONSUMED, and here rather than after the row is
         # built so that every path out of this function leaves the same baseline
@@ -1554,7 +1616,7 @@ def post_rows(data, *, cfg=None, root=None):
             # as on. A slot or a reading an earlier call left is not that.
             return []
         if now_on:
-            _write_slot(root, cfg, data, rel)
+            _write_slot(root, cfg, data, rel, after=call)
         # The config's own switch as it stood before the call: the
         # pre-image's, or the default (on) when the note says there was no
         # config - so a config created switched off owes its row too.
@@ -1572,7 +1634,7 @@ def post_rows(data, *, cfg=None, root=None):
             # another tree's config named as placed is not that switch. The
             # slot follows the row as on the sweep lane.
             entry[_ON_BEFORE] = True
-            _write_slot(root, cfg, data, rel)
+            _write_slot(root, cfg, data, rel, after=call)
         if action == "config.edit" and created:
             old_obj = {}
         new_obj = (_read_json(os.path.join(str(root), rel))

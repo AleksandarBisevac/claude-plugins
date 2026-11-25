@@ -74,6 +74,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
+import _output                                     # noqa: E402  (REPO_ROOT: the guide's table)
 import _loader                                     # noqa: E402
 import _config                                     # noqa: E402
 
@@ -673,6 +674,66 @@ def pre_tool_entries(registry):
             for block in registry.get("hooks", {}).get("PreToolUse", [])]
 
 
+# The host reads a plugin's hooks from TWO places: `hooks/hooks.json`, which it
+# loads by itself, and every file `.claude-plugin/plugin.json`'s `hooks` field
+# names. The failed-call pass after lives in the second, so a reader of the first
+# alone would see a registration with no failed-call event and call that true.
+PLUGIN_JSON = os.path.join(PLUGIN_DIR, ".claude-plugin", "plugin.json")
+FAIL_EVENT = "PostToolUseFailure"
+
+# The event names the oldest host this plugin supports accepts in a hooks file.
+# Read from Claude Code 2.0.55's published bundle (`npm pack`, its cli.js, the
+# array a hooks file's keys are parsed against); 2.0.56 is the first release
+# whose bundle names the failed-call event. A key outside this list makes that
+# host refuse the WHOLE file it sits in - observed on 2.0.55, where the failed-call
+# event in hooks.json took every guard with it while the same entry in a second
+# file named by plugin.json failed alone. COMPATIBILITY.md states the floor.
+OLDEST_HOST_EVENTS = ("PreToolUse", "PostToolUse", "Notification",
+                      "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop",
+                      "SubagentStart", "SubagentStop", "PreCompact",
+                      "PermissionRequest")
+
+
+def registration_files(plugin_dir=PLUGIN_DIR):
+    """[path, ...] the host reads hooks from, in the order it loads them:
+    `hooks/hooks.json`, then each file plugin.json's `hooks` field names.
+
+    Raises ValueError on a `hooks` field this cannot read as file names - an
+    inline object, or a value that is not a path - rather than reading it as
+    naming nothing, which would hide the registration it holds."""
+    files = [os.path.join(plugin_dir, "hooks", "hooks.json")]
+    with open(os.path.join(plugin_dir, ".claude-plugin", "plugin.json"),
+              encoding="utf-8") as fh:
+        named = json.load(fh).get("hooks")
+    if named is None:
+        return files
+    if isinstance(named, str):
+        named = [named]
+    if not isinstance(named, list) or not all(isinstance(n, str) for n in named):
+        raise ValueError("plugin.json's `hooks` is not a file name or a list of "
+                         "them: %r" % (named,))
+    return files + [os.path.normpath(os.path.join(plugin_dir, n)) for n in named]
+
+
+def event_entries(event, plugin_dir=PLUGIN_DIR):
+    """[(matcher, [command, ...])] for every block registered on `event`, across
+    every registration file, in load order."""
+    out = []
+    for path in registration_files(plugin_dir):
+        with open(path, encoding="utf-8") as fh:
+            registry = json.load(fh)
+        out += [(block.get("matcher", ""),
+                 [h["command"] for h in block.get("hooks", [])])
+                for block in registry.get("hooks", {}).get(event, [])]
+    return out
+
+
+def script_of(command):
+    """The `.py` a launcher command runs, by basename, or None."""
+    names = [t for t in launcher_argv(command) if t.endswith(".py")]
+    return os.path.basename(names[-1]) if names else None
+
+
 def commands_for(tool, entries):
     """Every command registered for `tool`, in order: a matcher is a regex the
     harness fullmatches against the tool name."""
@@ -1065,10 +1126,101 @@ def _prompt_hook_cases(check):
           bool(entry) and "onFailure" not in entry, entry)
 
 
+FAILED_CALL_SECTION = "### `plugins/audit/hooks/failure-hooks.json`"
+GUIDE = os.path.join(_output.REPO_ROOT, "PLUGIN-BUILD-GUIDE.md")
+_TABLE_SPLIT = re.compile(r"(?<!\\)\|")
+
+
+def failed_call_table(text):
+    """{(hook script, matcher): answer} from the table under the failed-call
+    registration's own section of the guide, or raise ValueError naming what
+    could not be read. A matcher's `|` is written escaped inside its cell."""
+    start = text.find(FAILED_CALL_SECTION)
+    if start < 0:
+        raise ValueError("the guide has no section %s" % (FAILED_CALL_SECTION,))
+    section = text[start + len(FAILED_CALL_SECTION):]
+    nxt = re.search(r"^#{1,3} ", section, re.M)
+    section = section[:nxt.start()] if nxt else section
+    rows = {}
+    heads = None
+    for line in section.splitlines():
+        line = line.strip()
+        if not (line.startswith("|") and line.endswith("|")):
+            if heads is not None and rows:
+                break
+            continue
+        cells = [c.strip().replace("\\|", "|").replace("`", "").replace("**", "")
+                 for c in _TABLE_SPLIT.split(line[1:-1])]
+        if heads is None:
+            heads = [c.lower() for c in cells]
+            continue
+        if all(re.match(r"^:?-{2,}:?$", c) for c in cells):
+            continue
+        row = dict(zip(heads, cells))
+        hook = row.get("hook", "")
+        hook = hook if hook.endswith(".py") else hook + ".py"
+        rows[(hook, row.get("pass after on", ""))] = row.get("failed call", "")
+    if not rows:
+        raise ValueError("the section %s holds no table rows" % (FAILED_CALL_SECTION,))
+    return rows
+
+
+def _pairs(entries):
+    """{(hook script, matcher)} the entries register."""
+    return set((script_of(cmd), matcher) for matcher, cmds in entries
+               for cmd in cmds if script_of(cmd))
+
+
+def _failed_call_cases(check):
+    """fx1-fx2: where the failed-call pass after is registered, and the one
+    table that answers, per hook and matcher, whether a failed call owes it."""
+    with open(HOOKS_JSON, encoding="utf-8") as fh:
+        first = json.load(fh).get("hooks", {})
+    ok, files = _harness.attempt(registration_files)
+    second = []
+    if ok:
+        for path in files[1:]:
+            with open(path, encoding="utf-8") as fh:
+                second.append((os.path.basename(path),
+                               sorted(json.load(fh).get("hooks", {}))))
+    unknown = sorted(set(first) - set(OLDEST_HOST_EVENTS))
+    check("fx1 hooks.json names only events the oldest supported host knows (%s "
+          "outside it: %r), and the failed-call event sits in a second file "
+          "plugin.json names, alone: %r"
+          % (len(unknown), unknown, second if ok else files),
+          ok and not unknown and second == [("failure-hooks.json", [FAIL_EVENT])],
+          repr((unknown, second if ok else files)))
+
+    after = _pairs(event_entries("PostToolUse")) if ok else set()
+    failed = _pairs(event_entries(FAIL_EVENT)) if ok else set()
+    with open(GUIDE, encoding="utf-8") as fh:
+        guide = fh.read()
+    read, table = _harness.attempt(failed_call_table, guide)
+    table = table if read else {}
+    answers = ("owes", "not owed")
+    unanswered = sorted("%s on %s" % p for p in after if p not in table)
+    def contradicted(pair):
+        said = table[pair]
+        return said not in answers or (said == "owes") != (pair in failed)
+
+    wrong = sorted("%s on %s: says %r, registered %s" % (
+        p[0], p[1], table[p],
+        "on the failed call" if p in failed else "on the pass after alone")
+        for p in after if p in table and contradicted(p))
+    stray = sorted("%s on %s" % p for p in (set(table) | failed) - after)
+    check("fx2 every hook registered for the pass after has its answer for a "
+          "failed call in the table beside the registration, and the answer is "
+          "what the failed-call registration does (unanswered %r, contradicted "
+          "%r, naming no pass after %r)" % (unanswered, wrong, stray),
+          read and after and not unanswered and not wrong and not stray,
+          repr(table))
+
+
 def _cases(check):
     _shape_cases(check)
     _unit_cases(check)
     _prompt_hook_cases(check)
+    _failed_call_cases(check)
     with open(HOOKS_JSON, encoding="utf-8") as fh:
         entries = pre_tool_entries(json.load(fh))
     _matcher_cases(check, entries)

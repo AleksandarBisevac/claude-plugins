@@ -2738,10 +2738,163 @@ def _member_cases(check):
             os.environ["CLAUDE_PROJECT_DIR"] = prev_env
 
 
+def _failed_call_cases(check):
+    """(gf) A COMMAND THAT WRITES AND THEN EXITS NON-ZERO is a failed call to the
+    host: the pass after arrives under the failed-call event, with an `error`
+    text and no `tool_response`. Each pass is every command the registration
+    files list for the event and tool, run through the launcher as written, so a
+    guard nothing registers on that event says nothing - as in a session. The
+    project is at the deny tier: a running task declares one file, and the call
+    writes a source file and a non-source file outside it."""
+    import test_hooks
+    root = Path(_harness.fixture_root("bash-writes-failed-call-"))
+    repo = root / "repo"
+    home = root / "home"
+    home.mkdir(parents=True)
+    (repo / "src").mkdir(parents=True)
+    (repo / "docs" / "audit").mkdir(parents=True)
+    (repo / ".gitignore").write_text(".claude/\n", encoding="utf-8")
+    (repo / "src" / "declared.py").write_text("A = 1\n", encoding="utf-8")
+    (repo / "docs" / "audit" / "audit-plan.json").write_text(json.dumps({
+        "meta": {"version": 3, "developmentBranch": "main"},
+        "phases": [{"id": "P1", "title": "p", "status": "in_progress",
+                    "tasks": [{"id": "P1.1", "title": "t",
+                               "status": "in_progress",
+                               "files": ["src/declared.py"]}]}]}) + "\n",
+        encoding="utf-8")
+    git = ("git",) + _harness.NO_AUTO_MAINTENANCE + (
+        "-c", "user.email=t@example.invalid", "-c", "user.name=t",
+        "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main")
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE")
+               and k not in ("AUDIT_LOCK_TOKENS", "AUDIT_DRIVE_SESSION"))
+    env.update({"CLAUDE_PROJECT_DIR": str(repo), "HOME": str(home),
+                "USERPROFILE": str(home)})
+    seq = [0]
+
+    def run(event, sid, cid, command):
+        """[(exit code, stdout)] of every guard-bash-writes command the
+        registration runs for Bash on `event`."""
+        payload = {"hook_event_name": event, "tool_name": "Bash",
+                   "session_id": sid, "tool_use_id": cid, "cwd": str(repo),
+                   "tool_input": {"command": command}}
+        if event == test_hooks.FAIL_EVENT:
+            payload.update({"error": "Exit code 1\nfailed on a later line",
+                            "is_interrupt": False, "duration_ms": 9})
+        else:
+            payload["tool_response"] = {"stdout": "", "stderr": ""}
+        out = []
+        for cmd in test_hooks.commands_for(
+                "Bash", test_hooks.event_entries(event)):
+            if test_hooks.script_of(cmd) != "guard-bash-writes.py":
+                continue
+            proc = subprocess.run(test_hooks.launcher_argv(cmd),
+                                  input=json.dumps(payload), cwd=str(repo),
+                                  env=env, capture_output=True, text=True,
+                                  timeout=60)
+            out.append((proc.returncode, proc.stdout.strip()))
+        return out
+
+    def call(sid, act, after):
+        """A seeding `ls` call, then one call that runs `act()` and gets each
+        event in `after`. -> [(event, [(exit code, stdout)])]"""
+        seq[0] += 1
+        run("PostToolUse", sid, "gf-seed-%d" % (seq[0],), "ls")
+        act()
+        cid = "gf-call-%d" % (seq[0],)
+        return [(event, run(event, sid, cid, "sh ./write-then-fail.sh"))
+                for event in after]
+
+    def notices(results):
+        """[(event, parsed output)] for every pass that printed something."""
+        got = []
+        for event, passes in results:
+            for _code, out in passes:
+                if out:
+                    ok, parsed = _harness.attempt(json.loads, out)
+                    got.append((event, parsed if ok else out))
+        return got
+
+    def names_both(note):
+        text = json.dumps(note)
+        return "src/outside.py" in text and "config/outside.yml" in text
+
+    def answers(note):
+        """The event a notice's context names - the host refuses a context
+        naming any event but the one the hook ran for."""
+        spec = note.get("hookSpecificOutput") if isinstance(note, dict) else None
+        return (spec or {}).get("hookEventName")
+
+    written = []
+
+    def write_outside():
+        n = len(written)
+        (repo / "src").mkdir(exist_ok=True)
+        (repo / "config").mkdir(exist_ok=True)
+        (repo / "src" / "outside.py").write_text("B = %d\n" % n, encoding="utf-8")
+        (repo / "config" / "outside.yml").write_text("b: %d\n" % n,
+                                                     encoding="utf-8")
+        written.append(n)
+
+    def clean():
+        for p in (repo / "src" / "outside.py", repo / "config" / "outside.yml"):
+            if p.exists():
+                p.unlink()
+
+    try:
+        _harness.git(str(repo), "init", "-q", prefix=git, timeout=30)
+        _harness.git(str(repo), "add", "-A", prefix=git, timeout=30)
+        _harness.git(str(repo), "commit", "-qm", "c", prefix=git, timeout=30)
+
+        # gf1: the failed call writes outside the running task's scope.
+        res = call("gf-1", write_outside, (test_hooks.FAIL_EVENT,))
+        got = notices(res)
+        ran = [len(p) for _e, p in res]
+        note = got[0][1] if len(got) == 1 else None
+        spec = (note or {}).get("hookSpecificOutput") if isinstance(note, dict) else {}
+        check("gf1 a command that writes outside the running task's scope and "
+              "exits non-zero gets the notice under the failed-call event - a "
+              "block naming both files, its context under that event's own name: "
+              "ran %r, printed %r" % (ran, got),
+              ran == [1] and len(got) == 1 and isinstance(note, dict)
+              and note.get("decision") == "block" and names_both(note)
+              and (spec or {}).get("hookEventName") == test_hooks.FAIL_EVENT
+              and names_both(spec), repr(got))
+
+        # gf2: both events for one call, in either order: one notice.
+        once = []
+        for n, order in enumerate(((test_hooks.FAIL_EVENT, "PostToolUse"),
+                                   ("PostToolUse", test_hooks.FAIL_EVENT))):
+            clean()
+            res = call("gf-2-%d" % (n,), write_outside, order)
+            got = notices(res)
+            once.append((order[0], [len(p) for _e, p in res],
+                         [(e, names_both(g), answers(g)) for e, g in got],
+                         [len(p) for _e, p in res] == [1, 1] and len(got) == 1
+                         and got[0][0] == order[0] and names_both(got[0][1])
+                         and answers(got[0][1]) == order[0]))
+        check("gf2 both events for one call, in either order, give the notice "
+              "once, under the event that came first and naming it: %r"
+              % ([o[:3] for o in once if not o[3]],),
+              len(once) == 2 and all(o[3] for o in once), repr(once))
+
+        # gq1: the allow twin - a failed command that wrote nothing.
+        clean()
+        res = call("gq-1", lambda: None, (test_hooks.FAIL_EVENT,))
+        got = notices(res)
+        check("gq1 a failed command that wrote nothing gets no notice: ran %r, "
+              "printed %r" % ([len(p) for _e, p in res], got),
+              [len(p) for _e, p in res] == [1] and got == []
+              and all(code == 0 for _e, p in res for code, _o in p), repr(got))
+    finally:
+        _harness.remove_tree(str(root))
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _member_cases(check)
+        _failed_call_cases(check)
     return _harness.run(body)
 
 

@@ -1,0 +1,130 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test_guard_bash_writes.py tests/test_hooks.py": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass",
+    "run-test-gate.py docs/audit/audit-plan.json SG2 --task SG2.25-xk1 (not recorded)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-25T18:01:25Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test_guard_bash_writes.py tests/test_hooks.py` in a throwaway tree at HEAD exited 1 with 12 of 219 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - gf1 (house FAIL), gf2 (house FAIL), gq1 (house FAIL), fx1 (house FAIL), fx2 (house FAIL), fc1 (house FAIL), fc2 (house FAIL), fc3 (house FAIL), fc4 (house FAIL) and 3 more: SELFTEST FAILED: 212/219 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Host (settled, sg2.2 sections 5-6, plus three binary reads of the installed 2.1.332 recorded in the scratch host_probe.txt): the failed-call output schema is hookEventName PostToolUseFailure + additionalContext, top-level decision/reason accepted; the host THROWS on a hookSpecificOutput naming another event ('Hook returned incorrect event name'); plugin.json naming hooks.json is skipped as a duplicate. plugin.json carried no `hooks` field before; it now names \"./hooks/failure-hooks.json\" (release.py's json.dumps(indent=2) round-trips the file byte for byte). NEW hooks/failure-hooks.json: PostToolUseFailure on Edit|Write|MultiEdit|NotebookEdit -> journal-writes; Bash -> guard-bash-writes, journal-writes; mcp__.* -> journal-writes; all `open`, timeout 10. hooks.json is unchanged (declared, deliberately untouched). journal-writes.py: FAILED_CALL_EVENT; on the failed-call event the edit lane asks the file (_moved: slot digest vs now) and writes nothing when unmoved; once per call via _AFTER_KEY written into the slot the pass after refreshes, read by _served before any row on the edit lane (the sweep lane is idempotent already: its first pass leaves the slot equal to the file). main() already read every non-Pre event as the pass after; nothing reads tool_response. guard-bash-writes.py: main() echoes the payload's event (PostToolUse or PostToolUseFailure) in hookSpecificOutput - before, its notice for a failed call would be thrown away by the host; decide() unchanged (one git-status diff per pass, so a second event finds nothing new). Rule 1 table: PLUGIN-BUILD-GUIDE.md section `plugins/audit/hooks/failure-hooks.json` - journal-writes owes on Bash, MCP and edits (edits left registered: the hooks reference does not say a failed edit wrote nothing); guard-bash-writes owes on Bash, not on edits (its edit branch exempts a path from the next shell notice); require-plan (both matchers) and remind-tdd not owed, each with why. tools/gate-parity.py failmode_table_drift reads hooks.json plus every file plugin.json's `hooks` names (named_hook_files; an inline object is a named problem), events unioned; new case fm0f. tools/prove-gates.py: one red row mutating failure-hooks.json (fm0) - proven RED by `prove-gates.py --red --only failmode_table` (3 of 3). SECURITY.md fail-mode rows + authority sentence + the wiring-print command cover both files, and a paragraph names the cancelled call; README hooks list/table, COMPATIBILITY.md (new section: hooks.json holds 2.0.55's events only; failure-hooks.json needs 2.0.56), CHANGELOG Unreleased/Fixed. Tests: test_hooks.py gains registration_files/event_entries/script_of (the registry the host reads) and fx1/fx2; test_journal_writes.py stage jw-failed-call fc1-fc4, fq1-fq3; test_guard_bash_writes.py gf1, gf2, gq1 - every pass run as the host runs it: each command the registration files list for that event and tool, through py-launch.sh. Runs: task gate sweep exit 0 (710 cases, 3/3 files); lint/reader sweep exit 0 (test__output_lints, test__deps, test__refs, test_py_launch, test__manifest_vocab, test__doctor_trail, test_usage_ledger, test_drive_without_model, tools/gate-parity.py 129/129, tools/prove-gates.py 66/66: 10/10 files, 1445 cases); ruff and vermin -t=3.8- clean on the changed .py; bench-hooks --gate exit 0 (11 hooks within budget on 3.14.7; 3.8-3.13 NOT MEASURED, no interpreter here); run-test-gate unrecorded GATE GREEN exit 0. Mutation probe (scratch mutations.py, a copy of the tree, private TMPDIR, caches purged, each anchor asserted to match once): 18 rows, every one applied and CAUGHT, incl. the failed-call entry moved into hooks.json with plugin.json's field dropped, caught by fx1 alone (every behaviour case stays green there). DEPENDANTS: hooks.json readers - test_hooks (changed: reads both files), gate-parity (changed: reads both), prove-gates (changed: one row), bench-hooks (still correct: its gate walks hook .py imports, not the registration; its prose counts the hooks on one edit, which is unchanged), check-prohibitions (still correct: PreToolUse/Bash only), test_py_launch pl15 (still correct but reads hooks.json alone: the second file names the same two scripts; outside my files), test__manifest_vocab mv37 (still correct: the scripts on per-tool events are unchanged), test__doctor_trail rh10 / test_guard_secrets_read / test_drive_without_model / test_usage_ledger lf6 / test_audit_task timeout reader (still correct: each reads a PreToolUse, UserPromptSubmit or meter-usage entry the change does not touch), check-git-pipeline k12 (still correct: the second file spells the launcher the same way), py-launch.sh (still correct: the loud fallback prints PreToolUse only for `ask` and every failed-call entry is `open`, which gate-parity holds), the doctor's hooks row (reads state files, not the registration). plugin.json readers - release.py (still correct: rewrites version, keeps every key), verify.sh / capture-screenshots / test__refs (read version or path only), affected.py (a plugin.json change widens the gate to full: the orchestrator's recorded gate will be the whole tree). journal-writes/guard-bash-writes name users (test files, audit-task._actor, _config) unchanged. NOT RUN: `claude plugin validate` (the CLI; the pre-PR `plugin` slice) - it should be run by the orchestrator, since plugin.json gained a `hooks` field. .github/sweep-costs.json has no figure for the new jw-failed-call block (falls back to the suite's figure; not my file).",
+    "descriptive": "A command or MCP tool that writes and then fails now leaves its journal row and gets the shell-write notice, from a second hooks file an older host can refuse without losing any guard."
+  },
+  "testsAdded": [
+    "test_journal_writes.py jw-failed-call: fc1 a command and an MCP tool that change the config and fail leave the config row; fc2 a plan file; fc3 a switch-off; fc4 an edit tool that wrote and failed; fq1 a failed command that wrote nothing leaves none; fq2 a failed edit-tool call that wrote nothing leaves none; fq3 both events for one call, either order, three lanes, leave one row",
+    "test_guard_bash_writes.py: gf1 a failing command writing outside the running task's scope gets the block under the failed-call event's own name; gf2 both events, either order, one notice naming the event that carried it; gq1 a failed command that wrote nothing gets none",
+    "test_hooks.py: fx1 hooks.json names only 2.0.55's events and the failed-call event sits alone in the file plugin.json names; fx2 every pass-after hook has its failed-call answer in the guide's table and the answer matches the registration",
+    "tools/gate-parity.py fm0f: the fail-mode parity reads the file plugin.json names (fm0 alone stays green over hooks.json alone)"
+  ],
+  "casesAdded": [
+    [
+      "fc1",
+      "fc2",
+      "fc3",
+      "fc4",
+      "fq1",
+      "fq2",
+      "fq3"
+    ],
+    [
+      "gf1",
+      "gf2",
+      "gq1"
+    ],
+    [
+      "fx1",
+      "fx2"
+    ]
+  ],
+  "skillsInvoked": [
+    "writing-python",
+    "before-you-claim",
+    "no-silent-pass"
+  ],
+  "claims": "claims:\n1 journal-writes.py post_rows: _served(...) return [] and `if _failed_call(data) and not _moved(pre, root, rel)` are the once-per-call and ask-the-file lines its docstring and the guide describe; guard-bash-writes.py main(): `event = event if event in _AFTER_EVENTS else \"PostToolUse\"` is the echo; failure-hooks.json + plugin.json `hooks` are the registration the guide's table describes; host facts carry their source (hooks reference, 2.1.332 binary reads, the owner's 2.0.55 run)\n2 red first on HEAD: jw-failed-call 0/7, guard 239/242, hooks 247/249; mutation probe 18 rows all CAUGHT, each deny with an allow twin (e.g. no served mark -> fq3 red / served always -> fc4 red; not asked of the file -> fq2 red / never records -> fc4 red; echo dropped -> gf1,gf2 red / echo forced -> gf2 red; guard speaks for nothing -> gq1 red); the failed-call entry moved into hooks.json -> fx1 red alone\n3 grep -rn '\"hookEventName\"' plugins/audit/hooks: 9 hits - guard-bash-writes (2, fixed: echo the event); remind-tdd:321 and require-plan:309 left, because neither is registered on the failed-call event and the guide's table says why; _config:5986 and py-launch.sh (3) left, PreToolUse `ask` output only and every failed-call entry is `open` (gate-parity holds loud-on-non-decision-event); drive-without-model:233 and meter-usage:566 left, their own events. grep tool_response in hooks: 0 reads, only the two new comments\n4 n/a - no rule addressed to an agent; the rule \"the failed-call event never goes in hooks.json\" is held by tests/test_hooks.py fx1, named in COMPATIBILITY.md's and the guide's own sentences\n5 n/a - no timing recorded; bench-hooks --gate is an import-set gate, measured on 3.14.7 only (3.8-3.13 not measured, said in its output)\n6 n/a for a command guard - the shell-write notice still decides from `git status` (the operation), not the command text; the change is which event name its answer carries, with the allow case (pass after keeps \"PostToolUse\", gf2 second order) proven quiet first\n7 no number written into prose; the host versions 2.0.55/2.0.56 and 2.1.332 are versions with their source (npm pack of the published bundles, the owner's run, the installed binary), not counts",
+  "stamp": "audit-stamp: {\"content\":\"sha256:0a1b7322a7cd0784fb5567a43aac947356844b287cafc3a339eedfc2890fff90\",\"dirtyDigest\":\"sha256:8aa0f076c88e3be1d3831b356d3ef08d67a2f40f46424662e056cfaaa5920ef6\",\"dirtyPaths\":{\"CHANGELOG.md\":\"4e0453bb3a37fded\",\"COMPATIBILITY.md\":\"280e7816d0442813\",\"PLUGIN-BUILD-GUIDE.md\":\"c7f304b8924067ea\",\"SECURITY.md\":\"b2ac27ff9edd67cf\",\"plugins/audit/.claude-plugin/plugin.json\":\"bf86b9cf49628bac\",\"plugins/audit/README.md\":\"25ef74a0f9041445\",\"plugins/audit/hooks/failure-hooks.json\":\"b20fc7214e66597b\",\"plugins/audit/hooks/guard-bash-writes.py\":\"05e0e759343587f0\",\"plugins/audit/hooks/journal-writes.py\":\"9e08b7f27a24b09c\",\"tests/test_guard_bash_writes.py\":\"3aa9d0f655eb4bd7\",\"tests/test_hooks.py\":\"a1b1b70f920b05e7\",\"tests/test_journal_writes.py\":\"b1defb166aef27c1\",\"tools/gate-parity.py\":\"ee1ccf5dc4c141a5\",\"tools/prove-gates.py\":\"8574653996ec33a5\"},\"head\":\"6d699221\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"COMPATIBILITY.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/.claude-plugin/plugin.json\",\"plugins/audit/README.md\",\"plugins/audit/hooks/failure-hooks.json\",\"plugins/audit/hooks/guard-bash-writes.py\",\"plugins/audit/hooks/hooks.json\",\"plugins/audit/hooks/journal-writes.py\",\"tests/test_guard_bash_writes.py\",\"tests/test_hooks.py\",\"tests/test_journal_writes.py\",\"tools/gate-parity.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:e02d78f1216ae5c8033e864e73235df0cb353cc803d5dbbfa147d4f1047d0171\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 4 of the diff's 14 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 7 file(s) not read that cannot hold a move as read here: CHANGELOG.md, COMPATIBILITY.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md, plugins/audit/.claude-plugin/plugin.json, plugins/audit/README.md, plugins/audit/hooks/failure-hooks.json; 3 file(s) that could hold a move not compared: tests/test_guard_bash_writes.py, tests/test_hooks.py, tests/test_journal_writes.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "COMPATIBILITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/.claude-plugin/plugin.json",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_guard_bash_writes.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was only added: every statement of the base copy outside them stands in the tree copy, in order and in place, and the first added one is at tree line 2741 (`def _failed_call_cases(check):`); what it runs is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_hooks.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was only added: every statement of the base copy outside them stands in the tree copy, in order and in place, and the first added one is at tree line 77 (`import _output                                     # noqa: E402  (R...`); what it runs is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_journal_writes.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 4166 (`STAGES = (`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "plugins/audit/hooks/failure-hooks.json",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      }
+    ],
+    "base": {
+      "commit": "6d6992215942c90111c6d0d7270be62055314826"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-25T18:01:28Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

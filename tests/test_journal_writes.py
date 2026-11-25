@@ -50,6 +50,7 @@ import _loader                                     # noqa: E402
 import _config                                     # noqa: E402
 import _fmt                                        # noqa: E402  (the plural rule this hook must copy)
 import _journal_io                                 # noqa: E402  (the details allow-list + its bounds)
+import test_hooks                                  # noqa: E402  (the registration the host reads)
 
 M = _loader.load(os.path.join(_harness.HOOKS_DIR, "journal-writes.py"),
                  modname="journal_writes")
@@ -4154,6 +4155,190 @@ def _machine_path_value_cases(check):
         shutil.rmtree(wn, ignore_errors=True)
 
 
+# --- fc: the pass after for a call that failed ------------------------------------
+# A command that writes and then exits non-zero, and an MCP tool that writes and
+# then returns an error, reach the host as a FAILED call: no `tool_response`, an
+# `error` text, and the failed-call event in place of the pass after. Every pass
+# here is run the way the host runs it - each command the registration files
+# list for that event and tool, through the launcher as written there - so a
+# hook nothing registers on the failed-call event runs nothing, and its row is
+# missing the way it is missing in a session.
+_FC_EDITS = "Edit"
+
+
+def _fc_payload(event, project, sid, tool, tin, cid):
+    payload = {"hook_event_name": event, "tool_name": tool, "session_id": sid,
+               "tool_use_id": cid, "cwd": project, "tool_input": tin}
+    if event == test_hooks.FAIL_EVENT:
+        payload.update({"error": "Exit code 1\nwrite failed on a later line",
+                        "is_interrupt": False, "duration_ms": 12})
+    elif event == "PostToolUse":
+        payload["tool_response"] = {"stdout": "", "stderr": ""}
+    return payload
+
+
+def _fc_pass(event, project, sid, tool, tin, cid):
+    """Every journal-writes command the registration runs for `tool` on
+    `event`, as a process. -> [(exit code, stdout)], one per command run."""
+    import subprocess
+    env = dict(os.environ)
+    env["CLAUDE_PROJECT_DIR"] = project
+    env.pop(_OQ_MARK, None)
+    out = []
+    for cmd in test_hooks.commands_for(tool, test_hooks.event_entries(event)):
+        if test_hooks.script_of(cmd) != "journal-writes.py":
+            continue
+        proc = subprocess.run(
+            test_hooks.launcher_argv(cmd),
+            input=json.dumps(_fc_payload(event, project, sid, tool, tin,
+                                         cid)).encode("utf-8"),
+            capture_output=True, env=env, cwd=project, timeout=60)
+        out.append((proc.returncode, proc.stdout.decode("utf-8", "replace")))
+    return out
+
+
+def _failed_call_cases(check):
+    """fc1-fc4: a failed call that wrote leaves its one row; fq1-fq4: a failed
+    call that wrote nothing, and a second event for one call, leave none."""
+    ok, proj = _harness.attempt(_cf_repo, "journal-fc-")
+    if not ok:
+        _harness.could_not_run(check, "fc0 the repository fixture",
+                               "it did not build: %s" % (proj,))
+        return
+    rel = _config.CONFIG_REL.split("/")
+    conf = os.path.join(proj, *rel)
+    shard = os.path.join(proj, "docs", "audit", "phases", "P1.json")
+    shard_rel = "docs/audit/phases/P1.json"
+    seq = [0]
+
+    def fresh():
+        for sub in (os.path.join(proj, rel[0]),
+                    os.path.join(proj, "docs", "audit", "journal")):
+            if not _harness.remove_tree(sub):
+                raise RuntimeError("the fixture's %s could not be removed" % sub)
+        _cf_put(conf, _CF_ON)
+        _cf_put(shard, json.dumps(
+            {"id": "P1", "title": "p", "status": "pending", "tasks": []}) + "\n")
+
+    def call(sid, act, tool="Bash", tin=None, after=(test_hooks.FAIL_EVENT,)):
+        """One call: its Pre, `act()`, then each event in `after` under the
+        same tool call id. -> (new rows as (action, target, summary), every
+        pass's [(exit code, stdout)], the commands each `after` event ran)"""
+        seq[0] += 1
+        cid = "fc-call-%d" % (seq[0],)
+        tin = tin if tin is not None else {"command": "sh ./write-then-fail.sh"}
+        before = set(r.get("hash") for r in _journal_io.read_all(proj))
+        passes = _fc_pass("PreToolUse", proj, sid, tool, tin, cid)
+        act()
+        ran = []
+        for event in after:
+            got = _fc_pass(event, proj, sid, tool, tin, cid)
+            ran.append(len(got))
+            passes += got
+        rows = [(r.get("action"), r.get("target"), r.get("summary"))
+                for r in _journal_io.read_all(proj)
+                if r.get("hash") not in before]
+        return rows, passes, ran
+
+    def quiet(passes):
+        return all(code == 0 and not out.strip() for code, out in passes)
+
+    planned = '{\n  "journal": {"enabled": true},\n  "planGate": "observe"\n}\n'
+    mcp_tin = {"path": conf, "content": planned}
+    try:
+        # fc1: a config change by a command, and by an MCP tool, that then fail.
+        seen = []
+        for tool, tin in (("Bash", None), (_CF_MCP, mcp_tin)):
+            fresh()
+            rows, passes, ran = call("sess-fc1", lambda: _cf_put(conf, planned),
+                                     tool=tool, tin=tin)
+            seen.append((tool, ran, rows,
+                         ran == [1] and quiet(passes)
+                         and [(r[0], r[1]) for r in rows]
+                         == [("config.edit", _config.CONFIG_REL)]))
+        check("fc1 a command, and an MCP tool, that change the config and then "
+              "fail leave the config's one row under the failed-call event, the "
+              "payload carrying an error and no tool response: %r"
+              % ([s[:3] for s in seen if not s[3]],),
+              len(seen) == 2 and all(s[3] for s in seen), repr(seen))
+
+        # fc2: a plan file changed by a command that then fails.
+        fresh()
+        rows, passes, ran = call("sess-fc2", lambda: _cf_put(shard, json.dumps(
+            {"id": "P1", "title": "p", "status": "in_progress",
+             "tasks": []}) + "\n"))
+        check("fc2 a command that changes a plan file and then fails leaves the "
+              "file's row: ran %r, rows %r" % (ran, rows),
+              ran == [1] and quiet(passes)
+              and [(r[0], r[1]) for r in rows] == [("manifest.edit", shard_rel)],
+              repr((ran, rows, passes)))
+
+        # fc3: the switch turned off by a command that then fails - the one row
+        # the trail check does not warn about when it is missing.
+        fresh()
+        rows, passes, ran = call("sess-fc3", lambda: _cf_put(conf, _CF_OFF))
+        check("fc3 a command that switches the journal off and then fails leaves "
+              "its one row saying so: ran %r, rows %r" % (ran, rows),
+              ran == [1] and quiet(passes) and len(rows) == 1
+              and "journal.enabled true->false" in (rows[0][2] or ""),
+              repr((ran, rows, passes)))
+
+        # fc4: a config change by an edit tool whose call then failed.
+        fresh()
+        rows, passes, ran = call(
+            "sess-fc4", lambda: _cf_put(conf, planned), tool=_FC_EDITS,
+            tin={"file_path": conf, "old_string": "x", "new_string": "y"})
+        check("fc4 an edit-tool call that changed the config and then failed "
+              "leaves the config's one row: ran %r, rows %r" % (ran, rows),
+              ran == [1] and quiet(passes)
+              and [(r[0], r[1]) for r in rows]
+              == [("config.edit", _config.CONFIG_REL)],
+              repr((ran, rows, passes)))
+
+        # fq1: the allow twin of fc1-fc3 - a failed command that wrote nothing.
+        fresh()
+        rows, passes, ran = call("sess-fq1", lambda: None)
+        check("fq1 a failed command that wrote nothing leaves no row: ran %r, "
+              "rows %r" % (ran, rows),
+              ran == [1] and quiet(passes) and rows == [],
+              repr((ran, rows, passes)))
+
+        # fq2: the allow twin of fc4 - a failed edit-tool call that wrote
+        # nothing. The edit lane writes a row for an edit the tool reports
+        # done whatever the file says; a failed one is asked of the file.
+        fresh()
+        rows, passes, ran = call(
+            "sess-fq2", lambda: None, tool=_FC_EDITS,
+            tin={"file_path": conf, "old_string": "x", "new_string": "y"})
+        check("fq2 a failed edit-tool call that wrote nothing leaves no row: ran "
+              "%r, rows %r" % (ran, rows),
+              ran == [1] and quiet(passes) and rows == [],
+              repr((ran, rows, passes)))
+
+        # fq3/fq4: a host that sends both events for one call, in either order,
+        # on each lane: the second pass changes nothing.
+        both = []
+        for lane, tool, tin, body in (
+                ("command", "Bash", None, planned),
+                ("command switching it off", "Bash", None, _CF_OFF),
+                ("edit tool", _FC_EDITS,
+                 {"file_path": conf, "old_string": "x", "new_string": "y"},
+                 planned)):
+            for order in ((test_hooks.FAIL_EVENT, "PostToolUse"),
+                          ("PostToolUse", test_hooks.FAIL_EVENT)):
+                fresh()
+                rows, passes, ran = call("sess-fq3", lambda b=body: _cf_put(conf, b),
+                                         tool=tool, tin=tin, after=order)
+                both.append((lane, order[0], ran, rows,
+                             ran == [1, 1] and quiet(passes) and len(rows) == 1))
+        check("fq3 both events for one call, in either order, by a command, a "
+              "command switching the journal off and an edit tool, leave one row: "
+              "%r" % ([b[:4] for b in both if not b[4]],),
+              len(both) == 6 and all(b[4] for b in both), repr(both))
+    finally:
+        _harness.remove_tree(os.path.dirname(proj))
+
+
 # Every block, in replay order - the order the cases always printed in. A full
 # run starts one process per block, a few at a time, and replays their cases
 # in this order (`_harness.staged_main`); `--stage LABEL` runs only the blocks
@@ -4174,6 +4359,7 @@ STAGES = (
     ("jw-slot", "_slot_follows_file_cases"),
     ("jw-created-file", "_created_file_cases"),
     ("sn0", "_switch_reading_cases"),
+    ("jw-failed-call", "_failed_call_cases"),
 )
 
 

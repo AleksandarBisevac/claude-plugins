@@ -23,5 +23,6 @@
     "cost-tracking",
     "analytics",
     "diagnostics"
-  ]
+  ],
+  "hooks": "./hooks/failure-hooks.json"
 }

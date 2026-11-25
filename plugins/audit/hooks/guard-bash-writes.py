@@ -5,6 +5,16 @@ PostToolUse watcher (matcher: Bash|Edit|Write|MultiEdit|NotebookEdit) — the
 decide (SECURITY.md bypass class #1; upstream anthropics/claude-code#29709:
 heredocs piped into interpreters, obfuscated redirects, etc.).
 
+A COMMAND THAT WRITES AND THEN EXITS NON-ZERO is a failed call to the host,
+which sends it PostToolUseFailure instead: the Bash branch runs on that event
+too (`failure-hooks.json`), reading nothing of the payload a failed call does
+not carry - there is no `tool_response`, only an `error` text. A failed
+edit-tool call is not registered: this branch's work for an edit is to EXEMPT
+its path from the next shell notice, and an edit that failed earns no
+exemption. A call the user cancels fires neither event, and is the case left
+with no notice: no pass runs for it, and the next command's window, where its
+start is recorded, began after the write and absorbs it.
+
 Two branches by tool_name:
   Edit/Write/MultiEdit/NotebookEdit → RECORD the file as tool-edited (those
       files went through guard-edits + require-plan already) — unless it lands
@@ -166,6 +176,13 @@ _SAFE_SID = re.compile(r"[^A-Za-z0-9._-]+")
 PLUGIN_SIDECAR = "bash-writes-plugin-%s.json"
 PANEL_WRITER = "panel"
 CLI_WRITER = "cli"
+
+# The two events this hook runs on: the pass after a call, and the same pass for
+# a call that failed (registered in `failure-hooks.json`, which plugin.json names,
+# because an older host refuses a hooks file naming an event it does not know).
+# The pass is one diff of `git status` against the session's last look, so the
+# second event for one call finds nothing new and gives no second notice.
+_AFTER_EVENTS = ("PostToolUse", "PostToolUseFailure")
 
 # --- the git call -------------------------------------------------------------
 # `-uall` is load-bearing, and the measurement is the reason it survives a profile:
@@ -2246,6 +2263,13 @@ def main():
     except Exception:
         sys.exit(0)
 
+    # The output names the event it answers: the host refuses a
+    # `hookSpecificOutput` whose `hookEventName` is not the event the hook ran
+    # for, so a notice for a failed call written under the pass after's name
+    # would be lost whole. Both events take `decision`/`reason` and
+    # `additionalContext`.
+    event = data.get("hook_event_name") if isinstance(data, dict) else None
+    event = event if event in _AFTER_EVENTS else "PostToolUse"
     try:
         verdict, detail = decide(data)
         if verdict == "block":
@@ -2253,14 +2277,14 @@ def main():
                 "decision": "block",
                 "reason": detail,
                 "hookSpecificOutput": {
-                    "hookEventName": "PostToolUse",
+                    "hookEventName": event,
                     "additionalContext": detail,
                 },
             }))
         elif verdict == "warn":
             print(json.dumps({
                 "hookSpecificOutput": {
-                    "hookEventName": "PostToolUse",
+                    "hookEventName": event,
                     "additionalContext": detail,
                 }
             }))

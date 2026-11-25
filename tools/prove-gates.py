@@ -1026,6 +1026,13 @@ TABLE = (
  # unique in the document and whose hook stays wired after it goes.
  ("failmode_table_drift", "SECURITY.md", "drop", r"^\| `remind-tdd` \|",
   None, "tools/gate-parity.py", "fm0"),
+ # ...AND THE SECOND REGISTRATION FILE, the one plugin.json names. The wiring
+ # moves there rather than in hooks.json: a rule that read hooks.json alone sees
+ # no failed-call event at all, so it stays green over this mutation while the
+ # document goes on promising silence for a pair now registered loudly.
+ ("failmode_table_drift", "plugins/audit/hooks/failure-hooks.json", "replace",
+  "guard-bash-writes.py open", "guard-bash-writes.py ask",
+  "tools/gate-parity.py", "fm0"),
 
  # --- The remainder the hand-written source list was hiding --------------------
  # Fifteen lints arrived the moment `_gate_sources()` became a walk. Every row

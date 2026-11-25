@@ -41,8 +41,9 @@ here was a second reader of the same files:
     gates while disagreeing about which of them run, so a step the runner had no
     arm for was dropped in silence and the summary went on calling the change
     covered.
-  * every fail mode `SECURITY.md` documents must be the one `hooks.json` registers,
-    and every wired hook-and-event pair must have a row. `failmode_table_drift()`
+  * every fail mode `SECURITY.md` documents must be the one the registration files
+    register - `hooks.json` and each file the plugin manifest's `hooks` field
+    names - and every wired hook-and-event pair must have a row. `failmode_table_drift()`
     says why that document's drift is a security claim rather than a stale
     paragraph, and why the second direction is what makes the first worth having.
   * every CI job carries a time bound, two to three times the longest run its
@@ -264,7 +265,15 @@ def affected_dispatch(repo=None):
 # other: a table could be perfectly accurate about a wiring whose loud modes sit on
 # the wrong hooks, and a wiring could be exactly right while the document has gone
 # stale about it.
+#
+# THE WIRING IS TWO FILES, AND A READER OF ONE WOULD AGREE WITH A TABLE IT NEVER
+# CHECKED. The host loads `hooks/hooks.json` by itself and every file the plugin
+# manifest's `hooks` field names besides; the failed-call pass after lives in the
+# second, because a host that predates its event refuses the whole file naming it.
+# Read off hooks.json alone, that event is not in the vocabulary, so a row naming
+# it is scored against nothing and a pair it wires is never asked about.
 HOOKS_JSON_REL = os.path.join("plugins", "audit", "hooks", "hooks.json")
+PLUGIN_JSON_REL = os.path.join("plugins", "audit", ".claude-plugin", "plugin.json")
 LAUNCHER_REL = os.path.join("plugins", "audit", "hooks", "py-launch.sh")
 SECURITY_REL = "SECURITY.md"
 
@@ -382,6 +391,29 @@ def hook_registrations(text, default_mode):
         return blank
     return {"wired": sorted(set(wired)), "unlaunched": sorted(unlaunched),
             "events": tuple(sorted(blocks)), "problem": None}
+
+
+def named_hook_files(text):
+    """([repo-relative path], problem) for the hooks files the plugin manifest's
+    `hooks` field names - the registration the host reads besides hooks.json.
+
+    A field this cannot read as file names is a NAMED problem, never an empty
+    list: an inline registration read as naming nothing is the one-file reading
+    this exists to end."""
+    try:
+        data = json.loads(text)
+    except ValueError as exc:
+        return [], "does not parse as JSON: %s" % (exc,)
+    named = data.get("hooks") if isinstance(data, dict) else None
+    if named is None:
+        return [], None
+    if isinstance(named, str):
+        named = [named]
+    if not isinstance(named, list) or not all(isinstance(n, str) for n in named):
+        return [], ("names its `hooks` as something other than file paths (%r), so "
+                    "the registration it adds cannot be read" % (named,))
+    plugin = os.path.dirname(os.path.dirname(PLUGIN_JSON_REL))
+    return [os.path.normpath(os.path.join(plugin, n)) for n in named], None
 
 
 def _plain(cell):
@@ -554,31 +586,52 @@ def failmode_table_drift(repo=None):
     """{"problem", "findings", "rows", "described", "wired", "contract"}."""
     root = repo or REPO
     texts = {}
-    for rel in (LAUNCHER_REL, HOOKS_JSON_REL, SECURITY_REL):
+
+    def read(rel):
         try:
             with io.open(os.path.join(root, rel), encoding="utf-8") as fh:
                 texts[rel] = fh.read()
         except (IOError, OSError, UnicodeDecodeError) as exc:
-            return _failmode_answer("%s could not be read: %s" % (rel, exc))
+            return "%s could not be read: %s" % (rel, exc)
+        return None
+
+    for rel in (LAUNCHER_REL, HOOKS_JSON_REL, PLUGIN_JSON_REL, SECURITY_REL):
+        problem = read(rel)
+        if problem is not None:
+            return _failmode_answer(problem)
     contract, problem = launcher_contract(texts[LAUNCHER_REL])
     if problem is not None:
         return _failmode_answer("%s %s" % (LAUNCHER_REL, problem))
-    reg = hook_registrations(texts[HOOKS_JSON_REL], contract["default"])
-    if reg["problem"] is not None:
-        return _failmode_answer("%s %s" % (HOOKS_JSON_REL, reg["problem"]),
+    extra, problem = named_hook_files(texts[PLUGIN_JSON_REL])
+    if problem is not None:
+        return _failmode_answer("%s %s" % (PLUGIN_JSON_REL, problem),
                                 contract=contract)
-    rows, problem = failmode_rows(texts[SECURITY_REL], reg["events"])
+    wired, unlaunched, events = set(), [], set()
+    for rel in [HOOKS_JSON_REL] + extra:
+        problem = read(rel) if rel not in texts else None
+        if problem is not None:
+            return _failmode_answer(problem, contract=contract)
+        reg = hook_registrations(texts[rel], contract["default"])
+        if reg["problem"] is not None:
+            return _failmode_answer("%s %s" % (rel, reg["problem"]),
+                                    contract=contract)
+        wired |= set(reg["wired"])
+        events |= set(reg["events"])
+        unlaunched += [(rel, event, command)
+                       for event, command in reg["unlaunched"]]
+    wired = sorted(wired)
+    rows, problem = failmode_rows(texts[SECURITY_REL], tuple(sorted(events)))
     if problem is not None:
         return _failmode_answer("%s %s" % (SECURITY_REL, problem),
-                                wired=reg["wired"], contract=contract)
-    findings = failmode_findings(rows, reg["wired"], contract)
-    findings += [("%s / %s" % (HOOKS_JSON_REL, event),
+                                wired=wired, contract=contract)
+    findings = failmode_findings(rows, wired, contract)
+    findings += [("%s / %s" % (rel, event),
                   "does not go through `%s`, so its no-interpreter behaviour is "
                   "not the one the fail-mode table describes: %s"
                   % (_LAUNCHER_BASENAME, command))
-                 for event, command in reg["unlaunched"]]
+                 for rel, event, command in unlaunched]
     return _failmode_answer(None, findings=findings, rows=rows,
-                            wired=reg["wired"], contract=contract)
+                            wired=wired, contract=contract)
 
 
 # --- the slices ci.yml runs, against the slices verify.sh lists ----------------
@@ -4267,7 +4320,7 @@ def _cases(check):
     # start is the only cheap moment there is to begin holding one.
     _fm = failmode_table_drift()
     check("fm0 THE LIVE CLAIM: every fail mode SECURITY.md documents is the one "
-          "`hooks.json` registers, every wired hook+event pair has a row, no row "
+          "the registration files register, every wired hook+event pair has a row, no row "
           "describes a pair nothing wires any more, and a run that could not ask "
           "the question says so instead of coming back empty - read over %d "
           "row(s), %d documented pair(s) and %d registration(s) against the "
@@ -4276,6 +4329,31 @@ def _cases(check):
              _fm["contract"], _fm["problem"], _fm["findings"]),
           _fm["problem"] is None and _fm["findings"] == []
           and _fm["rows"] != [] and _fm["described"] != [] and _fm["wired"] != [])
+
+    # fm0 is green over hooks.json alone too: the failed-call event is then no
+    # event the table can name, so its rows are scored against nothing and its
+    # pairs are never asked about. What separates the two readings is whether
+    # the pairs the second file wires were READ and DESCRIBED at all.
+    _fm_fail = "PostToolUseFailure"
+    _fm_fwired = sorted((h, e) for h, e, _m in _fm["wired"] if e == _fm_fail)
+    _fm_fdesc = sorted((h, e) for h, e, _c in _fm["described"] if e == _fm_fail)
+    _fm_named = named_hook_files(json.dumps({"hooks": "./hooks/extra.json"}))
+    _fm_named_list = named_hook_files(json.dumps({"hooks": ["./a.json", "./b.json"]}))
+    _fm_named_none = named_hook_files(json.dumps({"name": "x"}))
+    _fm_named_inline = named_hook_files(json.dumps({"hooks": {"Stop": []}}))
+    check("fm0f ...and the wiring fm0 reads includes the file the plugin manifest's "
+          "`hooks` field names: the failed-call pairs wired %r are the ones the "
+          "table describes %r; a name, a list of names and no field read as "
+          "files, and an inline registration is a named problem: %r"
+          % (_fm_fwired, _fm_fdesc, _fm_named_inline),
+          _fm_fwired != [] and _fm_fwired == _fm_fdesc
+          and _fm_named == ([os.path.join("plugins", "audit", "hooks",
+                                          "extra.json")], None)
+          and _fm_named_list == ([os.path.join("plugins", "audit", "a.json"),
+                                  os.path.join("plugins", "audit", "b.json")],
+                                 None)
+          and _fm_named_none == ([], None)
+          and _fm_named_inline[0] == [] and _fm_named_inline[1] is not None)
 
     # ...and the property that makes fm0 worth anything about the REAL document.
     # Both shapes below are ones a careless reader loses IN SILENCE, and losing

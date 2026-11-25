@@ -1500,7 +1500,8 @@
       "SG2.19-xk1",
       "SG2.20-xk1",
       "SG2.21-xk1",
-      "SG2.24-xk1"
+      "SG2.24-xk1",
+      "SG2.25-xk1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1617,7 +1618,8 @@
       "SG2.2-ukq",
       "SG2.3",
       "SG2.14-xk1",
-      "SG2.15-xk1"
+      "SG2.15-xk1",
+      "SG2.25-xk1"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -2249,7 +2251,8 @@
       "SG2.18-xk1",
       "SG2.19-xk1",
       "SG2.20-xk1",
-      "SG2.24-xk1"
+      "SG2.24-xk1",
+      "SG2.25-xk1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2379,7 +2382,8 @@
       "SG2.15-xk1",
       "SG2.17-xk1",
       "SG2.18-xk1",
-      "SG2.19-xk1"
+      "SG2.19-xk1",
+      "SG2.25-xk1"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -2655,7 +2659,8 @@
       "P18.10",
       "P23.3",
       "P27.1",
-      "P109.8"
+      "P109.8",
+      "SG2.25-xk1"
     ],
     "plugins/audit/COMPATIBILITY.md": [
       "P69.3"
@@ -2851,7 +2856,8 @@
       "SG2.3",
       "SG2.14-xk1",
       "SG2.15-xk1",
-      "SG2.20-xk1"
+      "SG2.20-xk1",
+      "SG2.25-xk1"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -3552,7 +3558,8 @@
       "P131.1",
       "P131.2",
       "P142.1",
-      "SG2.2-ukq"
+      "SG2.2-ukq",
+      "SG2.25-xk1"
     ],
     "plugins/audit/hooks/guard-capabilities.py": [
       "P15.4",
@@ -3692,7 +3699,8 @@
       "P125.42-0h5",
       "P159.2",
       "P159.4-pue",
-      "SG2.2-ukq"
+      "SG2.2-ukq",
+      "SG2.25-xk1"
     ],
     "plugins/audit/hooks/journal-writes.py": [
       "P15.4",
@@ -3732,7 +3740,8 @@
       "SG1.47-ukq",
       "SG1.49-ukq",
       "SG1.51-ukq",
-      "SG2.2-ukq"
+      "SG2.2-ukq",
+      "SG2.25-xk1"
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4",
@@ -9351,7 +9360,8 @@
       "SG1.45-ukq",
       "SG1.50-ukq",
       "SG2.15-xk1",
-      "SG2.2-ukq"
+      "SG2.2-ukq",
+      "SG2.25-xk1"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -9508,7 +9518,8 @@
       "SG1.22-ukq",
       "SG1.25-ukq",
       "SG2.3",
-      "SG2.2-ukq"
+      "SG2.2-ukq",
+      "SG2.25-xk1"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -14000,7 +14011,8 @@
       "P129.9-izt",
       "P132.5-5mm",
       "P142.1",
-      "SG2.2-ukq"
+      "SG2.2-ukq",
+      "SG2.25-xk1"
     ],
     "tests/test_guard_capabilities.py": [
       "P131.1"
@@ -14059,7 +14071,8 @@
       "SG1.7",
       "SG1.23-ukq",
       "SG1.25-ukq",
-      "SG2.2-ukq"
+      "SG2.2-ukq",
+      "SG2.25-xk1"
     ],
     "tests/test_import_evidence.py": [
       "P131.1",
@@ -14092,7 +14105,8 @@
       "SG1.54-ukq",
       "SG1.55-ukq",
       "SG2.8-xk1",
-      "SG2.13-xk1"
+      "SG2.13-xk1",
+      "SG2.25-xk1"
     ],
     "tests/test_manage_worktrees.py": [
       "P131.1",
@@ -14787,6 +14801,9 @@
     ],
     "plugins/audit/reference/vendoring-a-skill.md": [
       "SG2.20-xk1"
+    ],
+    "plugins/audit/hooks/failure-hooks.json": [
+      "SG2.25-xk1"
     ]
   },
   "bugs": [
