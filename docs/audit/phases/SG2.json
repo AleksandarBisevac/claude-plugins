@@ -327,6 +327,10 @@
         {
           "at": "2026-11-25T13:44:44Z",
           "text": "44. From the independent review of 9e0e4d3b (SG2.19-xk1; durable scratch sg2.19-review/REVIEW.md, BATCH-1..4, probes beside it), batched by the owner's 2026-11-25 rule (only high, a regression, a user-facing wrong, or red CI opens a fix round): (a) the test-side stop-route derivation sees no call that has no Call node - a with block whose __enter__ asks, a property getter, __iter__ reached by a for loop, __getitem__ by a subscript (derive3_probe.py: four QUIET); the driver defines no class today, so nothing is missed on the tree, but SECURITY.md's spd22 paragraph and PLUGIN-BUILD-GUIDE.md say a shape nobody listed cannot be missed - either count those nodes as may-stop or state the limit. (b) BY READING the drive's copy remedy still reads the private _skill_places._STOP_REMEDY (drive-phase.py _copy_remedy, and spd39): make the reader's remedy a public value or function of _skill_places.py and call it. (c) BY READING PLUGIN-BUILD-GUIDE.md states the windows saving per step, not the per-step cost SG2.18/19 asked for (one worktree add at 123-139 ms, 2026-11-20, plus one removal, still unmeasured on windows - owner's machine). (d) with TMPDIR inside the project the stop names the cause but gives no remedy: say to point TMPDIR outside the repository."
+        },
+        {
+          "at": "2026-11-25T15:11:51Z",
+          "text": "45. From SG2.21-xk1's executor (durable scratch sg2.21/), batched by the owner's 2026-11-25 rule: (a) PLUGIN-BUILD-GUIDE.md near the drive's pinned-skill paragraph and SECURITY.md's pinned-skill section still say the step's checkout is made only when a member names a PINNED skill (names_a_pin) and that members naming no pinned skill start no git; since SG2.21 the decision reads no copy, so a member naming any skill in a plan with non-empty skillPins costs the step one checkout - rewrite both half-sentences to what the code does. (b) Pre-existing, identical at 2a8c21d4 and after SG2.21 (cli_probe.py D1): no member names a skill, two pins resolve to one directory in the commit and the working copy lacks the link; the opening ask judges no stop, P1.1 is started and its tree cut, then _skill_places.require_pins' pin-against-pin check stops the walk. Decide: either require_pins skips the pin-against-pin check when nothing is handed out (the validator already refuses clashing pins on the plan), or the step judges plan-level pin clashes before any start; the first is in _skill_places.py."
         }
       ]
     },
@@ -2759,7 +2763,7 @@
     {
       "id": "SG2.21-xk1",
       "title": "Whether a wave member needs the commit's copy is decided over the commit, never the working copy, and a step that stops after starting a member gives that start back",
-      "status": "in_progress",
+      "status": "done",
       "description": "An independent review of SG2.19-xk1 (the orchestrator's prompt names its directory; HOLD-1, probe alias_probe.py, outputs out/alias_new.txt and out/alias_old.txt; re-run by the orchestrator on fresh exports of both commits with the same result) found one regression a user sees.\n\nWHAT HAPPENS. In the commit, `.claude/skills/alias-a` is a link to the pinned `vendored-a`, whose committed bytes are not the pinned ones; in the working copy `alias-a` was replaced, uncommitted, by a plain directory whose bytes match. A session-route wave member names `alias-a`. At fff769ee: exit 1 with the commit-form stop, P1.1 pending with attempts 0, no tree cut, drive state `{}`. At 9e0e4d3b: the step prints 'started P1.1; tree for P1.1', P1.1 is `in_progress` with attempts 1, the wave and its tree are recorded in state, a worktree is left registered, and only then does the walk stop in the member's tree. The cause (drive-phase.py:9887-9888, the `uncut` list, and :9901, `names_a_pin`): whether a member needs the commit's checkout is decided by `covering_pins` over the project's WORKING COPY, and a member left out of `uncut` is then asked with `where=None` - the working copy again - even when the step makes a checkout for another member (C2). So the decision reads one copy and the session loads another, which is the exact class SG2.17 closed for the judgment itself.\n\nTHE RULE TO BUILD.\nA. The question 'does this member name a pinned skill' is asked of the same copy the judgment reads and the member's session will load: for an uncut session-route member, the commit. So no decision about the commit's copy reads the working copy. Keep SG2.19's properties: at most one checkout per commit per step; none for a plan with no pins or `skillPins: {}`; none when no uncut session-route member names any skill. If keeping 'no checkout when the names resolve to no pinned directory' needs the commit read anyway, drop that refinement rather than reading the working copy - say which and why, with the git-process count per wave-opening step before and after.\nB. A step that stops over a pin after it has started a member or cut its tree gives back that start, that tree and its registration, and the wave record - the SG2.16/SG2.17 property, held by SG2.19's snapshot-at-the-stop rule. Add this scenario (the review's C1 and C2) to the stop scenarios that rule runs, so the snapshot sees it; if the snapshot rule did not reach it because no scenario did, say so in the case's label.\n\nALLOW CASES: working copy equal to the commit (C0, stops with nothing changed on both commits); a plan with no pins (zero git processes for the pin check, real `next` byte for byte as at 9e0e4d3b); a matching pin behind a committed link dispatching (as at 9e0e4d3b); a member whose tree is already cut is judged in that tree.\n\nHOW TO PROVE. Red first on the tree as it stands with the review's alias_probe.py C1/C2 and a suite case per scenario; a mutation probe of your own (copies of the working tree, each mutation asserted applied, caches purged), each deny with its allow twin: the decision read from the working copy again; the stop's give-back skipped for a started member. SG2.19's mutation table (its directory) still answers as owed except rows whose code this changes - name each and why. The drive suite's touched block alone, then the whole suite once through the sweep with --jobs 4.\n\nNOT in this task: the review's BATCH items (calls without a Call node, the private remedy name, the windows per-step cost sentence, the TMPDIR remedy) - they go to the phase's low batch.\n\nAcceptance:\n(1) Whether an uncut session-route member needs the commit's copy is decided over the commit, so a working copy that differs from the commit can neither skip a stop nor move it after the member's start.\n(2) A step that stops over a pin after starting a member or cutting its tree leaves the plan, the state, the trees and git's worktree registrations as it found them, held by the snapshot-at-the-stop rule over this scenario.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2784,14 +2788,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "08de4ca6c0d7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: ask_member_pins now makes ONE decision per step and reads no copy of the project for it - the commit's copy is needed when an uncut session-route member (session route, commit known, no tree) names any skill in a plan with a non-empty skillPins (names_a_pin, which lost its ctx argument and no longer calls _skill_places.unused_pins or covering_pins), and then EVERY uncut member is asked of that one step checkout; the old per-member 'uncut' list that left a member to be asked with where=None (the working copy) is gone (C2). Refinement dropped, as the brief allows: 'no checkout when the names resolve to no pinned directory' cannot be answered without the commit read, so a member naming a skill no pin holds now costs the step one checkout. Git processes per wave-opening step on the real `next` (S/sg2.21/cli_probe.py, cli_head.out vs cli_new.out): no pins 49 -> 49; pins, both members name a pinned skill 54 -> 54; skillPins {} 49 -> 49; pins, no member names a skill 49 -> 49; pins, members name an unpinned skill 49 -> 54 (the checkout's own add, removal and reads); the review's alias shapes A1 24, A2 28 processes and a started member -> 8 processes and nothing started. RULE B: no give-back code path exists - SG2.16/SG2.17 hold 'a stop gives nothing back' by asking before anything is started (wave_step's opening ask, walk_wave's ask), not by undoing a start; so nothing was routed through anything; the stop that arrived after the start did so because the opening ask read the working copy and judged no stop, and with rule A the stop is raised by the opening ask, before open_wave records the wave. Rows that remove either ask fail (mutations). The snapshot-at-the-stop rule did not reach C1/C2 because no scenario of it held a working copy that names a skill differently from the commit; spd40 now registers C0, C1, C2 and C3 (the member naming the link is the second) in `ran` so spd24's snapshot judges them, each stop's state at PinStop construction equal to the state before the step. TESTS: tests/test_drive_phase.py - _pin_alias_wave, _pin_alias_runs (spd40, spd40a), _pin_unpinned_wave, _pin_decision_cases (spd41), called from _pin_stop_state_cases; spn-block 56/56 (53 over HEAD's code). CHANGELOG.md: the unreleased pinned-skill entry's sentence 'only for a member that names a pinned skill' says what is true now. Mutation probe S/sg2.21/mutations.py: 13 rows (the unmutated tree plus 12 mutations, each deny with its over-fire twin, anchors asserted applied, caches purged, private TMPDIR, restored byte for byte), ALL ANSWERED AS OWED, mutations.out. SG2.19's table (S/sg2.19/mutations.py, 32 rows) over this tree: 28 answered as owed, 4 NOT APPLIED because their anchors are the lines this task changed - 'E1: every uncut member checked out' and its allow twin (the refinement they pin is the one dropped; answered by spd41/spd34 rows of the new table) and the two SG2.18-mapped rows on the `uncut` line (re-anchored verbatim in the new table, both caught) - annotated in prev_mutations.out. Whole drive suite once through the sweep with --jobs 4: 1/1 files ok, 1111 cases. DEPENDANTS: drive-phase.py importers (the drive-without-model hook, _worktrees, the test files that import the driver) use no name this task changed: names_a_pin is called only inside the driver, its row in spd1's table is by name and still describes it; tests/test_drive_without_model.py 74/74 and test__worktrees 182/182 green; test_drive_phase.py's dependants (test_drive_without_model imports helpers) green. Prose naming drive-phase names: README, execute-task.md, COMPATIBILITY.md name decisions and keys this task does not touch - still correct. PLUGIN-BUILD-GUIDE.md (about line 5752 and 5756: 'that names a pinned skill (`names_a_pin`)' and 'a step whose members name no pinned skill starts no git') and SECURITY.md (about line 1300-1303: 'that names a pinned skill ... a step whose members name no pinned skill makes none') are NOW UNTRUE in that half-sentence - the step makes a checkout for a member naming any skill, none when no uncut member names a skill - and are outside this task's files (the guide was waived for no-rename; SECURITY.md was not named): the scope needs widening for those two sentences, or they go to the phase's low batch. I renamed nothing and kept the heading. tools/release.py/CHANGELOG heading kept. RESIDUAL, run (S/sg2.21/cli_probe.py D1, same before and after): when NO member names a skill and two pins resolve to one directory in the commit (a committed link) but not in the working copy, the opening ask (names empty, where=None, working copy) judges no stop, P1.1 is started and its tree cut, and the stop is raised in the tree by require_pins' directory-conflict check, which runs for an empty name list. The cause is in _skill_places.require_pins (outside my files): it should not raise a pin-against-pin conflict for a hand-out of no skill at all - or the driver should ask such members of the commit, which means a checkout for a step naming no skill, against the brief's 'none when no uncut member names any skill'. Not fixed here; for the orchestrator to decide. A stop that only the tree's own `.worktreeinclude` copies or setup command can cause is the other known post-start stop (checkout_at's docstring), unchanged. PROCESS NOTE: one edit batch to tests/test_drive_phase.py (adding the `skills` pair and C3 to _pin_alias_wave/_pin_alias_runs) was made with a python script rewriting the file rather than the Edit tool, against the session's rule that every edit of a tracked file goes through Edit; the resulting diff is reviewable with git diff and the file was re-run green after.",
+        "descriptive": "Whether a wave member needs the commit's copy is now decided without reading the working copy, so a working copy that differs from the commit can neither skip a pin stop nor move it behind a member's start; the step stops with nothing started, as at fff769ee."
       },
       "startedAt": "2026-11-25T14:24:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-25T15:11:49Z",
+      "verifiedBy": [
+        "spd40: the review's C0, C1, C2 and C3 (the member that names the link is the second) over a real session wave, each stopped over the commit's pinned-skill link whatever the working copy holds, registered in the snapshot-at-the-stop scenarios (state at PinStop equal to the state before the step; no tree, wave, start or registration)",
+        "spd40a: allow twin - plain directory in the commit, link to a changed skill in the working copy: both members handed out, no scratch left",
+        "spd41: a plan with pins whose members name an unpinned skill makes ONE step checkout (its own git processes the whole difference); no skill named, skillPins {} and no pins make none"
+      ],
       "notes": [
         {
           "at": "2026-11-25T14:24:52Z",
@@ -2805,7 +2813,40 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-25T14:59:27Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 2071000,
+            "startedAt": "2026-11-25T14:24:56Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-25T15:05:51Z.de3628",
+            "kind": "wait",
+            "ms": 4000,
+            "startedAt": "2026-11-25T14:59:56Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-25T15:05:51Z.de3628, ending at its startedAt",
+            "kind": "selection",
+            "ms": 23601,
+            "runId": "2026-11-25T15:05:51Z.de3628",
+            "startedAt": "2026-11-25T15:00:00Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-25T15:05:51Z.de3628",
+            "kind": "gate",
+            "ms": 327310,
+            "runId": "2026-11-25T15:05:51Z.de3628",
+            "startedAt": "2026-11-25T15:00:24Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 08de4ca6c0d7",
+            "kind": "commit",
+            "ms": 1799,
+            "startedAt": "2026-11-25T15:11:45Z"
+          }
+        ],
         "firstStartedAt": "2026-11-25T14:24:54Z"
       },
       "reviewPerTask": "signals",
@@ -2813,6 +2854,103 @@
         "runId": "2026-11-25T15:11:44Z.1cd61f",
         "status": "passed",
         "at": "2026-11-25T15:11:44Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "08de4ca6c0d7",
+        "at": "2026-11-25T15:11:49Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-25T14:59:19Z",
+        "basis": "`python3 tests/test_drive_phase.py --selftest --stage spn-block` in a throwaway tree at HEAD exited 1 with 3 of 56 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - spd40 (house FAIL), spd41 (house FAIL), spd24 (house FAIL): SELFTEST FAILED: 53/56 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "SG2.22-xk1",
+      "title": "The reading's growth case judges the growth over the whole series, so one noisy length on a shared runner cannot redden it while a reading that grows faster than linear still does",
+      "status": "cancelled",
+      "description": "MEASURED, by the orchestrator, from CI logs: `cw8` in tests/test__clause_coverage.py (added by SG1.33-ukq, ef60e43f) went red on two consecutive release-tier runs whose diffs do not touch the suite or `_clause_coverage.py` - run 45624543750 at 9e0e4d3b, windows cp1252 leg: 'markers on one line grew 2.04x, 1.53x, 2.92x per doubling'; run 45633864708 at 2a8c21d4, linux plain leg: 'line-start numbers after one line grew 1.17x, 1.43x, 3.00x per doubling'. The rerun of the first was green on the same bytes. The case fails when ANY ONE step's ratio exceeds 2 ** WIDE_POWER (about 2.83x), and a single step is where a shared runner's noise lands even after the least of WIDE_ROUNDS rounds is kept. Both red series grew far less than 2.83x per doubling OVERALL (about 9.2x and 5.0x over three doublings, against a linear 8x and a quadratic 64x).\n\nTHE RULE. What the case exists to catch is a reading that grows faster than linear; such a reading grows at EVERY doubling, so the growth over the whole series shows it, and a single noisy step does not move the whole-series figure past the bound. Judge the growth exponent over the series (the last length's time over the first's, against 2 ** (WIDE_POWER * doublings), or a least-squares slope of log time over log length - choose the structurally correct one and say why), keep the ceiling at the longest length and the memory bound unchanged, and keep the case's label true of what it now judges. Do not raise WIDE_POWER or WIDE_ROUNDS to make the red go away: that is weakening the case, not fixing it.\n\nHOW TO PROVE. Red first: a pure helper that judges a given series of seconds, and cases over fixed series - the two red series above from CI must judge green (allow); a quadratic series (4x per doubling) and a series that is linear and then quadratic over its last two doublings must judge red (deny); a planted quadratic `reading_line` (a mutation) must turn cw8 red through the real child as today. A mutation probe of your own (copies of the working tree, each mutation asserted applied, caches purged): the judgement back to the per-step max (the two CI series red); the bound loosened to cubic (the quadratic series green); the ceiling check removed. Run the suite five times back to back and report each cw8 series, and once under --jobs 4 sweep load.\n\nAcceptance:\n(1) cw8 judges the growth over the whole series, so the two series CI recorded red are judged green and a reading quadratic over the series or over its last two doublings is judged red.\n(2) The ceiling and memory bounds are unchanged and the case's label says what it judges.",
+      "files": [
+        "tests/test__clause_coverage.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__clause_coverage.py: the growth case judges the whole series, so one noisy length cannot redden it and a faster-than-linear reading still does"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__clause_coverage.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Re-added as regression: the fix lives in the only file, the test suite, so the red-first helper cannot show it red at HEAD (see the note on this task); the work is kept as a patch and carried to the new task"
+      },
+      "startedAt": "2026-11-25T15:12:45Z",
+      "completedAt": "2026-11-25T15:36:48Z",
+      "verifiedBy": [],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-25T15:12:45Z"
+      },
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "SG2.23-xk1",
+      "title": "The reading's growth case judges the growth over the whole series, so one noisy length on a shared runner cannot redden it while a reading that grows faster than linear still does",
+      "status": "in_progress",
+      "description": "MEASURED, by the orchestrator, from CI logs: `cw8` in tests/test__clause_coverage.py (added by SG1.33-ukq, ef60e43f) went red on two consecutive release-tier runs whose diffs do not touch the suite or `_clause_coverage.py` - run 45624543750 at 9e0e4d3b, windows cp1252 leg: 'markers on one line grew 2.04x, 1.53x, 2.92x per doubling'; run 45633864708 at 2a8c21d4, linux plain leg: 'line-start numbers after one line grew 1.17x, 1.43x, 3.00x per doubling'. The rerun of the first was green on the same bytes. The case fails when ANY ONE step's ratio exceeds 2 ** WIDE_POWER (about 2.83x), and a single step is where a shared runner's noise lands even after the least of WIDE_ROUNDS rounds is kept. Both red series grew far less than 2.83x per doubling OVERALL (about 9.2x and 5.0x over three doublings, against a linear 8x and a quadratic 64x).\n\nTHE RULE. What the case exists to catch is a reading that grows faster than linear; such a reading grows at EVERY doubling, so the growth over the whole series shows it, and a single noisy step does not move the whole-series figure past the bound. Judge the growth exponent over the series (the last length's time over the first's, against 2 ** (WIDE_POWER * doublings), or a least-squares slope of log time over log length - choose the structurally correct one and say why), keep the ceiling at the longest length and the memory bound unchanged, and keep the case's label true of what it now judges. Do not raise WIDE_POWER or WIDE_ROUNDS to make the red go away: that is weakening the case, not fixing it.\n\nHOW TO PROVE (regression: the fix lives in the suite itself, so the new cases cannot be red at HEAD - re-added from SG2.22-xk1 for that reason; the proof is the mutation table). A pure helper that judges a given series of seconds, and cases over fixed series - the two red series above from CI must judge green (allow); a quadratic series (4x per doubling) and a series that is linear and then quadratic over its last two doublings must judge red (deny); a planted quadratic `reading_line` (a mutation) must turn cw8 red through the real child as today. A mutation probe of your own (copies of the working tree, each mutation asserted applied, caches purged): the judgement back to the per-step max (the two CI series red); the bound loosened to cubic (the quadratic series green); the ceiling check removed. Run the suite five times back to back and report each cw8 series, and once under --jobs 4 sweep load.\n\nAcceptance:\n(1) cw8 judges the growth over the whole series, so the two series CI recorded red are judged green and a reading quadratic over the series or over its last two doublings is judged red.\n(2) The ceiling and memory bounds are unchanged and the case's label says what it judges.",
+      "files": [
+        "tests/test__clause_coverage.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test__clause_coverage.py: the growth case judges the whole series, so one noisy length cannot redden it and a faster-than-linear reading still does"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__clause_coverage.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-25T15:37:04Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-25T15:37:04Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-25T15:44:22Z.64cb55",
+        "status": "passed",
+        "at": "2026-11-25T15:44:22Z"
       }
     }
   ],

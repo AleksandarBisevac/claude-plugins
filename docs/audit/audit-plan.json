@@ -14415,7 +14415,9 @@
       "SG1.39-ukq",
       "SG1.41-ukq",
       "SG2.5-xk1",
-      "SG2.7-xk1"
+      "SG2.7-xk1",
+      "SG2.22-xk1",
+      "SG2.23-xk1"
     ],
     "tests/test__config_rules_lints.py": [
       "P131.2"

@@ -1,0 +1,63 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__clause_coverage.py": "pass",
+    "run-test-gate.py SG2 --task SG2.22-xk1 (not recorded, the wider affected set)": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "Regression task whose fix lives in the suite itself, so its cases cannot be red at HEAD (the throwaway run copies the test file over HEAD and passed). The proof is the mutation probe, mutations.py: 12 rows held (baseline green, nine deny/allow rows each turned their named case red, a planted quadratic reading_line turned cw8 red through the real child, two controls stayed green). Beforehand the old per-step judgement made cw17 fail (91/92) and the slope made it 92/92.",
+    "at": "2026-11-25"
+  },
+  "outcome": {
+    "technical": "tests/test__clause_coverage.py only. cw8's judgement moved out of its inline loop into pure helpers: _growth_exponent(seconds) is the least-squares slope of log2 time over log2 length (the lengths double, pinned by cw20; a time under WIDE_FLOOR read as the floor) and _run_faults(run) returns the sentences one kind's measured run earns: the growth exponent over WIDE_POWER (WIDE_POWER and WIDE_ROUNDS unchanged), the longest over WIDE_CEILING, the peak over WIDE_BYTES per character (both unchanged), a series short of its lengths, a measurement the helper refused. cw8 keeps the real child and now extends its faults from _run_faults; its label and the comment above the constants say it judges the growth over the whole series, no single step. Slope rather than last-over-first: last-over-first reads two lengths, so the noise of either lands in full (a clean linear series bounded at 2 ** (WIDE_POWER * 3) tolerates one end length 2.83x slow), while every length votes in the slope (the weights over four lengths are .3, .1, .1, .3, so one end length may be 3.17x slow and one middle length 32x), and a reading faster than linear grows at every doubling so every length votes for it. New cases over fixed series with no child: cw17 allow (the two CI series verbatim, a linear series with one length 2.5x slow, a clean linear one, two under the floor), cw18 deny (quadratic, linear then quadratic over the last two doublings, cubic; exponents 1 and 2 read exactly), cw19 ceiling, memory, short series and refused measurement each one fault with the at-bound twins green, cw20 the lengths double. Mutation probe (mutations.py, 12 rows incl. baseline, run in a copy of the tree): bound loosened to cubic -> cw18; ceiling removed, memory removed, short series, refused measurement -> cw19; non-doubling lengths -> cw20; first-step-only exponent -> cw18; ALLOW per-step max back -> cw17 red; ALLOW floor removed -> cw17 red; a planted quadratic reading_line -> cw8 red through the real child with the growth sentence (not the ceiling); twins: a planted linear reading_line keeps cw8 green, and the plant with the verdict wiring cut keeps cw8 green. cq13 goes red under any plant (linear included) and is not this change's. Five real cw8 series back to back and three under a --jobs 4 sweep: exponents 0.63 to 1.05, worst single step 2.25x, all judged green (the machine did not reproduce the CI noise; the proof of the noise case is the two verbatim CI series). Suite 92/92; gate command and the wider affected gate green; ruff, vermin and the house-style and prose-number lints clean on the file. Dependants: .github/sweep-costs.json still correct (the suite is one file figure, not a block table; the new stage costs milliseconds), _clause_coverage.py untouched, CHANGELOG.md line about cw8 timing all three at doubling lengths in a child killed at a deadline is still true, PLUGIN-BUILD-GUIDE.md says only that the cases are in this file. Other growth_series callers: tests/test_build_shop.py judges whole span already (span_growth, last over first, a different choice) and tests/test_guard_history_rewrite.py gw15 is one ratio between two sizes; neither judges a per-step maximum.",
+    "descriptive": "cw8 now fails a reading that grows faster than linear over the whole series, and one noisy length on a shared runner can no longer redden it."
+  },
+  "testsAdded": [
+    "cw17-cw20 judge fixed series with no child: the two CI series that were red are green, a quadratic and a linear-then-quadratic series are red, the ceiling and memory bounds and the short and refused series each fault with their at-bound twins green, and the lengths double",
+    "cw8 relabelled to say it judges the growth over the whole series and runs through the real child"
+  ],
+  "casesAdded": [
+    [
+      "cw17",
+      "cw18",
+      "cw19",
+      "cw20",
+      "cw8"
+    ]
+  ],
+  "claims": "claims:\n1 tests/test__clause_coverage.py _growth_exponent is the slope the docstring and the cw8 label describe; _run_faults holds the ceiling, memory, short and refused judgements the comment lists; cw8 calls it\n2 per-step max back -> cw17 red (91/92 in red_first, and the ALLOW row); cubic bound -> cw18 red; ceiling/memory/short/refused removed -> cw19 red; planted quadratic reading_line -> cw8 red with the growth sentence; planted linear -> cw8 green; all restored, 12/12 rows held\n3 grep growth_series in tests/: test_build_shop.py (span_growth, last over first, whole span) and test_guard_history_rewrite.py gw15 (one two-size ratio) - neither judges a per-step maximum, left because they do not carry the fault; the per-step shape in this file had one site, fixed\n4 n/a - no rule addressed to an agent\n5 five back-to-back series exponents 0.63-1.05 and three under a --jobs 4 sweep; the machine never reproduced the CI noise, so the noise claim rests on the two verbatim CI series, not on a local reproduction\n6 n/a - no guard\n7 numbers in the docstring (1.4, 2.5 times) are the fixture's own, derived by cw17; none written in prose elsewhere",
+  "stamp": "audit-stamp: {\"content\":\"sha256:af63e53e9efcc7f7be92786c0afc1c5bc7f65614898f21a448f712a211e854a5\",\"dirtyDigest\":\"sha256:104ba78533e7277f672d9d174e65458b607998ee63c2b241341d14832edb5b03\",\"dirtyPaths\":{\"tests/test__clause_coverage.py\":\"02538aa8ab465a32\"},\"head\":\"08de4ca6\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test__clause_coverage.py\"],\"scopeDigest\":\"sha256:537c718ebeb767bc1bef6e8de2908691b50da01986efadbedd594e9d5bc9200f\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 0 of the diff's 1 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 1 file(s) that could hold a move not compared: tests/test__clause_coverage.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [
+      {
+        "path": "tests/test__clause_coverage.py",
+        "from": "cw8 the reading's processor time over list numbers, line-start numbers, mentions and markers on one line at %d doubling lengths grows by at most 2 ** WIDE_POWER per doubling, stays under WIDE_CEILING seconds and WIDE_BYTES per character at the longest, in a child killed at WIDE_DEADLINE",
+        "to": "cw8 the reading's processor time over list numbers, line-start numbers, mentions and markers on one line at %d doubling lengths grows as at most the WIDE_POWER of the length over the whole series (the slope of log time over log length, no single step judged), stays under WIDE_CEILING seconds and WIDE_BYTES per character at the longest, in a child killed at WIDE_DEADLINE",
+        "line": 1670
+      }
+    ],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "tests/test__clause_coverage.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 1564 (`if run[\"fault\"] is not None:`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "08de4ca6c0d7e8b79f8d0586100d2d4557c776fe"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-25T15:37:39Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -41,12 +41,13 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import json
+import math
 import os
 import re
 import sys
 import time
 
-import _harness                                    # sets sys.path for scripts/ + hooks/
+import _harness                                   # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio, some_of            # noqa: E402
 import _clause_coverage as M                       # noqa: E402
 
@@ -1481,10 +1482,12 @@ def _conservation_check_cases(check):
           named and not silenced, "%r / %r" % (line, quiet_line))
 
 
-# The timing. A kind fails when its time grows by more than 2 ** WIDE_POWER from
-# one length to the next (a time under WIDE_FLOOR read as the floor), when the
-# longest takes more than WIDE_CEILING seconds or holds more than WIDE_BYTES per
-# character of input at its peak, or when its child is still running at
+# The timing. A kind fails when its time grows as more than the WIDE_POWER of the
+# length over the whole series of lengths - `_growth_exponent`, a time under
+# WIDE_FLOOR read as the floor; no one step is judged, because a shared runner's
+# noise lands on one length and a reading faster than linear shows at every
+# doubling - when the longest takes more than WIDE_CEILING seconds or holds more
+# than WIDE_BYTES per character of input at its peak, or when its child is still running at
 # WIDE_DEADLINE - a kill is a failure, never a skip. The time is the child's
 # processor time per reading, taken by `_harness.growth_series`: the readings of
 # one length are repeated until their total is long enough for the clock's step
@@ -1536,6 +1539,108 @@ print(json.dumps(out))
 '''
 
 
+def _growth_exponent(seconds):
+    """The exponent p in time ~ length ** p over the whole series: the least-squares
+    slope of log2 time over log2 length, which for lengths that double is the slope
+    over the position in the series.
+
+    Not the steepest step: a reading that grows faster than linear grows at every
+    doubling, so every length votes for it, while one length a loaded runner stretched
+    moves one step and only a share of the slope - a linear series with one length 2.5
+    times too slow reads 1.4, a step read alone reads 5x. Not the last time over the
+    first either, which is two lengths and so still the noise of either of them in
+    full. A time under WIDE_FLOOR reads as the floor."""
+    logs = [math.log2(max(s, WIDE_FLOOR)) for s in seconds]
+    middle = (len(logs) - 1) / 2.0
+    spread = sum((i - middle) ** 2 for i in range(len(logs)))
+    return sum((i - middle) * y for i, y in enumerate(logs)) / spread
+
+
+def _run_faults(run):
+    """The sentences one kind's measured run earns, empty when it is within every bound."""
+    kind = run["kind"]
+    if run["fault"] is not None:
+        return ["%s could not be measured: %s" % (kind, run["fault"])]
+    secs = run["seconds"]
+    if len(secs) != len(WIDE_UNITS):
+        return ["%s was measured at %d of %d lengths" % (kind, len(secs), len(WIDE_UNITS))]
+    faults = []
+    steps = [b / max(a, WIDE_FLOOR) for a, b in zip(secs, secs[1:])]
+    exponent = _growth_exponent(secs)
+    if exponent > WIDE_POWER:
+        faults.append("%s grew as length ** %.2f (%s per doubling), over %r readings a length"
+                      % (kind, exponent, ", ".join("%.2fx" % g for g in steps),
+                         run["repeats"]))
+    if secs[-1] > WIDE_CEILING:
+        faults.append("%s took %.3fs at the longest" % (kind, secs[-1]))
+    if run["peak"] > WIDE_BYTES * run["chars"]:
+        faults.append("%s held %d bytes for %d characters" % (kind, run["peak"], run["chars"]))
+    return faults
+
+
+def _series_from(first, ratios):
+    """The seconds of a series that starts at `first` and grows by each ratio in turn."""
+    out = [first]
+    for ratio in ratios:
+        out.append(out[-1] * ratio)
+    return out
+
+
+def _wide_series_cases(check):
+    """The growth judged over fixed series of seconds, with no child and no clock."""
+    def run(seconds, peak=0, chars=1, fault=None, repeats=None):
+        return {"kind": "k", "seconds": seconds, "repeats": repeats or [1] * len(seconds),
+                "fault": fault, "peak": peak, "chars": chars}
+
+    ci_windows = _series_from(0.05, (2.04, 1.53, 2.92))
+    ci_linux = _series_from(0.05, (1.17, 1.43, 3.00))
+    noisy_end = _series_from(0.02, (2.0, 2.0, 5.0))
+    linear = _series_from(0.01, (2.0, 2.0, 2.0))
+    allowed = {"windows run": ci_windows, "linux run": ci_linux,
+               "one length 2.5 times too slow on a linear reading": noisy_end,
+               "a linear reading": linear, "no time at all": [0.0] * 4,
+               "no time and then a hair above the floor": [0.0, 0.0, 0.0, WIDE_FLOOR * 0.6]}
+    said = {name: _run_faults(run(s)) for name, s in allowed.items()}
+    check("cw17 the two series a release-tier CI run recorded red (windows 2.04x, 1.53x, "
+          "2.92x; linux 1.17x, 1.43x, 3.00x), a linear reading with one length 2.5 times "
+          "too slow, a clean linear one and two under the floor are all judged green",
+          all(not v for v in said.values()), repr(said))
+
+    quadratic = _series_from(0.002, (4.0, 4.0, 4.0))
+    late = _series_from(0.01, (2.0, 4.0, 4.0))
+    cubic = _series_from(0.001, (8.0, 8.0, 8.0))
+    denied = {"quadratic": quadratic, "linear then quadratic over the last two doublings": late,
+              "cubic": cubic}
+    got = {name: _run_faults(run(s)) for name, s in denied.items()}
+    exponents = [_growth_exponent(s) for s in (linear, quadratic, late)]
+    check("cw18 a quadratic series, one that is linear and then quadratic over its last two "
+          "doublings and a cubic one are each judged red by exactly one growth sentence, "
+          "and the exponent read off a linear series is 1 and off a quadratic one is 2",
+          all(len(v) == 1 and "grew as length" in v[0] for v in got.values())
+          and abs(exponents[0] - 1.0) < 1e-9 and abs(exponents[1] - 2.0) < 1e-9
+          and exponents[2] > WIDE_POWER, "%r / %r" % (got, exponents))
+
+    ceiling = _run_faults(run([0.15, 0.3, 0.6, WIDE_CEILING * 1.2]))
+    at_ceiling = _run_faults(run([0.125, 0.25, 0.5, WIDE_CEILING]))
+    heavy = _run_faults(run(linear, peak=WIDE_BYTES * 100 + 1, chars=100))
+    at_bytes = _run_faults(run(linear, peak=WIDE_BYTES * 100, chars=100))
+    short = _run_faults(run(linear[:3]))
+    cut = _run_faults(run([], fault="the deadline passed"))
+    check("cw19 the longest length over WIDE_CEILING seconds, a peak over WIDE_BYTES per "
+          "character, a series short of its lengths and a measurement the helper refused "
+          "are each one fault; the ceiling and the byte bound themselves are within "
+          "bounds (the twins)",
+          len(ceiling) == 1 and "at the longest" in ceiling[0] and at_ceiling == []
+          and len(heavy) == 1 and "held" in heavy[0] and at_bytes == []
+          and len(short) == 1 and "3 of 4 lengths" in short[0]
+          and len(cut) == 1 and "could not be measured" in cut[0],
+          "%r / %r / %r / %r / %r / %r" % (ceiling, at_ceiling, heavy, at_bytes, short, cut))
+
+    check("cw20 the lengths double, which is what reading a slope per doubling as an "
+          "exponent of the length takes for granted",
+          all(b == 2 * a for a, b in zip(WIDE_UNITS, WIDE_UNITS[1:])), repr(WIDE_UNITS))
+
+
 def _wide_timing_cases(check):
     """The reading's time at doubling lengths, in a child killed at a deadline."""
     import subprocess
@@ -1561,23 +1666,11 @@ def _wide_timing_cases(check):
                                                     .split())[-300:],))
     else:
         for run in runs:
-            if run["fault"] is not None:
-                faults.append("%s could not be measured: %s" % (run["kind"], run["fault"]))
-                continue
-            secs = run["seconds"]
-            growth = [b / max(a, WIDE_FLOOR) for a, b in zip(secs, secs[1:])]
-            if max(growth) > 2 ** WIDE_POWER:
-                faults.append("%s grew %s per doubling, over %r readings a length"
-                              % (run["kind"], ", ".join("%.2fx" % g for g in growth),
-                                 run["repeats"]))
-            if secs[-1] > WIDE_CEILING:
-                faults.append("%s took %.3fs at the longest" % (run["kind"], secs[-1]))
-            if run["peak"] > WIDE_BYTES * run["chars"]:
-                faults.append("%s held %d bytes for %d characters" % (
-                    run["kind"], run["peak"], run["chars"]))
+            faults.extend(_run_faults(run))
     check("cw8 the reading's processor time over list numbers, line-start numbers, mentions "
-          "and markers on one line at %d doubling lengths grows by at most 2 ** "
-          "WIDE_POWER per doubling, stays under WIDE_CEILING seconds and WIDE_BYTES "
+          "and markers on one line at %d doubling lengths grows as at most the "
+          "WIDE_POWER of the length over the whole series (the slope of log time over "
+          "log length, no single step judged), stays under WIDE_CEILING seconds and WIDE_BYTES "
           "per character at the longest, in a child killed at WIDE_DEADLINE"
           % (len(WIDE_UNITS),),
           not faults, "%s" % ("; ".join(faults),))
@@ -1593,6 +1686,7 @@ def _cases(check):
     _harness.stage(check, "cw-part", _wide_parting_cases)
     _harness.stage(check, "cw-equal", _wide_equal_cases)
     _harness.stage(check, "cw-conserve", _conservation_check_cases)
+    _harness.stage(check, "cw-series", _wide_series_cases)
     _harness.stage(check, "cw-timing", _wide_timing_cases)
     _harness.stage(check, "cc-shape", _shape_cases)
     _harness.stage(check, "cc-marker", _marker_cases)
