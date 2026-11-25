@@ -337,9 +337,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   it, a bug's status with its fixing task and commit, a decision, a proposal materialized or
   dropped, a sync's work-item link - each named in one table the merge reads. Two accounts that
   share a key merge as one only when both sides changed one of them and a shared key moved: a
-  start against a close is one conflict, while a start beside a re-recorded red-first proof, a
-  fix beside a bug's notes edit, and a finding's resolution beside its newly linked fixing task
-  each merge clean. The suite holds that table to the schema, so an object value added to the
+  start against a close is one conflict, and so is a start that moves the status beside a
+  re-recorded red-first proof - the status is a key of the close too, so landing both would pair
+  one side's status with the other side's proof, a close neither side wrote - while a retry that
+  moves no status beside a re-recorded red-first proof, a fix beside a bug's notes edit, and a
+  finding's resolution beside its newly linked fixing task each merge clean. The suite holds that table to the schema, so an object value added to the
   schema later must be classified before the build is green; and it holds the groups of sibling
   keys to the code that writes them, so a function writing several keys of one record together
   must merge as one unit or carry its reason. That scan reads constant keys only: a key computed
