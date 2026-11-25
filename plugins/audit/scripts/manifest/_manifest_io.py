@@ -327,7 +327,7 @@ def written_twice(path):
     for stub in index.get("phases") or []:
         if not isinstance(stub, dict) or "shard" not in stub:
             continue
-        shard = os.path.join(base, str(stub["shard"]))
+        shard = shard_file(base, str(stub["shard"]))
         try:
             _body, found = parse_json_file(shard)
         except (OSError, ValueError):
@@ -553,7 +553,7 @@ def load_manifest(path, as_base=False):
     assembled = []
     for stub in data.get("phases", []):
         if isinstance(stub, dict) and "shard" in stub:
-            body = read(os.path.join(base, stub["shard"]))
+            body = read(shard_file(base, stub["shard"]))
             assembled.append(_merge_phase(stub, body))
         else:
             assembled.append(stub)          # already an inline phase (mixed/defensive)
@@ -590,7 +590,7 @@ def index_only_in_bodies(path):
         if not isinstance(stub, dict) or "shard" not in stub:
             continue
         try:
-            body = _read_json(os.path.join(base, stub["shard"]))
+            body = _read_json(shard_file(base, stub["shard"]))
         except Exception:
             continue
         if not isinstance(body, dict):
@@ -624,7 +624,7 @@ def stale_stubs(path):
         if not isinstance(stub, dict) or "shard" not in stub:
             continue
         try:
-            body = _read_json(os.path.join(base, stub["shard"]))
+            body = _read_json(shard_file(base, stub["shard"]))
         except Exception:
             continue
         if not isinstance(body, dict):
@@ -1313,6 +1313,19 @@ def shard_rel_path(pid, shard_rel_dir="phases"):
     return "%s/%s.json" % (shard_rel_dir, _shard_name(pid))
 
 
+def shard_file(base, ref, pathmod=os.path):
+    """The path of the shard a stub's posix `ref` names, under `base`, spelled
+    the way the platform spells it. The ref stays posix wherever it is DATA (the
+    index's `shard` field); the moment it becomes a file to open, and the path a
+    refusal tells a person to open, it passes through here. A bare join left
+    `C:\\...\\phases/P1.json` on Windows - a file that opens, named in a form
+    the person and the fixture's own join do not spell. `pathmod` is `ntpath` or
+    `posixpath` for a case that decides the other platform's spelling; on posix
+    the answer is the plain join, byte for byte.
+    """
+    return pathmod.join(base, ref.replace("/", pathmod.sep))
+
+
 def shard_name_collisions(manifest, shard_rel_dir="phases"):
     """`[(shard path, [phase ids])]` for every shard file more than one phase
     would be written to. `[]` when every phase gets a file of its own.
@@ -1974,11 +1987,11 @@ def save_sharded(index_path, manifest, shard_rel_dir="phases"):
     base = os.path.dirname(os.path.abspath(index_path))
     # Through `shard_rel_path` so the file opened here IS the file the stub in
     # `index` points at; the two used to be composed separately.
-    targets = [(os.path.join(base, shard_rel_path(pid, shard_rel_dir)), body)
+    targets = [(shard_file(base, shard_rel_path(pid, shard_rel_dir)), body)
                for pid, body in shards.items()]
     for p in [p for p, _body in targets] + [index_path]:
         refuse_written_twice(p)
-    os.makedirs(os.path.join(base, shard_rel_dir), exist_ok=True)
+    os.makedirs(shard_file(base, shard_rel_dir), exist_ok=True)
     written = []
     for p, body in targets:
         _atomic_write_json(p, body)
@@ -2064,7 +2077,7 @@ def shard_dir_to_retire(index_data, index_path):
     for stub in (phases or []):
         if not isinstance(stub, dict) or not isinstance(stub.get("shard"), str):
             continue
-        d = os.path.dirname(os.path.abspath(os.path.join(base, stub["shard"])))
+        d = os.path.dirname(os.path.abspath(shard_file(base, stub["shard"])))
         if d not in dirs:
             dirs.append(d)
     if not dirs:
