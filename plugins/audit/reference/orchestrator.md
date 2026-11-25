@@ -636,22 +636,18 @@ refuses a run that is not `full`, a suite the run did not name or named only on 
 and an ambiguous name; a catch no newer than the recorded `lastCaught` writes nothing, so
 `lastCaught` never moves back.
 
-**A red full run CI recorded is learned from after its shard is imported, never inside the
-pipeline.** A CI build throws its checkout away, so the pipeline records (`run-test-gate.py
---full --record --writer ci-<id>`) and files nothing. `import-evidence.py <manifest>
-<shard.jsonl>` writes into the manifest's own project (`_panel_write.project_of_manifest`), never
-the directory it was typed in, and refuses, exit 2, a manifest outside a `--project-dir` it is
-given. It prints, for each imported row that is full scope and red, the command
-`python3 <plugin>/scripts/governance/full-gate.py <manifest> --learn-from <runId> --project-dir
-<dir>` with every path absolute, so it runs as printed from any directory, and runs none of
-them. That command runs no gate: it reads the row from this checkout's ledger and hands it to
-`full-gate.learn_from_row`, the function the red branch calls, so every rule above applies
-unchanged, whatever order the rows are learned in. It refuses, exit 1, a run id the ledger does not hold (naming any ledger file
-it could not read in full), a row that is not full scope and a green row; it exits 1 when a
-learning verb fails, and 2 beside `--writer`. `/audit:review <phaseId> --full` runs
-`full-gate.py` itself, so a red run there is learned from on the spot. Run the printed command
-after an import when the operator asks for the import; nothing runs it for you, and
-`/audit:review` does not.
+**A red full run is learned from where its plan is kept, never inside a CI pipeline.** A CI
+build throws its checkout away, so the pipeline records (`run-test-gate.py --full --record`) into
+the build's copy of the plan and files nothing. A recorded full run is the plan's full-run
+record (`meta.lastFullRun`, the newest full run of any verdict); `full-gate.py <manifest>
+--learn-from <runId>` runs no gate: it reads that record, or an older full run's frozen ledger
+row while that row is there, and hands it to `full-gate.learn_from_row`, the function the red
+branch calls, so every rule above applies unchanged. It refuses, exit 1, a run id neither place
+holds (naming any file it could not read in full - a full run a newer one replaced is no longer
+held), a run that is not full scope and a green run; it exits 1 when a learning verb fails.
+`--writer` is gone from both commands (a usage error, exit 2), and `import-evidence.py` with it.
+`/audit:review <phaseId> --full` runs `full-gate.py` itself, so a red run there is learned from on
+the spot; nothing else runs `--learn-from` for you.
 
 **Removing a coupling is `audit-task.py uncouple --test <path>`, typed by a person.** No code
 path removes one on its own: `learning_plan` builds only `couple`, `bug-add` and

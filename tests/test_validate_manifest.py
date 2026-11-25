@@ -315,6 +315,7 @@ def _cases(record):
         _cases_success_line(record, path2)
         _cases_schema_parity(record, path2)
         _cases_run_record_schema(record, path2)
+        _cases_full_run_record(record, path2)
         _cases_reader_rules(record)
         _cases_never_raises(record, path2)
         _cases_directory_entries(record)
@@ -643,6 +644,57 @@ def _rr_shapes():
         plant(rec)
         shapes.append((label, rec))
     return shapes
+
+
+def _vfr_said(path, meta_extra):
+    """`(exit code, lines naming the plan's full-run keys)` of the validator
+    over `_valid_manifest` with `meta_extra` merged into its meta."""
+    plan = _valid_manifest()
+    plan["meta"].update(meta_extra)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh)
+    code, out = _run([path, "--verbose"])
+    return code, [ln for ln in out.splitlines()
+                  if "lastFullRun" in ln or "lastMeasuredFullRun" in ln]
+
+
+def _cases_full_run_record(record, path):
+    """(vfr) The plan's full-run record (`meta.lastFullRun`) is a run record:
+    the validator takes the writer's shape and says, as it says a subject's
+    record, a full record its reader would refuse; the newest measured full
+    run (`meta.lastMeasuredFullRun`) is held to the shape a phase's held run
+    is."""
+    well = dict(_rr_run("VF-RED", "failed"),
+                selectionMiss=[{"test": "tests/test_a.py", "phases": ["P0"],
+                                "sources": ["src/a.ts"]}])
+    measured = {"runId": "VF-GREEN", "at": _RR_AT, "head": "a" * 40,
+                "status": "passed", "entries": 1,
+                "digest": "sha256:" + "0" * 64}
+    good = _vfr_said(path, {"lastFullRun": well,
+                            "lastMeasuredFullRun": measured})
+    record("vfr1 ALLOW: a full run's record carrying its selection miss, and "
+           "the newest measured full run in a held run's shape, validate with "
+           "nothing said about either: %r" % (good,),
+           good == (0, []))
+    steps = _vfr_said(path, {"lastFullRun": dict(well, steps=5)})
+    miss = _vfr_said(path, {"lastFullRun": dict(
+        well, selectionMiss=[{"phases": ["P0"]}])})
+    share = _vfr_said(path, {"lastFullRun": dict(
+        well, sharedWithRepeated=["status"])})
+    red = _vfr_said(path, {"lastMeasuredFullRun": dict(measured,
+                                                        status="failed")})
+    record("vfr2 RED-FIRST: a full run's record that is not the record's "
+           "shape - steps a number, a selection miss naming no test, a share "
+           "rewriting its status - and a newest measured run whose status is "
+           "not passed are each said, naming the key and the release that "
+           "refuses it, and the plan still validates in 3.x: %r"
+           % ((steps, miss, share, red),),
+           all(code == 0 and len(said) == 1 and "(a warning in 3.x)" in said[0]
+               for code, said in (steps, miss, share, red))
+           and "lastFullRun.steps" in steps[1][0]
+           and "selectionMiss" in miss[1][0]
+           and "sharedWithRepeated" in share[1][0]
+           and "lastMeasuredFullRun" in red[1][0])
 
 
 def _cases_run_record_schema(record, path):

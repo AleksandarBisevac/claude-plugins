@@ -5758,13 +5758,11 @@ def _lock_stop_cases(check):
 def _runner_record_lines(reason):
     """The lines `run-test-gate.py`'s recorder (`_record_run`) prints for a run
     whose record the plan refused with `reason` - its own renderer, with the
-    ledger write, the record write and the boundary stubbed to answer as a
+    record write and the boundary stubbed to answer as a
     refused record does, so the text is never a copy of the runner's."""
     rtg = _loader.load_script("run-test-gate.py", "rtg_dl12")
     ev = rtg._ev
-    stubs = {"record": lambda *a, **k: {"row": {"runId": "R1"},
-                                        "path": "docs/audit/evidence/r.jsonl"},
-             "write_record": lambda *a, **k: {"written": False,
+    stubs = {"write_record":lambda *a, **k: {"written": False,
                                               "reason": reason,
                                               "releaseRefused": None},
              "write_evidence_since": lambda *a, **k: {"written": False,

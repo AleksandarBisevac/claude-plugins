@@ -190,9 +190,8 @@ claude-plugins/                           # this repo (personal, public)
           run-test-gate.py                # runs a phase's gate bracketed by a tree snapshot; counts what ran; states what it touched
           propose-gates.py                # a plan proposal from what evidence history caught, not the tree alone - and says which it drew on
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
-          import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains; prints (never runs) the full-gate.py --learn-from command for each red full row it brought in
           drive-phase.py                  # the step driver: `next <phase>` runs every due step that needs no judgement through the existing verbs, as subprocesses, and prints one instruction - dispatch, decide or done; a refused verb stops it with the verb's own words. Sign-off is the phase review's dispatch, one triage decision, then gate, invariants, sign-off verb, commit, landing and lock release as one step. `submit` is an agent's last act: the stamp, the red-first helper and the filing in one call
-          full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no runnable meta.fullGate entry is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
+          full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no runnable meta.fullGate entry is declared; --learn-from <runId> runs nothing and learns from a recorded run - the plan's full-run record or an older frozen row - through the same function
           _runner_output.py               # every reading of what a test runner printed: its summary line (how many checks ran) and the lines naming a failing check
           _runner_collects.py             # does the test runner collect this path: collected, not collected, or could not tell - from the runner's own file listing, else a literal include in its config text
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs; the one POSIX sh (and its PATH) every plan command runs under, or a refusal - never cmd.exe
@@ -446,7 +445,6 @@ L9:
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _status_facts, _utc_stamp
-  import-evidence -> _claude_home, _evidence_io, _journal_io, _loader, _manifest_io, _output, _panel_write
   integrate-task -> _claude_home, _evidence_io, _invariants, _journal_io, _loader, _manifest_io, _output, _task_outputs, _wave, _worktrees
   manage-worktrees -> _branch, _claude_home, _manifest_io, _output, _utc_stamp, _worktrees
   materialize-proposal -> _claude_home, _manifest_io, _output, _proposals, _warning_groups
@@ -1895,7 +1893,7 @@ is invisible to the scan; `tests/test__evidence_io.py`'s `pa0` holds the door's 
 body (doors and plan readers derived, a `global` in a door or a `_locked_*` body reported, one
 read for a key-name question allowed by name), and the same block runs each write mechanism the
 doors share (`pa1`, `pa2`, `pa10`, `pm1`-`pm4`), the panel's save (`pa11`) and each caller of
-`write_plan_file` (`pf1`-`pf7`) through the real code with another writer's change landed as it
+`write_plan_file` (`pf1`-`pf8`) through the real code with another writer's change landed as it
 asks for the lock. Its docstring's *WHAT IT CANNOT SEE* names the rest — a callee reached
 through an object, a dict or `getattr`, a path object's `replace`, a plan path held under a name
 that carries no plan word, a delete and the deletes that can reach a plan file, a subprocess's
@@ -4090,7 +4088,12 @@ it, so a shard that will not read is named by all three with its file (`pw1`).
 `RECORD_NOT_CARRIED` names, each with its reason; `tests/test__evidence_io.py` (`rs1`-`rs3`)
 reads the keys `row_for()` can write off its source and fails on one the record drops without a
 reason. Past `RECORD_MAX_BYTES` a record cuts in `RECORD_CUT_ORDER` — the coverage paths first,
-which decide nothing — and says each cut in `recordCut`. **A repeat's record stores what it
+which decide nothing — and says each cut in `recordCut`. **`RECORD_MAX_BYTES` is the target the
+cut holds a record to, not a ceiling it cannot pass:** the steps' failing lines, a full run's
+`selectionMiss` and `dirtyOutside` are never in the cut order, because a verdict's basis, the
+learning a full run exists for and a dirty tree read as clean are not things to lose for size, so a
+record at every cap (`MAX_STEPS`, `MAX_FAILING`, `MAX_PATHS`) can exceed it. Those caps are the hard
+bound; a task's record has always been able to pass the target the same way. **A repeat's record stores what it
 shares with the run it carries once** (`finished_record()` = `bounded_record()` then
 `shared_with_repeated()`): a subtree equal to the same one in `repeatedRun` is held there and
 its path named under `SHARED_KEY`, and a whole repeat's steps - the carried run's, each naming
@@ -4147,8 +4150,8 @@ rewrite the chain cannot see — every row rewritten and every hash recomputed f
 tampering would turn this check's first run red in every project that upgrades, and a check whose
 opening verdict is a wall of findings nobody means to act on is one its reader learns to skip. The
 gap closes where a row is appended: `link_after()` hashes an unchained row to make the `prev` of
-whatever follows, so a recorded full run - the one scope still appending - puts every row before it
-in its file under the chain, and a file no full run appends to again stays as it is. What *is* a finding is an
+whatever follows, so a row appended puts every row before it in its file under the chain - and no
+recorded run appends one any more, so a ledger file stays as its last append left it. What *is* a finding is an
 unchained row **after** a chained one — without that the chain is opt-out, since deleting two keys
 would put a row back outside it — and the finding names the innocent reading (an older copy of the
 plugin appended it) rather than asserting forgery, because nothing there can tell the two apart.
@@ -4393,14 +4396,21 @@ refused write returns before reaching it, so the chain can never assert a transi
 happen. That is why it is a separate action from the anchor below, whose subject is the evidence
 file and which was true the moment it was written.
 
-**`record()` writes the ledger row first and anchors it second** — only for a `--full` run now,
-the one scope that still appends a row — so the only reachable partial
-state is the harmless one — a run that happened with nothing yet pointing at it. The reverse would
-put a claim into a hash chain about a row that does not exist. The anchor's subject is the evidence
-file and it says only that a run was *recorded*, which is true the moment it is written; the row
-that says the **plan** moved belongs to whoever moves it and must not be written before that
-happens. The ledger half is deliberately **not** fail-soft: a run whose evidence could not be
-stored must not be reported as recorded.
+**A full run is recorded in the plan as every other run is.** `write_full_record()` writes the
+newest full run of any verdict as the index's `meta.lastFullRun` — `run_record()`'s shape and its
+`RECORD_MAX_BYTES` bound, its steps, observations and `selectionMiss` — and, when that run was
+measured (`measured_full_summary()`: `_measurement_disqualification()` passed against the gate it
+ran), `meta.lastMeasuredFullRun` in `held_run_record()`'s shape, in one `write_plan_file()` save
+that also stamps `meta.evidenceSince` when the plan states none (`since_change()`), since no ledger
+row is left to date the boundary from. `full_run_entries()` reads both back for `read_rows()`,
+ahead of the phases' records, as scope-`full` rows: the record through `record_row()`, the
+measured run through `held_run_row()`; a run both name is the record's row, judged measured
+through the summary's commands digest, because the plan's save scrubs a machine path out of a
+step's command where the frozen ledger kept it verbatim. `full_record_rule_problems()` asks the
+record the reader's rules for `validate-manifest`. No row is appended and no journal row anchors
+the run — `ACTION_RECORDED` stays for the anchors older releases wrote — so a full run that a newer
+one replaced is no longer resolvable by its id, and an older full run is read off its frozen row
+while that row is there.
 
 **`evidence-committed` is `audit-state-scope`'s other half.** That one grades what a commit
 *staged*; this grades what the committed plan *points at*. A `testEvidence` block points at its
@@ -4424,11 +4434,12 @@ short of that, UNKNOWN when the phase carries no `mergedHead` or git itself coul
 NOT_DECLARED when the plan names no runnable third place at all.
 
 **The plan holds the full runs each phase's answer is read from** (`phase.fullGateRuns`), so the
-answer survives without a ledger. `run-test-gate.py --full --record` writes the ledger row, then
-`hold_full_run()` offers the run to every started phase not already reading whole — merged or not,
+answer survives without a ledger. `run-test-gate.py --full --record` writes the plan's full-run
+record (`write_full_record()`, above), then `hold_full_run()` offers the run to every started phase
+not already reading whole — merged or not,
 since a run on a branch tip is what a fast-forward landing is certified by; a pending phase is
 offered nothing. `held_choice()` keeps at most two runs a phase: the best-ranked for it and the
-newest, and never replaces one that reads whole, so a later red run changes no byte. A held run
+newest, and never replaces one that reads whole, so a later red run changes no byte of a phase. A held run
 is an id, moment, head, `status` and the count and digest of its commands (`held_run_record()`);
 `records_of_bodies()` gives each back as a scope-`full` row, and `_measurement_disqualification()`
 reads it against the gate declared now. A held value of another shape certifies nothing and the
@@ -4448,8 +4459,8 @@ everywhere rather than as a red that holds the push and the release.
 **`row_is_red()` is the one reading of "this run exited red"**: every `status` but `passed`
 (`RUN_PASSED`), because `run-test-gate.py` exits 0 exactly then — so a status no writer has
 produced yet, or none at all, is red rather than a pass nobody measured. The measurement rule
-above, `full-gate.py`'s `--learn-from` refusal and `import-evidence.py`'s printed command all ask
-it rather than comparing the word themselves.
+above and `full-gate.py`'s `--learn-from` refusal both ask it rather than comparing the word
+themselves.
 
 **`pin_suite()` is where a runner's spelling of a suite becomes a tracked path.** A runner names
 a suite from whatever directory it was started in, and a derived gate, a coupling and a bug spell
@@ -5141,8 +5152,8 @@ gate means for every manifest already written, so the refusal names the option a
 decides.
 
 **Recording is opt-in and lands strictly after the verdict.** `--record` writes the subject's
-record and its pointer in the plan (a `--full` run, its evidence row and journal anchor instead,
-then the phases that hold it) — all inside the repository this run has just
+record and its pointer in the plan (a `--full` run, the plan's full-run record instead, then the
+phases that hold it) — all inside the repository this run has just
 described with `git status --porcelain`, which is why every one of them happens in `main()` after
 `run_gate()` has returned. A write above that line would appear in the very comparison it is being
 judged by, and the runner would accuse itself of the rewrite it exists to catch; a case drives the
@@ -5223,8 +5234,7 @@ would hide the failure the fix must be seen to clear — and any bug closed by i
 The full run passes no task, so only the closed-bug rule applies there.
 
 **The project is the manifest's.** Without `--project-dir`, the project is
-`_panel_write.project_of_manifest(manifest)`, the answer `full-gate.py`, `import-evidence.py` and
-`audit-task.py` read, never a count of directories up from the file — that count is right only for
+`_panel_write.project_of_manifest(manifest)`, the answer `full-gate.py` and `audit-task.py` read, never a count of directories up from the file — that count is right only for
 `<T>/docs/audit/<file>` and would record anywhere else into a ledger outside the project.
 
 **Which declared files a task's run reaches** (`gate_reach`). A passed gate run is evidence only
@@ -5296,71 +5306,8 @@ needs no `--tree`, refusing where nothing is kept. `kbg1` drives it.
 `bc1`-`bc4` and `be1`-`be5` drive the comparison; the `bod` cases the derived step's base; the
 drive's `bm`, `bdr` and `bt` cases drive `--base-of`.
 
-### `plugins/audit/scripts/governance/import-evidence.py`
-`import-evidence.py <manifest> <shard.jsonl> [--json] [--project-dir DIR]` — **bring a CI build's
-own evidence ledger file into this checkout, whole.**
-
-**Why it exists.** A CI runner's gate run writes its evidence row on the runner, and that file
-never reaches a clone through `git` — it is gitignored scratch unless something copies it out. A
-hand copy verifies nothing: a byte changed in transit, a line torn by a truncated artifact
-download, a shard typed over another writer's file under the same name, none of it visible before
-the row was trusted.
-
-**Verification is borrowed, never re-derived.** Before anything is copied, every line must parse
-and `_evidence_io.verify_rows` must hold over the whole file — the same chain check
-`audit-journal.py` and the doctor already trust, so a second implementation here could never come
-to disagree with it about what tampering looks like. A torn last line is checked separately,
-because a truncated tail never becomes a row for `verify_rows` to grade at all.
-
-**A name collision is graded by bytes, not merged.** A file already sitting under the shard's
-basename is compared byte for byte: identical bytes is the same import arriving twice and exits 0
-as "already imported"; different bytes is refused outright, because the chain's genesis is seeded
-from the basename alone (`_journal_io.genesis_prev`) — two different chains sharing one name is
-exactly the substitution that seed exists to catch. The copy itself is atomic: the bytes land in a
-temp file inside the destination directory and only `os.replace` gives it the final name.
-
-**One run, one row — checked before anything is written.** Every reader of the evidence directory
-counts rows, so a run arriving twice is counted twice. The import is refused, exit 1, naming each
-duplicated `runId` and the file already holding it, when the shard carries a `runId` the ledger
-already holds under another file, or repeats a `runId` among its own rows (the shard itself is
-then the holder). The holders come from `_evidence_io.read_rows`'s `rowFiles` over the plan this
-import was handed, the same read every consumer trusts, counting only the entries whose
-`rowSources` says `ROW_FROM_LEDGER`: a run the plan holds only as a `lastRun` record is NOT a
-holder, so the ledger file carrying it is imported and the run is then read once, as its row
-(`i45`) — the state of a plan that travels with git while its evidence files do not; once that
-run is a row, a second file carrying it is refused naming the ledger file (`i46`). A ledger that cannot be read in full refuses the import too, saying the check
-could not be made rather than reading as empty — an unread row may be the duplicate — and names the
-file with the step that clears each cause it cannot tell apart — make a file that would not open
-readable; truncate a torn tail's partial line on purpose; restore a file with a corrupted line from
-its committed copy or remove that line on purpose — and points at `audit-journal.py verify`, which
-names the cause. The byte-identical re-import is compared before this check and still reads as
-already imported.
-
-**A red full row prints the command that learns from it.** After a successful import — a fresh
-copy or the byte-identical repeat — `learn_from_commands` builds, from the rows this import already
-parsed, `python3 <full-gate.py> <manifest> --learn-from <runId> --project-dir <dir>` for each
-row that is full scope and red by `_evidence_io.row_is_red`. Every path in it is absolute and
-shell-quoted — the script resolved by `_loader.script_path`, the manifest argument made absolute,
-the project this import resolved — so the line runs as printed from any directory; `render` prints each after the authentication note and `--json` carries them as
-`learnFrom`. They are printed, never run: bringing a file in whole is not consent to write the
-plan, and a green row prints none.
-
-**The project is the manifest's.** `resolve_project` takes it from
-`_panel_write.project_of_manifest` when `--project-dir` is absent — the nearest ancestor holding
-`.claude/` or `.git`, else `<T>` for `<T>/docs/audit/<file>`, else the manifest's own directory —
-and never from the directory the command was typed in, which would land the shard in a ledger the
-plan never reads and print a `--learn-from` command pairing that plan with the wrong ledger. With
-`--project-dir`, a manifest that does not sit under it (both resolved through symlinks) is
-refused, exit 2.
-
-**What it does not prove.** A ledger is evidence, not authentication — a new shard starts at its
-own genesis the moment somebody names a file that way, so a verified chain says the rows were not
-edited after the file was written and says nothing about who wrote it. The report says so on every
-successful import; the commit that carries the imported file into the repository is the
-authorship trail.
-
 ### `plugins/audit/scripts/governance/full-gate.py`
-`full-gate.py <manifest> [--writer NAME] [--project-dir DIR]`, or
+`full-gate.py <manifest> [--project-dir DIR]`, or
 `full-gate.py <manifest> --learn-from RUNID [--project-dir DIR]`, or
 `full-gate.py <manifest> --ci-run RUNID --phase P [--project-dir DIR]` — **the one command of the third
 place**, meant for a pre-push hook or a CI step that should not have to spell out
@@ -5381,9 +5328,10 @@ and answers with the sentence and **exit 0** instead of letting that usage refus
 operator's shell as a blocked push. A `meta.fullGate` holding only review-only entries is no
 runnable gate, so it gets the same exit 0, with the entries it left out named.
 
-**A red run is learned from, and still blocks.** After a non-zero exit this file reads the row
-the run recorded (`_evidence_io.row_by_run`, with the id off the runner's own `evidence: recorded`
-line; with no such line, the newest full row stamped since it started the run — never an earlier
+**A red run is learned from, and still blocks.** After a non-zero exit this file reads the run
+the runner recorded, the plan's full-run record as `_evidence_io.read_rows` reads it back
+(`_evidence_io.row_by_run`, with the id off the runner's own `evidence: recorded`
+line; with no such line, the newest full run stamped since it started the run — never an earlier
 run at the same head) and files what it taught through `audit-task.py`, as subprocesses: a
 `couple` and a `bug-add` per `selectionMiss` entry, and a `couple --caught` per suite the plan
 already coupled that the runner named failing — pinned by `_evidence_io.resolve_named`, so a name
@@ -5422,26 +5370,27 @@ the answer. The argv lint in `test_drive_phase.py` reads this file as well as `d
 **The project is the manifest's, and a lost file is named.** Without `--project-dir` the project
 is `_panel_write.project_of_manifest(manifest)` — the plugin's one answer, never a count of
 directories up from the file — and it is always handed to `run-test-gate.py` as `--project-dir`,
-so the runner records into the very ledger the red branch then reads. When the run's row is not
-among the readable rows and `read_rows` could not read some ledger file in full, `find_row` says
-so, naming the file (`_evidence_io.unreadable_names`) with the `--learn-from` command to ask again
+so the runner records into the very plan the red branch then reads. When the run is not among
+the readable runs and `read_rows` could not read some ledger or plan file in full, `find_row` says
+so, naming the file (`_evidence_io.lost_in_read`) with the `--learn-from` command to ask again
 once it is repaired, rather than calling the run absent.
 
-**`--learn-from <runId>` learns from a run recorded elsewhere, running nothing.**
-`full-gate.py <manifest> --learn-from RUNID [--project-dir DIR]` is the door for a red full run a
-CI build recorded into its own shard: learning inside the pipeline would write into a checkout the
-build throws away, so the row teaches once `import-evidence.py` has brought it into a checkout
-that keeps what is filed. It reads the row with `_evidence_io.row_by_run` and hands it to
-`learn_from_row`, the one function the red branch also calls, so the rules above are stated once.
-`row_refusal` refuses a row that is not full scope and a row `_evidence_io.row_is_red` calls
-green — the one home of the runner's own reading, since `run-test-gate.py` exits 0 exactly when
-`status` is `passed`, and the reading `import-evidence.py` uses too — and a run id the readable rows lack
-is refused naming each ledger file `read_rows` could not read in full, the way `audit-task.py`'s
-`--basis-run` lookup does. Every refusal is one `[full-gate] cannot learn from run …` line and exit
-1. Unlike the red branch there is no runner's verdict to keep, so a failed verb or a raise is exit
-1 too; exit 0 means the learning ran, and when it filed nothing the lines above the summary say
-why. Learning twice files nothing new, by the own-miss rule above. Beside `--writer` it is a usage error, exit 2: a learning pass records no row for a
-writer to name.
+**`--learn-from <runId>` learns from a recorded run, running nothing.**
+`full-gate.py <manifest> --learn-from RUNID [--project-dir DIR]` reads the run where every
+recorded run is read — the plan's full-run record (`meta.lastFullRun`, the newest full run of any
+verdict), or an older full run's frozen ledger row while that row is there — with
+`_evidence_io.row_by_run`, and hands it to `learn_from_row`, the one function the red branch also
+calls, so the rules above are stated once. `row_refusal` refuses a run that is not full scope and
+one `_evidence_io.row_is_red` calls green — the one home of the runner's own reading, since
+`run-test-gate.py` exits 0 exactly when `status` is `passed` — and a run id the readable runs lack
+is refused with `_evidence_io.run_not_found`'s sentence, naming both places and each file
+`read_rows` could not read in full, the way `audit-task.py`'s `--basis-run` lookup does, and saying
+that a full run a newer one replaced is no longer held. Every refusal is one `[full-gate] cannot
+learn from run …` line and exit 1. Unlike the red branch there is no runner's verdict to keep, so a
+failed verb or a raise is exit 1 too; exit 0 means the learning ran, and when it filed nothing the
+lines above the summary say why. Learning twice files nothing new, by the own-miss rule above.
+`--writer`, which named a CI build's ledger file, is gone with the row it named: it is an unknown
+flag, exit 2.
 
 **`--ci-run <runId> --phase P` is the one path from a CI run to the plan.**
 `full-gate.py <manifest> --ci-run RUNID --phase P [--project-dir DIR]` asks `gh run view` for the
@@ -7403,8 +7352,12 @@ A run record and its pointer, a CI run, a merge stamp with its head, a sign-off'
 field by field, a red on the base, a green on one side and a newer red on the other conflicted on
 the run id, the moment and the duration alone, and keeping one side there read a red back as
 passed. `MERGE_UNITS` names every object value the schema declares on a kind the merge walks into
-as `whole` (sibling keys grouped where they are one account together), `container` or `map`, and
-`tests/test__manifest_merge.py` walks the schema and fails on one no row names. A group of sibling
+as `whole` (sibling keys grouped where they are one account together), `newest`, `container` or
+`map`, and `tests/test__manifest_merge.py` walks the schema and fails on one no row names. A
+`newest` value - `meta.lastFullRun`, `meta.lastMeasuredFullRun`, each meaning "the plan's newest
+one" - is whole and one key per row; changed on both sides it is the side whose `NEWEST_MOMENT`
+(`at`, in the recorder's stamp form) is later, never a blend, because a full run on every branch
+is ordinary work, and a conflict only when the moments tie or one is unreadable (`nw1`-`nw8`). A group of sibling
 keys - a task's status with the start, block or close that moved it, a gate derivation with its
 basis, a finding's disposition - is no schema object, so the suite finds those by their WRITERS:
 an AST scan of every `.py` under `scripts/` for the constant keys one function writes to one

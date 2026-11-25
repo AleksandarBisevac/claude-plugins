@@ -281,7 +281,7 @@ whatever the numbers say: set `meta.phaseGate.mode` to `"enforce"` once this rec
 this project — nothing switches it for you, because no threshold here decides that judgement
 call.
 
-## The `full run` row — the third place, read off the ledger
+## The `full run` row — the third place, read off the recorded runs
 
 Read only when `meta.fullGate` is declared. **No `meta.fullGate` is an OK row saying so**, the
 same reading `shadow recall` gives its own opt-in switch: a plan that never declared a third

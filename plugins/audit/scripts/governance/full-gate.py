@@ -25,8 +25,9 @@ own `_run_full` runs and every reader counts a recorded run against, so a
 either - the entries it left out are named in the sentence.
 
 THE RED BRANCH LEARNS, AND STILL BLOCKS. After the runner exits non-zero,
-this file reads the row it recorded (`_evidence_io.row_by_run`, with the run
-id off the runner's own `evidence: recorded` line) and files what the run
+this file reads the run it recorded - the plan's full-run record, read back
+as a row (`_evidence_io.read_rows`, then `row_by_run` with the run id off the
+runner's own `evidence: recorded` line) - and files what the run
 taught through `audit-task.py`, as subprocesses: a `couple` and a `bug-add`
 for each `selectionMiss` entry, and a `couple --caught` for each suite the
 plan already coupled that the runner named failing and the row does not list
@@ -35,8 +36,8 @@ is printed and its exit code named. The exit stays the runner's: a learned
 miss is still a red run, and the push it was guarding is still refused.
 
 WHAT IT NEVER ACTS ON. A green run (the runner's exit is the verdict, not
-whatever a row says). A run the runner said it did NOT record - a row the
-ledger holds for that head is some other run's. A failure the runner did not
+whatever a row says). A run the runner said it did NOT record - a run the
+plan or the ledger holds for that head is some other run's. A failure the runner did not
 NAME: every miss is re-checked against `_evidence_io.named_failing_suites`,
 the one reading of "named", so a suite read off a tail of output is reported
 as not learned rather than coupled. A miss whose `sources` the row CUT
@@ -114,18 +115,17 @@ record and names the one it replaced (`supersedes`). A bug is filed once per
 run: its title is built from the run's own fields, and any bug of that title,
 open or not, means it is filed.
 
-A RUN RECORDED ELSEWHERE IS LEARNED FROM AFTER IT IS IMPORTED. A CI build
-records into its own shard and learning there would write into a checkout the
-build throws away, so `--learn-from <runId>` runs NOTHING: it reads that row
-from this checkout's ledger (`_evidence_io.row_by_run`) and hands it to
-`learn_from_row`, the same function the red branch calls - the rules above are
-stated once. It refuses a run id the ledger does not hold (naming any ledger
-file it could not read in full), a row that is not full scope, and a green
-row. `import-evidence.py` prints this command for each red full row it brings
-in.
+A RECORDED RUN IS LEARNED FROM WITHOUT RUNNING IT AGAIN. `--learn-from
+<runId>` runs NOTHING: it reads that run as the recorded runs hold it - the
+plan's full-run record (the newest full run, of any verdict), or an older
+full run's frozen row in the evidence ledger (`_evidence_io.read_rows`, then
+`row_by_run`) - and hands it to `learn_from_row`, the same function the red
+branch calls - the rules above are stated once. It refuses a run id neither
+holds (naming any file it could not read in full; a full run a newer one
+replaced is no longer held), a run that is not full scope, and a green run.
 
 Usage:
-  full-gate.py <manifest> [--writer NAME] [--project-dir DIR]
+  full-gate.py <manifest> [--project-dir DIR]
   full-gate.py <manifest> --learn-from RUNID [--project-dir DIR]
   full-gate.py <manifest> --ci-run RUNID --phase P [--project-dir DIR]
   full-gate.py <manifest> --ci-unreported SHA --phase P --basis TEXT|-
@@ -139,11 +139,12 @@ Exit codes:
      with --learn-from, the learning ran - even when it filed nothing;
      with --ci-run/--ci-unreported, the run is recorded (or was already)
   1  the full run was red - whether or not a miss was learned from it; with
-     --learn-from, the row was refused, the ledger could not be read, a
-     learning verb failed, or the learning raised; with --ci-run or
+     --learn-from, the run was refused, the recorded runs could not be read,
+     a learning verb failed, or the learning raised; with --ci-run or
      --ci-unreported, the record was refused (the plan would not validate
      with it) or not written (the plan lock), or a red run's bug verb failed
-  2  usage error (--learn-from beside --writer, a CI flag beside another
+  2  usage error (an unknown flag - --writer among them, which names a ledger
+     file no run writes any more - a CI flag beside another
      mode, no --phase, a phase the plan lacks, --basis missing or stray,
      --run without --ci-unreported), or the manifest will not load
   6  with --ci-run, the run's core could not be read; nothing was written
@@ -282,21 +283,17 @@ def _stream_subprocess(cmd, out, stdin=None):
     return proc.wait()
 
 
-def _run_full_gate(manifest_path, writer, project_dir, out):
+def _run_full_gate(manifest_path, project_dir, out):
     """Build and run the one delegated command, returning its exit code.
 
     NEVER RE-IMPLEMENTS THE RUN. Every flag here is `run-test-gate.py`'s own:
     `--full --record` is the measurement this file exists to make easy to
-    reach, and `--writer` passes through unchanged rather than being re-parsed
-    and re-validated a second time by a second parser that could drift from
-    the first. `project_dir` is ALWAYS passed - the caller's `--project-dir`,
-    or the project `main` resolved for the manifest - so the runner records
-    into the very ledger the red branch then reads.
+    reach. `project_dir` is ALWAYS passed - the caller's `--project-dir`, or
+    the project `main` resolved for the manifest - so the runner records into
+    the very plan the red branch then reads.
     """
     cmd = [sys.executable, _loader.script_path("run-test-gate.py"),
           manifest_path, "--full", "--record"]
-    if writer:
-        cmd += ["--writer", writer]
     if project_dir:
         cmd += ["--project-dir", project_dir]
     return _stream_subprocess(cmd, out)
@@ -307,6 +304,9 @@ def _run_full_gate(manifest_path, writer, project_dir, out):
 # after the first is the only pointer to the row this run wrote.
 RECORDED_MARK = "evidence: recorded "
 NOT_RECORDED_MARK = "evidence: NOT recorded"
+# What a read of the recorded runs covers, as a refusal names it.
+RECORDED_RUNS = ("the recorded runs (the plan's records and the evidence "
+                 "ledger's older rows)")
 
 
 def bug_title(test):
@@ -371,30 +371,32 @@ def _stamped_since(row, started):
 
 
 def find_row(rows, lines, started, lost):
-    """`(row, why)` - the row this run recorded, or None and the sentence
+    """`(row, why)` - the run this run recorded, read as a row (the plan's
+    full-run record, or a frozen ledger row), or None and the sentence
     saying why nothing can be acted on.
 
-    `lost` names each ledger file `read_rows` could not read in full
-    (`_evidence_io.unreadable_names`). A row not among the readable ones is
-    then never called absent: the run may sit on the line that read lost,
-    so the sentence names those files, as `--learn-from`'s own refusal
-    does."""
+    `lost` names each file `read_rows` could not read in full
+    (`_evidence_io.lost_in_read`: the ledger's, then the plan's). A run not
+    among the readable ones is then never called absent: it may be in what
+    that read lost, so the sentence names those files, as `--learn-from`'s
+    own refusal does."""
     state, value = recorded_run(lines)
     if state == "not-recorded":
-        return None, ("the runner printed %r, so there is no row of this run "
-                      "to learn from; a row the ledger holds is some other "
-                      "run's" % (value,))
+        return None, ("the runner printed %r, so there is no record of this "
+                      "run to learn from; a run the plan or the ledger holds "
+                      "is some other run's" % (value,))
     if state == "recorded":
         row = _ev.row_by_run(rows, value)
         if row is None:
             return None, ("the runner printed that it recorded %s, and the "
-                          "readable rows of the evidence ledger hold no row "
-                          "with that id%s" % (value, _lost_note(lost)))
+                          "readable recorded runs (the plan's records and the "
+                          "evidence ledger's rows) hold no run with that id%s"
+                          % (value, _lost_note(lost)))
         return row, None
     row = _newest_full_since(rows, started)
     if row is None:
         return None, ("the runner printed no evidence line, and the readable "
-                      "rows of the ledger hold no full row stamped since %s%s"
+                      "recorded runs hold no full run stamped since %s%s"
                       % (_moment_text(started), _lost_note(lost)))
     return row, None
 
@@ -637,29 +639,27 @@ def learn_from_row(row, manifest_path, project, out):
 
 
 def learn(manifest_path, project, lines, started, out):
-    """Act on the row a red run recorded; return how many verbs failed."""
+    """Act on the run a red run recorded; return how many verbs failed."""
     try:
-        ledger = _ev.read_rows(project, manifest_path=manifest_path)
+        recorded = _ev.read_rows(project, manifest_path=manifest_path)
     except Exception as exc:
-        out("%s learned nothing: the evidence ledger could not be read (%s)"
-            % (PREFIX, exc))
+        out("%s learned nothing: %s could not be read (%s)"
+            % (PREFIX, RECORDED_RUNS, exc))
         return 0
-    row, why = find_row(ledger.get("rows") or [], lines, started,
-                        _ev.unreadable_names(ledger, project))
+    row, why = find_row(recorded.get("rows") or [], lines, started,
+                        _ev.lost_in_read(project, recorded))
     if row is None:
         out("%s learned nothing: %s" % (PREFIX, why))
         return 0
     return learn_from_row(row, manifest_path, project, out)["failed"]
 
 
-# --- learning from a run recorded elsewhere ---------------------------------------
-# A CI build records its full run into its own shard, and learning there would
-# write into a checkout the build throws away. So the build records, the shard
-# is imported (`import-evidence.py` prints the command below for each red full
-# row it brought in), and the learning happens here, in the checkout that keeps
-# it - running nothing, reading the one row the id names.
+# --- learning from a recorded run, running nothing --------------------------------
+# The run the id names is read where every recorded run is read: the plan's
+# full-run record holds the newest full run of any verdict, and an older full
+# run is read off its frozen ledger row while that row is there.
 def row_refusal(row, run_id):
-    """Why the ledger's row for `run_id` cannot be learned from, or None.
+    """Why the recorded run `run_id` (`row`) cannot be learned from, or None.
     Red is `_evidence_io.row_is_red`, the runner's own reading, and a run
     that exited red is the one the red branch learns from."""
     scope = row.get("scope")
@@ -673,38 +673,36 @@ def row_refusal(row, run_id):
     return None
 
 
-def _missing_row(ledger, run_id, project):
-    """The refusal for a run id the readable rows do not hold - naming each
-    ledger file that could not be read in full, because the run may sit on
-    the line that read lost, and 'no such run' would then be a false answer."""
-    lost = _ev.unreadable_names(ledger, project)
-    if lost:
-        return ("no run %s is among the readable rows of the evidence "
-                "ledger, and %s could not be read in full - the run may be "
-                "on a line that read lost; repair it before asking again"
-                % (run_id, ", ".join(lost)))
-    return ("no run %s is in the evidence ledger - import the shard that "
-            "recorded it first (import-evidence.py)" % (run_id,))
+def _missing_row(recorded, run_id, project, manifest_path):
+    """The refusal for a run id the recorded runs do not hold:
+    `_evidence_io.run_not_found`, the one sentence every lookup by run id
+    refuses with - both places named, each file that could not be read in
+    full (the run may be in what that read lost, and 'no such run' would then
+    be a false answer), and that a run a newer one replaced is no longer
+    held."""
+    return _ev.run_not_found(project, recorded, manifest_path, run_id)
 
 
 def learn_from(manifest_path, project, run_id, out):
-    """`--learn-from`: learn from the ledger's row for `run_id`, running no
-    gate. Returns the exit code.
+    """`--learn-from`: learn from the recorded run `run_id` - the plan's
+    full-run record or an older run's frozen ledger row - running no gate.
+    Returns the exit code.
 
     EXIT 1 WHEN THE LEARNING DID NOT HAPPEN OR DID NOT FINISH - a refused
-    row, an unreadable ledger, a verb that failed, a raise. Unlike the red
-    branch there is no runner's verdict to preserve here: the learning IS
-    the command, so its failure is the answer. Exit 0 once it ran, including
-    when it filed nothing, and the lines above the summary say why."""
+    run, recorded runs that could not be read, a verb that failed, a raise.
+    Unlike the red branch there is no runner's verdict to preserve here: the
+    learning IS the command, so its failure is the answer. Exit 0 once it
+    ran, including when it filed nothing, and the lines above the summary
+    say why."""
     try:
-        ledger = _ev.read_rows(project, manifest_path=manifest_path)
+        recorded = _ev.read_rows(project, manifest_path=manifest_path)
     except Exception as exc:
-        out("%s cannot learn from run %s: the evidence ledger could not be "
-            "read (%s)" % (PREFIX, run_id, exc))
+        out("%s cannot learn from run %s: %s could not be read (%s)"
+            % (PREFIX, run_id, RECORDED_RUNS, exc))
         return E_FAIL
-    row = _ev.row_by_run(ledger.get("rows") or [], run_id)
-    why = (_missing_row(ledger, run_id, project) if row is None
-           else row_refusal(row, run_id))
+    row = _ev.row_by_run(recorded.get("rows") or [], run_id)
+    why = (_missing_row(recorded, run_id, project, manifest_path)
+           if row is None else row_refusal(row, run_id))
     if why:
         out("%s cannot learn from run %s: %s" % (PREFIX, run_id, why))
         return E_FAIL
@@ -1077,9 +1075,9 @@ def _ci_usage(args, manifest):
                 "takes its run id itself")
     if args.ci_run is not None and args.ci_unreported is not None:
         return "--ci-run reads a run and --ci-unreported records none; pass one"
-    if args.learn_from is not None or args.writer:
+    if args.learn_from is not None:
         return ("--ci-run/--ci-unreported record a CI run and run no gate, so "
-                "--learn-from and --writer have no place beside them")
+                "--learn-from has no place beside them")
     if not args.phase:
         return "a CI run is recorded on a phase: pass --phase <id>"
     if args.ci_unreported is not None and not (args.basis or "").strip():
@@ -1097,7 +1095,6 @@ def _ci_usage(args, manifest):
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="full-gate.py", add_help=True)
     p.add_argument("manifest")
-    p.add_argument("--writer", dest="writer", default=None)
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--learn-from", dest="learn_from", default=None,
                    metavar="RUNID")
@@ -1112,10 +1109,6 @@ def main(argv, out=print):
         args = p.parse_args(argv)
     except SystemExit as exc:
         return E_USAGE if exc.code else E_OK
-    if args.learn_from is not None and args.writer:
-        out("%s --learn-from runs no gate and records no row, so --writer "
-            "names no file to write; pass one of them" % (PREFIX,))
-        return E_USAGE
     if args.basis == "-":
         args.basis = sys.stdin.read().strip()
     try:
@@ -1133,7 +1126,7 @@ def main(argv, out=print):
     # `.claude/` or `.git`, the default layout's root, else the manifest's own
     # directory) - never a count of directories, which is right only for
     # `<T>/docs/audit/<file>`. It is handed to the runner as `--project-dir`
-    # below, so the ledger read here is the one the run was recorded into.
+    # below, so the plan read here is the one the run was recorded into.
     project = args.project_dir or _panel_write.project_of_manifest(
         args.manifest)
     if args.learn_from is not None:
@@ -1153,7 +1146,7 @@ def main(argv, out=print):
         out(line)
 
     started = start_moment()
-    code = _run_full_gate(args.manifest, args.writer, project, tee)
+    code = _run_full_gate(args.manifest, project, tee)
     if code == E_OK:
         return code
     # LEARNING IS ADVISORY, THE VERDICT IS NOT: a row this file cannot read

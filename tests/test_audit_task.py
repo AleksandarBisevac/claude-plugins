@@ -74,6 +74,10 @@ M = _loader.load_script("audit-task.py", modname="audit_task")
 # same runner directly.
 _SCRIPT = os.path.abspath(__file__)
 _STAGE_PREFIX = "audit-task-stages-"
+# The clause every lookup of a run by its id ends its refusal with
+# (`_evidence_io.run_not_found`), spelled out here rather than imported so a
+# reworded refusal reaches these cases by name.
+_REPLACED_SAID = "a run a newer one replaced is no longer held"
 
 
 def _stderr_of(call, *args):
@@ -11809,6 +11813,9 @@ def _record_cases(check):
               codeff == 2 and "no run NO-SUCH-RUN is in the evidence ledger"
               in txtff and "in any record the plan" in txtff
               and task_in(ff_mp, "P1.5") is None)
+        check("ff4r ...and the refusal says a run a newer one replaced is no "
+              "longer held, in the lookup's own sentence: %r"
+              % (txtff[-260:],), _REPLACED_SAID in txtff)
 
         # ---- a torn ledger line: the run is not called absent ---------------
         # It may be the very line the read lost, so the refusal names the
@@ -12395,6 +12402,12 @@ def _record_cases(check):
               codecp3 == 2 and "no run NO-SUCH-RUN is in the evidence ledger"
               in txtcp3 and "in any record the plan" in txtcp3
               and len(cp_coupling(cp_mp)) == 1)
+        check("cp3b ...and the refusal says a run a newer one replaced is no "
+              "longer held, in the lookup's own sentence - a full run the "
+              "remedy named and the next full run replaced is refused this "
+              "way: %r" % (txtcp3[-260:],),
+              _REPLACED_SAID in txtcp3
+              and "taught nothing recorded" not in txtcp3)
 
         # ---- ALLOW CASE: --test naming no real path is refused -------------
         codecp4, txtcp4 = run(
@@ -12568,6 +12581,9 @@ def _record_cases(check):
               % ((codecc8, txtcc8[:200]),),
               codecc8 == 2 and "no run NO-SUCH-RUN is in the evidence ledger"
               in txtcc8 and "in any record the plan" in txtcc8)
+        check("cc8b ...and the refusal says a run a newer one replaced is no "
+              "longer held, in the lookup's own sentence: %r"
+              % (txtcc8[-260:],), _REPLACED_SAID in txtcc8)
         cc_row("RUN-CC-OLD", "2026-09-02T00:00:00Z", "full",
                ["tests/test_c.py"], _cc_named)
         codecc9, txtcc9 = run(

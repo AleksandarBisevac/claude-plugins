@@ -1034,13 +1034,13 @@ def _composition_view(manifest, boundary=None, full_run_rows=None,
 
     `full_run_rows` AND `git_root` ARE THE SAME KIND OF ARGUMENT, ONE LAYER
     OVER. Both name inputs this module has no business reading itself - the
-    full-scope rows live in the evidence ledger (`_evidence_io`) and
-    resolving a git root is `_panel_state`'s own convention, not this file's -
-    so a caller that has not wired them yet gets NO `fullRun` key at all on
-    any phase row, never a PROVISIONAL built from a ledger nobody actually
-    read. `full_run_rows=None` is that "not wired yet" state; an empty list
-    is a real answer ("the ledger holds no full-scope run") and is not the
-    same claim.
+    full runs are read by `_evidence_io` (the plan's full-run record and the
+    ledger's older rows) and resolving a git root is `_panel_state`'s own
+    convention, not this file's - so a caller that has not wired them yet
+    gets NO `fullRun` key at all on any phase row, never a PROVISIONAL built
+    from runs nobody actually read. `full_run_rows=None` is that "not wired
+    yet" state; an empty list is a real answer ("no recorded run is a
+    full-scope one") and is not the same claim.
 
     `full_run_error`, WHEN GIVEN, MEANS THE CALLER TRIED TO READ THE LEDGER
     AND COULD NOT - a third state beside "not wired" and "read clean", and it

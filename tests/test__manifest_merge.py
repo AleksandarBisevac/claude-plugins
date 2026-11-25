@@ -383,8 +383,99 @@ def _cases(check):
           sorted(["P10", "P9", "BUG-12", "BUG-2"], key=M.natural_key)
           == ["BUG-2", "BUG-12", "P9", "P10"])
     _whole_value_cases(check)
+    _newest_cases(check)
     _schema_table_cases(check)
     _co_write_cases(check)
+
+
+# --- a value that means "the newest one" ----------------------------------------
+# The plan's full-run record and its newest measured run: a pre-push full gate and
+# a full review record on every branch, so both sides changing them is ordinary
+# work. Each is the later side's value whole, by its own `at`, and a conflict only
+# when the moments do not order the two.
+def _full_runs(full, measured):
+    doc = _base()
+    if full is not None:
+        doc["meta"]["lastFullRun"] = full
+    if measured is not None:
+        doc["meta"]["lastMeasuredFullRun"] = measured
+    return doc
+
+
+def _held(rid, at):
+    return {"runId": rid, "at": at, "head": "a" * 40, "status": "passed",
+            "entries": ["sweep"], "digest": "sha256:" + "0" * 64}
+
+
+def _newest_cases(check):
+    g0 = _run("G0", "passed", "2026-11-20T09:00:00Z", 100)
+    h0 = _held("G0", g0["at"])
+    red_early = _run("R1", "failed", "2026-11-20T10:00:00Z", 200)
+    red_late = _run("R3", "failed", "2026-11-20T12:00:00Z", 300)
+    green = _run("G2", "passed", "2026-11-20T11:00:00Z", 400)
+    h2 = _held("G2", green["at"])
+    b = _full_runs(g0, h0)
+
+    def meta(r):
+        return (r["doc"]["meta"].get("lastFullRun"),
+                r["doc"]["meta"].get("lastMeasuredFullRun"))
+
+    def both_ways(o, t):
+        r, rev = M.merge3(b, o, t), M.merge3(b, t, o)
+        return r, _dump(r["doc"]) == _dump(rev["doc"]) and rev["conflicts"] == []
+
+    # A green base; a red on one branch, a later green (measured) on the other.
+    r, sym = both_ways(_full_runs(red_early, h0), _full_runs(green, h2))
+    check("nw1 a green full run on the base, a red on one branch and a later measured "
+          "green on the other merge with no conflict: the newest full run is the green, "
+          "and so is the newest measured run - each the later side's value whole, the "
+          "same in either direction",
+          r["conflicts"] == [] and meta(r) == (green, h2) and sym, (r["conflicts"], meta(r)))
+    # ...and the red the later one: each key is its own newest, from its own side.
+    r, sym = both_ways(_full_runs(red_late, h0), _full_runs(green, h2))
+    check("nw2 ...and when the red is the later run, the newest full run is that red "
+          "while the newest measured run is still the other branch's green - each key "
+          "the newest of its own meaning, never one side's pair imposed on the other",
+          r["conflicts"] == [] and meta(r) == (red_late, h2) and sym,
+          (r["conflicts"], meta(r)))
+    # Two reds on a green base: the later red, and the base's measured run kept.
+    r, sym = both_ways(_full_runs(red_early, h0), _full_runs(red_late, h0))
+    check("nw3 a red on each branch over a green base is the later red, with the "
+          "base's measured run, which neither red replaced",
+          r["conflicts"] == [] and meta(r) == (red_late, h0) and sym,
+          (r["conflicts"], meta(r)))
+    # Two measured greens: the later of each.
+    g4 = _run("G4", "passed", "2026-11-20T13:00:00Z", 500)
+    h4 = _held("G4", g4["at"])
+    r, sym = both_ways(_full_runs(green, h2), _full_runs(g4, h4))
+    check("nw4 a measured green on each branch is the later green in both keys",
+          r["conflicts"] == [] and meta(r) == (g4, h4) and sym, (r["conflicts"], meta(r)))
+    # One side unchanged: the other side's run, whatever its moment.
+    r = M.merge3(b, _full_runs(g0, h0), _full_runs(red_early, h0))
+    check("nw5 ALLOW: a full run recorded on one branch only is that branch's record",
+          r["conflicts"] == [] and meta(r) == (red_early, h0), (r["conflicts"], meta(r)))
+    # A tie: two different runs stamped the same second.
+    twin = _run("R9", "failed", red_early["at"], 900)
+    r = M.merge3(b, _full_runs(red_early, h0), _full_runs(twin, h0))
+    paths = [c["path"] for c in r["conflicts"]]
+    check("nw6 two different full runs of the same moment are one conflict on the "
+          "record, whose reason names the moment, since neither is the newer",
+          paths == ["meta.lastFullRun"]
+          and red_early["at"] in r["conflicts"][0]["reason"], r["conflicts"])
+    # A moment that is not the recorder's form orders nothing.
+    blank = dict(red_late, at="yesterday")
+    r = M.merge3(b, _full_runs(red_early, h0), _full_runs(blank, h0))
+    check("nw7 a run whose moment is not the recorder's stamp is a conflict naming the "
+          "side that carries none, never a guess at which is newer",
+          [c["path"] for c in r["conflicts"]] == ["meta.lastFullRun"]
+          and "theirs' run carries no moment" in r["conflicts"][0]["reason"],
+          r["conflicts"])
+    # Deleted on one side, recorded on the other: still the delete-vs-change conflict.
+    r = M.merge3(b, _full_runs(None, h0), _full_runs(red_late, h0))
+    check("nw8 a record deleted on one branch and replaced on the other is still a "
+          "delete-vs-change conflict, not the replacement taken as the newer",
+          [c["path"] for c in r["conflicts"]] == ["meta.lastFullRun"]
+          and "deleted" in r["conflicts"][0]["reason"], r["conflicts"])
 
 
 # --- a value that is one account merges whole ------------------------------------
@@ -1296,11 +1387,14 @@ def _schema_table_cases(check):
     twice += sorted("%s %s" % r for r in set(rows) if rows.count(r) > 1)
     twice += sorted("%s %s" % (row[0], row[1]) for row in M.MERGE_UNITS
                     if len(set(row[1])) != len(row[1]))
-    vocab = sorted(set(row[2] for row in M.MERGE_UNITS) - set(["whole", "container", "map"]))
+    vocab = sorted(set(row[2] for row in M.MERGE_UNITS)
+                   - set(["whole", "newest", "container", "map"]))
+    # A `newest` row is ONE key: its sides are ordered by that value's own moment,
+    # and two keys in one row would make one key's moment decide the other's.
     groups = [row for row in M.MERGE_UNITS if len(row[1]) > 1 and row[2] != "whole"]
     reasons = [row for row in M.MERGE_UNITS if not (row[3] or "").strip()]
     check("wv15 ...and no row names a key the schema does not declare for that kind, "
-          "none is named twice but by two whole rows, every verdict is one of the three "
+          "none is named twice but by two whole rows, every verdict is one of the four "
           "words, only a whole value groups sibling keys, and every row carries its "
           "reason; stale %r, twice %r, vocabulary %r, groups %r, no reason %r"
           % (stale, twice, vocab, groups, reasons),

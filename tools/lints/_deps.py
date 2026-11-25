@@ -928,17 +928,6 @@ LAYERS = (
      # It reaches `_manifest_io` for the loader, the phase resolver and `TERMINAL`,
      # and `_journal_io` for the row.
      "record-risk-confirmation",
-     # `import-evidence` is the same question one machine LATER: a CI runner
-     # made its own gate run and recorded its own ledger file, and until now the
-     # only way that file reached a clone was a hand copy nothing verified - a
-     # byte changed in transit, a truncated download, a shard typed over
-     # another writer's file under one name, none of it visible before the row
-     # was trusted. It reaches `_evidence_io` for `verify_rows` (the SAME
-     # chain check every other reader of this ledger trusts, not a second
-     # opinion written here) and `evidence_dir`, `_journal_io` for
-     # `rows_from_text` and config loading, and `_manifest_io` for the
-     # loader that turns a bad `<manifest>` argument into a usage error.
-     "import-evidence",
      # `migrate-json-encoding` rewrites the files of ONE manifest in the escaping
      # `_manifest_io.json_document` chose, in a single all-or-nothing pass. An
      # entry point for this layer's usual reason - the caller is an operator, or
@@ -2535,10 +2524,6 @@ STATE_WRITERS = (
      "archive moves an untracked month file into archive/ unchanged, because the "
      "hash chain survives only untouched bytes; a move is the operation, and "
      "rewriting the file through a writer would be the defect."),
-    ("scripts/governance/import-evidence.py", "import_shard",
-     "an imported evidence shard is copied as raw BYTES, verified before the "
-     "write, and a text writer would translate its line endings and break what "
-     "was verified. Its temp name is mkstemp's own."),
     ("scripts/governance/_invariants.py", "clone_id",
      "publishes the clone token whole: a link for the first writer and a "
      "replace only for an empty or truncated file; the link half is "
@@ -2800,6 +2785,8 @@ PLAN_WRITERS = (
     ("scripts/governance/run-test-gate.py", "_record_run",
      ("_evidence_io.write_evidence_since", "_evidence_io.write_record"),
      _PW_CASE % ("pf7",), _PW_HELPER),
+    ("scripts/governance/run-test-gate.py", "_record_full_run",
+     "_evidence_io.write_full_record", _PW_CASE % ("pf8",), _PW_HELPER),
     (_PW_AT, "_cmd_batch_add", _PW_VERB_VIA, _PW_CASE % ("pm3",), _PW_VERB),
     (_PW_AT, "_group_door", _PW_VERB_VIA, _PW_DOOR_CASE, _PW_VERB),
     (_PW_AT, "cmd_add", _PW_VERB_VIA, "tests/test__evidence_io.py pa10",

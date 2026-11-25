@@ -51,8 +51,15 @@ import _help_lints as L                          # noqa: E402
 # config table, so no single schema addition can be the byte that crosses the
 # line: crossing it has to be a decision to spend the margin, made in this file,
 # not a paragraph that happened to land last.
+#
+# SPENT ONCE, on 2026-11-25, from 40000 to 38000: the plan's full-run record
+# (`meta.lastFullRun`, the lastRun shape, and `meta.lastMeasuredFullRun`, the
+# fullGateRun shape) and the record's selection miss are new documented fields,
+# not repeats the fold could take back. The payload stood at 159878 bytes before
+# them and 161449 after, as p5 prints. What stays free is still larger than the
+# whole config table, which is what keeps the rule above true.
 PAYLOAD_CAP = 200000
-PAYLOAD_HEADROOM = 40000
+PAYLOAD_HEADROOM = 38000
 
 
 def _payload_bytes(root=None):
