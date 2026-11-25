@@ -382,9 +382,9 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   verdict by its addition: `DEFAULT_GATE` does not hold it, `provisional` still never counts an
   `unknown` phase, and a plan with no `meta.fullGate` never trips it. **The ledger arm, restated
   for 4.0.0**: the ledger it reads is the evidence directory's rows — the frozen rows earlier
-  releases wrote and the rows a `--full` run still appends, since a task or phase run writes
-  none — and the arm trips, as before, when a file there could not be read in full, because a
-  full run may sit on the line that read lost. A ledger deleted whole is not unreadable: the
+  releases wrote, since no recorded run appends one (a full run is the plan's full-run record,
+  `meta.lastFullRun`) — and the arm trips, as before, when a file there could not be read in
+  full, because a full run may sit on the line that read lost. A ledger deleted whole is not unreadable: the
   phase then answers from the full runs it holds in the plan (`phases[].fullGateRuns`).
 - **The evidence row's `outcomeBasis` and `derivedGap` step keys are additive.** A row written
   before either existed carries neither key, which is the true reading for it, and a passed
@@ -746,24 +746,40 @@ depending on an implementation:
   evidence row, so for it there is one thing to store and one thing that can be missing: its
   record in the plan (`lastRun`). The line beside the exit says no file holds the run; the
   repair is to re-run the gate with `--record` once the plan file can be written. A `--full`
-  run still appends its row and offers the run to the phases it can certify, so for it exit 3
-  still means either was not stored, and the line says which,
+  run writes the plan's full-run record (`meta.lastFullRun`) and offers the run to the phases
+  it can certify, so for it exit 3 means either was not stored, and the line says which,
 - **the evidence file is no longer written by a task, phase or base run — 4.0.0, a major.** A
   recorded run appends no row to `evidence.dir`, writes no `test.evidence.recorded` row into
   the journal for one and chains nothing; its record in the plan, and for a done task its
   commit's trailers, are what it leaves. `evidence.dir` is still read: it is where the rows
   earlier releases wrote are, and those are never rewritten, migrated or deleted, and keep
-  verifying exactly as before (`audit-journal.py verify`). A `--full` run is the one scope
-  that still appends its row, so a red full run stays where `full-gate.py --learn-from` and a
-  selection miss's `--basis-run` read it. `record-outside-run.py` is removed with no
+  verifying exactly as before (`audit-journal.py verify`). A `--full` run appends no row either
+  (the entry below says where it is kept). `record-outside-run.py` is removed with no
   replacement: an outside suite has no subject to hold a record, and the outside rows an
   earlier release wrote are still read by the `machine:` and `claimed:` lines,
 - **tallies over history count one run per subject from 4.0.0 on.** A subject's record holds
   its newest run and is replaced by the next, so a count over recorded runs - the doctor's
   gate-pattern tally, `propose-gates.py`'s history - sees every row an earlier release wrote
-  and, from this release on, one run per task and per phase (and every full run, whose rows
-  are still appended). A rate read off those counts after the upgrade is over fewer runs,
-  not fewer failures,
+  and, from this release on, one run per task, per phase and for the full gate. A rate read
+  off those counts after the upgrade is over fewer runs, not fewer failures,
+- **a full run is the plan's full-run record, and its row is gone — 4.0.0, a major.**
+  `run-test-gate.py --full --record` appends no row to `evidence.dir` and anchors nothing in
+  the journal: it writes the newest full run of any verdict - red, dirty and uncounted ones
+  too - as the index's `meta.lastFullRun`, a run record in `lastRun`'s shape and byte bound
+  carrying its steps, observations and `selectionMiss`, and, when that run was measured, the
+  index's `meta.lastMeasuredFullRun` in a held run's shape, in one save that also stamps
+  `meta.evidenceSince` when the plan states none. Both keys are additive to the schema and
+  `validate-manifest` checks them. `phases[].fullGateRuns` is unchanged and stays what a
+  phase's full-gate status is read from. Replaced, never appended: **`full-gate.py
+  --learn-from <runId>` and `audit-task.py couple --basis-run <runId>` resolve the plan's
+  full-run record or an older full run's frozen evidence row**, and a full run a newer one
+  replaced is no longer resolvable by its id,
+- **`--writer` and `import-evidence.py` are removed — 4.0.0, a major.** `--writer` named the
+  ledger file a CI build's full-run row was appended to, and no run appends a row any more:
+  passed to `run-test-gate.py` or `full-gate.py` it is now an unknown flag, exit 2.
+  `import-evidence.py`, which brought such a file into a clone and printed the `--learn-from`
+  command for each red full row in it, is removed with no replacement; a full run is learned
+  from in the checkout that keeps its plan (`full-gate.py <manifest>`),
 - **a `passed` sign-off with no gate run behind it — and it changed.** `audit-task.py
   signoff --verdict passed` (`/audit:phase signoff`) used to write the verdict whatever the
   ledger held; it now **exits 2** unless the phase's newest recorded gate run binds its work,

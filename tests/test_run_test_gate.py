@@ -10261,16 +10261,17 @@ def _layout_project_cases(check):
         finally:
             if env_was is not None:
                 os.environ["CLAUDE_PROJECT_DIR"] = env_was
-        here = [r.get("scope") for r in _ev_io.read_rows(root, manifest_path=_ev_io.plan_file_of(root))["rows"]]
+        here = [r.get("scope") for r in _ev_io.read_rows(
+            root, manifest_path=mpath)["rows"]]
         # Three dirnames up from the manifest is <base>/outer/inner.
         stray = [top for top, _dirs, _files in os.walk(base)
-                 if os.path.basename(top) == "evidence"
+                 if os.path.basename(top) in ("evidence", "journal")
                  and not top.startswith(root + os.sep)]
         check("lp1 RED-FIRST: `run-test-gate.py <root>/plans/plan.json --full "
-              "--record`, <root> holding .claude/, records its row in <root>'s "
-              "ledger - the helper's answer - and nothing lands three "
-              "directories up: %r" % ((code, here, stray,
-                                      [ln for ln in lines if "evidence" in ln]),),
+              "--record`, <root> holding .claude/, records the run in the plan "
+              "it was handed, read back through <root> - the helper's answer "
+              "- and nothing lands three directories up: %r"
+              % ((code, here, stray, [ln for ln in lines if "evidence" in ln]),),
               here == ["full"] and stray == [])
     finally:
         _harness.remove_tree(base)
@@ -10511,7 +10512,7 @@ def _full_scope_cases(check):
         text = "\n".join(lines)
         rows = _ev_io.read_rows(root, manifest_path=_ev_io.plan_file_of(root))["rows"]
         full_rows = [r for r in rows if r.get("scope") == "full"]
-        check("fg5 RED-FIRST: a declared fullGate records a scope-full row "
+        check("fg5 RED-FIRST: a declared fullGate records a scope-full run "
               "with the head it measured and a clean dirtyOutside, prints "
               "FULL GATE GREEN, and writes no pointer at all: %r"
               % (full_rows and full_rows[0],),
@@ -10526,11 +10527,16 @@ def _full_scope_cases(check):
               and row["observations"]["dirtyOutside"] == []
               and row["steps"][0]["command"] == "true")
         manifest_after = json.loads(open(mpath).read())
+        since = manifest_after["meta"].get("evidenceSince") or {}
         check("fg6 ...NO pointer (write_pointer is never called for scope "
-              "full) and NO evidence boundary stamp: %r"
-              % (manifest_after["phases"][0].get("testEvidence"),),
+              "full), and the plan's first recorded run dates the evidence "
+              "boundary in the same write as its record - the record is the "
+              "run's only copy, so no ledger row is left to date it: %r"
+              % ((manifest_after["phases"][0].get("testEvidence"), since,
+                  row.get("runId")),),
               "testEvidence" not in manifest_after["phases"][0]
-              and "evidenceSince" not in manifest_after["meta"])
+              and since.get("runId") == row.get("runId")
+              and since.get("at") == row.get("ts"))
 
         # --- ordering: the row is written before the summary is printed ----
         recorded_at = next(i for i, ln in enumerate(lines)
@@ -10567,16 +10573,19 @@ def _full_scope_cases(check):
     finally:
         _harness.remove_tree(root_d)
 
-    # --- --writer names a CI shard's own ledger file ------------------------
+    # --- --writer is gone: a full run writes no ledger file to name ----------
     root_w, mpath_w, _head_w = _full_repo("writer")
     try:
+        before = _fr_meta(mpath_w)
         code = M.main([mpath_w, "--full", "--project-dir", root_w, "--record",
                       "--writer", "ci-42"], out=(lambda _l: None))
-        ev_dir = _ev_io.evidence_dir(root_w)
-        names = os.listdir(ev_dir)
-        check("fg9 RED-FIRST: --writer ci-42 lands in a file named for it - a "
-              "CI build's identity must not be split by session: %r" % (names,),
-              code == M.E_OK and any("ci-42" in n for n in names))
+        check("fg9 RED-FIRST: --writer is refused as a usage error (exit 2) and "
+              "nothing is run or written - a full run's record is in the plan, "
+              "so there is no ledger file left for a writer to name: %r"
+              % ((code, _tree_bytes(_ev_io.evidence_dir(root_w))),),
+              code == M.E_ASK
+              and _tree_bytes(_ev_io.evidence_dir(root_w)) is None
+              and _fr_meta(mpath_w) == before)
     finally:
         _harness.remove_tree(root_w)
 
@@ -10730,9 +10739,21 @@ def _sm_fixture():
 
 
 def _sm_plan(fx, phases):
+    """Write the fixture's plan with `phases` after P1. The full runs the plan
+    already keeps in its meta (the newest, and the newest measured) are kept,
+    as any edit of a plan keeps its meta: they are the earlier runs a later
+    run's post-pass is bounded by, and rewriting them away would be a fixture
+    deleting the history the case asks about."""
+    kept = {}
+    if os.path.exists(fx["mpath"]):
+        with open(fx["mpath"]) as fh:
+            was = json.load(fh).get("meta") or {}
+        kept = dict((k, was[k]) for k in ("lastFullRun", "lastMeasuredFullRun")
+                    if k in was)
     with open(fx["mpath"], "w") as fh:
-        json.dump({"meta": {"version": 3, "fullGate": ["e2e"],
-                            "buildCommands": {"e2e": fx["command"]}},
+        json.dump({"meta": dict({"version": 3, "fullGate": ["e2e"],
+                                 "buildCommands": {"e2e": fx["command"]}},
+                                **kept),
                    "phases": [{"id": "P1", "title": "one",
                                "status": "in_progress", "tasks": []}]
                   + list(phases)}, fh)
@@ -10765,7 +10786,12 @@ def _sm_run(fx, mode):
     full_rows = [r for r in _ev_io.read_rows(
         fx["root"], manifest_path=_ev_io.plan_file_of(fx["root"]))["rows"]
                  if r.get("scope") == "full"]
-    return code, lines, full_rows[-1] if full_rows else {}
+    # THE RUN THIS CALL MADE, by the id the runner printed: the plan's full
+    # runs are read back beside the summaries the phases hold, in no order a
+    # position in the list could name.
+    said = re.findall(r"evidence: recorded (\S+)", "\n".join(lines))
+    mine = [r for r in full_rows if said and r.get("runId") == said[-1]]
+    return code, lines, mine[0] if mine else {}
 
 
 def _sm_remove(fx):
@@ -10846,6 +10872,196 @@ def _sm_pair():
     return root, shas[0], shas[1]
 
 
+# --- a full run's record in the plan, whatever its verdict --------------------
+# The plan's own key names, written out rather than read off the module under
+# test: they are the published spelling a plan file carries, and a reader of
+# a plan written by another build of the plugin looks them up by these words.
+_FR_KEY = "lastFullRun"
+_FR_MEASURED_KEY = "lastMeasuredFullRun"
+
+
+def _fr_meta(mpath):
+    with open(mpath, encoding="utf-8") as fh:
+        return json.load(fh).get("meta") or {}
+
+
+def _fr_validates(mpath):
+    """`(exit code, output tail)` of `validate-manifest.py --strict` over the
+    plan at `mpath`: a schema warning is a finding under --strict, so exit 0
+    means the published schema took every key the run wrote."""
+    proc = subprocess.run(
+        [sys.executable, _loader.script_path("validate-manifest.py"), mpath,
+         "--strict"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        universal_newlines=True)
+    return proc.returncode, proc.stdout[-600:]
+
+
+def _fr_run(name, buildcommands, dirty=False):
+    """`(root, mpath, code, lines, printed run ids)` of one recorded full run
+    over a fresh `_full_repo` whose one declared entry runs `buildcommands`'
+    `ok`, with an untracked file planted first when `dirty`."""
+    root, mpath, _head = _full_repo(name, buildcommands=buildcommands)
+    if dirty:
+        with open(os.path.join(root, "untracked.txt"), "w") as fh:
+            fh.write("uncommitted\n")
+    lines = []
+    code = M.main([mpath, "--full", "--project-dir", root, "--record"],
+                  out=lines.append)
+    said = re.findall(r"evidence: recorded (\S+)", "\n".join(lines))
+    return root, mpath, code, lines, said
+
+
+def _fr_read(root, mpath, run_id):
+    """`(row, source)` of run `run_id` among every recorded run the one reader
+    gives (`read_rows`), or `(None, None)`."""
+    read = _ev_io.read_rows(root, manifest_path=mpath)
+    for row, source in zip(read["rows"], read["rowSources"]):
+        if row.get("runId") == run_id:
+            return row, source
+    return None, None
+
+
+def _full_record_cases(check):
+    """(frr) A recorded full run is kept in the plan as ITS record - the
+    newest full run of any verdict, under `meta.lastFullRun`, with its steps,
+    its observations and its selection miss - and appends no evidence row.
+    The runs a phase can certify are still held as summaries; these are the
+    runs no phase holds: red, dirty, and one that counted nothing."""
+    red_root, red_mp, red_code, red_lines, red_said = _fr_run(
+        "fr-red", {"ok": "echo '1 failed in 0.01s'; false"})
+    try:
+        meta = _fr_meta(red_mp)
+        record = meta.get(_FR_KEY) or {}
+        steps = record.get("steps") or []
+        row, source = _fr_read(red_root, red_mp, red_said and red_said[0])
+        valid = _fr_validates(red_mp)
+        check("frr1 RED-FIRST: a RED full run recorded with --record exits 1 "
+              "and is kept in the plan as meta.%s - its id the one the runner "
+              "printed, its status failed, its failing step with its exit - "
+              "while no evidence directory comes into being; the one reader "
+              "gives it back from the record, and the plan still validates "
+              "under --strict: %r"
+              % (_FR_KEY, (red_code, red_said, record.get("runId"),
+                           record.get("status"),
+                           [(s.get("name"), s.get("exit")) for s in steps],
+                           _tree_bytes(_ev_io.evidence_dir(red_root)),
+                           source, valid),),
+              red_code == M.E_FAIL and len(red_said) == 1
+              and record.get("runId") == red_said[0]
+              and record.get("status") == "failed"
+              and [(s.get("name"), s.get("exit")) for s in steps]
+              == [("ok", 1)]
+              and _tree_bytes(_ev_io.evidence_dir(red_root)) is None
+              and row is not None and row.get("scope") == "full"
+              and source == _ev_io.ROW_FROM_RECORD
+              and valid[0] == 0)
+        check("frr1b ...and a red run is no MEASURED full run, so the plan "
+              "names none as the newest measured one: %r"
+              % (meta.get(_FR_MEASURED_KEY),),
+              _FR_MEASURED_KEY not in meta)
+    finally:
+        _harness.remove_tree(red_root)
+
+    dirty_root, dirty_mp, dirty_code, _dl, dirty_said = _fr_run(
+        "fr-dirty", {"ok": "echo '1 passed in 0.01s'"}, dirty=True)
+    try:
+        meta = _fr_meta(dirty_mp)
+        record = meta.get(_FR_KEY) or {}
+        dirty = (record.get("observations") or {}).get("dirtyOutside") or []
+        with open(dirty_mp, encoding="utf-8") as fh:
+            held = (json.load(fh)["phases"][0]).get("fullGateRuns")
+        check("frr2 RED-FIRST: a full run on a DIRTY tree, which no phase may "
+              "hold, is kept in the plan with the observation that says so - "
+              "its dirtyOutside names the untracked file - and appends no "
+              "row: %r" % ((dirty_code, dirty_said, record.get("runId"),
+                            dirty, held, meta.get(_FR_MEASURED_KEY)),),
+              dirty_code == M.E_OK and len(dirty_said) == 1
+              and record.get("runId") == dirty_said[0]
+              and any("untracked.txt" in p for p in dirty)
+              and not held and _FR_MEASURED_KEY not in meta
+              and _tree_bytes(_ev_io.evidence_dir(dirty_root)) is None)
+    finally:
+        _harness.remove_tree(dirty_root)
+
+    bare_root, bare_mp, bare_code, _bl, bare_said = _fr_run(
+        "fr-uncounted", {"ok": "true"})
+    try:
+        meta = _fr_meta(bare_mp)
+        record = meta.get(_FR_KEY) or {}
+        obs = record.get("observations") or {}
+        check("frr3 RED-FIRST: a green full run that COUNTED NOTHING, which no "
+              "phase may hold, is kept in the plan with its observations "
+              "saying it counted nothing, and appends no row: %r"
+              % ((bare_code, bare_said, record.get("runId"),
+                  record.get("status"), obs.get("ranTotal"),
+                  meta.get(_FR_MEASURED_KEY)),),
+              bare_code == M.E_OK and len(bare_said) == 1
+              and record.get("runId") == bare_said[0]
+              and record.get("status") == "passed"
+              and not obs.get("ranTotal") and _FR_MEASURED_KEY not in meta
+              and _tree_bytes(_ev_io.evidence_dir(bare_root)) is None)
+    finally:
+        _harness.remove_tree(bare_root)
+
+    fx = _sm_fixture()
+    try:
+        code_green, _lines, green = _sm_run(fx, "green")
+        measured = dict(_fr_meta(fx["mpath"]).get(_FR_MEASURED_KEY) or {})
+        second = _sm_commit(fx, "cart.ts")
+        _sm_plan(fx, [_sm_phase("P2", second, ["e2e/other.spec.ts"],
+                                ["src/cart.ts", "src/pay.ts"])])
+        code, lines, _row = _sm_run(fx, "named")
+        red_id = (re.findall(r"evidence: recorded (\S+)", "\n".join(lines))
+                  or [None])[0]
+        meta = _fr_meta(fx["mpath"])
+        record = meta.get(_FR_KEY) or {}
+        check("frr4 RED-FIRST: a red full run with a SELECTION MISS keeps the "
+              "miss on its record in the plan - the suite, the phase and the "
+              "sources a couple --basis-run would name - and no evidence row "
+              "is written for it or for the green run before it: %r"
+              % ((code_green, code, red_id, record.get("runId"),
+                  record.get("selectionMiss")),),
+              code_green == M.E_OK and code == M.E_FAIL
+              and record.get("runId") == red_id
+              and record.get("selectionMiss") == [
+                  {"test": "e2e/cart.spec.ts", "phases": ["P2"],
+                   "sources": ["src/cart.ts", "src/pay.ts"]}]
+              and _tree_bytes(_ev_io.evidence_dir(fx["root"])) is None)
+        check("frr4b ...and the green run that bounded it is still named as "
+              "the newest MEASURED full run, as a phase holds a run - so the "
+              "next red run's work since is bounded by it, not by whatever "
+              "older run a phase happens to hold: %r"
+              % ((green.get("runId"), measured, meta.get(_FR_MEASURED_KEY)),),
+              measured.get("runId") == green.get("runId")
+              and measured.get("status") == "passed"
+              and measured.get("entries") == 1
+              and meta.get(_FR_MEASURED_KEY) == measured)
+        size = _ev_io.record_bytes(record)
+        check("frr4c ...and the record is within the bound every run record "
+              "is held to, and the plan validates under --strict: %r"
+              % ((size, _ev_io.RECORD_MAX_BYTES, _fr_validates(fx["mpath"])),),
+              record.get("runId") == red_id and red_id is not None
+              and 0 < size <= _ev_io.RECORD_MAX_BYTES
+              and _fr_validates(fx["mpath"])[0] == 0)
+        again, _again_lines, _again_row = _sm_run(fx, "green")
+        meta = _fr_meta(fx["mpath"])
+        red_row, _src = _fr_read(fx["root"], fx["mpath"], red_id)
+        check("frr5 the NEWEST full run of any verdict is the one record: a "
+              "green run after the red replaces it, the red run is no longer "
+              "among the recorded runs, and the green one is now the newest "
+              "measured: %r"
+              % ((again, (meta.get(_FR_KEY) or {}).get("runId"),
+                  (meta.get(_FR_MEASURED_KEY) or {}).get("runId"),
+                  red_row and red_row.get("runId")),),
+              again == M.E_OK
+              and (meta.get(_FR_KEY) or {}).get("runId") not in (None, red_id)
+              and (meta.get(_FR_MEASURED_KEY) or {}).get("runId")
+              == (meta.get(_FR_KEY) or {}).get("runId")
+              and red_row is None)
+    finally:
+        _sm_remove(fx)
+
+
 def _selection_miss_cases(check):
     # --- a named failure no merged phase's derived gate listed -------------
     fx = _sm_fixture()
@@ -10905,6 +11121,45 @@ def _selection_miss_cases(check):
               and parsed[0][1].phases == ["P2"]
               and parsed[1][1].files == ["e2e/cart.spec.ts"])
 
+        # THE PRINTED REMEDY IS RUN AS A SHELL WOULD RUN IT, from a directory
+        # that is not the project: a bare `audit-task.py` is 'command not
+        # found' there, and a plan the command does not name is not found.
+        # The shell is the one the plan's own commands run under, so this
+        # case runs wherever the product does - Windows with Git's `sh`
+        # included - and skips only where the product itself refuses. It runs
+        # BEFORE any later full run: the plan keeps the newest full run alone,
+        # so the run a remedy names is resolvable until another replaces it.
+        env = dict(os.environ)
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        sm_argv, env, sm_why = _pg.shell_invocation(
+            _sm_remedy_text(misses[0]) if misses else "false", env)
+        if sm_argv is None:
+            _harness.skip(check, "sm16", "no POSIX shell here to run the "
+                          "printed remedy through: %s" % (sm_why,), True)
+        else:
+            away = _harness.fixture_root("run-test-gate-miss-away-")
+            try:
+                proc = subprocess.run(
+                    sm_argv, cwd=away, env=env,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    universal_newlines=True)
+            finally:
+                _harness.remove_tree(away)
+            with open(fx["mpath"]) as fh:
+                ran_plan = json.load(fh)
+            coupled = [e.get("test") for e in
+                       (ran_plan.get("meta") or {}).get("coupling") or []]
+            bugs = [(b.get("title"), b.get("files"))
+                    for b in ran_plan.get("bugs") or []]
+            check("sm16 RED-FIRST: the SELECTION MISS remedy runs as printed "
+                  "under the resolved POSIX sh from another directory, exit 0, and "
+                  "leaves the coupling and the bug it spells in the plan: "
+                  "%r" % ((proc.returncode, proc.stdout[-400:], coupled,
+                           bugs),),
+                  proc.returncode == 0 and coupled == [_SM_SUITE]
+                  and bugs == [("SELECTION MISS: %s" % (_SM_SUITE,),
+                                [_SM_SUITE])])
+
         # --- the same failure, but the runner named nothing --------------
         code, lines, row = _sm_run(fx, "tail")
         basis = [s.get("failingBasis") for s in row.get("steps") or []]
@@ -10951,43 +11206,6 @@ def _selection_miss_cases(check):
               "caught something: %r" % ((row.get("selectionMiss"), lines),),
               code == M.E_FAIL and "selectionMiss" not in row
               and not any(ln.startswith("SELECTION MISS") for ln in lines))
-
-        # THE PRINTED REMEDY IS RUN AS A SHELL WOULD RUN IT, from a directory
-        # that is not the project: a bare `audit-task.py` is 'command not
-        # found' there, and a plan the command does not name is not found.
-        # The shell is the one the plan's own commands run under, so this
-        # case runs wherever the product does - Windows with Git's `sh`
-        # included - and skips only where the product itself refuses.
-        env = dict(os.environ)
-        env.pop("CLAUDE_PROJECT_DIR", None)
-        sm_argv, env, sm_why = _pg.shell_invocation(
-            _sm_remedy_text(misses[0]) if misses else "false", env)
-        if sm_argv is None:
-            _harness.skip(check, "sm16", "no POSIX shell here to run the "
-                          "printed remedy through: %s" % (sm_why,), True)
-        else:
-            away = _harness.fixture_root("run-test-gate-miss-away-")
-            try:
-                proc = subprocess.run(
-                    sm_argv, cwd=away, env=env,
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    universal_newlines=True)
-            finally:
-                _harness.remove_tree(away)
-            with open(fx["mpath"]) as fh:
-                ran_plan = json.load(fh)
-            coupled = [e.get("test") for e in
-                       (ran_plan.get("meta") or {}).get("coupling") or []]
-            bugs = [(b.get("title"), b.get("files"))
-                    for b in ran_plan.get("bugs") or []]
-            check("sm16 RED-FIRST: the SELECTION MISS remedy runs as printed "
-                  "under the resolved POSIX sh from another directory, exit 0, and "
-                  "leaves the coupling and the bug it spells in the plan: "
-                  "%r" % ((proc.returncode, proc.stdout[-400:], coupled,
-                           bugs),),
-                  proc.returncode == 0 and coupled == [_SM_SUITE]
-                  and bugs == [("SELECTION MISS: %s" % (_SM_SUITE,),
-                                [_SM_SUITE])])
     finally:
         _sm_remove(fx)
 
@@ -11038,7 +11256,11 @@ def _selection_miss_cases(check):
         second = _sm_commit(fx, "cart.ts")
         _sm_plan(fx, [_sm_phase("P2", second, ["e2e/other.spec.ts"],
                                 ["src/cart.ts"])])
-        ledger_file = _ev_io.ledger_files(fx["root"])[-1]
+        # A ledger a previous release left, one line of it torn: no run writes
+        # a row now, so the file is planted as that release left it.
+        os.makedirs(_ev_io.evidence_dir(fx["root"]), exist_ok=True)
+        ledger_file = os.path.join(_ev_io.evidence_dir(fx["root"]),
+                                   "2026-09.previous-release.jsonl")
         with open(ledger_file, "a", encoding="utf-8") as fh:
             fh.write("{\"v\": 1, \"runId\": \"LOST\", this line is torn}\n")
         lost_name = _output.posix_rel(ledger_file, fx["root"])
@@ -14231,9 +14453,9 @@ def _no_row_cases(check):
     """(nrw) A recorded task, phase or base run appends no evidence row, writes
     no journal anchor for one and chains nothing: its record in the plan is the
     only copy, a ledger the previous release left is never touched, and exit 3
-    means the record was not written. A full run is the one scope that still
-    appends its row - the second direction, so a recorder that stopped every
-    write is told apart from one that stopped the right ones."""
+    means the record was not written. A full run appends none either: its
+    record is the plan's `meta.lastFullRun` (the frr block holds what it
+    keeps)."""
     root, mp, shard = _lr_repo()
     old_root, old_mp, _old_shard = _lr_repo()
     full_root, full_mp, _head = _full_repo("nr-full")
@@ -14266,20 +14488,24 @@ def _no_row_cases(check):
         full_said = re.findall(r"evidence: recorded (\S+)",
                                "\n".join(full_lines))
         full_rows = _ev_io.read_rows(full_root, manifest_path=full_mp)
-        # The ledger's own rows, told from the records by the read's sources.
+        # The ledger's own rows and the plan's, told apart by the read's
+        # sources.
         full_ledger = [r.get("runId") for r, src in zip(
             full_rows["rows"], full_rows["rowSources"])
             if src == _ev_io.ROW_FROM_LEDGER]
+        full_kept = [r.get("runId") for r, src in zip(
+            full_rows["rows"], full_rows["rowSources"])
+            if src == _ev_io.ROW_FROM_RECORD and r.get("scope") == "full"]
         check("nrw1 NO ROW, NO DIRECTORY: in a project that never had a ledger, "
-              "a recorded run of the green task, the red task and the phase "
-              "each exits on its verdict and prints the run its record in the "
-              "shard names, a base run exits 0 kept on the red's record - and "
-              "no evidence directory comes into being for any of them; a full "
-              "run, the one scope that still appends, exits 0 and its row is "
-              "the one row its project's ledger holds: %r"
+              "a recorded run of the green task, the red task, the phase and "
+              "the full gate each exits on its verdict and prints the run its "
+              "record in the plan names, a base run exits 0 kept on the red's "
+              "record - and no evidence directory comes into being for any of "
+              "them: %r"
               % (([(s, c, r, held[s].get("runId")) for s, c, r, _t in fresh],
-                  full_code, full_said, full_ledger, base_code,
+                  full_code, full_said, full_ledger, full_kept, base_code,
                   base_answer.get("recorded"), _tree_bytes(evdir),
+                  _tree_bytes(_ev_io.evidence_dir(full_root)),
                   _tree_bytes(_ev_io.evidence_dir(base_root))),),
               [(s, c) for s, c, _r, _t in fresh]
               == [("task green", M.E_OK), ("task red", M.E_FAIL),
@@ -14287,9 +14513,10 @@ def _no_row_cases(check):
               and all(r and held[s].get("runId") == r
                       for s, _c, r, _t in fresh)
               and full_code == M.E_OK and len(full_said) == 1
-              and full_ledger == full_said
+              and full_ledger == [] and full_kept == full_said
               and base_code == M.E_OK and base_answer.get("recorded") is True
               and _tree_bytes(evdir) is None
+              and _tree_bytes(_ev_io.evidence_dir(full_root)) is None
               and _tree_bytes(_ev_io.evidence_dir(base_root)) is None)
         verified_after = _ev_io.verify(old_root)
         check("nrw2 A LEDGER OF THE PREVIOUS RELEASE IS NEVER TOUCHED: the same "
@@ -14489,30 +14716,36 @@ def _record_wording_cases(check):
           and "Exit 3, not 1" in red and "index lock" in red
           and "phase lock" not in red)
 
-    # A full run whose row stands but whose hold no plan file took: the line
-    # names the row's file as the repository spells it.
+    # A full run whose record stands in the plan but whose hold no phase's
+    # plan file took: the line names the record's file as the repository
+    # spells it.
     import argparse
     root = _harness.fixture_root("run-test-gate-unrecorded-full-")
-    row_file = os.path.join(root, "docs", "audit", "evidence",
-                            "2026-11.rw.jsonl")
-    names = ("record", "_hold_full_run")
-    real = (M._ev.record, M._hold_full_run)
-    M._ev.record = lambda *_a, **_k: {"path": row_file,
-                                      "row": {"runId": "RW-FULL"}}
+    plan_file = os.path.join(root, "docs", "audit", "audit-plan.json")
+    names = ("row_for", "write_full_record", "_hold_full_run")
+    real = (M._ev.row_for, M._ev.write_full_record, M._hold_full_run)
+    M._ev.row_for = lambda *_a, **_k: {"runId": "RW-FULL", "scope": "full",
+                                       "status": "passed",
+                                       "ts": "2026-11-01T00:00:00Z"}
+    M._ev.write_full_record = lambda *_a, **_k: {
+        "written": True, "reason": None, "path": plan_file,
+        "releaseRefused": None, "replaced": None,
+        "since": {"written": False, "at": "2026-11-01T00:00:00Z",
+                  "reason": None}}
     M._hold_full_run = lambda *_a, **_k: False
     try:
         answer = M._record_full_run(
-            root, argparse.Namespace(writer=None, manifest=None), {},
+            root, argparse.Namespace(manifest=plan_file), {},
             {"status": "passed"}, [], "RW-FULL", out=lambda *_a: None)
     finally:
-        M._ev.record, M._hold_full_run = real
+        M._ev.row_for, M._ev.write_full_record, M._hold_full_run = real
         _harness.remove_tree(root)
     full = M.unrecorded_line({"status": "passed", "recorded": answer})
-    check("rw2 A FULL RUN'S ROW STANDING WITH NO PLAN FILE HOLDING IT names "
-          "the row's file repo-relative - the line is read by a person, and "
-          "an absolute path names this machine's checkout: %r / %r"
-          % (names, full),
-          "docs/audit/evidence/2026-11.rw.jsonl" in full
+    check("rw2 A FULL RUN'S RECORD STANDING WITH NO PHASE HOLDING IT names "
+          "the record's plan file repo-relative - the line is read by a "
+          "person, and an absolute path names this machine's checkout: "
+          "%r / %r" % (names, full),
+          "docs/audit/audit-plan.json" in full
           and root not in full and "Exit 3, not 0" in full)
 
     # A record the plan refused for a cause that is not a busy lock: the line
@@ -15117,6 +15350,7 @@ def _selftest():
         _harness.stage(check, "lg-block", _ledger_gone_cases)
         _harness.stage(check, "lr-block", _last_run_record_cases)
         _harness.stage(check, "nrw-block", _no_row_cases)
+        _harness.stage(check, "frr-block", _full_record_cases)
         _harness.stage(check, "rpt-block", _record_repeat_gate_cases)
         _record_wording_cases(check)
         _harness.stage(check, "rpr-block", _record_part_reuse_cases)

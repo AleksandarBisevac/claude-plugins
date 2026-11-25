@@ -156,6 +156,8 @@ MERGE_UNITS = (
      "one reading of the connection, with when and on what basis"),
     ("plan.meta", ("evidenceSince",), "whole",
      "one moment the ledger is read from, with the run and the basis that set it"),
+    ("plan.meta", ("lastFullRun", "lastMeasuredFullRun"), "whole",
+     "the newest full run and the newest measured one, written in one save"),
     ("plan.meta", ("usage",), "container", "usage settings, set apart"),
     ("phase", ("claim",), "whole", "one session's claim: its session, branch and moment"),
     ("phase", ("lastRun", "testEvidence"), "whole",

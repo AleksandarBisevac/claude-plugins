@@ -1072,6 +1072,15 @@ SCHEMA_EXEMPTIONS = {
         "ledger row (`_full_run_result`) that every surface reads through "
         "`read_rows` beside what the plan holds, so the phases already read "
         "from it and a held copy would be the same run twice.",
+    "meta.lastFullRun":
+        "the full-run record `run-test-gate.py --full --record` writes; the "
+        "demo's one full run is a generated ledger row, the older frozen form "
+        "`read_rows` still reads (as every demo run is also a ledger row), so "
+        "a record of it would be the same run twice, phase.fullGateRuns's "
+        "reason.",
+    "meta.lastMeasuredFullRun":
+        "the newest measured full run, written with meta.lastFullRun; exempt "
+        "for that row's reason.",
     "fullGateRun.runId": "a field of phase.fullGateRuns, exempt for its reason.",
     "fullGateRun.at": "a field of phase.fullGateRuns, exempt for its reason.",
     "fullGateRun.head": "a field of phase.fullGateRuns, exempt for its reason.",
@@ -1429,6 +1438,15 @@ SCHEMA_EXEMPTIONS = {
         "a count of moved paths past `MAX_PATHS`; no demo run moves that many.",
     "lastRun.coverageDropped":
         "a count of coverage paths past `MAX_PATHS`; no demo run names that many.",
+    "lastRun.dirtyOutsideDropped":
+        "a count of dirty paths past `MAX_PATHS`; no demo run is that dirty.",
+    "lastRun.selectionMiss":
+        "written only on a full run's record (`meta.lastFullRun`), which the "
+        "demo does not carry (that row's reason); the records it stamps are "
+        "task and phase records, and no record of either kind names one.",
+    "lastRun.selectionMissDropped":
+        "a count of selection misses past `MAX_PATHS`, for "
+        "lastRun.selectionMiss's reason: no demo record names a miss.",
     "lastRun.baseOf":
         "set only on a base run measured for a red task run (`--base-of`); the "
         "demo measures no base.",

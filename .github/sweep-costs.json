@@ -429,7 +429,6 @@
   "tests/test_guard_history_rewrite.py": 3.6,
   "tests/test_guard_secrets_read.py": 14.7,
   "tests/test_hooks.py": 97.8,
-  "tests/test_import_evidence.py": 1.0,
   "tests/test_integrate_task.py": 22.2,
   "tests/test_journal_writes.py": 29.9,
   "tests/test_manage_worktrees.py": 50.3,

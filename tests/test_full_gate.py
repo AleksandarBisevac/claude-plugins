@@ -19,6 +19,7 @@ answers.
 import contextlib
 import json
 import os
+import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -102,20 +103,20 @@ def _delegation_cases(check):
         real = M._stream_subprocess
         M._stream_subprocess = lambda cmd, out: called.append(cmd) or 0
         try:
-            code = M.main([mpath2, "--writer", "ci-9", "--project-dir", "/tmp/x"],
+            code = M.main([mpath2, "--project-dir", "/tmp/x"],
                           out=(lambda _l: None))
         finally:
             M._stream_subprocess = real
         cmd = called[0] if called else []
         check("fgd2 the built command names run-test-gate.py by basename "
               "(never imported), carries --full --record, and passes "
-              "--writer/--project-dir through unchanged rather than "
-              "re-parsing them: %r" % (cmd,),
+              "--project-dir through unchanged rather than re-parsing it: %r"
+              % (cmd,),
               code == M.E_OK and len(called) == 1
               and os.path.basename(cmd[1]) == "run-test-gate.py"
               and cmd[2] == mpath2
               and "--full" in cmd and "--record" in cmd
-              and "ci-9" in cmd and "/tmp/x" in cmd)
+              and "/tmp/x" in cmd and "--writer" not in cmd)
     finally:
         _harness.remove_tree(root2)
 
@@ -155,7 +156,7 @@ def _end_to_end_cases(check):
         check("fge1 a real full-gate.py run against a real run-test-gate.py "
               "exits 0, prints the runner's own FULL GATE GREEN line (a "
               "write that is not printed is the mutation this catches), and "
-              "leaves a scope-full evidence row behind: %r" % (full_rows,),
+              "leaves its scope-full run recorded behind: %r" % (full_rows,),
               code == M.E_OK and "FULL GATE GREEN" in text
               and len(full_rows) == 1)
     finally:
@@ -174,17 +175,51 @@ def _end_to_end_cases(check):
     finally:
         _harness.remove_tree(root_r)
 
-    # --- --writer plumbs through to the real evidence file it names --------
+    # --- --writer is gone with the ledger file it named ---------------------
     root_w, mpath_w = _full_repo("e2e-writer")
     try:
-        code = M.main([mpath_w, "--project-dir", root_w, "--writer", "ci-77"],
-                      out=(lambda _l: None))
-        names = os.listdir(_ev_io.evidence_dir(root_w))
-        check("fge3 --writer reaches the real evidence file, exactly as a "
-              "direct run-test-gate.py --writer call would: %r" % (names,),
-              code == M.E_OK and any("ci-77" in n for n in names))
+        seam, real, runner_calls = _no_runner_seam()
+        lines = []
+        M._stream_subprocess = seam
+        try:
+            code = M.main([mpath_w, "--project-dir", root_w, "--writer",
+                           "ci-77"], out=lines.append)
+        finally:
+            M._stream_subprocess = real
+        check("fge3 RED-FIRST: --writer is refused as a usage error (exit 2) "
+              "and the runner is never started - a full run's record is in "
+              "the plan, so no ledger file is left for a writer to name: %r"
+              % ((code, runner_calls),),
+              code == M.E_USAGE and runner_calls == []
+              and not os.path.isdir(_ev_io.evidence_dir(root_w)))
     finally:
         _harness.remove_tree(root_w)
+
+    # --- a real red run is learned from the plan's record ----------------
+    root_r, mpath_r = _full_repo("e2e-record-red",
+                                 buildcommands={"ok": "false"})
+    try:
+        lines = []
+        code = M.main([mpath_r, "--project-dir", root_r], out=lines.append)
+        said = [ln.split("evidence: recorded ", 1)[1].strip()
+                for ln in lines if "evidence: recorded " in ln]
+        with open(mpath_r) as fh:
+            kept = ((json.load(fh).get("meta") or {}).get("lastFullRun")
+                    or {}).get("runId")
+        found = [ln for ln in lines if said and ln.startswith(
+            "%s learned nothing from run %s:" % (M.PREFIX, said[0]))]
+        check("fglr1 RED-FIRST: a real red full run through a real "
+              "run-test-gate.py is kept in the plan as meta.lastFullRun and "
+              "writes no evidence directory, and the learning that follows "
+              "finds that run there - its 'learned nothing from run <id>' "
+              "line, never 'hold no row': %r"
+              % ((code, said, kept, found,
+                  os.path.isdir(_ev_io.evidence_dir(root_r))),),
+              code != M.E_OK and len(said) == 1 and kept == said[0]
+              and len(found) == 1
+              and not os.path.isdir(_ev_io.evidence_dir(root_r)))
+    finally:
+        _harness.remove_tree(root_r)
 
 
 # --- learning from a red full run ---------------------------------------------
@@ -540,12 +575,12 @@ def _since_bound_cases(check):
         check("fgl12 RED-FIRST: the runner printed no evidence line and "
               "recorded no row, and the ledger holds an EARLIER red full row "
               "at the same head carrying a miss - nothing is written, and "
-              "the output says no full row was stamped since the start; the "
+              "the output says no full run was stamped since the start; the "
               "mutation 'newest full row, unbounded' files the stale miss: %r"
               % ((code, actions, lines),),
               code == 1 and actions == [] and bugs == []
               and "tests/test_stale.py" not in coupling
-              and any("no full row stamped since" in ln for ln in lines))
+              and any("no full run stamped since" in ln for ln in lines))
     finally:
         _harness.remove_tree(root)
 
@@ -708,10 +743,9 @@ def _learn_from(root, mpath, run_id, extra=None):
     return code, lines, runner_calls
 
 
-def _imported_row(root, run_id, status="failed", scope="full", misses=None,
-                  steps=None):
-    """A red (or `status`) row as an imported CI shard holds it: written under
-    a `ci-` writer's own file, never through this checkout's session shard.
+def _full_row(root, run_id, status="failed", scope="full", misses=None,
+              steps=None):
+    """A red (or `status`) full run as its runner builds the row.
 
     THE STEP READS AS FAILING WHATEVER `status` SAYS, so a green row is
     deliberately inconsistent with it: `status` is the verdict the refusal
@@ -721,14 +755,114 @@ def _imported_row(root, run_id, status="failed", scope="full", misses=None,
         {"name": "ok", "exit": 1,
          "failingSuites": ["tests/test_cart.py", "tests/test_old.py"],
          "failingSuitesBasis": _NAMED_BASIS}]
-    row = {"v": 1, "runId": run_id, "ts": _utc_stamp.utc_stamp(), "scope": scope,
-           "status": status, "testedState": {"head": _git_head(root)},
-           "steps": steps,
-           "selectionMiss": misses if misses is not None else [
-               {"test": "tests/test_cart.py", "phases": ["P1"],
-                "sources": ["src/cart.py"]}]}
+    return {"v": 1, "runId": run_id, "ts": _utc_stamp.utc_stamp(),
+            "scope": scope, "status": status,
+            "testedState": {"head": _git_head(root)}, "steps": steps,
+            "selectionMiss": misses if misses is not None else [
+                {"test": "tests/test_cart.py", "phases": ["P1"],
+                 "sources": ["src/cart.py"]}]}
+
+
+def _imported_row(root, run_id, status="failed", scope="full", misses=None,
+                  steps=None):
+    """`_full_row`, as an older ledger holds it: a row a previous release
+    appended under a writer's own file, which this release reads and never
+    writes."""
+    row = _full_row(root, run_id, status=status, scope=scope, misses=misses,
+                    steps=steps)
     _ev_io.append_row(root, row, writer="ci-imported")
     return row
+
+
+def _plan_record(mpath, row):
+    """Keep the full run `row` in the plan as a recorded `--full` run leaves
+    it: its record (`run_record`, the shape every run record is written in)
+    under `meta.lastFullRun` - written with the plain file write a fixture
+    owns, since the writer itself is the runner's suite's to drive."""
+    with open(mpath) as fh:
+        plan = json.load(fh)
+    plan["meta"]["lastFullRun"] = _ev_io.run_record(row)
+    with open(mpath, "w") as fh:
+        json.dump(plan, fh)
+
+
+def _couple_from(root, mpath, run_id, test="tests/test_cart.py"):
+    """`(exit code, output, coupling entry for test)` - the SELECTION MISS
+    remedy's couple, spelled as the runner prints it, run for real."""
+    proc = subprocess.run(
+        [sys.executable, _loader.script_path("audit-task.py"), "couple",
+         "--test", test, "--sources", "src/cart.py", "--basis-run", run_id,
+         "--basis-head", _git_head(root), "--phases", "P1",
+         os.path.abspath(mpath), "--project-dir", os.path.abspath(root)],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        universal_newlines=True)
+    coupling, _bugs, _actions = _plan_facts(root, mpath)
+    return proc.returncode, proc.stdout[-500:], coupling.get(test) or {}
+
+
+def _record_learn_cases(check):
+    """(fglr) A red full run the plan keeps as its record is resolved by
+    --learn-from and by the SELECTION MISS remedy's couple --basis-run with
+    no ledger at all; a run an older ledger still holds resolves too."""
+    root, mpath = _learn_repo("learn-from-record")
+    try:
+        _plan_record(mpath, _full_row(root, "RUN-REC-RED"))
+        code, lines, runner_calls = _learn_from(root, mpath, "RUN-REC-RED")
+        coupling, bugs, _actions = _plan_facts(root, mpath)
+        cart = coupling.get("tests/test_cart.py") or {}
+        check("fglr2 RED-FIRST: --learn-from over a red full run the plan "
+              "keeps as meta.lastFullRun - no ledger directory at all - files "
+              "the coupling and the bug its selection miss names, exits 0 and "
+              "runs nothing: %r"
+              % ((code, runner_calls, _prefixed(lines),
+                  os.path.isdir(_ev_io.evidence_dir(root))),),
+              code == M.E_OK and runner_calls == []
+              and (cart.get("basis") or {}).get("runId") == "RUN-REC-RED"
+              and [b.get("title") for b in bugs]
+              == ["SELECTION MISS: tests/test_cart.py"]
+              and not os.path.isdir(_ev_io.evidence_dir(root)))
+    finally:
+        _harness.remove_tree(root)
+
+    root_c, mpath_c = _learn_repo("couple-from-record")
+    try:
+        _plan_record(mpath_c, _full_row(root_c, "RUN-REC-COUPLE"))
+        code, said, cart = _couple_from(root_c, mpath_c, "RUN-REC-COUPLE")
+        check("fglr3 RED-FIRST: the remedy's couple --basis-run names a red "
+              "full run the plan keeps as its record and is resolved - exit "
+              "0, the coupling's basis that run - with no ledger to look in: "
+              "%r" % ((code, said, cart.get("basis")),),
+              code == 0
+              and (cart.get("basis") or {}).get("runId") == "RUN-REC-COUPLE"
+              and not os.path.isdir(_ev_io.evidence_dir(root_c)))
+    finally:
+        _harness.remove_tree(root_c)
+
+    # --- the second direction: an older row still resolves -------------------
+    root_o, mpath_o = _learn_repo("learn-from-older-row")
+    try:
+        _imported_row(root_o, "RUN-OLD-RED")
+        _plan_record(mpath_o, _full_row(root_o, "RUN-NEW-RED", misses=[
+            {"test": "tests/test_stale.py", "phases": ["P1"],
+             "sources": ["src/stale.py"]}]))
+        code, lines, runner_calls = _learn_from(root_o, mpath_o, "RUN-OLD-RED")
+        coupling, _bugs, _actions = _plan_facts(root_o, mpath_o)
+        cart = coupling.get("tests/test_cart.py") or {}
+        code_c, said_c, old = _couple_from(root_o, mpath_o, "RUN-OLD-RED",
+                                           test="backend/tests/test_x.py")
+        check("fglr4 ALLOW: beside a plan keeping a newer full run, a run "
+              "only an older ledger row holds is still resolved - "
+              "--learn-from files its miss and couple --basis-run takes it - "
+              "and the newer run's miss is not filed in its place: %r"
+              % ((code, _prefixed(lines), code_c, said_c,
+                  sorted(coupling)),),
+              code == M.E_OK and runner_calls == []
+              and (cart.get("basis") or {}).get("runId") == "RUN-OLD-RED"
+              and "tests/test_stale.py" not in coupling
+              and code_c == 0
+              and (old.get("basis") or {}).get("runId") == "RUN-OLD-RED")
+    finally:
+        _harness.remove_tree(root_o)
 
 
 def _prefixed(lines):
@@ -869,13 +1003,14 @@ def _learn_from_cases(check):
             _ev_io.read_rows = real_read
         _coupling, bugs, actions = _plan_facts(root_x, mpath_x)
         said = _prefixed(lines)
-        check("fglf10 RED-FIRST: a ledger read that raises refuses --learn-from, "
-              "exit 1, in one line saying the ledger could not be read and "
-              "quoting the reader's own error - never read as an empty "
-              "ledger's 'no such run': %r" % (said,),
+        check("fglf10 RED-FIRST: a read of the recorded runs that raises "
+              "refuses --learn-from, exit 1, in one line naming both places "
+              "the read covers and quoting the reader's own error - never "
+              "read as an empty read's 'no such run': %r" % (said,),
               code == M.E_FAIL and runner_calls == [] and actions == []
               and bugs == [] and len(said) == 1
-              and "the evidence ledger could not be read" in said[0]
+              and "the recorded runs (the plan's records and the evidence "
+                  "ledger's older rows) could not be read" in said[0]
               and "the reader under test refused the ledger" in said[0])
     finally:
         _harness.remove_tree(root_x)
@@ -887,8 +1022,8 @@ def _learn_from_cases(check):
         code, lines, runner_calls = _learn_from(
             root_w, mpath_w, "RUN-CI-W", extra=["--writer", "ci-1"])
         _coupling, bugs, actions = _plan_facts(root_w, mpath_w)
-        check("fglf8 --learn-from with --writer exits 2 (a learning run "
-              "records no row, so a writer names nothing), runs nothing and "
+        check("fglf8 --learn-from with --writer exits 2 (no flag of this "
+              "command names a ledger file any more), runs nothing and "
               "writes nothing: %r" % ((code, lines),),
               code == M.E_USAGE and runner_calls == [] and actions == []
               and bugs == [])
@@ -1799,23 +1934,32 @@ def _held_run_cases(check):
               answers == {"P1": "whole", "P4": "provisional"}
               and read["ledgerAbsent"])
 
-        with open(mpath, "rb") as fh:
-            before = fh.read()
+        with open(mpath) as fh:
+            before = json.load(fh)
         with open(flag, "w") as fh:
             fh.write("red\n")
         lines = []
         code = M.main([mpath, "--project-dir", root], out=lines.append)
         os.remove(flag)
-        with open(mpath, "rb") as fh:
-            after = fh.read()
+        with open(mpath) as fh:
+            after = json.load(fh)
         read = _ev_io.read_rows(root, manifest_path=mpath)
         p1 = _ev_io.full_status(read["rows"], _phases_of(mpath)["P1"], root,
                                 declared)
+        meta_was, meta_now = before.get("meta") or {}, after.get("meta") or {}
         check("fgh3 a later RED full run on a head that contains the phase "
-              "leaves every byte of the plan as it was and the phase whole by "
-              "the run that certified it, and says it held nothing: exit %r, "
-              "%r, %r" % (code, p1, [ln for ln in lines if "plan:" in ln]),
-              code != M.E_OK and after == before
+              "leaves every phase as it was and the phase whole by the run "
+              "that certified it, says it held nothing, and changes only the "
+              "plan's full-run record - the newest measured run is still the "
+              "green one: exit %r, %r, %r"
+              % (code, p1, [ln for ln in lines if "plan:" in ln]),
+              code != M.E_OK and after.get("phases") == before.get("phases")
+              and dict(meta_now, lastFullRun=None)
+              == dict(meta_was, lastFullRun=None)
+              and (meta_now.get("lastFullRun") or {}).get("runId")
+              not in (None, run.get("runId"))
+              and (meta_now.get("lastMeasuredFullRun") or {}).get("runId")
+              == run.get("runId")
               and p1["answer"] == "whole" and p1["runId"] == run.get("runId")
               and any("plan:" in ln and "nothing" in ln for ln in lines))
     finally:
@@ -1944,6 +2088,7 @@ def _selftest():
         _end_to_end_cases(check)
         _learning_cases(check)
         _learn_from_cases(check)
+        _harness.stage(check, "fglr-block", _record_learn_cases)
         _catch_rule_cases(check)
         _pinned_learning_cases(check)
         _learn_from_exit_cases(check)

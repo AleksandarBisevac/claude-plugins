@@ -174,9 +174,9 @@ import _config_rules  # noqa: E402  (phase_gate_only_split: the one reading of
 
 E_OK, E_FAIL, E_ASK = 0, 1, 2
 # A `--record` run (green or red) whose record in the plan could not be stored -
-# for a task or phase run the shard record, the only copy it has, since no
-# evidence row is written beside it; for a `--full` run, the row it still
-# appends or its holding in the plan. Its own code because it is neither the work's failure (1) nor a
+# for a task or phase run the shard record, for a `--full` run the plan's
+# full-run record or a phase's holding of it - the only copy either has, since
+# no evidence row is written beside it. Its own code because it is neither the work's failure (1) nor a
 # usage error (2): the gate measured, and the record the caller asked for does
 # not exist - so a pre-push or CI step reading the exit code must not read 0 as
 # a pass, nor 1 as a recorded red. Without `--record` nothing changes.
@@ -3491,12 +3491,13 @@ def reuse_identity(project, manifest_path, manifest, commands, owns, group=None,
 def record_failed(res):
     """True when `--record` was asked for and what it stores was not stored:
     a task or phase run's record in the plan (`_evidence_io.RECORD_KEY`, the
-    run's only copy), or a full run's evidence row or its holding in the plan.
+    run's only copy), or a full run's record in the plan
+    (`_evidence_io.FULL_RECORD_KEY`, its only copy) or its holding by a phase.
 
     Read off `res["recorded"]`, which only `_record_run` and `_record_full_run`
     write: a run that never asked to record has no such key and is not failed.
-    A full run's `record` is whether every plan file it was offered to took
-    it (`_hold_full_run`).
+    A full run whose record was written has `record` saying whether every
+    phase's plan file it was offered to took it (`_hold_full_run`).
     """
     recorded = res.get("recorded")
     return isinstance(recorded, dict) and (recorded.get("recorded") is False
@@ -3510,27 +3511,26 @@ def unrecorded_line(res):
     on a red run as on a green one, since no caller may read 0 or 1 off a run
     the plan holds no record of.
 
-    ONE SENTENCE PER THING THAT CAN BE MISSING. A full run still
-    appends its evidence row, so for it "no row was stored" (its answer has
-    `recorded` False and no `record` key - the hold was never offered) and
-    "the row stands but no plan file holds the run" (`path` names the row's
-    file) are said apart. A task or phase run writes no row, so its only
-    missing thing is its record, and then no file holds the run at all - said
-    with the plan's own refusal when that is not a busy lock, since the repair
-    is then the cause's, not a wait."""
+    ONE SENTENCE PER THING THAT CAN BE MISSING. A run whose record could not
+    even be built (its answer has `recorded` False and no `record` key) is
+    said apart from a full run whose record stands while a phase it was
+    offered to holds none of it (`path` names the record's file). Otherwise
+    the missing thing is the record, and then no file holds the run at all -
+    said with the plan's own refusal when that is not a busy lock, since the
+    repair is then the cause's, not a wait."""
     recorded = res.get("recorded") if isinstance(res.get("recorded"), dict) else {}
     if recorded.get("recorded") is False and "record" not in recorded:
-        return ("GATE NOT RECORDED: the gate itself %s, but --record stored no "
-                "evidence row (see the `evidence: NOT recorded` line), so "
-                "nothing can later show this run happened. Exit %d, not %d - "
-                "fix the ledger and re-run."
+        return ("GATE NOT RECORDED: the gate itself %s, but --record could "
+                "not build the run's record (see the `evidence: NOT recorded` "
+                "line), so nothing can later show this run happened. Exit %d, "
+                "not %d - fix that and re-run."
                 % ("failed" if _ev.row_is_red(res) else "passed", E_UNRECORDED,
                    E_FAIL if _ev.row_is_red(res) else E_OK))
     if recorded.get("path"):
-        return ("GATE NOT RECORDED: the gate itself %s and its evidence row is "
-                "in %s, but the plan holds no record of the run (see the "
-                "`plan:` lines). Exit %d, not %d - re-run this gate with "
-                "--record once the plan's index lock is free."
+        return ("GATE NOT RECORDED: the gate itself %s and the plan's full-run "
+                "record is in %s, but a phase it was offered to holds no record "
+                "of the run (see the `plan:` lines). Exit %d, not %d - re-run "
+                "this gate with --record once the plan's index lock is free."
                 % ("failed" if _ev.row_is_red(res) else "passed",
                    recorded["path"], E_UNRECORDED,
                    E_FAIL if _ev.row_is_red(res) else E_OK))
@@ -5728,6 +5728,18 @@ def _record_run(project, args, res, source, commands, manifest, out=print):
              else _ev.write_evidence_since(project, args.manifest,
                                            ids.get("phaseId"),
                                            session_id=identity["sessionId"]))
+    _say_boundary(since, out)
+    return {"recorded": bool(pointer["written"]),
+            "pointer": bool(pointer["written"]),
+            "record": bool(pointer["written"]),
+            "reason": None if pointer["written"] else pointer.get("reason"),
+            "boundary": since["at"], "boundaryWritten": bool(since["written"])}
+
+
+def _say_boundary(since, out):
+    """The `boundary:` line for what a recorded run's write did with the plan's
+    `meta.evidenceSince` (`since`, `{"written", "at", "reason"}`), and a lock
+    that refused to be given back."""
     if since["written"]:
         out("  boundary: recording began %s - work finished before it could not "
             "carry evidence" % (since["at"],))
@@ -5745,11 +5757,6 @@ def _record_run(project, args, res, source, commands, manifest, out=print):
     # about whether the stamp landed.
     for refusal in (since.get("releaseRefused") or []):
         out("  lock:     %s" % (refusal,))
-    return {"recorded": bool(pointer["written"]),
-            "pointer": bool(pointer["written"]),
-            "record": bool(pointer["written"]),
-            "reason": None if pointer["written"] else pointer.get("reason"),
-            "boundary": since["at"], "boundaryWritten": bool(since["written"])}
 
 
 def _run_record_of(project, args, ids, row, lines):
@@ -6021,8 +6028,7 @@ def _joined_at_base(step, manifest, phase_id, tree):
 
 def _base_run_row(project, res, published, out=print):
     """A `BASE_SCOPE` run as `_evidence_io.row_for` builds it - no ids, no
-    pointer, no evidence boundary, as a full run is (`_record_full_run`): it
-    is no subject's evidence. Built in memory and never written as a row:
+    pointer and no evidence boundary: it is no subject's evidence. Built in memory and never written as a row:
     the red's record keeps it (`_evidence_io.keep_base`). `published` are the
     commands the run they were read off kept verbatim, kept verbatim again; a
     derived step's command, spelled again, is kept as a digest as it was on
@@ -6207,24 +6213,24 @@ def _say_base_answer(answer, args, left, how, out):
 # --- the third place: --full, against the whole product -----------------------
 def _record_full_run(project, args, manifest, res, commands, run_id,
                      out=print):
-    """Record a scope-`full` row: no ids, no pointer, no evidence boundary -
-    and the run on every phase it can certify (`_hold_full_run`).
+    """Record a full run as the plan's full-run record
+    (`_evidence_io.write_full_record`), then offer it to every phase it can
+    certify (`_hold_full_run`). No evidence row is appended.
 
-    THE FULL SCOPE IS THE ONE THAT STILL APPENDS A ROW. A task or phase run's
-    only copy is its record in the plan; a full run that no phase can hold - a
-    red one, a dirty one - has no record anywhere, and `full-gate.py`'s
-    learning and the selection-miss remedy's `--basis-run` read it back off
-    this row. So the row stays until a full run's record in the plan carries
-    what they read.
+    THE RECORD IS THE RUN'S ONLY COPY, whatever its verdict: the newest full
+    run - red, dirty or one that counted nothing as well as one a phase can
+    hold - with its steps, its observations and its selection miss, which is
+    what `full-gate.py --learn-from` and the selection-miss remedy's
+    `--basis-run` read it back for. Beside it the plan names the newest
+    MEASURED full run (`measured_full_summary`), which bounds the next run's
+    selection miss. A record that could not be written is exit 3 on either
+    verdict, and the phases are offered nothing.
 
-    THE TWO WRITES A PHASE OR TASK RUN MAKES ARE BOTH ABSENT ON PURPOSE.
-    `write_pointer` caches a verdict onto ONE phase or task's own runtime
-    fields, and a full run names neither - `subject_ids` for this scope is
-    `{}`, so there is nothing for a pointer to be filed under. The evidence
-    boundary is a plan-wide "when could ANY run have been recorded", already
-    written by the first phase or task run this plan ever records; a full
-    run repeating that write would be a second writer of a fact one writer
-    already owns.
+    NO POINTER. `write_pointer` caches a verdict onto ONE phase or task's own
+    runtime fields, and a full run names neither - `subject_ids` for this scope
+    is `{}`. THE BOUNDARY IS THE RECORD'S OWN WRITE, as a subject's record's is:
+    a plan that states no `meta.evidenceSince` is stamped in the same save, since
+    no ledger row is left to date it from.
 
     RECORDED STRICTLY BEFORE THE SUMMARY IS PRINTED, for the same reason the
     phase/task path already keeps that order: a long full run can be cut off
@@ -6234,7 +6240,7 @@ def _record_full_run(project, args, manifest, res, commands, run_id,
 
     `run_id` is minted by the caller, which names it in a remedy it prints.
 
-    THE PLAN HOLDS THE RUN TOO, after the row is written: each phase it can
+    THE PHASES HOLD THE RUN TOO, after the record is written: each phase it can
     certify keeps it under `_evidence_io.FULL_GATE_RUNS_KEY`. A plan file that
     refused it makes `record` False, so the run exits 3 like any run whose
     record in the plan was not stored.
@@ -6244,19 +6250,31 @@ def _record_full_run(project, args, manifest, res, commands, run_id,
                 "attempt": None, _ev.STARTED_KEY: res.get("startedAt")}
     published = [command for _name, command in (commands or [])]
     try:
-        recorded = _ev.record(project, res, _ev.FULL_SCOPE, {}, identity,
-                              published=published, writer=args.writer)
+        row = _ev.row_for(project, res, _ev.FULL_SCOPE, {}, identity,
+                          published=published)
     except Exception as exc:
         out("  evidence: NOT recorded - %s" % (exc,))
         return {"recorded": False}
-    out("  evidence: recorded %s" % (identity["runId"],))
-    held = _hold_full_run(project, args.manifest, manifest, recorded["row"],
-                          published, out)
-    # THE ROW'S FILE AS THE REPOSITORY SPELLS IT: the verdict line names it to
+    got = _ev.write_full_record(
+        project, args.manifest, _ev.run_record(row),
+        measured=_ev.measured_full_summary(row, published),
+        session_id=identity["sessionId"])
+    if got.get("releaseRefused"):
+        out("  lock:     %s" % (got["releaseRefused"],))
+    if not got["written"]:
+        # THE RECORD IS THE ONLY COPY: no file anywhere holds this run, and the
+        # verdict above is its only trace.
+        out("  evidence: NOT recorded - no file holds run %s" % (run_id,))
+        out("  record:   NOT written - %s" % (got["reason"],))
+        return {"recorded": False, "record": False, "reason": got["reason"]}
+    out("  evidence: recorded %s" % (run_id,))
+    _say_boundary(got["since"], out)
+    held = _hold_full_run(project, args.manifest, manifest, row, published,
+                          out)
+    # THE PLAN FILE AS THE REPOSITORY SPELLS IT: the verdict line names it to
     # a person, and an absolute path names this machine's checkout.
     return {"recorded": True, "record": held,
-            "path": _journal_io.repo_relative_or_token(project,
-                                                       recorded["path"])}
+            "path": _journal_io.repo_relative_or_token(project, got["path"])}
 
 
 def _hold_full_run(project, manifest_path, manifest, row, published, out):
@@ -6296,7 +6314,6 @@ def _miss_remedy(miss, run_id, head, manifest_path, project):
     the script is the absolute path `_loader.script_path` resolves by
     basename, and the plan and project are named - a bare `audit-task.py` is
     'command not found' in a shell. Every argument is shell-quoted.
-    `import-evidence.py`'s printed `--learn-from` commands take the same form.
 
     THE SUITE IS THE PINNED PATH: `miss["test"]` is what
     `_evidence_io.selection_miss` pinned the runner's spelling to
@@ -6452,12 +6469,13 @@ def _run_full(project, args, manifest, out=print):
     # empty one.
     res["coverageBasis"] = None
     # THE POST-PASS, BEFORE THE ROW IS BUILT so the row can carry what it
-    # found, and over the ledger as it stood BEFORE this run was appended -
-    # "the newest earlier measured full run" that bounds the work since must
-    # not be this one. The run id is minted here for the same reason: the
-    # remedy names it. The WHOLE read goes in, lost lines included: a ledger
-    # file read with losses may hold the bounding run, and the post-pass
-    # then asks nothing and names the file rather than bound by an older one.
+    # found, and over the runs the plan and the ledger held BEFORE this run was
+    # recorded - "the newest earlier measured full run" that bounds the work
+    # since must not be this one. The run id is minted here for the same
+    # reason: the remedy names it. The WHOLE read goes in, lost lines
+    # included: a ledger file read with losses may hold the bounding run, and
+    # the post-pass then asks nothing and names the file rather than bound by
+    # an older one.
     run_id = _ev.new_run_id()
     ledger = _ev.read_rows(project, manifest_path=args.manifest)
     selection = _ev.selection_miss(
@@ -6508,7 +6526,7 @@ _ALONE = "machine: this run had the machine to itself"
 
 
 def success_line(lines):
-    """A green run's one line: its verdict, the evidence row it recorded and the
+    """A green run's one line: its verdict, the run it recorded and the
     pointer that names it, or the raw log an `--own` run wrote.
 
     None - the long form - for anything but a plain green: a verdict other than
@@ -6662,11 +6680,6 @@ def main(argv, out=print):
     # takes no `phase` and refuses `--task` outright rather than silently
     # narrowing to either.
     p.add_argument("--full", dest="full", action="store_true")
-    # NAMES A CI SHARD'S OWN LEDGER FILE, reaching `_evidence_io.record` and
-    # winning over a session id - see `_evidence_io.append_row` for why a
-    # build's identity must not be split by which session invoked it. Only a
-    # full run still appends a row, so only `--full` reads it.
-    p.add_argument("--writer", dest="writer", default=None)
     # NARROWS the coverage question to one task. Without it the question is asked
     # of the PHASE, which is where this script is invoked from - a task-level
     # gate needs this flag, since one with no caller states nothing.
@@ -6683,12 +6696,13 @@ def main(argv, out=print):
     # that instruction exists, a flag nothing sets is better than a default that
     # writes into every repository the gate has ever been run in.
     p.add_argument("--record", dest="record", action="store_true",
-                   help="store the run as its record in the plan - for a task "
-                        "or phase run the only copy kept, no evidence row is "
-                        "written; a --full run still appends its row too; a "
-                        "run (green or red) whose record in the plan, or whose "
-                        "--full row, could not be stored exits 3 (0 passed, "
-                        "1 failed, 2 usage, 3 not recorded on either verdict)")
+                   help="store the run as its record in the plan, the only "
+                        "copy kept - a task or phase run on its subject, a "
+                        "--full run as the plan's full-run record; no "
+                        "evidence row is written; a run (green or red) whose "
+                        "record in the plan could not be stored exits 3 "
+                        "(0 passed, 1 failed, 2 usage, 3 not recorded on "
+                        "either verdict)")
     # THE OPERATOR'S WAY BACK TO A MEASUREMENT, and the reason a repeat is
     # allowed to be the default at all: a cache with no override is a cache that
     # gets deleted by hand. It suppresses the LOOKUP and not the identity - the
@@ -6774,7 +6788,7 @@ def main(argv, out=print):
             return E_ASK
     # THE PLUGIN'S ONE ANSWER to which project a named manifest belongs to
     # (`_output.project_of_manifest`, re-exported by `_panel_write` and asked
-    # through it here and by `full-gate.py` and `import-evidence.py`) - never
+    # through it here and by `full-gate.py`) - never
     # a count of directories, which is right only for `<T>/docs/audit/<file>`
     # and records anywhere else into a plan outside the project.
     project = args.project_dir or _panel_write.project_of_manifest(

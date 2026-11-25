@@ -456,6 +456,11 @@ KNOWN_META = {"version", "repo", "title", "createdISO", "node",
               # finds it missing; the evidence ledger is the second, independent
               # source, and the boundary is the EARLIER of the two.
               "evidenceSince",
+              # The newest full run of any verdict, in a task record's shape, and
+              # the newest MEASURED one in a held run's shape - written together
+              # by `_evidence_io.write_full_record` in one save of the index.
+              "lastFullRun",
+              "lastMeasuredFullRun",
               # token metering, read by the COMMANDS (the hooks read their own
               # copy from .claude/audit.config.json — the plugin's standing split):
               # ledgerDir, showCost, pricingAsOf, pricing.
