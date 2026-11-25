@@ -11857,51 +11857,39 @@ def _types_namespace(**kw):
     return types.SimpleNamespace(**kw)
 
 
-def _selftest():
-    def body(check):
-        _harness.stage(check, "wh-block", _withheld_cases)
-        _harness.stage(check, "rf-block", _read_field_cases)
-        _harness.stage(check, "ho-block", _holder_cases)
-        _harness.stage(check, "hs-block", _held_by_subject_cases)
-        _harness.stage(check, "bb-block", _black_box_cases)
-        _harness.stage(check, "nu-block", _newest_unreadable_cases)
-        _harness.stage(check, "ns-block", _never_shared_cases)
-        _harness.stage(check, "gs-block", _guard_structure_cases)
-        _harness.stage(check, "ur-block", _unreadable_record_cases)
-        _harness.stage(check, "id-block", _record_identity_cases)
-        _harness.stage(check, "ug-block", _guard_unreadable_cases)
-        _harness.stage(check, "us-block", _surface_unreadable_cases)
-        _harness.stage(check, "fh-block", _full_held_cases)
-        _harness.stage(check, "ev-block", _cases)
-        _harness.stage(check, "rs-block", _record_sufficiency_cases)
-        _harness.stage(check, "sh-block", _shared_subtree_cases)
-        _harness.stage(check, "rk-block", _record_schema_cases)
-        _harness.stage(check, "lr-block", _last_run_cases)
-        _harness.stage(check, "rv-block", _repeat_record_cases)
-        _harness.stage(check, "uw-block", _unwritable_lock_cases)
-        _harness.stage(check, "pa-block", _behind_lock_cases)
-        _harness.stage(check, "lk-block", _shard_lock_ast_cases)
-        _harness.stage(check, "ri-block", _one_reader_cases)
-        _harness.stage(check, "kb-block", _kept_base_cases)
-        _foreground_bound_cases(check)
-        _part_repeat_cases(check)
-        _left_to_phase_gate_cases(check)
-        _selection_time_cases(check)
-        _base_scope_cases(check)
-        _joined_step_cases(check)
-        _claimed_followers_cases(check)
-        _tree_key_cases(check)
-        _banner_cases(check)
-        _harness.stage(check, "grr-block", _gate_reach_row_cases)
-        _project_config_cases(check)
-        _moment_reader_cases(check)
-        _harness.stage(check, "rfg-block", _runnable_full_gate_cases)
-    return _harness.run(body)
+# A STAGED SUITE: each row is a block the sweep runs as a job of its own, on one
+# slot, and replays in this order (`_harness.staged_main`), so the case ids,
+# their order and the tally are a one-process run's. Run whole in one process,
+# the suite reached the sweep's per-file timeout floor on a windows CI cell; a
+# block's timeout is read off its own recorded figure instead. The rows keep the
+# order the cases ran in before the table existed, one per top-level case
+# function; each block starts in a process of its own.
+STAGES = (("wh-block", "_withheld_cases"), ("rf-block", "_read_field_cases"),
+          ("ho-block", "_holder_cases"), ("hs-block", "_held_by_subject_cases"),
+          ("bb-block", "_black_box_cases"), ("nu-block", "_newest_unreadable_cases"),
+          ("ns-block", "_never_shared_cases"), ("gs-block", "_guard_structure_cases"),
+          ("ur-block", "_unreadable_record_cases"),
+          ("id-block", "_record_identity_cases"),
+          ("ug-block", "_guard_unreadable_cases"),
+          ("us-block", "_surface_unreadable_cases"), ("fh-block", "_full_held_cases"),
+          ("ev-block", "_cases"), ("rs-block", "_record_sufficiency_cases"),
+          ("sh-block", "_shared_subtree_cases"), ("rk-block", "_record_schema_cases"),
+          ("lr-block", "_last_run_cases"), ("rv-block", "_repeat_record_cases"),
+          ("uw-block", "_unwritable_lock_cases"), ("pa-block", "_behind_lock_cases"),
+          ("lk-block", "_shard_lock_ast_cases"), ("ri-block", "_one_reader_cases"),
+          ("kb-block", "_kept_base_cases"), ("fg-block", "_foreground_bound_cases"),
+          ("pr-block", "_part_repeat_cases"), ("lp-block", "_left_to_phase_gate_cases"),
+          ("st-block", "_selection_time_cases"), ("bs-block", "_base_scope_cases"),
+          ("js-block", "_joined_step_cases"), ("cf-block", "_claimed_followers_cases"),
+          ("tk-block", "_tree_key_cases"), ("bn-block", "_banner_cases"),
+          ("grr-block", "_gate_reach_row_cases"),
+          ("pc-block", "_project_config_cases"), ("mr-block", "_moment_reader_cases"),
+          ("rfg-block", "_runnable_full_gate_cases"))
+# The prefix of the directory a full run's blocks report into.
+_STAGE_PREFIX = "evidence-io-stages-"
 
 
 if __name__ == "__main__":
     safe_stdio()
-    if "--selftest" in sys.argv[1:]:
-        raise SystemExit(_selftest())
-    sys.stderr.write("usage: test__evidence_io.py --selftest\n")
-    raise SystemExit(2)
+    raise SystemExit(_harness.staged_main(sys.argv[1:], STAGES, globals(),
+                                          _STAGE_PREFIX))

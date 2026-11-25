@@ -465,8 +465,12 @@ def _empty_like(o, t):
 # disposition. A row two sides both changed is one conflict - and so is every row
 # it shares a key with that some side moved, since that key is one value and the
 # accounts around it come with it: a start against a close is one conflict on both.
-# A row only one side changed is that side's, so a start on one side and a red-first
-# proof re-recorded on the other both land.
+# A row only one side changed is that side's, so a retry that moves no status on one
+# side and a red-first proof re-recorded on the other both land. A start that moves
+# the status changes the close's row too, which holds the status: beside a proof
+# re-recorded on the other side that row changed on both, and the two accounts are
+# one conflict - landed apart, the close would pair one side's status with the
+# other's proof.
 def _units(kind, b, o, t, extra=()):
     """The key sets merged as one value each in a record of `kind`: whole rows,
     those both sides changed joined through every key some side moved. A key

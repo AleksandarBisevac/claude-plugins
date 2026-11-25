@@ -1077,8 +1077,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/status/_status_facts.py (evidence_subjects, the failing-tests condition); plugins/audit/scripts/status/audit-status.py (the tests word)",
         "issue": "A phase measured green whose own run record is then made unreadable (a status written twice, a moment that is no moment, steps that are not a list) still reads `tests passed` in the status render, beside the render's own banner that run records cannot be read, and `audit-status --gate`, with the default conditions and with `--fail-on failing-tests`, exits 0 with GATE PASSED: the condition and the word read the pointer, not the record. The validator and the doctor warn and exit 0. So a CI gate on the plan's state stays green over a record nobody can read; only a close and a task's done refuse.",
-        "resolution": "A subject whose own newest record cannot be read gets no passing word in any render, and `failing-tests` trips on it with a sentence naming the record and the remedy; the JSON payload carries the same state; a case holds the three shapes for a task and a phase, and the allow direction (a readable green) stays quiet.",
-        "fixTask": "P169.31-6l3"
+        "resolution": "fixed in P169.31-6l3 (d2f6e199ea9e): A subject whose own newest record cannot be read gets no passing word in any render, and `failing-tests` trips on it with a sentence naming the record and the remedy; the JSON payload carries the same state; a case holds the three shapes for a task and a phase, and the allow direction (a readable green) stays quiet.",
+        "fixTask": "P169.31-6l3",
+        "commit": "d2f6e199ea9e",
+        "status": "fixed"
       },
       {
         "id": "P169-R111",
@@ -1135,9 +1137,16 @@
         "issue": "The cost of the added cases is not measured or recorded. The task's recorded gate run (repeatedRun.durationMs 273991, 'machine to itself') took about 274 s for the four gate files; the red-first helper's fixed-tree run was still going at 114 s; sweep-costs.json holds 20.0 for test_merge_manifest.py and 0.2 for test__manifest_merge.py, and the sweep's DEFAULT_TIMEOUT floor is 300 s. rr1-rr10 build about eight real git repositories with the driver installed, and wv23/wv25 parse every .py under scripts/ and walk the schema about twenty times. I did not time the files singly, so which one holds the 274 s is not shown; what is shown is that the recorded costs no longer describe these files and the gate sits within about 10 percent of the per-job floor on this host, and CI runners (windows git is slower) are not this host.",
         "resolution": "Time each file with the sweep's loud form, move rr1-rr10 into a block of their own if one file now dominates, and re-record .github/sweep-costs.json (--record-costs) so the hang detector is calibrated to the new cases rather than to the old ones.",
         "fixTask": "P169.33-6l3"
+      },
+      {
+        "id": "P169-R118",
+        "severity": "low",
+        "file": ".github/sweep-costs.json:17-142",
+        "issue": "The filed outcome says CI run 45601056962 was 'green on every cell' on 'this tree', but that run (177d9315) carried the OLD sweep-costs.json; the re-recorded figures (test__evidence_io 14.6 -> 307.0, test_merge_manifest 20.0 -> 262.2, 37 block figures) change how the sweep deals files to shards and every hang-detector timeout (the executor cites 787 s and 425 s). The tree as it will be committed, costs included, has not been run in CI; only gate-parity (exit 0) and a local gate run stand behind the new split.",
+        "resolution": "Treat the owner-dispatched CI run on the committed tree as the confirmation of the new shard deal and timeouts, and say in the outcome that 45601056962 predates the costs file."
       }
     ],
-    "outcome": "[findings: 117 - 12 high, 43 med, 62 low; 96 with a recorded fix commit]"
+    "outcome": "[findings: 118 - 12 high, 43 med, 63 low; 97 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2808,7 +2817,8 @@
         "P169.30-6l3",
         "P169.31-6l3",
         "P169.32-6l3",
-        "P169.33-6l3"
+        "P169.33-6l3",
+        "P169.34-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -8868,7 +8878,7 @@
     {
       "id": "P169.31-6l3",
       "title": "The status render and its gate give no passing word to a subject whose own run record cannot be read",
-      "status": "in_progress",
+      "status": "done",
       "description": "The status render and the status gate answer a subject's tests from the pointer the plan caches, not from the record. A phase measured green whose own record is then unreadable (a status written twice, a moment that names no moment, steps that are not a list) still reads `tests passed`, printed beside the render's own banner that run records cannot be read, and `audit-status --gate` exits 0 with GATE PASSED under the default conditions and under `--fail-on failing-tests`. The validator and the doctor warn and exit 0. A pipeline gating on the plan's state therefore stays green over a record nobody can read; only a close and a task's done refuse.\n\nHold it where the word is produced, so every surface gets it at once. (1) The one function that yields a subject's tests word takes the read's answer for that subject: when the subject's own newest record cannot be read the word is the unreadable one (the read's own sentence, with file and field), never the pointer's. The table, the phase head line, `--short`, `--json` and the gate all go through it; derive the list of surfaces that print a tests word from the code and make a case fail when one prints it another way. (2) `failing-tests` trips on such a subject, in its own sentence, naming the record and the remedy the read prints; `no-test-evidence` does not count it as evidence. A plan with no unreadable record renders and gates byte for byte as before (compare over this repository's plan, the example plan and the starter). (3) The JSON rollup carries the state under the key the tests word already has, as a new value; say in COMPATIBILITY.md's terms whether a new value of that word is an addition (the documents already say an unrecognised word trips nothing: check that an older reader of the JSON is not promised a closed set). (4) Cases: the three shapes for a task and for a phase, ledger on and off; the allow direction (a readable green stays `passed` and the gate passes); and the doctor's and the validator's lines stay what they are (warnings), stated in the documents as such.\n\nThe command document for status is near the help payload's ceiling: a sentence added there is paid for by one removed.",
       "files": [
         "plugins/audit/scripts/status/_status_facts.py",
@@ -8904,14 +8914,23 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d2f6e199ea9e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_status_facts.py: new UNREADABLE_EVIDENCE word and SOURCE_UNREADABLE source; unreadable_entry() matches the read's unreadableRecords entry to a subject (a plan-scope entry answers every subject carrying a word); evidence_row/evidence_rows/test_evidence_summary/rollup take `unreadable` (default None = unchanged): a subject whose own lastRun cannot be read gets status `unreadable`, source `unreadableRecords`, and the entry's file/field/why, over both the commit trailer word and the pointer word; such rows are in `failing`, counted in byStatus, never in `unrecognised` (decided by source, not by word); unevidenced() gains an `unreadable` list of done subjects so no-test-evidence trips. audit-status.py: unreadable_records_block now runs before rollup and is passed to both rollups (the overlay and this checkout's gate view); the table cell (_evidence_cell) and the phase head line both go through evidence_row with the read's entries (the head line no longer reads evidence_status); the `evidence_status` alias is removed; render_short prints the same RUN RECORDS UNREADABLE banner as the full view (_unreadable_lines, shared); _failing_tests_detail ends on _evidence_io.unreadable_records_sentence for those records (file, subject, field, remedy with --record); _no_evidence_detail names them; CONDITION_HELP for failing-tests and no-test-evidence says so. tests/test_audit_status.py: new staged block `ru` (ru1-ru8): sharded fixture with done phase P1 and done tasks P1.1/P1.2, each shape (key written twice with the green copy last, `at` not a moment, steps not a list) on a task and on the phase, evidence ledger on and off; ru8 derives from the AST of audit-status.py every call to a function (in either module) taking `unreadable` and requires each to pass it, and that `evidence_status` is spelled nowhere. tests/test__status_facts.py: `evidence_status` dropped from the b1 shared-alias list. Docs: status.md paragraph rewritten (net 34 bytes smaller), COMPATIBILITY.md section 1 Not-promised bullet (the word is additive, no closed set was promised, default gate unchanged, validator/doctor stay warnings), CHANGELOG Fixed entry, PLUGIN-BUILD-GUIDE sections for both modules. Runs: task gate `python3 tools/sweep-selftests.py tests/test_audit_status.py tests/test__status_facts.py tests/test__help.py tests/test__evidence_io.py` exit 0 twice (4/4 files ok, 1306 cases; test_audit_status 440/440); orchestrator's list `python3 tools/sweep-selftests.py tests/test__panel_composition.py tests/test__evidence_view.py tests/test_run_test_gate.py tests/test__help_lints.py tests/test__refs.py tests/test__deps.py tests/test__output_lints.py` exit 0 twice (7/7, 1711 cases); dependants `tests/test_render_report.py tests/test__live_copy.py tests/test__doctor_trail.py tests/test__panel_state.py tests/test_validate_manifest.py tests/test__doctor_completions.py tests/test__verdict_binding.py` exit 0 (7/7, 694 cases); ruff exit 0, vermin -t=3.8- exit 0 over the four touched .py files. Byte-for-byte: HEAD's plugins/audit (git archive to scratch) vs the tree, audit-status.py over docs/audit/audit-plan.json, examples/acme-store/audit-plan.json and plugins/audit/templates/audit-plan.starter.json with '', --short, --json, --gate, --gate --fail-on failing-tests,no-test-evidence, --json --gate --fail-on ..., --view all: all 21 outputs and exit codes identical (cmp). Mutations on scratch copies, each caught: head line without the read -> ru2, ru8; failing drops unreadable rows -> ru4, ru5, ru6; any entry answers any subject (over-fire) -> ru2, ru4; no read still reads unreadable (over-fire) -> ru1; --short drops the banner -> ru3; no-test-evidence counts it as evidence -> ru6; gate line drops the read's sentence -> ru5. Observed: audit-doctor exit 0 with [WARNING] run records naming the file and field; validate-manifest exit 0 'valid ... 3 warning(s)'. Dependants: COMPATIBILITY.md's named files unchanged (one Not-promised bullet added, no file it names touched); _status_facts importers (drive-phase, full-gate, run-test-gate, _manifest_rules, audit-task, _panel_composition, _panel_paths, _evidence_view) still correct - every new parameter defaults to None and rolls up as before, NO_SIGN_OFF_EVIDENCE/KNOWN_EVIDENCE unchanged so the _areas.py anchor reads the same set (suites green); audit-status importers (render-report, the tests named) still correct - the only removed name, the evidence_status alias, had no user but test__status_facts' b1 list, which is updated; tests/ dependants (.github/sweep-costs.json, tools/affected.py) unchanged - the cost table was not re-recorded for the new ru block (about 3 s measured once); status.md dependants (gate-parity, prove-gates, _help_lints, measure-context) - test__help_lints and test__refs green, status.md is not a gated measure-context entry and shrank; CHANGELOG/PLUGIN-BUILD-GUIDE dependants (test__deps doc lints) green. Not done, outside this task's files: the panel (_panel_state calls rollup without `unreadable`; ui/panel/overview.js reads the pointer off the composition row) and the report (render-report's lib.rollup, both calls) still print the pointer's word for such a subject; no new value reaches them. Under a live overlay, an entry for this checkout's shard also turns the overlay's row for that subject (the conservative direction).",
+        "descriptive": "A task or phase whose own run record cannot be read now reads `unreadable` in the status table, phase head line, --short banner, --json and both test-evidence gate conditions, instead of the pointer's `passed`."
       },
       "startedAt": "2026-11-25T10:17:56Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-25T10:49:10Z",
+      "verifiedBy": [
+        "ru1 allow: every record readable, ledger off and on - passed everywhere, gates pass",
+        "ru2 render: unreadable task cell / phase head clause over each shape, subject and ledger setting, sibling stays passed, file and field named",
+        "ru3 --short names the unreadable record and prints no passing word",
+        "ru4 --json byStatus counts `unreadable` and failing lists it with scope, file, field",
+        "ru5 --gate --fail-on failing-tests exits 1 naming subject, file, field and the --record remedy",
+        "ru6 --gate --fail-on no-test-evidence exits 1 naming the subject",
+        "ru7 validator stays a warning: valid, no finding, default gate passes",
+        "ru8 the door derived from audit-status.py's AST: every call to a function taking `unreadable` passes it, evidence_status spelled nowhere"
+      ],
       "notes": [
         {
           "at": "2026-11-20T08:25:50Z",
@@ -8979,6 +8998,24 @@
             "ms": 387614,
             "basis": "durationMs in run 2026-11-25T10:48:44Z.cbb220's record (run-test-gate --record)",
             "runId": "2026-11-25T10:48:44Z.cbb220"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-25T10:41:15Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1397000,
+            "startedAt": "2026-11-25T10:17:58Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-25T10:48:44Z.cbb220",
+            "kind": "wait",
+            "ms": 5000,
+            "startedAt": "2026-11-25T10:41:47Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit d2f6e199ea9e",
+            "kind": "commit",
+            "ms": 1764,
+            "startedAt": "2026-11-25T10:49:07Z"
           }
         ],
         "firstStartedAt": "2026-11-25T10:17:56Z"
@@ -9087,6 +9124,18 @@
         "runId": "2026-11-25T10:49:06Z.ae7106",
         "status": "passed",
         "at": "2026-11-25T10:49:06Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "d2f6e199ea9e",
+        "at": "2026-11-25T10:49:10Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-25T10:41:13Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_status.py tests/test__status_facts.py` in a throwaway tree at HEAD exited 1 with 6 of 440 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ru2 (house FAIL), ru3 (house FAIL), ru4 (house FAIL), ru5 (house FAIL), ru6 (house FAIL), ru8 (house FAIL): SELFTEST FAILED: 434/440 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -9245,7 +9294,7 @@
     {
       "id": "P169.33-6l3",
       "title": "The merge's clean-start sentence says only what merges clean, and the merge suite's recorded cost describes its new cases",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Two findings of the drive's reviewer on P169.30 (P169-R116, P169-R117; read both in the phase's review). (1) CHANGELOG.md and PLUGIN-BUILD-GUIDE.md say a task's start beside a re-recorded red-first proof merges clean; that holds only for a retry that moves no status. A start that moves status pending to in_progress shares `status` with the close row, so `_units` joins them into one conflict (conservative, never a mix). Decide whether the rows should let a start that moves status merge beside a close-row field the start does not touch, or whether one conflict is right because status is one account; implement the structurally correct one, make every sentence true, and add a wv27 fixture with a start that moves status showing the chosen behaviour (and red under the other). (2) .github/sweep-costs.json holds 20.0 for tests/test_merge_manifest.py; measured singly on the owner's mac on 2026-11-25 it took about 40 s after P169.30's rr1-rr10. Re-record the two merge suites' figures by the sweep's own procedure (--record-costs, or --costs-from-log from a CI log of the phase branch), never by hand-typing a number, and say which source the figures come from. (3) CI release run 45593789114 on fb4c3bfd is RED on one file: tests/test__evidence_io.py 'did not finish within 300s' in selftests (windows, cp1252 1). In the green run before it (45571636087, 5e2506f4, same suite) it took 192.2 s on that cell, 292.1 s on windows plain 2, 110.5 s on linux plain 2, while .github/sweep-costs.json records 14.6 for it; the suite grew to 576 cases in P169.28 and is not staged, so its hang detector sits at the 300 s floor. Make the suite a staged suite (its __main__ is _harness.staged_main with a STAGES table, as tests/test_audit_task.py does; read the 'blocks, not suites' comment above work_items() in tools/sweep-selftests.py and _harness's STAGES comments) so no block is near the floor on the slowest runner, and re-record the costs of every file this task touches by the sweep's procedure (--costs-from-log from that CI run's logs, or a fresh CI run of the phase branch; never a hand-typed figure). Acceptance: the case ids and the 576-case total are unchanged (compare the printed labels before and after); the sweep's own cases on staged suites stay green (tests/test_sweep_selftests.py or wherever they live); a CI run of the phase branch is green on every windows cell, which I dispatch.",
       "files": [
         "CHANGELOG.md",
@@ -9259,7 +9308,8 @@
         ".github/sweep-costs.json",
         "(tests/test_merge_manifest.py",
         "tests/test_stamp_verification.py",
-        "tests/test__evidence_io.py"
+        "tests/test__evidence_io.py",
+        "plugins/audit/scripts/manifest/_manifest_merge.py"
       ],
       "tests": {
         "mode": "regression",
@@ -9280,14 +9330,14 @@
         "P169.30-6l3",
         "P169.31-6l3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-25T10:49:29Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -9310,12 +9360,221 @@
         {
           "at": "2026-11-25T10:18:14Z",
           "text": "no test runner in this task's gate for the test P169-R116, P169-R117 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test__manifest_merge.py tests/test_merge_manifest.py'], derived as from --gate; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        },
+        {
+          "at": "2026-11-25T10:49:27Z",
+          "text": "reads the '## [Unreleased]' heading; this task edits one Fixed entry under it and keeps the heading",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-25T10:49:27Z",
+          "text": "quotes the guide's 'related listing' sentence, which is not in the merge or sweep sections this task edits",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-25T10:49:27Z",
+          "text": "quotes the doctor-trail paragraph of the guide; this task edits only the merge section's _units paragraph",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-25T10:49:27Z",
+          "text": "quotes the guide's 'deciding a step on facts' marker; not in the merge section this task edits",
+          "waives": "tests/test_drive_phase.py"
+        },
+        {
+          "at": "2026-11-25T10:49:27Z",
+          "text": "reads the generated module map; this task adds no module and does not touch that section",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-25T10:49:27Z",
+          "text": "quotes a scope-spelling sentence outside the merge section; untouched",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-25T10:49:27Z",
+          "text": "reads .github/sweep-costs.json by its schema; this task re-records figures through the sweep's own --record-costs/--costs-from-log writer, so the shape it reads is the one it writes",
+          "waives": "tools/sweep-selftests.py"
         }
       ],
       "fixes": [
         "P169-R116",
         "P169-R117"
-      ]
+      ],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-25T11:27:56Z",
+            "ms": 23962,
+            "basis": "selectionMs in run 2026-11-25T11:34:57Z.796bef's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-25T11:34:57Z.796bef"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-25T11:28:20Z",
+            "ms": 397838,
+            "basis": "durationMs in run 2026-11-25T11:34:57Z.796bef's record (run-test-gate --record)",
+            "runId": "2026-11-25T11:34:57Z.796bef"
+          }
+        ],
+        "firstStartedAt": "2026-11-25T10:49:29Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-25T11:35:16Z.e494bf",
+        "status": "passed",
+        "durationMs": 196,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:a9948cde8adf909758db5b6853fde580a495c0cd79b58cda9354e080b25176fc",
+        "reuseKey": "1:sha256:19dd08f058f796c58c59d36efe514aa3f0bee76b5d23ddd114f522282884cac7",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-25T11:34:57Z.796bef",
+          "ts": "2026-11-25T11:34:57Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+        "selectionMs": 16090,
+        "at": "2026-11-25T11:35:16Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "attempt": 1,
+          "banners": [],
+          "durationMs": 397838,
+          "failed": [],
+          "gateDigest": "sha256:a9948cde8adf909758db5b6853fde580a495c0cd79b58cda9354e080b25176fc",
+          "gateReach": {
+            "gaps": []
+          },
+          "gateSource": "task",
+          "launch": "2026-11-25T11:27:52Z-1013b08a",
+          "observations": {
+            "countsBasis": "no step printed a summary this reader can count (python3 tools/sweep-selftests.py tests/test__manifest_merge.py tests/test_merge_manifest.py tests/test__evidence_io.py + affected/related: .claude/hooks/arm-rel... (5516 more characters)), so the size of this gate is not knowable from its output",
+            "coverage": [
+              "tests/test__evidence_io.py",
+              "tests/test__manifest_merge.py",
+              "tests/test__manifest_merge.py",
+              "tests/test_merge_manifest.py",
+              "tests/test_stamp_verification.py"
+            ],
+            "coverageBasis": "the runner named 208 path(s); the work under test declares 13 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 197/197 and 203 more; declared but not named by the run: (tests/test_merge_manifest.py, .github/sweep-costs.json, CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/scripts/manifest/_manifest_merge.py; breadth: the run named 176 suite path(s) and this task declares 13 file(s), and 170 of them are suites the task neither declares nor is named after (test__deps.py, test__output.py, test_audit_task.py, test_close_phase.py, test_commit_task_work.py, test_drive_phase.py, tests/_harness.py and 163 more) - this gate asks more than the task changed; that is reported, not refused",
+            "ranTotal": null,
+            "treeBasis": "git described the tree before and after",
+            "treeMutated": []
+          },
+          "reuseKey": "1:sha256:19dd08f058f796c58c59d36efe514aa3f0bee76b5d23ddd114f522282884cac7",
+          "runId": "2026-11-25T11:34:57Z.796bef",
+          "selectionMs": 23962,
+          "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+          "startedAt": "2026-11-25T11:28:20Z",
+          "status": "passed",
+          "via": "cli",
+          "at": "2026-11-25T11:34:57Z",
+          "testedState": {
+            "dirtyBasis": "git described the tree before the run; 10 dirty path(s)",
+            "dirtyDigest": "sha256:71c5223d55f5ac6fa2692470af5f659e0f4904d97b41918d6ee13313628da2f9",
+            "head": "d2f6e199",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeBasis": "9 declared file(s); 8 read, 1 missing",
+            "scopeDigest": "sha256:248057547dcbd2fe95daf09c08757fa7ef5ae74028d46d53fb045c78a3b38dec",
+            "scopeListDigest": "sha256:abf8fe1711443d0462e9ef772a272712a7a4e6db759d00d033ef05f9ccc09fb2"
+          },
+          "steps": [
+            {
+              "commandBytes": 5463,
+              "commandSha256": "274caf87af107f4eb740fa8f227c0f8c238e2403b354324bd607f1f86fa27e25",
+              "durationMs": 397782,
+              "exit": 0,
+              "measured": "not-knowable",
+              "name": "python3 tools/sweep-selftests.py tests/test__manifest_merge.py tests/test_merge_manifest.py tests/test__evidence_io.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_run_test_gate.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "program": "python3",
+              "ran": null,
+              "suiteReader": "none"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-25T11:34:57Z.796bef",
+            "launch": "2026-11-25T11:27:52Z-1013b08a",
+            "status": "passed",
+            "at": "2026-11-25T11:34:57Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-25T11:35:16Z.e494bf",
+        "status": "passed",
+        "at": "2026-11-25T11:35:16Z"
+      }
+    },
+    {
+      "id": "P169.34-6l3",
+      "title": "The panel and the report give no passing word to a subject whose own run record cannot be read",
+      "status": "pending",
+      "description": "P169.31 (d2f6e199) made the status render and its gate read a subject whose own run record cannot be read as `unreadable` through _status_facts' one tests word (evidence_row, rollup taking the read's answer). Its executor reported, and I confirmed by reading the call sites, that the other two surfaces still print the pointer's `passed`: `_panel_state.py` and both `lib.rollup` calls in `render-report.py` do not pass the read's answer, and the panel's overview reads the pointer off the composition row. Same class as P169-R110 (med), on the surfaces P169.31's file list did not hold. Hold it where the word is produced: every caller of rollup passes the read's answer (make rollup's read argument required, so a caller written tomorrow cannot omit it, and list every caller the change reached), the panel's payload and the report's evidence cell carry the unreadable word with the read's own sentence (this also closes P169-R89 and P169-R99 if their scenarios are covered: read both and say), and a case per surface fails when it prints the pointer's word for such a subject. A plan with no unreadable record renders byte for byte as before (report HTML/MD and panel payload over this repository's plan, the example and the starter). If the panel's JavaScript (scripts/ui/panel/overview.js) must change, stop before filing and say so: it is outside this list and needs the browser gate.",
+      "files": [
+        "plugins/audit/scripts/panel/_panel_state.py",
+        "plugins/audit/scripts/report/render-report.py",
+        "plugins/audit/scripts/panel/_panel_composition.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "tests/test__panel_state.py",
+        "tests/test_render_report.py",
+        "tests/test__panel_composition.py",
+        "tests/test__evidence_view.py",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__panel_state.py: a subject whose own record cannot be read reads the unreadable word in the panel's payload, never passed",
+          "tests/test_render_report.py: the report's evidence cell for such a subject gives no passing word and names the record"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__panel_state.py tests/test_render_report.py tests/test__panel_composition.py tests/test__evidence_view.py tests/test__status_facts.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.31-6l3",
+        "P169.32-6l3",
+        "P169.33-6l3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "neka njihov dokument bude osnova! I u odnosu na to treba napraviti plan implementacije",

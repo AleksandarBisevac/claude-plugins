@@ -762,7 +762,12 @@ def _whole_value_cases(check):
           (clean["conflicts"], ran["conflicts"]))
 
     # wv27 - two verbs writing apart in one record both land; two accounts meeting on
-    #        a key are one conflict.
+    #        a key are one conflict. A retry moves no status, so its row and the
+    #        close's meet on no key either side moved and both land; a START moves
+    #        the status, which the close's row holds too, so the close's row changed
+    #        on both sides and the start's and the proof's accounts are one conflict:
+    #        landed apart, the merged close would pair ours' status with theirs'
+    #        proof, a close neither side wrote.
     def bug_plan(**kw):
         return {"bugs": [dict({"id": "BUG-1", "title": "b", "status": "open",
                                "notes": "seen"}, **kw)]}
@@ -781,9 +786,13 @@ def _whole_value_cases(check):
         ("apart", "a finding's resolution edited on one side, a fixing task linked on "
                   "the other", finding_phase(), finding_phase(resolution="typed"),
          finding_phase(fixTask="P7.9")),
-        ("apart", "a task's attempts and start moved on one side, its red-first proof "
-                  "re-recorded on the other", task_phase(),
+        ("apart", "a retry moving no status - a task's attempts and start moved on one "
+                  "side - its red-first proof re-recorded on the other", task_phase(),
          task_phase(attempts=2, startedAt="T2"), task_phase(redFirst={"status": "proved"})),
+        ("one", "a start moving the status from pending on one side, its red-first proof "
+                "re-recorded on the other", task_phase(status="pending"),
+         task_phase(attempts=1, startedAt="T1"),
+         task_phase(status="pending", redFirst={"status": "proved"})),
         ("one", "a finding accepted on one side, carried on the other", finding_phase(),
          finding_phase(status="accepted-open", acceptedReason="ok"),
          finding_phase(status="carried", carriedTo="BUG-1")),
@@ -801,10 +810,17 @@ def _whole_value_cases(check):
            for want, name, b, o, t in shapes]
     wrong = [(name, paths) for want, name, paths in got
              if (want == "apart" and paths) or (want == "one" and len(paths) != 1)]
+    # The start beside the proof is one conflict over BOTH accounts - the start's
+    # status, moment and attempt with the close's proof - never two blocks, one per
+    # account, whose sides a person could keep apart.
+    started = [paths for _want, name, paths in got if name.startswith("a start moving")]
     check("wv27 two verbs writing apart in one record both land - a fix beside a note, a "
-          "resolution beside a fixing task, a start beside a red-first proof - and two "
-          "accounts meeting on a key are one conflict: wrong %r" % (wrong,),
-          wrong == [] and len(got) == 7)
+          "resolution beside a fixing task, a retry moving no status beside a red-first "
+          "proof - and two accounts meeting on a key are one conflict, a start moving the "
+          "status beside a re-recorded proof among them, over both accounts whole: "
+          "wrong %r, the start's %r" % (wrong, started),
+          wrong == [] and len(got) == 8
+          and started == [["tasks[P7.1].{status,startedAt,attempts,redFirst}"]])
 
     # wv12 - the read the resolver makes: a hand-resolved document whose run unit is
     #        neither side's nor the base's is named by its path; one side's unit,

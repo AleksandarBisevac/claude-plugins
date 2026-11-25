@@ -7373,8 +7373,10 @@ target, or puts in one dict literal or `dict(x, k=...)` call, read as keys of ev
 fit, and named at the line of its first write. A row is one verb's account and two rows may
 share a key - a task's start and its close both write the status - so `_units` merges each row
 whole and joins the rows both sides changed with every row sharing a key some side moved: a
-start against a close is one conflict, a start beside a re-recorded red-first proof is two
-clean merges. A co-write fails unless the merge, performing it two ways on two sides, makes it
+start against a close is one conflict, and so is a start that moves the status beside a
+re-recorded red-first proof, since the close's row holds the status too and so changed on both
+sides - landed apart, the close would pair one side's status with the other's proof; a retry that
+moves no status beside a re-recorded proof is two clean merges. A co-write fails unless the merge, performing it two ways on two sides, makes it
 one unit, or the suite gives its reason (a bug's close appending to the notes, a log a person
 also writes, carries its cost there); a group the table holds must be written together somewhere
 or carry its reason (a decision, which a person writes). A phase's status is in no row, and the
