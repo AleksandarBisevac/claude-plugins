@@ -344,6 +344,7 @@ def _cases(check):
 
     _walk_cases(check)
     _support_cases(check)
+    _deleted_suite_cases(check)
     _dogfood_cases(check)
 
     # ARMS carries machine ids, not human labels, so the guide's wording for
@@ -513,6 +514,47 @@ def _walk_cases(check):
           and "walk" in (failed["widen"] or ""))
 
 
+def _deleted_suite_cases(check):
+    """A suite this change deletes is no suite to run, whichever arm names it;
+    a suite that stays is still named when the module it reached is deleted."""
+    module, suite = "pkg/gone.py", "tests/test_gone.py"
+    sources = {"pkg/kept.py": "import os\n",
+               "tests/test_kept.py": "import pkg.kept\n"}
+    listing = "printf '%s\\n' {paths}"
+    command = listing.replace("{paths}", "%s %s" % (module, suite))
+    facts = {"versionAnswer": "vitest/3.2.4", "pySources": sources,
+             "absent": [module, suite],
+             "related": {"command": command, "exit": 0,
+                         "paths": [suite, "tests/test_kept.py"]}}
+    both = M.select([module, suite], _meta(listing={"related": listing}),
+                    facts)
+    said = [ln for ln in both["lines"] if suite in ln]
+    check("af53 A MODULE AND ITS SUITE DELETED TOGETHER GET A RUNNABLE GATE: "
+          "the deleted suite is selected by no arm - not the import graph, "
+          "where it is still a node, and not the listing that names it - it "
+          "widens nothing as test support, and one line says it was left out "
+          "because the tree under test does not hold it; the suite the "
+          "listing names that stays is still selected: %r"
+          % ((_suites(both), both["widen"], both["lines"]),),
+          both["widen"] is None
+          and suite not in [p for p, _a in _suites(both)]
+          and ("tests/test_kept.py", "related") in _suites(both)
+          and len(said) == 1 and "not in the tree under test" in said[0]
+          and "answers for nothing" in said[0])
+    # The twin: only the module is deleted, so its suite stays in the tree
+    # and must still run - the over-fire a rule reading "a changed suite path
+    # the module's deletion touches" would make.
+    stays = dict(sources, **{suite: "import pkg.gone\n"})
+    twin = M.select([module], {}, {"pySources": stays, "absent": [module]})
+    check("af54 THE TWIN: a module deleted while its suite remains still "
+          "names that suite, through the import graph, and no line says a "
+          "suite was left out: %r" % ((_suites(twin), twin["lines"]),),
+          twin["widen"] is None
+          and (suite, "python") in _suites(twin)
+          and not any("not in the tree under test" in ln
+                      for ln in twin["lines"]))
+
+
 def _support_cases(check):
     """A test-support change is covered by a declared unscoped sweep."""
     sweep = "python3 tools/sweep.py"
@@ -589,7 +631,7 @@ def _dogfood_cases(check):
     derived = (meta.get("phaseGate") or {}).get("derived") or {}
     template = M.listing_templates(meta).get("related") or ""
     selector = _tool_module("dogfood_affected", "affected.py")
-    leaf = "plugins/audit/scripts/governance/record-outside-run.py"
+    leaf = "plugins/audit/scripts/manifest/migrate-json-encoding.py"
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         listed_exit = selector.main(["--list-related", leaf])
@@ -624,7 +666,7 @@ def _dogfood_cases(check):
              res["widen"]),
           "tools/affected.py --list-related" in template and listed_exit == 0
           and blanket and res["widen"] is None
-          and "tests/test_record_outside_run.py" in picked
+          and "tests/test_migrate_json_encoding.py" in picked
           and not set(picked) & set(blanket))
 
     # A module the release hooks and the tools import: `--json` names gates
@@ -755,10 +797,9 @@ def _dogfood_cases(check):
 
 
 def _gather_cases(check):
-    """`af38`-`af42`: the one gathering of the facts `select` reads, and the
-    runner under it. These are the cases that shell out: the subject is what a
-    listing command does when it is run, so each one runs."""
-    import shutil
+    """`af38`-`af42` and `af55`: the one gathering of the facts `select`
+    reads, and the runner under it. These are the cases that shell out: the
+    subject is what a listing command does when it is run, so each one runs."""
     import subprocess
     import tempfile
     import time
@@ -847,6 +888,29 @@ def _gather_cases(check):
               and "src/a.py" in (fresh.get("pySources") or {})
               and M.select(["src/a.py"], meta, fresh)["widen"] is None)
 
+        # A deletion not yet staged: git's index still lists the suite, and
+        # only the tree says it is gone - the reading this case is for.
+        gone = "tests/test_gone.py"
+        with open(os.path.join(tree, "tests", "test_gone.py"), "w") as fh:
+            fh.write("import a\n")
+        subprocess.run(["git", "-C", tree, "add", gone],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        os.remove(os.path.join(tree, "tests", "test_gone.py"))
+        observed = M.gather_facts(tree, {}, ["src/a.py", gone])
+        picked = M.select(["src/a.py", gone], {}, observed)
+        check("af55 the gathering observes which changed paths the tree under "
+              "test does not hold - the deleted suite, though git's index "
+              "still lists it, never the module that stays - and the "
+              "selection over that gathering runs no deleted suite and widens "
+              "nothing: %r"
+              % ((observed.get("absent"), gone in (observed.get("suites") or []),
+                  _suites(picked), picked["widen"]),),
+              observed.get("absent") == [gone]
+              and gone in (observed.get("suites") or [])
+              and picked["widen"] is None
+              and gone not in [p for p, _a in _suites(picked)]
+              and ("tests/test_a.py", "python") in _suites(picked))
+
         seen = {"files": []}
         M.run_listing = counted
         del heard[:]
@@ -863,7 +927,8 @@ def _gather_cases(check):
               and sorted(seen.get("listings") or {}) == sorted(
                   c for c in heard if "{" not in c and "echo v1" != c))
     finally:
-        shutil.rmtree(tree, ignore_errors=True)
+        # The fixture writes git objects (af55), which are read-only.
+        _harness.remove_tree(tree)
 
 
 def _pids_in(path):

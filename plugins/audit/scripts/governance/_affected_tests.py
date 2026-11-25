@@ -39,6 +39,12 @@ answer every arm gave. The test-support widening alone is settled by the
 task's own gate when that gate holds the unscoped call of the spelling
 (`steps_for`): that call runs every suite the support file can reach.
 
+A DELETED SUITE IS NOT SELECTED, AND IT IS SAID. A changed path the tree under
+test does not hold (`facts["absent"]`, read off the tree by `gather_facts`) is
+refused whichever arm names it, with a line naming it and the arm's basis: a
+runner handed a missing file refuses it and measures nothing. A suite that
+stays is still selected when the module it imports is deleted.
+
 NOT TWICE. A step whose suites a declared entry already runs whole - the
 step's own command with its paths taken out (`left_to_run`) - is left out and
 said, so a full-sweep key does not run the same suites again beside it.
@@ -754,8 +760,10 @@ def _covers(root, path):
     return root == "" or path == root or path.startswith(root + "/")
 
 
-def _walk_arm(suites, runners, trees):
-    """`{runner: basis}` for every runner whose walk holds a changed suite."""
+def _walk_arm(suites, runners, trees, gone=()):
+    """`{runner: basis}` for every runner whose walk holds a changed suite, or
+    held one of `gone` - a suite the change deleted, whose absence the walk
+    now reads."""
     index = _walk_index(trees)
     out = {}
     for runner in sorted(set(runners)):
@@ -765,8 +773,10 @@ def _walk_arm(suites, runners, trees):
         for suite in suites:
             hit = [r for r in roots if _covers(r, suite)]
             if hit and runner not in out:
-                out[runner] = ("walk: its cases walk %s, which holds %s"
-                               % (hit[-1] or "the project root", suite))
+                out[runner] = ("walk: its cases walk %s, which %s %s"
+                               % (hit[-1] or "the project root",
+                                  "held, until this change deleted it,"
+                                  if suite in gone else "holds", suite))
     return out
 
 
@@ -841,8 +851,20 @@ def select(changed, meta, facts, exclude=None):
     changed = [p for p in (changed or []) if isinstance(p, str) and p]
     skip = set(exclude or ())
     suites, lines = [], []
+    # A SUITE THE TREE UNDER TEST DOES NOT HOLD IS NO SUITE TO RUN: the change
+    # deleted it, so it answers for nothing, and a runner handed its path
+    # refuses the missing file and measures nothing at all. Every arm can
+    # name one - the import graph keeps a deleted path as a node, and a
+    # listing handed the changed paths may echo it - so it is refused here,
+    # once, and said.
+    absent = set(p for p in facts.get("absent") or [] if isinstance(p, str))
+    left_out = []
 
     def add(path, arm, basis):
+        if path in absent:
+            if path not in [p for p, _b in left_out]:
+                left_out.append((path, basis))
+            return
         if path not in skip and path not in [s["path"] for s in suites]:
             suites.append({"path": path, "arm": arm, "basis": basis})
 
@@ -888,7 +910,8 @@ def select(changed, meta, facts, exclude=None):
             lines.append("walk: no Python sources were read, so no runner's "
                          "walk over %s was looked for" % (", ".join(edited),))
         else:
-            for path, basis in sorted(_walk_arm(edited, runners, trees).items()):
+            for path, basis in sorted(_walk_arm(edited, runners, trees,
+                                                absent).items()):
                 add(path, "walk", basis)
 
     e2e_paths = []
@@ -912,6 +935,9 @@ def select(changed, meta, facts, exclude=None):
             add(path, "e2e-widening", "e2e-widening: %s is app source and no "
                 "recorded listing sees the e2e specs, so every spec runs"
                 % (source[0],))
+    lines.extend("affected: %s is not in the tree under test - this change "
+                 "deletes it, so the deleted suite answers for nothing and is "
+                 "not run (%s)" % (path, basis) for path, basis in left_out)
     if "e2eChanged" in templates or (specs and not sees_e2e):
         read.update(source)
     read.update(p for p in changed if p.endswith(".py")
@@ -926,7 +952,9 @@ def select(changed, meta, facts, exclude=None):
     # support - a harness, a conftest, a fixture - or a suite nothing listed.
     # Every suite may lean on it, and a listing that answered with its
     # importers still left out its own run, so the whole set runs.
-    picked = set(s["path"] for s in suites)
+    # A suite left out above was named by an arm, so it is no unselected
+    # support file; a deleted harness no arm names still widens.
+    picked = set(s["path"] for s in suites) | set(p for p, _b in left_out)
     support = [p for p in changed if _phases.is_suite_path(p)
                and p not in skip and p not in picked]
     if support:
@@ -1518,6 +1546,11 @@ def gather_facts(project, meta, changed, seen=None, sources=True):
         seen["files"] = tree_files(project)
     files = seen["files"]
     facts["suites"] = [p for p in files or [] if _phases.is_suite_path(p)]
+    # Read off the tree, not git's list: a deletion not yet staged is still
+    # in the index, and the runner is handed the tree.
+    facts["absent"] = sorted(
+        p for p in changed or [] if isinstance(p, str) and p
+        and not os.path.lexists(os.path.join(project, *p.split("/"))))
     # A changed suite is read for the walk arm whatever its language: the
     # lints that walk it are Python whether or not it is.
     if sources and files is not None \
