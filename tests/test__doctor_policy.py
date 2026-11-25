@@ -360,7 +360,7 @@ def _cases(check):
         # the honest shape for "this machine could not say" - so these cases
         # below stay about resolution alone, and the ones after them supply a
         # verdict on purpose.
-        def _skills(mf, inv, cfg=None, home=None):
+        def _skills(mf, inv, cfg=None, home=None, project=None):
             """check_plan_skills with the user's Claude home PINNED: the resolver
             reads `<home>/skills`, and a machine that happens to hold a skill the
             fixture calls missing must not change the answer."""
@@ -368,7 +368,7 @@ def _cases(check):
             saved = os.environ.get("CLAUDE_CONFIG_DIR")
             os.environ["CLAUDE_CONFIG_DIR"] = home or os.path.join(tmp, "home-empty")
             try:
-                M.check_plan_skills(r, tmp, cfg or {}, cfgmod, mf,
+                M.check_plan_skills(r, project or tmp, cfg or {}, cfgmod, mf,
                                     _discover=lambda _p, home=None: inv)
             finally:
                 if saved is None:
@@ -557,6 +557,140 @@ def _cases(check):
               and "directory name" in renamed_row
               and "directory name" not in elsewhere_row
               and "does not load" in elsewhere_row)
+
+        # --- the pins the plan holds, read back ---------------------------------
+        # `_skill_places` is the one reader of a pin, and the launcher's stop and
+        # this row both ask it. Each answer is driven through a real directory,
+        # because the digest is of a directory and a fixture that stubbed the
+        # reader would be the suite agreeing with the code about itself.
+        _SP = M._skill_places
+        _PIN = "skill pins"
+        pin_skills = os.path.join(tmp, ".claude", "skills")
+        pin_a = os.path.join(pin_skills, "pin-a")
+        _put(pin_skills, "pin-a")
+        _put(pin_skills, "pin-b")
+        _put(pin_skills, "pin-big")
+        for _i in range(_SP.MAX_SKILL_ENTRIES + 1):
+            with open(os.path.join(pin_skills, "pin-big", "f%04d" % (_i,)), "w") as _fh:
+                _fh.write("")
+
+        def _digest(name):
+            return _SP.skill_digest(os.path.join(pin_skills, name))["digest"]
+
+        def _pinned(names, pins):
+            mf = _plan_with(names)
+            if pins is not None:
+                mf["meta"]["skillPins"] = pins
+            return mf
+        inv = {"skills": [{"name": "unrelated"}]}
+        quiet = _skills(_plan_with(["pin-a"]), inv, home=home)
+        for cid, label, pins in (("dp60", "no key", None),
+                                 ("dp60b", "an empty object", {})):
+            rep = _skills(_pinned(["pin-a"], pins), inv, home=home)
+            check("%s a plan with %s draws NO row of the pin family, and every "
+                  "other row is the one a plan that never heard of pins draws: %r"
+                  % (cid, label, _levels(rep, _PIN)),
+                  _levels(rep, _PIN) == [] and rep.rows == quiet.rows)
+        rep = _skills(_pinned(["pin-a", "pin-b"],
+                              {"pin-a": {"sha256": _digest("pin-a")}}), inv, home=home)
+        check("dp61 a pin whose directory holds the bytes pinned is a match, and "
+              "it names the SKILL.md the session would load; the plan's other "
+              "skill, which nothing pins, is named as INFORMATION - an OK row, "
+              "never a warning: %r" % ((_levels(rep, _PIN), _detail(rep, _PIN)),),
+              "WARNING" not in _levels(rep, _PIN) and "FINDING" not in _levels(rep, _PIN)
+              and "match" in _detail(rep, _PIN)
+              and os.path.join(pin_a, "SKILL.md") in _detail(rep, _PIN)
+              and "pin-b" in _detail(rep, _PIN) and "not pinned" in _detail(rep, _PIN))
+        rep = _skills(_pinned(["pin-a", "pin-b"],
+                              {"pin-a": {"sha256": _digest("pin-a")},
+                               "pin-b": {"sha256": _digest("pin-b")}}),
+                      inv, home=home)
+        check("dp62 ...and when every skill the plan names is pinned there is no "
+              "sentence about unpinned ones (the twin of dp61, which an "
+              "unconditional sentence fails): %r" % (_detail(rep, _PIN),),
+              "not pinned" not in _detail(rep, _PIN)
+              and "WARNING" not in _levels(rep, _PIN))
+        good = _digest("pin-a")
+        with open(os.path.join(pin_a, "SKILL.md"), "a", encoding="utf-8") as _fh:
+            _fh.write("one more line\n")
+        changed = _digest("pin-a")
+        rep = _skills(_pinned(["pin-a"], {"pin-a": {"sha256": good,
+                                                    "source": "o/r@1"}}),
+                      inv, home=home)
+        want = _SP.pin_verdict("pin-a", {"sha256": good, "source": "o/r@1"}, tmp,
+                               home, M._output.PLUGIN_ROOT,
+                               _SP.plugin_name(M._output.PLUGIN_ROOT))
+        check("dp63 a pin whose directory holds other bytes is a WARNING, never a "
+              "finding, naming the path, BOTH digests, and that a session naming "
+              "the skill will not start - in the words the launcher's stop uses, "
+              "from the same helper: %r" % ((_levels(rep, _PIN), _detail(rep, _PIN)),),
+              _levels(rep, _PIN).count("WARNING") == 1
+              and "FINDING" not in _levels(rep, _PIN)
+              and good in _detail(rep, _PIN) and changed in _detail(rep, _PIN)
+              and os.path.join(pin_a, "SKILL.md") in _detail(rep, _PIN)
+              and "will not start" in _detail(rep, _PIN) + _fix(rep, _PIN)
+              and _SP.stop_words(want) in _detail(rep, _PIN))
+        os.makedirs(os.path.join(pin_a, "__pycache__"))
+        with open(os.path.join(pin_a, "__pycache__", "x.pyc"), "wb") as _fh:
+            _fh.write(b"\0")
+        rep = _skills(_pinned(["pin-a"], {"pin-a": {"sha256": changed}}),
+                      inv, home=home)
+        rep_cache = _skills(_pinned(["pin-a"], {"pin-a": {"sha256": _digest("pin-a")}}),
+                            inv, home=home)
+        check("dp64 a mismatch caused by a cache written into the directory after "
+              "pinning NAMES it, as the runner's stop does; the same directory "
+              "pinned as it now is draws no warning (the twin): %r"
+              % (_detail(rep, _PIN),),
+              "__pycache__" in _detail(rep, _PIN)
+              and "WARNING" in _levels(rep, _PIN)
+              and "WARNING" not in _levels(rep_cache, _PIN))
+        shutil.rmtree(os.path.join(pin_a, "__pycache__"))
+        rep = _skills(_pinned(["ghost-pin"], {"ghost-pin": {"sha256": "a" * 64}}),
+                      inv, home=home)
+        rep_big = _skills(_pinned(["pin-big"], {"pin-big": {"sha256": "a" * 64}}),
+                          inv, home=home)
+        check("dp65 the two answers 'no copy where its bytes can be read' and 'a "
+              "copy that cannot be read whole' are told apart: a name nothing "
+              "places says it looked in the places it names and found none; a "
+              "directory past the ceiling says it has no digest and why, and "
+              "does not claim it was not found: %r"
+              % ((_detail(rep, _PIN), _detail(rep_big, _PIN)),),
+              "found none" in _detail(rep, _PIN)
+              and os.path.join("skills", "ghost-pin") in _detail(rep, _PIN)
+              and "could not be read whole" not in _detail(rep, _PIN)
+              and "could not be read whole" in _detail(rep_big, _PIN)
+              and str(_SP.MAX_SKILL_ENTRIES) in _detail(rep_big, _PIN)
+              and "WARNING" in _levels(rep, _PIN)
+              and "WARNING" in _levels(rep_big, _PIN))
+        rep = _skills(_pinned(["pin-b"], {"pin-b": {"sha256": _digest("pin-b")},
+                                          "retired-skill": {"sha256": "b" * 64}}),
+                      inv, home=home)
+        rep_used = _skills(_pinned(["pin-b", "retired-skill"],
+                                   {"pin-b": {"sha256": _digest("pin-b")}}),
+                           inv, home=home)
+        check("dp66 a pin naming a skill nothing in the plan names any more is a "
+              "WARNING saying it is stale and which verb drops it; a plan naming "
+              "that skill draws none (the twin): %r"
+              % ((_levels(rep, _PIN), _detail(rep, _PIN)),),
+              "stale" in _detail(rep, _PIN) and "retired-skill" in _detail(rep, _PIN)
+              and "skill-pin" in _fix(rep, _PIN)
+              and "stale" not in _detail(rep_used, _PIN))
+        mf_scan = _pinned(["pin-a", "pin-b"], {"pin-b": {"sha256": "c" * 64}})
+        rep = _skills(mf_scan, {"skills": []}, home=home)
+        rep_ok = _skills(mf_scan, inv, home=home)
+        check("dp69 the pin rows do not depend on the scan: an inventory that came "
+              "back EMPTY (the resolution rows say UNKNOWN) still gets the rows "
+              "for the pins the plan holds, the same ones a working scan gets: %r"
+              % ((_levels(rep, "skills"), _detail(rep, _PIN)),),
+              "UNKNOWN" in _detail(rep, "skills")
+              and _detail(rep, _PIN) == _detail(rep_ok, _PIN)
+              and "pin-b" in _detail(rep, _PIN))
+        rep = _skills(_pinned(["pin-b"], {"pin-b": {"sha256": "nope"}}), inv,
+                      home=home)
+        check("dp67 a key the reader cannot read as pins is said, not read past - "
+              "no row claims a match over it: %r" % (_detail(rep, _PIN),),
+              "WARNING" in _levels(rep, _PIN) and "match" not in _detail(rep, _PIN)
+              and "SHA-256" in _detail(rep, _PIN))
 
         # --- would it survive a CLONE? the half "resolves here" cannot see ------
         # The row above is answered on the authoring machine, where every name
@@ -875,6 +1009,73 @@ def _cases(check):
                   "which dp42 could be a check that warns about every phase",
                   _levels(rep, _BN) == ["OK"], repr(_levels(rep, _BN)))
         finally:
+            _harness.remove_tree(root)
+
+        # --- a pinned PROJECT skill is judged on the working copy ---------------
+        # A wave's sessions load the commit the work was cut from, not the
+        # working copy, so a working copy that differs from HEAD is said to - and
+        # a clean one is not (the twin). Driven through a real repository: the
+        # question is what git says about a directory.
+        root = _harness.fixture_root("dppin")
+        saved_cfg = os.environ.get("CLAUDE_CONFIG_DIR")
+        try:
+            repo = os.path.join(root, "repo")
+            os.makedirs(repo)
+            os.environ["CLAUDE_CONFIG_DIR"] = os.path.join(root, "home")
+            env = dict(os.environ, GIT_CONFIG_GLOBAL=os.path.join(root, "gc"),
+                       GIT_CONFIG_SYSTEM=os.devnull)
+
+            def pgit(*args):
+                return subprocess.run(["git"] + list(args), cwd=repo, env=env,
+                                      stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE)
+            pgit("init", "-q", "-b", "main", ".")
+            pgit("config", "user.email", "t@example.com")
+            pgit("config", "user.name", "T T")
+            folder = os.path.join(repo, ".claude", "skills", "pin-git")
+            os.makedirs(folder)
+            skill_md = os.path.join(folder, "SKILL.md")
+            with open(skill_md, "w", encoding="utf-8") as fh:
+                fh.write("---\nname: pin-git\n---\nbody\n")
+            pgit("add", "-A")
+            pgit("commit", "-qm", "vendor it")
+            sp_mod = M._skill_places
+            mf = _manifest()
+            mf["phases"][0]["tasks"][0]["skills"] = ["pin-git"]
+
+            def pinned_report():
+                mf["meta"]["skillPins"] = {"pin-git": {
+                    "sha256": sp_mod.skill_digest(folder)["digest"]}}
+                rep = base.Report()
+                M.check_plan_skills(rep, repo, {}, cfgmod, mf,
+                                    _discover=lambda _p, home=None: {
+                                        "skills": [{"name": "unrelated"}]})
+                return rep
+            clean = pinned_report()
+            with open(skill_md, "a", encoding="utf-8") as fh:
+                fh.write("edited, not committed\n")
+            edited = pinned_report()
+            pgit("add", "-A")
+            pgit("commit", "-qm", "commit the edit")
+            committed = pinned_report()
+            check("dp68 a pinned project skill whose working copy differs from "
+                  "HEAD is judged on the working copy AND says the commit is "
+                  "what a wave's sessions load; the same skill committed says "
+                  "neither - a clean one is the twin: %r"
+                  % ((_detail(clean, _PIN), _detail(edited, _PIN)),),
+                  "working copy" in _detail(edited, _PIN)
+                  and "differs from HEAD" in _detail(edited, _PIN)
+                  and "commit" in _detail(edited, _PIN)
+                  and "differs from HEAD" not in _detail(clean, _PIN)
+                  and "differs from HEAD" not in _detail(committed, _PIN)
+                  and "WARNING" in _levels(edited, _PIN)
+                  and "WARNING" not in _levels(clean, _PIN)
+                  and "WARNING" not in _levels(committed, _PIN))
+        finally:
+            if saved_cfg is None:
+                os.environ.pop("CLAUDE_CONFIG_DIR", None)
+            else:
+                os.environ["CLAUDE_CONFIG_DIR"] = saved_cfg
             _harness.remove_tree(root)
 
 

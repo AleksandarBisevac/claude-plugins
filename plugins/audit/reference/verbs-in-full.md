@@ -1584,6 +1584,38 @@ as are an empty `--skills`, a name with whitespace in it and `--remove` beside `
 and journaled as `defaultskills.change` with the old and the new list as comma-joined `from`
 and `to`.
 
+### Subcommand: `skill-pin <name> [--source TEXT]` / `skill-pin <name> --remove --reason TEXT`
+
+`meta.skillPins` holds the digest of a skill directory as it was reviewed, and a session that
+would load a pinned skill whose directory is not those bytes does not start. This is the writer
+of a pin, and `/audit:doctor` reads it back (the `skill pins` rows):
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" skill-pin <name> [--source TEXT] [--allow-personal-copy] [--reason TEXT] [<manifestPath>] [--json]
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" skill-pin <name> --remove --reason TEXT [<manifestPath>] [--json]
+```
+
+It computes nothing of its own: where `<name>` resolves is `_skill_places.resolve_skill`'s
+answer (a personal copy, then the project's, then the running plugin's), the digest is
+`_skill_places.skill_digest` of that copy's whole directory, and the output names the directory
+and the digest it pinned. It refuses, exit 2 with the plan's bytes and the journal untouched, a
+string that is no skill name, a name nothing resolves (naming every place it looked), a
+directory with no digest (in the reader's own words, naming the entry and its kind) and a
+personal copy — a home directory no clone carries, so the pin would fail on every other machine
+— unless `--allow-personal-copy` is passed; it then pins and says so. A skill already pinned to
+the bytes it holds changes nothing and says so (`--source` text that differs is rewritten as
+the one change); a changed one prints the old and the new digest. A directory is pinned once:
+a name whose directory is already pinned under another spelling (the bare name and the
+running plugin's `plugin:skill` reach one directory) updates THAT pin instead of adding a
+second, and a plan already holding two pins on one directory with different digests is
+refused, exit 1 with the validator's finding, until one of them is removed. `--remove` needs
+its `--reason`, refuses a name that is not pinned (naming the spelling that is, when there is
+one) and takes the key away with the last pin, so a plan with no pins carries no `skillPins`.
+The write is index-only, under the lock, revalidated and rolled back on a finding, and
+journaled as `skillpin.change` with the digest dropped or written as `from` and `to`. How an
+outside skill becomes a project skill worth pinning is `vendoring-a-skill.md`, in this
+directory.
+
 ### Subcommand: `priority <phaseId> <tier|--clear>` — the legacy spelling
 
 **This still works.** It is what `/audit:phase priority <phaseId> <tier|--clear>` was called

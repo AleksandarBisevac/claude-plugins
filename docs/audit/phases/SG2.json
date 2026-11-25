@@ -323,6 +323,10 @@
         {
           "at": "2026-11-20T13:40:33Z",
           "text": "42. From the independent review of a39bc270 and 8e6ea40b (scratchpad sg2.16-review/REVIEW.md, findings 5 and 8), the reader's half, low: (a) mutations that leave tests/test__skill_places.py green while the behaviour holds on probes - O_NOFOLLOW, O_NONBLOCK, the fstat identity check, the read's own budget stop, a CR carried across a chunk boundary, the .md suffix compared without case; each owes a case that can fail. (b) a directory replaced by a link after its lstat is walked through the link and files outside are hashed (bounded, no hang); SECURITY.md says such an entry is never opened - open directories with O_NOFOLLOW|O_DIRECTORY (or compare the scandir fd's fstat with the lstat) and hold it; by reading, a Windows junction is walked the same way - the review gives the command and the expected output for the owner's Windows machine. 43. Outside the changed lines, run by the same review: --explain cuts run: lines at its byte bound, and each --skill-pin lengthens every session line, so with long paths a two-member session wave printed one run: line of two without pins and none with pins (probe explain_probe.py). Not measured on a real install's shorter paths; owes a measurement and, if it reproduces, a fault of its own."
+        },
+        {
+          "at": "2026-11-25T13:44:44Z",
+          "text": "44. From the independent review of 9e0e4d3b (SG2.19-xk1; durable scratch sg2.19-review/REVIEW.md, BATCH-1..4, probes beside it), batched by the owner's 2026-11-25 rule (only high, a regression, a user-facing wrong, or red CI opens a fix round): (a) the test-side stop-route derivation sees no call that has no Call node - a with block whose __enter__ asks, a property getter, __iter__ reached by a for loop, __getitem__ by a subscript (derive3_probe.py: four QUIET); the driver defines no class today, so nothing is missed on the tree, but SECURITY.md's spd22 paragraph and PLUGIN-BUILD-GUIDE.md say a shape nobody listed cannot be missed - either count those nodes as may-stop or state the limit. (b) BY READING the drive's copy remedy still reads the private _skill_places._STOP_REMEDY (drive-phase.py _copy_remedy, and spd39): make the reader's remedy a public value or function of _skill_places.py and call it. (c) BY READING PLUGIN-BUILD-GUIDE.md states the windows saving per step, not the per-step cost SG2.18/19 asked for (one worktree add at 123-139 ms, 2026-11-20, plus one removal, still unmeasured on windows - owner's machine). (d) with TMPDIR inside the project the stop names the cause but gives no remedy: say to point TMPDIR outside the repository."
         }
       ]
     },
@@ -2442,7 +2446,7 @@
     {
       "id": "SG2.19-xk1",
       "title": "A step makes at most one scratch checkout of a commit and places it outside the project, a stop is judged by the whole observable state at the moment it is raised, and a call the stop-route derivation cannot resolve counts as one that may stop",
-      "status": "in_progress",
+      "status": "done",
       "description": "An independent review of the task before this one (SG2.18-xk1; the orchestrator's prompt names the review's directory - REVIEW.md, probes/, out/; every finding RUN unless it says BY READING) found no high and no user-visible regression, and four med. This is the FOURTH round of one class: a mechanism whose documents promise more than its code holds, each time because the mechanism ENUMERATES (shapes, events, asks) where the promise is about an invariant. So this task replaces each enumeration with the invariant it stands for; it does not add rows to a list.\n\nWHAT THE REVIEW SHOWED (re-run by the orchestrator on a fresh export of fff769ee, same results).\n(1) med - two scratch checkouts per wave-opening step, not one: the asks at drive-phase.py:9920 and :9762 (via walk_wave) each make their own (cli_probe.py G1: 4 worktree adds, 2 of them drive-pin-checkout-*, 55 git processes against 49 with no pins). The task promised one checkout per base commit per step; the documents say 'per ask'; the per-step cost on a windows runner the task asked to be stated is in no document. And (low) a checkout is made for `skillPins: {}` and for pins no asked member names (E1).\n(2) med - the runtime write record does not hold what PLUGIN-BUILD-GUIDE.md and CHANGELOG.md say: a write put back after the stop is forgiven (the guide says red); writes by a child process (how verbs write the plan and git cuts trees), a directory made and left, and a chmod are not seen (record_probe.py: five GAP rows). The cause is the shape: an event log from an audit hook can only see the events it subscribes to, in this process.\n(3) med - the static derivation misses direct-call shapes the documents say it follows (derive2_probe.py: a from-import called by bare name, a function-local import, a method called on an instance, a module attribute of the driver's own name, a raise of a name bound to PinStop, operator.methodcaller/attrgetter). The cause is the shape again: a list of blind shapes the scan refuses, with everything else assumed resolved.\n(4) med - `checkout_at` (drive-phase.py:9563) has no refusal of a place inside the project, unlike `_base_in` (:3632): with TMPDIR inside the project the scratch checkout is cut there (cli_probe.py T1), while its docstring and PLUGIN-BUILD-GUIDE.md say 'outside every checkout of the project'.\nLows: (5) the checkout runs the repository's hooks and filters (H1: post-checkout ran 5 times per opening against 3 at the parent) and no document says the pin check now runs repository-configured code; (6) spd24b cannot go red alone under the old validation_step order (mut_M1); (7) BY READING `_copy_remedy` depends on `_skill_places._STOP_REMEDY` and its ', or ' text, and a project skill behind an absolute link out of the repository is told to COMMIT; (8) BY READING `remove_base_tree` keeps the directory and its registration with a warning when `tree_unsettled` answers None, while SECURITY.md says the removal happens however the ask ends.\n\nTHE RULE TO BUILD.\nA. THE STEP OWNS THE CHECKOUT. A scratch checkout of a commit is made at most once per step per commit, lazily, by the first ask that needs it - a member on the session route with no tree whose resolved skills include a pinned one - held for the rest of the step and removed when the step ends (one owner: the step's own finally, KeyboardInterrupt included), so every ask in the step reads the same copy. No pinned skill among the asked members' skills means no checkout (E1 at zero). Count it: git processes per wave-opening step with pins, before and after, on the review's G1 shape and on a no-pins plan (unchanged, byte for byte). State the per-step cost on a windows runner from the phase notes' measured worktree-add figure (123-139 ms, 2026-11-20) plus a removal figure - measured on windows by the owner if you cannot, in which case write the case and the command and say it is owed, never a guess.\nB. ONE PLACEMENT FOR EVERY TREE THE DRIVE CUTS. The scratch checkout is placed by the same function that places a base tree (or one both call), which refuses a place inside any checkout of the project; the scratch inherits that refusal rather than carrying a copy of it. Allow case: TMPDIR outside, unchanged. Deny: T1.\nC. A STOP IS JUDGED BY THE STATE AT THE MOMENT IT IS RAISED. In every stop scenario the test harness takes a snapshot of everything a step can change - the project tree including the plan, state, briefs and prompts; the trees root; the lock; git's refs, HEAD, index and worktree registrations - by kind, mode and content digest, once before the step and once at the instant PinStop is constructed (hook the constructor in the test, not a log of events), and the two must be equal except for what the scenario names as the stop's own record, each named with its reason. This sees child-process writes, a directory left, a chmod and a write put back later, because it compares states rather than listening for events. The audit hook may stay only as an aid that names which call made a difference the snapshot found; the documents then say exactly that. Every GAP row of record_probe.py becomes a case that is red on the mechanism at fff769ee and green here, each with an honest twin (a step that writes nothing before its stop).\nD. THE STATIC HALF OVER-APPROXIMATES. A function is a stop route when it can reach a pin stop; a call whose target the derivation cannot resolve to one definite function - a function of drive-phase.py, or a function of a module the derivation reads - counts as a call that may stop, unless the target is in a stated set known not to stop (builtins and named stdlib modules, each named), and a raise of anything but a name that resolves to a class counts likewise. So a shape nobody listed cannot be missed: it is over-counted, and the exemption table (checked both ways, as today) is where an over-count is answered, each row with its reason. Measure how many functions this marks on the current tree against today's derivation, and say what each new one is. Every MISSED row of derive2_probe.py becomes a case, each with an honest twin. The three documents then state the rule (resolve or count as may-stop), not a list of blind shapes.\nE. Lows: (5) say in SECURITY.md that the scratch checkout runs the repository's checkout hooks and filters exactly as a member's tree does, and why that is the faithful choice - or disable them and say why that is still faithful; choose by what is structurally correct and say which; (6) give spd24b a stop half that is red under the old order alone; (7) make the reader's remedy a public value or function of `_skill_places.py` that `_copy_remedy` calls - if that needs a change in `_skill_places.py`, stop and say what - and give a project skill whose directory resolves out of the repository the reader's own remedy; (8) state the condition in SECURITY.md or remove it, choosing by structure.\n\nALLOW CASES: a plan with no pins (zero git processes for the pin check, real `next` byte for byte as at fff769ee); pins that no asked member names; a committed directory link, a `.claude/skills` link and a submodule entry dispatching with a matching pin (as at fff769ee); every scenario of today in which a stop writes nothing.\n\nHOW TO PROVE. Red first on the tree as it stands: the review's cli_probe.py G1/T1/E1, record_probe.py, derive2_probe.py (copy any you extend into the task's own directory). A mutation probe of your own (copies of the working tree, each mutation asserted applied, caches purged, never `git archive HEAD`), each deny with its allow twin: the step's checkout made per ask again; the checkout dropped before the step's last ask; the placement refusal removed; the snapshot taken at the end of the step instead of at the stop; the snapshot blind to one part (each part: project tree, trees root, refs, worktree registrations); an unresolved call counted as not stopping; the known-not-to-stop set widened to the driver's own module. The previous task's mutation table still answers as owed except rows whose code this removes - name each and why. The drive suite's touched blocks alone, then the whole suite once through the sweep with --jobs 4; the block's time before and after, twice with a gap.\n\nNOT in this task: the reader in `_skill_places.py` (see E7); the verb that writes a pin; how a wave is formed.\n\nAcceptance:\n(1) A wave-opening step with pins makes at most one scratch checkout per commit, none when no asked member names a pinned skill, placed by the one placement that refuses a place inside the project.\n(2) In every stop scenario the observable state at the instant the stop is raised equals the state before the step, judged by a snapshot that sees child-process writes, directories, modes and writes put back.\n(3) A call the stop-route derivation cannot resolve counts as one that may stop, and the documents state that rule rather than a list of shapes.\n(4) The four lows are each held or stated with the reason.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2469,14 +2473,25 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9e0e4d3bf0b6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "DRIVER (drive-phase.py). Rule A: the step owns the scratch checkout - own_checkouts(ctx, run) wraps drive_locked in drive() and holds {commit: (tree, holder)} under ctx[SCRATCH_KEY]; step_checkout(ctx, commit) makes it at the first ask that needs it and reuses it for every later ask of the step (the wave opening's and the walk's); the owner's finally removes each one through drop_checkout/remove_base_tree, KeyboardInterrupt included; an ask made outside a step owns its own (ask_member_pins wraps itself when no owner is set). E1: names_a_pin - a member needs the checkout only when one of its resolved skills is pinned by name (_skill_places.unused_pins) or resolves in the project's copy to a pinned directory (covering_pins); none for skillPins {} or no pins. Rule B: scratch_holder(ctx, prefix) is the one placement for the checkout and the base measurement's tree: it refuses (making nothing) a temp directory under any ancestor whose .git shares the project's common git dir (read off the .git file/commondir, no git process) or within the repository top; _base_in's own check is gone. Low 7b: _loaded_tier/_stop_sentence - a project skill whose directory resolves outside the copy keeps the reader's remedy and names its real place. Windows finding (scope added): commit_label(text, checkout, sha, where, sep) is the one builder of the commit form, spelling the path under the commit with '/' on every OS and keeping a blank in the project directory; pin_stop_words is its only caller (grep of '\"commit %s' in the driver: one other hit, a decision message unrelated to paths). TESTS (tests/test_drive_phase.py). Rule C: every stop scenario is judged by _observed snapshots (kind, mode, sha256) of the project tree, the trees root (executor.worktreeRoot), the lock and git's HEAD, packed-refs, index, refs, worktrees and audit-locks - before the step and at each PinStop construction (the constructor is hooked in _recorded, put back after); _stop_changes compares them minus _STOP_OWN_RECORD (lock: the state's lock key, a state file holding only the lock where none was and the directories made for it, audit-locks; scratch: the step's own registration). The audit hook stays as an aid naming the call behind a difference and the processes; _early_writes, _path_state and the old record are gone. Rule D: the driver's derivation is rewritten as an over-approximating resolver (_stop_* functions): calls resolve through names, from-imports, local imports, module aliases, parameters (values callers and defaults pass), plain local assignments, returns, IfExp/BoolOp branches, lambdas, and methods by name over top-level functions and class methods; anything else - and any raise not of a name resolving to a class - is a may-stop key unless the target is a builtin (not eval/exec) or a function of a module in _NOT_STOPPING_MODULES (named stdlib modules only). _UNRESOLVED_EXEMPT holds three rows (_fact's held, _at_point's turn, main opened by _output.terse_cli), checked both ways by spd38; _PIN_BLIND_LISTED and _pin_blind_spots are deleted; open_dispatch and step_checkout joined _STOP_ROUTES_EXEMPT, checkout_at's via is step_checkout; names_a_pin joined spd1's exemption table. Measurement (S/sg2.19/derive_measure.py over this driver, 633 top-level functions): HEAD's derivation marks 33 top routes, this one 35 with the table (2 newly marked, open_dispatch among them - a real may-stop, exempt with the old blind-list reason) and 65 without it (32 newly marked, all reached from the three table keys). Without by-name method resolution (literal reading) it marked 562 - recorded as a judgement for the orchestrator, not adopted. Windows finding (scope added): the process recorder read a Windows Popen event as one joined string (CPython's windows _execute_child runs list2cmdline before sys.audit, read in Lib/subprocess.py), so spd31 saw no git; _popen_argv splits it back (_split_cmdline), _is_git matches git/git.exe/a full path, and spd31 now says NO PROCESS RECORDED on an empty record. Low 6: spd24b's stop half compares the held re-dispatch count and asked ids before and after the stopped step. Docs: SECURITY.md, PLUGIN-BUILD-GUIDE.md and CHANGELOG.md pinned-skill passages state rule A (one checkout per step, the placement), rule C (snapshot judge, aid only), rule D (the rule, not a shape list), low 5 (checkout runs the repository's hooks and filters, why faithful), low 8 (tree_unsettled None keeps and says the tree), the windows add cost 123-139 ms (2026-11-20) with the removal figure owed. Counts: spn-block 44 cases at HEAD, 53 now (tests/test_drive_phase.py --selftest --stage spn-block, ALL PASS); over HEAD's code with the new test file 44/53, the 9 red: spd1, spd22, spd23, spd24 (bookkeeping rows naming new functions), spd33a, spd34, spd34a, spd35, spd39. Mutations (S/sg2.19/mutations.py, 23 rows + 5 re-anchored + 4 windows rows): all answered as owed, private TMPDIR per run, caches purged, anchors asserted applied.",
+        "descriptive": "A pin step makes one placed checkout per commit, a stop is judged by the whole state when it is raised, the stop-route derivation counts what it cannot resolve as a stop, and the two Windows CI failures are fixed at their cause."
       },
       "startedAt": "2026-11-25T11:55:33Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-25T13:31:46Z",
+      "verifiedBy": [
+        "spd34: a wave-opening real next makes one scratch add and one remove with pins named; none when members name no pinned skill, for skillPins {} and for no pins",
+        "spd34a: two asks in one step share one checkout, removed by the step's finally under an interrupt",
+        "spd35: the one placement refuses a temp directory inside the project or a linked tree of it, allows an unrelated repository, and places a base measurement's tree the same way",
+        "spd36: the snapshot at the stop names each kind of change (python write, rename, child write and new file, directory, chmod, link, write put back after the stop, third value, trees root, ref, worktree registration, index, drive state, a new state holding more than the lock) and not its honest twins",
+        "spd37: each shape the old blind list missed is a route and its honest twin is not",
+        "spd38: the over-count table is checked both ways",
+        "spd39: a project skill linked out of the repository keeps the reader's remedy at the commit",
+        "spd31a: a Windows-shaped Popen event (one joined command line, git spelled any way) is read back as its argv and counted as git",
+        "spd33a: the commit form names a path inside the commit with '/' on every platform, with a blank in the project directory kept",
+        "spd24b stop half: the held re-dispatch count and ids are unchanged by the stopped step"
+      ],
       "notes": [
         {
           "at": "2026-11-25T11:55:31Z",
@@ -2560,7 +2575,40 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-25T13:09:40Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 4445000,
+            "startedAt": "2026-11-25T11:55:35Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-25T13:18:34Z.824283",
+            "kind": "wait",
+            "ms": 5000,
+            "startedAt": "2026-11-25T13:10:09Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-25T13:18:34Z.824283, ending at its startedAt",
+            "kind": "selection",
+            "ms": 29502,
+            "runId": "2026-11-25T13:18:34Z.824283",
+            "startedAt": "2026-11-25T13:10:14Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-25T13:18:34Z.824283",
+            "kind": "gate",
+            "ms": 469490,
+            "runId": "2026-11-25T13:18:34Z.824283",
+            "startedAt": "2026-11-25T13:10:44Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 9e0e4d3bf0b6",
+            "kind": "commit",
+            "ms": 1747,
+            "startedAt": "2026-11-25T13:31:43Z"
+          }
+        ],
         "firstStartedAt": "2026-11-25T11:55:33Z"
       },
       "reviewPerTask": "signals",
@@ -2568,6 +2616,96 @@
         "runId": "2026-11-25T13:31:42Z.b950af",
         "status": "passed",
         "at": "2026-11-25T13:31:42Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "9e0e4d3bf0b6",
+        "at": "2026-11-25T13:31:46Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-25T13:09:27Z",
+        "basis": "`python3 tests/test_drive_phase.py --selftest --stage spn-block` in a throwaway tree at HEAD exited 1 with 9 of 53 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - spd1 (house FAIL), spd22 (house FAIL), spd23 (house FAIL), spd24 (house FAIL), spd34 (house FAIL), spd34a (house FAIL), spd35 (house FAIL), spd33a (house FAIL) and 1 more: SELFTEST FAILED: 44/53 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "SG2.20-xk1",
+      "title": "A pin is written by a verb and read back by the doctor, and one page says how to vendor an outside skill so that it can be pinned",
+      "status": "in_progress",
+      "description": "The task before this one made `meta.skillPins` stop a session over a skill whose directory is not the pinned bytes. Nothing yet WRITES a pin except a hand edit of the plan, nothing tells a user which of the plan's skills are pinned and whether they still match, and nothing says how an outside skill becomes a project skill in the first place. Read that task's reader and digest in `_skill_places.py` before anything else; this task adds no second reading of a pin.\n\nTHE RULE TO BUILD.\n1. A VERB WRITES THE PIN, under the manifest lock, with a journal row, revalidating through validate-manifest.py like every verb that mutates the plan: `/audit:task skill-pin <name> [--source <text>]` pins the directory digest of the copy the resolver finds NOW and prints the path and the digest it pinned; `--remove --reason <text>` drops one. It refuses, writing nothing, for a name the resolver cannot place or a directory with no digest, and it says when the copy it is about to pin is a personal one (a home directory no clone carries - the pin would then fail on every other machine) and refuses that without an explicit flag whose name says so. Re-pinning a name that is pinned prints the old and the new digest. The verb is the one the plugin's command file routes to: `plugins/audit/commands/task.md` is at its context ceiling (`python3 tools/measure-context.py --gate` prints it), so the verb's mention must fit under it by shortening something of equal standing, never by raising the ceiling; if it cannot fit, stop and say what would have to go.\n2. THE DOCTOR READS IT BACK, read-only, in the row family that already answers whether the plan's skills resolve (`_doctor_policy.check_plan_skills`): for each pinned name - matches (path), does not match (path, both digests, and that a session naming it will not start), not found where its bytes can be read; a pin naming a skill nothing in the plan names any more (a warning: stale); and, when the plan pins at least one skill, the plan-named skills that are NOT pinned, by name, as information and not as a warning. A plan with no skillPins key gets no new row at all. A mismatch on THIS machine is a warning, never a finding that fails a build, for the reason that function's docstring already gives for a skill absent here.\n3. ONE PAGE says how to vendor an outside skill, placed by the audience split CONTRIBUTING.md's decision record states (read it: the plugin's user-facing reference under plugins/audit/reference/, linked from the README's skills section - not a section of the README, not QUICKSTART). It states, each with the reason: copy the skill's directory into the project's `.claude/skills/<a name that says what it does and collides with nothing built in>`, never install the outside plugin for one skill; read the whole text before it is committed, since it is instructions an agent with a shell will follow; give it a `## Checklist` section, because a headless session is handed only the description and that section; take out any step that commits, pushes, spawns agents or fetches from the network, since the brief's rules win and a skill that asks for them only produces a conflict in the return; record where it came from (repository, commit, licence) beside it; pin it with the verb; and to upgrade - replace the directory, read the diff, re-pin. And what none of that buys: a pin proves the bytes, not that they are safe, and a skill being invoked is never evidence that its workflow was followed - the gates are.\n4. The page claims nothing the code does not do: every sentence about behaviour names the verb or the row that does it (the before-you-claim skill's first question), and a pin over the page's own example commands is not needed.\n\nWHAT CHANGED UNDER THIS TASK SINCE IT WAS WRITTEN (three tasks landed after the pin itself; read their text in docs/audit/phases/SG2.json, SG2.15-xk1, SG2.16-xk1 and SG2.17-xk1). The verb, the doctor and the page follow the reader as it now is, and restate none of it: (a) the digest is `_skill_places.skill_digest` - lstat before read, a non-regular entry or a link out makes the directory unreadable naming the entry, Markdown alone has CRLF read as LF, every entry counts including tool-written ones (`TOOL_WRITTEN`); the verb calls it and computes nothing of its own, and its refusal for 'a directory with no digest' prints the reader's own words (the entry and its kind). (b) A pin is about the directory a name resolves to, and two pins on one directory with different digests are a validation error: the verb pins under the spelling it is given, and re-pinning a directory already pinned under another spelling updates THAT pin or refuses naming it - never leaves two pins the validator then refuses (the verb revalidates, so the case is that the verb itself says which, before writing). (c) The doctor's 'not found where its bytes can be read' row has three answers to tell apart: not found, unreadable (the reader's words, naming the entry), and mismatch - which names a tool-written entry when one is present, as the runner's stop already does, by calling the same helper. On the session route a wave member's pin is judged on the copy its session loads (SG2.17-xk1): the doctor judges the project's working copy and says so, and when that copy differs from HEAD for a project skill it says the commit is what a wave's sessions will load. (d) The page's 'what a pin does not prove' is a pointer to SECURITY.md's pinned-skill section, not a copy of it; what the page owns is the vendoring steps, including that a checkout which converts line endings changes the digest of any file but Markdown, and the remedy (mark the skill directory as not text for git, with the one line of `.gitattributes` that does it), that a bytecode cache or `.DS_Store` written into the directory after pinning makes the pin mismatch, and that restored bytes must be committed before a wave's sessions see them.\n\nALLOW CASES: the doctor on a plan with no pins prints what it printed before; the verb on a matching, already pinned skill changes nothing and says so; `--remove` of a name that is not pinned refuses and changes nothing.\n\nHOW TO PROVE. Red first for the verb's refusals and the doctor's three answers. A mutation probe the orchestrator can run from the worktree root: the verb pinning SKILL.md's digest instead of the directory's (the round trip verb -> reader must then mismatch); the verb skipping revalidation; the doctor's mismatch row printed as a match; the personal-copy refusal removed. The round trip is a case of its own: pin with the verb, then the reader of the previous task answers match; change one byte, it answers mismatch; re-pin, match. `python3 tools/measure-context.py --gate` green.\n\nNOT in this task: any change to when a session stops (the previous task); the panel.\n\nAcceptance:\n(1) The verb pins the digest the reader then matches, under the lock, journaled and revalidated, and refuses a name it cannot place, a directory with no digest and - without its explicit flag - a personal copy.\n(2) The doctor names each pinned skill as matching, not matching or not found, a stale pin, and the unpinned plan skills, and prints nothing new for a plan with no pins.\n(3) The command file mentions the verb and stays under its context ceiling.\n(4) One reference page says how to vendor and pin a skill, linked from the README, with no sentence about behaviour the code does not do.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/status/_doctor_policy.py",
+        "plugins/audit/commands/task.md",
+        "plugins/audit/reference/vendoring-a-skill.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/README.md",
+        "tests/test_audit_task.py",
+        "tests/test__doctor_policy.py",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__refs.py",
+        "tools/lints/_deps.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_task.py: skill-pin pins the directory digest the reader matches, journals and revalidates, refuses an unplaced name, an unreadable directory and an unflagged personal copy, and --remove drops one with its reason",
+          "tests/test__doctor_policy.py: the doctor names a pinned skill as matching, not matching or not found, a stale pin and the unpinned plan skills, and prints nothing new for a plan with no pins"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__doctor_policy.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-25T13:32:30Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-25T13:32:28Z",
+          "text": "it quotes task.md's 'The operator's words go in VERBATIM' passage; SG2.20 adds the pin verb's section to task.md and leaves that passage byte for byte",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-25T13:32:28Z",
+          "text": "it quotes README's floor-guard sentence 'a bare new test is set aside only on proof'; SG2.20 edits only README's pinned-skill passage",
+          "waives": "tests/test__floor_guard.py"
+        },
+        {
+          "at": "2026-11-25T13:32:28Z",
+          "text": "it reads CHANGELOG.md's '## [Unreleased]' heading; SG2.20 adds lines under that heading and keeps it",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-25T14:10:15Z",
+          "text": "Scope widened by the orchestrator after the submit refused two paths: tests/test__refs.py - cases tk3 and pf2 enumerate, by name, the verbs the command docs and the writer's usage share, and the new skill-pin verb must be on both lists (two sorted list literals; the build-command task made the same edit); tools/lints/_deps.py - one GIT_PATH_BASE_EXEMPT row for _doctor_policy.py _head_note, which runs git status --porcelain over one skill directory only to ask whether it is empty, under the existing _DOCTOR reason. Both suites are red without the edits; the orchestrator read both diffs."
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-25T13:32:30Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-25T14:24:28Z.68299b",
+        "status": "passed",
+        "at": "2026-11-25T14:24:28Z"
       }
     }
   ],

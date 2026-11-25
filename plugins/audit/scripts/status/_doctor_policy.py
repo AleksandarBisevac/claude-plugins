@@ -34,6 +34,7 @@ This module carries no `--selftest` of its own; its cases live in
 import os
 import pathlib
 import shutil
+import subprocess
 import sys
 import time
 
@@ -385,6 +386,22 @@ def check_branch_naming(rep, project, manifest, git_root):
 
 
 def check_plan_skills(rep, project, cfg, cfg_mod, manifest, _discover=None):
+    """The rows about the skills a plan names: whether they resolve here and on a
+    clone (`_plan_skills_resolve`), and whether the ones it pins are the bytes
+    pinned (`_plan_skill_pins`).
+
+    TWO CALLS, NOT ONE BODY, because the first returns early - no name used, a scan
+    that raised, an inventory that came back empty - and a pin is judged by the
+    resolver and the plan alone, never by that scan: a plan whose scan failed still
+    owes the answer to whether its pinned skills are the bytes it pinned.
+    """
+    if not manifest:
+        return
+    _plan_skills_resolve(rep, project, cfg, cfg_mod, manifest, _discover)
+    _plan_skill_pins(rep, project, manifest)
+
+
+def _plan_skills_resolve(rep, project, cfg, cfg_mod, manifest, _discover=None):
     """Do the skills this plan NAMES resolve on this machine — and on anybody else's?
 
     `meta.reviewSkill`, `meta.areas[*].skills` and `task.skills` name skills
@@ -533,6 +550,127 @@ def _skills_dir_read(skills_dir, places):
     want = os.path.normcase(os.path.realpath(skills_dir))
     return any(os.path.normcase(os.path.realpath(os.path.dirname(
         os.path.dirname(p)))) == want for p in places or () if p)
+
+
+PIN_ROWS = "skill pins"
+
+
+def _plan_skill_pins(rep, project, manifest):
+    """The pins `meta.skillPins` holds, read back: for each pinned skill the plan
+    names, whether the copy a session would load is the bytes pinned - a match, a
+    mismatch, no copy found, or a copy that cannot be read whole - then each pin
+    nothing in the plan names any more (stale), and the plan's skills nothing
+    pins, as information.
+
+    THE ANSWER IS `_skill_places.pin_verdict`'s and the words of a mismatch, a
+    missing copy and an unreadable one are `stop_words`', the sentence the
+    runner's stop prints over the same verdict - so this row and the stop cannot
+    describe one pin differently. A plan with no `skillPins` key, or an empty one,
+    draws no row at all: nothing is claimed about what nothing says.
+
+    A MISMATCH HERE IS A WARNING, never a finding, for the reason `check_plan_skills`
+    gives for a skill absent on this machine: this checkout's copy not being the
+    reviewed bytes is a fact about this machine's directory until a session runs.
+
+    A PROJECT SKILL IS JUDGED ON THE WORKING COPY, which is what a serial task's
+    session loads; a wave member's session runs in a tree cut from a commit and
+    loads that commit's copy. So a working copy that differs from HEAD is said to
+    - the commit, not the directory, is what a wave's sessions will load - and
+    `git status` is what says it, over the one directory.
+    """
+    pins = _skill_places.skill_pins(manifest)
+    if pins is None or pins == {}:
+        return
+    broken = _skill_places.pin_shape_problems(pins)
+    if broken:
+        rep.warn(PIN_ROWS, "meta.skillPins cannot be read as pins, so no pinned "
+                           "skill is checked: %s" % ("; ".join(broken),),
+                 "the validator refuses this plan too; fix the key - `/audit:task "
+                 "skill-pin <name>` writes a pin that is well formed")
+        return
+    root = _output.PLUGIN_ROOT
+    home = _claude_home.claude_home()
+    running = _skill_places.plugin_name(root)
+    ar = _load("_areas", "_areas.py")
+    used = [name for _where, name in ar.plan_skill_refs(manifest)]
+    for problem in _skill_places.pin_directory_problems(pins, project, home, root):
+        rep.warn(PIN_ROWS, problem + " - every session naming either will not "
+                                     "start", "keep one pin per directory: "
+                                              "`/audit:task skill-pin <name> --remove "
+                                              "--reason \"<why>\"` drops one")
+    stale = _skill_places.unused_pins(pins, used)
+    live = [p for p in sorted(pins, key=str) if p not in stale]
+    verdicts = [_skill_places.pin_verdict(p, pins[p], project, home, root, running)
+                for p in live]
+    matched = []
+    for verdict in verdicts:
+        note, unknown = _head_note(project, verdict)
+        if verdict["answer"] == "match":
+            if note:
+                rep.warn(PIN_ROWS, "%s matches the bytes pinned at %s (judged on "
+                                   "the working copy), but %s"
+                         % (verdict["name"], verdict["path"], note),
+                         "commit the copy you pinned before a wave starts")
+            else:
+                matched.append("%s (%s%s)" % (verdict["name"], verdict["path"],
+                                              unknown))
+            continue
+        rep.warn(PIN_ROWS, _skill_places.stop_words(verdict)
+                 + (" " + note if note else ""),
+                 "a session or a wave naming %s will not start until the bytes "
+                 "are restored - or the diff is reviewed and the skill re-pinned "
+                 "with `/audit:task skill-pin %s`"
+                 % (verdict["name"], verdict["pinnedAs"] or verdict["name"]))
+    if matched:
+        rep.ok(PIN_ROWS, "%d pinned skill(s) match the bytes pinned: %s"
+               % (len(matched), _output.some_of(matched, sep="; ")))
+    if stale:
+        rep.warn(PIN_ROWS, "stale: %s %s pinned, and nothing in the plan names "
+                           "%s any more, so the pin protects nothing"
+                 % (", ".join(stale), "is" if len(stale) == 1 else "are",
+                    "it" if len(stale) == 1 else "them"),
+                 "drop it with `/audit:task skill-pin <name> --remove --reason "
+                 "\"<why>\"`")
+    covered = set(n for n, _p in _skill_places.covering_pins(
+        used, pins, project, home, root, running))
+    unpinned = [n for n in used if n not in covered]
+    if unpinned:
+        rep.ok(PIN_ROWS, "named by the plan and not pinned, so never checked: %s"
+               % _output.some_of(unpinned, sep=", "))
+
+
+def _head_note(project, verdict):
+    """`(note, unknown)` for a pinned PROJECT skill: `note` says its working copy
+    differs from HEAD and that a wave's sessions load the commit's copy, "" when it
+    does not or the skill is not a project one; `unknown` is the clause saying git
+    could not be asked, "" otherwise."""
+    folder = os.path.dirname(verdict["path"]) if verdict["path"] else None
+    skills = os.path.join(project, ".claude", "skills")
+    if not folder or not _under(folder, skills):
+        return "", ""
+    if not shutil.which("git"):
+        return "", " - whether it differs from HEAD was not asked: no git here"
+    try:
+        done = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all", "--ignored",
+             "--", folder], cwd=project, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, encoding="utf-8", errors="replace", timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return "", " - whether it differs from HEAD was not asked: %s" % (exc,)
+    if done.returncode != 0:
+        return "", (" - whether it differs from HEAD was not asked: git said %s"
+                    % ((done.stderr or "").strip() or "exit %d" % done.returncode,))
+    if not done.stdout.strip():
+        return "", ""
+    return ("the working copy at %s differs from HEAD, and a wave's sessions run "
+            "in trees cut from a commit and load THAT commit's copy - the "
+            "commit, not this directory, is what they will load" % (folder,)), ""
+
+
+def _under(path, root):
+    """True when `path` is `root` or under it, symlinks resolved."""
+    path, root = (os.path.normcase(os.path.realpath(p)) for p in (path, root))
+    return path == root or path.startswith(root + os.sep)
 
 
 def portability_mode(cfg, cfg_mod):

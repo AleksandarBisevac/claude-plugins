@@ -1,0 +1,149 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__doctor_policy.py": "pass",
+    "run-test-gate.py SG2 --task SG2.20-xk1 (no --record; the orchestrator's wider gate)": "pass",
+    "suites reading the verb table, task.md, README, CHANGELOG, the guide (test__refs, test__deps, test__output_lints, test__floor_guard, test__help, test__areas, test__config, test_audit_lookup and the rest of that list)": "pass",
+    "importers of audit-task.py and _doctor_policy.py (test__doctor_trail, test__invariants, test__scoped_commit, test_close_phase, test_commit_task_work, test_full_gate, test_audit_status, test_audit_doctor, test__doctor_report)": "pass",
+    "python3 tools/sweep-selftests.py --encoding cp1252 tests/test_audit_task.py tests/test__doctor_policy.py": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "python3 tools/prove-gates.py --list": "pass",
+    "python3 tools/release.py --selftest": "pass",
+    "python3 tools/check-prohibitions.py": "pass",
+    "python3 tools/check-committed-pii.py": "pass",
+    "ruff check plugins/audit tools tests .claude/hooks": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints": "pass",
+    "python3 -B sg2.20/mutations.py --jobs 4 (copies of the tree)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-25T14:13:04Z",
+    "basis": "`python3 tools/sweep-selftests.py --jobs 4 tests/test_audit_task.py tests/test__doctor_policy.py` in a throwaway tree at HEAD exited 1 with 15 of 1293 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dp61 (house FAIL), dp63 (house FAIL), dp64 (house FAIL), dp65 (house FAIL), dp66 (house FAIL), dp69 (house FAIL), dp67 (house FAIL), dp68 (house FAIL) and 7 more: SELFTEST FAILED: 1285/1293 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "VERB (audit-task.py): `skill-pin <name> [--source TEXT] [--allow-personal-copy] [--reason TEXT]` and `skill-pin <name> --remove --reason TEXT`, wired as the verb table's sibling of build-command: usage block, VERB_FLAGS row (skill_source, allow_personal_copy, remove, reason), parser choice and two flags, doors map, `import _skill_places`. It computes nothing of its own: resolve_skill places the name, skill_digest digests the whole directory, loaded_verdict says a personal copy does not travel, covering_pins finds the pins already holding the directory, _manifest_rules.skill_pin_findings is asked of the plan as it will be written. Under the plan's lock (_under_lock), written through _write_plan (index-only, revalidated, rolled back), journaled as skillpin.change (field, from, to, reason; changes[] when more than one spelling moved). Refusals, each exit 2 with nothing written and the reader's words: a string that is no skill name, a name nothing places (every place looked in), a directory with no digest (entry and kind), a personal copy without --allow-personal-copy (with the flag it pins and warns), --remove with no reason, --remove of a name not pinned (naming the spelling that is), --remove beside --source, a --source carrying a machine path; a plan already holding two pins on one directory with different digests is refused with exit 1 and the validator's finding (and a --remove of one is let through). A matching pin changes nothing and says so; a changed one prints old and new digest; --source alone is a 'source updated'; a directory pinned under another spelling has THAT pin updated (never a second); the last pin removed takes the skillPins key with it. DOCTOR (_doctor_policy.py): check_plan_skills is now two calls - _plan_skills_resolve (the old body, which returns early) and the new _plan_skill_pins - so the pin rows do not depend on the scan. Rows check 'skill pins', only when the plan carries a non-empty skillPins: matches (path) as one OK row; mismatch / not found / unreadable are WARNINGs worded by _skill_places.stop_words over pin_verdict (the runner's own sentence, naming a tool-written entry) with a fix saying a session naming it will not start; shape problems and directory clashes warn; stale pins (unused_pins) warn; plan skills nothing pins (covering_pins) are an OK row; a project skill's working copy that differs from HEAD (git status --porcelain over the directory) says the commit is what a wave's sessions load, and a matching one that differs is a WARNING. PAGE: reference/vendoring-a-skill.md (new; nine steps in the order asked, each with its reason, a pointer to SECURITY.md instead of a copy of what a pin does not prove, a ## Checklist recap); the .gitattributes line `.claude/skills/<name>/** -text` was MEASURED in a scratch repository with core.autocrlf=true (sg2.20/eol_probe.sh: without the line a checkout wrote CRLF, with it the bytes stayed LF). README: the verb in the /audit:task row (hint form and a prose paragraph placed before build-command's so bcm2's reading of that cell is unchanged), the doctor row, the skillPins row and the Executor skills bullet link the page; verbs-in-full has the verb's section and links the page; PLUGIN-BUILD-GUIDE lists the page in the reference tree and describes the verb and the doctor rows, and its generated module map got the one new edge (audit-task -> _skill_places) by hand from `_deps.py --render`; CHANGELOG has one Added entry. commands/task.md: the verb has its section, hint entry and description clause, and the body is 7997 of 8000 (measure-context --gate) because the reindex section was shortened to a pointer at verbs-in-full, where its full text already is. TESTS: tests/test_audit_task.py new block spv-block (_skill_pin_cases) spv1..spv11 incl. spv2b and spv6b, plus the derived grids extended for the new verb (vf positional row, vf4 second-direction row, tw5 tree-says row); tests/test__doctor_policy.py dp60..dp69 incl. dp60b (a real git repository for dp68). Counts: test_audit_task.py 1300 cases and test__doctor_policy.py 71 cases pass under the brief's command and under cp1252. Run `python3 -B sg2.20/mutations.py --jobs 4`: 33 rows applied and answered as owed (every deny red on the case named, each over-fire twin red on its allow case, the allow row green). WHAT I COULD NOT HOLD BEHAVIOURALLY: no input makes the verb's own write produce an in-process validator finding (a digest is always valid, and a pre-existing invalid plan is refused by _read_plan before the write), so 'revalidates' is held by spv6 (a plan already invalid is refused with exit 1 and left byte for byte) and structurally by spv11 (the locked body writes through _write_plan and calls no raw writer; the mutation row replaces the call with _write_add and spv11 goes red), not by a post-write failure. SCOPE: three files outside the task's files were edited and the Edit tool did not refuse any of them - tests/test__refs.py (the verb added to the two enumerations tk3 and pf2, as build-command was), tools/lints/_deps.py (one GIT_PATH_BASE_EXEMPT row for _doctor_policy.py:_head_note with the existing _DOCTOR reason: the git status listing is only tested for emptiness and the folder it asks about is an absolute path) and PLUGIN-BUILD-GUIDE.md's generated module map line. The reader _skill_places.py is unchanged; I call two names from it with a leading underscore (_tool_written_words from the verb's warning, none from the doctor) - noted, not changed. DEPENDANTS, each answered: commands/task.md's readers - tools/prove-gates.py quotes the 'operator's words go in VERBATIM' passage, which is byte identical (one occurrence before and after; `prove-gates.py --list` exits 0); tools/lints/_refs.py and tests/test__refs.py (`task.md`) enumerate the verbs both command docs name, so the two enumerations tk3 and pf2 CHANGED to list skill-pin and now pass; _journal_io.py, run-test-gate.py, audit-status.py, tests/test__journal_io.py name the file and read nothing I touched (their suites pass); docs/research/pipeline-cost-design.md names the context ceiling, which did not move (measure-context --gate prints 7997 / 8000). audit-task.py's readers - full-gate.py, run-test-gate.py and the suites importing it (test__doctor_trail, test__invariants, test__scoped_commit, test_close_phase, test_commit_task_work, test_full_gate, test_run_test_gate) still correct: the change is additive (one verb, two parser options, one import) and their suites pass; the prose names of audit-task.py in verbs-in-full, the guide and manifest-conventions still hold (the guide's section and verbs-in-full gained the verb). _doctor_policy.py's readers - audit-doctor.py (alias to check_plan_skills, which keeps its name and signature), test__doctor_report, tools/affected.py, the guide, test_drive_phase (basename) still correct and green. tests/test_audit_task.py and tests/test__doctor_policy.py's readers (test_commit_task_work, sweep-costs.json, affected.py, CHANGELOG) name the files only; the new block spv-block has no cost row, which the sweep weighs by the suite's figure. README.md: tests/test__floor_guard.py quotes the floorGuard sentence, byte identical (one occurrence before and after, suite green) and tools/affected.py names README.md only. CHANGELOG.md: tools/release.py reads the `## [Unreleased]` heading, kept (one occurrence before and after; release.py --selftest green); tools/lints/_deps.py quotes CHANGELOG.md by name only. PLUGIN-BUILD-GUIDE.md: its readers (_doctor_hygiene.py and the lints) pass. verbs-in-full.md's readers (_areas.py, test__areas, test__manifest_vocab, test_audit_task, CHANGELOG, agents/guide.md, execute-task.md) name it, and only a section was added. vendoring-a-skill.md: nothing names it but the three documents that now link it.",
+    "descriptive": "A pin is now written by `/audit:task skill-pin` (refusing what the reader cannot place or read and a personal copy without its flag), read back by `/audit:doctor`'s skill pins rows, and one reference page says how to vendor an outside skill so that it can be pinned."
+  },
+  "testsAdded": [
+    "tests/test_audit_task.py spv-block: the verb's round trip against the reader (match, one changed byte mismatches, re-pin matches), journal rows, every refusal with its allow twin and the plan's bytes compared, --remove, the one-directory-one-pin rule across spellings, the clash refusal, lock, sharded layout, --json, the docs and page wiring, plus the extended derived grids (vf, vf4, tw5)",
+    "tests/test__doctor_policy.py dp60-dp69: no row for no key or an empty key, match, unpinned information and its twin, mismatch with both digests worded by stop_words, a tool-written entry named, not found vs unreadable told apart, stale and its twin, a key the reader cannot read, rows independent of the scan, and the working copy vs HEAD sentence in a real repository with its clean twins"
+  ],
+  "casesAdded": [
+    [
+      "spv1",
+      "spv2",
+      "spv2b",
+      "spv3",
+      "spv4",
+      "spv5",
+      "spv6",
+      "spv6b",
+      "spv7",
+      "spv8",
+      "spv9",
+      "spv10",
+      "spv11"
+    ],
+    [
+      "dp60",
+      "dp60b",
+      "dp61",
+      "dp62",
+      "dp63",
+      "dp64",
+      "dp65",
+      "dp66",
+      "dp67",
+      "dp68",
+      "dp69"
+    ]
+  ],
+  "claims": "claims:\n1 the section comment above cmd_skill_pin (audit-task.py:15774-15799) says only what the code does: resolver, digest and loaded_verdict are called in _skill_pin_copy (15840), covering_pins and _pin_edit make one pin per directory (15885, 15869), skill_pin_findings is asked before the write (15928), the last pin takes the key (15922); the doctor's docstring (_doctor_policy.py:558) matches _plan_skill_pins and _head_note (642); verbs-in-full, README, CHANGELOG and the page were each read sentence by sentence against spv1-spv11 and dp60-dp69, and the page's behaviour sentences name the verb or the row that does them (claim-lines.py listed the added blocks; the untracked page is outside its diff and was read by hand); one sentence was corrected to say 'a headless session' because SKILLS_PREAMBLE is the runner's only\n2 33 rows of sg2.20/mutations.py, every anchor matched once, run in copies with caches purged and a private TMPDIR, all answered as owed: SKILL.md-only digest -> spv1 red; no journal -> spv1; raw writer -> spv11; clash check dropped -> spv6b; no lock -> spv7; personal refusal removed -> spv3 and its over-fire twins (flag never lets it through -> spv4; every copy refused -> spv1/spv4); doctor mismatch as match -> dp63/dp64 and its twin match as mismatch -> dp61/dp62; stale, unpinned, empty-key, no-key, HEAD sentence each with an over-fire twin; allow row green; the worktree untouched\n3 the class is 'a verb that writes a plan key must be named wherever verbs are enumerated': grep of the verb table, task.md hint, README row, verbs-in-full, the guide and the enumerating suites found vf, vf4, tw5 (test_audit_task) and tk3, pf2 (test__refs) naming build-command and default-skills-style rows - each extended, and the derived grids are red without the row; lines left: default-skills is in no hint or command file (a pre-existing gap, not this task's); the pin written under another spelling is the class of 'two pins on one directory', closed by covering_pins in the verb and held by spv5/spv6b\n4 nothing addressed to an agent as a rule was added to a brief; the page's 'take out any step that commits, pushes, spawns agents or fetches' is advice to a person vendoring, and the mechanism it names is SKILLS_PREAMBLE in run-agent-session.py which tells a headless session the task prompt outranks a skill; the revalidation rule is held by spv6, spv6b and spv11 as the return's outcome states\n5 n/a - no timing or property recorded in a document; the eol behaviour was measured once in a scratch repository (eol_probe.sh, one run each way) and the page states the remedy, not a figure\n6 n/a - no guard; the decisions read the resolved directory and its digest (resolve_skill, covering_pins by file identity), never a name's spelling, and the git question is asked of the directory (git status over its path), not of a command's text\n7 the page, README, verbs-in-full, CHANGELOG and guide additions carry no cardinality; test__deps (284 cases) and test__output_lints (188 cases), which hold the prose-number lints, pass over them",
+  "stamp": "audit-stamp: {\"content\":\"sha256:b0662a46074c0f0f75f61b1c581c0c0e05283cf63698c0d76655925819d80754\",\"dirtyDigest\":\"sha256:fd043a74e1f2ad19782d56eaf82ddcc9d9c0bebce7024565188bf86d363cebf0\",\"dirtyPaths\":{\"CHANGELOG.md\":\"0c70ab912da3bab1\",\"PLUGIN-BUILD-GUIDE.md\":\"f7060aa8fe17234d\",\"plugins/audit/README.md\":\"b174d9c7f60f13ba\",\"plugins/audit/commands/task.md\":\"98c71a574f6c4f78\",\"plugins/audit/reference/vendoring-a-skill.md\":\"2065738de2336061\",\"plugins/audit/reference/verbs-in-full.md\":\"f966a71188654b08\",\"plugins/audit/scripts/manifest/audit-task.py\":\"e7b265c9574737cd\",\"plugins/audit/scripts/status/_doctor_policy.py\":\"f9f4020a67ee7584\",\"tests/test__doctor_policy.py\":\"7a19834ce540c0d4\",\"tests/test__refs.py\":\"74c8ab6e48e1ddbd\",\"tests/test_audit_task.py\":\"a79bfcba882986e8\",\"tools/lints/_deps.py\":\"afc1fcc5046ecfd5\"},\"head\":\"9e0e4d3b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/README.md\",\"plugins/audit/commands/task.md\",\"plugins/audit/reference/vendoring-a-skill.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/scripts/status/_doctor_policy.py\",\"tests/test__doctor_policy.py\",\"tests/test__refs.py\",\"tests/test_audit_task.py\",\"tools/lints/_deps.py\"],\"scopeDigest\":\"sha256:0d6efeee0464755a63ed177d3fb271c11a99335ca531d9b7a156bc7f7efff33c\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "2 move(s) that lower the bar across 12 file(s) of the diff; 311 existing unit(s) compared, 0 new unit(s) counted and not judged; 6 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md, plugins/audit/commands/task.md, plugins/audit/reference/verbs-in-full.md, plugins/audit/reference/vendoring-a-skill.md; 2 file(s) that could hold a move not compared: tests/test__doctor_policy.py, tests/test_audit_task.py",
+    "findings": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test__refs.py",
+        "line": 2930,
+        "side": "tree",
+        "what": "labelled check `tk3 ...and the intersection is the script verbs the two docs name -...` differs from its base copy in its condition and arguments",
+        "part": "arguments"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test__refs.py",
+        "line": 3111,
+        "side": "tree",
+        "what": "labelled check `pf2 ...over a flag set, a dest map and a set of VERBS that all real...` differs from its base copy in its condition and arguments",
+        "part": "arguments"
+      }
+    ],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/commands/task.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/reference/verbs-in-full.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__doctor_policy.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 363 (`def _skills(mf, inv, cfg=None, home=None):`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_audit_task.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 4427 (`_vf_pos = {\"add\": [\"add\", \"T\", \"--phase\", \"P2\"],`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "plugins/audit/reference/vendoring-a-skill.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      }
+    ],
+    "base": {
+      "commit": "9e0e4d3bf0b6c7f80838d6aa356ccb2e28ad6f59"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-25T14:13:15Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

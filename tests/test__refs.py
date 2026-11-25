@@ -2934,8 +2934,8 @@ def _cases(check):
           % ((_tk_shared, sorted(_tk_flags)),),
           _tk_shared == ["add", "add-phase", "block", "build-command", "cancel",
                          "couple", "done", "move", "mute", "note", "reindex",
-                         "reopen", "scope", "start", "unblock", "uncouple",
-                         "unmute"]
+                         "reopen", "scope", "skill-pin", "start", "unblock",
+                         "uncouple", "unmute"]
           and "move" in _tk_flags and "move" in _at_usage)
     # `_tk_all`, not `_tk_flags`: the latter has no row for a verb that came from
     # the other document, and indexing it here raised `KeyError` the first time
@@ -3116,8 +3116,8 @@ def _cases(check):
           _pf_checked != [] and "--gate-clear" in _pf_checked
           and _pf_verbs == ["add", "add-phase", "block", "build-command",
                             "cancel", "couple", "done", "move", "mute", "note",
-                            "reopen", "scope", "start", "unblock", "uncouple",
-                            "unmute"]
+                            "reopen", "scope", "skill-pin", "start", "unblock",
+                            "uncouple", "unmute"]
           and _pf_same != "" and _pf_same == _at_src
           and _at_dest.get("--gate-clear") == "gate_clear"
           and _at_dest.get("--blocked-by") == "blocked_by")

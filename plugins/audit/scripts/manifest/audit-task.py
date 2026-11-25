@@ -105,6 +105,9 @@ Usage:
   audit-task.py default-skills (--skills a,b [--replace] | --remove)
                 [manifest] [--reason TEXT|-]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py skill-pin <name> (--remove --reason TEXT|- | [--source TEXT]
+                [--allow-personal-copy] [--reason TEXT|-]) [manifest]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py reindex [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py mute --test <path> --reason TEXT|- --owner NAME
@@ -494,6 +497,8 @@ import _proc_group            # noqa: E402  (shell_invocation: `record-listing` 
 #                                            plan command runs under)
 import _clause_coverage       # noqa: E402  (reading_line: how a description's Acceptance
 #                                            list was read, said at the write that set it)
+import _skill_places          # noqa: E402  (`skill-pin`: the resolver, the digest and the
+#                                            reader of a pin - the verb computes none of them)
 
 E_INVALID, E_USAGE, E_LIVE, E_STALE = 1, 2, 3, 4
 
@@ -15766,6 +15771,241 @@ def _locked_default_skills(args, project, config, mpath, names, out):
     return 0
 
 
+# --- skill-pin: one meta.skillPins entry, written on a plan that exists ----------
+# THE ONLY OTHER WRITER OF A PIN WAS A HAND EDIT OF THE PLAN, and a pin is a digest:
+# nobody types sixty-four hex characters they have not computed, so a pin written
+# by hand was a pin computed by something else and pasted. The verb pins what the
+# resolver finds NOW, through the same lock, `_write_plan` and validator every
+# other verb on this plan uses.
+#
+# IT COMPUTES NOTHING OF ITS OWN. Where the name resolves is `resolve_skill`'s
+# answer, the digest is `skill_digest`'s, and whether the copy would reach another
+# machine is `loaded_verdict`'s - so the digest written is the digest the reader
+# later compares, and every refusal is the reader's own sentence.
+#
+# A PERSONAL COPY IS REFUSED WITHOUT THE FLAG THAT SAYS IT, because a pin on a
+# directory in a home no clone carries fails on every other machine: the pin is a
+# statement about a reviewed copy on disk, and the copy is not on theirs.
+#
+# A DIRECTORY IS PINNED ONCE. A pin holds the directory its name resolves to
+# (`covering_pins`), and two pins on one directory with different digests are the
+# validation error `skill_pin_findings` names - which validate()'s in-process read
+# cannot see, since it reads no file. So a name whose directory is already pinned
+# under another spelling updates THAT pin, printing both digests, and never adds a
+# second one the validator would then refuse.
+#
+# `--remove` NEEDS ITS REASON, and drops the key with the last pin so a plan with
+# no pins carries no `skillPins` at all and behaves as it did before the key.
+SKILL_PIN_FIELD = "meta.skillPins"
+
+
+def cmd_skill_pin(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    name = (args.title or "").strip()
+    named = _skill_places.resolve_skill(
+        name, project, _claude_home.claude_home(), _output.PLUGIN_ROOT, None)
+    if named["problem"]:
+        out("[audit-task] skill-pin: %s; nothing written" % (named["problem"],))
+        return E_USAGE
+    reason = (args.reason or "").strip()
+    if args.remove:
+        if args.skill_source is not None or args.allow_personal_copy:
+            out("[audit-task] skill-pin --remove drops the pin and takes no "
+                "--source or --allow-personal-copy -- two answers to one "
+                "question, and guessing which was meant is how a pin gets "
+                "lost; nothing written")
+            return E_USAGE
+        if not reason:
+            out("[audit-task] skill-pin --remove needs --reason \"<why>\" -- a "
+                "pin dropped with no recorded why is the one remedy that makes "
+                "the check say nothing, and nobody can tell what was decided; "
+                "nothing written")
+            return E_USAGE
+    elif args.skill_source is not None:
+        machine = _journal_io.check_free_text(
+            project, "the skill pin's source", args.skill_source)
+        if machine or not args.skill_source.strip():
+            out("[audit-task] " + (machine or "skill-pin: --source is blank -- "
+                "name where the skill came from (repository, commit, licence), "
+                "or leave the flag out; nothing written"))
+            return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_skill_pin(
+                           args, project, config, mpath, name, out))
+
+
+def _skill_pin_copy(name, args, project):
+    """`(copy, refusal)`: the directory `name` resolves to now, with its digest
+    (`skill_digest`), or the reader's own sentence for why it cannot be pinned -
+    nothing placed, a copy no other machine has (unless the flag says so), or a
+    directory with no digest."""
+    home, root = _claude_home.claude_home(), _output.PLUGIN_ROOT
+    hit = _skill_places.resolve_skill(name, project, home, root,
+                                      _skill_places.plugin_name(root))
+    if not hit["found"]:
+        return None, ("skill-pin: no copy of %r is found where its bytes can be "
+                      "read - looked in %s: found none; nothing written"
+                      % (name, ", ".join(hit["places"]) or "no place"))
+    graded = _skill_places.loaded_verdict(None, hit)
+    if graded and graded["travels"] is False and not args.allow_personal_copy:
+        return None, ("skill-pin: %s - a pin on it would fail on every other "
+                      "machine, which has no such directory. Vendor the skill "
+                      "under .claude/skills/ (reference/vendoring-a-skill.md), or "
+                      "pass --allow-personal-copy to pin it for this machine "
+                      "alone; nothing written" % (graded["basis"],))
+    folder = os.path.dirname(hit["path"])
+    got = _skill_places.skill_digest(folder)
+    if got["digest"] is None:
+        return None, ("skill-pin: the copy at %s has no digest: %s; nothing "
+                      "written" % (folder, got["problem"]))
+    return {"folder": folder, "digest": got["digest"], "files": got["files"],
+            "toolWritten": got["toolWritten"], "tier": hit["source"],
+            "graded": graded}, None
+
+
+def _pin_edit(pins, held, digest, source):
+    """`[(spelling, old digest, new entry), ...]` for each pin in `held` that is not
+    already the entry (digest and source) the verb would write; [] when every one
+    is."""
+    edits = []
+    for spelling in held:
+        entry = pins.get(spelling) if isinstance(pins.get(spelling), dict) else {}
+        want = {"sha256": digest}
+        kept = source if source is not None else entry.get("source")
+        if kept is not None:
+            want["source"] = kept
+        if entry != want:
+            edits.append((spelling, entry.get("sha256"), want))
+    return edits
+
+
+def _locked_skill_pin(args, project, config, mpath, name, out):
+    """Pin, re-pin or drop `name`, under lock."""
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    meta = dict(assembled.get("meta") or {})
+    pins = dict(meta["skillPins"]) if isinstance(meta.get("skillPins"),
+                                                 dict) else {}
+    home, root = _claude_home.claude_home(), _output.PLUGIN_ROOT
+    held = [p for _n, p in _skill_places.covering_pins([name], pins, project,
+                                                       home, root)]
+    copy = None
+    if args.remove:
+        if name not in pins:
+            out("[audit-task] skill-pin: %r is not pinned%s -- nothing to "
+                "remove; nothing written"
+                % (name, (" (its directory is pinned as %s - remove that "
+                          "spelling)" % (", ".join(held),)) if held else ""))
+            return E_USAGE
+        dropped = pins.pop(name)
+        edits = [(name, dropped.get("sha256") if isinstance(dropped, dict)
+                  else None, None)]
+    else:
+        copy, refusal = _skill_pin_copy(name, args, project)
+        if refusal:
+            out("[audit-task] " + refusal)
+            return E_USAGE
+        source = args.skill_source.strip() if args.skill_source is not None else None
+        edits = _pin_edit(pins, held or [name], copy["digest"], source)
+        if not edits:
+            return _skill_pin_unchanged(args, out, name, held, copy)
+        for spelling, _old, entry in edits:
+            pins[spelling] = entry
+    if pins:
+        meta["skillPins"] = pins
+    else:
+        meta.pop("skillPins", None)
+    assembled["meta"] = meta
+    # THE HALF OF validate-manifest.py's READING that `vm` cannot make: two pins on
+    # one directory with different digests, which only the file system can say.
+    # Asked of the plan as it will be written, so a call that REMOVES one of two
+    # clashing pins is the way out and one that leaves them is refused.
+    clash = _rules.skill_pin_findings(assembled, project, home, root)
+    if clash:
+        out("[audit-task] REFUSED: the skill pin would leave the manifest "
+            "invalid -- nothing written:")
+        for line in clash:
+            out("FINDING: " + line)
+        return E_INVALID
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [],
+                        "the skill pin", out, index_fields=("meta",))
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    return _skill_pin_report(args, project, config, mpath, name, copy, edits,
+                             (written, written_manifest, warnings), out)
+
+
+def _skill_pin_unchanged(args, out, name, held, copy):
+    """The answer for a pin that already holds the bytes found: nothing written,
+    and which pin says so."""
+    spelled = ", ".join(held or [name])
+    if args.as_json:
+        out(json.dumps({"ok": True, "name": name, "change": "unchanged",
+                        "sha256": copy["digest"], "pinnedAs": held or [name],
+                        "directory": copy["folder"], "written": []},
+                       indent=2, sort_keys=True))
+        return 0
+    out("[audit-task] skill-pin: %s is already pinned (as %s) to %s, and the "
+        "copy at %s matches - nothing written"
+        % (name, spelled, copy["digest"], copy["folder"]))
+    return 0
+
+
+def _skill_pin_report(args, project, config, mpath, name, copy, edits, wrote, out):
+    """The journal row and the lines of a pin that was written: the directory and
+    the digest pinned (or, for a removal, the digest dropped), each re-pin's old
+    and new digest, and what the reader says about the copy."""
+    written, written_manifest, warnings = wrote
+    first, old, entry = edits[0]
+    now = entry["sha256"] if entry else None
+    verb = ("removed" if args.remove else "pinned" if old is None else
+            "re-pinned" if old != now else "source updated")
+    reason = (args.reason or "").strip()
+    summary = "%s.%s %s%s" % (SKILL_PIN_FIELD, first, verb,
+                              ": " + reason if reason else "")
+    details = {"field": "%s.%s" % (SKILL_PIN_FIELD, first), "from": old, "to": now}
+    if len(edits) > 1:
+        details["changes"] = [
+            {"id": spelling, "field": SKILL_PIN_FIELD, "from": was,
+             "to": (new or {}).get("sha256")} for spelling, was, new in edits]
+    if reason:
+        details["reason"] = reason
+    jres = _journal_row(project, config, mpath, "skillpin.change", summary,
+                        details)
+    index_note = _index_dirty_note(written, mpath, project, None)
+    if args.as_json:
+        result = {"ok": True, "name": name, "change": verb, "from": old,
+                  "to": now, "sha256": now, "pinnedAs": [e[0] for e in edits],
+                  "written": written}
+        if copy:
+            result["directory"] = copy["folder"]
+        out(_json_tail(result, args, jres, warnings, written_manifest,
+                       index_note))
+        return 0
+    out("[audit-task] %s" % (summary,))
+    if copy:
+        out("  directory: %s (%s copy, %d file(s))"
+            % (copy["folder"], copy["tier"], copy["files"]))
+        out("  digest: %s" % (now,))
+    for spelling, was, new in edits:
+        if was is not None and new is not None and was != new["sha256"]:
+            out("  %s: was %s, now %s" % (spelling, was, new["sha256"]))
+    if copy and copy["graded"] and copy["graded"]["travels"] is False:
+        out("WARNING: pinned on --allow-personal-copy: %s, so this pin fails on "
+            "every machine without it" % (copy["graded"]["basis"],))
+    if copy and copy["toolWritten"]:
+        out("WARNING:" + _skill_places._tool_written_words(copy["toolWritten"]))
+    _report_tail(out, jres, "skillpin.change", warnings, written_manifest,
+                 written, index_note)
+    return 0
+
+
 # --- next-id: the id a hand-written record takes ---------------------------------
 # A bug, a parked proposal and a bug's fix task are the records the model still
 # writes by hand (`commands/bug.md`, `init.md`), so they were also the ids the model
@@ -16191,6 +16431,11 @@ VERB_FLAGS = {
     # with the `--skills` flag `add` already holds, so the two verbs spell a
     # skill list one way.
     "default-skills": ("skills", "replace", "remove", "reason"),
+    # `skill-pin` writes or drops ONE `meta.skillPins` entry. `--source` is the
+    # free text recorded beside the digest (its dest is `skill_source`, because
+    # `source` names a tier everywhere else in this file's vocabulary), and
+    # `--allow-personal-copy` is the flag that says a copy no clone carries is meant.
+    "skill-pin": ("skill_source", "allow_personal_copy", "remove", "reason"),
 }
 
 
@@ -16234,7 +16479,7 @@ def build_parser():
                             "resolve-finding", "correct", "bug-add",
                             "bug-close", "reindex", "mute", "unmute",
                             "record-listing", "build-command",
-                            "default-skills", "file-return"])
+                            "default-skills", "skill-pin", "file-return"])
     p.add_argument("title", nargs="?", default="")
     p.add_argument("manifest", nargs="?", default=None)
     p.add_argument("--phase", default=None)
@@ -16614,7 +16859,18 @@ def build_parser():
     p.add_argument("--remove", action="store_true", default=False,
                    help="build-command: drop the key (refused while a "
                         "phase's testGate or a task's tests.gate names it); "
-                        "default-skills: drop meta.defaultSkills")
+                        "default-skills: drop meta.defaultSkills; "
+                        "skill-pin: drop the pin (needs --reason)")
+    # `skill-pin` only: where the vendored copy came from, recorded beside the
+    # digest, and the word that a copy only this machine has is meant.
+    p.add_argument("--source", dest="skill_source", default=None, metavar="TEXT",
+                   help="skill-pin: where the skill came from (repository, "
+                        "commit, licence), recorded beside the digest")
+    p.add_argument("--allow-personal-copy", dest="allow_personal_copy",
+                   action="store_true", default=False,
+                   help="skill-pin: pin a personal copy (a home directory no "
+                        "clone carries) anyway - the pin then fails on every "
+                        "other machine")
     p.add_argument("--takeover", action="store_true")
     p.add_argument("--json", action="store_true", dest="as_json")
     return _claude_home.attach_usage_hint(p)
@@ -17215,6 +17471,7 @@ def _dispatch(args, argv, out):
              "record-listing": cmd_record_listing,
              "build-command": cmd_build_command,
              "default-skills": cmd_default_skills,
+             "skill-pin": cmd_skill_pin,
              "file-return": cmd_file_return}
     try:
         return doors[args.command](args, out)

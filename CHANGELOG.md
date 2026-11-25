@@ -8,6 +8,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ### Added
 
+- **A pin is written by a verb, read back by the doctor, and one page says how to vendor an
+  outside skill so that it can be pinned.** `/audit:task skill-pin <name> [--source TEXT]`
+  pins the directory digest of the copy `_skill_places.resolve_skill` finds now - the
+  digest is `_skill_places.skill_digest`'s, so the reader later matches it - prints the
+  directory and the digest, and journals `skillpin.change`, under the plan's lock and
+  revalidated. It refuses, writing nothing and in the reader's own words, a name nothing
+  places, a directory with no digest (naming the entry and its kind) and a personal copy
+  unless `--allow-personal-copy` says so, since a pin on a home directory fails on every
+  other machine. A skill already pinned to the bytes it holds changes nothing and says so; a
+  changed one prints the old and the new digest; a directory already pinned under another
+  spelling has THAT pin updated, never a second one the validator would refuse, and a plan
+  already holding such a pair is refused for any pin until one is removed. `--remove`
+  needs its `--reason`, refuses a name that is not pinned and drops the `skillPins` key with
+  the last pin. `/audit:doctor` gains the `skill pins` rows for a plan that carries the key
+  (and none for one that does not): each pinned skill matches, does not match (a warning with
+  the path, both digests, any tool-written entry and that a session naming it will not
+  start), is not found, or cannot be read whole - the wording the runner's stop uses, from
+  the same helper; a pin nothing names any more is stale; the plan's unpinned skills are
+  named as information; and a project skill whose working copy differs from HEAD says the
+  commit is what a wave's sessions load. `reference/vendoring-a-skill.md` is the page - copy
+  the directory into `.claude/skills/<name>/` rather than install the plugin, read the whole
+  text, give it a `## Checklist`, take out any step that commits, pushes, spawns agents or
+  fetches, record where it came from, pin it, mark it not text for git, and to upgrade
+  replace the directory, read the diff and pin again - linked from the README and
+  `verbs-in-full.md`. `commands/task.md` names the verb under its context ceiling by
+  shortening its `reindex` section to a pointer.
 - **A plan can pin the bytes of a skill it names (experimental).** The optional
   `meta.skillPins` maps a skill name to `{sha256, source?}`, the digest of the skill's whole
   directory: SHA-256 over the sorted `<relative posix path> <sha256>` lines of every file

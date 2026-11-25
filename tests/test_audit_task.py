@@ -4499,7 +4499,10 @@ def _flag_cases(check):
                    "build-command": ["build-command", "k"],
                    # `default-skills` names its list with `--skills`, which its
                    # own door reads, so the bare call is the row.
-                   "default-skills": ["default-skills"]}
+                   "default-skills": ["default-skills"],
+                   # `skill-pin` names its skill as the positional, and the
+                   # misplaced-flag check fires before its body resolves it.
+                   "skill-pin": ["skill-pin", "k"]}
         _vf_leaks = []
         for _vfv in sorted(M.VERB_FLAGS):
             _vfknown = set(M.VERB_FLAGS[_vfv]) | set(M.UNIVERSAL_FLAGS)
@@ -4679,6 +4682,19 @@ def _flag_cases(check):
         _vf_ok["default-skills/--skills"] = run(
             ["default-skills", "--skills", "writing-python", "--reason", "r",
              "--json", "--project-dir", _vf_ds_proj])[0]
+        # A skill directory under the project, of a name no personal directory
+        # on a machine running this suite holds, so the project's copy is the
+        # one the resolver finds and no flag has to say a copy is personal.
+        _vf_sp_proj, _vf_sp_mp = mk("vf-skillpin", base_manifest())
+        _vf_sp_dir = os.path.join(_vf_sp_proj, ".claude", "skills",
+                                  "vf-vendored-qz")
+        os.makedirs(_vf_sp_dir)
+        with open(os.path.join(_vf_sp_dir, "SKILL.md"), "w",
+                  encoding="utf-8") as _fh:
+            _fh.write("---\nname: vf-vendored-qz\n---\nbody\n")
+        _vf_ok["skill-pin/--source"] = run(
+            ["skill-pin", "vf-vendored-qz", "--source", "o/r@1", "--reason", "r",
+             "--json", "--project-dir", _vf_sp_proj])[0]
         check("vf4 SECOND-DIRECTION CASE: every flag a verb DOES read still "
               "works, and `--json` / `--project-dir` reach every verb - a guard "
               "that fires on a correct call is a guard somebody routes around "
@@ -7976,6 +7992,10 @@ def _close_cases(check):
                                "npx vitest run"]),
             ("default-skills", ["default-skills", "--skills",
                                 "writing-python"]),
+            # A skill the pair's project holds, written in the loop just before
+            # this row runs, so the call writes a pin and the tree it names is
+            # the one asked about.
+            ("skill-pin", ["skill-pin", "tw-vendored-qz"]),
         )
         # `signoff` gets its own pair too: by its row every other row has left P2
         # with open work, which it rightly refuses.
@@ -8016,6 +8036,15 @@ def _close_cases(check):
                 _git_q(_tw_tree, ["commit", "-qm", "the work of P2.3"])
                 _tw_work = _harness.git(_tw_tree, "rev-parse", "HEAD").strip()
                 _argv = [_tw_work if a == _tw_sha else a for a in _argv]
+            if _label == "skill-pin":
+                # Written only now: an untracked file under the project would
+                # be a change the `done` row above reads as the task's.
+                _tw_skill = os.path.join(_tw_proj, ".claude", "skills",
+                                         "tw-vendored-qz")
+                os.makedirs(_tw_skill, exist_ok=True)
+                with open(os.path.join(_tw_skill, "SKILL.md"), "w",
+                          encoding="utf-8") as _fh:
+                    _fh.write("---\nname: tw-vendored-qz\n---\nbody\n")
             try:
                 _pin(_tw_tree, _tw_proj)
                 _codev, _txtv = (run_on_stdin(_argv, _fr_executor())
@@ -21139,6 +21168,453 @@ def _default_skills_cases(check):
         _harness.remove_tree(tmp)
 
 
+SPV_VERB_CLAUSE = (
+    "skill-pin pins the directory digest the reader matches, journals and "
+    "revalidates, refuses an unplaced name, an unreadable directory and an "
+    "unflagged personal copy, and --remove drops one with its reason")
+
+
+def _skill_pin_cases(check):
+    """`skill-pin`: the verb that writes `meta.skillPins`, through the lock, the
+    manifest writer and the validator, with one journal row per write. The digest
+    is `_skill_places.skill_digest`'s and the verdict is `pin_verdict`'s, so the
+    round trip - the verb pins, the reader answers match, a changed byte answers
+    mismatch, a re-pin answers match - is asked of the reader itself. Every refusal
+    is compared against the plan's BYTES and the journal's row count, because a
+    refusal that wrote is the fault and an exit code alone would pass a verb that
+    wrote and then complained; each is followed by its allow twin."""
+    import _skill_places as sp
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, _task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+    saved_home = os.environ.get("CLAUDE_CONFIG_DIR")
+    home = os.path.join(tmp, "home-spv")
+    os.makedirs(home)
+    # The resolver reads the user's skills from here: pinned, so a skill the
+    # machine running this suite happens to hold cannot change an answer.
+    os.environ["CLAUDE_CONFIG_DIR"] = home
+    running = sp.plugin_name(_output.PLUGIN_ROOT)
+    try:
+        def raw(path):
+            with open(path, "rb") as fh:
+                return fh.read()
+
+        def put(base, name, body="body\n"):
+            folder = os.path.join(base, name)
+            os.makedirs(os.path.join(folder, "scripts"), exist_ok=True)
+            with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8",
+                      newline="") as fh:
+                fh.write("---\nname: %s\n---\n%s" % (name, body))
+            with open(os.path.join(folder, "scripts", "run.sh"), "w",
+                      encoding="utf-8", newline="") as fh:
+                fh.write("echo %s\n" % (name,))
+            return folder
+
+        def plan(name, names=("vendored-x",), pins=None, sharded=False):
+            fx = base_manifest()
+            fx["meta"]["defaultSkills"] = list(names)
+            if pins is not None:
+                fx["meta"]["skillPins"] = pins
+            proj, mpath = mk(name, fx, sharded=sharded)
+            return proj, mpath, os.path.join(proj, ".claude", "skills")
+
+        def pins_of(mpath):
+            return (_mio.load_manifest(mpath).get("meta") or {}).get("skillPins")
+
+        def rows(project):
+            jmod = _panel_write._journalmod()
+            return [r for r in (jmod.read_all(project) if jmod else [])
+                    if r.get("action") == "skillpin.change"]
+
+        def details(row):
+            return row.get("details") or {}
+
+        def verdict(mpath, proj, name):
+            pins = pins_of(mpath) or {}
+            return sp.pin_verdict(name, pins.get(name), proj, home,
+                                  _output.PLUGIN_ROOT, running)["answer"]
+
+        # ---- the round trip, asked of the reader -------------------------------
+        proj, mpath, skills = plan("spv-trip")
+        folder = put(skills, "vendored-x")
+        code, txt = run(["skill-pin", "vendored-x", "--source",
+                         "owner/repo@abc123, MIT", "--project-dir", proj])
+        digest = sp.skill_digest(folder)["digest"]
+        got = pins_of(mpath)
+        trip_rows = rows(proj)
+        findings = M._validator().validate(_mio.load_manifest(mpath))[0]
+        pinned_answer = verdict(mpath, proj, "vendored-x")
+        with open(os.path.join(folder, "scripts", "run.sh"), "a",
+                  encoding="utf-8") as fh:
+            fh.write("x")
+        changed_answer = verdict(mpath, proj, "vendored-x")
+        new_digest = sp.skill_digest(folder)["digest"]
+        code2, txt2 = run(["skill-pin", "vendored-x", "--project-dir", proj])
+        repinned_answer = verdict(mpath, proj, "vendored-x")
+        check("spv1 " + SPV_VERB_CLAUSE + ": the round trip - the verb pins the "
+              "digest of the DIRECTORY, printing the directory and the digest, "
+              "and the reader answers match; one byte of a sibling file changed "
+              "answers mismatch; a re-pin prints the old and the new digest and "
+              "answers match again: %r"
+              % ((code, txt[-260:], got, pinned_answer, changed_answer,
+                  (code2, txt2[-300:]), repinned_answer, findings),),
+              code == 0 and digest and digest != new_digest
+              and got == {"vendored-x": {"sha256": digest,
+                                         "source": "owner/repo@abc123, MIT"}}
+              and digest in txt and os.path.join(".claude", "skills",
+                                                 "vendored-x") in txt
+              and pinned_answer == "match" and changed_answer == "mismatch"
+              and code2 == 0 and digest in txt2 and new_digest in txt2
+              and repinned_answer == "match" and findings == []
+              and len(trip_rows) == 1
+              and details(trip_rows[0]).get("field") == "meta.skillPins.vendored-x"
+              and details(trip_rows[0]).get("from") is None
+              and details(trip_rows[0]).get("to") == digest
+              and len(rows(proj)) == 2
+              and details(rows(proj)[1]).get("from") == digest
+              and details(rows(proj)[1]).get("to") == new_digest)
+
+        # A matching pin changes nothing and says so (the allow case beside the
+        # re-pin above, which changed the bytes first).
+        before = raw(mpath)
+        n_rows = len(rows(proj))
+        code, txt = run(["skill-pin", "vendored-x", "--project-dir", proj])
+        check("spv2 skill-pin of a skill already pinned to the bytes it holds "
+              "writes nothing, journals nothing and says the pin matches: %r"
+              % ((code, txt[-240:]),),
+              code == 0 and raw(mpath) == before and len(rows(proj)) == n_rows
+              and "nothing written" in txt and "matches" in txt)
+        # ...and the same digest under a new --source is a change, said as the
+        # source's and not as a re-pin of the bytes.
+        code, txt = run(["skill-pin", "vendored-x", "--source", "owner/repo@def",
+                         "--project-dir", proj])
+        src_rows = rows(proj)
+        check("spv2b a matching pin given a different --source rewrites only the "
+              "source, journals it as the source's change (from and to the same "
+              "digest) and the pin still answers match: %r"
+              % ((code, txt[-200:], (pins_of(mpath) or {}).get("vendored-x")),),
+              code == 0 and (pins_of(mpath) or {})["vendored-x"]["source"]
+              == "owner/repo@def"
+              and verdict(mpath, proj, "vendored-x") == "match"
+              and len(src_rows) == n_rows + 1
+              and "source updated" in txt and "vendored-x: was " not in txt)
+
+        # ---- refusals, each compared against the plan's bytes ------------------
+        proj, mpath, skills = plan("spv-deny")
+        put(skills, "vendored-x")
+        big = os.path.join(skills, "too-big")
+        put(skills, "too-big")
+        for i in range(sp.MAX_SKILL_ENTRIES + 1):
+            with open(os.path.join(big, "f%04d" % (i,)), "w") as fh:
+                fh.write("")
+        linked = put(skills, "linked-out")
+        outside = os.path.join(tmp, "outside-spv.txt")
+        with open(outside, "w") as fh:
+            fh.write("elsewhere\n")
+        try:
+            os.symlink(outside, os.path.join(linked, "escape"))
+            link_ran = True
+        except (OSError, NotImplementedError, AttributeError) as exc:
+            link_ran = "no link could be made here: %s" % (exc,)
+        put(os.path.join(home, "skills"), "personal-x")
+        before = raw(mpath)
+        refused = {}
+        for label, argv in (
+                ("unplaced", ["skill-pin", "ghost-skill"]),
+                ("not-a-name", ["skill-pin", "../ghost"]),
+                ("no-digest", ["skill-pin", "too-big"]),
+                ("link-out", ["skill-pin", "linked-out"]),
+                ("personal", ["skill-pin", "personal-x"]),
+                ("remove-not-pinned", ["skill-pin", "vendored-x", "--remove",
+                                       "--reason", "gone"]),
+                ("remove-no-reason", ["skill-pin", "vendored-x", "--remove"]),
+                ("remove-and-source", ["skill-pin", "vendored-x", "--remove",
+                                       "--reason", "r", "--source", "s"]),
+                ("source-path", ["skill-pin", "vendored-x", "--source",
+                                 os.path.join(proj, "elsewhere", "x")])):
+            refused[label] = run(argv + ["--project-dir", proj])
+        clean = raw(mpath) == before and rows(proj) == []
+        words = dict((k, v[1]) for k, v in refused.items())
+        link_ok = (link_ran is not True
+                   or ("escape" in words["link-out"]
+                       and "leading out of the directory" in words["link-out"]))
+        check("spv3 skill-pin refuses, with exit 2 and the reader's own words, "
+              "writing nothing: a name nothing places (the places it looked in), "
+              "a string that is no skill name, a directory past the entry "
+              "ceiling, a link leading out of the directory naming the entry "
+              "(%s), a personal copy without the flag (the reader's own words "
+              "about a home directory no clone carries, and the flag named), "
+              "--remove of a name that is not pinned, --remove with no reason, "
+              "--remove beside --source, and a source carrying a machine path: "
+              "%r" % ("ran" if link_ran is True else link_ran,
+                      dict((k, (c, t[-170:])) for k, (c, t) in refused.items())),
+              clean and all(c == 2 for c, _t in refused.values())
+              and os.path.join("skills", "ghost-skill") in words["unplaced"]
+              and "is not a skill name" in words["not-a-name"]
+              and str(sp.MAX_SKILL_ENTRIES) in words["no-digest"]
+              and link_ok
+              and "personal" in words["personal"]
+              and "no clone carries" in words["personal"]
+              and "--allow-personal-copy" in words["personal"]
+              and "not pinned" in words["remove-not-pinned"]
+              and "--reason" in words["remove-no-reason"]
+              and "--source" in words["remove-and-source"])
+        # THE ALLOW TWINS of the refusals above: the same plan, a name the
+        # resolver places and whose directory has a digest, a personal copy with
+        # the flag that says so, and a --remove with its reason.
+        ok_code, ok_txt = run(["skill-pin", "vendored-x", "--project-dir", proj])
+        pers_code, pers_txt = run(["skill-pin", "personal-x",
+                                   "--allow-personal-copy", "--project-dir", proj])
+        pins_now = pins_of(mpath) or {}
+        rm_code, rm_txt = run(["skill-pin", "vendored-x", "--remove", "--reason",
+                               "reviewed again", "--project-dir", proj])
+        rm_pins = pins_of(mpath) or {}
+        rm_rows = rows(proj)
+        rm_last = run(["skill-pin", "personal-x", "--remove", "--reason", "x",
+                       "--project-dir", proj])
+        meta_after = _mio.load_manifest(mpath).get("meta") or {}
+        check("spv4 ...and each refusal has its allow twin: a placed name pins; "
+              "a personal copy pins with --allow-personal-copy and the output "
+              "says it is personal; --remove with a reason drops that pin and "
+              "journals the digest it dropped with the reason; the last pin "
+              "dropped takes the key with it, so a plan with no pins has no "
+              "`skillPins` at all: %r"
+              % ((ok_code, pers_code, pers_txt[-200:], sorted(pins_now),
+                  rm_code, rm_txt[-160:], sorted(rm_pins), rm_last[0],
+                  sorted(meta_after)),),
+              ok_code == 0 and pers_code == 0 and "personal" in pers_txt
+              and sorted(pins_now) == ["personal-x", "vendored-x"]
+              and rm_code == 0 and sorted(rm_pins) == ["personal-x"]
+              and len(rm_rows) == 3
+              and details(rm_rows[2]).get("from") == pins_now["vendored-x"]["sha256"]
+              and details(rm_rows[2]).get("to") is None
+              and details(rm_rows[2]).get("reason") == "reviewed again"
+              and rm_last[0] == 0 and "skillPins" not in meta_after)
+
+        # ---- a directory is pinned under one digest, whatever its spelling ----
+        own = sorted(os.listdir(os.path.join(_output.PLUGIN_ROOT, "skills")))[0]
+        qualified = "%s:%s" % (running, own)
+        proj, mpath, _skills = plan("spv-spell", names=(own, qualified))
+        run(["skill-pin", own, "--project-dir", proj])
+        pinned_as_own = dict((pins_of(mpath) or {}))
+        before = raw(mpath)
+        same_code, same_txt = run(["skill-pin", qualified, "--project-dir", proj])
+        unchanged = raw(mpath) == before
+        stale = "0" * 64
+        doc = _mio.load_manifest(mpath)
+        doc["meta"]["skillPins"][own]["sha256"] = stale
+        _panel_write._atomic_write_json(mpath, doc)
+        stale_rows = len(rows(proj))
+        up_code, up_txt = run(["skill-pin", qualified, "--project-dir", proj])
+        moved = pins_of(mpath) or {}
+        findings = M._validator().validate(_mio.load_manifest(mpath))[0]
+        clash = _rules.skill_pin_findings(
+            _mio.load_manifest(mpath), proj, home, _output.PLUGIN_ROOT)
+        no_second = sorted(moved) == [own]
+        rm_code, rm_txt = run(["skill-pin", qualified, "--remove", "--reason",
+                               "r", "--project-dir", proj])
+        check("spv5 a directory is pinned once: pinning it under another spelling "
+              "than the pin that holds it changes nothing when that pin matches "
+              "(and says which pin), and otherwise UPDATES that pin - printing "
+              "its old and new digest - instead of adding a second pin the "
+              "validator then refuses; --remove under a spelling nothing is "
+              "pinned as refuses naming the spelling that is: %r"
+              % ((same_code, same_txt[-200:], unchanged, up_code, up_txt[-260:],
+                  moved, findings, clash, rm_code, rm_txt[-200:]),),
+              sorted(pinned_as_own) == [own]
+              and same_code == 0 and unchanged and own in same_txt
+              and "nothing written" in same_txt
+              and up_code == 0 and no_second and moved[own]["sha256"] != stale
+              and stale in up_txt and moved[own]["sha256"] in up_txt
+              and findings == [] and clash == []
+              and len(rows(proj)) == stale_rows + 1
+              and rm_code == 2 and own in rm_txt)
+
+        # ---- revalidated, locked, both layouts --------------------------------
+        proj, mpath, skills = plan("spv-bad", pins={"junk": {"sha256": "nope"}})
+        put(skills, "vendored-x")
+        before = raw(mpath)
+        bad_code, bad_txt = run(["skill-pin", "vendored-x", "--project-dir", proj])
+        rolled = raw(mpath) == before and rows(proj) == []
+        proj2, mpath2, skills2 = plan("spv-good")
+        put(skills2, "vendored-x")
+        good_code, _good_txt = run(["skill-pin", "vendored-x", "--project-dir",
+                                    proj2])
+        check("spv6 the write is revalidated: a plan already holding a pin that "
+              "is no pin is refused with exit 1 and the finding, every file "
+              "rolled back and no row journaled; the same call on a sound plan "
+              "writes (the allow twin): %r"
+              % ((bad_code, bad_txt[-240:], rolled, good_code),),
+              bad_code == 1 and "FINDING" in bad_txt and "junk" in bad_txt
+              and rolled and good_code == 0)
+        # The half of validate-manifest.py's reading the in-process validator
+        # cannot make: two pins on one directory with different digests. A plan
+        # already holding such a pair is refused for ANY pin until one of the two
+        # is removed - and the removal is the call that is allowed through.
+        clash_proj, clash_mp, clash_skills = plan("spv-clash", names=(own,
+                                                                      qualified))
+        put(clash_skills, "vendored-x")
+        _clash = _mio.load_manifest(clash_mp)
+        _clash["meta"]["skillPins"] = {own: {"sha256": "1" * 64},
+                                       qualified: {"sha256": "2" * 64}}
+        _clash["meta"]["defaultSkills"] = [own, qualified, "vendored-x"]
+        _panel_write._atomic_write_json(clash_mp, _clash)
+        before = raw(clash_mp)
+        clash_code, clash_txt = run(["skill-pin", "vendored-x", "--project-dir",
+                                     clash_proj])
+        refused_clean = raw(clash_mp) == before and rows(clash_proj) == []
+        fix_code, _fix_txt = run(["skill-pin", qualified, "--remove", "--reason",
+                                  "one spelling is enough", "--project-dir",
+                                  clash_proj])
+        then_code, _then_txt = run(["skill-pin", "vendored-x", "--project-dir",
+                                    clash_proj])
+        check("spv6b a plan already holding two pins on one directory with "
+              "different digests is refused for any pin, exit 1 with the "
+              "validator's own finding naming both spellings and every file "
+              "left as it was; removing one of the two is let through, and the "
+              "pin then writes (the allow twin): %r"
+              % ((clash_code, clash_txt[-300:], refused_clean, fix_code,
+                  then_code),),
+              clash_code == 1 and refused_clean and "FINDING" in clash_txt
+              and own in clash_txt and qualified in clash_txt
+              and fix_code == 0 and then_code == 0
+              and sorted(pins_of(clash_mp)) == sorted([own, "vendored-x"]))
+        # The verb writes only through the one writer that validates what it
+        # wrote and rolls back on a finding, never through a raw one beside it.
+        import ast
+        with open(os.path.join(_output.SCRIPTS_DIR, "manifest", "audit-task.py"),
+                  "r", encoding="utf-8") as _fh:
+            _tree = ast.parse(_fh.read())
+        _locked = [n for n in ast.walk(_tree)
+                   if isinstance(n, ast.FunctionDef)
+                   and n.name == "_locked_skill_pin"]
+        _calls = sorted(set(
+            (c.func.id if isinstance(c.func, ast.Name) else c.func.attr)
+            for fn in _locked for c in ast.walk(fn)
+            if isinstance(c, ast.Call)
+            and isinstance(c.func, (ast.Name, ast.Attribute))))
+        check("spv11 the verb's locked body writes through `_write_plan`, the one "
+              "writer that revalidates and rolls back, and calls none of the raw "
+              "writers: %r" % ([c for c in _calls if "write" in c.lower()],),
+              len(_locked) == 1 and "_write_plan" in _calls
+              and not [c for c in _calls
+                       if c in ("_write_add", "_atomic_write_json", "save_sharded",
+                                "write_text", "write")])
+        proj3, mpath3, skills3 = plan("spv-lock")
+        put(skills3, "vendored-x")
+        before = raw(mpath3)
+        open(mpath3 + ".lock", "w").close()
+        try:
+            held_code, held_txt = run(["skill-pin", "vendored-x", "--project-dir",
+                                       proj3])
+        finally:
+            os.remove(mpath3 + ".lock")
+        held_clean = raw(mpath3) == before and rows(proj3) == []
+        free_code, _free_txt = run(["skill-pin", "vendored-x", "--project-dir",
+                                    proj3])
+        check("spv7 the verb takes the plan's lock: a held lock refuses with "
+              "exit 3 and writes nothing, and the same call with the lock free "
+              "writes: %r" % ((held_code, held_txt[-160:], held_clean, free_code),),
+              held_code == 3 and held_clean and free_code == 0
+              and "vendored-x" in (pins_of(mpath3) or {}))
+        proj4, mpath4, skills4 = plan("spv-shard", sharded=True)
+        put(skills4, "vendored-x")
+        sh_code, _sh_txt = run(["skill-pin", "vendored-x", "--json",
+                                "--project-dir", proj4])
+        json_code, json_txt = run(["skill-pin", "vendored-x", "--json",
+                                   "--project-dir", proj4])
+        try:
+            parsed = json.loads(json_txt)
+        except ValueError:
+            parsed = {}
+        check("spv8 a sharded plan takes the pin in its index, and --json prints "
+              "one object carrying the digest and that nothing changed on the "
+              "second call: %r" % ((sh_code, json_code, parsed),),
+              sh_code == 0 and json_code == 0
+              and list((pins_of(mpath4) or {})) == ["vendored-x"]
+              and parsed.get("ok") is True
+              and parsed.get("change") == "unchanged"
+              and parsed.get("sha256") == pins_of(mpath4)["vendored-x"]["sha256"])
+
+        # ---- the documents say what the code does -----------------------------
+        usage = str(M.__doc__ or "")
+        usage_at = usage.find("audit-task.py skill-pin")
+        usage_end = usage.find("\n  audit-task.py ", usage_at + 1)
+        usage_flags = set(re.findall(
+            r"--[a-z][a-z-]*", usage[usage_at:usage_end]
+            if usage_at >= 0 and usage_end > usage_at else ""))
+        spelled = M.option_dests()
+        universal = set(spelled[d] for d in M.UNIVERSAL_FLAGS)
+        table_flags = set(spelled[d] for d in M.VERB_FLAGS.get("skill-pin", ()))
+
+        def segment(cell):
+            hits = re.findall(r"skill-pin <name>(.*?)(?: \\?\| |$)", cell)
+            return (set(re.findall(r"--[a-z][a-z-]*", " ".join(hits)))
+                    if hits else None)
+        docs = {}
+        for rel in ("commands/task.md", "README.md", "reference/verbs-in-full.md",
+                    "reference/vendoring-a-skill.md"):
+            try:
+                with open(os.path.join(_output.PLUGIN_ROOT, *rel.split("/")), "r",
+                          encoding="utf-8") as fh:
+                    docs[rel] = fh.read()
+            except OSError:
+                docs[rel] = ""
+        hint = re.search(r"^argument-hint: '(.*)'$", docs["commands/task.md"], re.M)
+        row = [ln for ln in docs["README.md"].splitlines()
+               if ln.startswith("| `/audit:task` | ")]
+        readme_cell = row[0].split(" | ")[1] if row else ""
+        hint_flags = segment(hint.group(1) if hint else "")
+        readme_flags = segment(readme_cell)
+        section = _phase_section(docs["commands/task.md"],
+                                 "Subcommand: `skill-pin")
+        check("spv9 the verb is in the usage block, in VERB_FLAGS, in the argument "
+              "hint, in the README's row and in task.md's own section with "
+              "exactly the flags it reads: table %r, usage %r, hint %r, README %r, "
+              "section %r"
+              % (sorted(table_flags), sorted(usage_flags - universal),
+                 hint_flags and sorted(hint_flags),
+                 readme_flags and sorted(readme_flags),
+                 sorted(re.findall(r"--[a-z][a-z-]*", section))),
+              table_flags != set() and (usage_flags - universal) == table_flags
+              and hint_flags == table_flags and readme_flags == table_flags
+              and table_flags <= set(re.findall(r"--[a-z][a-z-]*", section)))
+        page = docs["reference/vendoring-a-skill.md"]
+        check("spv10 the vendoring page exists, carries the `## Checklist` "
+              "section a headless session is handed, names the verb, the "
+              "attribute line that stops a checkout converting a skill's bytes, "
+              "and points at SECURITY.md for what a pin does not prove instead "
+              "of copying it; the README and verbs-in-full link it, and the "
+              "build guide lists it: %r"
+              % ({"page": len(page), "readme": "vendoring-a-skill.md"
+                  in docs["README.md"],
+                  "verbs": "vendoring-a-skill.md"
+                  in docs["reference/verbs-in-full.md"]},),
+              "\n## Checklist\n" in page and "`## Checklist`" in page
+              and "skill-pin" in page
+              and "-text" in page and ".gitattributes" in page
+              and "SECURITY.md" in page
+              and "vendoring-a-skill.md" in docs["README.md"]
+              and "vendoring-a-skill.md" in docs["reference/verbs-in-full.md"]
+              and "vendoring-a-skill.md" in _read_guide())
+    finally:
+        if saved_home is None:
+            os.environ.pop("CLAUDE_CONFIG_DIR", None)
+        else:
+            os.environ["CLAUDE_CONFIG_DIR"] = saved_home
+        _harness.remove_tree(tmp)
+
+
+def _read_guide():
+    """PLUGIN-BUILD-GUIDE.md, whole, or "" when it cannot be read."""
+    try:
+        with open(os.path.join(_output.REPO_ROOT, "PLUGIN-BUILD-GUIDE.md"), "r",
+                  encoding="utf-8") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
 def _bcm_plan_holder_cases(check):
     """`build-command --remove` against the two plan-level lists that name
     `meta.buildCommands` keys beside a phase's `testGate` and a task's
@@ -24101,6 +24577,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("bcm-block", "_build_command_cases"),
           ("bcp-block", "_bcm_plan_holder_cases"),
           ("dsv-block", "_default_skills_cases"),
+          ("spv-block", "_skill_pin_cases"),
           ("xf-block", "_crossfile_cases"),
           ("rf-block", "_retired_flag_cases"),
           ("gx-block", "_gate_entry_cases"),

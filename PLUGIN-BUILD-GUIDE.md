@@ -118,6 +118,7 @@ claude-plugins/                           # this repo (personal, public)
         phase-signoff.md                  # Phase sign-off - split out so a command that never reaches it skips it
         manifest-conventions.md           # shared command conventions (ids, templates, revalidate)
         tracker-sync.md                   # tracker-sync contract (tracker-neutral half + the ADO binding)
+        vendoring-a-skill.md              # how an outside skill becomes a project skill a plan can pin
       schema/
         audit-plan.schema.json            # JSON Schema (draft 2020-12) for the manifest
         audit-config.schema.json          # JSON Schema for .claude/audit.config.json (panel validation)
@@ -441,7 +442,7 @@ L9:
   audit-logs -> _claude_home, _gate_feed, _output
   audit-lookup -> _areas, _claude_home, _clause_coverage, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _impact, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _scoped_commit, _skill_places
   audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _task_timing, _ui_theme, _worktrees
-  audit-task -> _affected_tests, _areas, _branch, _claude_home, _clause_coverage, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _impact, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _task_timing, _tree_stamp, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
+  audit-task -> _affected_tests, _areas, _branch, _claude_home, _clause_coverage, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _impact, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _skill_places, _status_facts, _task_outputs, _task_timing, _tree_stamp, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
@@ -3591,7 +3592,13 @@ against this machine's inventory (v0.30, dead patterns v0.38), `meta.buildComman
 against PATH, the branch-naming convention, and the skills the plan names — first against
 this machine (decided by `_skill_places.resolve_skill`, the launcher's own resolver, alone; the
 discovery scan only adds a sentence beside a refusal, and a portability verdict counts only when it
-describes the very file the resolver found) and then, as a second half, against what a CLONE would load. Every row
+describes the very file the resolver found) and then, as a second half, against what a CLONE would load. A plan
+that carries `meta.skillPins` gets the `skill pins` rows (`_plan_skill_pins`, called beside the
+resolution rows because those return early and a pin needs no scan): each pinned skill is the reader's
+own verdict (`_skill_places.pin_verdict`) worded by the stop's own `stop_words`, a pin nothing in the
+plan names is stale, the plan's unpinned skills are named as information, and a project skill whose
+working copy differs from HEAD says that a wave's sessions load the commit; a plan with no such key
+draws none of them. Every row
 is a WARNING at most — a missing directory or an uninstalled runner is a gap in this
 checkout or this machine, never proof the repo is broken, which is the lesson CI's manifest
 job taught by failing over a correct observation. `_leading_executable` resolves what a
@@ -7643,6 +7650,21 @@ and the task's own. The list is set whole, trimmed and deduped; an existing list
 naming it, unless `--replace`; `--replace` or `--remove` with nothing there is refused; `--skills
 null` is refused, since a plan-wide list has nothing above it for the task-level opt-out to stop.
 The write is index-only and records `defaultskills.change` with the old and the new list.
+
+`skill-pin <name> [--source TEXT] [--allow-personal-copy]` / `skill-pin <name> --remove --reason TEXT`
+writes or drops one `meta.skillPins` entry and computes nothing of its own: where the name resolves
+is `_skill_places.resolve_skill`, the digest is `_skill_places.skill_digest` of that copy's whole
+directory, whether the copy would reach another machine is `loaded_verdict`, and which pins already
+hold the directory is `covering_pins`. Every refusal is the reader's sentence with nothing written
+(a name nothing places, a directory with no digest, a personal copy without the flag, a `--remove`
+with no reason or of a name that is not pinned); a directory pinned under another spelling has THAT
+pin updated, and a plan already holding two pins on one directory with different digests is refused
+through `_manifest_rules.skill_pin_findings` - the half of `validate-manifest.py`'s reading the
+in-process validator cannot make, since it reads no file. The write goes through `_write_plan`
+(index-only, revalidated, rolled back on a finding) and records `skillpin.change` with the digest
+written or dropped as `from` and `to`; the last pin dropped takes the `skillPins` key with it.
+`reference/vendoring-a-skill.md` is the page that says how an outside skill gets to be one a pin can
+name.
 
 ### `plugins/audit/scripts/usage/audit-usage.py`
 `/audit:usage` — token spend, attributed, rendering its own final ASCII output (no box

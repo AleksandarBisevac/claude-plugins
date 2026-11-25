@@ -1497,7 +1497,8 @@
       "SG2.16-xk1",
       "SG2.17-xk1",
       "SG2.18-xk1",
-      "SG2.19-xk1"
+      "SG2.19-xk1",
+      "SG2.20-xk1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2244,7 +2245,8 @@
       "SG2.16-xk1",
       "SG2.17-xk1",
       "SG2.18-xk1",
-      "SG2.19-xk1"
+      "SG2.19-xk1",
+      "SG2.20-xk1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2845,7 +2847,8 @@
       "SG1.57-ukq",
       "SG2.3",
       "SG2.14-xk1",
-      "SG2.15-xk1"
+      "SG2.15-xk1",
+      "SG2.20-xk1"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -3326,7 +3329,8 @@
       "P168.5",
       "SG1.6",
       "SG1.15-ukq",
-      "SG2.3"
+      "SG2.3",
+      "SG2.20-xk1"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -5939,7 +5943,8 @@
       "SG1.6",
       "SG1.15-ukq",
       "SG1.22-ukq",
-      "SG1.24-ukq"
+      "SG1.24-ukq",
+      "SG2.20-xk1"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -6477,7 +6482,8 @@
       "P138.5-myr",
       "P148.7",
       "P148.11-xpz",
-      "P166.3-b8m"
+      "P166.3-b8m",
+      "SG2.20-xk1"
     ],
     "plugins/audit/scripts/status/_doctor_report.py": [
       "P53.5",
@@ -11926,7 +11932,8 @@
       "P159.1",
       "P159.3-pue",
       "SG1.6",
-      "SG1.24-ukq"
+      "SG1.24-ukq",
+      "SG2.20-xk1"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -12667,7 +12674,8 @@
       "P168.7",
       "P168.8-icj",
       "SG1.4",
-      "SG1.18-ukq"
+      "SG1.18-ukq",
+      "SG2.20-xk1"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -13076,7 +13084,8 @@
       "P148.7",
       "P148.11-xpz",
       "P157.9-mwz",
-      "P166.3-b8m"
+      "P166.3-b8m",
+      "SG2.20-xk1"
     ],
     "tests/test__doctor_report.py": [
       "P131.1"
@@ -13381,7 +13390,8 @@
       "SG1.24-ukq",
       "SG1.25-ukq",
       "SG2.1-ukq",
-      "SG2.3"
+      "SG2.3",
+      "SG2.20-xk1"
     ],
     "tests/test__report_html.py": [
       "P131.1",
@@ -13741,7 +13751,8 @@
       "SG1.15-ukq",
       "SG1.22-ukq",
       "SG1.24-ukq",
-      "SG2.3"
+      "SG2.3",
+      "SG2.20-xk1"
     ],
     "tests/test_audit_usage.py": [
       "P131.1",
@@ -14758,6 +14769,9 @@
     ],
     "tools/ui-tests/confirm-write.test.mjs": [
       "P168.13-icj"
+    ],
+    "plugins/audit/reference/vendoring-a-skill.md": [
+      "SG2.20-xk1"
     ]
   },
   "bugs": [
