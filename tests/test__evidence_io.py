@@ -4342,7 +4342,7 @@ def _tree_key_cases(check):
     # The alias above holds one name for one function; this holds the WRITE. A
     # run-test-gate that hashed locally at the write site while keeping the
     # alias would pass tk1 and disagree with every reader, so the key is read
-    # back off a row a real `--record --tree` run wrote and compared with the
+    # back off the record a real `--record --tree` run wrote and compared with the
     # reader's own function over the same directory. A second tree is measured
     # too, each in a project of its own so the second run is measured and not
     # a repeat of the first's verdict.
@@ -4381,14 +4381,16 @@ def _tree_key_cases(check):
         lines = []
         code = rtg.main([mpath, "P1", "--project-dir", project, "--record",
                          "--tree", tree], out=lines.append)
-        # The run's LEDGER row: a fixture repository with no commit gives a
-        # record whose `testedState.head` is null, which the reader refuses,
-        # so the read holds a row standing for that record beside the run.
-        got = M.read_rows(project, manifest_path=mpath)
-        rows = [r for r, src in zip(got["rows"], got["rowSources"])
-                if src == M.ROW_FROM_LEDGER]
-        written = ((rows[-1].get("testedState") or {}).get("tree") or {}
-                   ).get("key") if rows else None
+        # The run's RECORD, read off the plan as written: no row is written
+        # beside it, and a fixture repository with no commit gives a record
+        # whose `testedState.head` is null, which `read_rows` passes over.
+        with open(mpath, encoding="utf-8") as fh:
+            record = json.load(fh)["phases"][0].get(M.RECORD_KEY)
+        rows = [record] if isinstance(record, dict) else []
+        # A record keeps the key flat, under `RECORD_TREE_KEY`, where a row
+        # kept it as `tree.key` - the same value either way.
+        written = (rows[-1].get("testedState") or {}).get(
+            M.RECORD_TREE_KEY) if rows else None
         keys.append(written)
         shown.append((name, code, len(rows), written, M.tree_key(tree)))
         if name == "two" and linked:
@@ -10854,9 +10856,6 @@ _BB_ENTRIES = {
     "plugins/audit/scripts/governance/import-evidence.py": (
         "copies ledger rows from another tree; it names no subject's "
         "newest run, verdict or repeat"),
-    "plugins/audit/scripts/governance/record-outside-run.py": (
-        "records a suite that ran elsewhere; it reads runs only to place its "
-        "window beside them"),
     "plugins/audit/scripts/manifest/migrate-json-encoding.py": (
         "listed through an import whose readers it never calls: it rewrites "
         "the plan's encoding"),
@@ -11023,6 +11022,13 @@ def _bb_build(tmp, variant, phase, task, malformed):
         carrier = built[-1][2]
     built.append(_bb_gate(fx, phase, task))
     fx["green"] = built[-1][2]
+    # THE OLDER GREEN IN THE LEDGER is what a previous release left: no run
+    # writes a row now, so the fixture writes the one that release would
+    # have, the green as the reader gives it back, before the red replaces
+    # its record.
+    green_row = M.row_by_run(M.read_rows(root, manifest_path=mpath)["rows"],
+                             fx["green"])
+    M.append_row(root, dict(green_row))
     # A run is held by the subject it measured: a task's on the task, the
     # gate that measured it whichever.
     held_on = (phase, task)
@@ -12120,6 +12126,362 @@ def _plan_door_cases(check):
         _harness.remove_tree(tmp)
 
 
+# --- the upgrade: records replace rows, and the frozen rows read as before -------
+def _bu_ledger(root, rows):
+    """Write `rows` as the previous release left them - one chained file under
+    the evidence directory - and return that directory."""
+    evdir = M.evidence_dir(root)
+    os.makedirs(evdir, exist_ok=True)
+    name = "2026-11.previous-release.jsonl"
+    with io.open(os.path.join(evdir, name), "w", encoding="utf-8",
+                 newline="\n") as fh:
+        for linked in M.chain_file(rows, name):
+            fh.write(_journal_io.canonical(linked) + "\n")
+    return evdir
+
+
+def _bu_meta(mpath, change):
+    with io.open(mpath, encoding="utf-8") as fh:
+        body = json.load(fh)
+    change(body["meta"])
+    with io.open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(body, fh)
+
+
+def _bu_run(run_id, ts, task="P1.1"):
+    """A green run of `task` stamped `ts`, as the ledger row `row_for` builds."""
+    return M.row_for("/nowhere", {"status": "passed", "durationMs": 5,
+                                  "failed": [], "steps": [{"name": "sweep",
+                                                           "exit": 0}]},
+                     "task", {"taskId": task, "phaseId": "P1"},
+                     {"runId": run_id, "ts": ts, "startedAt": ts})
+
+
+def _bu_gate(mpath):
+    """`(exit, the GATE lines)` of audit-status's gate over the two conditions
+    a recorded run feeds - the exit and the lines that state the verdict."""
+    proc = subprocess.run(
+        [sys.executable, _loader.script_path("audit-status.py"), mpath,
+         "--gate", "--fail-on", "failing-tests,no-test-evidence"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        universal_newlines=True)
+    said = (proc.stdout + "\n" + proc.stderr).splitlines()
+    return proc.returncode, [ln for ln in said if ln.startswith("GATE ")]
+
+
+def _boundary_upgrade_cases(check):
+    """(bu) Across the upgrade that stops the rows: the evidence boundary never
+    moves later, records beside no key leave it not established rather than
+    absent, a plan's first record and its stamp are one write, and a plan and
+    ledger of the previous release answer the same - with the ledger there and
+    with it deleted."""
+    tmp = _harness.fixture_root("audit-evidence-upgrade-")
+    try:
+        t0, t2, t3, t5 = ("2026-11-01T08:00:00Z", "2026-11-02T08:00:00Z",
+                          "2026-11-03T08:00:00Z", "2026-11-05T08:00:00Z")
+        # --- a ledger row beside records that keep replacing each other ------
+        root = os.path.join(tmp, "replaced")
+        mpath, shards = ri_plan(root)
+        _bu_ledger(root, [_bu_run("R0", t0)])
+        ri_put_record(shards["P1"], "P1.1", M.run_record(_bu_run("R2", t2)))
+        first = M.evidence_boundary(root, mpath)
+        ri_put_record(shards["P1"], "P1.1", M.run_record(_bu_run("R3", t3)))
+        second = M.evidence_boundary(root, mpath)
+        check("bu1 THE BOUNDARY NEVER MOVES LATER AS RECORDS REPLACE EACH "
+              "OTHER: a plan with no key, a frozen ledger row at %s and a "
+              "record replaced by a newer one - the boundary is the frozen "
+              "row's moment before and after the replacement: %r / %r"
+              % (t0, first, second),
+              first["at"] == second["at"] == t0
+              and first["sources"] == second["sources"]
+              == {"key": None, "ledger": t0})
+
+        # --- a record alone dates nothing ----------------------------------
+        bare = os.path.join(tmp, "record-only")
+        bare_path, bare_shards = ri_plan(bare)
+        ri_put_record(bare_shards["P1"], "P1.1",
+                      M.run_record(_bu_run("R2", t2)))
+        alone = M.evidence_boundary(bare, bare_path)
+        check("bu2 RECORDS BESIDE NO KEY AND NO LEDGER LEAVE THE BOUNDARY NOT "
+              "ESTABLISHED, never absent: a plan holding a record at %s and "
+              "neither a key nor a ledger says recorded runs exist, lists the "
+              "start as unknown, and bounds it at the record from above - an "
+              "`at` of None would excuse every gap in the plan: %r"
+              % (t2, alone),
+              alone["at"] == t2
+              and alone["sources"] == {"key": None, "ledger": None}
+              and alone["basis"].startswith(
+                  "recorded runs exist and the boundary is not established")
+              and len(alone["unknown"]) == 1
+              and "not established" in alone["unknown"][0]
+              and t2 in alone["unknown"][0])
+
+        # --- the previous release's plan and ledger -------------------------
+        prev = os.path.join(tmp, "previous")
+        pv_path, pv_shards = ri_plan(prev)
+        rows = ri_rows(prev)
+        _bu_ledger(prev, rows)
+        latest = M.latest_by_subject(rows)
+        with io.open(pv_shards["P1"], encoding="utf-8") as fh:
+            body = json.load(fh)
+        body["status"] = "done"
+        body[M.POINTER_KEY] = M.pointer_for(latest[("phase", "P1")])
+        for task in body["tasks"]:
+            task["status"] = "done"
+            if ("task", task["id"]) in latest:
+                task[M.POINTER_KEY] = M.pointer_for(latest[("task", task["id"])])
+        with io.open(pv_shards["P1"], "w", encoding="utf-8") as fh:
+            json.dump(body, fh)
+        _bu_meta(pv_path, lambda meta: meta.update(
+            {M.SINCE_KEY: M.since_from_rows(rows)}))
+        read = M.read_rows(prev, manifest_path=pv_path)
+        derived = dict(("%s %s" % k, M.pointer_for(v))
+                       for k, v in M.latest_by_subject(read["rows"]).items())
+        stored = dict([("phase P1", body[M.POINTER_KEY])] + [
+            ("task %s" % (t["id"],), t[M.POINTER_KEY])
+            for t in body["tasks"] if M.POINTER_KEY in t])
+        verified = M.verify(prev)
+        held_gate = _bu_gate(pv_path)
+        held_boundary = M.evidence_boundary(prev, pv_path)
+        _harness.remove_tree(M.evidence_dir(prev))
+        gone_gate = _bu_gate(pv_path)
+        gone_boundary = M.evidence_boundary(prev, pv_path)
+        check("bu4 A PLAN AND LEDGER OF THE PREVIOUS RELEASE: every pointer "
+              "the plan stores is the one the reader derives from the frozen "
+              "rows, and the ledger verifies: %r / %r / %r"
+              % (derived, stored, (verified.get("ok"), verified.get("rows"))),
+              derived == stored and len(stored) == 4
+              and verified.get("ok") is True
+              and verified.get("rows") == len(rows)
+              and read.get("records") == 0)
+        check("bu5 ...AND WITH THE LEDGER DELETED the two conditions a recorded "
+              "run feeds (failing-tests, no-test-evidence) answer as they did, "
+              "on the boundary the plan's key states - the gate is not vacuous, "
+              "the red task fails it both times: %r / %r / %r / %r"
+              % (held_gate, gone_gate, held_boundary["at"],
+                 gone_boundary["at"]),
+              held_gate == gone_gate and held_gate[0] == 1
+              and any("failing-tests" in ln for ln in held_gate[1])
+              and held_boundary["at"] == gone_boundary["at"]
+              == M.since_from_rows(rows)["at"])
+
+        # --- the one-time stamp: the run, and the frozen rows ---------------
+        stamped = os.path.join(tmp, "stamped")
+        st_path, _st = ri_plan(stamped)
+        st_ev = _bu_ledger(stamped, [_bu_run("R0", t0)])
+        got = M.write_evidence_since(stamped, st_path, "P1",
+                                     run=_bu_run("R5", t5))
+        _harness.remove_tree(st_ev)
+        after = M.evidence_boundary(stamped, st_path)
+        fresh = os.path.join(tmp, "fresh")
+        fr_path, fr_shards = ri_plan(fresh)
+        ri_put_record(fr_shards["P1"], "P1.2",
+                      M.run_record(_bu_run("R2", t2, task="P1.2")))
+        new = M.write_evidence_since(fresh, fr_path, "P1",
+                                     run=_bu_run("R5", t5))
+        again = M.write_evidence_since(fresh, fr_path, "P1",
+                                       run=_bu_run("R9", "2026-11-09T08:00:00Z"))
+        check("bu3 THE STAMP IS THE EARLIEST RUN THE PLAN HOLDS AND THE RUN "
+              "BEING RECORDED: on a plan with no key the first run of this "
+              "release stamps the frozen row's moment (%s), not its own, so "
+              "with the ledger then deleted the boundary still stands there; "
+              "with no ledger a record standing at %s is earlier than the run "
+              "(%s) and dates the stamp - only ever earlier - and a later run "
+              "moves nothing: %r / %r / %r / %r"
+              % (t0, t2, t5, got, after, new, again),
+              got["written"] is True and got["at"] == t0
+              and after["at"] == t0 and after["sources"]["key"] == t0
+              and new["written"] is True and new["at"] == t2
+              and again["written"] is False and again["at"] == t2)
+
+        # --- the record and the stamp are one write ------------------------
+        ids = {"taskId": "P1.1", "phaseId": "P1"}
+        one = os.path.join(tmp, "one-write")
+        one_path, one_shards = ri_plan(one)
+        # A git root is what gives a project its lock scheme.
+        _harness.git(None, "init", "-q", one, prefix=("git",))
+
+        def _stamp(path):
+            with io.open(path, encoding="utf-8") as fh:
+                return M.since_block(json.load(fh))
+
+        def _held(shard, task="P1.1"):
+            with io.open(shard, encoding="utf-8") as fh:
+                body = json.load(fh)
+            holder = body if task is None else [
+                t for t in body["tasks"] if t["id"] == task][0]
+            return holder.get(M.RECORD_KEY)
+        _locks.acquire(one, "index", session="bu-holder", out=lambda *_a: None)
+        busy = M.write_record(one, one_path, "task", ids,
+                              M.run_record(_bu_run("R2", t2)),
+                              session_id="bu-writer", wait=0.2)
+        _locks.release(one, "index", session="bu-holder", out=lambda *_a: None)
+        busy_state = (_stamp(one_path), _held(one_shards["P1"]))
+        wrote = M.write_record(one, one_path, "task", ids,
+                               M.run_record(_bu_run("R2", t2)),
+                               session_id="bu-writer")
+        first_stamp = _stamp(one_path)
+        later = M.write_record(one, one_path, "task", ids,
+                               M.run_record(_bu_run("R5", t5)),
+                               session_id="bu-writer")
+        since_rows = [r for r in _journal_io.read_all(one)
+                      if r.get("action") == M.ACTION_SINCE]
+        check("bu6 A PLAN'S FIRST RECORD AND ITS BOUNDARY ARE ONE WRITE: with "
+              "the index lock held elsewhere neither lands; with it free the "
+              "record's write stamps `meta.evidenceSince` at the run's own "
+              "moment (%s) in the same locked write - nothing is left for a "
+              "second acquisition to lose - and a later record leaves the "
+              "stamp exactly where it stands, journalled once: busy=%r/%r "
+              "wrote=%r stamp=%r later=%r rows=%r"
+              % (t2, busy.get("written"), busy_state, wrote.get("since"),
+                 first_stamp, later.get("since"), len(since_rows)),
+              busy["written"] is False and busy_state == (None, None)
+              and wrote["written"] is True
+              and wrote.get("since") == {"written": True, "at": t2,
+                                         "reason": None}
+              and (first_stamp or {}).get("at") == t2
+              and (first_stamp or {}).get("runId") == "R2"
+              and later["written"] is True
+              and later.get("since") == {"written": False, "at": t2,
+                                         "reason": None}
+              and _stamp(one_path) == first_stamp
+              and (_held(one_shards["P1"]) or {}).get("runId") == "R5"
+              and len(since_rows) == 1)
+
+        flat = os.path.join(tmp, "one-file")
+        _project(flat, {"manifestPath": "docs/audit/audit-plan.json"})
+        os.makedirs(os.path.join(flat, "docs", "audit"), exist_ok=True)
+        flat_path = os.path.join(flat, "docs", "audit", "audit-plan.json")
+        with io.open(flat_path, "w", encoding="utf-8") as fh:
+            json.dump({"meta": {"version": 3}, "phases": [
+                {"id": "P1", "title": "one", "status": "in_progress",
+                 "testGate": ["sweep"], "tasks": [
+                     {"id": "P1.1", "title": "t", "status": "in_progress"}]}]},
+                fh)
+        flat_wrote = M.write_record(flat, flat_path, "task", ids,
+                                    M.run_record(_bu_run("R3", t3)))
+        with io.open(flat_path, encoding="utf-8") as fh:
+            flat_body = json.load(fh)
+        check("bu7 ...AND IN THE ONE-FILE LAYOUT THEY ARE ONE SAVE: the index "
+              "is the phase body, so the stamp and the record land in the same "
+              "bytes: %r / %r"
+              % (flat_wrote.get("since"), M.since_block(flat_body)),
+              flat_wrote["written"] is True
+              and (M.since_block(flat_body) or {}).get("at") == t3
+              and flat_body["phases"][0]["tasks"][0].get(
+                  M.RECORD_KEY, {}).get("runId") == "R3")
+
+        # --- records older than every frozen source ------------------------
+        late = os.path.join(tmp, "late-ledger")
+        late_path, late_shards = ri_plan(late)
+        _bu_ledger(late, [_bu_run("R5", t5)])
+        ri_put_record(late_shards["P1"], "P1.1",
+                      M.run_record(_bu_run("R2", t2)))
+        late_b = M.evidence_boundary(late, late_path)
+        check("bu8 A RECORD EARLIER THAN THE LEDGER'S EARLIEST ROW, BESIDE NO "
+              "KEY, IS NOT DATED BY THE LEDGER: recording began no later than "
+              "the record (%s), so the ledger's %s would excuse work the plan "
+              "shows was recordable - the boundary is not established, and "
+              "bounded at the record: %r" % (t2, t5, late_b),
+              late_b["at"] == t2
+              and late_b["sources"] == {"key": None, "ledger": t5}
+              and len(late_b["unknown"]) == 1
+              and "not established" in late_b["unknown"][0]
+              and late_b["basis"].startswith(
+                  "recorded runs exist and the boundary is not established"))
+
+        # --- what the gate makes of it ----------------------------------------
+        gated = os.path.join(tmp, "gated")
+        g_path, g_shards = ri_plan(gated)
+        ri_put_record(g_shards["P1"], "P1.1", M.run_record(_bu_run("R3", t3)))
+        with io.open(g_shards["P1"], encoding="utf-8") as fh:
+            g_body = json.load(fh)
+        g_body["tasks"][1].update(status="done", completedAt=t2)
+        with io.open(g_shards["P1"], "w", encoding="utf-8") as fh:
+            json.dump(g_body, fh)
+        unstamped = _bu_gate(g_path)
+        _bu_meta(g_path, lambda meta: meta.update(
+            {M.SINCE_KEY: {"at": t3, "basis": M.SINCE_BASIS}}))
+        stamped_gate = _bu_gate(g_path)
+        check("bu9 NO-TEST-EVIDENCE DOES NOT EXCUSE ON A BOUNDARY THAT IS NOT "
+              "ESTABLISHED: a done task finished at %s with no run, beside a "
+              "record at %s and no key, fails the gate - the excuse rests on "
+              "an unknown start, which the gate refuses - while the same plan "
+              "stating its boundary at %s passes it: %r / %r"
+              % (t2, t3, t3, unstamped, stamped_gate),
+              unstamped[0] == 1
+              and any("no-test-evidence" in ln for ln in unstamped[1])
+              and stamped_gate[0] == 0)
+
+        # --- a save that fails between the two files ------------------------
+        def _failing_save(path_part):
+            real = M._mio.save_plan_json
+
+            def save(path, body, *a, **k):
+                if path_part in os.path.abspath(path):
+                    raise OSError("save refused by the fixture")
+                return real(path, body, *a, **k)
+            M._mio.save_plan_json = save
+            return lambda: setattr(M._mio, "save_plan_json", real)
+
+        def _bytes(path):
+            with io.open(path, "rb") as fh:
+                return fh.read()
+
+        def _since_rows(root):
+            return [r for r in _journal_io.read_all(root)
+                    if r.get("action") == M.ACTION_SINCE]
+        sf = os.path.join(tmp, "shard-fails")
+        sf_path, sf_shards = ri_plan(sf)
+        sf_before = (_bytes(sf_path), _bytes(sf_shards["P1"]))
+        put_back = _failing_save(os.path.join("phases", "P1.json"))
+        try:
+            sf_got = M.write_record(sf, sf_path, "task", ids,
+                                    M.run_record(_bu_run("RS", t2)))
+        finally:
+            put_back()
+        check("bu10 THE SHARD'S SAVE FAILING SAVES NO STAMP: the record is "
+              "saved before the index, so a refused shard leaves the index "
+              "byte for byte as it was - no `meta.evidenceSince` naming a run "
+              "no file holds, and no journal row claiming one: %r"
+              % ((sf_got.get("written"), sf_got.get("reason"),
+                  sf_got.get("since"), _stamp(sf_path), len(_since_rows(sf))),),
+              sf_got["written"] is False
+              and "cannot write" in str(sf_got.get("reason"))
+              and (_bytes(sf_path), _bytes(sf_shards["P1"])) == sf_before
+              and _stamp(sf_path) is None
+              and (sf_got.get("since") or {}).get("written") is False
+              and _since_rows(sf) == [])
+        xf = os.path.join(tmp, "index-fails")
+        xf_path, xf_shards = ri_plan(xf)
+        xf_index = _bytes(xf_path)
+        put_back = _failing_save(os.path.join("audit", "audit-plan.json"))
+        try:
+            xf_got = M.write_record(xf, xf_path, "task", ids,
+                                    M.run_record(_bu_run("RX", t2)))
+        finally:
+            put_back()
+        xf_boundary = M.evidence_boundary(xf, xf_path)
+        check("bu11 ...AND THE INDEX'S SAVE FAILING AFTER THE SHARD'S LEAVES THE "
+              "RECORD ALONE, said as it is: the record stands, the answer says "
+              "no boundary was written and why - never what the change "
+              "answered - no journal row claims a stamp, and the boundary "
+              "reads as not established: %r"
+              % ((xf_got.get("written"), xf_got.get("since"),
+                  len(_since_rows(xf)), xf_boundary["basis"]),),
+              xf_got["written"] is True
+              and (_held(xf_shards["P1"]) or {}).get("runId") == "RX"
+              and _bytes(xf_path) == xf_index
+              and (xf_got.get("since") or {}).get("written") is False
+              and "cannot write" in str((xf_got.get("since") or {}).get(
+                  "reason"))
+              and _since_rows(xf) == []
+              and xf_boundary["basis"].startswith(
+                  "recorded runs exist and the boundary is not established"))
+    finally:
+        _harness.remove_tree(tmp)
+
+
 # A STAGED SUITE: each row is a block the sweep runs as a job of its own, on one
 # slot, and replays in this order (`_harness.staged_main`), so the case ids,
 # their order and the tally are a one-process run's. Run whole in one process,
@@ -12150,7 +12512,8 @@ STAGES = (("wh-block", "_withheld_cases"), ("rf-block", "_read_field_cases"),
           ("rfg-block", "_runnable_full_gate_cases"),
           ("kv-block", "_keep_both_verb_cases"),
           ("kc-block", "_container_twice_cases"),
-          ("pd-block", "_plan_door_cases"))
+          ("pd-block", "_plan_door_cases"),
+          ("bu-block", "_boundary_upgrade_cases"))
 # The prefix of the directory a full run's blocks report into.
 _STAGE_PREFIX = "evidence-io-stages-"
 

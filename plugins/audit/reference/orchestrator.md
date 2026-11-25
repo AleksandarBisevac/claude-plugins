@@ -305,22 +305,16 @@ The row carries `testedState.tree`, a hash key naming the measured tree and neve
 path a gate command prints goes through the ledger's write-boundary scrub like every other string.
 It is refused by name with `--full` or `--reconcile`, and when `<dir>` is not a directory.
 
-**A suite this plugin did not start is invisible to that line until somebody records it.** A
-pre-push hook runs one on `git push`, a developer runs one in a second terminal, a commit hook
-runs one — and one of those overlapping a recorded gate is where a red got attributed to the
-plugin's own run. When you know such a suite ran, record it:
-
-```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/record-outside-run.py" \
-    <manifestPath> --project <projectDir> --label "<what ran>" \
-    --started <ISO> [--ended <ISO> | --duration-ms N] [--status passed|failed]
-```
-
-It writes a row with no task and no phase on it, so it can never be pointed at work or stand in
-for a gate — it exists so the overlap question has something to find. **Do not try to infer one
-from the spelling of a command**: reading a Bash line for the word `test` or `push` is the
-guess-from-the-spelling mistake this product keeps being repaired for, and it is wrong in both
-directions on the first project that wraps its own runner.
+**A suite this plugin did not start is invisible to that line.** A pre-push hook runs one on
+`git push`, a developer runs one in a second terminal, a commit hook runs one — and one of those
+overlapping a recorded gate is where a red got attributed to the plugin's own run. Nothing records
+such a run any more: a recorded run's copy is its subject's record in the plan, and an outside
+suite has no subject to hold one. Outside runs an earlier release recorded stay in the evidence
+ledger and the line still finds them. When you know such a suite overlapped a red, say so in the
+task's note rather than re-running the gate blind. **Do not try to infer one from the spelling of
+a command**: reading a Bash line for the word `test` or `push` is the guess-from-the-spelling
+mistake this product keeps being repaired for, and it is wrong in both directions on the first
+project that wraps its own runner.
 
 ## Concurrency lock
 
@@ -456,9 +450,10 @@ commits once every gate is green. So `failed`, `gate-mutated`, `no-checks`, `tim
 evidence can sit in a working tree forever — exactly the history the record exists to keep.
 
 **The gap is narrower than "every failure", which is why this is rare.** A task commit stages the
-evidence directory, so it carries every row written since the last one: a run that fails at attempt
-1 and succeeds at attempt 2 is already durable, failure included. What is not durable is a run
-whose task or phase **never subsequently commits**. Run this at those points, and only those:
+task's shard, so it carries the task's record - its newest recorded run. A recorded task or phase
+run writes no evidence row, so a run that fails at attempt 1 and is replaced by attempt 2's is not
+kept: one record per subject, the newest. What is not durable at all is a run whose task or phase
+**never subsequently commits**. Run this at those points, and only those:
 
 ```
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-task-work.py" <manifestPath> <phaseId> --state
@@ -553,11 +548,11 @@ answer and not a miss.
 **`run` reads the evidence ledger, not the manifest or the journal — it is what a background
 gate's verdict is read back from.** A gate expected to outlast the Bash tool's foreground bound
 runs under `run_in_background`, so its own terminal may never be read to the end; the run
-records its row once the measurement completes and **before** its banner, so the verdict is
+writes its record once the measurement completes and **before** its banner, so the verdict is
 never lost to a truncated terminal. Read it back with the `runId` the run's own `evidence:
 recorded <runId>` line named, or with `run latest --phase <id>` / `run latest --task <id>` when
 that id was not kept. **Never read a background gate's verdict off a truncated terminal** — the
-ledger row is what the recording already made durable.
+record is what the recording already made durable.
 
 **`brief` is the one of these you do not run.** It answers what an EXECUTOR would otherwise grep
 the manifest or the journal for; the drive writes it at each `dispatch` with `--role`, and the
@@ -672,7 +667,7 @@ passed:**
 
 - **Run and recorded.** Nothing is skipped: the mute is judged after the step ran
   (`run-test-gate.mute_decision`), the step keeps its exit and the names that failed, and it
-  carries a `muted` marker on the evidence row. The terminal prints
+  carries a `muted` marker on the run's record. The terminal prints
   `muted: <suite> failed (bug <id>, until <day>)` under the step.
 - **Never blocks.** A step whose whole failure a live mute covers is left out of the failed
   steps (`failed_steps`), so the run can pass.

@@ -2760,7 +2760,7 @@
     {
       "id": "P169.8",
       "title": "No evidence row is written: the record in the shard is the only copy, and the older rows are frozen history",
-      "status": "pending",
+      "status": "cancelled",
       "description": "Stop the writes. A recorded run of any scope appends no row, writes no anchor row to the journal for it and chains nothing; its record in the shard and, for a task, its commit's trailers are the record. The set of paths a recorded run writes (recorded_paths) loses the evidence directory, and every reader of that set follows through the one function: the reuse identity, the left-out reading and its names, the stamp's recorder exclusion, the scope digest, the commit scope and its label, and the landing refusal's evidence half. `evidence.dir` stays a read key: it is where the frozen rows are. Rows already written are never rewritten, migrated or deleted by this plugin, and a ledger written before this release keeps verifying.\n\nRemoved: import-evidence.py (the CI row adapter) and the gate runner's --writer; record-outside-run.py writes its subject's record instead of a row, or is removed if no caller remains (say which, with the grep).\n\nCOMPATIBILITY.md gains the major section's entries for this phase: the evidence file is no longer written; `testEvidence` stops meaning a cache of that file and is the pointer to the subject's record or to the run its commit names, and deleting the block is still always safe; --record's exit 3 means the shard record was not written; sign-off, done and close bind to the newest recorded run, a record or an older row; --failing-from and couple --basis-run resolve a record or an older row and no superseded run; tallies over history count one run per subject from this release on; the unknown-full-run arm about an unreadable ledger is restated. CHANGELOG.md says the first run after the upgrade measures every step, because the key no longer leaves the evidence directory out.\n\nACCEPTANCE.\n1. A fixture phase driven from its first task to sign-off leaves the bytes under the evidence directory identical, and no task commit of it contains a path under that directory.\n2. recorded_paths equals the set of paths a recorded run modifies, by git status in a fixture; the difference in the plan's meta across a recorded run is within the recorder's own keys.\n3. On a plan and ledger as the previous release wrote them, status, the report, failing-tests and no-test-evidence answer the same after this change; with the ledger then deleted the two conditions still answer the same and the report says pointer without evidence, never failed.\n4. The evidence boundary never moves later across the upgrade, and a record's moment never feeds it.\n5. The doctor reports the trail from the plan and git, verifies a frozen ledger that is present, and says so when none is.\n6. tools/check-example-ledgers.py, the demo generator and the committed examples are consistent with what the release writes: decide whether the examples keep a frozen ledger as history or carry records, state it, and keep `python3 tools/check-rendered-artifacts.py` green.\n7. The code lines removed and added, by the plan's command, in the outcome.\n\nDEPENDANTS to answer for by name: every caller of append_row, record and write_pointer; the journal's anchor row and whoever reads it (the doctor, audit-journal.py's merge and verify); _invariants.py's and commit-task-work.py's record paths; close-phase.py's ignored-stamp refusal; stamp-verification.py's recorder exclusion; tools/check-committed-pii.py, tools/check-rendered-artifacts.py and tools/check-git-pipeline.py (each names the evidence directory); SECURITY.md's fail-mode table if a row's write was in it; and the README or reference page that tells a user to commit the evidence directory.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -2837,15 +2837,15 @@
         "P169.35-6l3",
         "P169.36-6l3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Cut before any work into P169.37-6l3 (stop the write), P169.38-6l3 (recorded_paths and its readers), P169.39-6l3 (doctor trail), P169.40-6l3 (demo and examples): one property and about five code files per task, the 4.0.0 line's task-size rule. This description and its ACCEPTANCE stay the authority the cuts point at."
       },
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-11-25T17:16:09Z",
+      "completedAt": "2026-11-25T17:17:33Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -2901,7 +2901,12 @@
           "text": "its comments name COMPATIBILITY.md as where two config-key decisions are recorded, and share four ordinary words with a sentence the trailers section added; this task adds a section of its own to that document and leaves the config-key entries those comments point at as they are",
           "waives": "plugins/audit/hooks/_config.py"
         }
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-25T17:16:09Z"
+      },
+      "reviewPerTask": "signals"
     },
     {
       "id": "P169.9",
@@ -10004,7 +10009,7 @@
     {
       "id": "P169.35-6l3",
       "title": "The Overview and the report page show an unreadable run record as unreadable, with the read's sentence as visible text",
-      "status": "in_progress",
+      "status": "done",
       "description": "Left by P169.34 (read its CHANGELOG line and hand-back): the panel payload and the report data now carry the word `unreadable` for a subject whose own run record cannot be read, but the page sources do not draw it. overview.js's evState reads the composition row's pointer plus evidence.runs[rid], so the Overview badge still draws `passed` when the ledger holds the older run; TEV_LABELS, TEV_ORDER, badges.css and the panel's EVWORD have no entry for the word, so there is no tint and the roll-up chip uses the fallback label; and the read's own sentence (file, subject, field, the --record step) is only in a title attribute, not visible text (P169-R89; read it and close it here). Fix at the source of each surface: the Overview reads rollup.testEvidence.failing rows with status unreadable; one label and one tint from _ui_theme for both surfaces; the sentence visible on both pages. Read the refactoring-the-assembled-ui and writing-javascript/writing-css skills first and print the pins with tools/count-ui-pins.py before editing. A plan with no unreadable record renders byte for byte as before. The vitest case runs with npx vitest run tools/ui-tests/overview-outcome.test.mjs; the browser gates (node tools/check-report-interactive.mjs, the panel gate) must stay green; the orchestrator runs them, not the executor (machine-wide capture lock), so hand back the commands. The owner sees the page before the phase lands (owner rule: green light before UI work ships).",
       "files": [
         "plugins/audit/scripts/ui/panel/overview.js",
@@ -10071,14 +10076,19 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "977a89e2bf07",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "An unreadable run record is drawn as unreadable on both pages. Panel (overview.js): renderOver reads rollup.testEvidence.failing rows with status unreadable and hands them to ovDetail; evMarkLost marks the matching task and phase rows (copies, payload untouched); evState answers key unreadable before reading the pointer, so badge, roll-up count and sign-off line agree; evidence.unreadablePlanSaid is shown once per phase detail (row facts when absent); EVWORD/EVORDER entries; status-colours.css puts unreadable in the warn group. Report (_report_html.py): TEV_UNREADABLE, TEV_LABELS/TEV_ORDER entries, _tev_note draws the read's sentence as escaped visible text in the cell, bug cell and phase marks; badges.css amber group plus .tevnote. One label row _ui_theme.EVIDENCE_WORD (Run record unreadable) in LABELS. Tests: overview-outcome.test.mjs ou1-ou12 (38 passed), test__report_html uv1-uv8 and css-ur (189/189), test__ui_theme ev-w1/ev-w2 (80/80), test__panel_page ev2c (red on a scratch copy without the selector). Mutation probes on a scratch copy: 11 vitest and 10 python mutants all red. Rendered followers regenerated (check-rendered-artifacts green); screenshots re-shot by the orchestrator. Plain report/panel body and Markdown byte-identical for plans with no unreadable record; only the inline stylesheet differs. Dependants: part list of _panel_ui unchanged; no helper-name collisions in ui/; Markdown twin uses the key so unchanged; test__panel_page pins ev1/ev10c/ev14/ev15/ps1-3 kept by leaving the pinned signatures and reading the roll-up in renderOver's existing alias.",
+        "descriptive": "The Overview and the report show a subject whose run record cannot be read as 'Run record unreadable' in the warn tint, with the read's sentence as visible text."
       },
       "startedAt": "2026-11-25T16:30:26Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-25T17:16:06Z",
+      "verifiedBy": [
+        "vitest: a subject the rollup lists as unreadable draws the unreadable badge, never the pointer's passed (12 cases incl. scope, status, prototype-name ids, once-per-phase sentence, payload not written)",
+        "report: the evidence cell of an unreadable record carries the read's sentence as visible text, the label and the amber tint (uv1-uv8, css-ur)",
+        "ui_theme: EVIDENCE_WORD is one row in LABELS (ev-w1, ev-w2)",
+        "panel page: unreadable sits in the warn group (ev2c)"
+      ],
       "notes": [
         {
           "at": "2026-11-25T16:30:23Z",
@@ -10106,6 +10116,24 @@
             "ms": 445117,
             "basis": "durationMs in run 2026-11-25T17:14:58Z.22b44c's record (run-test-gate --record)",
             "runId": "2026-11-25T17:14:58Z.22b44c"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-25T17:07:00Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 2192000,
+            "startedAt": "2026-11-25T16:30:28Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-25T17:14:58Z.22b44c",
+            "kind": "wait",
+            "ms": 1000,
+            "startedAt": "2026-11-25T17:07:08Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 977a89e2bf07",
+            "kind": "commit",
+            "ms": 2079,
+            "startedAt": "2026-11-25T17:16:02Z"
           }
         ],
         "firstStartedAt": "2026-11-25T16:30:26Z"
@@ -10358,6 +10386,18 @@
         "runId": "2026-11-25T17:16:01Z.0b9842",
         "status": "passed",
         "at": "2026-11-25T17:16:01Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "977a89e2bf07",
+        "at": "2026-11-25T17:16:06Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-25T17:06:59Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__report_html.py` in a throwaway tree at HEAD exited 1 with 3 of 186 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - css-ur CONSTRUCT: a subject whose own run record cannot be read is TINTED - `unreadable` sits in the same amber group, and is named exactly once in the stylesheet - not left to the `.chip` default grey, which is the colour of an absence: ':where(.chip,.tevn)[data-tev=\"gate-mutated\"],\\n:where(.chip,.tevn)[data-tev=\"no-checks\"],\\n:where(.chip,.tevn)[data-tev=\"timed-out\"],\\n:where(.chip,.tevn)[data-tev=\"could-not-run\"],\\n:where(.chip,.tevn)[data-tev=\"undated\"],\\n:where(.chip,.tevn)[data-tev=\"ledger-unreadable\"],\\n:where(.chip,.tevn)[data-tev=\"dangling\"]' (house FAIL) and 2 more: SELFTEST FAILED: 182/186 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -10564,6 +10604,591 @@
         "basis": "regression task, tests.expectRedFirst false: the red is CI release run 45638311139 (commit 8bbfa87c), Windows legs plain 5 and cp1252 1, kt3 and kt4b in tests/test__manifest_io.py; it cannot be reproduced on darwin. Green: CI run 45649499978 (branch ci/P169-36q), every leg including Windows, on this tree. Probe run 45646423969 was red on Windows only for kt3, ur1, ur7 expectations, fixed here. kt4d was shown red on posix by mutating shard_file to a bare join (206/207), restored 207/207.",
         "at": "2026-11-25"
       }
+    },
+    {
+      "id": "P169.37-6l3",
+      "title": "A recorded run appends no evidence row and writes no journal anchor for it; the shard record is the only copy",
+      "status": "in_progress",
+      "description": "This is a cut of P169.8 (cancelled before any work; read its description and ACCEPTANCE in docs/audit/phases/P169.json - the umbrella text stays the authority for the whole property, this task owns only the slice below). Slice: STOP THE WRITE. A recorded run of any scope appends no row, writes no journal anchor row for it and chains nothing (run-test-gate.py, _evidence_io's append_row/record/write_pointer paths). Remove import-evidence.py (the CI row adapter, its suite, its LAYERS row) and the gate runner's --writer; record-outside-run.py writes its subject's record instead of a row, or is removed if no caller remains (say which, with the grep). evidence.dir stays a read key; rows already written are never rewritten, migrated or deleted, and a ledger of the previous release keeps verifying and reads the same (umbrella ACCEPTANCE 1 for the run itself, 3, 4). recorded_paths is NOT changed here (the next cut does it; with no row written, keeping the directory in the set is harmless). COMPATIBILITY.md: the evidence file is no longer written; testEvidence is the pointer to the subject's record or to the run its commit names, deleting the block still safe; --record's exit 3 means the shard record was not written; tallies count one run per subject from this release on; the unknown-full-run arm about an unreadable ledger restated. Answer by name: every caller of append_row, record and write_pointer; the journal's anchor row and its readers (doctor, audit-journal.py merge/verify) - a reader outside your list that breaks: stop and say. State removed/added code lines in the outcome.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/record-outside-run.py",
+        "plugins/audit/scripts/governance/import-evidence.py",
+        "tools/lints/_deps.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__evidence_io.py",
+        "tests/test_record_outside_run.py",
+        "tests/test_import_evidence.py",
+        "tests/test__deps.py",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/reference/phase-signoff.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/README.md",
+        ".github/sweep-costs.json",
+        "tools/affected.py",
+        "tests/test__affected_tests.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test__invariants.py",
+        "tests/test_commit_task_work.py",
+        "tests/test_drive_phase.py",
+        "tests/test_drive_without_model.py",
+        "plugins/audit/scripts/governance/audit-journal.py",
+        "plugins/audit/reference/manifest-conventions.md",
+        "tools/check-git-pipeline.py",
+        "tests/test_merge_manifest.py",
+        "plugins/audit/scripts/manifest/merge-manifest.py",
+        "plugins/audit/scripts/governance/_affected_tests.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: a recorded run appends no row and leaves the evidence directory's bytes identical; exit 3 means the shard record was not written",
+          "tests/test__evidence_io.py: the boundary never moves later when records replace rows and a record's moment never feeds it; a plan and ledger of the previous release give the same pointers, and the same conditions with the ledger deleted"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test__deps.py tests/test__invariants.py tests/test_commit_task_work.py tests/test_drive_phase.py tests/test_drive_without_model.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.5",
+        "P169.6",
+        "P169.7",
+        "P169.15-6l3",
+        "P169.16-6l3",
+        "P169.18-6l3",
+        "P169.19-6l3",
+        "P169.21-6l3",
+        "P169.22-6l3",
+        "P169.23-6l3",
+        "P169.24-6l3",
+        "P169.25-6l3",
+        "P169.26-6l3",
+        "P169.27-6l3",
+        "P169.28-6l3",
+        "P169.29-6l3",
+        "P169.30-6l3",
+        "P169.31-6l3",
+        "P169.32-6l3",
+        "P169.33-6l3",
+        "P169.34-6l3",
+        "P169.35-6l3",
+        "P169.36-6l3"
+      ],
+      "attempts": 3,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-25T21:53:38Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-25T17:17:54Z",
+          "text": "quotes run-test-gate's 'the work under test declares no files' sentence, which this task keeps; the ledgers check itself is P169.40-6l3's",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-25T17:17:54Z",
+          "text": "COMPATIBILITY.md readers quote existing sections this task does not reword; it adds entries to the major section",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-25T17:17:54Z",
+          "text": "COMPATIBILITY.md readers quote existing sections this task does not reword; it adds entries to the major section",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-25T17:17:54Z",
+          "text": "COMPATIBILITY.md readers quote existing sections this task does not reword; it adds entries to the major section",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-25T17:17:54Z",
+          "text": "COMPATIBILITY.md readers quote existing sections this task does not reword; it adds entries to the major section",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-25T17:17:54Z",
+          "text": "COMPATIBILITY.md readers quote existing sections this task does not reword; it adds entries to the major section",
+          "waives": "tests/test__manifest_phases.py"
+        },
+        {
+          "at": "2026-11-25T17:17:54Z",
+          "text": "reads the '## [Unreleased]' heading; this task adds entries under it and keeps the heading",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-25T21:53:35Z",
+          "text": "quotes a guide sentence about scope spelling that this task does not reword",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-25T21:53:35Z",
+          "text": "quotes orchestrator.md's 'never git push/force-push/stash' line, which this task keeps",
+          "waives": ".claude/hooks/guard-uncommitted.py"
+        },
+        {
+          "at": "2026-11-25T21:53:35Z",
+          "text": "quotes the sweep-costs comment about blocks, which this task keeps; it only drops the deleted suite's row",
+          "waives": "tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-11-25T21:53:35Z",
+          "text": "audit-journal.py's own suite; this task changes one docstring line there, no behaviour",
+          "waives": "tests/test_audit_journal.py"
+        }
+      ],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-25T20:52:12Z",
+            "ms": 30536,
+            "basis": "selectionMs in run 2026-11-25T20:52:43Z.0414b1's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-25T20:52:43Z.0414b1"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-25T20:52:43Z",
+            "ms": 156,
+            "basis": "durationMs in run 2026-11-25T20:52:43Z.0414b1's record (run-test-gate --record)",
+            "runId": "2026-11-25T20:52:43Z.0414b1"
+          },
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-25T21:43:33Z",
+            "ms": 31443,
+            "basis": "selectionMs in run 2026-11-25T21:44:06Z.327479's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-25T21:44:06Z.327479"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-25T21:44:05Z",
+            "ms": 151,
+            "basis": "durationMs in run 2026-11-25T21:44:06Z.327479's record (run-test-gate --record)",
+            "runId": "2026-11-25T21:44:06Z.327479"
+          },
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-25T21:44:35Z",
+            "ms": 30509,
+            "basis": "selectionMs in run 2026-11-25T21:51:18Z.543865's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-25T21:51:18Z.543865"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-25T21:45:06Z",
+            "ms": 371826,
+            "basis": "durationMs in run 2026-11-25T21:51:18Z.543865's record (run-test-gate --record)",
+            "runId": "2026-11-25T21:51:18Z.543865"
+          },
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-25T21:51:19Z",
+            "ms": 30260,
+            "basis": "selectionMs in run 2026-11-25T21:51:50Z.e90557's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-25T21:51:50Z.e90557"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-25T21:51:50Z",
+            "ms": 152,
+            "basis": "durationMs in run 2026-11-25T21:51:50Z.e90557's record (run-test-gate --record)",
+            "runId": "2026-11-25T21:51:50Z.e90557"
+          },
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-25T21:58:04Z",
+            "ms": 30607,
+            "basis": "selectionMs in run 2026-11-25T22:04:47Z.141838's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-25T22:04:47Z.141838"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-25T21:58:35Z",
+            "ms": 372368,
+            "basis": "durationMs in run 2026-11-25T22:04:47Z.141838's record (run-test-gate --record)",
+            "runId": "2026-11-25T22:04:47Z.141838"
+          }
+        ],
+        "firstStartedAt": "2026-11-25T17:17:57Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-25T22:05:04Z.b59026",
+        "status": "passed",
+        "durationMs": 188,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:d5ea974dd2c3e0cadc996961bf14b539a23fb22904f92b7209393d94bfff792e",
+        "reuseKey": "1:sha256:0e4ab8b40441411874177712b92b53130327ea67d6315cfee9b77282636e71d4",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-25T22:04:47Z.141838",
+          "ts": "2026-11-25T22:04:47Z",
+          "status": "passed"
+        },
+        "attempt": 3,
+        "via": "cli",
+        "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+        "selectionMs": 14975,
+        "at": "2026-11-25T22:05:04Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "attempt": 3,
+          "banners": [],
+          "durationMs": 372368,
+          "failed": [],
+          "gateDigest": "sha256:d5ea974dd2c3e0cadc996961bf14b539a23fb22904f92b7209393d94bfff792e",
+          "gateReach": {
+            "gaps": []
+          },
+          "gateSource": "task",
+          "launch": "2026-11-25T21:58:04Z-783ef725",
+          "observations": {
+            "countsBasis": "no step printed a summary this reader can count (python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test__deps.py tests/test__invariants.py tests/test_commit_task_wor... (5478 more characters)), so the size of this gate is not knowable from its output",
+            "coverage": [
+              "tests/test__affected_tests.py",
+              "tests/test__deps.py",
+              "tests/test__evidence_io.py",
+              "tests/test__invariants.py",
+              "tests/test_commit_task_work.py",
+              "tests/test_drive_phase.py",
+              "tests/test_drive_without_model.py",
+              "tests/test_import_evidence.py",
+              "tests/test_merge_manifest.py",
+              "tests/test_run_test_gate.py",
+              "tools/affected.py",
+              "tools/check-git-pipeline.py"
+            ],
+            "coverageBasis": "the runner named 207 path(s); the work under test declares 33 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 196/196 and 202 more; declared but not named by the run: .github/sweep-costs.json, CHANGELOG.md, COMPATIBILITY.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md, plugins/audit/reference/execute-task.md and 15 more; breadth: the run named 175 suite path(s) and this task declares 33 file(s), and 161 of them are suites the task neither declares nor is named after (test__output.py, test_audit_task.py, test_close_phase.py, test_stamp_verification.py, tests/_harness.py, tests/test__ado_connect.py and 155 more) - this gate asks more than the task changed; that is reported, not refused",
+            "ranTotal": null,
+            "treeBasis": "git described the tree before and after",
+            "treeMutated": []
+          },
+          "reuseKey": "1:sha256:0e4ab8b40441411874177712b92b53130327ea67d6315cfee9b77282636e71d4",
+          "runId": "2026-11-25T22:04:47Z.141838",
+          "selectionMs": 30607,
+          "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+          "startedAt": "2026-11-25T21:58:35Z",
+          "status": "passed",
+          "via": "cli",
+          "at": "2026-11-25T22:04:47Z",
+          "testedState": {
+            "dirtyBasis": "git described the tree before the run; 37 dirty path(s)",
+            "dirtyDigest": "sha256:0bed6088d3b34e2f90e95653163e72147e0a325cb998cb828aa66ea99619e6d5",
+            "head": "d369b143",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeBasis": "33 declared file(s); 31 read, 2 missing",
+            "scopeDigest": "sha256:fa6a738153a5f95157c379b481a9747000eac6a1c29c7d044bbafe97b9634ee3",
+            "scopeListDigest": "sha256:64f16f95df5a9adc80cf10179db2b6f8a9f25abc93e9122ed4364ff671911e87"
+          },
+          "steps": [
+            {
+              "commandBytes": 5430,
+              "commandSha256": "eee6e3bb57738fe0d33fe088bd820b84f8761a508fb6324884957f90dc9c20a1",
+              "durationMs": 372317,
+              "exit": 0,
+              "measured": "not-knowable",
+              "name": "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test__deps.py tests/test__invariants.py tests/test_commit_task_work.py tests/test_drive_phase.py tests/test_drive_without_model.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "program": "python3",
+              "ran": null,
+              "suiteReader": "none"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-25T22:04:47Z.141838",
+            "launch": "2026-11-25T21:58:04Z-783ef725",
+            "status": "passed",
+            "at": "2026-11-25T22:04:47Z"
+          },
+          {
+            "runId": "2026-11-25T21:51:18Z.543865",
+            "launch": "2026-11-25T21:44:24Z-1b0a2a9a",
+            "status": "passed",
+            "at": "2026-11-25T21:51:18Z"
+          },
+          {
+            "runId": "2026-11-25T21:44:06Z.327479",
+            "launch": "2026-11-25T21:43:33Z-288ba1a7",
+            "status": "failed",
+            "at": "2026-11-25T21:44:06Z"
+          },
+          {
+            "runId": "2026-11-25T20:52:43Z.0414b1",
+            "launch": "2026-11-25T20:52:06Z-39a906a6",
+            "status": "failed",
+            "at": "2026-11-25T20:52:43Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-25T22:05:04Z.b59026",
+        "status": "passed",
+        "at": "2026-11-25T22:05:04Z"
+      }
+    },
+    {
+      "id": "P169.38-6l3",
+      "title": "The set of paths a recorded run writes loses the evidence directory, and every reader of that set follows through the one function",
+      "status": "pending",
+      "description": "This is a cut of P169.8 (cancelled before any work; read its description, ACCEPTANCE and DEPENDANTS in docs/audit/phases/P169.json - the umbrella text stays the authority for the whole property, this task owns only the slice below). Slice: RECORDED_PATHS. recorded_paths loses the evidence directory, and every reader follows through the one function: the reuse identity, the left-out reading and its names, the stamp's recorder exclusion (stamp-verification.py), the scope digest, the commit scope and its label (commit-task-work.py), and the landing refusal's evidence half (close-phase.py's ignored-stamp refusal); _invariants.py's record paths (umbrella ACCEPTANCE 2, and the commit half of 1). Sign-off, done and close bind to the newest recorded run, a record or an older row; --failing-from and couple --basis-run resolve a record or an older row and no superseded run - say in COMPATIBILITY.md. CHANGELOG.md says the first run after the upgrade measures every step, because the key no longer leaves the evidence directory out. tests/test_run_test_gate.py is not in this list: if the recorded_paths-by-git-status case belongs there, tell me and I widen. State removed/added code lines in the outcome.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "tests/test__evidence_io.py",
+        "tests/test_stamp_verification.py",
+        "tests/test_commit_task_work.py",
+        "tests/test_close_phase.py",
+        "tests/test__invariants.py",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: recorded_paths equals the set of paths a recorded run modifies, by git status in a fixture; the plan's meta differs across a recorded run only in the recorder's own keys",
+          "tests/test__invariants.py: no task commit may carry a path under the evidence directory, and a commit of the previous release that does is still read as before"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_stamp_verification.py tests/test_commit_task_work.py tests/test_close_phase.py tests/test__invariants.py tests/test_run_test_gate.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.37-6l3",
+        "P169.41-6l3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P169.39-6l3",
+      "title": "The doctor reports the trail from the plan and git, verifies a frozen ledger that is present and says so when none is",
+      "status": "pending",
+      "description": "This is a cut of P169.8 (cancelled before any work; read its description, ACCEPTANCE and DEPENDANTS in docs/audit/phases/P169.json - the umbrella text stays the authority for the whole property, this task owns only the slice below). Slice: the doctor's trail rows (umbrella ACCEPTANCE 5) after rows stop being written: report the trail from the plan's records and the commits' trailers, verify a frozen ledger when one is present, say so plainly when none is (never 'failed' for an absent ledger). Include the pinned-tier rows that do not mention an unreadable plan (register F926) only if the same row is touched.",
+      "files": [
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "tests/test__doctor_trail.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__doctor_trail.py: the doctor reports the trail from the plan and git, verifies a frozen ledger that is present and says so when none is"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__doctor_trail.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.38-6l3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P169.40-6l3",
+      "title": "The demo generator, the example ledgers check and the committed examples agree with what the release writes",
+      "status": "pending",
+      "description": "This is a cut of P169.8 (cancelled before any work; read its description, ACCEPTANCE and DEPENDANTS in docs/audit/phases/P169.json - the umbrella text stays the authority for the whole property, this task owns only the slice below). Slice: umbrella ACCEPTANCE 6. Decide whether the examples keep a frozen ledger as history or carry records, state it in CHANGELOG, make tools/demo/gen-demo-manifest.py and tools/check-example-ledgers.py consistent with it, and keep python3 tools/check-rendered-artifacts.py green (the committed example files it regenerates: name them to me, I widen; the orchestrator runs browser gates). tools/check-committed-pii.py and tools/check-git-pipeline.py name the evidence directory: answer for each by name.",
+      "files": [
+        "tools/demo/gen-demo-manifest.py",
+        "tools/check-example-ledgers.py",
+        "tests/test_gen_demo_manifest.py",
+        "tests/test_check_example_ledgers.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_gen_demo_manifest.py: the generated demo carries what the release writes (records, or a frozen ledger kept as history - the one decided) and check-example-ledgers agrees"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_gen_demo_manifest.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.38-6l3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P169.41-6l3",
+      "title": "A full run's record lives in the plan whatever its verdict, and the full scope appends no row",
+      "status": "pending",
+      "description": "Cut of P169.8 (cancelled; read its description and ACCEPTANCE), found by P169.37's executor: with no row written, a --full --record run lives only in the phases' fullGateRuns, which hold only a CERTIFYING run and only its summary ({runId, at, head, status, entries, digest}). A red, dirty or uncountable full run is never held (_held_rank -1 on _full_disqualification), and no held run keeps steps, observations or selectionMiss - so the SELECTION MISS remedy (couple --basis-run), full-gate.py --learn-from and find_row (full-gate.py ~373-399) lose the run they look up. P169.37 therefore leaves the full scope appending its row; THIS task gives the full run its own record in the plan, the way a task's and a phase's records live there: the newest full run of any verdict, with what learning needs (steps, observations, selectionMiss), beside fullGateRuns (which stays the certifying summary). Then the full scope appends no row, --learn-from/find_row/the remedy resolve the record (or an older frozen row), the schema and validate-manifest know the key (adding a key is free per COMPATIBILITY.md), and the CI row path goes: remove the gate runner's --writer and import-evidence.py (its suite, LAYERS row, sweep-costs row, full-gate.py's pass-through and mentions, docs/examples/azure-pipelines.yml, README and orchestrator.md). Keep the record's size bounded (say the bound and measure it on this repo's full run). The schema file(s): name them to me, I widen. COMPATIBILITY.md: the full run's record, --writer and import-evidence removed (a 4.0.0 break), --learn-from resolves a record or an older row.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/full-gate.py",
+        "plugins/audit/scripts/governance/import-evidence.py",
+        "plugins/audit/scripts/manifest/validate-manifest.py",
+        "tests/test_run_test_gate.py",
+        "tests/test_full_gate.py",
+        "tests/test_import_evidence.py",
+        "tests/test_validate_manifest.py",
+        "tools/lints/_deps.py",
+        "tests/test__deps.py",
+        "docs/examples/azure-pipelines.yml",
+        "plugins/audit/README.md",
+        "plugins/audit/reference/orchestrator.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: a red, dirty or uncountable full run recorded with --record is kept in the plan with its steps, observations and selection miss, and appends no row",
+          "tests/test_full_gate.py: --learn-from and the SELECTION MISS remedy's couple --basis-run resolve a red full run from the plan's record, and an older row still resolves"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_full_gate.py tests/test_validate_manifest.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.37-6l3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P169.42-6l3",
+      "title": "A suite the change deletes is not run as an affected suite, and the gate says it left it out",
+      "status": "cancelled",
+      "description": "Cut out of P169.37-6l3, whose gate exposed it: run-test-gate's affected selection (_affected_tests.select: the python import-graph arm and the recorded related listing) named tests/test_record_outside_run.py, a suite that change deletes, and the sweep refused the missing file (exit 2, nothing measured) - any user deleting a module with its suite gets a gate that cannot run. The fix is already written in the working tree by P169.37's executor (gather_facts records the absent paths, select refuses an absent path from any arm and says so on one line, a refused suite does not widen as test support; cases af53-af55; mutations A1-A5 in scratchpad p37-mutations-r6.py). This task lands those two files alone, before P169.37 (which still declares them; its commit then carries no diff on them), so the drive's committed runner holds the fix when P169.37's gate is measured. The PLUGIN-BUILD-GUIDE paragraph about the rule rides with P169.37's commit.",
+      "files": [
+        "plugins/audit/scripts/governance/_affected_tests.py",
+        "tests/test__affected_tests.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__affected_tests.py: a module and its suite deleted together get a runnable gate naming the left-out suite once; a module deleted while its suite stays still selects the suite; the absence is read off the tree, staged or not"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__affected_tests.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.36-6l3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Its work landed as d369b143, committed under P169.37-6l3 on the start refusal's own remedy (the change was that task's unfinished work); nothing is left for this task."
+      },
+      "startedAt": null,
+      "completedAt": "2026-11-25T21:53:19Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-25T21:52:52Z",
+          "text": "its _affected_tests section gains the deleted-suite rule in P169.37's commit, which carries that file's hunks; this commit changes no name the section quotes",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        }
+      ]
     }
   ],
   "request": "neka njihov dokument bude osnova! I u odnosu na to treba napraviti plan implementacije",

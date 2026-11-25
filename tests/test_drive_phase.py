@@ -1731,11 +1731,11 @@ def _lr_launched_then_other(M, prefix):
 
 def _launch_replaced_cases(check):
     """(lr) The launched run is still the drive's when another run of the
-    same subject is recorded AFTER it and so replaces its record: the ledger
-    row carries the launch token as the record does, so the drive reads the
-    run it launched back from that row; and with no ledger row to read, the
-    drive says the launched run was replaced, by which run, and launches the
-    gate again - never a wait on a run that has already ended."""
+    same subject is recorded AFTER it and so replaces its record. A task
+    keeps one run, so no row of the launched run is left: the record that
+    replaced it names it, with its token, among the launches it replaced, and
+    the drive says the launched run was replaced, by which run, and launches
+    the gate again - never a wait on a run that has already ended."""
     M, why = _load("drive_phase_replaced", real_gate_choice=True)
     if M is None:
         check("lrp1 the driver loads", False, why)
@@ -1747,18 +1747,23 @@ def _launch_replaced_cases(check):
     held = [(r.get("runId"), r.get("launch"), src) for r, src in zip(
         read["rows"], read.get("rowSources") or [])
         if r.get("runId") in (own, other)]
-    check("lrp1 the LEDGER ROW of a launched run carries its launch token, as "
-          "its record does - so a reader of the row alone finds the run: %r"
-          % ((token, own, other, held),),
+    replacer = [r for r in read["rows"] if r.get("runId") == other]
+    named = [(e.get("runId"), e.get("launch"))
+             for e in ((replacer[0] if replacer else {}).get(
+                 _evio.REPLACED_KEY) or []) if isinstance(e, dict)]
+    check("lrp1 the launched run, replaced, is held by no row - the task keeps "
+          "one run - and the record that replaced it names it with its launch "
+          "token, so a reader of that record alone finds which launch it "
+          "replaced: %r" % ((token, own, other, held, named),),
           bool(token) and own is not None and other is not None and own != other
-          and (own, token, _evio.ROW_FROM_LEDGER) in held)
+          and [h[0] for h in held] == [other]
+          and (own, token) in named)
     code, line = _signal_raw(M, root, mpath)
     check("lrp2 the launched run recorded, then ANOTHER run of the task "
-          "recorded after it and replacing its record: the next call decides "
-          "from the launched run's ledger row - red, as it ran - and does not "
-          "wait for a run that has already ended: %r" % ((code, line),),
-          code == 0 and "gate-red-writer" in line
-          and _signal_head(line) != ("wait", "P1.1"))
+          "recorded after it and replacing its record: the next call does not "
+          "wait for a run that has already ended - it launches the gate again: "
+          "%r" % ((code, line),),
+          code == 0 and _signal_head(line) == ("dispatch", "P1.1"))
     groot, gmpath, gtoken, gown, gother, gcalls = _lr_launched_then_other(
         M, "lrp-records")
     _lt_drop_ledger(groot, gmpath)
@@ -2766,8 +2771,14 @@ def _gate_choice_follow_cases(check):
         prints = [t for _c, t in run["prints"]]
         gates = [n for n, s in enumerate(run["steps"])
                  if s == ("dispatch", "gate", "P1.1")]
+        # One run per subject: the record holds the newest run alone, so the
+        # runs measured are counted off the gate stages the recorder appends
+        # to the task's timing as it records each one.
+        measured = [s.get("runId") for s in _tm_stages(mpath, "gate")]
         runs[label] = (run["steps"], gates, prints,
-                       [r.get("status") for r in _measured_rows(root, mpath, "P1.1")],
+                       (len(measured), len(set(measured)),
+                        [r.get("status")
+                         for r in _measured_rows(root, mpath, "P1.1")]),
                        tasks_of(mpath)["P1.1"].get("status"))
     steps, gates, prints, statuses, status = runs["slow"]
     regen = [n for n, text in enumerate(prints) if "docs/map.txt regenerated" in text]
@@ -2777,13 +2788,13 @@ def _gate_choice_follow_cases(check):
           "regenerated - and each run measured once: %r"
           % ((steps, gates, regen, statuses, status),),
           len(gates) == 2 and regen and regen[0] == gates[1]
-          and statuses == ["failed", "passed"] and status == "done")
+          and statuses == (2, 2, ["passed"]) and status == "done")
     steps, gates, prints, statuses, status = runs["fast"]
     check("gc7 THE TWIN: measured under the bound, the re-gate runs inside the "
           "next that ran the recipe - no gate dispatch at all, the same two "
           "measured runs: %r" % ((steps, statuses, status),),
           steps == expected_sequence(["P1.1"]) and not gates
-          and statuses == ["failed", "passed"] and status == "done")
+          and statuses == (2, 2, ["passed"]) and status == "done")
 
 
 def _phase_gate_calls(calls):
@@ -3306,10 +3317,16 @@ def _writer_scope_cases(check):
             and r.get(_evio.VERDICT_SOURCE) != _evio.REUSED]
     # The red for a set-aside that commits on the gate measured before it: the
     # ledger records no list of what a run read, so the gate is measured again.
+    # One run per subject: the second green replaced the first, so the two
+    # runs are counted off the gate stages the recorder put on the timing.
+    measured = set(s.get("runId") for s in _tm_stages(mpath, "gate"))
     check("xs4 the gate is measured again on the tree the set-aside left: two "
-          "green runs of the task are recorded, the newest after the patch was "
-          "kept: %r" % (([(r.get("status"), r.get("ts")) for r in runs], patch),),
-          len(runs) == 2 and all(r.get("status") == "passed" for r in runs)
+          "green runs of the task were measured, and the one recorded is the "
+          "newest, made after the patch was kept: %r"
+          % (([(r.get("status"), r.get("ts")) for r in runs], len(measured),
+              patch),),
+          len(runs) == 1 and len(measured) == 2
+          and all(r.get("status") == "passed" for r in runs)
           and bool(re.search(r"-(\d{8}T\d{6}Z)\.patch$", patch))
           and max(str(r.get("ts") or "") for r in runs).replace("-", "")
           .replace(":", "") >= re.search(r"-(\d{8}T\d{6}Z)", patch).group(1))
@@ -7692,8 +7709,9 @@ def _records_wave(M, prefix):
     _code, first = _next_wave(M, root, mpath)
     sent = _dispatched(first)
     added = _add_task(root, mpath)
-    # The added task's own gate, recorded on the phase tree, so the record-only
-    # commit carries an evidence row beside the manifest and the journal.
+    # The added task's own gate, recorded on the phase tree: its record lands
+    # in the shard, so the record-only commit carries the manifest and the
+    # journal - and no evidence row, which a task run no longer writes.
     with _Env(root):
         gated = _verb(root, "run-test-gate.py", [mpath, PHASE, "--task", added,
                                                  "--record", "--project-dir", root])
@@ -7759,12 +7777,13 @@ def _wave_record_cases(check):
     kinds = sorted(set(p.split("/")[2] if p.count("/") > 2 else "manifest"
                        for p in run["committed"] if p.startswith("docs/audit/")))
     check("wq1 a wave is cut, the phase tree then commits a record-only commit "
-          "(a task add), and the member's gate is green: its record checks see "
-          "the phase tree's manifest pair, journal and evidence: rows=%r "
-          "status=%r committed=%r gated=%r %r" % (rows, (tasks.get("P1.1") or {}).get(
-              "status"), run["committed"], run["gated"][0], run["second"][-300:]),
+          "(a task add, its gate recorded in the shard), and the member's gate "
+          "is green: its record checks see the phase tree's manifest pair and "
+          "journal: rows=%r status=%r committed=%r gated=%r %r"
+          % (rows, (tasks.get("P1.1") or {}).get("status"), run["committed"],
+             run["gated"][0], run["second"][-300:]),
           run["sent"] == ["P1.1", "P1.2"] and run["added"] in tasks
-          and kinds == ["evidence", "journal", "manifest"]
+          and kinds == ["journal", "manifest"]
           and rows == ["passed"]
           and (tasks.get("P1.1") or {}).get("status") == "done")
     tree2 = run["tree2"]
@@ -7958,13 +7977,17 @@ def _follower_cases(check):
     carried = _git_out(root, "show", "--name-only", "--format=", sha).split()
     held = _git_out(root, "show", "%s:docs/map.txt" % (sha,)).strip()
     said = "\n".join(t for _c, t in run["prints"])
-    gates = [r.get("status") for r in _rows_of(root, mpath, "P1.1")]
+    # One run per subject: the green record replaced the red, so the two gate
+    # runs are counted off the stages the recorder put on the task's timing.
+    measured = [s.get("runId") for s in _tm_stages(mpath, "gate")]
+    gates = (len(set(measured)),
+             [r.get("status") for r in _rows_of(root, mpath, "P1.1")])
     check("the drive regenerates that follower by its recipe in the task tree, the "
           "task commit carries it, and the second gate is green with no decision "
           "printed: %r" % ((run["steps"], carried, held, gates),),
           run["steps"] == expected_sequence(["P1.1"])
           and task.get("status") == "done" and "docs/map.txt" in carried
-          and held == "current" and gates == ["failed", "passed"]
+          and held == "current" and gates == (2, ["passed"])
           and "docs/map.txt" in (task.get("files") or [])
           and "decide gate-red" not in said and "docs/map.txt regenerated" in said)
 
@@ -8582,13 +8605,18 @@ PINNED_320_DID = [
 # landing's - carry the session id like every other row the session's verbs
 # write, so they land in the session's file; `phase.merged` alone is filed by
 # the landing under the checkout's writer token.
+#
+# The 3.2.0 drive's sequence, less its `test.evidence.recorded` anchors - one
+# before each task's `task.testEvidence` and one before `phase.testEvidence`:
+# a recorded task or phase run keeps its record in the plan and writes no
+# ledger row for an anchor to name. Every other action stands as it was.
 PINNED_320_ACTIONS = sorted([
     ("phase.merged",),
-    ("task.start", "task.return.filed", "test.evidence.recorded",
+    ("task.start", "task.return.filed",
      "task.testEvidence", "meta.evidenceSince", "audit.task.committed",
-     "task.done", "task.start", "task.return.filed", "test.evidence.recorded",
+     "task.done", "task.start", "task.return.filed",
      "task.testEvidence", "audit.task.committed", "task.done",
-     "test.evidence.recorded", "phase.testEvidence", "phase.verdict",
+     "phase.testEvidence", "phase.verdict",
      "audit.state.committed", "audit.state.committed"),
 ])
 
@@ -11414,22 +11442,25 @@ def _scope_declared_cases(check):
     _next(M, root, mpath)
     _file_executor(root, mpath, "P1.1")
     _code, risky = _next(M, root, mpath)
-    rows = len(_rows_of(root, mpath, "P1.1"))
+    # One run per subject: a run measured again is a record under a new id
+    # replacing the old, so "measured again" is the run id moving.
+    rows = [r.get("runId") for r in _rows_of(root, mpath, "P1.1")]
     with _Env(root):
         scode, sout = _verb(root, "audit-task.py", [
             "scope", "P1.1", mpath, "--project-dir", root,
             "--files", "src/f1.txt,src/f2.txt"])
     code, asked = _next(M, root, mpath, "--answer", "confirm")
-    newest = (_rows_of(root, mpath, "P1.1") or [{}])[-1]
+    after = _rows_of(root, mpath, "P1.1")
+    newest = (after or [{}])[-1]
     check("sd6 scope-changed re-runs the gate under the scope the task holds "
-          "now before it offers close: one more green row is recorded before "
-          "the decision is printed: %r"
+          "now before it offers close: a new green run replaces the task's "
+          "record before the decision is printed: %r"
           % ((instruction(risky), scode, sout[-200:], rows,
-              len(_rows_of(root, mpath, "P1.1")), newest.get("status"),
+              [r.get("runId") for r in after], newest.get("status"),
               asked[-400:]),),
-          instruction(risky)[1] == "high-risk" and scode == 0 and rows == 1
+          instruction(risky)[1] == "high-risk" and scode == 0 and len(rows) == 1
           and instruction(asked)[1] == "scope-changed"
-          and len(_rows_of(root, mpath, "P1.1")) == rows + 1
+          and len(after) == 1 and newest.get("runId") not in rows
           and newest.get("status") == "passed")
     code, closed = _next(M, root, mpath, "--answer", "close", "--reason",
                          "the widened file is read, not changed")
@@ -11454,17 +11485,19 @@ def _scope_declared_cases(check):
     state.pop("gated", None)
     with open(state_file, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(state, fh)
-    rows = len(_rows_of(root, mpath, "P1.1"))
+    rows = [r.get("runId") for r in _rows_of(root, mpath, "P1.1")]
     code, again = _next(M, root, mpath, "--answer", "close", "--reason",
                         "no run stands under this scope")
+    after = [r.get("runId") for r in _rows_of(root, mpath, "P1.1")]
     check("sd8 `close` with no gate run under the scope the task holds now "
-          "accepts nothing: the task is not closed, the gate is measured, and "
-          "scope-changed is asked again: %r"
-          % ((code, tasks_of(mpath)["P1.1"].get("status"), rows,
-              len(_rows_of(root, mpath, "P1.1")), again[-400:]),),
+          "accepts nothing: the task is not closed, the gate is measured - a "
+          "new run replacing the task's record - and scope-changed is asked "
+          "again: %r"
+          % ((code, tasks_of(mpath)["P1.1"].get("status"), rows, after,
+              again[-400:]),),
           tasks_of(mpath)["P1.1"].get("status") == "in_progress"
           and instruction(again)[1] == "scope-changed"
-          and len(_rows_of(root, mpath, "P1.1")) == rows + 1
+          and len(after) == 1 and after[0] not in rows
           and "scopeAccepted" not in _drive_state(root))
 
     # The redo pin, on every terminal path.
@@ -20786,19 +20819,22 @@ def _timing_red_cases(check, M, bindir, log):
     rows = _tm_rows(root, mpath)
     writers = _tm_stages(mpath, "writer")
     gates, bases = _tm_stages(mpath, "gate"), _tm_stages(mpath, "base")
+    # One run per subject: the green record replaced the red, and the base
+    # kept on the red's reading went with it, so the timing - written as each
+    # run was recorded - is what still names all three.
     check("tm5 a red gate, a base measurement and a second writer round leave two "
           "writer stages with their rounds and figures, two gate stages of two "
-          "runs with their statuses red then green, and one base stage read off "
-          "the base run's row: %r"
+          "runs - the newest the task's one recorded run, green, the red it "
+          "replaced held by no row - and one base stage of a run of its own: %r"
           % ((steps, _tm_task(mpath).get("timing")),),
           _tm_task(mpath).get("status") == "done"
           and [(w.get("round"), w["ms"]) for w in writers]
           == [(1, TM_WRITER_MS), (2, TM_RESUME_MS)]
           and len(gates) == 2 and len(set(g.get("runId") for g in gates)) == 2
           and [rows.get(g.get("runId"), {}).get("status") for g in gates]
-          == ["failed", "passed"]
-          and len(bases) == 1 and bases[0].get("runId") in rows
-          and bases[0]["ms"] == rows[bases[0]["runId"]]["durationMs"]
+          == [None, "passed"]
+          and len(bases) == 1 and bases[0].get("runId")
+          and isinstance(bases[0].get("ms"), int)
           and bases[0]["runId"] not in [g.get("runId") for g in gates])
 
 
@@ -20914,7 +20950,12 @@ def _timing_close_cases(check):
           and len(commits) == 1
           and verb_ms - len(lengths) <= commits[0]["ms"] <= verb_ms + 250
           and "commit-task-work.py" in commits[0]["basis"]
-          and len(runs) == 2 and sorted(g.get("runId") for g in gates) == runs
+          # One run per subject: the record holds the newest gate run, and
+          # the two runs measured are the two gate stages the recorder put on
+          # the timing - every run still held among them, the newest held.
+          and len(gates) == 2 and len(set(g.get("runId") for g in gates)) == 2
+          and gates[-1].get("runId") in runs
+          and set(runs) <= set(g.get("runId") for g in gates)
           and all(g["ms"] >= 1000 for g in gates)
           and summary.get("overrunMs") == 0 and _tm_parts_add_up(summary))
 
@@ -22653,7 +22694,7 @@ raise SystemExit(1 if "\nFAIL  " in "\n" + text else 0)
 
 def _base_measure_repo(M, prefix, base_text, task_text, sleep=None,
                        play_gate=True, seed_ms=None, tests_add=None, extra=(),
-                       work=None):
+                       work=None, phase_gated=False):
     """A one-task writer fixture whose gate prints `task_text` over the writer's
     work and `base_text` at HEAD - after sleeping `sleep` seconds there, when
     given - played up to the gate run after the writer's session: `(root,
@@ -22664,16 +22705,21 @@ def _base_measure_repo(M, prefix, base_text, task_text, sleep=None,
     reads for the task gate and for its base alike. `tests_add` is P1.1's
     `tests.add`, `extra` more `(path, text)` committed with the outputs, and
     `work` more `{path: text}` the writer's session writes - a file the task
-    creates is in the tree its gate ran in."""
+    creates is in the tree its gate ran in. `phase_gated` takes P1.1's own
+    `tests.gate` away, so it runs its phase's - the same command."""
     gate = '"%s" gate_k02.py' % (sys.executable.replace("\\", "/"),)
     root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=(gate,),
                         executor=WRITER_EXECUTOR)
     if seed_ms is not None:
         _seed_gate_ms(root, mpath, [gate], seed_ms)
-    if tests_add is not None:
+    if tests_add is not None or phase_gated:
         with open(mpath, encoding="utf-8") as fh:
             plan = json.load(fh)
-        plan["phases"][0]["tasks"][0]["tests"]["add"] = list(tests_add)
+        tests = plan["phases"][0]["tasks"][0]["tests"]
+        if tests_add is not None:
+            tests["add"] = list(tests_add)
+        if phase_gated:
+            tests.pop("gate", None)
         _write_lf(mpath, json.dumps(plan, indent=2))
     planted = (("gate_k02.py", _BASE_GATE_SCRIPT),
                ("gate-out/base.txt", base_text),
@@ -23093,6 +23139,46 @@ def _kept_only_refused(M):
     return refused, put_back
 
 
+def _bh_join(M, prefix, k02, slow_ms, phase_gated=False):
+    """A second start of P1.1 made while its first red's base runs, played to
+    the end of that base: `(what was seen, whether it joined)` - the second
+    red waits on the running launch rather than launching another, and is
+    decided over it as gate-red-base. The last item seen is the scope P1.1's
+    record reads back with (`phase_gated`: a task with no gate of its own)."""
+    j_root, j_mpath, j_log, j_line, _jb = _base_measure_repo(
+        M, prefix, k02, k02, seed_ms=slow_ms, phase_gated=phase_gated)
+    j_bin = os.path.join(os.path.dirname(j_log), "bin")
+    j_argv = _base_run_argv(M, j_root, j_mpath)
+    launch0 = _base_mark(j_root).get("launch")
+    _c, j_decided = _signal_next(M, j_root, j_mpath)
+    _verb(j_root, "audit-task.py", ["start", "P1.1", j_mpath,
+                                    "--project-dir", j_root])
+    _c, j_retried = _signal_next(M, j_root, j_mpath)
+    _c, j_again = _writer_round(M, j_root, j_mpath, j_bin, j_log,
+                                WRITER_COSTS[1],
+                                edit={"src/f1.txt": "changed once more\n"})
+    j_mark = _base_mark(j_root)
+    j_played = _play_base(j_root, j_argv) if j_argv else (None, "no base run")
+    _c, j_after = _bn_settle(M, j_root, j_mpath, _signal_next(
+        M, j_root, j_mpath)[1])
+    j_launches = [n for n in os.listdir(os.path.join(
+        j_root, ".claude", "state", "drive", "base-runs"))] if os.path.isdir(
+        os.path.join(j_root, ".claude", "state", "drive", "base-runs")) else []
+    project, config = _evio.project_config_for(j_mpath, j_root)
+    scopes = [r.get("scope") for r in _evio.read_rows(
+        project, config, manifest_path=j_mpath)["rows"]
+        if r.get("taskId") == "P1.1" and r.get("scope") != _evio.BASE_SCOPE]
+    seen = (j_line, j_decided, j_retried, j_again, launch0,
+            j_mark.get("launch"), j_played, j_after, j_launches,
+            scopes[-1] if scopes else None)
+    return seen, (bool(j_argv) and " wait P1.1" in (j_decided or "")
+                  and " wait P1.1" in (j_again or "")
+                  and "the base of run" not in (j_again or "")
+                  and bool(launch0) and j_mark.get("launch") == launch0
+                  and j_played[0] == 0 and "gate-red-base" in (j_after or "")
+                  and "gate-red-base-unknown" not in (j_after or ""))
+
+
 def _base_held_cases(check):
     """What stays of a base that is skipped, unread or joined, now that every
     red waits for its base: a second start of the same task at the commit a
@@ -23111,38 +23197,38 @@ def _base_held_cases(check):
     # the same commit: it joins the running base rather than launching a
     # second one. The start is made by hand: nothing the drive offers while the
     # base runs starts the task again.
-    j_root, j_mpath, j_log, j_line, _jb = _base_measure_repo(
-        M, "base-held-join", k02, k02, seed_ms=slow_ms)
-    j_bin = os.path.join(os.path.dirname(j_log), "bin")
-    j_argv = _base_run_argv(M, j_root, j_mpath)
-    launch0 = _base_mark(j_root).get("launch")
-    _c, j_decided = _signal_next(M, j_root, j_mpath)
-    _verb(j_root, "audit-task.py", ["start", "P1.1", j_mpath,
-                                    "--project-dir", j_root])
-    _c, j_retried = _signal_next(M, j_root, j_mpath)
-    _c, j_again = _writer_round(M, j_root, j_mpath, j_bin, j_log,
-                                WRITER_COSTS[1],
-                                edit={"src/f1.txt": "changed once more\n"})
-    j_mark = _base_mark(j_root)
-    j_played = _play_base(j_root, j_argv) if j_argv else (None, "no base run")
-    _c, j_after = _bn_settle(M, j_root, j_mpath, _signal_next(
-        M, j_root, j_mpath)[1])
-    j_launches = [n for n in os.listdir(os.path.join(
-        j_root, ".claude", "state", "drive", "base-runs"))] if os.path.isdir(
-        os.path.join(j_root, ".claude", "state", "drive", "base-runs")) else []
+    seen, joined = _bh_join(M, "base-held-join", k02, slow_ms)
     check("bh1 A SECOND START AT THE COMMIT A BASE IS RUNNING FOR JOINS IT: the "
           "first start's red waits on its base, the red of the start made "
           "again launches no second base run - its mark is the running launch, "
           "and it waits on that run too - and once that base ends the red is "
-          "decided over it, gate-red-base: %r"
-          % ((j_line, j_decided, j_retried, j_again, launch0,
-              j_mark.get("launch"), j_played, j_after, j_launches),),
-          bool(j_argv) and " wait P1.1" in (j_decided or "")
-          and " wait P1.1" in (j_again or "")
-          and "the base of run" not in (j_again or "")
-          and bool(launch0) and j_mark.get("launch") == launch0
-          and j_played[0] == 0 and "gate-red-base" in (j_after or "")
-          and "gate-red-base-unknown" not in (j_after or ""))
+          "decided over it, gate-red-base: %r" % (seen,), joined)
+    # The same, for a task with no gate of its own: it runs its phase's, so
+    # its record reads back with scope "phase", and the red its launch was
+    # measured for is replaced by the second start's - the drive measures the
+    # base of the red the task holds now, whatever scope its record reads as.
+    p_seen, p_joined = _bh_join(M, "base-held-join-phase", k02, slow_ms,
+                                phase_gated=True)
+    check("bh6 ...AND FOR A TASK ON ITS PHASE'S GATE, whose record reads back "
+          "with scope phase: its launched red replaced by the second start's, "
+          "the base decides the red it holds now - gate-red-base: %r"
+          % (p_seen,),
+          p_joined and p_seen[-1] == "phase")
+    # Newest by moment, never by the order rows were read in: the task's red
+    # record read before an older green row of it is still its newest run.
+    newer = _evio.record_row(
+        {"runId": "R-red", "at": "2026-11-20T10:00:00Z", "status": "failed",
+         "steps": [{"name": "gate", "exit": 1}], "gateSource": "phase"},
+        "task", "P1.1", PHASE)
+    older = {"runId": "R-green", "ts": "2026-11-01T10:00:00Z",
+             "status": "passed", "scope": "task", "taskId": "P1.1",
+             "phaseId": PHASE, "steps": [{"name": "gate", "exit": 0}]}
+    picked = M.red_run_row([newer, older], "R-replaced", "P1.1")
+    check("bh7 THE NEWEST RUN IS THE MODULE'S ORDER, NOT THE READ'S: a red "
+          "replaced id falls back to the task's newest run by moment - the red "
+          "record - though an older green row of the task is read after it: %r"
+          % ((picked or {}).get("runId"),),
+          (picked or {}).get("runId") == "R-red")
 
     # The kept base is measured but cannot be read back: the red is decided on
     # the measurement this start took, never sent to the writer as measured.
@@ -24049,9 +24135,12 @@ def _base_derived_cases(check):
           "not moved - counts toward no stop, so it is never "
           "gate-red-base-unknown; the writer rounds bound it: %r / %r / %r"
           % (second, runs, s_mark),
+          # One run per subject: the task holds the second red alone, under
+          # an id of its own - not the first red's, which it replaced.
           "gate-red-writer" in second
           and "gate-red-base-unknown" not in second
-          and len(set(runs)) >= 2 and s_mark.get("of") == runs[-1]
+          and len(runs) == 1 and runs[-1] != u_mark.get("of")
+          and s_mark.get("of") == runs[-1]
           and s_mark.get("measurable") is False
           and not s_mark.get("moved")
           and not s_mark.get("unmeasuredBefore"))
@@ -25215,17 +25304,20 @@ def _base_twice_unmeasurable_case(check, k02):
                       edit={"src/f1.txt": "changed again by the writer\n"})
         _c, second = _signal_next(M, root, mpath)
         second_mark = _base_mark(root)
-        gates = len(_red_rows(root))
+        # One run per subject: the task holds the second red alone, and a
+        # third gate would replace it under an id of its own.
+        gates = [r.get("runId") for r in _red_rows(root)]
         resumes = _writer_resumes(root)
         _c, third = _signal_next(M, root, mpath)
     finally:
         M.take_base = real_take
+    after_third = [r.get("runId") for r in _red_rows(root)]
     check("brc3 a second red of one start whose base cannot be measured "
           "either stops as gate-red-base-unknown - the first went to the "
           "writer - and the next drive after it runs no third gate and sends "
           "no writer round: %r"
           % ((first, first_mark.get("measurable"), second, second_mark,
-              gates, len(_red_rows(root)), resumes, _writer_resumes(root),
+              gates, after_third, resumes, _writer_resumes(root),
               len(_stub_runs(log)), len(_stub_runs(again_log)), third),),
           "gate-red-writer" in first
           and first_mark.get("measurable") is False
@@ -25234,7 +25326,8 @@ def _base_twice_unmeasurable_case(check, k02):
           and second_mark.get("measurable") is False
           and second_mark.get("unmeasuredBefore") == 1
           and "gate-red-base-unknown" in third
-          and gates == 2 and len(_red_rows(root)) == gates
+          and len(gates) == 1 and gates[0] != first_mark.get("of")
+          and after_third == gates
           and resumes == 1 and _writer_resumes(root) == 1
           and len(_stub_runs(log)) == 1 and len(_stub_runs(again_log)) == 1)
 

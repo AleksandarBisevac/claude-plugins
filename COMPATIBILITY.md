@@ -224,8 +224,11 @@ current. Neither is legacy, and a mutating command does not nudge you off either
 - **`testEvidence` is under the same promise, and is deliberately three keys.**
   A task or a phase may carry `{runId, status, at}` pointing at the run that last
   exercised it. **Absent means no run has been recorded** — never "failed" — which is
-  again what makes adding it free. It is a **cache**, not the truth: the record lives
-  in the evidence file beside the manifest, deleting the block is always safe, and
+  again what makes adding it free. It is a **pointer**, not the truth, and **in 4.0.0 it
+  stops meaning a cache of the evidence file**: it names the subject's own record
+  (`lastRun`, below), or for a done task the run its commit's trailers name (section 3);
+  a pointer an earlier release wrote names a row in the evidence file, which is still
+  read. Deleting the block is still always safe, and
   `runId` is **opaque** — its format is not a schema and must not be parsed. What is
   promised is that the key keeps being read and that absence keeps meaning what it
   means. `status` **may gain members** — that is the standing "an enum gains no
@@ -377,7 +380,12 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   trips on a merged phase whose full-run answer is `unknown` — no `mergedHead` recorded, git
   unable to answer ancestry, or a ledger that could not be read — and no existing gate changes
   verdict by its addition: `DEFAULT_GATE` does not hold it, `provisional` still never counts an
-  `unknown` phase, and a plan with no `meta.fullGate` never trips it.
+  `unknown` phase, and a plan with no `meta.fullGate` never trips it. **The ledger arm, restated
+  for 4.0.0**: the ledger it reads is the evidence directory's rows — the frozen rows earlier
+  releases wrote and the rows a `--full` run still appends, since a task or phase run writes
+  none — and the arm trips, as before, when a file there could not be read in full, because a
+  full run may sit on the line that read lost. A ledger deleted whole is not unreadable: the
+  phase then answers from the full runs it holds in the plan (`phases[].fullGateRuns`).
 - **The evidence row's `outcomeBasis` and `derivedGap` step keys are additive.** A row written
   before either existed carries neither key, which is the true reading for it, and a passed
   step's row is unchanged.
@@ -734,6 +742,28 @@ depending on an implementation:
   not 1, and a run without `--record` is unchanged. It is recorded
   here rather than passed over because an exit code moved from 0 to 3 on a shipped command,
   and a pipeline that read the unrecorded green as success is a pipeline that now stops,
+  **In 4.0.0 exit 3 means the shard record was not written.** A task or phase run writes no
+  evidence row, so for it there is one thing to store and one thing that can be missing: its
+  record in the plan (`lastRun`). The line beside the exit says no file holds the run; the
+  repair is to re-run the gate with `--record` once the plan file can be written. A `--full`
+  run still appends its row and offers the run to the phases it can certify, so for it exit 3
+  still means either was not stored, and the line says which,
+- **the evidence file is no longer written by a task, phase or base run — 4.0.0, a major.** A
+  recorded run appends no row to `evidence.dir`, writes no `test.evidence.recorded` row into
+  the journal for one and chains nothing; its record in the plan, and for a done task its
+  commit's trailers, are what it leaves. `evidence.dir` is still read: it is where the rows
+  earlier releases wrote are, and those are never rewritten, migrated or deleted, and keep
+  verifying exactly as before (`audit-journal.py verify`). A `--full` run is the one scope
+  that still appends its row, so a red full run stays where `full-gate.py --learn-from` and a
+  selection miss's `--basis-run` read it. `record-outside-run.py` is removed with no
+  replacement: an outside suite has no subject to hold a record, and the outside rows an
+  earlier release wrote are still read by the `machine:` and `claimed:` lines,
+- **tallies over history count one run per subject from 4.0.0 on.** A subject's record holds
+  its newest run and is replaced by the next, so a count over recorded runs - the doctor's
+  gate-pattern tally, `propose-gates.py`'s history - sees every row an earlier release wrote
+  and, from this release on, one run per task and per phase (and every full run, whose rows
+  are still appended). A rate read off those counts after the upgrade is over fewer runs,
+  not fewer failures,
 - **a `passed` sign-off with no gate run behind it — and it changed.** `audit-task.py
   signoff --verdict passed` (`/audit:phase signoff`) used to write the verdict whatever the
   ledger held; it now **exits 2** unless the phase's newest recorded gate run binds its work,

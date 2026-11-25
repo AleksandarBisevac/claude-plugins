@@ -1110,14 +1110,26 @@ def _resolve_cases(check, tmp, env):
 _W_SHARD = "docs/audit/phases/%s.json"
 
 
-def _window_plan(extra=None):
-    """A two-phase plan; `extra` is the task each side adds to P1 as P1.2."""
+# The evidence boundary every window plan states, so a run recorded into one of
+# its shards is that shard's write alone: a plan stating none has it stamped by
+# its first record, in the same write, which changes the index too.
+_W_SINCE = {"at": "2026-11-01T08:00:00Z",
+            "basis": "the first run this plan recorded; work completed before "
+                     "it could not carry evidence"}
+
+
+def _window_plan(extra=None, since=True):
+    """A two-phase plan; `extra` is the task each side adds to P1 as P1.2.
+    `since` False leaves `meta.evidenceSince` off."""
     tasks = [{"id": "P1.1", "title": "a", "status": "pending", "files": ["src/a.ts"]}]
     index = {"src/a.ts": ["P1.1"], "src/b.ts": ["BF10.1"]}
     if extra:
         tasks.append(dict(extra, id="P1.2", status="pending"))
         index[extra["files"][0]] = ["P1.2"]
-    return {"meta": {"version": 2, "repo": "demo"},
+    meta = {"version": 2, "repo": "demo"}
+    if since:
+        meta["evidenceSince"] = dict(_W_SINCE)
+    return {"meta": meta,
             "phases": [{"id": "P1", "title": "One", "status": "pending", "tasks": tasks},
                        {"id": "BF10", "title": "Ten", "status": "pending",
                         "tasks": [{"id": "BF10.1", "title": "b", "status": "pending",
@@ -1126,7 +1138,7 @@ def _window_plan(extra=None):
 
 
 def _stopped_merge(tmp, name, env, autocrlf=False, driver=True, theirs_bf=None,
-                   before_base=None, merge_args=()):
+                   before_base=None, merge_args=(), since=True):
     """A sharded plan with the driver installed, both sides minting P1.2, and `git
     merge` stopped on P1's shard -> (repo, index path, merge exit, merge output).
     `autocrlf` sets `core.autocrlf=true` in the repository before anything is
@@ -1135,28 +1147,30 @@ def _stopped_merge(tmp, name, env, autocrlf=False, driver=True, theirs_bf=None,
     that never installed it is - `.gitattributes` still names it. `theirs_bf` is
     merged into BF10.1 on theirs alone, so BF10's shard is one side's blob;
     `before_base(repo)` runs before the base commit; `merge_args` are added to
-    `git merge`."""
+    `git merge`; `since` False leaves every side's plan without
+    `meta.evidenceSince`."""
     repo = os.path.join(tmp, name)
     os.makedirs(repo)
     _harness.git(repo, "init", "-q", "-b", "main")
     if autocrlf:
         _harness.git(repo, "config", "core.autocrlf", "true")
     idx = os.path.join(repo, "docs", "audit", "plan.json")
-    _write_json(idx, _window_plan())
-    _mio.save_sharded(idx, _window_plan())
+    _write_json(idx, _window_plan(since=since))
+    _mio.save_sharded(idx, _window_plan(since=since))
     _install(idx)
     if before_base:
         before_base(repo)
     _harness.git(repo, "add", "-A")
     _harness.git(repo, "commit", "-qm", "base")
     _harness.git(repo, "checkout", "-qb", "side")
-    theirs = _window_plan({"title": "theirs", "files": ["src/t.ts"]})
+    theirs = _window_plan({"title": "theirs", "files": ["src/t.ts"]}, since=since)
     if theirs_bf:
         theirs["phases"][1]["tasks"][0].update(theirs_bf)
     _mio.save_sharded(idx, theirs)
     _harness.git(repo, "commit", "-qam", "theirs")
     _harness.git(repo, "checkout", "-q", "main")
-    _mio.save_sharded(idx, _window_plan({"title": "ours", "files": ["src/o.ts"]}))
+    _mio.save_sharded(idx, _window_plan({"title": "ours", "files": ["src/o.ts"]},
+                                        since=since))
     _harness.git(repo, "commit", "-qam", "ours")
     if not driver:
         _harness.git(repo, "config", "--remove-section", "merge.%s" % (M.DRIVER_NAME,))
@@ -1343,13 +1357,40 @@ def _window_cases(check, tmp, env):
           and "nothing was written" in out
           and "git checkout -- %s" % (_W_SHARD % "BF10",) in out
           and "--reconcile" in out)
+
+    # The other half: a plan stating no boundary has it stamped by its FIRST
+    # record, in the same write - so a first record made while the merge is
+    # stopped changes the index as well as the shard, and both are named.
+    f_repo, f_idx, _fc, _fo = _stopped_merge(tmp, "w-first-record", env,
+                                             since=False)
+    f_before = _plan_bytes(f_repo)
+    first = _record_into(f_repo, f_idx, "BF10.1", "BF10", "RF")
+    f_after = _plan_bytes(f_repo)
+    f_code, f_out = _resolve(["resolve", f_idx, "--renumber", "theirs"])
+    f_stamp = (_json_or_none(_plan_bytes(f_repo)["docs/audit/plan.json"]) or {}
+               ).get("meta", {}).get("evidenceSince")
+    check("rw1d A FIRST RECORD DURING A STOPPED MERGE, on a plan stating no "
+          "evidence boundary, changes the index (the boundary it is stamped "
+          "with) and BF10's shard, and resolve refuses naming BOTH, writing "
+          "nothing: %r / %s" % ((first.get("written"), f_stamp), f_out),
+          first.get("written") is True
+          and (f_stamp or {}).get("runId") == "RF"
+          and f_after["docs/audit/plan.json"]
+          != f_before["docs/audit/plan.json"]
+          and f_after[_W_SHARD % "BF10"] != f_before[_W_SHARD % "BF10"]
+          and f_code != 0 and "nothing was written" in f_out
+          and "docs/audit/plan.json - changed since git's merge left it clean"
+          in f_out
+          and "%s - changed since git's merge left it clean" % (_W_SHARD % "BF10",)
+          in f_out
+          and _plan_bytes(f_repo) == f_after)
     _harness.git(repo, "checkout", "--", _W_SHARD % "BF10")
     code, out = _resolve(["resolve", idx, "--renumber", "theirs"])
     check("rw2 the way on is true: after `git checkout --` on the stray file resolve "
           "completes, writing what the undisturbed resolve wrote: %s" % (out,),
           code == 0 and _plan_bytes(repo) == clean)
-    # ...and what the refusal says comes back does: the discarded record's run,
-    # held as a ledger row (the gate writes the row before the record), is put
+    # ...and what the refusal says comes back does: a discarded record whose run
+    # an evidence row still holds (a full run's, or an earlier release's) is put
     # back by reconcile once the merge is committed.
     import _evidence_io
     discarded = _last_run(repo, "BF10")

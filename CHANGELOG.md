@@ -33,6 +33,41 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   no longer imports `tempfile`, so with calls not recorded the journal hook imports nothing
   beyond what loading it already imported.
 
+### Breaking — a recorded task or phase run writes no evidence row
+- **`run-test-gate.py --record` keeps a task, phase or base run only as its record in the
+  plan.** It appends no row to the evidence directory, writes no `test.evidence.recorded` row
+  into the journal and chains nothing; `evidence: recorded <runId>` is printed once the record
+  is in the shard. Exit 3 now means that record was not written, and the line beside it says
+  no file holds the run. A `--full` run still appends its row and its journal anchor, so a red
+  full run is still there for `full-gate.py --learn-from` and a selection miss's remedy.
+  Rows an earlier release wrote are never rewritten or deleted, are still read beside the
+  records and keep verifying. `testEvidence` is the pointer to the subject's record (or, for a
+  done task, the run its commit names) rather than a cache of the evidence file; deleting the
+  block is still safe. A count over recorded runs sees one run per task and per phase from this
+  release on. A plan that states no `meta.evidenceSince` is stamped in the same locked write
+  as its first record - from the earliest run the plan and its ledger hold, that record's run
+  included - so no outcome leaves a record beside an undated boundary, and a stamp the plan
+  already states is never moved by a record. A plan holding records with no stamp (an earlier
+  release's, or a hand edit) and no ledger row as early as its earliest record reads its
+  boundary as not established: work finished after that record is a gap no excuse covers, and
+  `--fail-on no-test-evidence` refuses any excuse for work before it, rather than excusing
+  every gap as a plan that never recorded anything.
+- **`record-outside-run.py` is removed.** Nothing invoked it but a manual step in the
+  orchestrator reference, and an outside suite has no subject to hold a record. Outside rows
+  an earlier release wrote are still read by the `machine:` and `claimed:` lines.
+- **What reads recorded runs follows the one run a subject keeps.** The `evidence-committed`
+  invariant counts a pointer as backed when its holder's own committed record names the run,
+  as well as when a committed older row does: a pointer HEAD cannot back is still a breach,
+  and a run kept only as its record is backed by that record. `commit-task-work.py` binds the
+  newest recorded run: a red record
+  refuses the commit, and a record that replaced the red is what is bound. A task commit in a
+  project with no evidence directory prints no `degraded:` line about it, since a project that
+  never had a ledger is the ordinary state now. The drive measures the base of the red the
+  subject holds now - the record, or the run it repeats - never of a red id a later record
+  replaced, whether the task runs its own gate or its phase's, and a base measured for a red
+  the newest record repeats is kept on that record. `--base-of` a launched run a later run
+  replaced says so and names the red the subject holds now, or says no red of it stands.
+
 ### Breaking — a plan file that writes a key twice is refused
 - **Every plan file is now parsed through one door, which refuses a key written twice
   anywhere in it; no verb keeps one copy silently any more.** A merge resolved by keeping

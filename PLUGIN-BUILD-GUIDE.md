@@ -190,7 +190,6 @@ claude-plugins/                           # this repo (personal, public)
           run-test-gate.py                # runs a phase's gate bracketed by a tree snapshot; counts what ran; states what it touched
           propose-gates.py                # a plan proposal from what evidence history caught, not the tree alone - and says which it drew on
           record-risk-confirmation.py     # the high-risk gate answered BEFORE the run, bounded to named task ids and written to the trail
-          record-outside-run.py           # a suite that ran where this plugin could not see it, so a gate run in the same window is not credited with its effects
           import-evidence.py              # a CI build's own evidence ledger file, brought in whole after its chain verifies - never rewrites a row, never re-chains; prints (never runs) the full-gate.py --learn-from command for each red full row it brought in
           drive-phase.py                  # the step driver: `next <phase>` runs every due step that needs no judgement through the existing verbs, as subprocesses, and prints one instruction - dispatch, decide or done; a refused verb stops it with the verb's own words. Sign-off is the phase review's dispatch, one triage decision, then gate, invariants, sign-off verb, commit, landing and lock release as one step. `submit` is an agent's last act: the stamp, the red-first helper and the filing in one call
           full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no runnable meta.fullGate entry is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
@@ -457,7 +456,6 @@ L9:
   panel-server -> _claude_home, _live_copy, _locks, _manifest_io, _output, _panel_discovery, _panel_page, _panel_runstate, _panel_settings, _panel_state, _panel_write, _ui_theme
   propose-gates -> _claude_home, _evidence_io, _manifest_vocab, _output
   read-ado-links -> _ado_drift, _ado_tracked, _manifest_io, _output
-  record-outside-run -> _claude_home, _evidence_io, _journal_io, _manifest_io, _output
   record-risk-confirmation -> _claude_home, _journal_io, _manifest_io, _output
   render-report -> _areas, _evidence_io, _evidence_view, _fmt, _invariants, _live_copy, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _report_html, _report_md, _report_page, _report_ui, _report_usage, _status_facts, _ui_theme
   repair-commits -> _commit_trail, _journal_io, _locks, _manifest_io, _manifest_rules, _output, _panel_write
@@ -4148,8 +4146,9 @@ rewrite the chain cannot see — every row rewritten and every hash recomputed f
 **A row written before the chain existed is a counted warning, never a finding.** Grading those as
 tampering would turn this check's first run red in every project that upgrades, and a check whose
 opening verdict is a wall of findings nobody means to act on is one its reader learns to skip. The
-gap closes itself: `link_after()` hashes an unchained row to make the `prev` of whatever follows,
-so the next recorded run puts every row before it under the chain. What *is* a finding is an
+gap closes where a row is appended: `link_after()` hashes an unchained row to make the `prev` of
+whatever follows, so a recorded full run - the one scope still appending - puts every row before it
+in its file under the chain, and a file no full run appends to again stays as it is. What *is* a finding is an
 unchained row **after** a chained one — without that the chain is opt-out, since deleting two keys
 would put a row back outside it — and the finding names the innocent reading (an older copy of the
 plugin appended it) rather than asserting forgery, because nothing there can tell the two apart.
@@ -4160,8 +4159,8 @@ either has findings.
 `write_pointer()` puts three keys — `runId`, `status`, `at` — on the task or the phase, **in the
 shard and never the index**: a phase run that touched the index is what makes two parallel phases
 conflict on merge. Every `written: False` is a designed outcome carrying a sentence, not an error
-path. A refused pointer leaves the ledger row standing and names `--reconcile`, which is the only
-reachable partial state and the harmless one.
+path. A pointer is written in the same plan-file write as its record; a pointer `write_pointer()`
+refuses names `--reconcile`, and no command of the plugin calls `write_pointer()` on its own any more.
 
 **Every write of a plan file here goes through `write_plan_file()`, under the lock the verbs
 take.** It takes `SHARD_LOCK` — `index`, the lock every `audit-task.py` verb (`_under_lock`), the
@@ -4180,8 +4179,8 @@ drive holds only for a verb's write. **The lock is one per plan, not one per sha
 verbs' and the panel's lock already is: every plan-file write, of any shard and of the index,
 excludes every other. What that costs is a queue — a wave's members recording at one moment
 wait behind each other, each record holding the lock for one read and one write of its shard —
-and a member still waiting past `RECORD_WAIT_SECONDS` exits 3 with its ledger row written and
-the line saying to re-run it. The queue's length is measured, not written here: time
+and a member still waiting past `RECORD_WAIT_SECONDS` exits 3 with nothing written - its record
+was the run's only copy - and the line saying to re-run it. The queue's length is measured, not written here: time
 `write_record` on a copy of the plan, alone and with members started together. `shard_lock_state()` answers `free` / `ours` / `held` /
 `stale` / `unlockable`, and **`ours` exists because `_locks.acquire` is not re-entrant** — a gate
 a verb launched under its own hold meets the lock that hold already has, so the holder is
@@ -4201,7 +4200,7 @@ A claim that could not be *written* (a lock directory this run cannot write) nam
 that state refusing the lock and not the work, leaving the work to a caller's other guard; a plan
 writer has none, and the panel's writer and both repairs already refuse on it, so this helper
 refuses too, once for every caller: a record written unlocked beside a verb mid-write is a loss
-nothing reports, where a refused record is exit 3 with its ledger row standing for `--reconcile`.
+nothing reports, where a refused record is exit 3 and says no file holds the run.
 **The realistic way a record waits out its bound** is the commit verb: `commit-task-work.py
 --state` on a sharded plan holds `index` across its `git commit`, so a project's slow pre-commit
 hook keeps a wave sibling's record waiting for as long as the hook runs.
@@ -4261,14 +4260,26 @@ index lock, and nothing here establishes that no writer of that member's plan ru
 lose a write, and nothing detects it.
 
 **The record is the run, and its write is not allowed to fail quietly.** `write_record()` puts
-`lastRun` (`RECORD_KEY`) on the subject — the run whole, built by `run_record()` from the row
-`record()` just appended, the machine and attribution lines printed beside it, and a `--launch`
+`lastRun` (`RECORD_KEY`) on the subject — the run whole, built by `run_record()` from the run
+`row_for()` built in memory (no row is appended for a task or phase run: the record is its only
+copy), the machine and attribution lines printed beside it, and a `--launch`
 token — with the pointer derived from it (`pointer_from_record()`) beside it, and, for a task
 run, the gate and selection stages `record_stages()` builds appended to the task's `timing`
 (`_task_timing.append_run_stages`), all in **one read and one write of the shard through
 `write_plan_file()`**. Unlike the pointer, the lock is **waited for** for `RECORD_WAIT_SECONDS`,
 so a verb that wrote while the record waited keeps what it wrote; a lock still held past the
-wait is refused with the shard untouched, and `run-test-gate.py` makes that exit 3. Replaced,
+wait is refused with the shard untouched, and `run-test-gate.py` makes that exit 3. **A plan that
+states no `meta.evidenceSince` is stamped in that same acquisition** — `write_plan_file()`'s
+`index` and `index_change`, the index's `since_change()` ahead of the shard's record, both files
+read and changed before either is saved, the record saved first (a save failing between the two
+leaves a record with no stamp, never a stamp naming a run no file holds — `bu10`, `bu11`) and one
+save in the one-file layout — from `derive_since()`, the
+earliest run the plan and its ledger hold with this record's run, so a record never stands beside
+an undated boundary; a stamp the index already states is left as it is (`bu6`, `bu7`). Records
+beside no stamp and no ledger row as early (an earlier release's plan, a hand edit) make
+`boundary_of()` answer *not established* — the earliest record bounds the start from above and
+the reading is listed in `unknown`, which the gate refuses an excuse on (`bu2`, `bu8`, `bu9`).
+Replaced,
 never appended, so a record's size is the gate's width — `MAX_STEPS` steps of at most
 `MAX_FAILING` failing lines at the journal's value bound. **A repeated verdict carries the run it
 repeated** (`repeat_carried()`): that run whole under `repeatedRun` (`REPEATED_RUN_KEY`) and, for
@@ -4382,7 +4393,8 @@ refused write returns before reaching it, so the chain can never assert a transi
 happen. That is why it is a separate action from the anchor below, whose subject is the evidence
 file and which was true the moment it was written.
 
-**`record()` writes the ledger row first and anchors it second**, so the only reachable partial
+**`record()` writes the ledger row first and anchors it second** — only for a `--full` run now,
+the one scope that still appends a row — so the only reachable partial
 state is the harmless one — a run that happened with nothing yet pointing at it. The reverse would
 put a claim into a hash chain about a row that does not exist. The anchor's subject is the evidence
 file and it says only that a run was *recorded*, which is true the moment it is written; the row
@@ -4391,9 +4403,11 @@ happens. The ledger half is deliberately **not** fail-soft: a run whose evidence
 stored must not be reported as recorded.
 
 **`evidence-committed` is `audit-state-scope`'s other half.** That one grades what a commit
-*staged*; this grades what the committed plan *points at*. A `testEvidence` block is a cache at a
-row in the ledger, so a pointer that survives a clone while its row does not is a plan referring to
-evidence that did not travel with it — and the working tree is exactly where that looks fine, which
+*staged*; this grades what the committed plan *points at*. A `testEvidence` block points at its
+holder's own record in the plan, or — written by an earlier release — at a row in the ledger, so a
+pointer is backed when the committed holder's record (read through `readable_record`) names its run
+or a committed row does. A pointer naming neither is a plan referring to evidence that did not
+travel with it — and the working tree is exactly where that looks fine, which
 is why both the listing and the reading come from `HEAD` rather than from disk. The claim is
 narrower than the invariant and the difference is stated: it asks about HEAD, not about every state
 the phase ever committed, because a pointer briefly unsupported and since repaired is not a fault a
@@ -4658,7 +4672,12 @@ a `.py` change with no sources read, a changed path no arm reads, a changed file
 under a test directory that no arm selected (test support every suite may lean
 on), or suites with no path-scoped spelling to run them under (`entries_for()` asks
 `_gate_derive.resolve_shape`) each answer `widen` with the reason, and the caller
-adds the phase gate. Each selected arm
+adds the phase gate. A suite the change deletes is the one thing no arm selects:
+`gather_facts()` reads which changed paths the tree under test does not hold
+(`absent`), and `select()` refuses such a path whichever arm names it and says so on
+a line beside the arm's basis — a runner handed a missing file refuses it and measures
+nothing, and the deleted suite answers for nothing. A suite that stays is still
+selected when the module it imports is deleted (`af53`-`af55`). Each selected arm
 becomes a step named `affected/<arm>: <suites>`, so the evidence row says which
 arm put each suite there. The gate digest a commit is bound to stays the task's
 own declared gate, because the affected steps are measured, not declared. A task
@@ -5121,8 +5140,9 @@ hand next year. It does NOT narrow the gate to the task's files — that changes
 gate means for every manifest already written, so the refusal names the option and a human
 decides.
 
-**Recording is opt-in and lands strictly after the verdict.** `--record` writes the evidence row,
-the journal anchor and the manifest pointer — all three inside the repository this run has just
+**Recording is opt-in and lands strictly after the verdict.** `--record` writes the subject's
+record and its pointer in the plan (a `--full` run, its evidence row and journal anchor instead,
+then the phases that hold it) — all inside the repository this run has just
 described with `git status --porcelain`, which is why every one of them happens in `main()` after
 `run_gate()` has returned. A write above that line would appear in the very comparison it is being
 judged by, and the runner would accuse itself of the rewrite it exists to catch; a case drives the
@@ -5275,36 +5295,6 @@ the run named under `kept` (`kept_base_answer`); **`--kept-only`** asks for that
 needs no `--tree`, refusing where nothing is kept. `kbg1` drives it.
 `bc1`-`bc4` and `be1`-`be5` drive the comparison; the `bod` cases the derived step's base; the
 drive's `bm`, `bdr` and `bt` cases drive `--base-of`.
-
-### `plugins/audit/scripts/governance/record-outside-run.py`
-`record-outside-run.py <manifest> --label TEXT --started <ISO> [--ended <ISO> | --duration-ms N]
-[--status passed|failed]` — **record a test suite that ran where this plugin could not see it.**
-
-**Why it exists.** `run-test-gate.py` records the runs it *makes*, and for a long time those were
-the only runs the ledger knew about. A suite can run elsewhere on the same machine in the same
-minutes — a pre-push hook fires one on `git push`, a developer starts one in a second terminal, a
-commit hook runs one — taking the same cores, the same ports and the same scratch directories. A
-red that a concurrent outside suite had caused was recorded, rendered and read as the gate's own
-verdict on the work. Writing this row does not make the red go away; it gives
-`_evidence_io.attribution_of` a **named rival with its own row**, so the verdict comes back
-`CONTESTED` instead of being claimed alone.
-
-**It is declared, never sniffed.** Guessing an outside suite from the spelling of a Bash command
-— does it say `playwright`, does it say `push` — is the read-the-command's-spelling class this
-product keeps being repaired for, and it would be wrong in both directions on the first project
-that wraps its own runner. So the row is written by whoever knows: the operator, or the hook they
-wire it into.
-
-**The row has no subject, and that is the bound.** A gate row carries a `scope` and a task or
-phase id, and those are what `latest_by_subject` and `reusable_run` key on. This row's scope is
-its own word (`outside`) and it carries no ids, so it can never be pointed at a task, never stand
-in for a measurement the plugin owes, and never be repeated instead of a gate. It is a fact about
-the **machine in a window**. `--status` is optional and written through as given: absent means
-nobody said what the outside suite answered, which is true and better than a word invented to
-fill the field. The window is the whole value of the row, so a `--started` that will not parse is
-a refusal rather than a guess — and the stamp is read by `_evidence_io`'s own reader, because a
-writer parsing instants its own way would disagree with the module that decides whether two of
-them overlap, by a time zone.
 
 ### `plugins/audit/scripts/governance/import-evidence.py`
 `import-evidence.py <manifest> <shard.jsonl> [--json] [--project-dir DIR]` — **bring a CI build's

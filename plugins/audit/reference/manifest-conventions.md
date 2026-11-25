@@ -511,9 +511,12 @@ The journal's **completion-record actions**:
   changes, one `{id, field, from, to}` per value: a phase's `status`, a bug's `status`/`fixedIn`).
   It is the verb's own row, the way `phase.verdict` is; the values it moves are the ones
   `validate-manifest` warned about
-- `test.evidence.recorded` — a gate run was written to the evidence record (details: runId,
-  taskId?, phaseId). Its subject is the **evidence file**, and it says only that a run was
-  recorded — which is true the moment it is written, whatever happens to the plan afterwards
+- `test.evidence.recorded` — a row was appended to an evidence file (details: runId, taskId?,
+  phaseId). Its subject is the **evidence file**, and it says only that the row was written —
+  which is true the moment it is written, whatever happens to the plan afterwards. Only a recorded
+  `--full` run writes one now; a task, phase or base run keeps its record in the plan and writes
+  neither a row nor this anchor, so a file with no anchor after its last one is read as it is.
+  Rows of this action from earlier releases name every recorded run of their day
 - `task.testEvidence` / `phase.testEvidence` — a `testEvidence` pointer moved (details: runId,
   taskId?, phaseId, field, from, to). Written **only after the pointer actually lands**: a pointer
   refused by another live session leaves the row above standing and no row here, because the chain
@@ -521,11 +524,13 @@ The journal's **completion-record actions**:
   `lastRun` record in one write, so this row also says the record moved
 - `meta.evidenceSince` — the plan stated its evidence boundary for the first time, i.e. when it
   could first have recorded a run at all (details: field, from, to, runId?, phaseId?). Written by
-  the recorder on the first `--record` that finds the key absent, and **only after the key actually
-  lands** — a stamp a lock refused leaves no row, for the reason one bullet up. It is a row of its
-  OWN rather than a detail on `test.evidence.recorded`: that row is written before the plan is
-  touched and stays true whatever happens to it afterwards, so a plan-movement claim hung on it
-  would assert a transition that had not happened yet and might never happen
+  the recorder on the first `--record` that finds the key absent — the key lands in the same locked
+  write as that run's record, so neither lands without the other — and **only after the key
+  actually lands**: a write a lock refused leaves no row, for the reason one bullet up. It is a row of its
+  OWN rather than a detail on `test.evidence.recorded`: that row is a full run's, written before
+  the plan is touched and true whatever happens to it afterwards, and a task or phase run writes
+  none at all - so a plan-movement claim hung on it would assert a transition that had not
+  happened yet, or would have nowhere to hang
 - `audit.state.committed` — an audit-state commit was made for work no task commit will carry
   (details: commitNonce, phaseId; older rows: commit, phaseId). Written before the commit and
   carried by it, so it names the commit by the nonce its `Audit-Row` trailer carries

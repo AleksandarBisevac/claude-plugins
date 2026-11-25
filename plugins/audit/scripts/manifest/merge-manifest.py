@@ -1068,12 +1068,14 @@ def _stray_refusal(strays, answer):
                  "put each file back, which DISCARDS what it holds, then run resolve "
                  "again:")
     lines += ["      %s" % (step,) for _rel, _held, fix in strays for step in fix]
-    lines.append("    what a discarded write held: a run record comes back through "
-                 "`run-test-gate.py <manifestPath> <phaseId> --reconcile` once the "
-                 "merge is committed, which points each subject at the newest run its "
-                 "ledger holds, or by running the gate again; anything else is made "
-                 "again by running the verb that wrote it. To keep the bytes as they "
-                 "are, copy the file out of the work tree first.")
+    lines.append("    what a discarded write held: a task or phase run's record is "
+                 "that run's only copy, so it comes back by running the gate again "
+                 "with --record once the merge is committed; `run-test-gate.py "
+                 "<manifestPath> <phaseId> --reconcile` re-points a subject only at "
+                 "a run its records or an evidence row still hold (a full run's, or "
+                 "an earlier release's). Anything else is made again by running the "
+                 "verb that wrote it. To keep the bytes as they are, copy the file "
+                 "out of the work tree first.")
     return "\n".join(lines)
 
 
