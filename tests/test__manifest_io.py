@@ -18,7 +18,9 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import json
+import ntpath
 import os
+import posixpath
 import shutil
 import sys
 import tempfile
@@ -2066,6 +2068,39 @@ def _twice_save_cases(check):
               "plan over a clean plan: %r" % (outcomes,),
               outcomes == [("cache", "written"), ("clean plan", "written")]
               and M.read_json(clean) == doc)
+        # THE PLATFORM'S OWN SPELLING: a stub's ref is posix DATA, and the
+        # path a refusal names is the one the platform joins. The two decided
+        # spellings run on every platform (`ntpath`, `posixpath`), because the
+        # Windows leg is not where a posix-only run can see a mixed
+        # separator; the plain join is what the helper answers on this one.
+        nt = M.shard_file("C:\\plan", "phases/P1.json", ntpath)
+        px = M.shard_file("/plan", "phases/P1.json", posixpath)
+        here = M.shard_file(tmp, "phases/P1.json")
+        root_d = os.path.join(tmp, "plat")
+        index_d, shard_d = _kt_sharded(root_d, doc,
+                                       shard_text=_kt_shard_twice())
+        raised_d, said_d = _kt_refusal(lambda: M.load_manifest(index_d))
+        raised_e, said_e = _kt_refusal(
+            lambda: M.save_sharded(index_d, dict(doc, bugs=[])))
+        wrote = M.save_sharded(os.path.join(tmp, "plat-clean", "audit-plan.json"),
+                               doc)
+        mixed = os.sep != "/" and ("phases" + "/") in said_d + said_e
+        check("kt4d RED-FIRST: ...the shard a refusal names is the platform's "
+              "own spelling of its path - ntpath, posixpath and this "
+              "platform's join each give the join of the ref's parts, a "
+              "posix ref reaching a read or a save leaves no mixed separator "
+              "in the sentence, and the files a save reports are the joined "
+              "paths: %r"
+              % ((nt, px, here, said_d[:120], said_e[:120], wrote),),
+              nt == "C:\\plan\\phases\\P1.json"
+              and px == "/plan/phases/P1.json"
+              and here == os.path.join(tmp, "phases", "P1.json")
+              and M.shard_file("/plan", "/abs/P1.json", posixpath)
+              == "/abs/P1.json"
+              and raised_d and raised_e and shard_d in said_d
+              and shard_d in said_e and not mixed
+              and os.path.join(tmp, "plat-clean", "phases", "P1.json")
+              in wrote)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
