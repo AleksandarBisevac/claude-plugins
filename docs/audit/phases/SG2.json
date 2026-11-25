@@ -2911,7 +2911,7 @@
     {
       "id": "SG2.23-xk1",
       "title": "The reading's growth case judges the growth over the whole series, so one noisy length on a shared runner cannot redden it while a reading that grows faster than linear still does",
-      "status": "in_progress",
+      "status": "done",
       "description": "MEASURED, by the orchestrator, from CI logs: `cw8` in tests/test__clause_coverage.py (added by SG1.33-ukq, ef60e43f) went red on two consecutive release-tier runs whose diffs do not touch the suite or `_clause_coverage.py` - run 45624543750 at 9e0e4d3b, windows cp1252 leg: 'markers on one line grew 2.04x, 1.53x, 2.92x per doubling'; run 45633864708 at 2a8c21d4, linux plain leg: 'line-start numbers after one line grew 1.17x, 1.43x, 3.00x per doubling'. The rerun of the first was green on the same bytes. The case fails when ANY ONE step's ratio exceeds 2 ** WIDE_POWER (about 2.83x), and a single step is where a shared runner's noise lands even after the least of WIDE_ROUNDS rounds is kept. Both red series grew far less than 2.83x per doubling OVERALL (about 9.2x and 5.0x over three doublings, against a linear 8x and a quadratic 64x).\n\nTHE RULE. What the case exists to catch is a reading that grows faster than linear; such a reading grows at EVERY doubling, so the growth over the whole series shows it, and a single noisy step does not move the whole-series figure past the bound. Judge the growth exponent over the series (the last length's time over the first's, against 2 ** (WIDE_POWER * doublings), or a least-squares slope of log time over log length - choose the structurally correct one and say why), keep the ceiling at the longest length and the memory bound unchanged, and keep the case's label true of what it now judges. Do not raise WIDE_POWER or WIDE_ROUNDS to make the red go away: that is weakening the case, not fixing it.\n\nHOW TO PROVE (regression: the fix lives in the suite itself, so the new cases cannot be red at HEAD - re-added from SG2.22-xk1 for that reason; the proof is the mutation table). A pure helper that judges a given series of seconds, and cases over fixed series - the two red series above from CI must judge green (allow); a quadratic series (4x per doubling) and a series that is linear and then quadratic over its last two doublings must judge red (deny); a planted quadratic `reading_line` (a mutation) must turn cw8 red through the real child as today. A mutation probe of your own (copies of the working tree, each mutation asserted applied, caches purged): the judgement back to the per-step max (the two CI series red); the bound loosened to cubic (the quadratic series green); the ceiling check removed. Run the suite five times back to back and report each cw8 series, and once under --jobs 4 sweep load.\n\nAcceptance:\n(1) cw8 judges the growth over the whole series, so the two series CI recorded red are judged green and a reading quadratic over the series or over its last two doublings is judged red.\n(2) The ceiling and memory bounds are unchanged and the case's label says what it judges.",
       "files": [
         "tests/test__clause_coverage.py"
@@ -2934,16 +2934,58 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3e50ae804f35",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test__clause_coverage.py only. cw8's judgement moved out of its inline loop into pure helpers: _growth_exponent(seconds) is the least-squares slope of log2 time over log2 length (the lengths double, pinned by cw20; a time under WIDE_FLOOR read as the floor) and _run_faults(run) returns the sentences one kind's measured run earns: the growth exponent over WIDE_POWER (WIDE_POWER and WIDE_ROUNDS unchanged), the longest over WIDE_CEILING, the peak over WIDE_BYTES per character (both unchanged), a series short of its lengths, a measurement the helper refused. cw8 keeps the real child and now extends its faults from _run_faults; its label and the comment above the constants say it judges the growth over the whole series, no single step. Slope rather than last-over-first: last-over-first reads two lengths, so the noise of either lands in full (a clean linear series bounded at 2 ** (WIDE_POWER * 3) tolerates one end length 2.83x slow), while every length votes in the slope (the weights over four lengths are .3, .1, .1, .3, so one end length may be 3.17x slow and one middle length 32x), and a reading faster than linear grows at every doubling so every length votes for it. New cases over fixed series with no child: cw17 allow (the two CI series verbatim, a linear series with one length 2.5x slow, a clean linear one, two under the floor), cw18 deny (quadratic, linear then quadratic over the last two doublings, cubic; exponents 1 and 2 read exactly), cw19 ceiling, memory, short series and refused measurement each one fault with the at-bound twins green, cw20 the lengths double. Mutation probe (mutations.py, 12 rows incl. baseline, run in a copy of the tree): bound loosened to cubic -> cw18; ceiling removed, memory removed, short series, refused measurement -> cw19; non-doubling lengths -> cw20; first-step-only exponent -> cw18; ALLOW per-step max back -> cw17 red; ALLOW floor removed -> cw17 red; a planted quadratic reading_line -> cw8 red through the real child with the growth sentence (not the ceiling); twins: a planted linear reading_line keeps cw8 green, and the plant with the verdict wiring cut keeps cw8 green. cq13 goes red under any plant (linear included) and is not this change's. Five real cw8 series back to back and three under a --jobs 4 sweep: exponents 0.63 to 1.05, worst single step 2.25x, all judged green (the machine did not reproduce the CI noise; the proof of the noise case is the two verbatim CI series). Suite 92/92; gate command and the wider affected gate green; ruff, vermin and the house-style and prose-number lints clean on the file. Dependants: .github/sweep-costs.json still correct (the suite is one file figure, not a block table; the new stage costs milliseconds), _clause_coverage.py untouched, CHANGELOG.md line about cw8 timing all three at doubling lengths in a child killed at a deadline is still true, PLUGIN-BUILD-GUIDE.md says only that the cases are in this file. Other growth_series callers: tests/test_build_shop.py judges whole span already (span_growth, last over first, a different choice) and tests/test_guard_history_rewrite.py gw15 is one ratio between two sizes; neither judges a per-step maximum.",
+        "descriptive": "cw8 now fails a reading that grows faster than linear over the whole series, and one noisy length on a shared runner can no longer redden it."
       },
       "startedAt": "2026-11-25T15:37:04Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-25T15:46:28Z",
+      "verifiedBy": [
+        "cw17-cw20 judge fixed series with no child: the two CI series that were red are green, a quadratic and a linear-then-quadratic series are red, the ceiling and memory bounds and the short and refused series each fault with their at-bound twins green, and the lengths double",
+        "cw8 relabelled to say it judges the growth over the whole series and runs through the real child"
+      ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-25T15:37:39Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 34000,
+            "startedAt": "2026-11-25T15:37:05Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-25T15:41:27Z.18537d",
+            "kind": "wait",
+            "ms": 4000,
+            "startedAt": "2026-11-25T15:37:51Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-25T15:41:27Z.18537d, ending at its startedAt",
+            "kind": "selection",
+            "ms": 15601,
+            "runId": "2026-11-25T15:41:27Z.18537d",
+            "startedAt": "2026-11-25T15:37:55Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-25T15:41:27Z.18537d",
+            "kind": "gate",
+            "ms": 196187,
+            "runId": "2026-11-25T15:41:27Z.18537d",
+            "startedAt": "2026-11-25T15:38:11Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-25T15:46:14Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 111000,
+            "startedAt": "2026-11-25T15:44:23Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 3e50ae804f35",
+            "kind": "commit",
+            "ms": 1597,
+            "startedAt": "2026-11-25T15:46:25Z"
+          }
+        ],
         "firstStartedAt": "2026-11-25T15:37:04Z"
       },
       "reviewPerTask": "signals",
@@ -2951,6 +2993,88 @@
         "runId": "2026-11-25T15:44:22Z.64cb55",
         "status": "passed",
         "at": "2026-11-25T15:44:22Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "3e50ae804f35",
+        "at": "2026-11-25T15:46:28Z",
+        "return": "docs/audit/evidence/returns/SG2.23-xk1/20261125T153704Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Regression task whose fix lives in the suite itself, so its cases cannot be red at HEAD (the throwaway run copies the test file over HEAD and passed). The proof is the mutation probe, mutations.py: 12 rows held (baseline green, nine deny/allow rows each turned their named case red, a planted quadratic reading_line turned cw8 red through the real child, two controls stayed green). Beforehand the old per-step judgement made cw17 fail (91/92) and the slope made it 92/92.",
+        "at": "2026-11-25"
+      }
+    },
+    {
+      "id": "SG2.24-xk1",
+      "title": "A task skill the executor agent could not load is said on the record, as it already is for a headless session and for the phase reviewer's review skill",
+      "status": "in_progress",
+      "description": "WHAT IS TRUE TODAY (read from the tree; name the lines again before building on them). A task's skills reach its executor by two routes. HEADLESS: the session runner refuses to start over a skill it cannot find, records which skills the session invoked, and the drive writes a note on the task for a declared skill the session never invoked (`uninvoked_skills`, `skills_said`). SUBAGENT: the brief's Skills section (audit-lookup.py `skills_lines`) tells the agent to invoke each via the Skill tool - and when the tool will not load one, the agent goes on without it and NOTHING says so: not the return, not the task, not the drive. For the phase reviewer's review skill the development branch already closed this (the brief's Review skill section asks for `skillsInvoked` or `skillUnavailable`, and `submit` refuses a phase return with neither); the executor's task skills were left as they were.\n\nWhy this is not 'stop before the spawn': the drive cannot know which names the Skill tool of an agent can load. `runner_review_skill`'s docstring states it - a skill another plugin ships, or one bundled with Claude Code, loads for an agent and is invisible to the plugin's resolver. A stop on 'the resolver cannot find it' would refuse working plans. (A PINNED skill is different and is already a stop: a pin says the skill is a copy on disk.) So what the two routes can share is the RECORD, not the stop.\n\nTHE RULE TO BUILD.\n1. The executor's brief, only when the task resolves at least one skill, asks for the same two fields the reviewer's does, in the same words where the words can be the same: `skillsInvoked`, the names it invoked; `skillUnavailable`, what the Skill tool said for one it could not load. The ask lives in the brief's Skills section, not in the agent file, and the executor's context ceiling (`python3 tools/measure-context.py --gate`) stays green. A task with no skill gets no new line, and its brief is byte for byte what it was.\n2. `submit` reads them for an executor return on the subagent route and writes, through the note verb's own path, ONE note on the task when a skill the brief named is neither in `skillsInvoked` nor accounted for in `skillUnavailable` - or is reported unavailable, with what the tool said. The note's wording is the headless route's (`skills_said`) wherever the fact is the same, so a reader of a task sees one sentence shape for one fact whichever route ran it.\n3. IT IS A RECORD AND NEVER A VERDICT. Nothing is refused, held or reddened over it: an invoked skill is not evidence its workflow was followed, and an uninvoked one is not a defect of the diff. The return files exactly as it would have; the gate, the review and the close do not read the note. State that in the code where the note is written and hold it with a case: the same return with and without the fields files with the same stamp and the same gate question.\n4. A return that carries neither field, for a task with skills, is filed and the note says that whether the skills were invoked was not said - the third answer, distinct from 'invoked none'. It is not refused: every executor return in flight when this lands would otherwise bounce.\n5. The phase reviewer's handling is not touched, and the two readings of `skillsInvoked` (reviewer's refusal, executor's note) share whatever helper reads the field's shape, so a malformed value is one message.\n\nALLOW CASES: a task with no skills; a return naming every skill; the headless route (its note is written as before, once, not twice).\n\nHOW TO PROVE. Red first for the three notes (uninvoked, unavailable with the tool's words, not said). A mutation probe the orchestrator can run from the worktree root: the note written for a task with no skills; the note turned into a refusal (the 'record, never a verdict' case goes red); the headless route writing a second note; the unavailable reason dropped from the note. `python3 tools/measure-context.py --gate` green.\n\nNOT in this task: pins; the review skill; the agent files' return shape beyond what the brief section adds.\n\nAcceptance:\n(1) An executor return on the subagent route that leaves a named skill uninvoked, reports it unavailable, or says nothing of its skills gets one note on the task saying which, in the headless route's wording where the fact is the same.\n(2) The return files with the same stamp and gate question as without the fields; nothing is refused or held over them.\n(3) A task with no skills gets a brief and a submit byte for byte as before.",
+      "files": [
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_audit_lookup.py",
+        "tests/test_drive_phase.py",
+        "plugins/audit/reference/execute-task.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_lookup.py: the executor brief asks for skillsInvoked and skillUnavailable only when the task resolves a skill, and a task with none gets the brief it had",
+          "tests/test_drive_phase.py: submit writes one note for a named skill left uninvoked, reported unavailable or not spoken of, in the headless route's wording, and files the return with the same stamp and gate question either way"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_drive_phase.py tests/test__refs.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-25T15:47:28Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-25T15:47:26Z",
+          "text": "it quotes execute-task.md's per-gate return sentence; SG2.24 edits only execute-task.md's skills passage",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-25T15:47:26Z",
+          "text": "it reads CHANGELOG.md's '## [Unreleased]' heading; SG2.24 adds lines under that heading and keeps it",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-25T15:47:26Z",
+          "reader": "tests/test__refs.py",
+          "reads": "PLUGIN-BUILD-GUIDE.md",
+          "text": "declared to answer a reading: tests/test__refs.py reads PLUGIN-BUILD-GUIDE.md - quotes its text beside its path: \"The executor's carries the resolved skills\""
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-25T15:47:28Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-25T16:29:26Z.928ca8",
+        "status": "passed",
+        "at": "2026-11-25T16:29:26Z"
       }
     }
   ],

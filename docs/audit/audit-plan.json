@@ -1499,7 +1499,8 @@
       "SG2.18-xk1",
       "SG2.19-xk1",
       "SG2.20-xk1",
-      "SG2.21-xk1"
+      "SG2.21-xk1",
+      "SG2.24-xk1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2247,7 +2248,8 @@
       "SG2.17-xk1",
       "SG2.18-xk1",
       "SG2.19-xk1",
-      "SG2.20-xk1"
+      "SG2.20-xk1",
+      "SG2.24-xk1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3914,7 +3916,8 @@
       "SG1.37-ukq",
       "SG1.38-ukq",
       "SG1.40-ukq",
-      "SG1.42-ukq"
+      "SG1.42-ukq",
+      "SG2.24-xk1"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -6743,7 +6746,8 @@
       "SG1.25-ukq",
       "SG2.3",
       "SG2.14-xk1",
-      "SG2.15-xk1"
+      "SG2.15-xk1",
+      "SG2.24-xk1"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -11645,7 +11649,8 @@
       "SG2.17-xk1",
       "SG2.18-xk1",
       "SG2.19-xk1",
-      "SG2.21-xk1"
+      "SG2.21-xk1",
+      "SG2.24-xk1"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -13393,7 +13398,8 @@
       "SG1.25-ukq",
       "SG2.1-ukq",
       "SG2.3",
-      "SG2.20-xk1"
+      "SG2.20-xk1",
+      "SG2.24-xk1"
     ],
     "tests/test__report_html.py": [
       "P131.1",
@@ -13665,7 +13671,8 @@
       "SG1.25-ukq",
       "SG2.3",
       "SG2.14-xk1",
-      "SG2.15-xk1"
+      "SG2.15-xk1",
+      "SG2.24-xk1"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -13961,7 +13968,8 @@
       "SG2.17-xk1",
       "SG2.18-xk1",
       "SG2.19-xk1",
-      "SG2.21-xk1"
+      "SG2.21-xk1",
+      "SG2.24-xk1"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"

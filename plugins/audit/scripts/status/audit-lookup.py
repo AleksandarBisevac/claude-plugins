@@ -636,13 +636,29 @@ def skills_lines(manifest, phase, task, project):
     area defaults whatever they declare. A pinned skill whose copy is not the
     bytes pinned - judged where the agent's Skill tool would look: `project`,
     the user's skills, this plugin's own - raises `_skill_places.PinStop`, and
-    `write_brief` composes no brief."""
+    `write_brief` composes no brief.
+
+    A task that resolves at least one skill is also asked for the two fields
+    the phase reviewer's brief asks for, in this section and not in the agent
+    file: `drive-phase.py submit`'s `note_executor_skills` reads them and notes
+    on the task a skill that was left out - a record, never a verdict, so the
+    lines say that nothing is refused over them. A task that resolves none gets
+    the lines below it always had."""
     skills = _skill_places.require_pins(
         _areas.resolve_skills(manifest, phase, task), manifest, project,
         _claude_home.claude_home(), _output.PLUGIN_ROOT)
     if skills:
         return (["Invoke each via the Skill tool before touching code, in "
-                 "this order:"] + ["- %s" % (s,) for s in skills])
+                 "this order:"] + ["- %s" % (s,) for s in skills] + [
+                 "Then name the skills you invoked in your return's "
+                 "`skillsInvoked` field, a list of the names.",
+                 "If the Skill tool will not load one, go on without it and put "
+                 "what the tool said in `skillUnavailable`, a string. This is a "
+                 "record, never a verdict: `drive-phase.py submit` files your "
+                 "return as it would without either field, and adds one note "
+                 "to the task for a skill above that is neither invoked nor "
+                 "reported unavailable, or when the return says nothing of "
+                 "them."])
     if _areas.skills_opted_out(task):
         return ["No skill resolves for this task: it opts out with "
                 "`skills: null`, which stops the plan and area defaults."]

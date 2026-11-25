@@ -15452,6 +15452,7 @@ def _steps_unit_cases(check):
     _owed_red_first_units(check)
     _submit_mutant_units(check)
     _review_skill_submit_units(check)
+    _executor_skill_note_units(check)
     _unchecked_ids_units(check)
     _brief_scope_units(check)
     _banner_units(check)
@@ -16821,6 +16822,175 @@ def _review_skill_submit_units(check):
           "whole return raises one finding: %r" % ((sliced,),),
           sliced.get("skillUnavailable") == told
           and "skillUnavailable" not in bare)
+
+
+def _executor_skill_note_units(check):
+    """An executor return filed through `submit` on the subagent route leaves ONE
+    note on its task when a skill the brief named is neither in `skillsInvoked`
+    nor accounted for in `skillUnavailable`, is reported unavailable, or the
+    return says nothing of them - in the words a headless session's note uses
+    for the same fact - and the note is a record: the return files as it would
+    without the fields, and a note the verb refuses changes nothing."""
+    M, _w = _unit_driver("drive_phase_executor_skill_note")
+    # The two readings that start a git process each (the paths the attempt
+    # changed, the floor guard's diff) answer what they would for a scratch
+    # directory that is no repository, so the block's filings start neither:
+    # nothing here asks what they decide, and a git call is slow on the slowest
+    # runner.
+    M.submit_strays = lambda ctx, manifest, phase, task_u, tree: (
+        None, None, "no repository in this unit rig")
+    M.floor_reading = lambda ctx, phase, task_u, tree=None, cases=None: (
+        None, "floor guard not read in this unit rig")
+    both = {"defaultSkills": ["alpha-house", "beta-house"]}
+
+    def run(meta, extra, mod=M, answers=None, state=None):
+        task_u = _step_task()
+        plan_u = _step_plan(_step_phase([task_u]), meta)
+        ctx, calls = _submit_rig(mod, task_u, answers)
+        if state is not None:
+            mod.read_state = lambda _ctx: state(task_u)
+        try:
+            said = _caught(mod.submit, ctx, plan_u, _submit_args(), None,
+                           json.dumps(_executor_body("P1.1", extra)))
+        finally:
+            _harness.remove_tree(ctx["project"])
+        notes = [i for s, a, i in calls if s == "audit-task.py" and a[:1] == ["note"]]
+        return said, calls, notes, ctx
+
+    def bare(calls):
+        """The filed body without the two fields and without the floor
+        reading's own clock (`floorGuard.at`, whole seconds), and the verbs run
+        apart from the note."""
+        body = _filed_bodies(calls)
+        for each in body:
+            each.pop("skillsInvoked", None)
+            each.pop("skillUnavailable", None)
+            if isinstance(each.get("floorGuard"), dict):
+                each["floorGuard"].pop("at", None)
+        return body, [c for c in _scripts(calls) if c != ("audit-task.py", "note")]
+
+    said_0, calls_0, notes_0, _c = run(both, {})
+    check("esn1 a task whose brief named two skills, filed with neither field, "
+          "gets ONE note saying whether they were invoked was not said - the "
+          "headless route's sentence, naming both - and is filed: %r"
+          % ((said_0, notes_0),),
+          said_0[0] == 0 and len(notes_0) == 1
+          and M.skills_said({"declared": ["alpha-house", "beta-house"],
+                             "invoked": None})[2:] in notes_0[0]
+          and "whether its declared skills (alpha-house, beta-house) were invoked "
+              "is not recorded: its record carries no skillsInvoked" in notes_0[0]
+          and "never invoked" not in notes_0[0]
+          and len(_filed_bodies(calls_0)) == 1)
+    said_u, calls_u, notes_u, _c = run(both, {"skillsInvoked": ["alpha-house"]})
+    check("esn2 a return naming one of two skills gets ONE note naming the other "
+          "as never invoked, in the headless route's words, and not the one it "
+          "named: %r" % ((said_u, notes_u),),
+          said_u[0] == 0 and len(notes_u) == 1
+          and M.skills_said({"declared": ["alpha-house", "beta-house"],
+                             "invoked": ["alpha-house"]})[2:] in notes_u[0]
+          and "declared skill(s) never invoked through the Skill tool: beta-house"
+              in notes_u[0] and "alpha-house" not in notes_u[0])
+    told = "Unknown skill: beta-house"
+    said_n, calls_n, notes_n, _c = run(
+        both, {"skillsInvoked": ["alpha-house"], "skillUnavailable": told})
+    check("esn3 a skill the Skill tool would not load, with what it said, gets ONE "
+          "note naming it and the tool's words - and says it was not 'never "
+          "invoked', since the return accounts for it: %r" % ((said_n, notes_n),),
+          said_n[0] == 0 and len(notes_n) == 1 and "beta-house" in notes_n[0]
+          and told in notes_n[0] and "alpha-house" not in notes_n[0]
+          and "never invoked" not in notes_n[0])
+    said_e, _calls_e, notes_e, _c = run(both, {"skillsInvoked": []})
+    check("esn3e an explicit empty `skillsInvoked` is an answer - it invoked none - "
+          "so ONE note names both skills as never invoked and does not say the "
+          "question was left unanswered, which is the return with no field "
+          "(esn1): %r" % ((said_e, notes_e),),
+          said_e[0] == 0 and len(notes_e) == 1
+          and "never invoked through the Skill tool: alpha-house, beta-house"
+          in notes_e[0] and "not recorded" not in notes_e[0])
+    said_m, _calls_m, notes_m, _c = run(both, {"skillsInvoked": "alpha-house"})
+    asked = M.skipped_review_skill(
+        {"meta": {"reviewSkill": "alpha-house"}}, {"id": "P1"},
+        {"skillsInvoked": "alpha-house"})
+    check("esn4 a `skillsInvoked` that is not a list is read by the reader the "
+          "phase reviewer's refusal uses, so both say it in one phrase, and the "
+          "executor's return is filed with ONE note: %r"
+          % ((said_m, notes_m, asked),),
+          said_m[0] == 0 and len(notes_m) == 1 and "is not a list" in asked
+          and "is not a list" in notes_m[0] and "alpha-house" in notes_m[0]
+          and "beta-house" in notes_m[0])
+    # The allow direction: a note written whatever the return held, or for a task
+    # with no skill, goes red on each of these.
+    for cid, meta, extra, what in (
+            ("esn5", both, {"skillsInvoked": ["alpha-house", "beta-house"]},
+             "a return naming every skill"),
+            ("esn5q", both, {"skillsInvoked": ["superpowers:alpha-house",
+                                               "beta-house"]},
+             "a return naming one by a plugin-qualified spelling"),
+            ("esn5u", both, {"skillsInvoked": ["alpha-house", "beta-house"],
+                             "skillUnavailable": told},
+             "a return naming every skill, whatever it also says of the tool"),
+            ("esn6", {}, {}, "a task that resolves no skill, no field given"),
+            ("esn6f", {}, {"skillsInvoked": ["x"], "skillUnavailable": told},
+             "a task that resolves no skill, the fields given anyway")):
+        said_a, calls_a, notes_a, _c = run(meta, extra)
+        check("%s %s files with no note at all: %r" % (cid, what, (said_a, notes_a)),
+              said_a[0] == 0 and notes_a == [] and len(_filed_bodies(calls_a)) == 1)
+    # THE RECORD IS NEVER A VERDICT: the return that names every skill - no note,
+    # nothing to say - and each return that earns a note file as the same body and
+    # the same verbs, so the stamp and what the gate is asked are not read from the
+    # fields. The mutation this is here for: a note that refuses or holds the
+    # return, which the quiet one alone would not show.
+    said_q, calls_q, _notes_q, _c = run(
+        both, {"skillsInvoked": ["alpha-house", "beta-house"]})
+    plain_body, plain_ran = bare(calls_q)
+    shapes = [("none", said_0, calls_0), ("said", said_u, calls_u),
+              ("unavailable", said_n, calls_n), ("empty", said_e, _calls_e),
+              ("malformed", said_m, _calls_m)]
+    check("esn7 the return that earns a note, whichever of the fields it carries, "
+          "files the same body as the one naming every skill, apart from the "
+          "fields themselves - the stamp included - runs the same verbs apart from "
+          "the note, and answers the same: %r"
+          % ([(n, bare(c)[1], s[0],
+               sorted(k for k in set(bare(c)[0][0]) | set(plain_body[0])
+                      if bare(c)[0][0].get(k) != plain_body[0].get(k)))
+              for n, s, c in shapes],),
+          said_q[0] == 0
+          and all(bare(c) == (plain_body, plain_ran) and s == said_q
+                  for _n, s, c in shapes)
+          and plain_ran == [("stamp-verification.py", "take"),
+                            ("audit-task.py", "file-return")]
+          and plain_body[0].get("stamp") == "audit-stamp: {\"head\": \"abc1234\"}")
+    said_r, calls_r, notes_r, ctx_r = run(both, {}, answers={
+        ("audit-task.py", "note"): (1, "", "[audit-task] REFUSED: a note\n")})
+    check("esn8 a note the verb refuses is a warning on the step and nothing "
+          "else: the return is still filed, the answer is the one without the "
+          "refusal, and the note is asked for once: %r"
+          % ((said_r, notes_r, ctx_r.get("warnings")),),
+          said_r == said_0 and len(notes_r) == 1
+          and len(_filed_bodies(calls_r)) == 1
+          and any("not noted" in w for w in ctx_r.get("warnings") or []))
+    said_f, _calls_f, notes_f, _c = run(both, {}, answers={
+        ("audit-task.py", "file-return"): (1, "[audit-task] REFUSED: shape\n", "")})
+    check("esn9 a return the filing verb refuses leaves no note, since nothing "
+          "was filed to note: %r" % ((said_f, notes_f),),
+          said_f[0] == 1 and notes_f == [])
+
+    def headless(task_u):
+        held = {}
+        M._mark(held, "writer", task_u, {"dispatches": [{
+            "seq": 0, "round": 1, "record": "r.jsonl", "argv": []}]})
+        return held
+    said_h, calls_h, notes_h, _c = run(both, {}, state=headless)
+    check("esn10 a task a headless writer session ran leaves no note from "
+          "`submit`: the drive's own note of that session (`session_note`) says "
+          "it once, and a second would say it twice: %r"
+          % ((said_h, notes_h, M.session_note(1, {
+              "session": "s1", "cost": "0.1", "stream": "x.jsonl", "exit": 0,
+              "declared": ["alpha-house"], "invoked": []})),),
+          said_h[0] == 0 and notes_h == [] and len(_filed_bodies(calls_h)) == 1
+          and "never invoked through the Skill tool: alpha-house" in M.session_note(
+              1, {"session": "s1", "cost": "0.1", "stream": "x.jsonl", "exit": 0,
+                  "declared": ["alpha-house"], "invoked": []}))
 
 
 UNCHECKED_CLAUSE = ("ids bound to a suite the submit's command did not run are "
@@ -18999,6 +19169,9 @@ _HANDOUT_EXEMPT = {
                                  "whose review_skill_lines asks",
     "drive-phase.py:skipped_review_skill": "reads a filed return for the skill's name",
     "drive-phase.py:unavailable_skill_finding": "files a finding about a filed return",
+    "drive-phase.py:note_executor_skills": "reads a filed executor return against the "
+                                           "names its brief printed, whose skills_lines "
+                                           "asked the pins; it hands nothing out",
     "drive-phase.py:names_a_pin": "whether a member needs the step's checkout of a "
                                   "commit to be asked of; the names then reach the "
                                   "reader through session_skills, which asks",

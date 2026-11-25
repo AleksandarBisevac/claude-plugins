@@ -3936,7 +3936,12 @@ through `submit` too, the phase review's with `--head` - but a per-task reviewer
 session under `executor.writerModel` is told not to, and the drive files its return. The
 reviewer's carries the executor's return as filed for the task's current start
 (byte-identical), the diff, the recorded run and the gate commands, and is refused with exit 4
-(`E_REFUSED`), writing nothing, until that return is filed. The phase reviewer's carries a
+(`E_REFUSED`), writing nothing, until that return is filed. The executor's Skills section, for
+a task that resolves at least one skill, also asks for the same two fields - `skillsInvoked`
+and `skillUnavailable` - as a record that refuses nothing (`skills_lines`; a task resolving
+none gets the one line it always had and no mention of either, `esk1`-`esk3`), which
+`drive-phase.py submit` reads once the return is filed (`note_executor_skills`, in the
+`submit` section). The phase reviewer's carries a
 `## Review skill` section naming the skill `_areas.resolve_review_skill` resolves and the basis
 it returns, and asking for it to be named in the return's `skillsInvoked` or, when the Skill
 tool will not load it, for what the tool said in `skillUnavailable` — `drive-phase.py submit`
@@ -6073,7 +6078,18 @@ with no mark, as `writer_prove` does for red; a task owing none runs no green an
 because the stamp is taken after the last claim, refused as a missing stamp when it prints no
 `audit-stamp:` line or git put no HEAD in it (`take_stamp`); and last `audit-task.py
 file-return`, the write-once door, which a reviewer's return and a phase review's (`--head`)
-reach unchanged. Exit 0 filed, 1 refused with nothing written, 2 a usage error. The `ds` cases
+reach unchanged. After the filing, an executor's `submit` leaves ONE note on its task when
+the skills the brief named (`_areas.resolve_skills`, which the brief's Skills section prints)
+are not all in its `skillsInvoked` - a skill never invoked, one the agent says the Skill tool
+would not load with the tool's words from `skillUnavailable`, or a return that says nothing
+usable of them, which is whether they were invoked not recorded and not a return that invoked
+none - in the sentences a headless session's note uses for the same facts (`skills_clause`),
+the field's shape read by the reader the phase reviewer's refusal uses (`invoked_reading`)
+(`note_executor_skills`, `esn1`-`esn10`). It is a record and never a verdict: it refuses,
+holds and reddens nothing, a note the verb refuses is a warning on the step, the same return
+files with or without the fields (`esn7`, `esn8`), a task resolving no skill gets none
+(`esn6`, `esn6f`), and a task a headless writer session ran gets none from `submit`, since
+`session_note` has said it (`esn10`). Exit 0 filed, 1 refused with nothing written, 2 a usage error. The `ds` cases
 in `tests/test_drive_phase.py` hold each refusal beside the twin that files, and
 the drive's own cases play every agent through `submit`.
 

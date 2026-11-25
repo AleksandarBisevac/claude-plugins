@@ -1,0 +1,110 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_drive_phase.py tests/test__refs.py --jobs 4": "pass",
+    "run-test-gate.py SG2 --task SG2.24-xk1 (no --record; the orchestrator's affected-suite gate)": "pass",
+    "python3 tools/sweep-selftests.py over the 17 dependant suites the brief lists and the lints that read the guide and the prose (--jobs 4)": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "ruff check on the four touched py files": "pass",
+    "vermin -t=3.8- on the four touched py files": "pass"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: `skills_clause` is the one sentence for a declared skill never invoked / not recorded (`skills_said` is now `; ` + it, byte for byte as before; `uninvoked_skills` takes an optional `unread` phrase); `invoked_reading` is the one reader of the `skillsInvoked` shape, now used by `skipped_review_skill` (the reviewer's refusal text is unchanged) and by `executor_skills_said`, which tells three answers apart: a list leaving a skill out (headless wording), a return saying nothing usable (field absent or not a list: the headless 'not recorded' wording, not 'invoked none'; an explicit empty list IS 'invoked none'), and a skill left out beside a non-blank `skillUnavailable` (named with the tool's words, clipped). `note_executor_skills` runs in `submit` AFTER the executor return is filed (and after carry_work), resolves the names with `_areas.resolve_skills` (no second resolution, no pin asked), skips a task whose drive state holds writer dispatches (the headless route's `session_note` already says it), writes ONE note through `note_task` (stdin, scrubbed), and turns a refused note or an unreadable state into a warning; nothing is refused or held, stated in its docstring. audit-lookup.py `skills_lines`: when at least one skill resolves, two lines after the list ask for `skillsInvoked` and `skillUnavailable` and say it is a record, never a verdict; the no-skill and opt-out lines are untouched. Docs: PLUGIN-BUILD-GUIDE.md (lookup paragraph and the submit paragraph), execute-task.md (one sentence in the skills bullet), CHANGELOG.md; the sentence tests/test__refs.py quotes ('The executor's carries the resolved skills ...') is NOT changed, so test__refs.py is unchanged and its sko cases pass. Tests: tests/test_audit_lookup.py gains `_executor_skill_ask_cases` (esk1-esk3, block esk-block) and its co2 assertion `listed[1:] == [...]` became `listed[1:2] == [...]` because the list now carries the ask after the names; tests/test_drive_phase.py gains `_executor_skill_note_units` (esn1..esn10 with esn3e, esn5q, esn5u, esn6f; called from `_steps_unit_cases`, block ux-block) and one row in `_HANDOUT_EXEMPT` (spd1 derives every caller of a skill resolver; the first full gate run went red on it and it is the reason `note_executor_skills` hands nothing out). Red first: with the tests written and the code untouched, esk1, esk3 and esn1-esn4, esn8 failed, the allow cases passed (red_first.out); the fix turned them green. Mutation probe mutations.py: 19 rows, every anchor applied once, every row CAUGHT (the first run showed two rows SURVIVED: esn2 compared the note with the mutated function's own output, now a literal; and one twin expectation named a case that cannot see the opted-out line, an opt-out twin row added) - mutations.out. Block time ux-block: 127 cases / 3.14 s before (one run), 141 cases / 3.22 s and 3.26 s after (two runs, a gap between); git processes of the new block: 12 for 14 cases (one rev-parse per filing; 77 before the unit rig's strays and floor-guard readings were answered without git in this block). submit command filed with the narrowest test command that runs the esn cases (the ux-block stage); the esk cases are in another suite and are therefore reported unchecked by the drive, their red is in red_first.out.",
+    "descriptive": "An executor subagent that leaves a named skill uninvoked, reports it unavailable or says nothing of its skills now gets one note on its task, in the headless route's words, as a record that refuses nothing."
+  },
+  "testsAdded": [
+    "esk1-esk3 in tests/test_audit_lookup.py: the executor brief asks for skillsInvoked and skillUnavailable only when a skill resolves, and a task with none gets the lines it had",
+    "esn1-esn10 (with esn3e, esn5q, esn5u, esn6f) in tests/test_drive_phase.py: submit writes one note per uninvoked, unavailable or not-spoken-of skill in the headless wording, none for the allow cases or the headless route, and files the same body and verbs either way"
+  ],
+  "casesAdded": [
+    [
+      "esk1",
+      "esk2",
+      "esk3"
+    ],
+    [
+      "esn1",
+      "esn2",
+      "esn3",
+      "esn3e",
+      "esn4",
+      "esn5",
+      "esn5q",
+      "esn5u",
+      "esn6",
+      "esn6f",
+      "esn7",
+      "esn8",
+      "esn9",
+      "esn10"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py:2798 skills_clause is the sentence both routes say (skills_said at the headless note and executor_skills_said at :2837 call it); :13427 note_executor_skills is the one writer and runs after the filing (call at :14073); audit-lookup.py:632 skills_lines is the ask; the 'record, never a verdict' sentence is in both docstrings and backed by esn7 (same body, stamp and verbs as the return naming every skill) and esn8 (a refused note is a warning)\n2 19 mutation rows each applied once and CAUGHT: note never written -> esn1-4,3e; note whatever the clause (allow twin) -> esn5,5q,5u,6,6f; note as refusal -> esn1-3,7; refused note raises -> esn8; note before filing -> esn9; headless second note -> esn10 (twin: all-headless -> esn1-4); reason dropped -> esn3; wording diverged -> esn2,3e,10; ask dropped / added to the no-skill and opt-out lines -> esk1,3 / esk2 / esk2,3; first probe run had 2 rows SURVIVED (a circular case and a wrong expectation) and both were repaired and re-run to ALL CAUGHT\n3 grep -n 'skillsInvoked\\|INVOKED_FIELD' drive-phase.py: the reviewer's refusal read the field's shape inline and the executor's note needs the same reading, so both now call invoked_reading; the headless clause was inline in skills_said and is now skills_clause; run-agent-session.py's reading of the stream is a different fact (what the runner saw) and is left; the reviewer's own handling is otherwise untouched\n4 enforced by drive-phase.py submit (note_executor_skills) and named in the brief's own lines in audit-lookup.py skills_lines; the 'never a verdict' rule is held by esn7 and esn8, and nothing refuses a return for the fields\n5 ux-block timed 3.14 s once before (127 cases) and 3.22 s / 3.26 s after (141 cases, runs 3 s apart); the before figure is one run\n6 n/a - no guard reads a command\n7 no number written into prose; the counts above come from the commands printed in mutations.out, gate_final.out and dependants.out",
+  "redFirst": {
+    "at": "2026-11-25T16:15:50Z",
+    "basis": "`python3 tests/test_drive_phase.py --selftest --stage ux-block` in a throwaway tree at HEAD exited 1 with 6 of 141 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - esn1 (house FAIL), esn2 (house FAIL), esn3 (house FAIL), esn3e (house FAIL), esn4 (house FAIL), esn8 (house FAIL): SELFTEST FAILED: 135/141 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:a941255df28fd84a549e25c7df5eef97954116f58c016e38a0d82cd84a9a1a9c\",\"dirtyDigest\":\"sha256:0263d81902ba803783e285fac7182435156fca7d7b28b26c6263cd0099aa3f39\",\"dirtyPaths\":{\"CHANGELOG.md\":\"044cdac6e2a320c7\",\"PLUGIN-BUILD-GUIDE.md\":\"fae5349a38449649\",\"plugins/audit/reference/execute-task.md\":\"d2a3368e601dc6e9\",\"plugins/audit/scripts/governance/drive-phase.py\":\"1552aa5f45de78de\",\"plugins/audit/scripts/status/audit-lookup.py\":\"6fa66236cb96f25a\",\"tests/test_audit_lookup.py\":\"515af34cba98c79a\",\"tests/test_drive_phase.py\":\"a4c21b828fc25cda\"},\"head\":\"3e50ae80\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__refs.py\",\"tests/test_audit_lookup.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:4a647eae56accebc00785458f638600ba1a00ee8f0db12ed9d7f31721278def0\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "1 move(s) that lower the bar across 7 file(s) of the diff; 3 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/execute-task.md; 2 file(s) that could hold a move not compared: tests/test_audit_lookup.py, tests/test_drive_phase.py",
+    "findings": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test_audit_lookup.py",
+        "line": 3837,
+        "side": "tree",
+        "what": "labelled check `co2 the brief's Skills section with nothing resolving names the pla...` differs from its base copy in its condition and arguments",
+        "part": "arguments"
+      }
+    ],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/reference/execute-task.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_audit_lookup.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was only added: every statement of the base copy outside them stands in the tree copy, in order and in place, and the first added one is at tree line 3405 (`_harness.stage(check, \"esk-block\", _executor_skill_ask_cases)`); what it runs is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_drive_phase.py",
+        "move": "definition-changed",
+        "reason": "code outside its test definitions was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 18987 (`_HANDOUT_EXEMPT = {`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "3e50ae804f352c61760db3e3aafcf7284b289062"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-25T16:16:01Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": [
+    "tests/test_audit_lookup.py: the executor brief asks for skillsInvoked and skillUnavailable only when the task resolves a skill, and a task with none gets the brief it had - not checked: the submit's command did not run `tests/test_audit_lookup.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

@@ -2782,8 +2782,8 @@ def uninvoked_skills(run):
     own = run.get("invoked")
     if own is None:
         return None, ("whether its declared skills (%s) were invoked is not "
-                      "recorded: its record carries no skillsInvoked"
-                      % (", ".join(declared),))
+                      "recorded: %s" % (", ".join(declared), run.get("unread")
+                                        or "its record carries no skillsInvoked"))
     invoked = run.get("carried", own)
     called = set(_bare_skill(n) for n in (invoked if invoked is not None else own))
     missing = [n for n in declared if _bare_skill(n) not in called]
@@ -2795,17 +2795,75 @@ def uninvoked_skills(run):
     return missing, None
 
 
-def skills_said(run):
-    """The clause a session's note ends with about its declared skills - the ones
-    never invoked by name, or that no reading of them was recorded - or "" when
-    there is nothing to say (none declared, or every one invoked)."""
+def skills_clause(run):
+    """The words a note says about a session's declared skills - the ones never
+    invoked by name, or that no reading of them was recorded - or "" when there
+    is nothing to say (none declared, or every one invoked). THE ONE SENTENCE
+    for each fact, whichever route ran the task: a headless session's note
+    (`skills_said`) and an executor subagent's (`executor_skills_said`) both
+    take it from here."""
     missing, why = uninvoked_skills(run)
     if why:
-        return "; %s" % (why,)
+        return why
     if missing:
-        return "; declared skill(s) never invoked through the Skill tool: %s" % (
+        return "declared skill(s) never invoked through the Skill tool: %s" % (
             ", ".join(missing),)
     return ""
+
+
+def skills_said(run):
+    """`skills_clause` as the tail of a session's note: `; ` and the clause, or ""
+    when there is nothing to say."""
+    clause = skills_clause(run)
+    return "; %s" % (clause,) if clause else ""
+
+
+def invoked_reading(body):
+    """`(listed, held)` for what a return says in `INVOKED_FIELD`: the names it
+    lists, as strings, and why it lists none - "is absent", "is not a list" or
+    "is empty" - else None. THE ONE READER of the field's shape: the phase
+    reviewer's refusal (`skipped_review_skill`) and the executor's note
+    (`executor_skills_said`) both ask it, so a malformed value is the same
+    phrase in both."""
+    named = body.get(INVOKED_FIELD) if isinstance(body, dict) else None
+    if named is None:
+        return [], "is absent"
+    if not isinstance(named, list):
+        return [], "is not a list"
+    listed = [str(n) for n in named]
+    return listed, (None if listed else "is empty")
+
+
+def executor_skills_said(skills, body):
+    """The clause an executor subagent's note says about `skills`, the ones its
+    brief named, read off its return `body` - or "" when there is nothing to
+    say: no skill named, or every one in `INVOKED_FIELD`.
+
+    Three answers are told apart. A list that leaves a skill out is a skill never
+    invoked (`skills_clause`'s sentence). A return that says nothing usable of
+    them - no field, or a field that is no list - is whether they were invoked
+    not recorded, which is not a return that invoked none, and an explicit
+    empty list is. A skill left out beside non-blank `UNAVAILABLE_FIELD` is one
+    the agent says the Skill tool would not load, with the tool's words: the
+    reason is free text and names no skill, so it accounts for every one left
+    out."""
+    if not skills:
+        return ""
+    listed, held = invoked_reading(body)
+    said = held in (None, "is empty")
+    run = {"declared": list(skills), "invoked": listed if said else None}
+    if held == "is not a list":
+        run["unread"] = "its `%s` %s" % (INVOKED_FIELD, held)
+    reason = unavailable_reason(body)
+    if not reason:
+        return skills_clause(run)
+    called = [_bare_skill(n) for n in listed]
+    left = [n for n in skills if _bare_skill(n) not in called]
+    if not left:
+        return ""
+    return ("declared skill(s) not invoked, the agent reporting that the Skill "
+            "tool would not load one: %s - the tool said: %s"
+            % (", ".join(left), _clip(" ".join(reason.split()), 300)))
 
 
 def session_note(round_n, run, who="writer"):
@@ -13343,15 +13401,12 @@ def skipped_review_skill(manifest, phase, body):
     skill, basis = _areas.resolve_review_skill(manifest, phase)
     if not skill:
         return None
-    named = body.get(INVOKED_FIELD) if isinstance(body, dict) else None
-    listed = [str(n) for n in named] if isinstance(named, list) else []
+    listed, held = invoked_reading(body)
     if _bare_skill(skill) in [_bare_skill(n) for n in listed]:
         return None
     if unavailable_reason(body):
         return None
-    held = ("is absent" if named is None else
-            "is not a list" if not isinstance(named, list) else
-            "is empty" if not listed else "names only %s" % (", ".join(listed),))
+    held = held or "names only %s" % (", ".join(listed),)
     return ("the phase return for %s does not name the review skill %s (basis: "
             "%s) as invoked: its `%s` %s, and it has no `%s`. Invoke %s through "
             "the Skill tool and review with it, then submit again with it listed "
@@ -13367,6 +13422,41 @@ def unavailable_reason(body):
     not load, so it is no answer."""
     said = body.get(UNAVAILABLE_FIELD) if isinstance(body, dict) else None
     return said.strip() if isinstance(said, str) and said.strip() else None
+
+
+def note_executor_skills(ctx, manifest, phase, task, body):
+    """Leave ONE note on `task` when its executor's return, just filed, does not
+    account for a skill its brief named (`executor_skills_said`): left out of
+    `INVOKED_FIELD`, reported unavailable, or not spoken of.
+
+    A RECORD AND NEVER A VERDICT. Nothing here refuses, holds or reddens: it runs
+    after the return is filed, and a note the verb refuses is a warning on the
+    step, so the filing, the stamp, the gate, the review and the close are what
+    they would be without the fields. A skill the Skill tool loaded is no
+    evidence its workflow was followed, and one it did not is no defect of the
+    diff; the reader of a task sees the fact and judges it.
+
+    The names are the brief's own: `_areas.resolve_skills`, which the brief's
+    Skills section prints; no second resolution, and no pin is asked, since a
+    pinned skill that changed stopped the brief and the drive's hand-out. A task
+    the drive ran as a headless writer session is left alone - its note of the
+    same fact is `session_note`'s, and a second would say it twice."""
+    clause = executor_skills_said(_areas.resolve_skills(manifest, phase, task), body)
+    if not clause:
+        return
+    try:
+        ran = writer_state(read_state(ctx), task)["dispatches"]
+    except ValueError as exc:
+        warn(ctx, "the skills of %s were not noted: whether a headless session "
+                  "ran it is not known (%s)" % (task["id"], exc))
+        return
+    if ran:
+        return
+    refused = note_task(ctx, task, "executor return filed through submit: %s" % (
+        clause,))
+    did_or_warn(ctx, refused, "skills of %s %s: %s" % (
+        task["id"], "noted" if refused is None else "not noted (%s)" % (refused,),
+        clause))
 
 
 def unavailable_skill_finding(manifest, phase, body, plan_path):
@@ -13980,6 +14070,7 @@ def submit(ctx, manifest, args, cmd, text):
                                   (body.get("redFirst") or {}).get("status"))
         if tree:
             carry_work(ctx, task, tree, wave_state(ctx, phase).get("records"))
+        note_executor_skills(ctx, manifest, phase, task, body)
     ctx["did"].insert(0, "%s %s return filed%s" % (
         args.id, args.role, (" at %s" % (written.group(1).strip(),))
         if written else ""))

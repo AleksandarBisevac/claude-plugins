@@ -8,6 +8,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ### Added
 
+- **A task skill the executor subagent could not load is said on the record, as it already
+  is for a headless session and for the phase reviewer's review skill.** The executor's brief
+  asks, only when the task resolves at least one skill and in its Skills section, for
+  `skillsInvoked` (the names it invoked) and `skillUnavailable` (what the Skill tool said of
+  one it could not load) - a task with none gets the brief it had. After it files the return,
+  `drive-phase.py submit` leaves ONE note on the task when a skill the brief named is not in
+  `skillsInvoked`: the headless route's sentence for a skill never invoked, a sentence naming
+  what the tool said for one reported unavailable, and the headless route's "not recorded"
+  sentence for a return that says nothing usable of its skills (no field, or a field that is
+  not a list) - the third answer, apart from an explicit empty list. It is a record and never a
+  verdict: nothing is refused or held, a note the verb refuses is a warning on the step, the
+  same return files with the same stamp with or without the fields, and a task a headless
+  writer session ran gets no second note. The reader of the field's shape is shared with the
+  phase reviewer's refusal, so a malformed value is one phrase; the reviewer's handling is
+  unchanged.
 - **A pin is written by a verb, read back by the doctor, and one page says how to vendor an
   outside skill so that it can be pinned.** `/audit:task skill-pin <name> [--source TEXT]`
   pins the directory digest of the copy `_skill_places.resolve_skill` finds now - the

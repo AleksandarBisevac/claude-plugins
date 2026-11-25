@@ -76,6 +76,11 @@ verb writes and refuses, and what the run commands leave behind, is
      order — house conventions before task specifics, because a subagent
      that reads the specifics first has already made the decisions the conventions were meant to
      inform. With no `meta.defaultSkills` and no registered area this is exactly `task.skills`.
+     The computed brief's Skills section, when a skill resolves, also asks the return for
+     `skillsInvoked` and, for one the Skill tool would not load, `skillUnavailable`;
+     `drive-phase.py submit` files the return as it would without them and leaves one note on
+     the task for a skill neither invoked nor reported unavailable, or when the return says
+     nothing of them - a record, never a verdict.
    - Give it `task.description`, `task.files`, `task.docs`, the phase's `desiredOutcome` (so the work
      aims at the phase's stated goal), and the repo hard-rules (no token logging, no secret
      reads, plus any `meta`-level conventions). It must load project skills for domain rules.

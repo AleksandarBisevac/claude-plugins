@@ -3402,6 +3402,7 @@ def _selftest():
         _harness.stage(check, "gfb-block", _green_brief_cases)
         _harness.stage(check, "rs-block", _return_section_cases)
         _harness.stage(check, "spb-block", _skill_pin_brief_cases)
+        _harness.stage(check, "esk-block", _executor_skill_ask_cases)
     return _harness.run(body)
 
 
@@ -3841,7 +3842,7 @@ def _conventions_order_cases(check):
           and "task" in none_line
           and "skills: null" in opted_line
           and "meta.defaultSkills" not in opted_line
-          and listed[1:] == ["- from-plan"])
+          and listed[1:2] == ["- from-plan"])
 
 
 def _red_command_reader_cases(check):
@@ -4197,6 +4198,66 @@ def _skill_pin_brief_cases(check):
         check("spb4 ALLOW: a pin for a skill this task does not use asks nothing, "
               "and the task's own unpinned skill is untouched however it changed",
               code_o == M.E_OK and other is not None)
+    finally:
+        _harness.remove_tree(root)
+
+
+def _executor_skill_ask_cases(check):
+    """The executor brief's Skills section asks for `skillsInvoked` and
+    `skillUnavailable` - the fields the phase reviewer's brief asks for, the
+    names the drive reads - only when the task resolves a skill; a task that
+    resolves none gets the lines it always had, and a whole brief for it says
+    nothing of either field."""
+    drive = _loader.load_script("drive-phase.py", "drive_phase_esk", cache=False)
+    invoked, unavailable = ("`%s`" % (drive.INVOKED_FIELD,),
+                            "`%s`" % (drive.UNAVAILABLE_FIELD,))
+    nowhere = os.path.join(_output.REPO_ROOT, "no-such-project-esk")
+    plan = {"meta": {"defaultSkills": ["from-plan"]}}
+    listed = M.skills_lines(plan, {"id": "P1"}, {"id": "P1.1"}, nowhere)
+    asked = " ".join(listed[2:])
+    check("esk1 a task that resolves a skill is told to name what it invoked in "
+          "%s and what the Skill tool said of one it could not load in %s, and "
+          "that this is a record and never a verdict - after the skill list, "
+          "which is untouched: %r" % (invoked, unavailable, listed),
+          listed[:2] == ["Invoke each via the Skill tool before touching code, "
+                         "in this order:", "- from-plan"]
+          and asked.count(invoked) == 1 and asked.count(unavailable) == 1
+          and "never a verdict" in asked)
+    # The allow direction: the section asked unconditionally goes red on each of
+    # these, which are the lines a task with no skill has always had.
+    none_lines = M.skills_lines({"meta": {}}, {"id": "P1"}, {"id": "P1.1"}, nowhere)
+    opted_lines = M.skills_lines(plan, {"id": "P1"},
+                                 {"id": "P1.1", "skills": None}, nowhere)
+    check("esk2 a task that resolves no skill - none declared, or an explicit "
+          "opt-out - gets exactly the one line it always had and neither field: "
+          "%r" % ((none_lines, opted_lines),),
+          none_lines == ["No skill resolves for this task: no plan default "
+                         "(meta.defaultSkills), no area default and no task "
+                         "skill."]
+          and opted_lines == ["No skill resolves for this task: it opts out with "
+                              "`skills: null`, which stops the plan and area "
+                              "defaults."])
+    root = _harness.fixture_root("audit-lookup-esk-")
+    name = "20260101T000000Z.executor.md"
+    try:
+        briefs = []
+        for label, skills in (("with", ["writing-python"]), ("without", None)):
+            manifest = _bf_manifest()
+            manifest["phases"][0]["tasks"][0]["skills"] = skills
+            proj, mpath, _folder = _pin_project(root, label, manifest, "x\n")
+            _code, _said, text = _pin_brief(proj, mpath, "P1.1", "executor", name)
+            briefs.append(text or "")
+        with_skill, without = briefs
+        section = with_skill.split("\n## Skills\n", 1)[-1].split("\n## ", 1)[0]
+        check("esk3 the written brief of a task with a skill carries the ask once, "
+              "inside its Skills section; the written brief of a task with none "
+              "names neither field anywhere: %r"
+              % ((with_skill.count(invoked), with_skill.count(unavailable),
+                  without.count(invoked), without.count(unavailable)),),
+              section.count(invoked) == 1 and with_skill.count(invoked) == 1
+              and with_skill.count(unavailable) == 1
+              and without != "" and invoked not in without
+              and unavailable not in without)
     finally:
         _harness.remove_tree(root)
 
