@@ -1,0 +1,107 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__doctor_policy.py tests/test__skill_places.py tests/test_drive_phase.py --jobs 4": "pass",
+    "python3 tools/sweep-selftests.py tests/test__doctor_policy.py tests/test__skill_places.py tests/test__deps.py tests/test__doctor_report.py tests/test__output_lints.py tests/test_audit_doctor.py tests/test__doctor_hygiene.py tests/test__doctor_setup.py --jobs 4": "pass",
+    "ruff check on the seven changed .py files": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-25T18:45:21Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__doctor_policy.py tests/test__skill_places.py` in a throwaway tree at HEAD exited 1 with 29 of 38 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dp68 (house FAIL), dp68b (house FAIL), dp70 (house FAIL), dp70b (house FAIL), dp71 (house FAIL), dp72 (house FAIL), dp72b (house FAIL), dp72c (house FAIL) and 21 more: SELFTEST FAILED: 19/38 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "skillsInvoked": [
+    "writing-python",
+    "before-you-claim",
+    "no-silent-pass"
+  ],
+  "outcome": {
+    "technical": "The doctor's pin rows now judge each route by the drive's own reader over the copy the drive asks for that route. _doctor_policy._pin_routes names the routes from the config (executor.writerModel, executor.waveWidth): the project's working copy for 'a session run in this tree' or 'a subagent dispatched from this tree', and on the session route at a wave width above one also 'a wave's sessions', judged over HEAD's copy. Every row is prefixed 'for <route>:' and its fix is that route's (_pin_fix: a wave's skill held by a commit is told to commit; the working-copy route is told to restore where it reads). Both routes call _skill_places.pin_verdict, the function the drive calls. The git-status reader (_head_note, _under) is deleted; its stale GIT_PATH_BASE_EXEMPT row in tools/lints/_deps.py is deleted with it (a file outside the task's files list; the plan gate allowed the edit). HEAD's copy is read by _in_head_copy / _cut_head_copy: git rev-parse, then read-tree into a PRIVATE index file and checkout-index into a scratch directory under the temp directory, removed in a finally; nothing is written to the project, its .git or .git/worktrees. A copy that cannot be cut (no git, no repository, no commit, no scratch dir, git failed, temp dir inside the repository) is a WARNING row 'for a wave's sessions: not judged: <why>', and a scratch directory that could not be removed is its own warning. I chose this over a second `git worktree add --detach` (which checkout_at uses) because it needs no .git/worktrees entry, runs no post-checkout hook and so cannot leave a registration if the doctor is killed; the cost is that the bytes come from read-tree/checkout-index rather than the identical git operation, which I measured equal over core.autocrlf=true, text eol=crlf, -text and a committed directory link (S/sg2.26/exp_checkout.py: SAME in all four) and which dp70/dp71 hold against the real drive. The words of a stop for a copy that is not the project's moved out of drive-phase.py into _skill_places (commit_label, loaded_tier, copy_remedy, copy_stop_words; loaded_tier uses _inside instead of _worktrees.within_tree, same containment on resolved paths); drive-phase.pin_stop_words now calls copy_stop_words and the drive's four private helpers are gone, so the runner's stop and the doctor's wave row are one sentence (dp70 asserts the doctor's words occur verbatim in the drive's output). Tests: tests/test__doctor_policy.py gained a scenario block that builds real git projects and runs BOTH audit-doctor.py --json and drive-phase.py next on each (dp70, dp70b link layout and its committed twin, dp71, dp71b autocrlf and twin, dp72, dp72b, dp72c working-copy-only edit on the session and subagent routes and the matching twin, dp73 no pins draws no row, dp74 .git byte-for-byte, worktree list and private TMPDIR unchanged after the doctor runs, dp75, dp75b not-judged, dp76 a personal skill is not told to commit); dp68 rewritten for the route rows, dp68b asserts no git-status text and no _head_note. tests/test__skill_places.py gained sp52-sp55. tests/test_drive_phase.py: spd33a now calls _skill_places.commit_label (the driver no longer defines it). PLUGIN-BUILD-GUIDE.md: the _doctor_policy, _skill_places and drive-phase sections updated. Measured: red on HEAD's code with the new test files (S/sg2.26/red_first.out): doctor suite 73/84, skill_places 19/38, the reds including dp70, dp71, dp72 (OK where the wave stops; 'will not start' where it dispatches). The probes reproduce the review's disagreement on an export of HEAD (link_head_probe L1: doctor OK, next exit 1) and agree on the work in progress (S/sg2.26/out/link_head.after.txt, journey.after.txt: s2, s5, s6, s6b). Mutation probe S/sg2.26/mutations.py (16 rows on copies of the tree, each anchor asserted applied once, each deny with its allow twin, caches purged, private TMPDIR): ALL 16 APPLIED AND KILLED (S/sg2.26/mutations.out). Gates run: sweep of test__doctor_policy + test__skill_places + test_drive_phase --jobs 4: 3/3 ok (test_drive_phase 1125 cases); dependants' sweep test__doctor_policy test__skill_places test__deps test__doctor_report test__output_lints test_audit_doctor test__doctor_hygiene test__doctor_setup: 8/8 ok, 967 cases; ruff clean on the changed .py. The submit's own proof command is narrowed to the two suites that carry the new cases (test_drive_phase would not fit the helper's deadline and its one change, spd33a, was run green in the sweep above). Not run: the full affected-test gate and any browser gate. _deps.layer_violations() reports one violation (panel/_panel_state.py), identical on an export of HEAD, so not mine. Open items outside the task's files: reference/vendoring-a-skill.md:75-76 promises 'doctor says so when a pinned project skill's working copy differs from HEAD' (the sibling task owns the guide), and commands/doctor.md says 'no locks, no mutations' while the wave row now makes and removes a scratch directory under the temp dir.",
+    "descriptive": "The doctor's skill-pin rows now name the route they judge and reach, over a clean scratch copy of HEAD, the same verdict the drive's wave reaches - so a re-pinned committed link, an autocrlf checkout and a working-copy-only edit no longer read OK or 'will not start' where the drive does the opposite."
+  },
+  "testsAdded": [
+    "dp70/dp70b: a link-layout skill re-pinned uncommitted - the doctor's wave row warns exactly where drive-phase next stops, in the same words; the committed twin reads OK on both routes and the wave starts",
+    "dp71/dp71b: a core.autocrlf=true checkout (git status clean) - doctor and drive agree the wave stops; the same project without the conversion is quiet",
+    "dp72/dp72b/dp72c: a working-copy-only edit - on the session route the wave dispatches and the doctor warns only for the working-copy route, on the subagent route both stop; the matching subagent twin starts",
+    "dp73/dp74/dp75/dp75b/dp76: no pins draws no row; the doctor leaves .git, the worktree list and its temp dir as found; a copy of HEAD that cannot be cut is 'not judged'; a personal skill is never told to commit",
+    "dp68/dp68b: in-process route rows for an edited, clean and committed skill, and no git-status reading left in _doctor_policy",
+    "sp52-sp55: _skill_places.copy_stop_words, loaded_tier and commit_label"
+  ],
+  "casesAdded": [
+    [
+      "dp68",
+      "dp68b",
+      "dp70",
+      "dp70b",
+      "dp71",
+      "dp71b",
+      "dp72",
+      "dp72b",
+      "dp72c",
+      "dp73",
+      "dp74",
+      "dp75",
+      "dp75b",
+      "dp76",
+      "sp52",
+      "sp53",
+      "sp54",
+      "sp55"
+    ]
+  ],
+  "claims": "claims:\n1 _doctor_policy.py:563-579 (_pin_routes) names the routes from the config the drive reads, :661-690 (_say_route) calls _skill_places.pin_verdict, the drive's own reader (_skill_places.py:466), and words a wave stop with _skill_places.copy_stop_words (:609), which drive-phase.py:9805 calls too; _doctor_policy.py:722-775 (_in_head_copy/_cut_head_copy) is the only place HEAD is read, with a private index; the docstring claims only what these do. Dependants: audit-doctor.py, tests/test__doctor_report.py - still correct (they use check_areas/_leading_executable, untouched; test__doctor_report 24/24 green); tools/affected.py and tools/lints/_deps.py - the _head_note exemption row was stale and is deleted (git_path_base_violations() == []); PLUGIN-BUILD-GUIDE.md updated for the three sections; drive-phase.py's 66 importers - unchanged names except four private helpers removed (grep of plugins tests tools shows no other use; tests/test_drive_phase.py spd33a updated); run-agent-session.py, _manifest_rules.py, audit-task.py, _panel_write.py, audit-lookup.py import _skill_places - only additions, no existing signature changed.\n2 red on HEAD's code with the new tests: red_first.out doctor 73/84 (dp70, dp71, dp72 among the 11 reds), skill_places 19/38; mutation probe mutations.out: 16 rows each applied once, ALL KILLED, deny rows m1 m3 m5 m6 m7 m9 m10 m11 m12 m13 m14 m15 m16 with allow twins m2 m4 m8 over-firing the guard until dp72b/dp72c, dp70b/dp71b/dp72c and dp76 went red; baseline green, tree restored green.\n3 the class is two readers of one copy: grep for 'git status|porcelain' in _doctor_policy.py now has 0 hits (dp68b asserts it); the same class elsewhere in the drive/doctor: `_skill_places.stop_words` callers are drive-phase (via copy_stop_words), run-agent-session and _doctor_policy, each over the one verdict; left because outside the task: reference/vendoring-a-skill.md:75-76 still promises 'doctor says so when a pinned project skill's working copy differs from HEAD' (the sibling task owns that guide), and commands/doctor.md's 'no locks, no mutations' - the wave row now makes and removes a scratch directory under the temp dir (nothing in the project, .git or worktree list; dp74).\n4 n/a - no rule addressed to an agent was written; the doctor's read-only property is held by dp74 (it compares every file under .git, the worktree list and the private temp dir before and after a doctor run).\n5 measured once: the equality of read-tree plus checkout-index with git worktree add --detach, once per layout (exp_checkout.py in the scratch directory: autocrlf, eol attribute, -text, committed link, SAME in all four), no repeat with a gap; the timings I quote are single runs on a loaded machine.\n6 the doctor reads the operation: the copy a route loads (resolve_skill and pin_verdict over the checkout the drive would cut), never a git status text; allow twins dp70b/dp71b/dp72c/dp73 proven quiet on the working tree before the deny rows were trusted, and m2/m4/m8 over-fire mutations went red.\n7 no number written into prose of the plugin or the guide: the tests print their tallies, and counts quoted in the outcome carry their command (red_first.out, mutations.out, the sweep lines).",
+  "stamp": "audit-stamp: {\"content\":\"sha256:3e72c06a2acce912a49d6df01bdd18da875486d382688f3662f532ef16c15f9c\",\"dirtyDigest\":\"sha256:3e73a6b9d80c0dd424f71c0a3cdc67f0455e62c83753e1f0f0a567e499891125\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"2a9a465bf5cbec9c\",\"plugins/audit/scripts/governance/drive-phase.py\":\"983538bc2e7afbbc\",\"plugins/audit/scripts/status/_doctor_policy.py\":\"65f967749f4d7fdb\",\"plugins/audit/scripts/status/_skill_places.py\":\"982343660bebe6bf\",\"tests/test__doctor_policy.py\":\"d45a8d500fcb6248\",\"tests/test__skill_places.py\":\"699c670d2d60be5c\",\"tests/test_drive_phase.py\":\"f977f993f8605615\",\"tools/lints/_deps.py\":\"ec68d267b9f4b7ba\"},\"head\":\"bd911be4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/status/_doctor_policy.py\",\"plugins/audit/scripts/status/_skill_places.py\",\"tests/test__doctor_policy.py\",\"tests/test__skill_places.py\",\"tests/test_drive_phase.py\",\"tools/lints/_deps.py\"],\"scopeDigest\":\"sha256:4e3ee78478534a4491c9ae85a3f627ae6aa64d7383732f31c7a1290b1d75a8d3\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 4 of the diff's 8 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 1 change(s) to tests the task declared by case; 1 file(s) not read that cannot hold a move as read here: PLUGIN-BUILD-GUIDE.md; 3 file(s) that could hold a move not compared: tests/test__doctor_policy.py, tests/test__skill_places.py, tests/test_drive_phase.py",
+    "findings": [],
+    "declared": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test__doctor_policy.py",
+        "line": 1061,
+        "side": "base",
+        "what": "labelled check `dp68 a pinned project skill whose working copy differs from HEAD is...` is gone from the tree copy",
+        "part": "gone"
+      }
+    ],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__doctor_policy.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 1046 (`def pinned_report():`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test__skill_places.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 751 (`_PIN_API = (\"skill_digest\", \"pin_verdict\", \"stop_words\", \"pin_stops...`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_drive_phase.py",
+        "move": "definition-changed",
+        "reason": "code outside its test definitions was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 23019 (`out[label] = C.commit_label(text, top, sha, where, sep=sep) \\`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "bd911be4bf62af762b2f705a5056012f40f3dbde"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-25T18:45:27Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

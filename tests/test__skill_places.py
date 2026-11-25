@@ -749,7 +749,66 @@ def _spelling_cases(check, root):
 # The reader's surface. A module without it fails each case by name rather than
 # raising out of the block before any case ran.
 _PIN_API = ("skill_digest", "pin_verdict", "stop_words", "pin_stops", "require_pins",
-            "PinStop", "pin_shape_problems")
+            "PinStop", "pin_shape_problems", "copy_stop_words", "loaded_tier",
+            "commit_label")
+
+
+def _copy_words_cases(check, root):
+    """The words of a stop for the copy that was asked - a commit's checkout or a
+    member's tree - are `_skill_places`', so the runner's stop and the doctor's
+    row for a wave's sessions are one sentence."""
+    tree = os.path.join(root, "wtree")
+    home = os.path.join(root, "whome")
+    plugin = os.path.join(root, "wplugin")
+    sha = "7f4ccca2c894" + "0" * 28
+    _skill_dir(os.path.join(tree, ".claude", "skills"), "qzv-held")
+    _skill_dir(os.path.join(home, "skills"), "qzv-personal")
+    wrong = {"sha256": "f" * 64}
+
+    def stop(name):
+        return M.pin_verdict(name, wrong, tree, home, plugin, "house")
+    commit = ("commit", sha, tree)
+    held = M.copy_stop_words([stop("qzv-held")], tree, home, plugin, commit)
+    own = M.copy_stop_words([stop("qzv-held")], tree, home, plugin, ("tree", tree))
+    personal = M.copy_stop_words([stop("qzv-personal")], tree, home, plugin, commit)
+    check("sp52 a stop over a PROJECT skill judged at a commit tells the reader to "
+          "COMMIT the restored bytes and names the file as the commit holds it - "
+          "`commit <sha12>/...`, never the scratch checkout's path; judged in a "
+          "member's tree it says to restore them there instead: %r" % ((held, own),),
+          "COMMIT" in held and "commit %s/.claude/skills/qzv-held/SKILL.md" % sha[:12]
+          in held and tree not in held and "own tree" in own and "COMMIT" not in own)
+    check("sp53 ALLOW (the twin of sp52): a PERSONAL skill's stop under the very "
+          "same commit keeps the reader's own remedy - no commit holds it - and its "
+          "path stays the one it is read from: %r" % (personal,),
+          personal == M.stop_words(stop("qzv-personal")) and "COMMIT" not in personal
+          and home in personal)
+    hit = M.resolve_skill("qzv-held", tree, home, plugin, "house")
+    pers = M.resolve_skill("qzv-personal", tree, home, plugin, "house")
+    outside = os.path.join(root, "woutside")
+    _skill_dir(outside, "qzv-linked")
+    linked = None
+    try:
+        os.symlink(os.path.join(outside, "qzv-linked"),
+                   os.path.join(tree, ".claude", "skills", "qzv-linked"),
+                   target_is_directory=True)
+        linked = M.resolve_skill("qzv-linked", tree, home, plugin, "house")
+    except (OSError, NotImplementedError):
+        linked = None
+    tiers = (M.loaded_tier(hit, commit), M.loaded_tier(pers, commit),
+             M.loaded_tier(linked, commit) if linked else "no link made here")
+    check("sp54 the tier a stop's remedy is for is the one the skill LOADS from: a "
+          "project skill inside the copy is 'project', a personal one stays "
+          "'personal', and a project skill that is a link to a place outside the "
+          "copy is 'outside' - read where it is, so no commit changes it%s: %r"
+          % ("" if linked else " (the link case did not run: no link made here)",
+             tiers),
+          tiers[:2] == ("project", "personal")
+          and tiers[2] in ("outside", "no link made here"))
+    text = "read %s/x/SKILL.md and %s/y" % (tree, os.path.join(root, "elsewhere"))
+    check("sp55 the commit form relabels the paths under the checkout only: %r"
+          % (M.commit_label(text, tree, sha),),
+          M.commit_label(text, tree, sha) == "read commit %s/x/SKILL.md and %s/y"
+          % (sha[:12], os.path.join(root, "elsewhere")))
 
 
 def _pinned_cases(check):
@@ -766,6 +825,7 @@ def _pinned_cases(check):
     _line_end_cases(check, root)
     _tool_written_cases(check, root)
     _spelling_cases(check, root)
+    _copy_words_cases(check, root)
 
 
 def _selftest():

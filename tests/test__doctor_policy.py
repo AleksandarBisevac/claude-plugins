@@ -1043,40 +1043,410 @@ def _cases(check):
             mf = _manifest()
             mf["phases"][0]["tasks"][0]["skills"] = ["pin-git"]
 
-            def pinned_report():
+            wave_cfg = {"executor": {"writerModel": "claude-sonnet-4-5",
+                                     "writerBudgetUsd": 2.5, "waveWidth": 2}}
+
+            def pinned_report(cfg, digest=None):
                 mf["meta"]["skillPins"] = {"pin-git": {
-                    "sha256": sp_mod.skill_digest(folder)["digest"]}}
+                    "sha256": digest or sp_mod.skill_digest(folder)["digest"]}}
                 rep = base.Report()
-                M.check_plan_skills(rep, repo, {}, cfgmod, mf,
+                M.check_plan_skills(rep, repo, cfg, cfgmod, mf,
                                     _discover=lambda _p, home=None: {
                                         "skills": [{"name": "unrelated"}]})
                 return rep
-            clean = pinned_report()
+            clean = pinned_report(wave_cfg)
+            reviewed = sp_mod.skill_digest(folder)["digest"]
             with open(skill_md, "a", encoding="utf-8") as fh:
                 fh.write("edited, not committed\n")
-            edited = pinned_report()
+            # The pin stays the committed bytes: the edit is not re-pinned.
+            edited = pinned_report(wave_cfg, reviewed)
+            edited_agent = pinned_report({}, reviewed)
             pgit("add", "-A")
             pgit("commit", "-qm", "commit the edit")
-            committed = pinned_report()
-            check("dp68 a pinned project skill whose working copy differs from "
-                  "HEAD is judged on the working copy AND says the commit is "
-                  "what a wave's sessions load; the same skill committed says "
-                  "neither - a clean one is the twin: %r"
-                  % ((_detail(clean, _PIN), _detail(edited, _PIN)),),
-                  "working copy" in _detail(edited, _PIN)
-                  and "differs from HEAD" in _detail(edited, _PIN)
-                  and "commit" in _detail(edited, _PIN)
-                  and "differs from HEAD" not in _detail(clean, _PIN)
-                  and "differs from HEAD" not in _detail(committed, _PIN)
-                  and "WARNING" in _levels(edited, _PIN)
+            committed = pinned_report(wave_cfg)
+
+            def rows_for(rep, level, route):
+                return [r["detail"] for r in rep.rows if r["check"] == _PIN
+                        and r["level"] == level and ("for %s: " % route) in r["detail"]]
+            # THE ALLOW TWINS ARE THE CLEAN AND THE COMMITTED REPORTS: a doctor
+            # that warned for every route whatever the bytes are fails there.
+            check("dp68 a pinned project skill edited after its commit is a WARNING "
+                  "for the route that reads the working copy (a session run in "
+                  "this tree) and an OK for the one that reads the commit (a "
+                  "wave's sessions) - each row naming its route; a subagent "
+                  "dispatched from this tree, the other config, is warned about "
+                  "alone; the same skill clean, and committed after the edit, "
+                  "warns for neither: %r"
+                  % ((_detail(edited, _PIN), _detail(edited_agent, _PIN)),),
+                  len(rows_for(edited, "WARNING", "a session run in this tree")) == 1
+                  and len(rows_for(edited, "OK", "a wave's sessions")) == 1
+                  and not rows_for(edited, "WARNING", "a wave's sessions")
+                  and len(rows_for(edited_agent, "WARNING",
+                                   "a subagent dispatched from this tree")) == 1
+                  and "wave" not in _detail(edited_agent, _PIN)
                   and "WARNING" not in _levels(clean, _PIN)
-                  and "WARNING" not in _levels(committed, _PIN))
+                  and "WARNING" not in _levels(committed, _PIN)
+                  and len(rows_for(committed, "OK", "a wave's sessions")) == 1
+                  and len(rows_for(committed, "OK", "a session run in this tree")) == 1
+                  and "differs from HEAD" not in _detail(edited, _PIN))
+            with open(M.__file__, encoding="utf-8") as fh:
+                policy_source = fh.read()
+            check("dp68b no `git status` reading of a pinned skill is left in the "
+                  "doctor: the second reader the pin rows used to consult is gone, "
+                  "and what asks git about HEAD does so only to read out a copy "
+                  "of it - %r" % (policy_source.count("--porcelain"),),
+                  "--porcelain" not in policy_source
+                  and not hasattr(M, "_head_note"))
         finally:
             if saved_cfg is None:
                 os.environ.pop("CLAUDE_CONFIG_DIR", None)
             else:
                 os.environ["CLAUDE_CONFIG_DIR"] = saved_cfg
             _harness.remove_tree(root)
+
+        _route_cases(check)
+
+
+# --- the doctor's pin rows against what the drive does -------------------------------
+# The rule these cases hold: for every pinned skill the doctor's verdict per route is
+# the verdict `drive-phase.py next` reaches for that route. So each scenario below is
+# a real scratch project, run through BOTH real entries - `audit-doctor.py --json` and
+# `drive-phase.py next` - and the two are compared in the same case. A fixture that
+# stubbed either reader would be the suite agreeing with the code about itself.
+_ROUTE_SESSION = {"writerModel": "claude-sonnet-4-5", "writerBudgetUsd": 2.5}
+
+
+def _route_body(name, word="rules"):
+    return ("---\nname: %s\ndescription: a vendored skill the plan pins\n---\n"
+            "Follow the house %s.\n" % (name, word))
+
+
+def _route_write(path, text, newline="\n"):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline=newline) as fh:
+        fh.write(text)
+
+
+def _route_world(base_dir, tag, session, link=False, autocrlf=False, personal=False):
+    """A committed scratch project `base_dir/tag`: two tasks, each naming a vendored
+    skill (`route-a`, `route-b`) the plan pins over the bytes as they stand in the
+    working copy, a wave of width 2 (`session` picks the route: headless sessions
+    in trees cut from the commit, or subagents). `link` makes `route-a` a committed
+    link to `vendor/route-a`; `autocrlf` commits under `core.autocrlf=true` a
+    script written with LF, so a checkout of the commit holds CRLF. Returns
+    `{"root", "plan", "bin", "tmp"}`."""
+    import json
+    root = os.path.join(base_dir, tag)
+    skills = os.path.join(root, ".claude", "skills")
+    for skill in ("route-a", "route-b"):
+        holder = (os.path.join(root, "vendor") if link and skill == "route-a"
+                  else os.path.join(root, ".no-claude-home", "skills")
+                  if personal and skill == "route-a" else skills)
+        _route_write(os.path.join(holder, skill, "SKILL.md"), _route_body(skill))
+        _route_write(os.path.join(holder, skill, "run.sh"), "echo hi\n")
+    if link:
+        os.symlink(os.path.join("..", "..", "vendor", "route-a"),
+                   os.path.join(skills, "route-a"), target_is_directory=True)
+    executor = {"waveWidth": 2, "worktreeRoot": os.path.join(base_dir, tag + "-trees")}
+    if session:
+        executor.update(_ROUTE_SESSION)
+    _route_write(os.path.join(root, ".claude", "audit.config.json"), json.dumps(
+        {"manifestPath": "docs/audit/audit-plan.json", "review": {"perTask": "phase"},
+         "executor": executor}))
+    _route_write(os.path.join(root, ".gitignore"), ".claude/state/\n.no-claude-home/\n")
+    for n in (1, 2):
+        _route_write(os.path.join(root, "src", "f%d.txt" % n), "v0\n")
+    tasks = []
+    for n, skill in ((1, "route-a"), (2, "route-b")):
+        tasks.append({
+            "id": "P1.%d" % n, "title": "task %d" % n, "status": "pending",
+            "files": ["src/f%d.txt" % n], "description": "change src/f%d.txt" % n,
+            "dependsOn": [], "blockedBy": [], "attempts": 0, "maxAttempts": 3,
+            "commit": None, "outcome": None, "startedAt": None, "completedAt": None,
+            "verifiedBy": [], "risk": "low", "skills": [skill], "model": "sonnet",
+            "tests": {"mode": "gate-only", "add": [], "gate": ["true"],
+                      "expectRedFirst": False}})
+    plan = os.path.join(root, "docs", "audit", "audit-plan.json")
+    _route_pin(root, plan, tasks)
+    _harness.git(root, "init", "-q", ".")
+    if autocrlf:
+        _harness.git(root, "config", "core.autocrlf", "true")
+    _harness.git(root, "add", "-A")
+    _harness.git(root, "commit", "-qm", "fixture")
+    bindir = os.path.join(base_dir, tag + "-bin")
+    os.makedirs(bindir)
+    tmp = os.path.join(base_dir, tag + "-tmp")
+    os.makedirs(tmp)
+    return {"root": root, "plan": plan, "bin": bindir, "tmp": tmp, "tasks": tasks}
+
+
+def _route_pin(root, plan, tasks):
+    """Write the plan with each vendored skill pinned over the bytes the working
+    copy holds now - what `/audit:task skill-pin` records."""
+    import json
+    sp = M._skill_places
+    def folder_of(skill):
+        home = os.path.join(root, ".no-claude-home", "skills", skill)
+        return home if os.path.isdir(home) else os.path.join(
+            root, ".claude", "skills", skill)
+    pins = dict((s, {"sha256": sp.skill_digest(folder_of(s))["digest"]})
+                for s in ("route-a", "route-b"))
+    _route_write(plan, json.dumps({
+        "meta": {"version": 2, "developmentBranch": "main", "branchPrefix": "audit",
+                 "skillPins": pins},
+        "fileIndex": {"src/f1.txt": ["P1.1"], "src/f2.txt": ["P1.2"]},
+        "phases": [{"id": "P1", "title": "one", "status": "pending",
+                    "desiredOutcome": "files changed", "review": {"model": "sonnet"},
+                    "testGate": ["true"], "tasks": tasks}]}, indent=2))
+
+
+def _route_run(world, script, *argv):
+    """`(exit code, output)` of a plugin script over the scratch project, in an
+    environment holding nothing of this session's: its own config home, its own temp
+    directory (so what the doctor leaves behind there can be counted), a `claude`
+    that only names a version."""
+    import subprocess
+    root = world["root"]
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE_") and k not in (
+                   "CLAUDECODE", "AUDIT_LOCK_TOKENS", "AUDIT_DRIVE_SESSION"))
+    env.update({"CLAUDE_CODE_SESSION_ID": "route-cases", "CLAUDE_PROJECT_DIR": root,
+                "CLAUDE_CONFIG_DIR": os.path.join(root, ".no-claude-home"),
+                "PATH": world["bin"] + os.pathsep + env.get("PATH", ""),
+                "TMPDIR": world["tmp"], "PYTHONDONTWRITEBYTECODE": "1"})
+    done = subprocess.run([sys.executable, "-B", os.path.join(
+        _harness.SCRIPTS_DIR, *script.split("/"))] + list(argv), cwd=root, env=env,
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        encoding="utf-8", errors="replace", timeout=300)
+    return done.returncode, done.stdout
+
+
+def _route_doctor(world):
+    """The doctor's `skill pins` rows, as its `--json` prints them."""
+    import json
+    code, out = _route_run(world, "status/audit-doctor.py", "--project",
+                           world["root"], "--json")
+    rows = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            if node.get("check") == "skill pins":
+                rows.append(node)
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+    try:
+        walk(json.loads(out))
+    except ValueError:
+        rows.append({"level": "UNPARSED", "detail": out[-400:]})
+    return rows
+
+
+def _route_next(world):
+    """`(exit code, dispatch lines, output)` of the drive's next step."""
+    code, out = _route_run(world, "governance/drive-phase.py", "next", "P1",
+                           world["plan"], "--project-dir", world["root"])
+    dispatched = [ln for ln in out.splitlines()
+                  if ln.startswith("dispatch ") and not ln.endswith("then next")]
+    return code, dispatched, out
+
+
+def _route_said(rows, level, route):
+    """The details of the doctor's rows of `level` about `route`."""
+    return [r["detail"] for r in rows if r.get("level") == level
+            and ("for %s: " % route) in r.get("detail", "")]
+
+
+def _route_fixes(rows, route):
+    """The `fix` of the doctor's warning rows about `route` - what it tells the
+    reader to do, which is a claim of its own."""
+    return [r.get("fix") or "" for r in rows if r.get("level") == "WARNING"
+            and ("for %s: " % route) in r.get("detail", "")]
+
+
+def _route_agree(world, route):
+    """One scenario read through both entries: `(doctor warns for route, drive
+    stopped the hand-out, the words, the drive's output)` - `route` the doctor row's
+    route, the drive's stop being the stop of a step that handed nothing out."""
+    rows = _route_doctor(world)
+    code, dispatched, out = _route_next(world)
+    warned = _route_said(rows, "WARNING", route)
+    return {"rows": rows, "warned": warned, "stopped": code != 0 and not dispatched,
+            "started": code == 0 and len(dispatched) == 2, "out": out}
+
+
+def _route_link_cases(check, base_dir, wave, tree):
+    """A skill committed as a link to a vendored directory (the layout the drive
+    supports), changed and re-pinned without a commit, and its twin. Skipped, as a
+    case saying so, where a checkout holds no committed link."""
+    if os.name == "nt":
+        for cid in ("dp70", "dp70b"):
+            _harness.skip(check, cid, "a windows checkout holds a committed link as "
+                          "one only under core.symlinks, which this suite does not "
+                          "set", os.name == "nt")
+        return
+    world = _route_world(base_dir, "link", True, link=True)
+    _route_write(os.path.join(world["root"], "vendor", "route-a", "SKILL.md"),
+                 _route_body("route-a", "ruler"))
+    _route_pin(world["root"], world["plan"], world["tasks"])
+    got = _route_agree(world, wave)
+    words = got["warned"][0].split(": ", 1)[1] if got["warned"] else ""
+    check("dp70 a skill committed as a link to a vendored directory, then changed and "
+          "re-pinned without a commit: the doctor's row for a wave's sessions is a "
+          "WARNING and the drive's wave stops over the same skill, in the same words - "
+          "the working copy matches, and the row for a session run in this tree says "
+          "so: %r" % ((got["warned"], got["stopped"]),),
+          len(got["warned"]) == 1 and got["stopped"] and words in got["out"]
+          and all("commit" in fix and "a wave's sessions" in fix
+                  for fix in _route_fixes(got["rows"], wave))
+          and len(_route_said(got["rows"], "OK", tree)) == 1
+          and not _route_said(got["rows"], "WARNING", tree))
+    # THE ALLOW TWIN: the same layout, committed and unchanged, is a match for both
+    # routes and the wave starts - a doctor that warned for every link fails here.
+    world = _route_world(base_dir, "linkok", True, link=True)
+    got = _route_agree(world, wave)
+    check("dp70b the same link layout committed and unchanged: both routes match, "
+          "no row warns, and the wave starts: %r"
+          % ((got["rows"], got["stopped"], got["started"]),),
+          not got["warned"] and got["started"]
+          and len(_route_said(got["rows"], "OK", wave)) == 1
+          and len(_route_said(got["rows"], "OK", tree)) == 1
+          and "WARNING" not in [r["level"] for r in got["rows"]])
+
+
+def _route_cases(check):
+    """The doctor's pin rows and `drive-phase.py next` agree, route by route."""
+    wave, tree = "a wave's sessions", "a session run in this tree"
+    agent = "a subagent dispatched from this tree"
+    base_dir = os.path.realpath(_harness.fixture_root("dproute"))
+
+    _route_link_cases(check, base_dir, wave, tree)
+
+    # --- an end-of-line conversion: git is clean, the commit's bytes are not the pin
+    world = _route_world(base_dir, "crlf", True, autocrlf=True)
+    status = _harness.git(world["root"], "status", "--porcelain").strip()
+    got = _route_agree(world, wave)
+    check("dp71 a checkout under core.autocrlf=true, pinned over the LF bytes of the "
+          "working copy: git says nothing differs (%r), the commit's copy is the "
+          "converted one - every text file of both skills - and the doctor's wave "
+          "rows warn exactly where the drive's wave stops: %r"
+          % (status, (got["warned"], got["stopped"])),
+          status == "" and len(got["warned"]) == 2 and got["stopped"]
+          and len(_route_said(got["rows"], "OK", tree)) == 1)
+    world = _route_world(base_dir, "crlfoff", True)
+    got = _route_agree(world, wave)
+    check("dp71b the same project without the conversion: no warning and the wave "
+          "starts - the twin a doctor that always warned about line endings fails: %r"
+          % ((got["rows"],),), not got["warned"] and got["started"])
+
+    # --- a skill edited in the working copy only, after the commit
+    world = _route_world(base_dir, "edit", True)
+    _route_write(os.path.join(world["root"], ".claude", "skills", "route-a", "SKILL.md"),
+                 _route_body("route-a", "ruler"))
+    got = _route_agree(world, tree)
+    check("dp72 a pinned skill edited in the working copy only: on the session route "
+          "the wave dispatches its members (they load the commit's copy), so the "
+          "doctor's row for a wave's sessions is no warning, while the row for a "
+          "session run in this tree - the serial route, which loads the working "
+          "copy - warns: %r" % ((got["rows"], got["started"]),),
+          got["started"] and not _route_said(got["rows"], "WARNING", wave)
+          and len(_route_said(got["rows"], "OK", wave)) == 1
+          and len(got["warned"]) == 1
+          # the serial route reads the working copy, so its remedy restores the
+          # bytes where it reads them - it does not send the reader to a commit
+          and [f for f in _route_fixes(got["rows"], tree) if "will not start" in f
+               and "commit" not in f and "restored" in f]
+          # no warning promises that a WAVE will not start over a wave the drive
+          # dispatched - the claim the row made before it knew its route
+          and not any("wave" in (r.get("fix") or "") + r.get("detail", "")
+                      for r in got["rows"] if r["level"] == "WARNING"))
+    world = _route_world(base_dir, "editagent", False)
+    _route_write(os.path.join(world["root"], ".claude", "skills", "route-a", "SKILL.md"),
+                 _route_body("route-a", "ruler"))
+    got = _route_agree(world, agent)
+    check("dp72b the same edit on the subagent route: the drive's hand-out stops "
+          "(the brief judges the working copy) and the doctor's one row warns for a "
+          "subagent dispatched from this tree and names no wave: %r"
+          % ((got["rows"], got["stopped"]),),
+          got["stopped"] and len(got["warned"]) == 1
+          and not any("wave" in r.get("detail", "") for r in got["rows"]))
+    world = _route_world(base_dir, "agentok", False)
+    got = _route_agree(world, agent)
+    check("dp72c the subagent route over bytes committed and unchanged: the row is an "
+          "OK for that route and the hand-out starts: %r" % ((got["rows"],),),
+          got["started"] and not got["warned"]
+          and len(_route_said(got["rows"], "OK", agent)) == 1
+          # a project on the subagent route has no wave to judge a commit for
+          and not any("wave" in r.get("detail", "") for r in got["rows"]))
+    # --- a skill no commit holds: its stop is the reader's own on every route
+    world = _route_world(base_dir, "personal", True, personal=True)
+    _route_write(os.path.join(world["root"], ".no-claude-home", "skills", "route-a",
+                              "SKILL.md"), _route_body("route-a", "ruler"))
+    got = _route_agree(world, wave)
+    check("dp76 a pinned PERSONAL skill changed after pinning is stopped by the drive "
+          "and warned about by the doctor for both routes, and a commit does not hold "
+          "it: the wave row's remedy never sends the reader to commit the bytes, "
+          "where the project skill of dp70 is told to: %r"
+          % ((got["rows"], got["stopped"]),),
+          got["stopped"] and len(got["warned"]) == 1
+          and len(_route_said(got["rows"], "WARNING", tree)) == 1
+          and _route_fixes(got["rows"], wave)
+          and all("commit them" not in fix for fix in _route_fixes(got["rows"], wave))
+          and "COMMIT" not in got["warned"][0])
+
+    # --- a plan that pins nothing prints no pin row
+    world = _route_world(base_dir, "nopins", True)
+    import json
+    with open(world["plan"], encoding="utf-8") as fh:
+        data = json.load(fh)
+    del data["meta"]["skillPins"]
+    _route_write(world["plan"], json.dumps(data, indent=2))
+    check("dp73 a plan with no skillPins key draws no pin row through the doctor's "
+          "own entry: %r" % (_route_doctor(world),), _route_doctor(world) == [])
+
+    # --- the doctor leaves the project as it found it
+    world = _route_world(base_dir, "readonly", True)
+    top = os.path.join(world["root"], ".git")
+
+    def snapshot():
+        held = {}
+        for here, _dirs, files in os.walk(top):
+            for name in files:
+                full = os.path.join(here, name)
+                with open(full, "rb") as fh:
+                    held[os.path.relpath(full, top)] = fh.read()
+        return held, _harness.git(world["root"], "worktree", "list", "--porcelain")
+    before = snapshot()
+    _route_doctor(world)
+    after = snapshot()
+    leftover = sorted(os.listdir(world["tmp"]))
+    check("dp74 the doctor over a project on the session route leaves nothing "
+          "behind: every file under .git (the index, the objects, the worktree "
+          "admin directory) is byte for byte what it was, the worktree list is the "
+          "same, and its private temp directory holds nothing afterwards - the "
+          "scratch copy of HEAD is gone: %r"
+          % ((sorted(set(before[0]) ^ set(after[0])), leftover),),
+          before == after and leftover == [])
+
+    # --- a copy of HEAD that cannot be had is said, never read as a match
+    world = _route_world(base_dir, "nocommit", True)
+    _harness.remove_tree(os.path.join(world["root"], ".git"))
+    _harness.git(world["root"], "init", "-q", ".")
+    rows = _route_doctor(world)
+    mine = _route_said(rows, "WARNING", wave)
+    check("dp75 a project whose HEAD names no commit: the wave row says it was NOT "
+          "JUDGED and why, as a warning, and no row claims that a wave's sessions "
+          "match: %r" % (rows,),
+          len(mine) == 1 and "not judged" in mine[0]
+          and "HEAD names no commit" in mine[0]
+          and not _route_said(rows, "OK", wave))
+    called = []
+    why, left = M._in_head_copy(base_dir, lambda *seen: called.append(seen))
+    check("dp75b a directory in no repository is not judged either, in words, and "
+          "the callback is never called: %r" % ((why, left, called),),
+          why and "repository" in why and left is None and called == [])
 
 
 def _selftest():

@@ -3647,9 +3647,16 @@ describes the very file the resolver found) and then, as a second half, against 
 that carries `meta.skillPins` gets the `skill pins` rows (`_plan_skill_pins`, called beside the
 resolution rows because those return early and a pin needs no scan): each pinned skill is the reader's
 own verdict (`_skill_places.pin_verdict`) worded by the stop's own `stop_words`, a pin nothing in the
-plan names is stale, the plan's unpinned skills are named as information, and a project skill whose
-working copy differs from HEAD says that a wave's sessions load the commit; a plan with no such key
-draws none of them. Every row
+plan names is stale, and the plan's unpinned skills are named as information. **Every pin row names
+the route it judges** (`_pin_routes`), because the drive reads two copies: the project's working
+copy for a session run in the tree or a subagent dispatched from it, and, on the session route at a
+wave width above one, the commit a wave's members are cut from. The second is read out of HEAD
+with a private index and `checkout-index` into a scratch directory the doctor removes itself
+(`_in_head_copy`) - nothing it writes survives in the project, its `.git` or its worktree list -
+so the checkout's own line-ending conversion, filters and committed links are what the verdict
+reads, and a copy that cannot be cut says `not judged` and why; no `git status` reading of a pinned
+skill is left. A commit's stop is worded by `_skill_places.copy_stop_words`, the sentence the
+runner's stop prints. A plan with no such key draws none of them. Every row
 is a WARNING at most — a missing directory or an uninstalled runner is a gap in this
 checkout or this machine, never proof the repo is broken, which is the lesson CI's manifest
 job taught by failing over a correct observation. `_leading_executable` resolves what a
@@ -3914,7 +3921,10 @@ each. The digest does not see a file's mode or an empty directory. `pin_verdict`
 name's answer - `match`, `mismatch`, `not-found` or `unreadable` - with the path read, both
 digests, the tool-written entries and the SKILL.md bytes it hashed (`skillMd`, which the
 session runner discloses instead of reading the file again); `stop_words` is the stop,
-offering a restore or a re-pin after review and never the pin's removal. A pin is about a
+offering a restore or a re-pin after review and never the pin's removal. A stop over a copy that
+is not the project's - a commit's checkout or a member's tree - is worded here too
+(`copy_stop_words`, with `loaded_tier`, `copy_remedy` and `commit_label` under it), so the
+drive's stop and the doctor's row for a wave's sessions are one sentence. A pin is about a
 DIRECTORY: `covering_pins` holds a name by every pin that is spelled the same or resolves to
 the directory the name resolves to, compared by `os.path.samestat`, so the bare name, the
 running plugin's `plugin:skill` and another case on a volume that folds case are one pin;
@@ -5818,7 +5828,8 @@ one placement (`scratch_holder`), which refuses a temp directory inside any chec
 project's repository - the main one or a linked tree - and makes nothing there (`spd35`). What the member's tree gets after git - its `.worktreeinclude` copies and
 setup command - is not in the checkout; the tree's own copy is asked once it exists. A personal
 or plugin skill lies outside the cut and is read where it is. **The stop's remedy names the copy
-each stopped skill's tier loads**, built in one place (`pin_stop_words`, `_copy_remedy`): a
+each stopped skill's tier loads**, built in one place (`pin_stop_words`, over
+`_skill_places.copy_stop_words`, which `/audit:doctor`'s row for a wave's sessions calls too): a
 project skill judged at the commit is told to restore the bytes and commit them, one judged in a
 member's tree to restore them there, each replacing the reader's remedy rather than following
 it; a personal or plugin skill, one found nowhere, and a project skill whose directory resolves

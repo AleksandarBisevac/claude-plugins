@@ -23016,8 +23016,7 @@ def _commit_label_case(check, C):
                                  sep.join(("C:" if sep == "\\" else "", "home", "skills",
                                            "pin-g")),
                                  p("my proj", ".claude", "skills", "pin-g")))
-        out[label] = C.commit_label(text, top, sha, where, sep=sep) \
-            if hasattr(C, "commit_label") else "no commit_label in this driver"
+        out[label] = _skill_places.commit_label(text, top, sha, where, sep=sep)
     want_read = "commit 7f4ccca2c894/my proj/.claude/skills/pin-c/SKILL.md has digest"
     want_look = "commit 7f4ccca2c894/my proj/.claude/skills/pin-g; nothing"
     check("spd33a the commit form of a stop names a path inside the commit with `/` on "

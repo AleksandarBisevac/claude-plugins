@@ -36,6 +36,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -398,7 +399,7 @@ def check_plan_skills(rep, project, cfg, cfg_mod, manifest, _discover=None):
     if not manifest:
         return
     _plan_skills_resolve(rep, project, cfg, cfg_mod, manifest, _discover)
-    _plan_skill_pins(rep, project, manifest)
+    _plan_skill_pins(rep, project, manifest, cfg)
 
 
 def _plan_skills_resolve(rep, project, cfg, cfg_mod, manifest, _discover=None):
@@ -553,30 +554,54 @@ def _skills_dir_read(skills_dir, places):
 
 
 PIN_ROWS = "skill pins"
+# The two copies the drive asks a pin over (`_pin_routes`): the project's own, and
+# the commit a wave's members are cut from.
+PIN_ROUTE_TREE = "tree"
+PIN_ROUTE_WAVE = "wave"
 
 
-def _plan_skill_pins(rep, project, manifest):
+def _pin_routes(cfg):
+    """`[(key, label), ...]` - the routes a pinned skill is judged for under `cfg`,
+    each the copy the drive asks over it (`drive-phase.ask_member_pins`): the
+    project's own working copy for a session run in this tree (a serial task) or a
+    subagent dispatched from it - whichever route `executor.writerModel` sets - and,
+    on the session route at a wave width above one, the copy of the commit a wave's
+    members are cut from. A width the config does not give validly is no wave: the
+    config rows say so."""
+    rules = _load("_config_rules", "_config_rules.py")
+    session = rules.writer_session_setting(cfg)[0]
+    width = rules.wave_width_setting(cfg)[0]
+    routes = [(PIN_ROUTE_TREE, "a session run in this tree" if session
+               else "a subagent dispatched from this tree")]
+    if session and width is not None and width != 1:
+        routes.append((PIN_ROUTE_WAVE, "a wave's sessions"))
+    return routes
+
+
+def _plan_skill_pins(rep, project, manifest, cfg=None):
     """The pins `meta.skillPins` holds, read back: for each pinned skill the plan
-    names, whether the copy a session would load is the bytes pinned - a match, a
+    names, whether the copy each route would load is the bytes pinned - a match, a
     mismatch, no copy found, or a copy that cannot be read whole - then each pin
     nothing in the plan names any more (stale), and the plan's skills nothing
     pins, as information.
 
-    THE ANSWER IS `_skill_places.pin_verdict`'s and the words of a mismatch, a
-    missing copy and an unreadable one are `stop_words`', the sentence the
-    runner's stop prints over the same verdict - so this row and the stop cannot
-    describe one pin differently. A plan with no `skillPins` key, or an empty one,
-    draws no row at all: nothing is claimed about what nothing says.
+    THE ANSWER IS `_skill_places.pin_verdict`'s, over the copy the drive asks for
+    that route, and the words of a stop are `_skill_places`' too (`stop_words`;
+    `copy_stop_words` for a commit's copy), the sentence the runner's stop prints
+    over the same verdict - so this row and the stop cannot describe one pin
+    differently. A plan with no `skillPins` key, or an empty one, draws no row at
+    all: nothing is claimed about what nothing says.
 
     A MISMATCH HERE IS A WARNING, never a finding, for the reason `check_plan_skills`
     gives for a skill absent on this machine: this checkout's copy not being the
     reviewed bytes is a fact about this machine's directory until a session runs.
 
-    A PROJECT SKILL IS JUDGED ON THE WORKING COPY, which is what a serial task's
-    session loads; a wave member's session runs in a tree cut from a commit and
-    loads that commit's copy. So a working copy that differs from HEAD is said to
-    - the commit, not the directory, is what a wave's sessions will load - and
-    `git status` is what says it, over the one directory.
+    EVERY ROW NAMES THE ROUTE IT JUDGES, because the drive judges two copies
+    (`_pin_routes`): a serial task's session and a subagent's brief read the
+    working copy, while a wave's sessions run in trees cut from a commit and load
+    THAT commit's copy. Neither is a fact about the other, so a working copy edited
+    after its commit stops the first route and not the second, and the reverse
+    for bytes committed and then restored.
     """
     pins = _skill_places.skill_pins(manifest)
     if pins is None or pins == {}:
@@ -600,30 +625,24 @@ def _plan_skill_pins(rep, project, manifest):
                                               "--reason \"<why>\"` drops one")
     stale = _skill_places.unused_pins(pins, used)
     live = [p for p in sorted(pins, key=str) if p not in stale]
-    verdicts = [_skill_places.pin_verdict(p, pins[p], project, home, root, running)
-                for p in live]
-    matched = []
-    for verdict in verdicts:
-        note, unknown = _head_note(project, verdict)
-        if verdict["answer"] == "match":
-            if note:
-                rep.warn(PIN_ROWS, "%s matches the bytes pinned at %s (judged on "
-                                   "the working copy), but %s"
-                         % (verdict["name"], verdict["path"], note),
-                         "commit the copy you pinned before a wave starts")
-            else:
-                matched.append("%s (%s%s)" % (verdict["name"], verdict["path"],
-                                              unknown))
-            continue
-        rep.warn(PIN_ROWS, _skill_places.stop_words(verdict)
-                 + (" " + note if note else ""),
-                 "a session or a wave naming %s will not start until the bytes "
-                 "are restored - or the diff is reviewed and the skill re-pinned "
-                 "with `/audit:task skill-pin %s`"
-                 % (verdict["name"], verdict["pinnedAs"] or verdict["name"]))
-    if matched:
-        rep.ok(PIN_ROWS, "%d pinned skill(s) match the bytes pinned: %s"
-               % (len(matched), _output.some_of(matched, sep="; ")))
+    for key, label in _pin_routes(cfg):
+        if key == PIN_ROUTE_WAVE:
+            why, left = _in_head_copy(project, lambda where, sha, tree: _say_route(
+                rep, key, label, live, pins, (where, home, root, running),
+                ("commit", sha, tree)))
+            if why:
+                rep.warn(PIN_ROWS, "for %s: not judged: %s" % (label, why),
+                         "a wave's sessions load the commit's copy of a pinned "
+                         "skill and this doctor could not read it - `git "
+                         "rev-parse HEAD` and a writable temp directory are what "
+                         "it asks for")
+            if left:
+                rep.warn(PIN_ROWS, "the scratch copy of HEAD this check made, %s, "
+                                   "could not be removed" % (left,),
+                         "remove it by hand; nothing else of this check is left")
+        else:
+            _say_route(rep, key, label, live, pins, (project, home, root, running),
+                       None)
     if stale:
         rep.warn(PIN_ROWS, "stale: %s %s pinned, and nothing in the plan names "
                            "%s any more, so the pin protects nothing"
@@ -639,38 +658,122 @@ def _plan_skill_pins(rep, project, manifest):
                % _output.some_of(unpinned, sep=", "))
 
 
-def _head_note(project, verdict):
-    """`(note, unknown)` for a pinned PROJECT skill: `note` says its working copy
-    differs from HEAD and that a wave's sessions load the commit's copy, "" when it
-    does not or the skill is not a project one; `unknown` is the clause saying git
-    could not be asked, "" otherwise."""
-    folder = os.path.dirname(verdict["path"]) if verdict["path"] else None
-    skills = os.path.join(project, ".claude", "skills")
-    if not folder or not _under(folder, skills):
-        return "", ""
-    if not shutil.which("git"):
-        return "", " - whether it differs from HEAD was not asked: no git here"
+def _say_route(rep, key, label, live, pins, reading, how):
+    """The rows of one route: each pin of `live` read by `_skill_places.pin_verdict`
+    over the copy `reading` (`(where, home, plugin root, running plugin)`) names,
+    every mismatch, missing or unreadable copy a WARNING worded for that copy, the
+    matches one OK row. `how` is None for the project's own copy and
+    `("commit", sha, checkout)` for the commit's, whose paths are named as the
+    commit holds them. Runs while that copy exists."""
+    where, home, root, running = reading
+    matched = []
+    for name in live:
+        verdict = _skill_places.pin_verdict(name, pins[name], where, home, root,
+                                            running)
+        shown = verdict["path"]
+        if how is not None and shown:
+            shown = _skill_places.commit_label(shown, how[2], how[1], where)
+        if verdict["answer"] == "match":
+            matched.append("%s (%s)" % (verdict["name"], shown))
+            continue
+        if how is None:
+            words, held = _skill_places.stop_words(verdict), False
+        else:
+            words = _skill_places.copy_stop_words([verdict], where, home, root, how)
+            held = _skill_places.loaded_tier(_skill_places.resolve_skill(
+                verdict["name"], where, home, root, running), how) == "project"
+        rep.warn(PIN_ROWS, "for %s: %s" % (label, words),
+                 _pin_fix(key, label, verdict, held))
+    if matched:
+        rep.ok(PIN_ROWS, "for %s: %d pinned skill(s) match the bytes pinned: %s"
+               % (label, len(matched), _output.some_of(matched, sep="; ")))
+
+
+def _pin_fix(key, label, verdict, held):
+    """What to do about one stopped pin, for the route that stops: restore the
+    bytes where that route reads them - for a wave's sessions in a commit the
+    project holds (`held`), so committed - or review the diff and re-pin."""
+    name = verdict["name"]
+    repin = "`/audit:task skill-pin %s`" % (verdict["pinnedAs"] or name,)
+    if key == PIN_ROUTE_WAVE and held:
+        return ("%s naming %s will not start until the pinned bytes are in the "
+                "commit they are cut from: commit them, or review the diff, re-pin "
+                "with %s and commit the copy" % (label, name, repin))
+    return ("%s naming %s will not start until the bytes are restored where it "
+            "reads them - or the diff is reviewed and the skill re-pinned with %s"
+            % (label, name, repin))
+
+
+def _git_text(cwd, argv, env=None):
+    """`(code, text)` of one git call in `cwd`: stdout when it succeeded, else its
+    stderr (or the exit code); code None, with the exception, when git could not be
+    run at all."""
     try:
-        done = subprocess.run(
-            ["git", "status", "--porcelain", "--untracked-files=all", "--ignored",
-             "--", folder], cwd=project, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, encoding="utf-8", errors="replace", timeout=30)
+        done = subprocess.run(["git"] + list(argv), cwd=cwd, env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              encoding="utf-8", errors="replace", timeout=120)
     except (OSError, subprocess.SubprocessError) as exc:
-        return "", " - whether it differs from HEAD was not asked: %s" % (exc,)
-    if done.returncode != 0:
-        return "", (" - whether it differs from HEAD was not asked: git said %s"
-                    % ((done.stderr or "").strip() or "exit %d" % done.returncode,))
-    if not done.stdout.strip():
-        return "", ""
-    return ("the working copy at %s differs from HEAD, and a wave's sessions run "
-            "in trees cut from a commit and load THAT commit's copy - the "
-            "commit, not this directory, is what they will load" % (folder,)), ""
+        return None, "%s: %s" % (exc.__class__.__name__, exc)
+    if done.returncode == 0:
+        return 0, done.stdout.strip()
+    return done.returncode, (done.stderr or "").strip() or "exit %d" % done.returncode
 
 
-def _under(path, root):
-    """True when `path` is `root` or under it, symlinks resolved."""
-    path, root = (os.path.normcase(os.path.realpath(p)) for p in (path, root))
-    return path == root or path.startswith(root + os.sep)
+def _in_head_copy(project, run):
+    """`(why, left)`: `run(where, sha, tree)` over a copy of HEAD's tree that holds
+    the bytes a checkout of it holds - the working-tree conversion, filters and
+    links a wave member's tree gets (`drive-phase.checkout_at`) - with `where` the
+    project's directory in it. `why` is the reason no copy could be had, None when
+    `run` was called; `left` the scratch directory still on disk afterwards, None
+    when it is gone.
+
+    THE COPY IS READ OUT WITH A PRIVATE INDEX, NOT A SECOND WORKTREE: `read-tree`
+    into an index file of its own and `checkout-index` into a directory under the
+    temp directory write nothing to the project, its `.git` or its worktree list,
+    which is what a diagnostic that promises no mutation can offer. The scratch
+    directory is outside the repository's top and removed by this function's own
+    `finally`."""
+    if not shutil.which("git"):
+        return "no git here", None
+    code, top = _git_text(project, ["rev-parse", "--show-toplevel"])
+    if code != 0:
+        return "git names no repository here (%s)" % (top,), None
+    code, sha = _git_text(project, ["rev-parse", "--verify", "-q", "HEAD^{commit}"])
+    if code != 0:
+        return ("HEAD names no commit (%s), so there is no commit for a wave to be "
+                "cut from" % (sha or "nothing committed yet",)), None
+    rel = os.path.relpath(os.path.realpath(project), os.path.realpath(top))
+    if rel == os.pardir or rel.startswith(os.pardir + os.sep):
+        return "the project directory is not inside the repository's top", None
+    try:
+        holder = tempfile.mkdtemp(prefix="doctor-pin-head-")
+    except OSError as exc:
+        return "no scratch directory could be made (%s)" % (exc,), None
+    try:
+        why = _cut_head_copy(top, sha, rel, holder, run)
+    finally:
+        shutil.rmtree(holder, ignore_errors=True)
+    return why, (holder if os.path.exists(holder) else None)
+
+
+def _cut_head_copy(top, sha, rel, holder, run):
+    """`_in_head_copy`'s body once its scratch directory `holder` exists: the reason
+    the copy could not be cut, or None after `run` was called over it."""
+    if _worktrees.within_tree(top, holder):
+        return "the temp directory %s is inside the repository %s" % (holder, top)
+    tree = os.path.join(holder, "tree")
+    os.mkdir(tree)
+    env = dict((k, v) for k, v in os.environ.items()
+               if k not in ("GIT_INDEX_FILE", "GIT_WORK_TREE"))
+    env["GIT_INDEX_FILE"] = os.path.join(holder, "index")
+    for step, argv in (("read-tree", ["read-tree", sha]),
+                       ("checkout-index", ["--work-tree=" + tree, "checkout-index",
+                                           "-a", "-q"])):
+        code, text = _git_text(top, argv, env)
+        if code != 0:
+            return "git %s failed: %s" % (step, text)
+    run(tree if rel == "." else os.path.join(tree, *rel.split(os.sep)), sha, tree)
+    return None
 
 
 def portability_mode(cfg, cfg_mod):

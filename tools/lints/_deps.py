@@ -2111,7 +2111,6 @@ GIT_PATH_BASE_EXEMPT = (
     ("_doctor_hygiene.py", "check_local_artifacts", _DOCTOR),
     ("_doctor_setup.py", "check_worktree_env", _DOCTOR),
     ("_doctor_setup.py", "plugin_integrity", _DOCTOR),
-    ("_doctor_policy.py", "_head_note", _DOCTOR),
     ("_doctor_trail.py", "tracked_among", _DOCTOR),
     ("_live_copy.py", "_readiness_moved", _RECORD_PATHS),
     ("guard-bash-writes.py", "slot_write_magnitude",

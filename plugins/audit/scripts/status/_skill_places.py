@@ -539,6 +539,94 @@ def stop_words(verdict):
                                            _STOP_REMEDY))
 
 
+# --- a stop's words for the copy that was asked ---------------------------------------
+# A pin is judged over one of three copies - the project's own, a member's tree, or a
+# real checkout of the commit a member's tree will be cut from - and the remedy of a
+# stop is the copy's. The runner's stop (`drive-phase.pin_stop_words`) and
+# `/audit:doctor`'s pin row for a wave's sessions both word a stop here, so the row
+# and the stop cannot tell one pin's story two ways. `how` is `("tree", tree)` or
+# `("commit", sha, checkout)`; the project's own copy has none and keeps
+# `stop_words`' remedy.
+def commit_label(text, checkout, sha, where=None, sep=None):
+    """`text` with every path under the scratch `checkout` of commit `sha` named as
+    the commit holds it - `commit <sha12>/<path>`, the path spelled with `/` on every
+    platform: a path inside a commit is git's, never the OS's (`sep` is the OS's
+    separator, `os.sep` when None). The project directory the skills were read
+    from (`where`, under the checkout) is matched whole, so a blank in it is kept;
+    below it a path runs to the first blank, comma or semicolon - no skill name
+    holds one (`is_skill_name`), and a file under a skill directory whose name does
+    is relabelled only up to it. THE ONE BUILDER of the commit form."""
+    sep = sep or os.sep
+    seps = re.escape(sep) + ("" if sep == "/" else "/")
+    tail = r"((?:[%s][^%s\s,;]*)*)" % (seps, seps)
+    for base in ([where] if where and where.startswith(checkout) else []) + [checkout]:
+        head = "commit %s%s" % (sha[:12], base[len(checkout):].replace(sep, "/"))
+        text = re.sub(re.escape(base) + tail, lambda hit, head=head: head + hit.group(
+            1).replace(sep, "/"), text)
+    return text
+
+
+def loaded_tier(hit, how):
+    """The tier of the skill `hit` (`resolve_skill`'s answer) for the remedy:
+    "project" only when its directory resolves inside the copy `how` names - the
+    checkout of a commit, or a member's tree. A project skill whose directory
+    resolves outside it (a link to a place the repository does not hold) is read
+    where it is, as a personal skill is, so no commit or tree changes it."""
+    tier = hit.get("source")
+    if tier != "project" or not hit.get("path"):
+        return tier
+    copy = how[2] if how[0] == "commit" else how[1]
+    folder = os.path.realpath(os.path.dirname(hit["path"]))
+    if _inside(folder, os.path.realpath(copy)):
+        return tier
+    return "outside"
+
+
+def copy_remedy(verdict, tier, how):
+    """The reader's sentence for one stopped `verdict` with its remedy replaced by
+    the one for the copy `tier` loads: a PROJECT skill judged at a commit is told
+    to commit the restored bytes, since the member's tree is cut from the commit
+    and not from the working copy; one judged in a member's tree, to restore them
+    there. A personal or plugin skill - one found nowhere, and a project skill
+    whose directory resolves outside the copy (`loaded_tier`'s "outside") - is
+    read where it is, which no commit or tree holds, so the reader's own remedy
+    stands. The way to re-pin is the reader's, whichever copy."""
+    words = stop_words(verdict)
+    if tier != "project":
+        return words
+    repin = _STOP_REMEDY.partition(", or ")[2]
+    if how[0] == "commit":
+        copy = ("That copy is commit %s's: the member's tree will be cut from that "
+                "commit, so the project's working copy is not what its session "
+                "loads. Restore the pinned bytes and COMMIT them, or %s"
+                % (how[1][:12], repin))
+    else:
+        copy = ("That copy is the member's own tree, where its session runs. Restore "
+                "the pinned bytes there, not in the project, or %s" % (repin,))
+    return words.replace(_STOP_REMEDY, copy)
+
+
+def copy_stop_words(stops, where, user_home, plugin_root, how):
+    """One sentence per stopped verdict of `stops` (`pin_stops`' answers, read over
+    the copy at `where`), its remedy the copy `how` names (`copy_remedy`) - and for
+    a project skill read from outside that copy, the place it is read from named in
+    place of the link the copy holds; the checkout's paths named as the commit when
+    `how` is a commit's (`commit_label`). THE ONE WORDING of a stop for a copy that
+    is not the project's."""
+    running = plugin_name(plugin_root)
+    lines = []
+    for verdict in stops:
+        hit = resolve_skill(verdict["name"], where, user_home, plugin_root, running)
+        tier = loaded_tier(hit, how)
+        words = copy_remedy(verdict, tier, how)
+        if tier == "outside":
+            folder = os.path.dirname(hit["path"])
+            words = words.replace(folder, os.path.realpath(folder))
+        lines.append(words)
+    text = "\n".join(lines)
+    return commit_label(text, how[2], how[1], where) if how[0] == "commit" else text
+
+
 def pin_shape_problems(pins):
     """What makes `meta.skillPins` (`pins`) no set of pins, one sentence per pin at
     fault; [] when it is absent (None) or well-formed."""

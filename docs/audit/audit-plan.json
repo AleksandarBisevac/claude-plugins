@@ -1454,7 +1454,6 @@
       "SG1.23-ukq",
       "SG1.24-ukq",
       "SG1.25-ukq",
-      "SG2.1-ukq",
       "SG1.26-ukq",
       "SG1.27-ukq",
       "SG1.28-ukq",
@@ -2252,7 +2251,8 @@
       "SG2.19-xk1",
       "SG2.20-xk1",
       "SG2.24-xk1",
-      "SG2.25-xk1"
+      "SG2.25-xk1",
+      "SG2.26-xk1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2830,7 +2830,6 @@
       "SG1.19-ukq",
       "SG1.22-ukq",
       "SG1.25-ukq",
-      "SG2.1-ukq",
       "SG1.26-ukq",
       "SG1.30-ukq",
       "SG1.31-ukq",
@@ -2857,7 +2856,8 @@
       "SG2.14-xk1",
       "SG2.15-xk1",
       "SG2.20-xk1",
-      "SG2.25-xk1"
+      "SG2.25-xk1",
+      "SG2.27-xk1"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -3058,7 +3058,6 @@
       "SG1.8",
       "SG1.18-ukq",
       "SG1.24-ukq",
-      "SG2.1-ukq",
       "SG1.29-ukq"
     ],
     "plugins/audit/commands/layout.md": [
@@ -3583,7 +3582,6 @@
       "SG1.7",
       "SG1.23-ukq",
       "SG1.25-ukq",
-      "SG2.1-ukq",
       "SG1.30-ukq",
       "SG1.34-ukq",
       "SG1.43-ukq",
@@ -3916,7 +3914,6 @@
       "SG1.19-ukq",
       "SG1.20-ukq",
       "SG1.22-ukq",
-      "SG2.1-ukq",
       "SG1.26-ukq",
       "SG1.27-ukq",
       "SG1.31-ukq",
@@ -5957,7 +5954,8 @@
       "SG1.15-ukq",
       "SG1.22-ukq",
       "SG1.24-ukq",
-      "SG2.20-xk1"
+      "SG2.20-xk1",
+      "SG2.27-xk1"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -6496,7 +6494,8 @@
       "P148.7",
       "P148.11-xpz",
       "P166.3-b8m",
-      "SG2.20-xk1"
+      "SG2.20-xk1",
+      "SG2.26-xk1"
     ],
     "plugins/audit/scripts/status/_doctor_report.py": [
       "P53.5",
@@ -10896,8 +10895,7 @@
       "SG1.9",
       "SG1.16-ukq",
       "SG1.17-ukq",
-      "SG1.18-ukq",
-      "SG2.1-ukq"
+      "SG1.18-ukq"
     ],
     "plugins/audit/evals/guard-stop/case.yaml": [
       "P101.3",
@@ -10907,7 +10905,6 @@
       "SG1.17-ukq",
       "SG1.18-ukq",
       "SG1.21-ukq",
-      "SG2.1-ukq",
       "SG1.28-ukq"
     ],
     "plugins/audit/scripts/ui/panel-css/tokens-and-reset.css": [
@@ -11663,7 +11660,8 @@
       "SG2.18-xk1",
       "SG2.19-xk1",
       "SG2.21-xk1",
-      "SG2.24-xk1"
+      "SG2.24-xk1",
+      "SG2.26-xk1"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11953,7 +11951,8 @@
       "P159.3-pue",
       "SG1.6",
       "SG1.24-ukq",
-      "SG2.20-xk1"
+      "SG2.20-xk1",
+      "SG2.27-xk1"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -12695,7 +12694,8 @@
       "P168.8-icj",
       "SG1.4",
       "SG1.18-ukq",
-      "SG2.20-xk1"
+      "SG2.20-xk1",
+      "SG2.26-xk1"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -13105,7 +13105,8 @@
       "P148.11-xpz",
       "P157.9-mwz",
       "P166.3-b8m",
-      "SG2.20-xk1"
+      "SG2.20-xk1",
+      "SG2.26-xk1"
     ],
     "tests/test__doctor_report.py": [
       "P131.1"
@@ -13409,7 +13410,6 @@
       "SG1.22-ukq",
       "SG1.24-ukq",
       "SG1.25-ukq",
-      "SG2.1-ukq",
       "SG2.3",
       "SG2.20-xk1",
       "SG2.24-xk1"
@@ -13774,7 +13774,8 @@
       "SG1.22-ukq",
       "SG1.24-ukq",
       "SG2.3",
-      "SG2.20-xk1"
+      "SG2.20-xk1",
+      "SG2.27-xk1"
     ],
     "tests/test_audit_usage.py": [
       "P131.1",
@@ -13982,7 +13983,8 @@
       "SG2.18-xk1",
       "SG2.19-xk1",
       "SG2.21-xk1",
-      "SG2.24-xk1"
+      "SG2.24-xk1",
+      "SG2.26-xk1"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -14023,7 +14025,6 @@
       "SG1.18-ukq",
       "SG1.23-ukq",
       "SG1.25-ukq",
-      "SG2.1-ukq",
       "SG1.30-ukq",
       "SG1.34-ukq",
       "SG1.43-ukq",
@@ -14366,8 +14367,7 @@
       "P152.10",
       "P155.30-gfj",
       "SG1.16-ukq",
-      "SG1.18-ukq",
-      "SG2.1-ukq"
+      "SG1.18-ukq"
     ],
     "tools/lints/_ui_theme_lints.py": [
       "P131.2",
@@ -14423,7 +14423,6 @@
       "P148.5",
       "SG1.15-ukq",
       "SG1.24-ukq",
-      "SG2.1-ukq",
       "SG1.29-ukq",
       "SG1.33-ukq",
       "SG1.39-ukq",
@@ -14433,7 +14432,6 @@
       "P131.7",
       "SG1.15-ukq",
       "SG1.24-ukq",
-      "SG2.1-ukq",
       "SG1.29-ukq",
       "SG1.33-ukq",
       "SG1.39-ukq",
@@ -14460,8 +14458,7 @@
       "P155.30-gfj",
       "P161.5-toy",
       "SG1.16-ukq",
-      "SG1.18-ukq",
-      "SG2.1-ukq"
+      "SG1.18-ukq"
     ],
     "tests/test__ui_theme_lints.py": [
       "P131.2",
@@ -14512,7 +14509,8 @@
       "P138.5-myr",
       "P148.11-xpz",
       "SG2.14-xk1",
-      "SG2.15-xk1"
+      "SG2.15-xk1",
+      "SG2.26-xk1"
     ],
     "tests/test__skill_places.py": [
       "P138.4-myr",
@@ -14520,7 +14518,8 @@
       "P148.2",
       "P148.11-xpz",
       "SG2.14-xk1",
-      "SG2.15-xk1"
+      "SG2.15-xk1",
+      "SG2.26-xk1"
     ],
     "tests/test_verify_sh.py": [
       "P140.1"
@@ -14633,7 +14632,6 @@
       "SG1.12-ukq",
       "SG1.18-ukq",
       "SG1.19-ukq",
-      "SG2.1-ukq",
       "SG1.26-ukq",
       "SG1.31-ukq",
       "SG1.35-ukq",
@@ -14649,7 +14647,6 @@
       "SG1.12-ukq",
       "SG1.18-ukq",
       "SG1.19-ukq",
-      "SG2.1-ukq",
       "SG1.26-ukq",
       "SG1.31-ukq",
       "SG1.35-ukq",
@@ -14674,7 +14671,6 @@
       "SG1.16-ukq",
       "SG1.21-ukq",
       "SG1.25-ukq",
-      "SG2.1-ukq",
       "SG2.10-xk1"
     ],
     "tests/test_eval_scaffolds.py": [
@@ -14686,7 +14682,6 @@
       "SG1.18-ukq",
       "SG1.21-ukq",
       "SG1.25-ukq",
-      "SG2.1-ukq",
       "SG1.28-ukq",
       "SG2.5-xk1",
       "SG2.6-xk1",
@@ -14800,7 +14795,8 @@
       "P168.13-icj"
     ],
     "plugins/audit/reference/vendoring-a-skill.md": [
-      "SG2.20-xk1"
+      "SG2.20-xk1",
+      "SG2.27-xk1"
     ],
     "plugins/audit/hooks/failure-hooks.json": [
       "SG2.25-xk1"
