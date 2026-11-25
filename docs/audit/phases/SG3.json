@@ -1,0 +1,237 @@
+{
+  "id": "SG3",
+  "title": "Skill gates: the low findings SG2 carried to the next release",
+  "status": "pending",
+  "description": "Holds SG2.1-ukq, the low batch the owner carried out of SG2 on 2026-11-25 (lows hold no sign-off). Its notes are the list to cut tasks from.",
+  "desiredOutcome": "Every low finding SG2 and its reviews recorded on the carried batch is fixed, cut one property per task, or closed with its reason.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [
+    "SG2"
+  ],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "SG3.1-xk1",
+      "title": "The low findings of the SG1 review, in one batch",
+      "status": "pending",
+      "description": "The review of phase SG1 (five slices, each finding re-run by the orchestrator where it says so) and the reviewers of its tasks left low findings. None held the sign-off. They are fixed here together, each with a case that is red before its fix, or recorded as not reproducing with the run that shows it. A finding marked unconfirmed below was read, not run: run it first.\n\nFROM THE TASK REVIEWERS (recorded on the phase as SG1-R2 to SG1-R7).\nR2. A floor block typed by an agent is dropped by submit only; a return filed through the file-return verb with a typed, marked block is read back as the script's reading. The README row on the floor guard and reference/execute-task.md say an agent's own block is dropped, without that limit. Word both as dropped by submit, and say the mark is a convention, not a proof. The same holds for the red-first block; do not close the class for one key alone.\nR3. commands/init.md step 4.5, the CHANGELOG entry and the README row say the user corrects a line in the same answer that approves the plan. The approval gate is a single-choice question, so a typed correction replaces the option and cannot also approve. Say that a correction is typed as the answer to the gate question, which presents the plan again.\nR4. commands/init.md step 4.5 defines settled as said in the arguments or a step-2 answer; an answer given in step 3 or 3.5 then counts as unsettled. Define settled as said in the arguments or in any answer of steps 2 to 3.5.\nR5. tests/test__refs.py case ia7 searches the whole of step 6 for the sentence that the approval gate prints the list; the sentence could move into a sub-step and the case stays green. Restrict the search to the text before the first sub-heading or code fence of step 6, and add a row that moves the sentence.\nR6. tools/lints/_output_lints.py allows every file name under plugins/audit/evals as a name a test may carry, the git-ignored results directory included, so the orphan check can differ between a machine that ran an eval and one that did not. Skip that directory or read tracked files only, with one case.\nR7, the part still open: the README row on the config hold says a linked worktree of the project and does not name a worktree nested under it, which the hook also covers.\n\nFROM THE PHASE REVIEW, BY AREA.\nFloor guard: a deleted fixture or support module under a test directory is reported as a deleted test; skip, assertion and suppression spellings of languages other than Python that the reader does not know; one file raising a recursion error, or one quoted path, turns the whole reading could-not-tell; a byte-order mark reads as does not compile; one unreadable accepted-suppression entry blanks every reading; an absent phase reads as clean (unconfirmed).\nGreen-first: scope with a tests-add entry re-derives expectRedFirst true on a green-first tdd task and the validator then refuses (unconfirmed); a re-opened task's base holds its own earlier commit (unconfirmed); the fallback block is worded for red and stamped with the green mark; a refusal of the green helper on the headless route is a bare repeating stop (unconfirmed); the landing does not re-read a green-first answer taken off an executor return.\nConfig hold: a relative path is resolved against the project, not the session directory, and the case named for it claims otherwise; a project root spelled through a symlink at another depth defeats the resolved-path comparison; for the main session the ask returns before the text rules, so a custom rule's block becomes a prompt; a task declaring the audit config dead-ends at the executor's first write with no notice when the task is added; a null floorGuard is clean to the validator and invalid to the schema.\nEvals: the guard-stop refusal accepts a suite red for any reason; host git hooks run during the fixture build; the bugfix order grader fails a fix made with the Write tool or a relative path, and its before side is met by any call holding the word.\nClause reader: the last Acceptance item takes the prose after it, since only a heading ends it.\n\nHOW TO PROVE. One case per finding, red on the tree before its fix; for a finding that does not reproduce, the command and its output in the outcome. A mutation probe covering every new case, runnable by the orchestrator. Documents changed here are read against the code they describe.\n\nAcceptance:\n(1) Each finding above is fixed with a case that was red before the fix, or is recorded in the outcome as not reproducing, with the run.\n(2) No case that was green before this task is edited to pass; a case changed on purpose is named with the reason.\n(3) The findings recorded on phase SG1 as R2 to R7 are each answered by name in the outcome.\n\nADDED BEFORE START \n\nFROM THE SECOND REVIEW ROUND (over the fix tasks; lows only - its med and high findings were fixed in SG1).\nFloor guard: a declaration by path and test name also covers a method of that name in every class of the file (unless the ambiguity rule of the fix task already answers it - run it first).\nGreen-first: the signature of an executor return that is not JSON includes its absolute path, so a settlement made in another worktree is not honoured for it, against the docstring of the signature; the sentence the close of a phase prints about what is unsettled never asks about a waiting green-first answer; an existing case the task un-skips counts as a case of its own by the passed count.\nConfig hold: the drive's session mark set to 0 or to false counts as marked, so that session is refused where it should be asked.\nClause reader: an unfenced line starting with a hash inside a numbered list ends the body as a heading (the count is printed).\nEval grader: a git call behind a timeout prefix is not counted, and a comment holding a dry-run flag excuses a forced clean; the header of the case lists neither.",
+      "files": [
+        "plugins/audit/README.md",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/commands/init.md",
+        "CHANGELOG.md",
+        "tests/test__refs.py",
+        "tools/lints/_output_lints.py",
+        "tests/test__output_lints.py",
+        "plugins/audit/scripts/governance/_floor_guard.py",
+        "tests/test__floor_guard.py",
+        "plugins/audit/scripts/governance/_clause_coverage.py",
+        "tests/test__clause_coverage.py",
+        "plugins/audit/hooks/guard-edits.py",
+        "tests/test_guard_edits.py",
+        "plugins/audit/evals/build-shop.sh",
+        "plugins/audit/evals/guard-stop/case.yaml",
+        "plugins/audit/evals/bugfix/case.yaml",
+        "tests/test_build_shop.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__refs.py: the sentence that the approval gate prints the assumptions list is searched for in the opening of step 6 only, and a row moving it into a sub-step is red",
+          "tests/test__output_lints.py: a file under the evals results directory does not make a same-named suite a non-orphan",
+          "tests/test__floor_guard.py: a deleted fixture under a test directory is not reported as a deleted test, and one file the reader cannot parse leaves the other files read",
+          "tests/test__clause_coverage.py: prose after a blank line following the last Acceptance item is not part of that item",
+          "tests/test_guard_edits.py: a relative config path is resolved against the directory the case names, and a custom rule's block is not turned into a prompt for the main session",
+          "tests/test_build_shop.py: the guard-stop refusal names why the suite is red, and the bugfix order grader accepts a fix made with the Write tool"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__refs.py tests/test__output_lints.py tests/test__floor_guard.py tests/test__clause_coverage.py tests/test_guard_edits.py tests/test_build_shop.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T00:32:07Z",
+          "text": "More lows, left by the executors of the second round of SG1 fix tasks, to answer in this batch: (i) the header of plugins/audit/evals/guard-stop/case.yaml and two comments in tests/test_build_shop.py say the harness matches with JavaScript's regex engine and cite nothing - the plugin-evals documentation page says so in its grader table and its troubleshooting section (read 2026-11-18); name that page where the claim is made. (ii) PLUGIN-BUILD-GUIDE.md's sentence on tests/test_build_shop.py does not mention that the tripwire pattern is assembled from named parts in the suite or that it is timed. (iii) the greenFirst description in plugins/audit/schema/audit-plan.schema.json says nothing of a module that did not load or of the own-definitions count. Files this needs beyond the task's list: PLUGIN-BUILD-GUIDE.md, plugins/audit/schema/audit-plan.schema.json."
+        },
+        {
+          "at": "2026-11-18T01:59:18Z",
+          "text": "Third-round lows (2026-11-18), each with a run probe under the session's review3 directory. (1) The eval tripwire counts a harmless git restore/clean/stash whose excusing option is quoted, escaped or continued on a second line; the bare forms were counted before SG1.28, the forms behind an escaped quote or a tab after 'then' are counted since - state it in the case file's header list of what may still count, or read the quoted option. (2) In the tripwire pattern a brace and a backtick are separators that the git path prefix and a NAME=value value also accept, so a long blank-free token of braces grows faster than linearly; under a third of a second at sixteen thousand characters. (3) Trailing prose after the last parenthesised Acceptance item joins that item without a word. (4) load_failures prints that the runner printed no reason for a bare stand-in line. (5) A staticmethod named test_ goes to the uncounted definitions. (6) jest and vitest: a todo test is counted as an own definition while the runner's todo figure is not among the skipped (read, not run)."
+        },
+        {
+          "at": "2026-11-18T05:03:12Z",
+          "text": "Fourth-round lows on the floor guard and the config hold (2026-11-18), probes under the session's review4/x and review3/w directories. (1) One part of about ten thousand statements edited at both ends takes many seconds to pair (quadratic tables; synthetic). (2) tests/test_drive_phase.py is read by its definitions because one helper's name starts with the test prefix, so its labelled checks are never compared as units; an edited check there reads not compared, never a finding. (3) Renaming a function that holds checks, or adding a parameter to it, reports each check inside as moved; the word should say the enclosing statement changed. (4) The clean basis says no existing unit was compared after a row suite switches to the definitions reading. (5) A hard link placed in the project to the config of a tree outside it is not matched by the config hold; state it. (6) The walk up to find a directory that can answer the case question can cross a mount point. (7) A directory entry vanishing between the listing and the lookup reads as a volume that tells case apart. (8) On Windows a trailing dot or blank names the same file and is not matched by the config hold - read, not run; the owner's Windows machine can run it."
+        },
+        {
+          "at": "2026-11-18T06:44:27Z",
+          "text": "Fourth-round lows on green-first (2026-11-18), probes under the session's review4/y directory. (1) A definition repeated in one class is named twice in the basis. (2) The clause on kept files calls unchanged declared files anything the task changed. (3) A module-level helper whose name starts with the test prefix is taken out and listed as a case under unittest. (4) A file starting with a byte-order mark does not parse, so nothing is taken out of it. (5) A test assigned as a lambda is never taken out. (6) The schema's description of the greenFirst status does not say the baseline has the task's own definitions taken out, nor list the no-own-definition and flat-difference refusals. (7) The sweep cost table has no figure for the stage sg-green-held."
+        },
+        {
+          "at": "2026-11-18T07:31:23Z",
+          "text": "Fourth-round lows on the Acceptance reader (2026-11-18), probes under the session's review4/z directory. (1) The conventions document says an opener in brackets counts after a blank; the code also counts one after punctuation. (2) The line for a description with no clause read and a wider reading finding items is absent from the JSON form of the reading. (3) The quote's cut can split a combining sequence. (4) Shapes that still read short in silence, before and after alike, none plausible inside a bracketed list: a list continued as 3:, 3 -, #3, Step 3., 3.), (3.), a bold 3., a task-list box, a quoted line; the marker word in a table cell or split by emphasis."
+        },
+        {
+          "at": "2026-11-18T08:29:39Z",
+          "text": "Fifth-round lows on green-first (2026-11-18), probes under the session's review5/y directory. (1) The check of the two laid trees reads only the declared paths, so a baseline that lays an undeclared source file goes unseen. (2) Laying a declared path over a directory of the same name raises in both the red and the green verb. (3) The clause on kept files still names an unchanged held file. (4) The sweep cost table has no figure for the stage sg-green-same."
+        },
+        {
+          "at": "2026-11-18T09:41:06Z",
+          "text": "Lows seen while closing the fifth-round follow-ups (2026-11-18). (1) Green-first: a not-green answer whose only failing case is one of HEAD's own still closes with the sentence that the task's tests fail on the code before the change. (2) Green-first: the basis calls the baseline, which holds the task's copy of the declared files, HEAD's own run, beside a run of HEAD's own tree with nothing of the task's laid; two names that read as one. (3) Acceptance reader: a citation numbered one directly after the bare marker word in prose is read as a list by the wider reading; generated plain lists whose vocabulary holds such a token print at about one in a hundred (the session's review5/z/d2c_classify.py prints the table). (4) Acceptance reader: a colon-less heading over a list that does not start at one, or whose numbers are quoted or emphasised, is read by neither reading and nothing is said. (5) The sweep cost table has no figure for the stage sg-green-cause."
+        },
+        {
+          "at": "2026-11-18T11:10:53Z",
+          "text": "Lows from the task that gave the guard and the journal one question (2026-11-18). (1) The trail check keys its drift check by a row's target spelling, so after a config write recorded under another letter case it warns that the plain spelling changed with no row, though the write is recorded. (2) A write of a nested tree's config through an MCP tool is held by the guard and leaves no config row: the journal's sweep lane reads only the project's config and that of the tree the session stands in. Stated in the documents. (3) The journal now asks the identity question on every edit-tool write, so its disk calls per write rose; the session's sg1.34/count.py prints the counts. (4) The hook import budget was measured on one interpreter here; the gate names the versions it did not measure."
+        },
+        {
+          "at": "2026-11-18T11:46:56Z",
+          "text": "Sixth-round lows (2026-11-18), probes under the session's review6 directory. Config hold: (1) a symlink FILE in the project pointing at the config of a linked worktree outside it is allowed; (2) a hard link to the project's config placed in an outside linked worktree is not matched and no document says so; (3) a write through an alias of the temp directory records its target as a long relative path; (4) the case that holds the disk-call table complete against the source cannot see an os call made through an alias, though the counting case still catches it. Green-first: (5) a command naming a new test file by path is called green at HEAD though at HEAD it errors on the missing file; (6) the advice to narrow is given where narrowing would still leave a laid file failing to load, a failure the same basis names."
+        },
+        {
+          "at": "2026-11-18T13:10:53Z",
+          "text": "Seventh-round floor-guard lows (2026-11-18), probes under the session's review7 directory: (1) a file-local function merely named skip, whose argument is a condition, reads clean when the argument changes; (2) a reason reworded on a skip raised as an exception is a finding, because the module's list of reason-carrying calls lacks that form while the suite's own list has it; (3) a nested helper's docstring inside a test is compared although the docstring row says it is set aside; (4) a skip reason moved from positional to keyword is a finding."
+        },
+        {
+          "at": "2026-11-18T13:42:21Z",
+          "text": "A case seen red once and green on the re-run (2026-11-18, the unrecorded task gate of the green-first wording task): tests/test_drive_phase.py bq4, which kills a background base run; its block alone passed on the next run and so did the whole gate. Measure it twice with a gap before calling it flaky or load-dependent."
+        },
+        {
+          "at": "2026-11-18T15:07:39Z",
+          "text": "Eighth-round config-hold lows (2026-11-18), probes under the session's review8 directory: (1) an exception of an unexpected kind raised while finding the session's tree escapes the guard's decision and fails the hook open; (2) the same for one raised while asking whether a directory holds a repository, in code older than the hold; (3) a held write that resolves outside every tree gets a journal target that climbs out of the project with leading parent segments, which a reader taking targets as project-relative could misread."
+        },
+        {
+          "at": "2026-11-18T15:24:18Z",
+          "text": "Trail check, older than this phase (2026-11-18, probe in the session's sg1.44 directory, tie_probe.py): two rows for one target written by two sessions inside one second are ordered by their content, not by which was written last, so the drift warning anchors on the older one and says an edit the journal never saw; with more than a second between them the check is quiet. Measured on plain spellings on the commit before the config-row task: several of six same-second runs warn."
+        },
+        {
+          "at": "2026-11-18T17:58:57Z",
+          "text": "14. An MCP tool writing ANOTHER tree's config (a linked worktree outside the project, the session standing in the project) is held by the guard and leaves no journal row, config absent or present: the journal's sweep reads the project's tree and the session's, not the tree the path is written in. Stated in the documents since SG1.47; measured by the reviewer's probe row u21. Decide: the sweep takes the path's tree from the payload as the guard does, or the residual stays as documented. 15. tests/test_guard_edits.py cf32c failed once under load on 'the disk image is detached again' and left its image attached on the host; green when re-run alone. Make the detach retry or the case's teardown detach by device, so a busy host cannot leave an image behind."
+        },
+        {
+          "at": "2026-11-18T18:17:47Z",
+          "text": "16. Lows of the ninth review round (reports in the session's review9/V-report.md and J-report.md): tests/test_guard_edits.py cf29 pins the config question's exact disk-call sequence, so a correct change to where a walk starts turns it red; the file naming a tree's common directory is opened without a regular-file check unless SG1.48 closed it; a config created through a dangling symlinked config folder leaves no journal row because the slot store sits under the same link; a stale absent note gives a created row for an owner's hand creation when the next call's pass before never ran; tests/test_journal_writes.py cq4 stands a verb's row on the shard while the real add-phase row is on the index; the mutation that leaves the hook's private mark on the entry survives the suite and is harmless since the row-key normaliser drops it; the branch of the snapshot for a config folder that is a plain file is held by no case; the pass before costs tens of milliseconds more on a plan with hundreds of phase files."
+        },
+        {
+          "at": "2026-11-18T19:14:02Z",
+          "text": "17. Floor guard: a docstring holding a doctest example that stops being a docstring because a new docstring is written above it reads clean, for a test's docstring and for the module's, and the example no longer runs. Found by the executor of SG1.45 (the session's sg1.45/probe/demote.py, both inputs clean before and after that task). Needs a deliberate edit and a runner that collects doctests from test files; a string statement holding an example that was a docstring in the base copy should be compared as the docstring row says."
+        },
+        {
+          "at": "2026-11-18T20:52:26Z",
+          "text": "18. Lows of review rounds 10 and 11, each reproduced by the reviewer: (floor guard) setattr on the module taken through a local alias of the modules table inside a helper reads clean; the reason for 'no new test' lists every name without a bound; (journal) the build guide says the pass after reads less than before with no measurement beside it; the suite's case for two calls in flight drives two sessions only. 19. Measured 2026-11-18 in this worktree's hook state directory: du -sh prints 987M and ls piped to grep -c '^journal-preimage-' prints 14157, the oldest two days old - every new subagent is a new writer and gets its own preimage of every plan file. Decide by measurement whether a preimage can be shared by content, and what removes one before the seven-day sweep."
+        },
+        {
+          "at": "2026-11-18T22:52:33Z",
+          "text": "20. Lows of review round 12 (config hold), each reproduced by the reviewer: a config-named write in a folder whose parent holds only an empty git entry that is no repository is held, before and after the registered-trees task, and the generated allow twin cannot see it because its stray entries never sit in the directory the config hangs off; with a separate git directory the main tree is not asked - git itself prints the git directory as the main worktree there, so it lies outside the stated rule; say so in the documents' not-matched list."
+        },
+        {
+          "at": "2026-11-19T00:25:04Z",
+          "text": "21. Lows of review round 13 (journal): a config write that changes stateDir leaves the call's reading, like the slots and start records before it, in the old state directory, which the prompt-time sweep never reaches; with the journal on the pass before of a command reads the config even when the payload carries no call id, and discards the reading."
+        },
+        {
+          "at": "2026-11-19T02:56:23Z",
+          "text": "22. Two lows from the task review of the trail-check sentence task: the case that holds an ordinary call leaving no reading has no row for a call whose pass after never ran - assert that its one reading stays and that a later call of the same writer leaves it in place; the four documents do not carry one wording of the hand switch-off sentence - the README and the changelog drop 'by hand and in the panel' and cite one case where SECURITY.md and the build guide cite two. 23. The task reviewer's brief tells it to file its return through a heredoc; a worktree-isolated session refuses that compound command, and the reviewer has no Write tool, so it cannot file - the orchestrator filed the object verbatim from a file on stdin. Give the brief a plain-command way to file."
+        },
+        {
+          "at": "2026-11-19T11:02:35Z",
+          "text": "24. Floor guard, lows of the last three review rounds: under a name that does not resolve, a call spelled skip on an object of the file (a cursor's skip, a same-file helper) has its reason position set aside, so a changed argument there reads not compared rather than a finding - as it did before this run of fixes; a base or a local variable sharing a name declines the base file-wide, by design; a module imported from two places in one try statement reads not compared where it once read clean; tests/test_stamp_verification.py and the guard's own suite read not compared on a bare new test because they call exec into another module's dictionary - an exec with an explicit dictionary that is provably not the file's own could be proven; a store on the modules-table entry through an alias inside a helper still reads clean and is listed as read without proof; an imported callee that writes into the namespace it is handed is proven harmless by rule. 25. tests/test_drive_phase.py bq4 is intermittent under load (red in an unrecorded gate run twice, green re-run alone both times): find what it races on."
+        },
+        {
+          "at": "2026-11-19T11:22:10Z",
+          "text": "26. From the fresh read of the task that made the config hold ask the checkout it finds (no regression in its own code): (a) the journal's pass after hangs until the host's hook timeout when a directory above the project holds a named pipe called .git - the author's identity reading opens every ancestor's git entry without asking whether it is a regular file (usage_ledger.file_witness); it hangs the same way before that task for the project's own config and manifest writes, so open only regular files, as the pointer reader does; (b) no case holds that a git entry reached through a symbolic link is followed (stat changed to lstat turns only the disk-call count red) - give it a row beside the separate-git-directory and submodule rows; (c) no case holds that the found top is asked when its common directory cannot be read (the early return restored leaves both suites green); (d) SECURITY.md says any other entry is passed over as git's discovery passes over it - for a pointer file that is unreadable, binary or over the bound git stops with an error instead; the direction is safe, the sentence is not true of git; (e) a directory holding only HEAD is taken for a repository where git is not, and a pointer file naming a directory that does not exist ends the walk; (f) read, not run: a pointer whose path is not UTF-8 is passed over."
+        },
+        {
+          "at": "2026-11-19T16:01:33Z",
+          "text": "27. From the fresh read of the merge's conflict resolutions (no code finding; every case id and block of both sides present once). MED, a document claim: CHANGELOG.md, Unreleased, Changed - the entry 'A brief's rules win over a skill's instruction, and the phase review is handed its review skill' still announces the review skill reaching the phase brief and the validation session, which the development branch released (its Fixed entry 'The configured review skill now runs at phase sign-off'), and says the session 'is started with that skill' with no condition where the merged code leaves it out and warns when the runner cannot load it (runner_review_skill). Cut the entry to the half that is new - the precedence rule in both agent bodies and the appended preamble - and retitle it. LOW: the same merge left a blank line after each of the four sub-headings of Unreleased where no other sub-heading of the file has one - remove them. LOW, a record and not a document: SG1.10's verifiedBy and red-first basis in the plan cite the session-runner case ids the merge renamed (now ras82, ras82b, ras83); the old ids name the development branch's timing cases - say so in a note on that task rather than rewriting its record."
+        },
+        {
+          "at": "2026-11-20T00:47:00Z",
+          "text": "28. tests/test_build_shop.py on windows depends on WHICH sh the host resolves. Measured 2026-11-20 on a windows-2025 runner, same tree: steps run from PowerShell resolve sh to Git's bin/sh.exe, a launcher that puts Git's own directories ahead of PATH, so a case that hides git (esc18a, esc18b) or substitutes one (esc63, esc65) meets the real git - four reds; steps run from bash resolve usr/bin/sh.exe and all four pass. CI runs from bash, so no leg is red; a developer running the suite from PowerShell is. Rule: the suite picks the sh that honours the PATH it is handed, or says which sh it found when a hidden tool is still found. 29. CHANGELOG.md's earlier Added entry on the eval builder says the redirecting names 'are unset before the first git call'; since the builder now asks git for the names first (a read), the clause wants 'before the first git call that can write'."
+        },
+        {
+          "at": "2026-11-20T00:48:00Z",
+          "text": "30. plugins/audit/evals/build-shop.sh: the check before git init walks the list the block above it computed. If that whole block were lost the list would be empty and the check would ask nothing (the suite still goes red - esc45, esc46 - but the script itself would not refuse). One line: refuse at the check when the list is empty."
+        },
+        {
+          "at": "2026-11-20T02:31:04Z",
+          "text": "31. tests/test_build_shop.py esc70: the hand-built runs carry repeats None (node's shape), so the ', over [..] searches a length' ending of the growth fault that python's child always produces is held by no case; give one growth run a repeats list and compare the whole text. 32. One TRIPWIRE_CEILING serves both engines; node's longest search read 0.005 to 0.009 s on a windows-2025 runner (2026-11-20), so for node the ceiling catches nothing: derive one per engine, or say in the comment that the ceiling is python's and node is held by growth and the deadline."
+        },
+        {
+          "at": "2026-11-20T04:12:38Z",
+          "text": "33. tests/test_guard_edits.py cf37b counts a decision's disk listings only after the journal library is loaded; a cold hook process lists four of the plugin's scripts folders on its first ordinary write (find_script's walk) and no case holds that figure - add a case counting a cold hook process's listings with its basis, or give find_script a direct path for the journal library so the walk is not paid on every call. 34. tools/sweep-selftests.py merge_costs/record_costs: the cost table carries one platform for all entries and a partial record keeps old block figures, so figures from two machines can sit under one label with no case red - record an origin per block or refuse the mix. 35. tests/test_guard_edits.py: cf37 and cf37b are skipped by name on windows, so the per-call process and listing counts are asserted on no windows leg."
+        },
+        {
+          "at": "2026-11-20T06:00:56Z",
+          "text": "36. .github/sweep-costs.json: ge-generated and jw-generated carry 300.0, the seconds they were allowed before being killed on windows, not a measurement; re-record the two suites' blocks from the windows cells of the first green CI run after the template change (--costs-from-log, --platform windows-2025). 37. tests/test_guard_edits.py cf36e puts its measured values (commit ids, counts, lists) in the case label, so the PASS line changes every run - move them to the detail. 38. tests/test_guard_edits.py: no case holds the initialised-only template; a copy of it carrying a commit turns nothing red - add it to cf36e. 39. tests/test_guard_edits.py, the comment above the template builder says a repository's index is the same bytes wherever git made them; the index holds stat data, stale in a copy and harmless only because status re-hashes - say that. 40. Candidate for the speed work, not a defect: on a windows-2025 runner (2026-11-20) the edit guard asked git about 4.7 rev-parse questions per fresh arrangement at about 28 ms each, and the journal hook one git config read per tree."
+        },
+        {
+          "at": "2026-11-20T06:27:10Z",
+          "text": "41. Measured, CI run 44684792267 (2026-11-20, commit 6e6756c3): on a full windows leg ge-generated took 318.1 s and jw-generated 233.0 s on one slot each - green only because the table gives them 900 s; ge-generated was the longest single block of its leg (the next was 169.4 s). Each is one case, so the sweep cannot spread it. When the table is re-recorded (note 36) check whether that block sets its leg's wall time; if it does, the seam is cf36 and oq5 run per family as cases of their own, which changes their ids."
+        },
+        {
+          "at": "2026-11-20T13:40:33Z",
+          "text": "42. From the independent review of a39bc270 and 8e6ea40b (scratchpad sg2.16-review/REVIEW.md, findings 5 and 8), the reader's half, low: (a) mutations that leave tests/test__skill_places.py green while the behaviour holds on probes - O_NOFOLLOW, O_NONBLOCK, the fstat identity check, the read's own budget stop, a CR carried across a chunk boundary, the .md suffix compared without case; each owes a case that can fail. (b) a directory replaced by a link after its lstat is walked through the link and files outside are hashed (bounded, no hang); SECURITY.md says such an entry is never opened - open directories with O_NOFOLLOW|O_DIRECTORY (or compare the scandir fd's fstat with the lstat) and hold it; by reading, a Windows junction is walked the same way - the review gives the command and the expected output for the owner's Windows machine. 43. Outside the changed lines, run by the same review: --explain cuts run: lines at its byte bound, and each --skill-pin lengthens every session line, so with long paths a two-member session wave printed one run: line of two without pins and none with pins (probe explain_probe.py). Not measured on a real install's shorter paths; owes a measurement and, if it reproduces, a fault of its own."
+        },
+        {
+          "at": "2026-11-25T13:44:44Z",
+          "text": "44. From the independent review of 9e0e4d3b (SG2.19-xk1; durable scratch sg2.19-review/REVIEW.md, BATCH-1..4, probes beside it), batched by the owner's 2026-11-25 rule (only high, a regression, a user-facing wrong, or red CI opens a fix round): (a) the test-side stop-route derivation sees no call that has no Call node - a with block whose __enter__ asks, a property getter, __iter__ reached by a for loop, __getitem__ by a subscript (derive3_probe.py: four QUIET); the driver defines no class today, so nothing is missed on the tree, but SECURITY.md's spd22 paragraph and PLUGIN-BUILD-GUIDE.md say a shape nobody listed cannot be missed - either count those nodes as may-stop or state the limit. (b) BY READING the drive's copy remedy still reads the private _skill_places._STOP_REMEDY (drive-phase.py _copy_remedy, and spd39): make the reader's remedy a public value or function of _skill_places.py and call it. (c) BY READING PLUGIN-BUILD-GUIDE.md states the windows saving per step, not the per-step cost SG2.18/19 asked for (one worktree add at 123-139 ms, 2026-11-20, plus one removal, still unmeasured on windows - owner's machine). (d) with TMPDIR inside the project the stop names the cause but gives no remedy: say to point TMPDIR outside the repository."
+        },
+        {
+          "at": "2026-11-25T15:11:51Z",
+          "text": "45. From SG2.21-xk1's executor (durable scratch sg2.21/), batched by the owner's 2026-11-25 rule: (a) PLUGIN-BUILD-GUIDE.md near the drive's pinned-skill paragraph and SECURITY.md's pinned-skill section still say the step's checkout is made only when a member names a PINNED skill (names_a_pin) and that members naming no pinned skill start no git; since SG2.21 the decision reads no copy, so a member naming any skill in a plan with non-empty skillPins costs the step one checkout - rewrite both half-sentences to what the code does. (b) Pre-existing, identical at 2a8c21d4 and after SG2.21 (cli_probe.py D1): no member names a skill, two pins resolve to one directory in the commit and the working copy lacks the link; the opening ask judges no stop, P1.1 is started and its tree cut, then _skill_places.require_pins' pin-against-pin check stops the walk. Decide: either require_pins skips the pin-against-pin check when nothing is handed out (the validator already refuses clashing pins on the plan), or the step judges plan-level pin clashes before any start; the first is in _skill_places.py."
+        },
+        {
+          "at": "2026-11-25T16:29:37Z",
+          "text": "46. Two test-strength items, batched by the owner's 2026-11-25 rule; both belong on the owner's Weakened-tests card: (a) SG2.24-xk1 narrowed tests/test_audit_lookup.py co2 from listed[1:] == ['- from-plan'] to listed[1:2] == ['- from-plan'] because the Skills list now carries the skillsInvoked/skillUnavailable ask after the names (the floor guard reported it as definition-changed); a stray extra skill line now passes co2 - pin the whole list again, names then the ask lines verbatim, so co2 is as strict as before. (b) From SG2.23-xk1's drive reviewer: the whole-series slope in tests/test__clause_coverage.py cw8 judges a reading quadratic only at its LAST doubling (ratios 2,2,4) green at 1.3, where the old per-step maximum flagged it; the task asked only for quadratic over the series or over its last two doublings - decide whether a last-step-only blow-up is worth a second, noise-tolerant judgement (e.g. the last step against a looser bound) or say in the case's comment that it is out of scope."
+        },
+        {
+          "at": "2026-11-25T17:26:33Z",
+          "text": "47. SG2 phase review lows (two reviewers over 66635e08..b16a5c49; REVIEW.md files under the orchestrator's sg2-phase-review/{pins,rest}), batched by the owner's 2026-11-25 rule: (a) .github/sweep-costs.json stores ge-generated and jw-generated as 300.0, a kill-at-timeout reading, not a cost (windows runs since took 318.1 s and 233.0 s); re-record from a windows log. (b) drive-phase.py executor_skills_said: the subagent-return note says 'its record carries no skillsInvoked', wording written for a headless runner record. (c) run-agent-session.py sets PYTHONDONTWRITEBYTECODE=1 for every headless session, pins or not, while CHANGELOG says a plan without skillPins dispatches exactly as before; scope it to pinned plans or say it. (d) tests/test_build_shop.py esc48 is a tripwire on the host git's list of repository-local names with no allow half; a runner git upgrade reddens CI with no code change. (e) drive-phase.py note_executor_skills promises ONE note, a re-filed return leaves a second; and its ran-headless check reads writer dispatches across every start of the task. (f) COMPATIBILITY.md says a plan without skillPins composes exactly as before, but SG2.24 adds the skillsInvoked/skillUnavailable ask to every executor brief whose task resolves a skill. (g) validate-manifest.py skill_pin_findings reads the user's home: pins foo and <plugin>:foo with different digests pass on a machine with a personal foo and fail in CI."
+        },
+        {
+          "at": "2026-11-25T19:30:59Z",
+          "text": "48. SG2 sign-off left four meds open for this batch (owner's 2026-11-25 rule; each is recorded on SG2's review.findings with its full text): SG2-R3 test_build_shop esc47 waives the other-repository unchanged check when its own check refuses (macOS); SG2-R5 timing_faults' 'grew > bound' fault wiring is held by no case that can go red without it; SG2-R10 sweep-costs.json carries macOS seconds under platform windows-2025 for the guard_edits and journal_writes blocks - re-record from a windows log (with 47a); SG2-R11 ge-generated and jw-generated are each heavier than their suite's other blocks together - split at the seam rather than rely on the timeout."
+        }
+      ],
+      "movedFrom": {
+        "id": "SG2.1-ukq",
+        "phase": "SG2",
+        "at": "2026-11-25T18:45:41Z"
+      }
+    }
+  ],
+  "parentBranch": "integration/skill-gates"
+}

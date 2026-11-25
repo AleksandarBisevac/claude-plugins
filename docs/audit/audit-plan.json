@@ -1090,6 +1090,12 @@
       "title": "A named skill is the one that was reviewed",
       "status": "done",
       "shard": "phases/SG2.json"
+    },
+    {
+      "id": "SG3",
+      "title": "Skill gates: the low findings SG2 carried to the next release",
+      "status": "pending",
+      "shard": "phases/SG3.json"
     }
   ],
   "fileIndex": {
@@ -1454,6 +1460,7 @@
       "SG1.23-ukq",
       "SG1.24-ukq",
       "SG1.25-ukq",
+      "SG3.1-xk1",
       "SG1.26-ukq",
       "SG1.27-ukq",
       "SG1.28-ukq",
@@ -2831,6 +2838,7 @@
       "SG1.19-ukq",
       "SG1.22-ukq",
       "SG1.25-ukq",
+      "SG3.1-xk1",
       "SG1.26-ukq",
       "SG1.30-ukq",
       "SG1.31-ukq",
@@ -3059,6 +3067,7 @@
       "SG1.8",
       "SG1.18-ukq",
       "SG1.24-ukq",
+      "SG3.1-xk1",
       "SG1.29-ukq"
     ],
     "plugins/audit/commands/layout.md": [
@@ -3583,6 +3592,7 @@
       "SG1.7",
       "SG1.23-ukq",
       "SG1.25-ukq",
+      "SG3.1-xk1",
       "SG1.30-ukq",
       "SG1.34-ukq",
       "SG1.43-ukq",
@@ -3915,6 +3925,7 @@
       "SG1.19-ukq",
       "SG1.20-ukq",
       "SG1.22-ukq",
+      "SG3.1-xk1",
       "SG1.26-ukq",
       "SG1.27-ukq",
       "SG1.31-ukq",
@@ -10896,7 +10907,8 @@
       "SG1.9",
       "SG1.16-ukq",
       "SG1.17-ukq",
-      "SG1.18-ukq"
+      "SG1.18-ukq",
+      "SG3.1-xk1"
     ],
     "plugins/audit/evals/guard-stop/case.yaml": [
       "P101.3",
@@ -10906,6 +10918,7 @@
       "SG1.17-ukq",
       "SG1.18-ukq",
       "SG1.21-ukq",
+      "SG3.1-xk1",
       "SG1.28-ukq"
     ],
     "plugins/audit/scripts/ui/panel-css/tokens-and-reset.css": [
@@ -13411,6 +13424,7 @@
       "SG1.22-ukq",
       "SG1.24-ukq",
       "SG1.25-ukq",
+      "SG3.1-xk1",
       "SG2.3",
       "SG2.20-xk1",
       "SG2.24-xk1"
@@ -14026,6 +14040,7 @@
       "SG1.18-ukq",
       "SG1.23-ukq",
       "SG1.25-ukq",
+      "SG3.1-xk1",
       "SG1.30-ukq",
       "SG1.34-ukq",
       "SG1.43-ukq",
@@ -14368,7 +14383,8 @@
       "P152.10",
       "P155.30-gfj",
       "SG1.16-ukq",
-      "SG1.18-ukq"
+      "SG1.18-ukq",
+      "SG3.1-xk1"
     ],
     "tools/lints/_ui_theme_lints.py": [
       "P131.2",
@@ -14424,6 +14440,7 @@
       "P148.5",
       "SG1.15-ukq",
       "SG1.24-ukq",
+      "SG3.1-xk1",
       "SG1.29-ukq",
       "SG1.33-ukq",
       "SG1.39-ukq",
@@ -14433,6 +14450,7 @@
       "P131.7",
       "SG1.15-ukq",
       "SG1.24-ukq",
+      "SG3.1-xk1",
       "SG1.29-ukq",
       "SG1.33-ukq",
       "SG1.39-ukq",
@@ -14459,7 +14477,8 @@
       "P155.30-gfj",
       "P161.5-toy",
       "SG1.16-ukq",
-      "SG1.18-ukq"
+      "SG1.18-ukq",
+      "SG3.1-xk1"
     ],
     "tests/test__ui_theme_lints.py": [
       "P131.2",
@@ -14633,6 +14652,7 @@
       "SG1.12-ukq",
       "SG1.18-ukq",
       "SG1.19-ukq",
+      "SG3.1-xk1",
       "SG1.26-ukq",
       "SG1.31-ukq",
       "SG1.35-ukq",
@@ -14648,6 +14668,7 @@
       "SG1.12-ukq",
       "SG1.18-ukq",
       "SG1.19-ukq",
+      "SG3.1-xk1",
       "SG1.26-ukq",
       "SG1.31-ukq",
       "SG1.35-ukq",
@@ -14672,6 +14693,7 @@
       "SG1.16-ukq",
       "SG1.21-ukq",
       "SG1.25-ukq",
+      "SG3.1-xk1",
       "SG2.10-xk1"
     ],
     "tests/test_eval_scaffolds.py": [
@@ -14683,6 +14705,7 @@
       "SG1.18-ukq",
       "SG1.21-ukq",
       "SG1.25-ukq",
+      "SG3.1-xk1",
       "SG1.28-ukq",
       "SG2.5-xk1",
       "SG2.6-xk1",
