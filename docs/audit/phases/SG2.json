@@ -2633,7 +2633,7 @@
     {
       "id": "SG2.20-xk1",
       "title": "A pin is written by a verb and read back by the doctor, and one page says how to vendor an outside skill so that it can be pinned",
-      "status": "in_progress",
+      "status": "done",
       "description": "The task before this one made `meta.skillPins` stop a session over a skill whose directory is not the pinned bytes. Nothing yet WRITES a pin except a hand edit of the plan, nothing tells a user which of the plan's skills are pinned and whether they still match, and nothing says how an outside skill becomes a project skill in the first place. Read that task's reader and digest in `_skill_places.py` before anything else; this task adds no second reading of a pin.\n\nTHE RULE TO BUILD.\n1. A VERB WRITES THE PIN, under the manifest lock, with a journal row, revalidating through validate-manifest.py like every verb that mutates the plan: `/audit:task skill-pin <name> [--source <text>]` pins the directory digest of the copy the resolver finds NOW and prints the path and the digest it pinned; `--remove --reason <text>` drops one. It refuses, writing nothing, for a name the resolver cannot place or a directory with no digest, and it says when the copy it is about to pin is a personal one (a home directory no clone carries - the pin would then fail on every other machine) and refuses that without an explicit flag whose name says so. Re-pinning a name that is pinned prints the old and the new digest. The verb is the one the plugin's command file routes to: `plugins/audit/commands/task.md` is at its context ceiling (`python3 tools/measure-context.py --gate` prints it), so the verb's mention must fit under it by shortening something of equal standing, never by raising the ceiling; if it cannot fit, stop and say what would have to go.\n2. THE DOCTOR READS IT BACK, read-only, in the row family that already answers whether the plan's skills resolve (`_doctor_policy.check_plan_skills`): for each pinned name - matches (path), does not match (path, both digests, and that a session naming it will not start), not found where its bytes can be read; a pin naming a skill nothing in the plan names any more (a warning: stale); and, when the plan pins at least one skill, the plan-named skills that are NOT pinned, by name, as information and not as a warning. A plan with no skillPins key gets no new row at all. A mismatch on THIS machine is a warning, never a finding that fails a build, for the reason that function's docstring already gives for a skill absent here.\n3. ONE PAGE says how to vendor an outside skill, placed by the audience split CONTRIBUTING.md's decision record states (read it: the plugin's user-facing reference under plugins/audit/reference/, linked from the README's skills section - not a section of the README, not QUICKSTART). It states, each with the reason: copy the skill's directory into the project's `.claude/skills/<a name that says what it does and collides with nothing built in>`, never install the outside plugin for one skill; read the whole text before it is committed, since it is instructions an agent with a shell will follow; give it a `## Checklist` section, because a headless session is handed only the description and that section; take out any step that commits, pushes, spawns agents or fetches from the network, since the brief's rules win and a skill that asks for them only produces a conflict in the return; record where it came from (repository, commit, licence) beside it; pin it with the verb; and to upgrade - replace the directory, read the diff, re-pin. And what none of that buys: a pin proves the bytes, not that they are safe, and a skill being invoked is never evidence that its workflow was followed - the gates are.\n4. The page claims nothing the code does not do: every sentence about behaviour names the verb or the row that does it (the before-you-claim skill's first question), and a pin over the page's own example commands is not needed.\n\nWHAT CHANGED UNDER THIS TASK SINCE IT WAS WRITTEN (three tasks landed after the pin itself; read their text in docs/audit/phases/SG2.json, SG2.15-xk1, SG2.16-xk1 and SG2.17-xk1). The verb, the doctor and the page follow the reader as it now is, and restate none of it: (a) the digest is `_skill_places.skill_digest` - lstat before read, a non-regular entry or a link out makes the directory unreadable naming the entry, Markdown alone has CRLF read as LF, every entry counts including tool-written ones (`TOOL_WRITTEN`); the verb calls it and computes nothing of its own, and its refusal for 'a directory with no digest' prints the reader's own words (the entry and its kind). (b) A pin is about the directory a name resolves to, and two pins on one directory with different digests are a validation error: the verb pins under the spelling it is given, and re-pinning a directory already pinned under another spelling updates THAT pin or refuses naming it - never leaves two pins the validator then refuses (the verb revalidates, so the case is that the verb itself says which, before writing). (c) The doctor's 'not found where its bytes can be read' row has three answers to tell apart: not found, unreadable (the reader's words, naming the entry), and mismatch - which names a tool-written entry when one is present, as the runner's stop already does, by calling the same helper. On the session route a wave member's pin is judged on the copy its session loads (SG2.17-xk1): the doctor judges the project's working copy and says so, and when that copy differs from HEAD for a project skill it says the commit is what a wave's sessions will load. (d) The page's 'what a pin does not prove' is a pointer to SECURITY.md's pinned-skill section, not a copy of it; what the page owns is the vendoring steps, including that a checkout which converts line endings changes the digest of any file but Markdown, and the remedy (mark the skill directory as not text for git, with the one line of `.gitattributes` that does it), that a bytecode cache or `.DS_Store` written into the directory after pinning makes the pin mismatch, and that restored bytes must be committed before a wave's sessions see them.\n\nALLOW CASES: the doctor on a plan with no pins prints what it printed before; the verb on a matching, already pinned skill changes nothing and says so; `--remove` of a name that is not pinned refuses and changes nothing.\n\nHOW TO PROVE. Red first for the verb's refusals and the doctor's three answers. A mutation probe the orchestrator can run from the worktree root: the verb pinning SKILL.md's digest instead of the directory's (the round trip verb -> reader must then mismatch); the verb skipping revalidation; the doctor's mismatch row printed as a match; the personal-copy refusal removed. The round trip is a case of its own: pin with the verb, then the reader of the previous task answers match; change one byte, it answers mismatch; re-pin, match. `python3 tools/measure-context.py --gate` green.\n\nNOT in this task: any change to when a session stops (the previous task); the panel.\n\nAcceptance:\n(1) The verb pins the digest the reader then matches, under the lock, journaled and revalidated, and refuses a name it cannot place, a directory with no digest and - without its explicit flag - a personal copy.\n(2) The doctor names each pinned skill as matching, not matching or not found, a stale pin, and the unpinned plan skills, and prints nothing new for a plan with no pins.\n(3) The command file mentions the verb and stays under its context ceiling.\n(4) One reference page says how to vendor and pin a skill, linked from the README, with no sentence about behaviour the code does not do.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -2668,14 +2668,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2a8c21d48a16",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "VERB (audit-task.py): `skill-pin <name> [--source TEXT] [--allow-personal-copy] [--reason TEXT]` and `skill-pin <name> --remove --reason TEXT`, wired as the verb table's sibling of build-command: usage block, VERB_FLAGS row (skill_source, allow_personal_copy, remove, reason), parser choice and two flags, doors map, `import _skill_places`. It computes nothing of its own: resolve_skill places the name, skill_digest digests the whole directory, loaded_verdict says a personal copy does not travel, covering_pins finds the pins already holding the directory, _manifest_rules.skill_pin_findings is asked of the plan as it will be written. Under the plan's lock (_under_lock), written through _write_plan (index-only, revalidated, rolled back), journaled as skillpin.change (field, from, to, reason; changes[] when more than one spelling moved). Refusals, each exit 2 with nothing written and the reader's words: a string that is no skill name, a name nothing places (every place looked in), a directory with no digest (entry and kind), a personal copy without --allow-personal-copy (with the flag it pins and warns), --remove with no reason, --remove of a name not pinned (naming the spelling that is), --remove beside --source, a --source carrying a machine path; a plan already holding two pins on one directory with different digests is refused with exit 1 and the validator's finding (and a --remove of one is let through). A matching pin changes nothing and says so; a changed one prints old and new digest; --source alone is a 'source updated'; a directory pinned under another spelling has THAT pin updated (never a second); the last pin removed takes the skillPins key with it. DOCTOR (_doctor_policy.py): check_plan_skills is now two calls - _plan_skills_resolve (the old body, which returns early) and the new _plan_skill_pins - so the pin rows do not depend on the scan. Rows check 'skill pins', only when the plan carries a non-empty skillPins: matches (path) as one OK row; mismatch / not found / unreadable are WARNINGs worded by _skill_places.stop_words over pin_verdict (the runner's own sentence, naming a tool-written entry) with a fix saying a session naming it will not start; shape problems and directory clashes warn; stale pins (unused_pins) warn; plan skills nothing pins (covering_pins) are an OK row; a project skill's working copy that differs from HEAD (git status --porcelain over the directory) says the commit is what a wave's sessions load, and a matching one that differs is a WARNING. PAGE: reference/vendoring-a-skill.md (new; nine steps in the order asked, each with its reason, a pointer to SECURITY.md instead of a copy of what a pin does not prove, a ## Checklist recap); the .gitattributes line `.claude/skills/<name>/** -text` was MEASURED in a scratch repository with core.autocrlf=true (sg2.20/eol_probe.sh: without the line a checkout wrote CRLF, with it the bytes stayed LF). README: the verb in the /audit:task row (hint form and a prose paragraph placed before build-command's so bcm2's reading of that cell is unchanged), the doctor row, the skillPins row and the Executor skills bullet link the page; verbs-in-full has the verb's section and links the page; PLUGIN-BUILD-GUIDE lists the page in the reference tree and describes the verb and the doctor rows, and its generated module map got the one new edge (audit-task -> _skill_places) by hand from `_deps.py --render`; CHANGELOG has one Added entry. commands/task.md: the verb has its section, hint entry and description clause, and the body is 7997 of 8000 (measure-context --gate) because the reindex section was shortened to a pointer at verbs-in-full, where its full text already is. TESTS: tests/test_audit_task.py new block spv-block (_skill_pin_cases) spv1..spv11 incl. spv2b and spv6b, plus the derived grids extended for the new verb (vf positional row, vf4 second-direction row, tw5 tree-says row); tests/test__doctor_policy.py dp60..dp69 incl. dp60b (a real git repository for dp68). Counts: test_audit_task.py 1300 cases and test__doctor_policy.py 71 cases pass under the brief's command and under cp1252. Run `python3 -B sg2.20/mutations.py --jobs 4`: 33 rows applied and answered as owed (every deny red on the case named, each over-fire twin red on its allow case, the allow row green). WHAT I COULD NOT HOLD BEHAVIOURALLY: no input makes the verb's own write produce an in-process validator finding (a digest is always valid, and a pre-existing invalid plan is refused by _read_plan before the write), so 'revalidates' is held by spv6 (a plan already invalid is refused with exit 1 and left byte for byte) and structurally by spv11 (the locked body writes through _write_plan and calls no raw writer; the mutation row replaces the call with _write_add and spv11 goes red), not by a post-write failure. SCOPE: three files outside the task's files were edited and the Edit tool did not refuse any of them - tests/test__refs.py (the verb added to the two enumerations tk3 and pf2, as build-command was), tools/lints/_deps.py (one GIT_PATH_BASE_EXEMPT row for _doctor_policy.py:_head_note with the existing _DOCTOR reason: the git status listing is only tested for emptiness and the folder it asks about is an absolute path) and PLUGIN-BUILD-GUIDE.md's generated module map line. The reader _skill_places.py is unchanged; I call two names from it with a leading underscore (_tool_written_words from the verb's warning, none from the doctor) - noted, not changed. DEPENDANTS, each answered: commands/task.md's readers - tools/prove-gates.py quotes the 'operator's words go in VERBATIM' passage, which is byte identical (one occurrence before and after; `prove-gates.py --list` exits 0); tools/lints/_refs.py and tests/test__refs.py (`task.md`) enumerate the verbs both command docs name, so the two enumerations tk3 and pf2 CHANGED to list skill-pin and now pass; _journal_io.py, run-test-gate.py, audit-status.py, tests/test__journal_io.py name the file and read nothing I touched (their suites pass); docs/research/pipeline-cost-design.md names the context ceiling, which did not move (measure-context --gate prints 7997 / 8000). audit-task.py's readers - full-gate.py, run-test-gate.py and the suites importing it (test__doctor_trail, test__invariants, test__scoped_commit, test_close_phase, test_commit_task_work, test_full_gate, test_run_test_gate) still correct: the change is additive (one verb, two parser options, one import) and their suites pass; the prose names of audit-task.py in verbs-in-full, the guide and manifest-conventions still hold (the guide's section and verbs-in-full gained the verb). _doctor_policy.py's readers - audit-doctor.py (alias to check_plan_skills, which keeps its name and signature), test__doctor_report, tools/affected.py, the guide, test_drive_phase (basename) still correct and green. tests/test_audit_task.py and tests/test__doctor_policy.py's readers (test_commit_task_work, sweep-costs.json, affected.py, CHANGELOG) name the files only; the new block spv-block has no cost row, which the sweep weighs by the suite's figure. README.md: tests/test__floor_guard.py quotes the floorGuard sentence, byte identical (one occurrence before and after, suite green) and tools/affected.py names README.md only. CHANGELOG.md: tools/release.py reads the `## [Unreleased]` heading, kept (one occurrence before and after; release.py --selftest green); tools/lints/_deps.py quotes CHANGELOG.md by name only. PLUGIN-BUILD-GUIDE.md: its readers (_doctor_hygiene.py and the lints) pass. verbs-in-full.md's readers (_areas.py, test__areas, test__manifest_vocab, test_audit_task, CHANGELOG, agents/guide.md, execute-task.md) name it, and only a section was added. vendoring-a-skill.md: nothing names it but the three documents that now link it.",
+        "descriptive": "A pin is now written by `/audit:task skill-pin` (refusing what the reader cannot place or read and a personal copy without its flag), read back by `/audit:doctor`'s skill pins rows, and one reference page says how to vendor an outside skill so that it can be pinned."
       },
       "startedAt": "2026-11-25T13:32:30Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-25T14:24:33Z",
+      "verifiedBy": [
+        "tests/test_audit_task.py spv-block: the verb's round trip against the reader (match, one changed byte mismatches, re-pin matches), journal rows, every refusal with its allow twin and the plan's bytes compared, --remove, the one-directory-one-pin rule across spellings, the clash refusal, lock, sharded layout, --json, the docs and page wiring, plus the extended derived grids (vf, vf4, tw5)",
+        "tests/test__doctor_policy.py dp60-dp69: no row for no key or an empty key, match, unpinned information and its twin, mismatch with both digests worded by stop_words, a tool-written entry named, not found vs unreadable told apart, stale and its twin, a key the reader cannot read, rows independent of the scan, and the working copy vs HEAD sentence in a real repository with its clean twins"
+      ],
       "notes": [
         {
           "at": "2026-11-25T13:32:28Z",
@@ -2698,7 +2701,40 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-25T14:13:15Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 2443000,
+            "startedAt": "2026-11-25T13:32:32Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-25T14:23:28Z.374e94",
+            "kind": "wait",
+            "ms": 4000,
+            "startedAt": "2026-11-25T14:13:29Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-25T14:23:28Z.374e94, ending at its startedAt",
+            "kind": "selection",
+            "ms": 24030,
+            "runId": "2026-11-25T14:23:28Z.374e94",
+            "startedAt": "2026-11-25T14:13:33Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-25T14:23:28Z.374e94",
+            "kind": "gate",
+            "ms": 570446,
+            "runId": "2026-11-25T14:23:28Z.374e94",
+            "startedAt": "2026-11-25T14:13:58Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 2a8c21d48a16",
+            "kind": "commit",
+            "ms": 2209,
+            "startedAt": "2026-11-25T14:24:29Z"
+          }
+        ],
         "firstStartedAt": "2026-11-25T13:32:30Z"
       },
       "reviewPerTask": "signals",
@@ -2706,6 +2742,77 @@
         "runId": "2026-11-25T14:24:28Z.68299b",
         "status": "passed",
         "at": "2026-11-25T14:24:28Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "2a8c21d48a16",
+        "at": "2026-11-25T14:24:33Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-25T14:13:04Z",
+        "basis": "`python3 tools/sweep-selftests.py --jobs 4 tests/test_audit_task.py tests/test__doctor_policy.py` in a throwaway tree at HEAD exited 1 with 15 of 1293 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dp61 (house FAIL), dp63 (house FAIL), dp64 (house FAIL), dp65 (house FAIL), dp66 (house FAIL), dp69 (house FAIL), dp67 (house FAIL), dp68 (house FAIL) and 7 more: SELFTEST FAILED: 1285/1293 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "SG2.21-xk1",
+      "title": "Whether a wave member needs the commit's copy is decided over the commit, never the working copy, and a step that stops after starting a member gives that start back",
+      "status": "in_progress",
+      "description": "An independent review of SG2.19-xk1 (the orchestrator's prompt names its directory; HOLD-1, probe alias_probe.py, outputs out/alias_new.txt and out/alias_old.txt; re-run by the orchestrator on fresh exports of both commits with the same result) found one regression a user sees.\n\nWHAT HAPPENS. In the commit, `.claude/skills/alias-a` is a link to the pinned `vendored-a`, whose committed bytes are not the pinned ones; in the working copy `alias-a` was replaced, uncommitted, by a plain directory whose bytes match. A session-route wave member names `alias-a`. At fff769ee: exit 1 with the commit-form stop, P1.1 pending with attempts 0, no tree cut, drive state `{}`. At 9e0e4d3b: the step prints 'started P1.1; tree for P1.1', P1.1 is `in_progress` with attempts 1, the wave and its tree are recorded in state, a worktree is left registered, and only then does the walk stop in the member's tree. The cause (drive-phase.py:9887-9888, the `uncut` list, and :9901, `names_a_pin`): whether a member needs the commit's checkout is decided by `covering_pins` over the project's WORKING COPY, and a member left out of `uncut` is then asked with `where=None` - the working copy again - even when the step makes a checkout for another member (C2). So the decision reads one copy and the session loads another, which is the exact class SG2.17 closed for the judgment itself.\n\nTHE RULE TO BUILD.\nA. The question 'does this member name a pinned skill' is asked of the same copy the judgment reads and the member's session will load: for an uncut session-route member, the commit. So no decision about the commit's copy reads the working copy. Keep SG2.19's properties: at most one checkout per commit per step; none for a plan with no pins or `skillPins: {}`; none when no uncut session-route member names any skill. If keeping 'no checkout when the names resolve to no pinned directory' needs the commit read anyway, drop that refinement rather than reading the working copy - say which and why, with the git-process count per wave-opening step before and after.\nB. A step that stops over a pin after it has started a member or cut its tree gives back that start, that tree and its registration, and the wave record - the SG2.16/SG2.17 property, held by SG2.19's snapshot-at-the-stop rule. Add this scenario (the review's C1 and C2) to the stop scenarios that rule runs, so the snapshot sees it; if the snapshot rule did not reach it because no scenario did, say so in the case's label.\n\nALLOW CASES: working copy equal to the commit (C0, stops with nothing changed on both commits); a plan with no pins (zero git processes for the pin check, real `next` byte for byte as at 9e0e4d3b); a matching pin behind a committed link dispatching (as at 9e0e4d3b); a member whose tree is already cut is judged in that tree.\n\nHOW TO PROVE. Red first on the tree as it stands with the review's alias_probe.py C1/C2 and a suite case per scenario; a mutation probe of your own (copies of the working tree, each mutation asserted applied, caches purged), each deny with its allow twin: the decision read from the working copy again; the stop's give-back skipped for a started member. SG2.19's mutation table (its directory) still answers as owed except rows whose code this changes - name each and why. The drive suite's touched block alone, then the whole suite once through the sweep with --jobs 4.\n\nNOT in this task: the review's BATCH items (calls without a Call node, the private remedy name, the windows per-step cost sentence, the TMPDIR remedy) - they go to the phase's low batch.\n\nAcceptance:\n(1) Whether an uncut session-route member needs the commit's copy is decided over the commit, so a working copy that differs from the commit can neither skip a stop nor move it after the member's start.\n(2) A step that stops over a pin after starting a member or cutting its tree leaves the plan, the state, the trees and git's worktree registrations as it found them, held by the snapshot-at-the-stop rule over this scenario.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: whether a member needs the commit's copy is decided over the commit, and a stop after a member's start gives the start back"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-25T14:24:54Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-25T14:24:52Z",
+          "text": "it has a section headed by drive-phase.py's path; SG2.21 renames and moves nothing and adds no module",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        },
+        {
+          "at": "2026-11-25T14:24:52Z",
+          "text": "it reads CHANGELOG.md's '## [Unreleased]' heading; SG2.21 adds lines under that heading and keeps it",
+          "waives": "tools/release.py"
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-25T14:24:54Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-25T15:11:44Z.1cd61f",
+        "status": "passed",
+        "at": "2026-11-25T15:11:44Z"
       }
     }
   ],

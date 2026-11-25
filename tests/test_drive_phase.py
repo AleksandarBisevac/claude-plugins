@@ -19695,6 +19695,8 @@ def _pin_stop_state_cases(check):
                   for code, out, diff in single.values()))
     waves = dict((route, _pin_wave_runs(M, route, hits, ran))
                  for route in ("agent", "session"))
+    _pin_alias_runs(check, M, hits, ran)
+    _pin_decision_cases(check, M)
     for case, label, member, name in (("spd11", "second", "P1.2", "pin-b"),
                                       ("spd12", "first", "P1.1", "pin-a")):
         got = dict((route, waves[route][label]) for route in waves)
@@ -19720,6 +19722,157 @@ def _pin_stop_state_cases(check):
     _pin_answer_cases(check, ran)
     _pin_member_cases(check)
     _pin_route_cases(check, M, hits, ran, waves)
+
+
+def _pin_alias_wave(prefix, detach, skills, plain_in_commit=False):
+    """`(root, mpath)`, or None where this platform makes no link: a session wave
+    whose two members name the skills `skills` (a pair of lists - `alias-a`,
+    `pin-b`, or none). In the COMMIT `alias-a` is a link to the pinned `pin-a`,
+    whose committed bytes are not the pinned ones; with `detach` the project's
+    WORKING copy then holds `alias-a` as a plain directory of the pinned bytes,
+    uncommitted - the copy a decision read from the project sees. With
+    `plain_in_commit` the shapes are the other way about: the commit holds
+    `alias-a` as a plain directory and `pin-a` as pinned, and the working copy
+    holds `alias-a` as a link to a `pin-a` changed after the commit."""
+    root, mpath = _pin_wave(prefix, "session", named=False)
+
+    def edit(plan):
+        tasks = plan["phases"][0]["tasks"]
+        for task, names in zip(tasks, skills):
+            task["skills"] = list(names)
+    _commit_plan(root, mpath, edit, "fixture: a member names a skill by another name")
+    skills = os.path.join(root, ".claude", "skills")
+    alias = os.path.join(skills, "alias-a")
+    if plain_in_commit:
+        _pin_skill_dir(root, "alias-a", _PIN_BODIES["pin-a"])
+        _pin_git(root, "add", "-A")
+        _pin_git(root, "commit", "-qm", "fixture: alias-a a plain directory")
+        _harness.remove_tree(alias)
+        if not _pin_link("pin-a", alias):
+            return None
+        _pin_skill_dir(root, "pin-a", _changed(_PIN_BODIES["pin-a"]))
+        return root, mpath
+    if not _pin_link("pin-a", alias):
+        return None
+    _pin_skill_dir(root, "pin-a", _changed(_PIN_BODIES["pin-a"]))
+    _pin_git(root, "add", "-A")
+    _pin_git(root, "commit", "-qm", "fixture: alias-a links pin-a, changed")
+    if detach:
+        os.remove(alias)
+        _pin_skill_dir(root, "alias-a", _PIN_BODIES["pin-a"])
+    return root, mpath
+
+
+def _pin_alias_runs(check, M, hits, ran):
+    """A member's need for the commit's copy is decided over the commit, and a step
+    the pin stops leaves the plan and the trees as it found them whatever the
+    project's working copy holds - the review's C0, C1 and C2, and C3 (the member
+    that names the link is the second), each stopped
+    through `_stop_run` and registered in `ran`, so spd24's snapshot at the stop
+    judges them like every other stop. The snapshot rule did not reach C1 and C2 at
+    the commit that decided over the working copy because no scenario of it held
+    a working copy that names a skill differently from the commit."""
+    rows = {}
+    for tag, detach, skills, member in (
+            ("C0", False, (["alias-a"], []), "P1.1"),
+            ("C1", True, (["alias-a"], []), "P1.1"),
+            ("C2", True, (["alias-a"], ["pin-b"]), "P1.1"),
+            ("C3", True, ([], ["alias-a"]), "P1.2")):
+        made = _pin_alias_wave("spn-al-%s" % (tag.lower(),), detach, skills)
+        if made is None:
+            rows[tag] = None
+            continue
+        root, mpath = made
+        head = _pin_git(root, "rev-parse", "HEAD").strip()
+        left = _scratch_left(root)
+        stopped = ran["wave-session-alias-%s" % (tag,)] = _stop_run(
+            hits, root, mpath, lambda: _next_wave(M, root, mpath))
+        text = stopped["text"]
+        rows[tag] = (stopped["code"] != 0, stopped["handed"], stopped["diff"],
+                     stopped["early"], _scratch_left(root) == left,
+                     "stopped - %s: " % (member,) in text and "alias-a" in text
+                     and "commit %s" % (head[:12],) in text
+                     and "pin-a" in text, text[-240:])
+    check("spd40 a member whose skill is a link to a pinned directory in the COMMIT is "
+          "asked of the commit, whatever the project's working copy holds there: with "
+          "the working copy equal to the commit (C0), with `alias-a` replaced in it by "
+          "a plain directory of the pinned bytes (C1), and with the other member "
+          "naming a pinned skill so that the step makes a checkout anyway (C2), and "
+          "with the member that names it the SECOND, the first naming nothing (C3), `next` "
+          "stops naming the member and the commit's path, hands nothing out, and the "
+          "snapshot at the stop equals the one before the step - nothing started, no "
+          "tree cut, no wave recorded, no registration left (stopped, handed out, keys "
+          "that differ, changed at the stop, scratch left, words): %r" % (rows,),
+          all(r is None or (r[0] is True and r[1] == [] and r[2] == [] and r[3] == []
+                            and r[4] is True and r[5] is True)
+              for r in rows.values())
+          and sorted(rows) == ["C0", "C1", "C2", "C3"])
+    allow = _pin_alias_wave("spn-al-twin", False, (["alias-a"], []), plain_in_commit=True)
+    twin = None
+    if allow is not None:
+        root, mpath = allow
+        left = _scratch_left()
+        code, text = _next_wave(M, root, mpath)
+        twin = (code, len(_handed_out(text)), _scratch_left() == left)
+    check("spd40a ALLOW, the other way about: the commit holds `alias-a` as a plain "
+          "directory and the project's working copy holds it as a link to a changed "
+          "pinned skill - a working copy that differs from the commit causes no stop "
+          "either: both members are handed out and no scratch checkout is left "
+          "(exit, dispatches, nothing left; None where this platform makes no link): %r"
+          % (twin,), twin is None or twin == (0, 2, True))
+
+
+def _pin_unpinned_wave(prefix):
+    """`(root, mpath)`: a session wave in a plan that pins `pin-a` and `pin-b`, whose
+    two members name `plain-c` - a skill of the project no pin holds - and nothing
+    else."""
+    root, mpath = _pin_wave(prefix, "session", named=False)
+    _pin_skill_dir(root, "plain-c", _PIN_BODIES["pin-a"].replace("pin-a", "plain-c"))
+    _harness.git(root, "add", "-A")
+
+    def edit(plan):
+        for task in plan["phases"][0]["tasks"]:
+            task["skills"] = ["plain-c"]
+    _commit_plan(root, mpath, edit, "fixture: members name an unpinned skill")
+    return root, mpath
+
+
+def _pin_decision_cases(check, M):
+    """Whether the step needs the commit's copy does not read the project: a plan
+    with pins whose members name a skill no pin holds makes ONE checkout - the
+    commit is the only copy that can say whether a name resolves to a pinned
+    directory - where a plan whose members name nothing, an empty `skillPins` and a
+    plan with no pins make none. `{label: (exit, dispatches, scratch adds, scratch
+    removes, git processes)}`."""
+    rows, argvs = {}, {}
+    for label, build in (
+            ("unpinned name", lambda: _pin_unpinned_wave("spn-dc-0")),
+            ("no name", lambda: _pin_wave("spn-dc-1", "session", True, False)),
+            ("skillPins {}", lambda: _pin_wave("spn-dc-2", "session", "empty", True)),
+            ("no pins", lambda: _pin_wave("spn-dc-3", "session", False, True))):
+        root, mpath = build()
+        (code, text), rec = _recorded(lambda: _next_wave(M, root, mpath))
+        gits = argvs[label] = _git_argvs(rec)
+        rows[label] = (code, len(_handed_out(text)), len(_scratch_adds(gits)),
+                       len([a for a in gits if "worktree" in a and "remove" in a
+                            and any("drive-pin-checkout-" in w for w in a)]), len(gits))
+    # The processes that name the scratch checkout - its add, its removal and the
+    # reads of it between - are the step's whole difference from one with none.
+    own = [a for a in argvs["unpinned name"]
+           if any("drive-pin-checkout-" in w for w in a)]
+    extra = len(argvs["unpinned name"]) - len(argvs["no name"])
+    check("spd41 a member that names a skill no pin holds still needs the commit's "
+          "copy - whether a name resolves to a pinned directory is a question for "
+          "the copy the session loads, never for the working copy - so a plan with "
+          "pins makes ONE checkout for it; a wave whose members name no skill, an "
+          "empty `skillPins` and a plan with no pins make none, and the checkout's "
+          "own git processes are the whole difference between a step that makes "
+          "one and a step that makes none (exit, dispatches, adds, removes, git "
+          "processes; the difference): %r" % ((rows, extra),),
+          rows["unpinned name"][:4] == (0, 2, 1, 1)
+          and all(rows[k][:4] == (0, 2, 0, 0) for k in (
+              "no name", "skillPins {}", "no pins"))
+          and extra == len(own))
 
 
 def _pin_answer_cases(check, ran):

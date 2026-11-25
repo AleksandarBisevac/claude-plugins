@@ -9683,7 +9683,8 @@ def checkout_at(ctx, commit):
     The cost is three git processes for each step that makes one (`git worktree
     add`, the one question's read of its admin directory, `git worktree remove`)
     and a checkout of the whole commit, made only when a member on the session
-    route has no tree yet and names a pinned skill."""
+    route has no tree yet and names a skill in a plan that pins any
+    (`names_a_pin`)."""
     holder, refused = scratch_holder(ctx, PIN_CHECKOUT_PREFIX)
     if refused is not None:
         raise _skill_places.PinStop(
@@ -9856,9 +9857,16 @@ def ask_member_pins(ctx, state, manifest, phase, task_ids, base=None, owed=True)
     (`step_checkout`) - made by the first ask that needs it, read by every later
     ask of the step and removed when the step ends (`own_checkouts`; an ask made
     outside a step owns its own) - so the project's working copy, edited or
-    restored and not committed, is not the copy asked. A member that names no
-    pinned skill - by its name, or by the directory it resolves to in the
-    project's copy (`_skill_places.covering_pins`) - needs no checkout. A
+    restored and not committed, is not the copy asked. WHETHER A CHECKOUT IS
+    NEEDED IS DECIDED ONCE FOR THE STEP AND READS NO COPY (`names_a_pin`): it is
+    when a member with no tree yet names any skill in a plan that pins any, and
+    then every such member is asked of that checkout - a name's directory is a
+    fact of the copy the session loads, so asking the project's working copy
+    whether it resolves to a pinned one could skip a stop the commit holds, or
+    move it behind the member's start. So a plan whose members name no skill, an
+    empty `skillPins` and a plan with no pins make none; a member naming a skill
+    no pin holds costs the step one checkout, which is what not reading the
+    working copy costs. A
     personal or plugin skill lies outside the cut and is read where it is; the
     stop's remedy names the copy each skill's tier loads (`pin_stop_words`). A
     serial task, and every task on the subagent route, is asked of the project:
@@ -9884,11 +9892,14 @@ def ask_member_pins(ctx, state, manifest, phase, task_ids, base=None, owed=True)
     trees = wave.get("trees") or {}
     session = writer_setting(ctx["config"])[0]
     commit = base or wave.get("base")
-    uncut = [t for t in asked if session and commit and not trees.get(t["id"])
-             and names_a_pin(ctx, manifest, phase, t, pins)]
+    uncut = [t for t in asked if session and commit and not trees.get(t["id"])]
+    # ONE DECISION FOR THE STEP, read off no copy of the project: the commit's copy
+    # is needed when an uncut member names any skill, and then every uncut member
+    # is asked of that one copy - none is asked of the working copy beside it.
+    copy = (step_checkout(ctx, commit) if any(
+        names_a_pin(manifest, phase, t, pins) for t in uncut) else None)
     for task in asked:
         tree = trees.get(task["id"]) if session else None
-        copy = step_checkout(ctx, commit) if task in uncut else None
         where, how = ((member_project(ctx, tree), ("tree", tree)) if tree
                       else (member_project(ctx, copy[0]), ("commit", commit, copy[0]))
                       if copy else (None, None))
@@ -9898,19 +9909,15 @@ def ask_member_pins(ctx, state, manifest, phase, task_ids, base=None, owed=True)
             raise _skill_places.PinStop("%s: %s" % (task["id"], exc))
 
 
-def names_a_pin(ctx, manifest, phase, task, pins):
-    """Whether a skill `task`'s session starts with is one `pins` holds - under the
-    pin's name in any spelling (`_skill_places.unused_pins`), or resolving in the
-    project's copy to a pinned directory (`_skill_places.covering_pins`). A task
-    naming none needs no copy of a commit to be asked of."""
-    names = _areas.resolve_skills(manifest, phase, task)
-    if not names or not isinstance(pins, dict) or not pins:
-        return False
-    if len(_skill_places.unused_pins(pins, names)) < len(pins):
-        return True
-    return bool(_skill_places.covering_pins(names, pins, ctx["project"],
-                                            _claude_home.claude_home(),
-                                            _output.PLUGIN_ROOT))
+def names_a_pin(manifest, phase, task, pins):
+    """Whether `task`'s session starts with a skill a pin of `pins` could hold: it
+    names any skill, in a plan that pins any. Which directory a name resolves to
+    is a fact of the copy the session will load, so it is asked of that copy
+    (`ask_member_pins`) and never of the project's working copy, which may
+    resolve the name elsewhere - the decision reads no copy at all, and a member
+    that names no skill needs none."""
+    return bool(isinstance(pins, dict) and pins
+                and _areas.resolve_skills(manifest, phase, task))
 
 
 def ask_task_pins(ctx, state, manifest, phase, task):

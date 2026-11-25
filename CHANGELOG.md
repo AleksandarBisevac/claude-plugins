@@ -84,8 +84,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   session's dispatch once more over a session that opened no file is counted only after its
   pins are asked. On the headless route a wave member's pin is asked of the copy its session
   loads: before its tree is cut, a real detached checkout of the commit it will be cut from,
-  made by `git worktree add` - at most one per commit per step, only for a member that names
-  a pinned skill, and removed with its registration when the step ends - in a temp directory
+  made by `git worktree add` - at most one per commit per step, only when a member with no
+  tree yet names a skill in a plan that pins any, decided with no copy of the project read
+  (whether a name is a link to a pinned directory is a fact of the commit's copy, so a
+  working copy that differs from the commit can neither skip a stop nor move it behind the
+  member's start; a member naming a skill no pin holds therefore costs the step one
+  checkout), and removed with its registration when the step ends - in a temp directory
   that is refused when it lies inside a checkout of the project, judged by the same reader
   as every other copy; then the tree's own copy. A
   plan that pins nothing runs no git for it. The stop's remedy names the copy each stopped
