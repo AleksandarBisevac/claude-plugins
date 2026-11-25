@@ -3270,7 +3270,13 @@ plan and name each row's copy, the same way for every surface that shows one. `r
 (the verdicts `_commit_trail.plan_verdicts` read at each done task's commit, handed in for the
 same reason as `usage`) lets a done task's evidence row read its word from its commit's trailers;
 `trail_verdict` decides when it is read, and each row's `source` says which record it came from
-(`trailers` or `testEvidence`).
+(`trailers` or `testEvidence`). `rollup`'s `unreadable` (the run-record read's
+`unreadableRecords`, handed in the same way) makes `evidence_row` the one door a tests word
+comes through: a subject whose own `lastRun` cannot be read gets the read's word `unreadable`,
+`source` `unreadableRecords` and the record's `file`, `field` and `why`, over both the commit's
+word and the pointer's; `test_evidence_summary` lists it in `failing`, and `unevidenced` under
+`unreadable`, so `failing-tests` and `no-test-evidence` both trip on it. A caller passing none
+(the panel and the report today) rolls up as before.
 `task_timing`, `phase_timing` and `timing_rollup` read a task's `timing` record through
 `_task_timing.summarize` and sum it per phase over the DONE tasks that have a window, so the
 stage figures less the overrun plus the unattributed share are the summed windows. Cancelling
@@ -3303,7 +3309,12 @@ conditions — default `invalid,open-high-bugs,blocked-tasks`, tunable with `--f
 plan that has never recorded a run must not start failing builds on upgrade, and both
 read phases as well as tasks). The human render carries the same words in a `tests`
 column, which — like the report's optional columns — is drawn only when a task in view
-has recorded a run, so an unchanged plan renders exactly as it did before. A `time` column
+has recorded a run, so an unchanged plan renders exactly as it did before. The run-record read
+(`unreadable_records_block`) runs before the rollup and is handed to it, so the table cell, the
+phase head line, `--json` and the gate read one answer: a subject whose own record cannot be
+read prints `unreadable`, never its pointer's word, `--short` carries the banner the full view
+opens with, and `failing-tests` ends on the read's own sentence. The validator and the doctor
+still name such a record as a warning, so the default gate is unchanged. A `time` column
 follows the same rule for a task's timing record: its window, in hours or days once past an
 hour (`_wall_duration`; the shared `_fmt.human_duration` keeps its output for every other
 caller), `-` for no record, `open` for a record with no completion, `no window` for a record

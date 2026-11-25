@@ -265,14 +265,13 @@ would manufacture claims out of a single measurement — the shape recorded evid
 exists to remove, not one to add. `scripts/governance/run-test-gate.py --record` is for a
 subject or a few; it is not a history tool.
 
-**Neither condition resolves a pointer.** The block is a *cache* of a run recorded
-in the evidence file beside the plan; `failing-tests` opens nothing at all, and
-`no-test-evidence` opens that file only to date the boundary above — for the
-earliest run in it, never to ask whether a subject's own `runId` still resolves.
-That question belongs to
-`/audit:doctor` and to `--fail-on invariant-breach`. The `tests` column in the render
-carries the same word where a task has one, and a phase's own verdict is a `tests
-<word>` clause on its head line.
+**Neither condition resolves a pointer** against the evidence file beside the plan;
+`no-test-evidence` opens it only to date the boundary above. That is
+`/audit:doctor`'s and `--fail-on invariant-breach`'s. The `tests` column carries a
+task's word, and a phase's is a `tests <word>` clause on its head line. A subject
+whose own run record cannot be read is `unreadable` there, in `testEvidence` and
+in both conditions, never its pointer's word, and `--short` names it; the
+validator and the doctor still only warn.
 
 ### `provisional` / `stale-full-run` / `unknown-full-run` — the third place
 

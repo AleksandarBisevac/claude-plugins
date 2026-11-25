@@ -5270,8 +5270,309 @@ def _trail_render_cases(check):
         _harness.remove_tree(root)
 
 
+# --- a subject whose own run record cannot be read ----------------------------
+# The shapes a record stops reading in: a key the merge kept both copies
+# of (the green copy last, so a last-copy reader sees `passed`), a moment that
+# names no moment, and steps that are not a list. Each is put on a task's record
+# and on the phase's, with the evidence ledger beside the plan holding every run
+# green ("on") and with no ledger at all ("off"). The pointer beside the record
+# says `passed` throughout: it is the cache the tests word used to be read from.
+_RU_FILE = "docs/audit/phases/P1.json"
+_RU_DUP = "@@written-twice@@"
+_RU_SHAPES = (("twice", "lastRun.status"), ("moment", "lastRun.at"),
+              ("steps", "lastRun.steps"))
+
+
+def _ru_row(run_id, ts, scope, task):
+    row = {"v": _ebio.ROW_VERSION, "runId": run_id, "ts": ts, "scope": scope,
+           "phaseId": "P1", "status": "passed", "durationMs": 10,
+           "selectionMs": 1, "startedAt": ts, "failed": [],
+           "reuseKey": "sha256:k", "gateDigest": "sha256:g",
+           "gateSource": scope,
+           "testedState": {"head": "abc123", "dirtyDigest": "sha256:d",
+                           "tree": "sha256:t", "scopeDigest": "sha256:s"},
+           "banners": [], "steps": [{
+               "name": "sweep", "exit": 0, "ran": 3, "measured": "measured",
+               "durationMs": 8, "outcome": "passed"}]}
+    if task:
+        row["taskId"] = task
+    return row
+
+
+def _ru_project(root, shape, subject, ledger):
+    """The manifest path of a sharded plan under `root`: phase P1, done and
+    merged, of done tasks P1.1 and P1.2, every subject holding a green record
+    and its pointer; `subject` ("task" for P1.1, "phase" for P1) gets `shape`
+    (None for none), and the ledger holds every run when `ledger` is "on"."""
+    os.makedirs(os.path.join(root, ".claude"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    rows = [_ru_row("RU-P1.1", "2026-11-18T11:00:00Z", "task", "P1.1"),
+            _ru_row("RU-P1.2", "2026-11-18T11:01:00Z", "task", "P1.2"),
+            _ru_row("RU-P1", "2026-11-18T11:05:00Z", "phase", None)]
+
+    def held(body, row):
+        rec = _ebio.run_record(row)
+        body[_ebio.RECORD_KEY] = rec
+        body[_ebio.POINTER_KEY] = _ebio.pointer_from_record(rec)
+        return body
+    tasks = [held({"id": tid, "title": "t", "status": "done",
+                   "completedAt": "2026-11-18T12:00:00Z",
+                   "tests": {"mode": "tdd", "gate": ["sweep"]}}, row)
+             for tid, row in (("P1.1", rows[0]), ("P1.2", rows[1]))]
+    shard = held({"id": "P1", "title": "one", "status": "done",
+                  "mergedAt": "2026-11-18T12:30:00Z", "testGate": ["sweep"],
+                  "tasks": tasks}, rows[2])
+    rec = (shard if subject == "phase" else tasks[0]).get(_ebio.RECORD_KEY)
+    if shape == "twice":
+        rec["status"] = _RU_DUP
+    elif shape == "moment":
+        rec["at"] = "not-a-moment"
+    elif shape == "steps":
+        rec["steps"] = 5
+    text = json.dumps(shard, indent=2).replace(
+        '"status": "%s"' % (_RU_DUP,), '"status": "failed", "status": "passed"')
+    with open(os.path.join(root, _RU_FILE), "w", encoding="utf-8") as fh:
+        fh.write(text)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump({"meta": {"version": 3,
+                            "evidenceSince": {"at": "2026-01-01T00:00:00Z"}},
+                   "phases": [{"id": "P1", "title": "one",
+                               "shard": "phases/P1.json"}]}, fh)
+    if ledger == "on":
+        where = _ebio.evidence_dir(root)
+        os.makedirs(where)
+        with open(os.path.join(where, "manual.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            for row in rows:
+                fh.write(json.dumps(row) + "\n")
+    if shutil.which("git"):
+        _harness.git(None, "init", "-q", root, prefix=("git",))
+    return mpath
+
+
+def _ru_views(root, mpath):
+    """Every surface that prints a tests word, over one plan: the render, its
+    `--short`, its `--json` (parsed), and the gate under each condition."""
+    views = {}
+    with _main_loop_env():
+        views["text"] = _in_project(root, [mpath])[1]
+        views["short"] = _in_project(root, [mpath, "--short"])[1]
+        out = _in_project(root, [mpath, "--json"])[1]
+        try:
+            views["json"] = json.loads(out)
+        except ValueError:
+            views["json"] = {}
+        for name, argv in (("default", ["--gate"]),
+                           ("failing", ["--gate", "--fail-on",
+                                        "failing-tests"]),
+                           ("absent", ["--gate", "--fail-on",
+                                       "no-test-evidence"])):
+            code, out, err = _in_project(root, [mpath] + argv)
+            views[name] = (code, out + err)
+    return views
+
+
+def _ru_gate_line(said, condition):
+    hits = [ln for ln in said.splitlines()
+            if ln.startswith("GATE FAILED: %s" % (condition,))]
+    return hits[0] if len(hits) == 1 else ""
+
+
+def _unreadable_record_cases(check):
+    """(ru) A task or phase whose own newest run record cannot be read gets no
+    passing word on any surface: the render's table and head line, `--short`,
+    `--json` and the gate - which trips `failing-tests` on it, naming the
+    record and the remedy - while a readable green stays `passed`."""
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="audit-status-unreadable-")
+    try:
+        allow, built = [], {}
+        for ledger in ("off", "on"):
+            root = os.path.join(tmp, "allow-%s" % (ledger,))
+            v = _ru_views(root, _ru_project(root, None, "task", ledger))
+            te = v["json"].get("testEvidence") or {}
+            ok = (_column_cell(v["text"], "P1.1", "tests") == "passed"
+                  and _column_cell(v["text"], "P1.2", "tests") == "passed"
+                  and "tests passed" in _head_line(v["text"], "P1")
+                  and "unreadable" not in v["text"] + v["short"]
+                  and te.get("byStatus") == {"passed": 3}
+                  and te.get("failing") == []
+                  and v["failing"][0] == 0
+                  and "GATE PASSED: failing-tests" in v["failing"][1]
+                  and v["absent"][0] == 0 and v["default"][0] == 0)
+            if not ok:
+                allow.append((ledger, v["failing"], v["absent"],
+                              te.get("byStatus"), v["text"][-900:]))
+        check("ru1 ALLOW, ledger off and on: a plan whose every record reads "
+              "green renders `passed` in both task cells and `tests passed` on "
+              "the phase head line, says nothing unreadable, counts three "
+              "`passed` in --json, and passes failing-tests, no-test-evidence "
+              "and the default gate - what fails if the unreadable word starts "
+              "firing on a readable record: %r" % (allow[:1],), allow == [])
+
+        for shape, field in _RU_SHAPES:
+            for subject in ("task", "phase"):
+                for ledger in ("off", "on"):
+                    root = os.path.join(tmp, "%s-%s-%s" % (shape, subject,
+                                                           ledger))
+                    mpath = _ru_project(root, shape, subject, ledger)
+                    built[(shape, subject, ledger)] = (field,
+                                                       _ru_views(root, mpath))
+        sid = {"task": "P1.1", "phase": "P1"}
+
+        def wrong(test):
+            return [(key, view_said) for key, view_said in (
+                (k, test(k[1], sid[k[1]], f, v))
+                for k, (f, v) in sorted(built.items())) if view_said]
+
+        def render(subject, who, field, v):
+            text = v["text"]
+            if subject == "task":
+                ok = (_column_cell(text, "P1.1", "tests") == "unreadable"
+                      and _column_cell(text, "P1.2", "tests") == "passed"
+                      and "tests passed" in _head_line(text, "P1"))
+            else:
+                ok = ("tests unreadable" in _head_line(text, "P1")
+                      and "tests passed" not in _head_line(text, "P1")
+                      and _column_cell(text, "P1.1", "tests") == "passed")
+            ok = ok and _RU_FILE in text and field in text
+            return None if ok else (_head_line(text, "P1"),
+                                    _column_cell(text, "P1.1", "tests"))
+        bad = wrong(render)
+        check("ru2 RED-FIRST: THE RENDER, each shape in `_RU_SHAPES` on a task "
+              "and on a phase, ledger off and on: the subject's tests word is "
+              "`unreadable` - the task's cell, or the phase's head-line clause "
+              "- never the pointer's `passed`, the readable subject beside it "
+              "keeps `passed`, and the record's file and field are named: "
+              "%d plan(s), wrong %r" % (len(built), bad[:3]),
+              len(built) == len(_RU_SHAPES) * 4 and bad == [])
+
+        def short(subject, who, field, v):
+            ok = (_RU_FILE in v["short"] and field in v["short"]
+                  and who in v["short"] and "passed" not in v["short"])
+            return None if ok else v["short"][-600:]
+        bad = wrong(short)
+        check("ru3 RED-FIRST: --short, over the same plans, names the "
+              "record that cannot be read - file, subject and field - and "
+              "prints no passing word: wrong %r" % (bad[:2],), bad == [])
+
+        def as_json(subject, who, field, v):
+            te = v["json"].get("testEvidence") or {}
+            gone = [e for e in te.get("failing") or []
+                    if e.get("status") == "unreadable"]
+            ok = (te.get("byStatus") == {"passed": 2, "unreadable": 1}
+                  and len(gone) == 1 and gone[0].get("id") == who
+                  and gone[0].get("scope") == subject
+                  and gone[0].get("file") == _RU_FILE
+                  and str(gone[0].get("field") or "").startswith(field))
+            return None if ok else (te.get("byStatus"), te.get("failing"))
+        bad = wrong(as_json)
+        check("ru4 RED-FIRST: --json counts the subject under `byStatus` as "
+              "the word `unreadable`, never as `passed`, and lists it in "
+              "`failing` with that word, its scope, the file and the field: "
+              "wrong %r" % (bad[:2],), bad == [])
+
+        def failing(subject, who, field, v):
+            code, said = v["failing"]
+            line = _ru_gate_line(said, "failing-tests")
+            ok = (code == 1 and who in line and _RU_FILE in line
+                  and field in line and "--record" in line
+                  and "GATE PASSED" not in said)
+            return None if ok else (code, said[-500:])
+        bad = wrong(failing)
+        check("ru5 RED-FIRST: --gate --fail-on failing-tests exits 1 on each of "
+              "them, its line naming the subject, the record's file and field, "
+              "and the remedy the read prints (`--record`): wrong %r"
+              % (bad[:2],), bad == [])
+
+        def absent(subject, who, field, v):
+            code, said = v["absent"]
+            line = _ru_gate_line(said, "no-test-evidence")
+            return None if code == 1 and who in line else (code, said[-400:])
+        bad = wrong(absent)
+        check("ru6 RED-FIRST: --gate --fail-on no-test-evidence does not count "
+              "a record that cannot be read as evidence - it exits 1 naming the "
+              "subject: wrong %r" % (bad[:2],), bad == [])
+
+        def default(subject, who, field, v):
+            code, said = v["default"]
+            doc = v["json"]
+            ok = (code == 0 and "GATE PASSED" in said
+                  and doc.get("valid") is True and doc.get("findings") == 0
+                  and (doc.get("warnings") or 0) >= 1
+                  and [e.get("file") for e in doc.get("unreadableRecords")
+                       or []] == [_RU_FILE])
+            return None if ok else (code, said[-300:], doc.get("valid"),
+                                    doc.get("findings"), doc.get("warnings"))
+        bad = wrong(default)
+        check("ru7 ...and the validator's line stays what it is, a WARNING: "
+              "the plan is still `valid` with no finding and a warning, the "
+              "record named under `unreadableRecords`, so the default gate, "
+              "which holds neither test condition, passes as it did: wrong %r"
+              % (bad[:2],), bad == [])
+    finally:
+        _harness.remove_tree(tmp)
+    _unreadable_door_cases(check)
+
+
+def _ru_params(tree):
+    """`{function name: index of its unreadable parameter}` over `tree`."""
+    import ast
+    return dict((n.name, [a.arg for a in n.args.args].index("unreadable"))
+                for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
+                and "unreadable" in [a.arg for a in n.args.args])
+
+
+def _unreadable_door_cases(check):
+    """(ru) The surfaces that print a tests word, derived from the command's
+    source: every call it makes to a function that takes the run-record read's
+    answer hands that answer on, and the pointer-only reader is not spelled in
+    it at all - so a surface printing the word another way fails here by
+    line, before any fixture would have to reach it."""
+    import ast
+    trees = {}
+    for path in (_loader.script_path("audit-status.py"),
+                 _loader.script_path("_status_facts.py")):
+        with open(path, encoding="utf-8") as fh:
+            trees[os.path.basename(path)] = ast.parse(fh.read())
+    takes = {}
+    for tree in trees.values():
+        takes.update(_ru_params(tree))
+    cmd = trees["audit-status.py"]
+    calls, dropped = [], []
+    for node in ast.walk(cmd):
+        if not isinstance(node, ast.Call):
+            continue
+        name = (node.func.attr if isinstance(node.func, ast.Attribute)
+                else getattr(node.func, "id", None))
+        if name not in takes:
+            continue
+        calls.append((name, node.lineno))
+        if not (len(node.args) > takes[name]
+                or any(k.arg == "unreadable" for k in node.keywords)):
+            dropped.append((name, node.lineno))
+    pointer_only = sorted(set(
+        n.lineno for n in ast.walk(cmd)
+        if (isinstance(n, ast.Attribute) and n.attr == "evidence_status")
+        or (isinstance(n, ast.Name) and n.id == "evidence_status")))
+    names = sorted(set(c[0] for c in calls))
+    check("ru8 THE DOOR, DERIVED: every call audit-status.py makes to a "
+          "function that takes the read's answer (`unreadable`) passes it, "
+          "and the pointer-only `evidence_status` is spelled nowhere in it - "
+          "the table cell, the phase head line, the rollup the JSON and the "
+          "gate read: %d call(s) to %r; dropped %r; pointer-only at %r"
+          % (len(calls), names, dropped, pointer_only),
+          dropped == [] and pointer_only == []
+          and set(("rollup", "evidence_row", "_evidence_cell")) <= set(names))
+
+
 def _selftest():
     def body(record):
+        _harness.stage(record, "ru", _unreadable_record_cases)
         _harness.stage(record, "trs", _trail_render_cases)
         _harness.stage(record, "tc", _timing_render_cases)
         _cases(record)

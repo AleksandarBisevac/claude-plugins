@@ -410,6 +410,16 @@ current. Neither is legacy, and a mutating command does not nudge you off either
 - **That an enum gains no members.** A new task status, a new gate name or a new
   branch type is additive, and code that switches exhaustively over one of them
   should have a default arm.
+- **That the tests word `/audit:status` prints stays inside the `testEvidence.status`
+  enum.** `unreadable` is the run-record read's word for a task or phase whose own
+  `lastRun` cannot be read: the table, the phase head line and `--json`'s
+  `testEvidence` (`byStatus`, and a `failing` row that also carries `file`, `field` and
+  `why`) give it instead of the pointer's word. It is additive under the rule above, and
+  nothing promised a reader of that payload a closed set. It is never written into the
+  plan, so a pointer spelling it is still an unrecognised word. `failing-tests` and
+  `no-test-evidence` trip on such a subject; neither is in `DEFAULT_GATE`, and the
+  validator and `/audit:doctor` still report the record as a warning, so the default
+  gate's verdict over a plan holding one is what it was.
 - **The CONTENTS of a cache block the plugin writes for itself.**
   `meta.ado.hierarchy`, `meta.ado.parentCandidates` and `meta.ado.connection` are
   cached *evidence*, re-derived by the `/audit:sync` subcommand that owns each one —

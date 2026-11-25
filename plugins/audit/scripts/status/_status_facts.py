@@ -919,6 +919,16 @@ def evidence_gap(holder, scope, boundary, trail=None):
 # no source.
 SOURCE_TRAILERS = "trailers"
 SOURCE_POINTER = "testEvidence"
+# ...or the run-record read's own answer that the subject's newest record
+# cannot be read (`_evidence_io.plan_unreadable`'s `unreadableRecords`). Such a
+# row's word is `UNREADABLE_EVIDENCE` whatever the pointer or the commit says:
+# the record is the newest run, and a cache of an older one is no answer about
+# it. The word is the READ's, never one the plan writes, so it is outside
+# `KNOWN_EVIDENCE` (the pointer's enum), and the row is picked out by its
+# `source`, so a hand-written pointer spelling that word is still a word this
+# build does not recognise rather than a record nobody could read.
+SOURCE_UNREADABLE = "unreadableRecords"
+UNREADABLE_EVIDENCE = "unreadable"
 # WHEN A SURFACE READS THE TRAIL, the one rule `/audit:status` and the panel
 # both keep: on every call, for every done task's commit the plan records
 # whatever the view folds - `_commit_trail.plan_verdicts`, one `git log` -
@@ -949,8 +959,34 @@ def trail_verdict(holder, scope, verdict):
     return verdict if isinstance(status, str) and status else None
 
 
-def evidence_row(holder, scope, trail=None):
+def unreadable_entry(unreadable, scope, sid):
+    """The entry of `unreadable` (the read's `unreadableRecords`) naming the
+    record of subject `sid` in `scope` as one that cannot be read, or None.
+
+    An entry of scope `plan` is the read itself failing, which names no
+    subject: it answers for every subject, because none of their records was
+    read."""
+    for entry in unreadable or []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("scope") == "plan":
+            return entry
+        if entry.get("scope") == scope and sid is not None \
+                and str(entry.get("subject")) == str(sid):
+            return entry
+    return None
+
+
+def evidence_row(holder, scope, trail=None, unreadable=None):
     """The `evidence_rows` row for ONE phase or task.
+
+    `unreadable` is the run-record read's `unreadableRecords`. When it names
+    this subject's own record, `status` is `UNREADABLE_EVIDENCE` and `source`
+    is `SOURCE_UNREADABLE`, with the entry's `file`, `field` and `why` on the
+    row - never the pointer's word or the commit's, which answer for an older
+    run than the record does. A whole-plan entry (the read failed) turns only a
+    row that would carry a word: a subject recording nothing is still `-`.
+    None is nobody read the records, and every row is as it was.
 
     `trail` is the verdict the task's commit carries (`trail_verdict` decides
     whether it is read). When it is, `status` is its word and `source` is
@@ -989,6 +1025,13 @@ def evidence_row(holder, scope, trail=None):
             "gradedBy": graded_by(holder)}
     if read and read.get("override"):
         row["override"] = read["override"]
+    lost = unreadable_entry(unreadable, scope, holder.get("id"))
+    if lost is not None and (lost.get("scope") != "plan"
+                             or status is not None):
+        row.pop("override", None)
+        row.update({"status": UNREADABLE_EVIDENCE, "source": SOURCE_UNREADABLE,
+                    "file": lost.get("file"), "field": lost.get("field"),
+                    "why": lost.get("why")})
     return row
 
 
@@ -1000,11 +1043,12 @@ def graded_by(holder):
     return str(value) if isinstance(value, str) and value else None
 
 
-def evidence_rows(manifest, trail=None):
+def evidence_rows(manifest, trail=None, unreadable=None):
     """One row per phase and per task the plan carries, in document order.
 
     `trail` is `{task id: verdict}` (`_commit_trail.plan_verdicts`), or None
     when nobody read the commits - every row then reads its pointer.
+    `unreadable` is `evidence_row`'s.
 
     `{"scope", "id", "status", "subjectStatus", "finishedAt"}`. `status` is the
     recorded verdict, None where none is recorded; `subjectStatus` is the subject's
@@ -1025,16 +1069,24 @@ def evidence_rows(manifest, trail=None):
     for ph in (manifest.get("phases") or []):
         if not isinstance(ph, dict):
             continue
-        rows.append(evidence_row(ph, "phase"))
+        rows.append(evidence_row(ph, "phase", unreadable=unreadable))
         for t in (ph.get("tasks") or []):
             if not isinstance(t, dict):
                 continue
             rows.append(evidence_row(t, "task",
-                                     (trail or {}).get(str(t.get("id")))))
+                                     (trail or {}).get(str(t.get("id"))),
+                                     unreadable))
     return rows
 
 
-def test_evidence_summary(manifest, boundary=None, trail=None):
+def unreadable_evidence(row):
+    """Whether an evidence row's word is the read's: a record nobody could
+    read, decided by its source rather than by the word."""
+    return isinstance(row, dict) and row.get("source") == SOURCE_UNREADABLE
+
+
+def test_evidence_summary(manifest, boundary=None, trail=None,
+                          unreadable=None):
     """What the plan's `testEvidence` pointers SAY -- the block `rollup` carries.
 
     ALWAYS PRESENT AND ALWAYS COMPLETE, every list included even when empty, for the
@@ -1079,11 +1131,15 @@ def test_evidence_summary(manifest, boundary=None, trail=None):
     `trail` is `evidence_rows`': a done task whose commit carries its verdict
     is counted by that word, and its row says `source: trailers`.
 
+    `unreadable` is `evidence_rows`' too: a subject whose own record cannot be
+    read is counted under `UNREADABLE_EVIDENCE` and listed in `failing`, since
+    a record nobody can read signs nothing off, and never in `unrecognised`.
+
     NOTHING IS RESOLVED AGAINST THE LEDGER. Every row is what the manifest - or
     a done task's own commit - says about itself; whether a `runId` names a run this checkout holds is asked by
     `verify-invariants.py` and `_doctor_completions`, and answered nowhere near here.
     """
-    rows = evidence_rows(manifest, trail)
+    rows = evidence_rows(manifest, trail, unreadable)
     recorded = [r for r in rows if r["status"] is not None]
     missing = [r for r in rows
                if r["status"] is None and r["subjectStatus"] == "done"]
@@ -1094,7 +1150,8 @@ def test_evidence_summary(manifest, boundary=None, trail=None):
         "recorded": len(recorded),
         "byStatus": _by_status_values([r["status"] for r in recorded]),
         "failing": [r for r in recorded
-                    if r["status"] in NO_SIGN_OFF_EVIDENCE],
+                    if r["status"] in NO_SIGN_OFF_EVIDENCE
+                    or unreadable_evidence(r)],
         # THE HALF OF `failing` THAT REACHED NO VERDICT AT ALL. It is a
         # SUBSET and not a fourth bucket: `failing` stays whole beside it for
         # `missingOnDone`'s reason - "which recorded run cannot sign work off"
@@ -1106,7 +1163,8 @@ def test_evidence_summary(manifest, boundary=None, trail=None):
         "noVerdict": [r for r in recorded
                       if r["status"] in NO_VERDICT_EVIDENCE],
         "unrecognised": [r for r in recorded
-                         if r["status"] not in KNOWN_EVIDENCE],
+                         if r["status"] not in KNOWN_EVIDENCE
+                         and not unreadable_evidence(r)],
         "missingOnDone": missing,
     }
     out.update(gaps)
@@ -1160,8 +1218,10 @@ def evidence_subjects(summary, key):
 def unevidenced(summary):
     """What `no-test-evidence` FAILS on, split by the repair each part needs.
 
-    `{GAP_SINCE: [...], GAP_UNDATED: [...], "unsound": [...]}`, and the condition
-    trips when any of the three is non-empty. ONE FUNCTION, because the gate's
+    `{GAP_SINCE: [...], GAP_UNDATED: [...], UNREADABLE_EVIDENCE: [...],
+    "unsound": [...]}`, and the condition trips when any of them is non-empty.
+    The third is each done subject whose own run record cannot be read - a word
+    on the row and no run behind it. ONE FUNCTION, because the gate's
     verdict and the sentence a human reads under a red build have to be the same
     answer -- a renderer that re-derived "which subjects failed" is a second
     opinion that can disagree with the exit code.
@@ -1188,6 +1248,11 @@ def unevidenced(summary):
     excused = evidence_subjects(summary, GAP_BEFORE)
     out = {GAP_SINCE: evidence_subjects(summary, GAP_SINCE),
            GAP_UNDATED: evidence_subjects(summary, GAP_UNDATED),
+           # A done subject whose own record cannot be read carries a word
+           # and no evidence: the read gave no run for it.
+           UNREADABLE_EVIDENCE: [r for r in evidence_subjects(summary, "failing")
+                                 if unreadable_evidence(r)
+                                 and r.get("subjectStatus") == "done"],
            "unsound": []}
     gaps = evidence_subjects(summary, "missingOnDone")
     if gaps and not excused and not out[GAP_SINCE] and not out[GAP_UNDATED]:
@@ -1357,11 +1422,16 @@ def timing_rollup(manifest):
 
 
 def rollup(manifest, findings, warnings, usage=None, boundary=None,
-           copies=None, own=None, trail=None):
+           copies=None, own=None, trail=None, unreadable=None):
     """The machine-readable summary --json, render-report and the panel consume.
 
     `usage` is the optional block from `usage_summary()`; it is passed in rather
     than read here so this stays a pure dict -> dict transform.
+
+    `unreadable` is the run-record read's `unreadableRecords`, passed in for
+    `usage`'s reason (the read is `_evidence_io`'s, a layer-mate): each subject
+    it names is counted by `test_evidence_summary` as `UNREADABLE_EVIDENCE`.
+    None is nobody read the records, and every word is as it was.
 
     `copies` is `{phase id: {"live", "basis"}}` for each phase whose row was
     read from somewhere other than this checkout's own live copy, and each
@@ -1530,12 +1600,14 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None,
                      str(b["id"]) for b in open_bugs
                      if _is_high_severity(b.get("severity"))
                      and _mio.keyable_id(b.get("id")))},
-        # What the plan's `testEvidence` pointers SAY, never what the ledger holds.
+        # What the plan's `testEvidence` pointers SAY, never what the ledger holds
+        # - save a subject `unreadable` names, whose word is the read's.
         # Unconditional and whole, the same call `priorityNote` makes below: an
         # empty `failing` list and a block nobody computed must not look alike, and
         # the CLI, the report and the panel all read the one key rather than each
         # walking the plan for it.
-        "testEvidence": test_evidence_summary(manifest, boundary, trail),
+        "testEvidence": test_evidence_summary(manifest, boundary, trail,
+                                              unreadable),
         # "parked" is every entry whose status AS WRITTEN is 'proposed', payload
         # or not — `is_parked_proposal` holds the decision and says why. It used
         # to require a payload as well, which is a count of what
@@ -1739,9 +1811,10 @@ def evaluate_gate(summary, conditions, exempt=None):
             failed.append(c)
         elif c == "invariant-breach" and invariant_breaches(summary) is not None:
             failed.append(c)
-        # A RECORDED verdict that cannot sign work off. Absence is not one of them
-        # and cannot reach this arm: `test_evidence_summary` only ever puts a row
-        # in `failing` when a status was actually written down.
+        # A RECORDED verdict that cannot sign work off, or a subject whose own
+        # record cannot be read. Absence is not one of them and cannot reach
+        # this arm: `test_evidence_summary` puts a row in `failing` only when a
+        # status was written down or a record the plan holds would not read.
         elif c == "failing-tests" and evidence_subjects(summary, "failing"):
             failed.append(c)
         # ...and the other question entirely: a SUBJECT the plan calls done with

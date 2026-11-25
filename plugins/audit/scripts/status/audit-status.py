@@ -159,7 +159,9 @@ stale_full_runs = _status_facts.stale_full_runs
 unknown_full_runs = _status_facts.unknown_full_runs
 NO_SIGN_OFF_EVIDENCE = _status_facts.NO_SIGN_OFF_EVIDENCE
 KNOWN_EVIDENCE = _status_facts.KNOWN_EVIDENCE
-evidence_status = _status_facts.evidence_status
+# `evidence_status` - the pointer's word alone - is deliberately NOT aliased:
+# every tests word this command prints is `_status_facts.evidence_row`'s, which
+# also hears the run-record read, and an alias would be the other door.
 evidence_rows = _status_facts.evidence_rows
 test_evidence_summary = _status_facts.test_evidence_summary
 evidence_subjects = _status_facts.evidence_subjects
@@ -530,13 +532,32 @@ def _failing_tests_detail(summary):
     never be mistaken for the pass it is not, and a status this build has never seen
     would print as itself. `some_of` keeps the line bounded and says how many it
     left out, so the count in front and the list behind it cannot disagree.
+
+    A subject whose own record cannot be read is listed by the read's word,
+    and the line ends on the read's own sentence for those records - file,
+    subject, field, and the step that gets out - so a red build names the
+    repair, not only the word.
     """
     rows = evidence_subjects(summary, "failing")
-    return "%d subject(s): %s" % (
+    detail = "%d subject(s): %s" % (
         len(rows),
         _output.some_of(["%s %s %s" % (r.get("scope"), _subject_id(r),
                                        r.get("status")) for r in rows],
                         sep="; "))
+    lost = _unreadable_entries_of(summary, [
+        r for r in rows if _status_facts.unreadable_evidence(r)])
+    if lost:
+        detail += " - %s" % (_evidence_io.unreadable_records_sentence(lost),)
+    return detail
+
+
+def _unreadable_entries_of(summary, rows):
+    """The read's entries (`summary['unreadableRecords']`) for the evidence
+    `rows` whose word is the read's, in the read's order."""
+    entries = summary.get("unreadableRecords") or []
+    return [e for e in entries if isinstance(e, dict) and any(
+        _status_facts.unreadable_entry([e], r.get("scope"), r.get("id"))
+        for r in rows)]
 
 
 def _subject_list(rows):
@@ -557,11 +578,12 @@ def _no_evidence_detail(summary):
     PE.1` send a reader to two different places in the plan. "done subject" is the
     word that covers both without claiming the wrong one.
 
-    ONE CONDITION, UP TO THREE SENTENCES, because the repairs differ and a reader
+    ONE CONDITION, A SENTENCE PER REPAIR, because the repairs differ and a reader
     under a red build must be able to tell which one they have without opening the
     manifest: run the gate for a subject the recorder existed for, set the stamp
-    for one the plan cannot date, and make the unreadable source readable when the
-    excuse itself is what failed. Rendered off `unevidenced`, which is the same
+    for one the plan cannot date, record again a subject whose own run record
+    cannot be read, and make the unreadable source readable when the excuse
+    itself is what failed. Rendered off `unevidenced`, which is the same
     call the gate's verdict is taken from -- a line derived a second way is a
     second opinion that can contradict the exit code.
     """
@@ -575,6 +597,11 @@ def _no_evidence_detail(summary):
                      "was possible cannot be told: %s"
                      % (len(bits[GAP_UNDATED]),
                         _subject_list(bits[GAP_UNDATED])))
+    lost = bits[_status_facts.UNREADABLE_EVIDENCE]
+    if lost:
+        parts.append("%d done subject(s) whose own run record cannot be read, "
+                     "so no run is recorded for them: %s"
+                     % (len(lost), _subject_list(lost)))
     if bits["unsound"]:
         parts.append("the boundary that would excuse them cannot be trusted: %s"
                      % (_output.some_of(bits["unsound"], sep="; "),))
@@ -947,7 +974,7 @@ def _short(sha):
 EVIDENCE_CELL_MAX = max(len(w) for w in KNOWN_EVIDENCE)
 
 
-def _evidence_cell(holder, verdict=None):
+def _evidence_cell(holder, verdict=None, unreadable=None):
     """The `tests` cell: the word the manifest recorded, or `-` for no record.
 
     THE RAW WORD, NEVER A TRANSLATION OF IT, and the three distinctions that survive
@@ -973,8 +1000,12 @@ def _evidence_cell(holder, verdict=None):
     with a recorded `Audit-Gate`. Read, the cell is the commit's word followed
     by `TRAIL_CELL_MARK`, so a reader can always tell which record a word came
     from; otherwise it is the pointer's word, unmarked, as before trailers.
+
+    `unreadable` is the read's `unreadableRecords`: a task it names reads
+    `unreadable` over both the commit's word and the pointer's, unmarked, and
+    the render's banner names the file and the field.
     """
-    row = _status_facts.evidence_row(holder, "task", verdict)
+    row = _status_facts.evidence_row(holder, "task", verdict, unreadable)
     status = row["status"]
     if not status:
         return "-"
@@ -1086,9 +1117,21 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None,
 SHORT_FULL_VIEW_POINTER = "/audit:status"
 
 
+def _unreadable_lines(summary, pt):
+    """The banner naming each run record the plan holds that cannot be read,
+    in the read's own sentence; `[]` when every record reads."""
+    unread = summary.get("unreadableRecords")
+    if not unread:
+        return []
+    return [pt.paint("  RUN RECORDS UNREADABLE: %s"
+                     % (_evidence_io.unreadable_records_sentence(unread),),
+                     "finding")]
+
+
 def render_short(manifest, summary, width=18, pt=None, manifest_path=None):
     """The condensed render an automated run echoes mid-flight: the overall
-    line, the usage line, the READY NOW block (with the command to type), the
+    line, the full view's banner for a run record that cannot be read, the
+    usage line, the READY NOW block (with the command to type), the
     UNFINISHED block when a lock was read, and a closing line naming the
     command for the full view.
 
@@ -1110,6 +1153,9 @@ def render_short(manifest, summary, width=18, pt=None, manifest_path=None):
     """
     pt = pt or _cli_fmt.PLAIN
     lines = [_overall_line(summary, width)]
+    # The full view's banner too: the condensed form prints no tests word, so
+    # a record nobody can read is said here or nowhere.
+    lines += _unreadable_lines(summary, pt)
     usage = summary.get("usage")
     if usage:
         lines.append("  " + _usage_line(summary, usage))
@@ -1186,11 +1232,7 @@ def _header_lines(manifest, summary, width=18, pt=None, manifest_path=None):
         out.append(pt.paint(
             "  INVALID MANIFEST: %d validator finding(s) - fix before "
             "running a phase" % summary["findings"], "finding"))
-    unread = summary.get("unreadableRecords")
-    if unread:
-        out.append(pt.paint("  RUN RECORDS UNREADABLE: %s"
-                            % (_evidence_io.unreadable_records_sentence(
-                                unread),), "finding"))
+    out += _unreadable_lines(summary, pt)
     # A park-all /audit:init leaves a valid plan with zero phases. Without this
     # line that plan reads as "nothing to do" on the one surface everyone
     # checks first, when the actual state is "everything is waiting for you".
@@ -1265,9 +1307,12 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None,
     # the cells are theirs -- a phase's own verdict has its own clause on the phase
     # head below, which is conditional in its own right.
     trail = trail or {}
+    # The run-record read's answer the rollup counted from, so a cell and the
+    # count it sits under read one answer.
+    unreadable = summary.get("unreadableRecords")
 
     def tests_cell(t):
-        return _evidence_cell(t, trail.get(str(t.get("id"))))
+        return _evidence_cell(t, trail.get(str(t.get("id"))), unreadable)
     show_tests = any(tests_cell(t) != "-"
                      for pe in shown_phases
                      for t in ((by_id.get(pe.get("id")) or {}).get("tasks") or [])
@@ -1365,8 +1410,10 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None,
         # render that showed only the task column would leave a tripped gate with
         # nothing on screen explaining it. Printed only when the phase records
         # something: absent is the ordinary case, and a `tests -` on every phase
-        # head would be noise for every plan that has never run a gate.
-        phase_tests = evidence_status(ph)
+        # head would be noise for every plan that has never run a gate. The word
+        # is the row's, so a phase whose own record cannot be read says so.
+        phase_tests = _status_facts.evidence_row(
+            ph, "phase", unreadable=unreadable)["status"]
         if phase_tests:
             head += "  tests %s" % _clip(phase_tests, EVIDENCE_CELL_MAX)
         # THE THIRD PLACE'S OWN WORD, beside the sign-off gate's above and never
@@ -1943,9 +1990,11 @@ CONDITION_HELP = {
                      "an ABSENT block never does because absent means no run was "
                      "recorded rather than a failure, and a word this build does "
                      "not recognise is reported as itself and judged by nothing, "
-                     "since the enum may gain members. It reports what the "
-                     "manifest says; whether the ledger holds that run is "
-                     "/audit:doctor's question)",
+                     "since the enum may gain members. A task or phase whose own "
+                     "run record cannot be read trips it too, as `unreadable`, "
+                     "naming the record and the step that gets out. It reports "
+                     "what the manifest says; whether the ledger holds that run "
+                     "is /audit:doctor's question)",
     "no-test-evidence": "a `done` task OR PHASE carrying no `testEvidence` at "
                         "all (that COULD have carried one - see the boundary "
                         "below. Both scopes, exactly "
@@ -1965,7 +2014,9 @@ CONDITION_HELP = {
                         "could tell that apart from neglect; the gate prints the "
                         "basis it excused on. A subject the plan cannot date is "
                         "named apart, since the repair is to set `completedAt` / "
-                        "`mergedAt` rather than to run the gate. And when a "
+                        "`mergedAt` rather than to run the gate. A done subject "
+                        "whose own run record cannot be read has no evidence "
+                        "either, and is named apart too. And when a "
                         "source of the boundary could not be READ, work excused "
                         "on it fails instead: an unaskable source may have held "
                         "an earlier moment, which would make the excuse wider "
@@ -2546,11 +2597,16 @@ def main(argv):
     # the git root the plan names.
     git_root = _invariants.git_root_for(manifest, project)
     trail, trail_error = _commit_trail.plan_verdicts(plan, git_root)
+    # A RUN RECORD THE PLAN HOLDS THAT IS NOT THE RECORD'S SHAPE gives no run
+    # to any reader. The read comes before the rollup, which counts each
+    # subject it names by the read's word rather than its pointer's - the one
+    # answer every tests word below is printed from, the gate's included.
+    unread = unreadable_records_block(manifest_path, project)
     summary = rollup(plan, findings, warnings,
                      usage=usage_summary(plan, manifest_path,
                                          full=(want_json or want_gate)),
                      boundary=boundary, copies=live["copies"], own=live["own"],
-                     trail=trail)
+                     trail=trail, unreadable=unread)
     rolled_keys = set(summary)
     if live["note"]:
         summary["liveCopyError"] = live["note"]
@@ -2616,11 +2672,9 @@ def main(argv):
                            for c in _status_facts.FULL_RUN_CONDITIONS))
             or not (want_json or want_gate)):
         summary["fullRun"] = full_run_block(manifest, manifest_path, project)
-    # A RUN RECORD THE PLAN HOLDS THAT IS NOT THE RECORD'S SHAPE gives no run
-    # to any reader, so every mode says which: `--json` as the reader's own
-    # entries, the human render as its one sentence. Present only then, so a
-    # plan whose records all read keeps its payload byte for byte.
-    unread = unreadable_records_block(manifest_path, project)
+    # ...and every mode says which records those are: `--json` as the reader's
+    # own entries, the human render as its one sentence. Present only then, so
+    # a plan whose records all read keeps its payload byte for byte.
     if unread:
         summary["unreadableRecords"] = unread
 
@@ -2641,7 +2695,8 @@ def main(argv):
                                                full=True),
                            boundary=boundary,
                            trail=_commit_trail.plan_verdicts(manifest,
-                                                             git_root)[0])
+                                                             git_root)[0],
+                           unreadable=unread)
         gate_view.update((k, v) for k, v in summary.items()
                          if k not in rolled_keys)
     gate_task = args.task or None

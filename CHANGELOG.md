@@ -309,6 +309,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   is named cannot bind, and the binding says so.
 
 ### Fixed
+- **`/audit:status` gives no passing word to a task or phase whose own run record cannot be
+  read.** A subject measured green whose `lastRun` then stopped reading - a key the merge kept
+  twice, a moment that names no moment, steps that are not a list - still read `tests passed`
+  in the table and on the phase head line, beside the banner saying the record could not be
+  read, and `--gate --fail-on failing-tests` passed: the word was read from the pointer, not
+  the record. The word now comes from the run-record read wherever it is printed: such a
+  subject reads `unreadable` in the table, on the head line and in `--json`'s `testEvidence`
+  (counted in `byStatus`, listed in `failing` with the record's `file`, `field` and `why`),
+  `--short` prints the banner, `failing-tests` trips on it with the read's own sentence -
+  file, field and the step that gets out - and `no-test-evidence` names it as a done subject
+  with no run. The validator and `/audit:doctor` still report the record as a warning and the
+  default gate holds neither test condition, so its verdict is unchanged; a plan whose records
+  all read renders and gates exactly as before. COMPATIBILITY.md section 1 records the new word
+  as additive.
 - **A run record merges as one value, so a merge never reads a red back as passed.** The plan's
   merge driver merged a run record field by field: with a red on the base, a green recorded on
   one branch and a newer red on the other, it conflicted on the run id, the moment and the

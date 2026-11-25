@@ -90,7 +90,10 @@ def _cases(check):
                "PARKED_PROPOSAL_STATUS", "is_parked_proposal",
                "areas_of", "effective_bug_status", "TERMINAL", "rollup",
                "unmet_refs", "evaluate_gate", "budget_breaches",
-               "NO_SIGN_OFF_EVIDENCE", "KNOWN_EVIDENCE", "evidence_status",
+               "NO_SIGN_OFF_EVIDENCE", "KNOWN_EVIDENCE",
+               # `evidence_status` is not here: the command prints every tests
+               # word through `evidence_row`, so it does not alias the
+               # pointer-only reader (`ru8` holds that).
                "evidence_rows", "test_evidence_summary", "evidence_subjects",
                # The boundary's half. `evidence_gap` and `GAP_CLASSES` are NOT
                # here: the command does not alias them, deliberately, and a
