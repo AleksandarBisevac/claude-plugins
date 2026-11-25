@@ -7348,13 +7348,40 @@ a list tail - a phase, a task, a bug, a `fileIndex` row - so two branches that e
 record write the same lines and git's line merge stops, in either layout: sharding moves a phase
 RUN into its own shard, but every record that is ADDED still lands in the index. `_manifest_merge`
 (pure) merges three parsed documents: records matched by `id`, a `fileIndex` row as a set of
-task ids, fields three-way. What stays a conflict is what a human must decide - one field changed
-two ways, delete against change, and the same id added twice with different content, which is never
+task ids, fields three-way - except a value that is ONE ACCOUNT of one event, which merges whole.
+A run record and its pointer, a CI run, a merge stamp with its head, a sign-off's verdict: merged
+field by field, a red on the base, a green on one side and a newer red on the other conflicted on
+the run id, the moment and the duration alone, and keeping one side there read a red back as
+passed. `MERGE_UNITS` names every object value the schema declares on a kind the merge walks into
+as `whole` (sibling keys grouped where they are one account together), `container` or `map`, and
+`tests/test__manifest_merge.py` walks the schema and fails on one no row names. A group of sibling
+keys - a task's status with the start, block or close that moved it, a gate derivation with its
+basis, a finding's disposition - is no schema object, so the suite finds those by their WRITERS:
+an AST scan of every `.py` under `scripts/` for the constant keys one function writes to one
+target, or puts in one dict literal or `dict(x, k=...)` call, read as keys of every kind they
+fit, and named at the line of its first write. A row is one verb's account and two rows may
+share a key - a task's start and its close both write the status - so `_units` merges each row
+whole and joins the rows both sides changed with every row sharing a key some side moved: a
+start against a close is one conflict, a start beside a re-recorded red-first proof is two
+clean merges. A co-write fails unless the merge, performing it two ways on two sides, makes it
+one unit, or the suite gives its reason (a bug's close appending to the notes, a log a person
+also writes, carries its cost there); a group the table holds must be written together somewhere
+or carry its reason (a decision, which a person writes). A phase's status is in no row, and the
+suite says why and what that costs. The scan cannot read a key computed at run time or a record
+two functions write; its docstring lists those. The shapes it does read are named once
+(`SCAN_READS`), each branch of the scan is guarded by its name, and a case holds one fixture per
+name both ways: each fixture is found with every shape read and lost with its own shape left
+out, so a deleted fixture or a branch that stopped reading is red by name. A container holding a record of a kind the table names - a
+proposal's parked phase - merges as that kind (`REF_KINDS`, held to the schema's `$ref`). What stays a
+conflict is what a human must decide - one field changed two ways, a whole value changed on both
+sides, delete against change, and the same id added twice with different content, which is never
 renumbered. The order is symmetric - base order, a side's additions after the record they followed,
 tail runs at the tail, ties by a natural sort of the run's first id - because phase order is
 execution order and merging in either direction must produce the same bytes. `render` does not
 patch markers into one document: it renders each side WHOLE, every conflict resolved that side's
-way, and the marker blocks are the line diff between the two. A block around one value cannot own
+way, and the marker blocks are the line diff between the two, with every line of a conflict's value
+kept from matching the other side's - so each conflict is ONE block, and no way of keeping a side
+per block holds a value neither side wrote. A block around one value cannot own
 the comma on the sibling before it - a deleted last record, or two adjacent conflicts, left it
 dangling - while two complete documents are valid JSON by construction, so keeping one side
 throughout reproduces that side's document exactly. A value that is new on both sides merges as if
@@ -7378,6 +7405,17 @@ index has no stages to read - renumbers each id both sides minted on the side na
 the one conflict list. Because nothing it writes was read from the work tree, it first asks every
 target, under `index`, whether it holds only what the merge or `resolve` itself put there, and
 writes nothing when one does not (the evidence section's rule paragraph has the three states).
+Its refusal of a merge with no id to renumber, and its stray refusal, also name, by file and
+path, every whole value a plan file holds that is
+neither the base's, ours' nor theirs' (`_manifest_merge.foreign_values`, each marker block still in
+the file read once per side, a diff3 base section in neither reading) - a run typed together from
+both sides, or one recorded while the merge was stopped. A side it renumbered counts as that side
+under its new ids, so a block kept from it after a first `resolve` is not called foreign. A file
+both sides hold alike is passed over after one parse when it still parses to what they hold -
+walking every shard cost the resolver seconds on a plan of this repository's size - and walked
+like any other when it does not, so a run recorded there while the merge was stopped is named by
+the refusal of a merge with no id to renumber too. It cannot see an edit made after it has run,
+and a file the edit left unparsed is the plan reader's to report.
 `.gitattributes` gets the manifest and its
 shard glob; a clone that has not installed falls back to git's own line merge, which is why that
 file is safe to commit. `_merge_install.replay_merges` is the doctor's measurement of what the
@@ -7389,7 +7427,12 @@ simplification drops a merge resolved by taking one side. `_merge_install` names
 back, because `merge-manifest status` and the doctor's `merge driver` line must give one answer and
 a doctor module may not reach an entry point. Cases: `tests/test__manifest_merge.py` (the merge) and
 `tests/test__merge_install.py` (locating, and a quoted root read back), `tests/test_merge_manifest.py` (real git: the field report reproduced as a control, both
-directions byte-identical, sharded, a stale shim, a driver that dies before writing).
+directions byte-identical, sharded, a stale shim, a driver that dies before writing, and
+`rr1`-`rr10`: two branches that each recorded a run, merged through the installed driver and
+resolved by hand - the stray refusal naming a mixed record, a run recorded in a shard both sides
+hold alike named by the no-collision refusal, and, as allow cases, a block kept after `resolve`
+renumbered a side, a bug fixed beside a notes edit and a finding's resolution beside its fixing
+task, while a finding accepted against carried stays one conflict).
 
 ### `plugins/audit/scripts/manifest/_id_shape.py`
 **Ids two branches cannot both mint.** Every allocator is max+1 and max+1 is taken on one branch,

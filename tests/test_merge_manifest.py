@@ -402,10 +402,286 @@ def _git_cases(check, tmp):
               code != 0 and "<<<<<<< ours" in text and "without writing" in out,
               "%s\n%s" % (out, text))
         _resolve_cases(check, tmp, env)
+        _run_record_cases(check, tmp, env)
         _window_cases(check, tmp, env)
     finally:
         os.environ.clear()
         os.environ.update(held)
+
+
+# --- a run record is merged whole, through git ----------------------------------
+# Two branches that each recorded a run on one task: the record and its pointer are
+# one account of one run, so `git merge` through the installed driver must leave a
+# block that, kept either way, is one side's run - never one side's run id beside the
+# other side's status. The records are written by the evidence layer's own writer,
+# so the fixture is the shape a gate leaves, not a hand-written guess at it.
+_RR_UNIT = ("lastRun", "testEvidence")
+
+
+def _record_run(repo, idx, run_id, status, ts, ms, task_id="P1.1"):
+    import _evidence_io
+    row = {"v": 1, "runId": run_id, "ts": ts, "scope": "task", "taskId": task_id,
+           "phaseId": "P1", "status": status, "durationMs": ms,
+           "steps": [], "failed": ["tests/test_x.py"] if status == "failed" else []}
+    return _evidence_io.write_record(repo, idx, "task",
+                                     {"taskId": task_id, "phaseId": "P1"},
+                                     _evidence_io.run_record(row),
+                                     session_id="run-record-case")
+
+
+def _verbs_merge(tmp, name, env, ours, theirs):
+    """A sharded plan holding a bug and a review finding, `theirs(plan)` committed
+    on a branch and `ours(plan)` on main, merged through the installed driver ->
+    (merge exit, output, the plan as the work tree then reads)."""
+    repo = os.path.join(tmp, name)
+    os.makedirs(repo)
+    _harness.git(repo, "init", "-q", "-b", "main")
+    idx = os.path.join(repo, "docs", "audit", "plan.json")
+    plan = _window_plan()
+    plan["bugs"] = [{"id": "BUG-1", "title": "b", "status": "open", "severity": "low",
+                     "notes": "seen once"}]
+    plan["phases"][0]["review"] = {"status": "failed", "findings": [
+        {"id": "x1", "issue": "i", "severity": "med", "status": "open"}]}
+    _write_json(idx, plan)
+    _mio.save_sharded(idx, plan)
+    _install(idx)
+    _harness.git(repo, "add", "-A")
+    _harness.git(repo, "commit", "-qm", "base")
+    for branch, edit in (("side", theirs), ("main", ours)):
+        _harness.git(repo, "checkout", "-q" + ("b" if branch == "side" else ""), branch)
+        doc = _mio.load_manifest(idx)
+        edit(doc)
+        _mio.save_sharded(idx, doc)
+        _harness.git(repo, "commit", "-qam", branch)
+    code, out = _git(repo, env, "merge", "-q", "side", "-m", "merge")
+    try:
+        merged = _mio.load_manifest(idx)
+    except Exception:
+        merged = None
+    return code, out, merged
+
+
+def _minted_and_run_merge(tmp, name, env):
+    """Both sides mint P1.2 (a collision resolve renumbers) AND record a run on P1.1
+    and on their own P1.2, through the evidence writer -> (repo, index, exit)."""
+    repo = os.path.join(tmp, name)
+    os.makedirs(repo)
+    _harness.git(repo, "init", "-q", "-b", "main")
+    idx = os.path.join(repo, "docs", "audit", "plan.json")
+    _write_json(idx, _window_plan())
+    _mio.save_sharded(idx, _window_plan())
+    _install(idx)
+    _record_run(repo, idx, "R1", "failed", "2026-11-20T10:00:00Z", 100)
+    _harness.git(repo, "add", "-A")
+    _harness.git(repo, "commit", "-qm", "base")
+    for branch, title, runs in (
+            ("side", "theirs", (("R3", "failed", "P1.1"), ("R5", "failed", "P1.2"))),
+            ("main", "ours", (("R2", "passed", "P1.1"), ("R4", "passed", "P1.2")))):
+        _harness.git(repo, "checkout", "-q" + ("b" if branch == "side" else ""), branch)
+        plan = _mio.load_manifest(idx)
+        plan["phases"][0]["tasks"].append({"id": "P1.2", "title": title, "status": "pending",
+                                           "files": ["src/%s.ts" % (title,)]})
+        plan["fileIndex"]["src/%s.ts" % (title,)] = ["P1.2"]
+        _mio.save_sharded(idx, plan)
+        for i, (rid, status, tid) in enumerate(runs):
+            _record_run(repo, idx, rid, status, "2026-11-20T1%d:00:00Z" % (i + 1,), 10, tid)
+        _harness.git(repo, "add", "-A")
+        _harness.git(repo, "commit", "-qm", title)
+    code, _out = _git(repo, env, "merge", "-q", "side", "-m", "merge")
+    return repo, idx, code
+
+
+def _rr_unit(shard_doc):
+    task = [t for t in (shard_doc or {}).get("tasks") or [] if t.get("id") == "P1.1"]
+    return dict((k, task[0][k]) for k in _RR_UNIT if task and k in task[0])
+
+
+def _rr_resolutions(text):
+    """Every document keeping one side per marker block, block by block."""
+    lines = text.split("\n")
+    n = sum(1 for ln in lines if ln.startswith("<<<<<<< "))
+    out = []
+    for mask in range(2 ** n):
+        kept, mode, block = [], None, -1
+        for line in lines:
+            if line.startswith("<<<<<<< "):
+                block, mode = block + 1, "ours"
+                continue
+            if line == "=======" and mode:
+                mode = "theirs"
+                continue
+            if line.startswith(">>>>>>> ") and mode:
+                mode = None
+                continue
+            if mode is None or mode == ("theirs" if mask >> block & 1 else "ours"):
+                kept.append(line)
+        out.append(_json_or_none("\n".join(kept).encode("utf-8")))
+    return n, out
+
+
+def _run_record_merge(tmp, name, env):
+    """A sharded plan with the driver installed, a red recorded on the base, a green
+    on ours and a newer red on theirs, `git merge` stopped -> (repo, index, exit,
+    output, {side: P1's shard as that commit holds it})."""
+    repo = os.path.join(tmp, name)
+    os.makedirs(repo)
+    _harness.git(repo, "init", "-q", "-b", "main")
+    idx = os.path.join(repo, "docs", "audit", "plan.json")
+    _write_json(idx, _window_plan())
+    _mio.save_sharded(idx, _window_plan())
+    _install(idx)
+    wrote = [_record_run(repo, idx, "R1", "failed", "2026-11-20T10:00:00Z", 100)]
+    _harness.git(repo, "add", "-A")
+    _harness.git(repo, "commit", "-qm", "base")
+    _harness.git(repo, "checkout", "-qb", "side")
+    wrote.append(_record_run(repo, idx, "R3", "failed", "2026-11-20T12:00:00Z", 300))
+    _harness.git(repo, "commit", "-qam", "theirs: a newer red")
+    _harness.git(repo, "checkout", "-q", "main")
+    wrote.append(_record_run(repo, idx, "R2", "passed", "2026-11-20T11:00:00Z", 200))
+    _harness.git(repo, "commit", "-qam", "ours: a green")
+    code, out = _git(repo, env, "merge", "-q", "side", "-m", "merge")
+    sides = dict((rev, _json_or_none(_harness.git(repo, "show", "%s:%s" % (
+        rev, _W_SHARD % "P1")).encode("utf-8"))) for rev in ("HEAD~1", "HEAD", "side"))
+    return repo, idx, code, out, sides, wrote
+
+
+def _run_record_cases(check, tmp, env):
+    repo, idx, code, out, sides, wrote = _run_record_merge(tmp, "rr-git", env)
+    units = dict((rev, _rr_unit(doc)) for rev, doc in sides.items())
+    recorded = [w.get("written") for w in wrote]
+    with open(os.path.join(repo, _W_SHARD % "P1"), encoding="utf-8") as fh:
+        text = fh.read()
+    blocks, docs = _rr_resolutions(text)
+    held = [_rr_unit(d) if isinstance(d, dict) else "unparsed" for d in docs]
+    mixed = [u for u in held if u not in (units["HEAD"], units["side"])]
+    check("rr1 a real `git merge` through the installed driver over two branches that "
+          "each recorded a run on P1.1 stops on ONE conflict naming the record and its "
+          "pointer together, and every way of keeping a side of each block leaves ours' "
+          "run or theirs' run whole; mixed: %r" % (mixed,),
+          recorded == [True, True, True] and code != 0
+          and "tasks[P1.1].{lastRun,testEvidence} - " in out
+          and "lastRun.runId" not in out
+          and units["HEAD"].get("lastRun", {}).get("runId") == "R2"
+          and units["side"].get("lastRun", {}).get("runId") == "R3"
+          and blocks >= 1 and len(docs) == 2 ** blocks and mixed == []
+          and units["HEAD"] in held and units["side"] in held,
+          "%s %s\n%s\n%s" % (recorded, code, out, text))
+
+    # A hand resolution typed with ours' run id and theirs' status: neither side's.
+    hand = copy.deepcopy(sides["HEAD"])
+    task = [t for t in hand["tasks"] if t["id"] == "P1.1"][0]
+    task["lastRun"]["status"] = task["testEvidence"]["status"] = "failed"
+    _write_json(os.path.join(repo, _W_SHARD % "P1"), hand)
+    before = _plan_bytes(repo)
+    code, msg = _resolve(["resolve", idx, "--renumber", "theirs"])
+    check("rr2 the resolver reading a hand-resolved shard refuses a run record neither "
+          "side nor the base wrote, naming its path, with nothing written: %s" % (msg,),
+          code == 1 and "%s: tasks[P1.1].{lastRun,testEvidence}" % (_W_SHARD % "P1",) in msg
+          and "nothing was written" in msg and _plan_bytes(repo) == before)
+
+    # ALLOW: the same hand resolution keeping theirs' run whole names no record.
+    _write_json(os.path.join(repo, _W_SHARD % "P1"), sides["side"])
+    code, msg = _resolve(["resolve", idx, "--renumber", "theirs"])
+    check("rr3 ALLOW: a hand resolution keeping one side's run whole is not called a "
+          "record neither side wrote - the resolver answers as before: %s" % (msg,),
+          code == 1 and "{lastRun,testEvidence}" not in msg
+          and "no id in" in msg)
+
+    # rr7 - a run recorded, while the merge is stopped, in a shard both sides hold
+    #       alike is neither side's too, and the refusal with no id to renumber -
+    #       which returns before any stray check - names it.
+    repo, idx, _c, _o, _s, _w = _run_record_merge(tmp, "rr-alike", env)
+    alike = os.path.join(repo, _W_SHARD % "BF10")
+    with open(alike, encoding="utf-8") as fh:
+        shard = json.load(fh)
+    shard["tasks"][0].update(lastRun={"runId": "R9", "status": "passed", "at": "T9"},
+                             testEvidence={"runId": "R9", "status": "passed", "at": "T9"})
+    _write_json(alike, shard)
+    code7, msg7 = _resolve(["resolve", idx, "--renumber", "theirs"])
+    check("rr7 a run recorded while the merge is stopped, in a shard both sides hold "
+          "alike, is named by the refusal of a merge with no id to renumber: %s" % (msg7,),
+          code7 == 1 and "no id in" in msg7
+          and "%s: tasks[BF10.1].{lastRun,testEvidence}" % (_W_SHARD % "BF10",) in msg7)
+
+    # rr8/rr9 - two verbs writing apart in one record, through the real driver.
+    def bug(doc):
+        return doc["bugs"][0]
+
+    def finding(doc):
+        return doc["phases"][0]["review"]["findings"][0]
+    code8, out8, merged8 = _verbs_merge(
+        tmp, "rr-bug-note", env,
+        lambda d: bug(d).update(status="fixed", fixedIn="a" * 40),
+        lambda d: bug(d).update(notes="seen once\nseen again on windows"))
+    check("rr8 ALLOW: a bug fixed on one branch and its notes edited on the other merge "
+          "clean through the driver, keeping both: exit %d %s" % (code8, out8),
+          code8 == 0 and merged8 is not None
+          and bug(merged8).get("status") == "fixed" and bug(merged8).get("fixedIn") == "a" * 40
+          and bug(merged8).get("notes") == "seen once\nseen again on windows")
+    code9, out9, merged9 = _verbs_merge(
+        tmp, "rr-finding-link", env,
+        lambda d: finding(d).update(resolution="typed by the reviewer"),
+        lambda d: finding(d).update(fixTask="P1.1"))
+    check("rr9 ALLOW: a finding's resolution edited on one branch and a fixing task "
+          "linked on the other merge clean through the driver, keeping both: exit %d %s"
+          % (code9, out9),
+          code9 == 0 and merged9 is not None
+          and finding(merged9).get("resolution") == "typed by the reviewer"
+          and finding(merged9).get("fixTask") == "P1.1")
+    code10, out10, _m = _verbs_merge(
+        tmp, "rr-finding-mix", env,
+        lambda d: finding(d).update(status="accepted-open", acceptedReason="ok"),
+        lambda d: finding(d).update(status="carried", carriedTo="BUG-1"))
+    check("rr10 ...while a finding accepted on one branch and carried on the other stops "
+          "on ONE conflict over its disposition: exit %d %s" % (code10, out10),
+          code10 != 0 and out10.count(" - changed on both sides") == 1
+          and "findings[x1].{status,acceptedReason,carriedTo}" in out10)
+
+    # rr4 - a diff3 block's base section is neither side's reading.
+    diff3 = "\n".join(['{', '<<<<<<< ours', '  "a": 1', '||||||| base', '  "a": 0',
+                       '=======', '  "a": 2', '>>>>>>> theirs', '}'])
+    check("rr4 each marker block is read once per side, a diff3 base section in neither "
+          "reading, and a file with no marker is read as it stands",
+          M._readings(diff3, 7) == ['{\n  "a": 1\n}', '{\n  "a": 2\n}']
+          and M._readings('{"a": 1}', 7) == ['{"a": 1}'], M._readings(diff3, 7))
+
+    # rr5 - with an id to renumber, the refusal is the stray one, and it names the
+    #       mixed record too - saying once that nothing was written.
+    repo, idx, code = _minted_and_run_merge(tmp, "rr-minted", env)
+    shard = os.path.join(repo, _W_SHARD % "P1")
+    ours = _json_or_none(_harness.git(repo, "show", "HEAD:%s" % (_W_SHARD % "P1",))
+                         .encode("utf-8"))
+    mixed = copy.deepcopy(ours)
+    run = [t for t in mixed["tasks"] if t["id"] == "P1.1"][0]
+    run["lastRun"]["status"] = run["testEvidence"]["status"] = "failed"
+    _write_json(shard, mixed)
+    before = _plan_bytes(repo)
+    code2, msg = _resolve(["resolve", idx, "--renumber", "theirs"])
+    check("rr5 with an id minted on both sides the refusal is the stray one, and it "
+          "names the record neither side wrote, saying once that nothing was written: "
+          "%s" % (msg,),
+          code != 0 and code2 == 1 and "changed since git's merge" in msg
+          and "%s: tasks[P1.1].{lastRun,testEvidence}" % (_W_SHARD % "P1",) in msg
+          and msg.count("nothing was written") == 1 and _plan_bytes(repo) == before)
+
+    # rr6 - ALLOW, the sequence a person runs: resolve renumbers theirs' P1.2 to P1.3
+    #       and leaves the run conflict on P1.1; ours' block kept whole, resolve runs
+    #       again. Theirs' P1.2 now held as P1.3 is theirs' record under its new id.
+    repo, idx, _c = _minted_and_run_merge(tmp, "rr-renumbered", env)
+    code1, out1 = _resolve(["resolve", idx, "--renumber", "theirs"])
+    with open(shard.replace("rr-minted", "rr-renumbered"), encoding="utf-8") as fh:
+        left = fh.read()
+    _blocks, docs = _rr_resolutions(left)
+    kept = docs[0] if docs and isinstance(docs[0], dict) else None
+    if kept is not None:
+        _write_json(shard.replace("rr-minted", "rr-renumbered"), kept)
+    code2, out2 = _resolve(["resolve", idx, "--renumber", "theirs"])
+    ids = [t["id"] for t in (kept or {}).get("tasks") or []]
+    check("rr6 ALLOW: after resolve renumbered theirs' P1.2 to P1.3 and a person kept "
+          "ours' block of the run left in conflict, resolve run again names no record "
+          "- theirs' record under its new id is theirs': %s | %s" % (out1, out2),
+          code1 == 1 and "P1.2 -> P1.3" in out1 and ids == ["P1.1", "P1.2", "P1.3"]
+          and code2 == 1 and "neither side's" not in out2)
 
 
 def _resolve(argv):

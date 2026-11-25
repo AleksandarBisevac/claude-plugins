@@ -160,9 +160,13 @@ phase, a task, a bug, a `fileIndex` row — write the same lines, and git's line
 conflict nothing disagrees about. That is true in **both** layouts: sharding keeps a phase run in its
 own file, but every added record still lands in the index. The driver merges the three versions by
 record instead — matched by `id`, `fileIndex` rows as sets — and leaves a conflict only where a
-human has to decide: one field changed two ways, a record deleted on one side and changed on the
-other, or the same id added on both sides with different content (never renumbered). A real conflict
-is a marker block around **that record alone**, with every other record already merged.
+human has to decide: one value changed two ways, a record deleted on one side and changed on the
+other, or the same id added on both sides with different content (never renumbered). A value that
+is one account of one event — a run record with its pointer, a CI run, a sign-off's verdict, a
+task's status with the close that set it — is ONE value, however many fields it spans, so two
+sides that each recorded one conflict on the whole account, never on a field of it. A real
+conflict is a marker block around **that value alone**, with everything else already merged, and
+every way of keeping one side of each block keeps one side's account whole.
 
 **It writes outside the manifest, so ask first.** Before `install`, say what it writes and get an
 explicit yes (AskUserQuestion) — run it with `--dry-run` first and show that output:
@@ -212,6 +216,13 @@ markers included. It compares against what git's merge left, as git itself answe
 `git add` does not hide the write. Show
 the refusal verbatim and let the user choose: its commands put each file back and **discard**
 what it holds, and nothing carries that write into the merged plan.
+
+Both refusals - that one, and the refusal of a merge with no id to renumber - also **name each
+record a plan file holds that is neither side's nor the base's**, by file and path: one account
+typed together from both sides of a block, or a run recorded while the merge was stopped - in
+any plan file, one both sides hold alike included. A side resolve has already renumbered counts
+as that side under its new ids. Tell the user to keep one
+side's block of each account whole, or to record the run again once the merge is committed.
 
 **After a merge the driver ran.** A single-file plan is revalidated by the driver itself, and only a
 finding neither side had fails the merge. An index or shard cannot be validated alone, so after a

@@ -1,0 +1,77 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__manifest_merge.py tests/test_merge_manifest.py tests/test__merge_install.py tests/test__evidence_io.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-25T10:04:35Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__manifest_merge.py tests/test_merge_manifest.py tests/test__merge_install.py tests/test__evidence_io.py` in a throwaway tree at HEAD exited 1 with failing cases wv1 (house FAIL), wv2 (house FAIL), wv3 (house FAIL), wv4 (house FAIL), wv5 (house FAIL), wv8 (house FAIL), wv10 (house FAIL), wv11 (house FAIL) and 10 more, but the fix run could not be made: the run timed out after 114 s and its process group was torn down - SELFTEST FAILED: 37/42 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "_manifest_merge.py: MERGE_UNITS (kind, keys, whole|container|map, reason) with ELEMENT_KINDS and REF_KINDS. Whole rows may share a key. `_units(kind, b, o, t, extra)` merges each row whole and joins the rows both sides changed with every row sharing a key that some side moved; an unmoved shared key goes to the conflicting unit. Task rows are split into a start {status,startedAt,attempts,blockedReason} and a close {status,commit,completedAt,outcome,verifiedBy,redFirst}. Finding rows are a disposition {status,commit,resolution,acceptedReason,carriedTo} and a link {fixTask,commit}. Bug row is {status,taskId,fixedIn}; notes were dropped from it, with the cost stated in the suite. render skips a file that holds none of the conflicts, and foreign_values judges by the same units. merge-manifest.py: _foreign_records judges against base/ours/theirs and, after renumbering, the renamed side. It reads every plan file, but passes over a file both sides hold alike once it parses to what they hold; the stray refusal says 'nothing was written' once. Tests: test__manifest_merge.py wv1-wv27 (59/59) and test_merge_manifest.py rr1-rr10 (74/74). The writers scan (wv23/wv24) asks the merge itself: a co-write is held when _units makes it one unit. Reasons sit in _CO_WRITES_APART, which now points at the write's line, with phase status justified with its cost in _PHASE_STATUS. The shapes the scan reads are named once in SCAN_READS and every branch of _co_writes is guarded by its name; wv25 holds one fixture per name both ways, each found with every shape read and lost with its own left out, and wv26 holds two quiet shapes. layout.md, PLUGIN-BUILD-GUIDE.md and CHANGELOG.md were updated. Gate sweep: 4/4 files ok, 723 cases. Dependants and lints: 6/6 ok, 973 cases. ruff and vermin exited 0. fuzz.py seeds 0,1,2,3,4,11,23,57 at 300: bad 0. Resolve timing (two rounds, 45 s gap). MED2 sequence: HEAD 1.81/1.50 then 1.45/1.42 s; fixed 1.49/1.32 then 1.24/1.17 s. No-collision repro (copy of the reviewer's wrb repo, P162 run recorded while stopped): HEAD 0.65 then 0.60 s; fixed 0.70 then 0.72 s, naming docs/audit/phases/P162.json: tasks[P162.1].{lastRun,testEvidence}.",
+    "descriptive": "Each verb's account in the plan merges whole, and two accounts are joined only when they meet on a key that moved. Resolve names a hand-mixed or stopped-merge record in any plan file at about HEAD's cost."
+  },
+  "testsAdded": [
+    "wv1-wv11, wv18: three-sided run, stamp, CI, list and close shapes, every resolution enumerated and held to base/ours/theirs",
+    "wv12-wv13: foreign_values names a mixed record and one with its pointer deleted, and names nothing for a side's, the base's, a renumbered side's or a container edit",
+    "wv14-wv17: MERGE_UNITS held to the schema; element kinds and REF_KINDS held to its refs; the named accounts are whole",
+    "wv19-wv20: a whole value whose keys are not adjacent is one block; each block names only its own conflicts",
+    "wv21: every writer-found group set two ways is one conflict and never mixes",
+    "wv22: a parked phase merges as a phase",
+    "wv23-wv24: the plan writers' co-writes held against the merge's own units both ways",
+    "wv25: every shape in SCAN_READS has one fixture, found at its write with every shape read and lost with its own left out; no fixture names an unread shape",
+    "wv26: two quiet shapes - a record created with its id, two keys written by two functions",
+    "wv27: independent verbs in one record both land; accounts meeting on a moved key are one conflict",
+    "rr1-rr3: real git merge of two recorded runs, the resolver naming a mixed record, and the allow case",
+    "rr4-rr6: diff3 readings; the stray refusal naming a mixed record once; after renumbering, a kept block is not foreign",
+    "rr7: a run recorded while stopped, in a shard both sides hold alike, is named by the no-collision refusal",
+    "rr8-rr10: through the driver, a bug fixed beside a notes edit and a finding resolution beside a fixing-task link both merge clean, while accepted-vs-carried is one conflict"
+  ],
+  "casesAdded": [
+    [
+      "wv1",
+      "wv2",
+      "wv3",
+      "wv4",
+      "wv5",
+      "wv6",
+      "wv7",
+      "wv8",
+      "wv9",
+      "wv10",
+      "wv11",
+      "wv12",
+      "wv13",
+      "wv14",
+      "wv15",
+      "wv16",
+      "wv17",
+      "wv18",
+      "wv19",
+      "wv20",
+      "wv21",
+      "wv22",
+      "wv23",
+      "wv24",
+      "wv25",
+      "wv26",
+      "wv27"
+    ],
+    [
+      "rr1",
+      "rr2",
+      "rr3",
+      "rr4",
+      "rr5",
+      "rr6",
+      "rr7",
+      "rr8",
+      "rr9",
+      "rr10"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:65350ae569c3615df0281e032f7f0ea3e66d555a3e5b12757013ba65c9335db0\",\"dirtyDigest\":\"sha256:cf332f2d29033791daddb5e9dabe7c8a491ee5b2fb4ecf11602c00332338a874\",\"dirtyPaths\":{\"CHANGELOG.md\":\"7aea9906c6f5848b\",\"PLUGIN-BUILD-GUIDE.md\":\"cf7375f4fd3c69e1\",\"plugins/audit/commands/layout.md\":\"24f94454b47fb55f\",\"plugins/audit/scripts/manifest/_manifest_merge.py\":\"d7dbb242800b2893\",\"plugins/audit/scripts/manifest/merge-manifest.py\":\"d9fbd48bfd6e753e\",\"tests/test__manifest_merge.py\":\"2587c6ff93d36599\",\"tests/test_merge_manifest.py\":\"950b74868d78b8f7\"},\"head\":\"5e2506f4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/commands/layout.md\",\"plugins/audit/scripts/manifest/_manifest_merge.py\",\"plugins/audit/scripts/manifest/merge-manifest.py\",\"tests/test__manifest_merge.py\",\"tests/test_merge_manifest.py\"],\"scopeDigest\":\"sha256:ca7dab96d3db61770d285f961b14cdb2243f5f46e887b64a656d7c47c454dfe7\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

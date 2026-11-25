@@ -309,6 +309,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   is named cannot bind, and the binding says so.
 
 ### Fixed
+- **A run record merges as one value, so a merge never reads a red back as passed.** The plan's
+  merge driver merged a run record field by field: with a red on the base, a green recorded on
+  one branch and a newer red on the other, it conflicted on the run id, the moment and the
+  duration alone, and keeping one side there left that side's run id beside the other side's
+  status - and a key only one side wrote stayed on the other side's run. A record and the pointer
+  beside it are now one value: changed on both sides, they are one conflict on the whole record,
+  rendered as one marker block, and either side kept is that side's run byte for byte. The same
+  holds for the other values the plan holds as one account of one event - a CI run, a merge
+  stamp with its head, a sign-off's verdict, a review verdict, a task's start (its status,
+  moment, attempt or block reason) and its close (its status, commit, outcome, verification and
+  red-first proof), a gate derivation with its basis, a finding's disposition and the task fixing
+  it, a bug's status with its fixing task and commit, a decision, a proposal materialized or
+  dropped, a sync's work-item link - each named in one table the merge reads. Two accounts that
+  share a key merge as one only when both sides changed one of them and a shared key moved: a
+  start against a close is one conflict, while a start beside a re-recorded red-first proof, a
+  fix beside a bug's notes edit, and a finding's resolution beside its newly linked fixing task
+  each merge clean. The suite holds that table to the schema, so an object value added to the
+  schema later must be classified before the build is green; and it holds the groups of sibling
+  keys to the code that writes them, so a function writing several keys of one record together
+  must merge as one unit or carry its reason. That scan reads constant keys only: a key computed
+  at run time, a record written by two functions, or one a person writes (a decision) is in the
+  table because its writers were read. A parked phase inside a proposal now merges as a phase, field by field
+  as before. Every conflict, not only these, is now one block spanning its whole value. Changed
+  on one branch only is still that branch's value. `merge-manifest.py resolve` now names, by file
+  and path, a record in a hand-resolved plan file that is neither side's nor the base's, in its
+  refusal, counting a side it renumbered as that side, in any plan file. It cannot see a record
+  edited after it ran.
 - **Every wait for a base run has an exit.** A background base measurement whose recorded process
   id read present - a process the drive may not inspect, or one the system had handed that id
   again - was waited on for ever. The wait now says how long it has waited and when its bound

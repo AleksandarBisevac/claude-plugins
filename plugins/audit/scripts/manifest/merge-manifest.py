@@ -53,6 +53,7 @@ This script carries no `--selftest` of its own; its cases live in
 import argparse
 import json
 import os
+import posixpath
 import shutil
 import subprocess
 import sys
@@ -465,8 +466,10 @@ def resolve(path, side):
     base = plans["the merge base"] or {}
     ids = _collisions(base, ours, theirs)
     if not ids:
+        foreign = _foreign_records(top, path, rel, (base, ours, theirs))
         return 1, ("%s refused: no id in %s was minted on both sides; what conflicts "
-                   "is a real disagreement, which the marker blocks show" % (_TAG, rel))
+                   "is a real disagreement, which the marker blocks show%s"
+                   % (_TAG, rel, _foreign_lines(foreign, "nothing was written, and ")))
     named, other = (theirs, ours) if side == "theirs" else (ours, theirs)
     mapping, refused = _renumbering(ids, named, other, _id_shape.suffix_here(top, named))
     if refused:
@@ -476,6 +479,10 @@ def resolve(path, side):
     sides = (renamed, other) if side == "ours" else (other, renamed)
     result = _manifest_merge.merge3(base, sides[0], sides[1])
     files = _render_plan(path, result, _sharded_at(top, rel))
+    # A record of the renumbered side is that side's under its new id as much as
+    # under its old one: the plan files hold the old id until resolve writes, and
+    # the new one once it has.
+    foreign = _foreign_records(top, path, rel, (base, ours, theirs, renamed))
     lock = None
     if _locks.available(top):
         lock = _locks.acquire(top, "index", note="merge-driver resolve",
@@ -491,7 +498,7 @@ def resolve(path, side):
         if problem:
             return 1, "%s refused: nothing was written - %s" % (_TAG, problem)
         if strays:
-            return 1, _stray_refusal(strays, answer)
+            return 1, _stray_refusal(strays, answer) + _foreign_lines(foreign, "")
         for target, text in files:
             _write(target, text)
     finally:
@@ -951,6 +958,105 @@ def _stray_refusal(strays, answer):
                  "ledger holds, or by running the gate again; anything else is made "
                  "again by running the verb that wrote it. To keep the bytes as they "
                  "are, copy the file out of the work tree first.")
+    return "\n".join(lines)
+
+
+# --- a record neither side wrote ---------------------------------------------------
+# The record merge keeps a value that is ONE ACCOUNT whole (`_manifest_merge.
+# MERGE_UNITS`): a run record and its pointer, a CI run, a sign-off's verdict. A
+# person resolving by hand can still type one together from both sides - one side's
+# run id beside the other side's status. `resolve` never writes over such a file -
+# it is a stray, or the merge holds no collision to renumber - but neither refusal
+# says which record it is. So each plan file is read as it stands, every marker block
+# still in it read once as its ours lines and once as its theirs lines (a diff3 base
+# section dropped), and each reading compared, whole value by whole value, with the
+# same file in the base, ours, theirs and - once resolve has renumbered a side - that
+# side renumbered. A run recorded while the merge was stopped is named the same way:
+# it too is neither side's. A file both sides hold alike that still parses to what
+# they hold is passed over after one parse - that is most shards of a sharded plan,
+# and walking each cost the resolver seconds - while one that differs from it is
+# walked like any other. A file that does not parse in a reading is skipped - what
+# the edit left unreadable is the plan reader's to report, not this one's.
+def _readings(text, size):
+    """`text` with each marker block kept as one side - [ours' reading, theirs'
+    reading], or [text] when it holds no marker. A diff3 base section is dropped."""
+    lines = text.split("\n")
+    if not any(_marker(ln, size) for ln in lines):
+        return [text]
+    out = []
+    for side in ("<", ">"):
+        kept, mode = [], None
+        for ln in lines:
+            mark = _marker(ln, size)
+            if mark and mark[0] in "<|":
+                mode = mark[0]
+            elif ln == "=" * size and mode:
+                mode = ">"
+            elif mark and mark[0] == ">":
+                mode = None
+            elif mode is None or mode == side:
+                kept.append(ln)
+        out.append("\n".join(kept))
+    return out
+
+
+def _foreign_records(top, path, rel, plans):
+    """[(plan file, record path)] of every whole value a plan file in the work tree
+    holds that none of `plans` - base, ours, theirs, then any side renumbered -
+    holds in that file. A file the sides hold alike is walked only when it no
+    longer parses to what they hold."""
+    files = [(path, rel, tuple(plans))]
+    if _sharded_at(top, rel):
+        parts = [_mio.split_manifest(plan or {}) for plan in plans]
+        files = [(path, rel, tuple(index for index, _shards in parts))]
+        for pid in sorted(set(pid for _index, shards in parts for pid in shards),
+                          key=_manifest_merge.natural_key):
+            shard_rel = _mio.shard_rel_path(pid)
+            files.append((os.path.join(os.path.dirname(path), shard_rel),
+                          posixpath.join(posixpath.dirname(rel), shard_rel),
+                          tuple(shards.get(pid) for _index, shards in parts)))
+    found = []
+    for target, label, sides in files:
+        held = _held_text(target)
+        if held is None or held is _UNREADABLE:
+            continue
+        if all(s == sides[1] for s in sides[2:]) and _parsed(held) == sides[1]:
+            # Both sides hold this file alike and it still holds what they hold:
+            # nothing in it can be neither side's, and one parse says so without
+            # walking it.
+            continue
+        for reading in _readings(held, _marker_size(top, label)):
+            try:
+                doc = json.loads(reading)
+            except ValueError:
+                continue
+            for f in _manifest_merge.foreign_values(sides[0], sides[1], sides[2], doc,
+                                                    also=sides[3:]):
+                if (label, f["path"]) not in found:
+                    found.append((label, f["path"]))
+    return found
+
+
+def _parsed(text):
+    """`text` as JSON, or None when it is not - a file holding markers is not."""
+    try:
+        return json.loads(text)
+    except ValueError:
+        return None
+
+
+def _foreign_lines(foreign, lead):
+    """The lines a refusal adds for `foreign` - '' when there is none. `lead` opens
+    the sentence: a refusal that has not said nothing was written says it here."""
+    if not foreign:
+        return ""
+    lines = ["", "    %s%d record(s) in the plan files are "
+                 "neither side's nor the base's - one account the merge keeps whole, "
+                 "assembled from both sides by hand or written while the merge was "
+                 "stopped:" % (lead, len(foreign))]
+    lines += ["      %s: %s" % (label, where) for label, where in foreign]
+    lines.append("    keep one side's block of each whole, or, for a run, record it "
+                 "again once the merge is committed")
     return "\n".join(lines)
 
 
