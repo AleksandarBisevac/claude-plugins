@@ -331,13 +331,17 @@
         {
           "at": "2026-11-25T15:11:51Z",
           "text": "45. From SG2.21-xk1's executor (durable scratch sg2.21/), batched by the owner's 2026-11-25 rule: (a) PLUGIN-BUILD-GUIDE.md near the drive's pinned-skill paragraph and SECURITY.md's pinned-skill section still say the step's checkout is made only when a member names a PINNED skill (names_a_pin) and that members naming no pinned skill start no git; since SG2.21 the decision reads no copy, so a member naming any skill in a plan with non-empty skillPins costs the step one checkout - rewrite both half-sentences to what the code does. (b) Pre-existing, identical at 2a8c21d4 and after SG2.21 (cli_probe.py D1): no member names a skill, two pins resolve to one directory in the commit and the working copy lacks the link; the opening ask judges no stop, P1.1 is started and its tree cut, then _skill_places.require_pins' pin-against-pin check stops the walk. Decide: either require_pins skips the pin-against-pin check when nothing is handed out (the validator already refuses clashing pins on the plan), or the step judges plan-level pin clashes before any start; the first is in _skill_places.py."
+        },
+        {
+          "at": "2026-11-25T16:29:37Z",
+          "text": "46. Two test-strength items, batched by the owner's 2026-11-25 rule; both belong on the owner's Weakened-tests card: (a) SG2.24-xk1 narrowed tests/test_audit_lookup.py co2 from listed[1:] == ['- from-plan'] to listed[1:2] == ['- from-plan'] because the Skills list now carries the skillsInvoked/skillUnavailable ask after the names (the floor guard reported it as definition-changed); a stray extra skill line now passes co2 - pin the whole list again, names then the ask lines verbatim, so co2 is as strict as before. (b) From SG2.23-xk1's drive reviewer: the whole-series slope in tests/test__clause_coverage.py cw8 judges a reading quadratic only at its LAST doubling (ratios 2,2,4) green at 1.3, where the old per-step maximum flagged it; the task asked only for quadratic over the series or over its last two doublings - decide whether a last-step-only blow-up is worth a second, noise-tolerant judgement (e.g. the last step against a looser bound) or say in the case's comment that it is out of scope."
         }
       ]
     },
     {
       "id": "SG2.2-ukq",
       "title": "A tool call that failed still gets the pass after: the journal's sweep and the Bash-write notice run for a command that wrote and then exited non-zero",
-      "status": "pending",
+      "status": "blocked",
       "description": "READ FROM THE HOST'S DOCUMENTATION, NOT YET DRIVEN LIVE. The host's hooks reference (code.claude.com/docs/en/hooks, read 2026-11-18) says of the event this plugin registers its pass after under: it 'runs immediately after a tool completes successfully', and 'for tool calls that fail, add the same hook under PostToolUseFailure'; of that second event: it 'runs when a tool that started executing fails: the tool threw an error, or an MCP tool returned an error result', its sample payload is a test command with the error text 'Exit code 1', and 'cancelling a running tool does not fire this hook'. The plugin's hooks.json registers nothing under the second event. If the host behaves as documented, then for a command that writes and then exits non-zero - `sed -i ... file; false`, a script that edits the plan or the config and fails on a later line - no pass after runs: the journal's sweep writes no row for a config or plan file the command changed (the next call's pass before takes a fresh baseline, so the change is never a row; the trail check may warn later, and for a switch-off does not), and the Bash-write guard's after-the-fact notice - a block on the deny tier - is never given for an out-of-scope write. The orchestrator's probe of the journal with a pass before and no pass after shows no row and no warning. This predates this branch.\n\nFIRST, ESTABLISH THE HOST'S BEHAVIOUR, and write down what was established and how: the documentation's sentences; the installed host's own binary or bundled schema naming the event and its payload fields; and what an older host does with an event name it does not know in a plugin's hooks.json - is the entry passed over, or is the plugin's whole hooks file refused. If the last cannot be established from documentation or the binary, stop and report: the registration then needs the owner's live run (hand over the exact command and the output that would settle it) and nothing is registered blind.\n\nTHE RULE TO BUILD.\n1. EVERY HOOK REGISTERED FOR THE PASS AFTER IS ASKED ONCE WHETHER A FAILED CALL OWES ITS WORK, and the answer is written in one table beside the registration: the journal's sweep and the Bash-write notice owe it for a command and for an MCP tool; an edit tool that failed wrote nothing - say so from the host's documentation or leave it registered, whichever is established.\n2. THE PASS AFTER DOES ITS WORK ONCE PER CALL whichever event carried it, and when a host sends both events for one call the second changes nothing: no second row, no second notice.\n3. THE FAILED-CALL PAYLOAD IS READ AS WHAT IT IS: no tool response, an error text; nothing in the pass after may require the response's fields. A cancelled call fires nothing and is named in the documents as the case that leaves no row and no notice.\n4. SECURITY.md's fail-mode table gains the rows the registration adds, by the rule the parity check holds it to; the README's hooks table, the build guide and the changelog follow; COMPATIBILITY.md says which host versions the registration needs, if the first step established one.\n\nHOW TO PROVE. Red before, each as the hooks run as processes with the failed-call payload: a command that edits the config and exits non-zero - no row; one that writes a file outside the running task's scope and exits non-zero - no notice; a switch-off by a failing command - no row. Allow twins: a failed command that wrote nothing leaves no row and no notice; both events for one call leave one row; a failed edit-tool call leaves none. The hook import budget holds. A mutation probe from the worktree root.\n\nNOT in this task: a call that was cancelled; what the host does between events.\n\nAcceptance:\n(1) What the host does for a failed call, and what an older host does with the event's name, is written down with its source, or the task stopped and handed the owner the command.\n(2) A command that changes a config or plan file and exits non-zero leaves its journal row, and one that writes outside the running task's scope and exits non-zero gets the notice.\n(3) Both events for one call leave one row and one notice, and a failed call that wrote nothing leaves neither.\n(4) SECURITY.md's fail-mode table matches hooks.json, and the documents name the cancelled call as the one that leaves nothing.",
       "files": [
         "plugins/audit/hooks/hooks.json",
@@ -350,7 +354,9 @@
         "plugins/audit/README.md",
         "CHANGELOG.md",
         "PLUGIN-BUILD-GUIDE.md",
-        "COMPATIBILITY.md"
+        "COMPATIBILITY.md",
+        "tools/gate-parity.py",
+        "tools/prove-gates.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -370,16 +376,101 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-25T16:30:18Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-25T16:30:15Z",
+          "text": "it quotes SECURITY.md's reporting link text; SG2.2 edits SECURITY.md only in the fail-mode table and the pass-after passage",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-25T16:30:15Z",
+          "text": "it quotes SECURITY.md's 'Test-file exemption' heading; SG2.2 edits SECURITY.md only in the fail-mode table and the pass-after passage",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-25T16:30:15Z",
+          "text": "it quotes SECURITY.md's capability-policy sentence; SG2.2 edits SECURITY.md only in the fail-mode table and the pass-after passage",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-25T16:30:15Z",
+          "text": "it quotes SECURITY.md's secret-read residual; SG2.2 edits SECURITY.md only in the fail-mode table and the pass-after passage",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-25T16:30:15Z",
+          "text": "it quotes a SECURITY.md passage on committed paths; SG2.2 edits SECURITY.md only in the fail-mode table and the pass-after passage",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-25T16:30:15Z",
+          "text": "it quotes SECURITY.md's 'deliberately loud rather than silent'; SG2.2 edits SECURITY.md only in the fail-mode table and the pass-after passage",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-25T16:30:15Z",
+          "text": "it has a section headed by SECURITY.md's path; SG2.2 renames and moves nothing",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-25T16:30:15Z",
+          "text": "it quotes README's floor-guard sentence; SG2.2 edits README only in the hooks table",
+          "waives": "tests/test__floor_guard.py"
+        },
+        {
+          "at": "2026-11-25T16:30:15Z",
+          "text": "it reads CHANGELOG.md's '## [Unreleased]' heading; SG2.2 adds lines under that heading and keeps it",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-25T16:30:15Z",
+          "text": "it quotes COMPATIBILITY.md's 'beside the manifest'; SG2.2 adds one host-version sentence for the failed-call registration to COMPATIBILITY.md and leaves every other sentence byte for byte",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-25T16:30:15Z",
+          "text": "it quotes COMPATIBILITY.md's 'which one wins'; SG2.2 adds one host-version sentence for the failed-call registration to COMPATIBILITY.md and leaves every other sentence byte for byte",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-25T16:30:15Z",
+          "text": "it quotes COMPATIBILITY.md's 'Validation stays additive'; SG2.2 adds one host-version sentence for the failed-call registration to COMPATIBILITY.md and leaves every other sentence byte for byte",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-25T16:30:15Z",
+          "text": "it quotes COMPATIBILITY.md's 'names no file'; SG2.2 adds one host-version sentence for the failed-call registration to COMPATIBILITY.md and leaves every other sentence byte for byte",
+          "waives": "tests/test__manifest_phases.py"
+        },
+        {
+          "at": "2026-11-25T16:30:15Z",
+          "reader": "tools/gate-parity.py",
+          "reads": "SECURITY.md",
+          "text": "declared to answer a reading: tools/gate-parity.py reads SECURITY.md - quotes its text beside its path: 'Fail modes (by design)'"
+        },
+        {
+          "at": "2026-11-25T16:30:15Z",
+          "reader": "tools/prove-gates.py",
+          "reads": "SECURITY.md",
+          "text": "declared to answer a reading: tools/prove-gates.py reads SECURITY.md - quotes its text beside its path: '| `guard-edits` | PreToolUse edits + MCP | **ask** | allow |'"
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-25T16:30:18Z"
+      },
+      "reviewPerTask": "signals",
+      "blockedReason": "Stopped at its own first step: whether a host that does not know PostToolUseFailure skips that one entry in a plugin's hooks.json or refuses the whole file is not established from the docs, the host's changelog or the installed binaries (all installed hosts know the event; durable scratch sg2.2/host_behaviour.md). Registering blind could switch off every guard on such a host, so this waits for the owner's live run (section 4 of host_behaviour.md); nothing was written."
     },
     {
       "id": "SG2.3",
@@ -3009,7 +3100,7 @@
     {
       "id": "SG2.24-xk1",
       "title": "A task skill the executor agent could not load is said on the record, as it already is for a headless session and for the phase reviewer's review skill",
-      "status": "in_progress",
+      "status": "done",
       "description": "WHAT IS TRUE TODAY (read from the tree; name the lines again before building on them). A task's skills reach its executor by two routes. HEADLESS: the session runner refuses to start over a skill it cannot find, records which skills the session invoked, and the drive writes a note on the task for a declared skill the session never invoked (`uninvoked_skills`, `skills_said`). SUBAGENT: the brief's Skills section (audit-lookup.py `skills_lines`) tells the agent to invoke each via the Skill tool - and when the tool will not load one, the agent goes on without it and NOTHING says so: not the return, not the task, not the drive. For the phase reviewer's review skill the development branch already closed this (the brief's Review skill section asks for `skillsInvoked` or `skillUnavailable`, and `submit` refuses a phase return with neither); the executor's task skills were left as they were.\n\nWhy this is not 'stop before the spawn': the drive cannot know which names the Skill tool of an agent can load. `runner_review_skill`'s docstring states it - a skill another plugin ships, or one bundled with Claude Code, loads for an agent and is invisible to the plugin's resolver. A stop on 'the resolver cannot find it' would refuse working plans. (A PINNED skill is different and is already a stop: a pin says the skill is a copy on disk.) So what the two routes can share is the RECORD, not the stop.\n\nTHE RULE TO BUILD.\n1. The executor's brief, only when the task resolves at least one skill, asks for the same two fields the reviewer's does, in the same words where the words can be the same: `skillsInvoked`, the names it invoked; `skillUnavailable`, what the Skill tool said for one it could not load. The ask lives in the brief's Skills section, not in the agent file, and the executor's context ceiling (`python3 tools/measure-context.py --gate`) stays green. A task with no skill gets no new line, and its brief is byte for byte what it was.\n2. `submit` reads them for an executor return on the subagent route and writes, through the note verb's own path, ONE note on the task when a skill the brief named is neither in `skillsInvoked` nor accounted for in `skillUnavailable` - or is reported unavailable, with what the tool said. The note's wording is the headless route's (`skills_said`) wherever the fact is the same, so a reader of a task sees one sentence shape for one fact whichever route ran it.\n3. IT IS A RECORD AND NEVER A VERDICT. Nothing is refused, held or reddened over it: an invoked skill is not evidence its workflow was followed, and an uninvoked one is not a defect of the diff. The return files exactly as it would have; the gate, the review and the close do not read the note. State that in the code where the note is written and hold it with a case: the same return with and without the fields files with the same stamp and the same gate question.\n4. A return that carries neither field, for a task with skills, is filed and the note says that whether the skills were invoked was not said - the third answer, distinct from 'invoked none'. It is not refused: every executor return in flight when this lands would otherwise bounce.\n5. The phase reviewer's handling is not touched, and the two readings of `skillsInvoked` (reviewer's refusal, executor's note) share whatever helper reads the field's shape, so a malformed value is one message.\n\nALLOW CASES: a task with no skills; a return naming every skill; the headless route (its note is written as before, once, not twice).\n\nHOW TO PROVE. Red first for the three notes (uninvoked, unavailable with the tool's words, not said). A mutation probe the orchestrator can run from the worktree root: the note written for a task with no skills; the note turned into a refusal (the 'record, never a verdict' case goes red); the headless route writing a second note; the unavailable reason dropped from the note. `python3 tools/measure-context.py --gate` green.\n\nNOT in this task: pins; the review skill; the agent files' return shape beyond what the brief section adds.\n\nAcceptance:\n(1) An executor return on the subagent route that leaves a named skill uninvoked, reports it unavailable, or says nothing of its skills gets one note on the task saying which, in the headless route's wording where the fact is the same.\n(2) The return files with the same stamp and gate question as without the fields; nothing is refused or held over them.\n(3) A task with no skills gets a brief and a submit byte for byte as before.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -3040,14 +3131,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b16a5c493999",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: `skills_clause` is the one sentence for a declared skill never invoked / not recorded (`skills_said` is now `; ` + it, byte for byte as before; `uninvoked_skills` takes an optional `unread` phrase); `invoked_reading` is the one reader of the `skillsInvoked` shape, now used by `skipped_review_skill` (the reviewer's refusal text is unchanged) and by `executor_skills_said`, which tells three answers apart: a list leaving a skill out (headless wording), a return saying nothing usable (field absent or not a list: the headless 'not recorded' wording, not 'invoked none'; an explicit empty list IS 'invoked none'), and a skill left out beside a non-blank `skillUnavailable` (named with the tool's words, clipped). `note_executor_skills` runs in `submit` AFTER the executor return is filed (and after carry_work), resolves the names with `_areas.resolve_skills` (no second resolution, no pin asked), skips a task whose drive state holds writer dispatches (the headless route's `session_note` already says it), writes ONE note through `note_task` (stdin, scrubbed), and turns a refused note or an unreadable state into a warning; nothing is refused or held, stated in its docstring. audit-lookup.py `skills_lines`: when at least one skill resolves, two lines after the list ask for `skillsInvoked` and `skillUnavailable` and say it is a record, never a verdict; the no-skill and opt-out lines are untouched. Docs: PLUGIN-BUILD-GUIDE.md (lookup paragraph and the submit paragraph), execute-task.md (one sentence in the skills bullet), CHANGELOG.md; the sentence tests/test__refs.py quotes ('The executor's carries the resolved skills ...') is NOT changed, so test__refs.py is unchanged and its sko cases pass. Tests: tests/test_audit_lookup.py gains `_executor_skill_ask_cases` (esk1-esk3, block esk-block) and its co2 assertion `listed[1:] == [...]` became `listed[1:2] == [...]` because the list now carries the ask after the names; tests/test_drive_phase.py gains `_executor_skill_note_units` (esn1..esn10 with esn3e, esn5q, esn5u, esn6f; called from `_steps_unit_cases`, block ux-block) and one row in `_HANDOUT_EXEMPT` (spd1 derives every caller of a skill resolver; the first full gate run went red on it and it is the reason `note_executor_skills` hands nothing out). Red first: with the tests written and the code untouched, esk1, esk3 and esn1-esn4, esn8 failed, the allow cases passed (red_first.out); the fix turned them green. Mutation probe mutations.py: 19 rows, every anchor applied once, every row CAUGHT (the first run showed two rows SURVIVED: esn2 compared the note with the mutated function's own output, now a literal; and one twin expectation named a case that cannot see the opted-out line, an opt-out twin row added) - mutations.out. Block time ux-block: 127 cases / 3.14 s before (one run), 141 cases / 3.22 s and 3.26 s after (two runs, a gap between); git processes of the new block: 12 for 14 cases (one rev-parse per filing; 77 before the unit rig's strays and floor-guard readings were answered without git in this block). submit command filed with the narrowest test command that runs the esn cases (the ux-block stage); the esk cases are in another suite and are therefore reported unchecked by the drive, their red is in red_first.out.",
+        "descriptive": "An executor subagent that leaves a named skill uninvoked, reports it unavailable or says nothing of its skills now gets one note on its task, in the headless route's words, as a record that refuses nothing."
       },
       "startedAt": "2026-11-25T15:47:28Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-25T16:29:31Z",
+      "verifiedBy": [
+        "esk1-esk3 in tests/test_audit_lookup.py: the executor brief asks for skillsInvoked and skillUnavailable only when a skill resolves, and a task with none gets the lines it had",
+        "esn1-esn10 (with esn3e, esn5q, esn5u, esn6f) in tests/test_drive_phase.py: submit writes one note per uninvoked, unavailable or not-spoken-of skill in the headless wording, none for the allow cases or the headless route, and files the same body and verbs either way"
+      ],
       "notes": [
         {
           "at": "2026-11-25T15:47:26Z",
@@ -3067,7 +3161,40 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-25T16:16:01Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1710000,
+            "startedAt": "2026-11-25T15:47:31Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-25T16:26:05Z.934730",
+            "kind": "wait",
+            "ms": 5000,
+            "startedAt": "2026-11-25T16:16:50Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-25T16:26:05Z.934730, ending at its startedAt",
+            "kind": "selection",
+            "ms": 22645,
+            "runId": "2026-11-25T16:26:05Z.934730",
+            "startedAt": "2026-11-25T16:16:55Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-25T16:26:05Z.934730",
+            "kind": "gate",
+            "ms": 526362,
+            "runId": "2026-11-25T16:26:05Z.934730",
+            "startedAt": "2026-11-25T16:17:18Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit b16a5c493999",
+            "kind": "commit",
+            "ms": 1818,
+            "startedAt": "2026-11-25T16:29:27Z"
+          }
+        ],
         "firstStartedAt": "2026-11-25T15:47:28Z"
       },
       "reviewPerTask": "signals",
@@ -3075,6 +3202,18 @@
         "runId": "2026-11-25T16:29:26Z.928ca8",
         "status": "passed",
         "at": "2026-11-25T16:29:26Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "b16a5c493999",
+        "at": "2026-11-25T16:29:31Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-25T16:15:50Z",
+        "basis": "`python3 tests/test_drive_phase.py --selftest --stage ux-block` in a throwaway tree at HEAD exited 1 with 6 of 141 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - esn1 (house FAIL), esn2 (house FAIL), esn3 (house FAIL), esn3e (house FAIL), esn4 (house FAIL), esn8 (house FAIL): SELFTEST FAILED: 135/141 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],

@@ -9350,7 +9350,8 @@
       "SG1.36-ukq",
       "SG1.45-ukq",
       "SG1.50-ukq",
-      "SG2.15-xk1"
+      "SG2.15-xk1",
+      "SG2.2-ukq"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -9506,7 +9507,8 @@
       "SG1.19-ukq",
       "SG1.22-ukq",
       "SG1.25-ukq",
-      "SG2.3"
+      "SG2.3",
+      "SG2.2-ukq"
     ],
     "tools/redfirst.sh": [
       "P55.13",
