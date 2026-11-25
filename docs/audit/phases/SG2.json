@@ -319,6 +319,10 @@
         {
           "at": "2026-11-20T06:27:10Z",
           "text": "41. Measured, CI run 44684792267 (2026-11-20, commit 6e6756c3): on a full windows leg ge-generated took 318.1 s and jw-generated 233.0 s on one slot each - green only because the table gives them 900 s; ge-generated was the longest single block of its leg (the next was 169.4 s). Each is one case, so the sweep cannot spread it. When the table is re-recorded (note 36) check whether that block sets its leg's wall time; if it does, the seam is cf36 and oq5 run per family as cases of their own, which changes their ids."
+        },
+        {
+          "at": "2026-11-20T13:40:33Z",
+          "text": "42. From the independent review of a39bc270 and 8e6ea40b (scratchpad sg2.16-review/REVIEW.md, findings 5 and 8), the reader's half, low: (a) mutations that leave tests/test__skill_places.py green while the behaviour holds on probes - O_NOFOLLOW, O_NONBLOCK, the fstat identity check, the read's own budget stop, a CR carried across a chunk boundary, the .md suffix compared without case; each owes a case that can fail. (b) a directory replaced by a link after its lstat is walked through the link and files outside are hashed (bounded, no hang); SECURITY.md says such an entry is never opened - open directories with O_NOFOLLOW|O_DIRECTORY (or compare the scandir fd's fstat with the lstat) and hold it; by reading, a Windows junction is walked the same way - the review gives the command and the expected output for the owner's Windows machine. 43. Outside the changed lines, run by the same review: --explain cuts run: lines at its byte bound, and each --skill-pin lengthens every session line, so with long paths a two-member session wave printed one run: line of two without pins and none with pins (probe explain_probe.py). Not measured on a real install's shorter paths; owes a measurement and, if it reproduces, a fault of its own."
         }
       ]
     },
@@ -1968,7 +1972,7 @@
     {
       "id": "SG2.16-xk1",
       "title": "A step the drive stops over a pin leaves the plan's state as it found it: no wave member marked dispatched that was not, and no answer of the human's spent",
-      "status": "in_progress",
+      "status": "done",
       "description": "An independent review of the commit that added meta.skillPins (the orchestrator's prompt names its file) found two places where the new stop arrives AFTER the drive has written state for the step, both BY READING and neither run - so the first act of this task is to reproduce each on the real commands, and to say plainly if one does not reproduce.\n\nWHAT THE REVIEW READ.\n(a) A WAVE. `walk_wave` steps its members in id order. The first member's `dispatch` writes its brief, sets the dispatched mark and records the agent as handed out; a later member's pin stop (the refused brief on the agent route, the stop raised on the session route) ends the step, and the wave's dispatch line for the first member is never printed. On the next `next` the first member is treated as dispatched: the human is told an executor returned nothing when none was spawned, or on the session route the drive waits on a stored command nobody ran. The review notes this is older than the pins - ANY member's stop drops what was already marked - and that the pins add a common new stop at exactly that point.\n(b) A RESUME. `apply_answer` removes the pending decision, writes that, and spends the gated mark before `resume_writer` builds the session's command, which is where the pin is asked. A stop there loses the human's `--answer resume` and its prompt; the next `next` runs the gate again and asks again.\n(c) Between the pre-check `dispatch` makes and the later building of the session's command a pinned skill can change, leaving a dispatch mark behind with nothing started (the runner still refuses). A narrow window; close it by the same rule rather than by a second check.\n\nTHE RULE TO BUILD. One invariant, held for every route by one kind of case: A STEP THAT STOPS HAS WRITTEN NOTHING THE NEXT STEP WILL READ AS DONE. Concretely:\n1. Everything that can refuse a hand-out is asked for EVERY member of the step before ANYTHING is marked for any member: in a wave, all members' pins (and whatever else `dispatch` can refuse over before its mark - find them; the pins are the new one, not necessarily the only one) are checked first, and a stop names the member and leaves all of them as they were. If some refusal can only be known after an earlier member is marked, then the members already marked are still returned and printed with the stop as a warning, so nothing is marked silently - say which shape each refusal takes and why.\n2. An answer of the human's is consumed only once the step it answers can no longer stop: the pins are asked before the pending decision is removed and before the gated mark is spent. After a stop the same `--answer` given again works, and nothing has to be re-run.\n3. The session's command is built from what the pre-check read - one read of the pins per step - so there is no second moment for the answer to change between the check and the mark.\n4. THE CASE THAT HOLDS IT compares the state the drive keeps (the dispatch marks, the pending decision, the gated mark, briefs on disk, the lock) before the stopped step and after it, whole, for: a single task on each route (spd8 is the model), a two-member wave on each route with the SECOND member's pin failing and with the FIRST member's failing, and a resume. Not 'the mark is absent' per place - the snapshot equal - so a state the drive gains later is covered without a new case. Say what the snapshot reads and what it deliberately leaves out (a journal row saying the step stopped is a record, not state the next step reads as done - if you leave it out, the case says so).\n5. The older gap the review names - any member's stop in a wave dropping what was already marked - is in scope where rule 1's ordering closes it; where a member can stop for a reason that cannot be known before another is marked, rule 1's second shape applies. Name every stop a wave member can hit and which shape covers it.\n\nALLOW CASES: a wave whose members' pins all match dispatches every member exactly as before, line for line; a wave in a plan with no pins; a resume whose pin matches consumes the answer and starts the session as before; a stop followed by restoring the bytes and the same command again proceeds as a first attempt.\n\nHOW TO PROVE. The reproduction of (a) and (b) on the tree as it stands, on the real commands in a scratch project (a script the orchestrator can run from the worktree root, extended from the end-to-end probe the prompt names): the wave leaving a member marked, the resume losing the answer - each shown, then shown gone. Red first for each snapshot case. A mutation probe (copies of the working tree, each mutation asserted applied, bytecode caches purged, never `git archive HEAD`), each deny with its allow twin: the wave's pre-check removed; the pre-check made to cover only the first member; the answer consumed before the check again; the snapshot comparison narrowed to one field (the case's own power). The drive suite's blocks this touches, each alone, green; the whole suite through the sweep once.\n\nNOT in this task: the reader, the digest, the documents (the task before this one); how a wave is formed or ordered; any change to what a non-pin stop says.\n\nAcceptance:\n(1) Each of (a) and (b) is reproduced on the real commands or shown not to occur, with the run.\n(2) After a step stopped over a pin - single task, wave with either member failing, resume - the drive's state equals its state before the step, held by a whole-snapshot case per route.\n(3) The same answer given again after a stop works, and a wave whose pins match dispatches as before, line for line.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1994,14 +1998,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8e6ea40b95a0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "REPRODUCED on the real commands (probe: SG2.15's, copied and extended, on a copy of HEAD's plugin, repro.out): (a) a wave whose SECOND member's pin changed - subagent route: the stopped step leaves dispatched-executor[P1.1] in the drive's state, the next `next` after restoring the bytes prints only P1.2, and a `next` after that says `decide no-executor-return P1.1`; session route: dispatched-executor and writer[P1.1] left behind, then `wait P1.1: the writer session has written no record`; (b) a resume: after the stopped `--answer resume` the pending decision is gone and the same answer is refused (`no decision is pending for P1, so --answer resume answers nothing`, exit 2), a resume prompt file left on disk. NOT reproduced as a failure of its own: (c) the window between the pre-check and the command's building cannot be hit deterministically by real commands (a file would have to change between two reads inside one process); it is shown by spd18 and spd18b, which change the bytes in between and are red on HEAD (PinStop after the mark, no dispatch recorded). Also seen on HEAD: a wave whose FIRST member's pin changed leaves the wave recorded, both members started and a tree cut before the stop (no dispatch mark, so benign in effect, but not a state equal to before). FIXED in plugins/audit/scripts/governance/drive-phase.py: (1) ask_member_pins reads the pin of every member that owes its executor (owes_executor: the _writer_turn facts, no action) before the wave is recorded (wave_step) and before any member is stepped (walk_wave), naming the member; (2) walk_wave's second shape: a member that stops (returned stop or raised ValueError) after an earlier member was handed out leaves that member printed, the stop a warning on the print, ctx stop kind cleared; (3) dispatch asks its tree, writer setting, pins (session_hand: ONE read, names and --skill-pin flags) and the review-fix reading before its brief and its mark; writer_argv builds the command from that read (held), also for reviewer_dispatch and review_fix_dispatch; (4) apply_answer sends a resume to resume_writer(consume=True) before consuming anything, and resume_writer drops the pending decision and spends the gated mark only after the tree, the writer setting, the pins and the prompt, the dispatch's own write recording both. --answer redispatch is deliberately NOT moved (what it did stays recorded and the reviewer is the drive's own next move; spd16 holds that). Docs: PLUGIN-BUILD-GUIDE.md (a paragraph in the drive-phase.py section; the run-agent-session.py paragraph on dispatch and writer_argv), CHANGELOG.md Fixed entry under Unreleased (heading untouched). TESTS (tests/test_drive_phase.py, block spn-block, one new function _pin_stop_state_cases and helpers after _pin_load_cases): spd10 one task each route, whole kept state equal; spd11/spd12 wave second/first member, kept state equal, plan untouched, member and skill named, nothing started, on both routes; spd13 restore then the same command hands both members out, print equal line for line to the same wave with no pins; spd14/spd15/spd15a resume stop keeps the decision, gated mark and every file under the state directory, the same answer then resumes with the pin on the command, a no-pin plan resumes as before; spd16 redispatch; spd17/spd17a which members are asked, a plan with no pins asks and reads nothing; spd21 an open wave asks before stepping; spd18/spd18b the command is built from the pre-check's read (executor and reviewer sessions); spd19 the review-fix reading is asked before the mark; spd20 the second shape. spd9 was changed (a plan with a pin now loads the manifest as often as one without, 1 time: the pre-check's read is the one the command is built from). REPOSITORIES BUILT per new case: spd10 two (one per route, copies of cached templates the existing spd cases already build, one git add and one commit each); spd11-spd13 together four wave repositories (two per route: the pinned wave, whose one repository serves all three cases through two stopped steps and one dispatching step, and a plan-with-no-pins twin for the line-for-line comparison), each _wave_repo copy plus about four git calls, four more commits in the pinned one, and one new template (two tasks) built once per run; spd14-spd21 none (a temp directory, no git). The whole-suite sweep ran twice (6:33 with the first defect, 5:57 after, --jobs 4); the block alone runs 10-35 s here, across the 22 mutation rows. NOT RUN: windows. FLOOR GUARD: the new tests carry `# noqa: BLE001` on two broad excepts (the same spelling _caught already uses in this file); no other suppression. TOOLS FILES: none outside the four named files; the plan gate did not refuse. A defect found by the sweep, not by my cases: review_fix_dispatch already had a local named `held`, so my new parameter of that name was shadowed (pv2, rw0-rw8 went red); renamed `hand`; no case of mine holds the command of a review-fix dispatch being built from the pre-check's read (open item). DEPENDANTS: hooks/drive-without-model.py runs drive-phase.py as a process (auto), unchanged, still correct; _worktrees.py names the restore verb, unchanged; tests/test__worktrees.py ut4/ut5 call resume_writer with its old five arguments (new trailing parameter defaults to no consumption) and ran green; test__filed_returns, test__invariants, test_audit_lookup, test__config (apply_answer's widening row), test__output_lints, test__deps, test_drive_without_model ran green; test_audit_status and test_commit_task_work were not run on their own and are in the orchestrator's gate, which passed; the names used elsewhere (_advance_plan, _attempt_start_moment, _carries, _close_plan) are untouched; README, execute-task.md and COMPATIBILITY.md name decisions and keys whose words and meaning are unchanged (no config key added or read); CHANGELOG's Unreleased heading is as it was.",
+        "descriptive": "A step the drive stops over a pin now leaves the drive's kept state as it found it - a wave marks no member before every member's pin is asked, a later member's stop never drops an earlier member's print, and a resume's answer is consumed only by the hand-out it makes."
       },
       "startedAt": "2026-11-20T11:43:59Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-20T13:08:01Z",
+      "verifiedBy": [
+        "tests/test_drive_phase.py: whole-snapshot cases over a step stopped over a pin - one task on the subagent and the session route, a wave with its second and with its first member's pinned skill changed on both routes (kept state equal, plan untouched, member named), a resume (decision, gated mark, every state file equal) - and the allow cases: the same command after restoring the bytes hands both members out line for line as a plan with no pins does, the same --answer resume then resumes with the pin on its command, a no-pin plan resumes as before",
+        "tests/test_drive_phase.py: unit cases for the rest of the rule - which members are asked (and none for a plan with no pins), an open wave asks before it steps, the command is built from the pre-check's read for the executor's and the reviewer's session, the review-fix reading is asked before the mark, the second shape (a stop after a member was printed), and the redispatch answer that is deliberately not held to the snapshot"
+      ],
       "notes": [
         {
           "at": "2026-11-20T11:43:57Z",
@@ -2016,7 +2023,40 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-20T12:54:23Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 4221000,
+            "startedAt": "2026-11-20T11:44:02Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-20T13:02:36Z.aa0d91",
+            "kind": "wait",
+            "ms": 6000,
+            "startedAt": "2026-11-20T12:55:03Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-20T13:02:36Z.aa0d91, ending at its startedAt",
+            "kind": "selection",
+            "ms": 24344,
+            "runId": "2026-11-20T13:02:36Z.aa0d91",
+            "startedAt": "2026-11-20T12:55:09Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-20T13:02:36Z.aa0d91",
+            "kind": "gate",
+            "ms": 421357,
+            "runId": "2026-11-20T13:02:36Z.aa0d91",
+            "startedAt": "2026-11-20T12:55:34Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 8e6ea40b95a0",
+            "kind": "commit",
+            "ms": 2460,
+            "startedAt": "2026-11-20T13:07:57Z"
+          }
+        ],
         "firstStartedAt": "2026-11-20T11:43:59Z"
       },
       "reviewPerTask": "signals",
@@ -2024,6 +2064,149 @@
         "runId": "2026-11-20T13:07:56Z.fc7a55",
         "status": "passed",
         "at": "2026-11-20T13:07:56Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "8e6ea40b95a0",
+        "at": "2026-11-20T13:08:01Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-20T12:54:07Z",
+        "basis": "`python3 tests/test_drive_phase.py --selftest --stage spn-block` in a throwaway tree at HEAD exited 1 with 13 of 24 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - spd11 (house FAIL), spd12 (house FAIL), spd13 (house FAIL), spd14 (house FAIL), spd15 (house FAIL), spd17 (house FAIL), spd17a (house FAIL), spd21 (house FAIL) and 4 more: SELFTEST FAILED: 11/24 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "SG2.17-xk1",
+      "title": "A pin is judged on the copy the session will load, and a step that stops gives back nothing a pending decision or an outstanding dispatch holds - the lock and the task's start included",
+      "status": "in_progress",
+      "description": "An independent review of the two tasks before this one (the orchestrator's prompt names its file; every finding below was RUN unless it says by reading, and its probes sit beside it) found two med defects and several lows of ONE class - the task before this one set out to make a stopped step write nothing the next step reads, and the review found writes it did not reach. This is the second time the class has come back, so the fix is the invariant held by a derived case, not the list of places.\n\nWHAT THE REVIEW SHOWED.\n(1) med - THE LOCK. `lock_to_give_back` returns true on any stop before it looks at `pending`, so a stopped `--answer resume` keeps the decision (the task before this one's fix) and gives the phase lock back anyway. Another session's `next` then takes the phase (exit 0) and the first session's same answer is refused: 'HELD by a live run -- another-session'. With the decision pending and no stop, the other session is refused. `drive`'s docstring promises the lock is kept while a decision is pending or a dispatch is out; the paragraph the task before this one added to PLUGIN-BUILD-GUIDE.md says the opposite. The same rule shows in a wave: a stop prints 'lock released' while an earlier member's executor is out.\n(2) med - THE COPY THAT IS JUDGED IS NOT THE COPY THAT IS LOADED. On the session route the drive's pre-check (`session_skills`, `session_hand`, `ask_member_pins`) hashes the skill in the PROJECT, while each wave member's session loads the copy in its own tree, cut from HEAD, and the runner checks that tree. Restoring the bytes in the project without committing - which is what the stop's remedy says to do - passes the pre-check, both members are marked, the runner exits 2 naming the tree's path, and the next `next` treats a session that never started as one with no result. No race is needed. Rooted in the pin's own task; the same at both later commits. On the subagent route the brief also judges the project's copy while the member's tree holds the changed bytes; which copy a subagent's Skill tool loads is Claude Code's and could not be run.\n(3) low - A SERIAL STEP STARTS THE TASK BEFORE IT ASKS. A single task stopped over a pin has gone pending -> in_progress, attempts 0 -> 1, startedAt set; the wave path asks before starting anything. The previous task's title promised the plan's state.\n(4) low - the shape-2 warning is dropped from the `--signal` line the main loop reads (`+1`, exit 0) on each step while an earlier member still prints; it surfaces only once nothing else is due.\n(6) low - `review_fix_dispatch` builds its command from the pre-check's read but no case holds it (dropping `held=hand` stays green), and it runs after the mark and can still stop, against `dispatch`'s docstring 'a dispatch that stops has marked nothing'.\n(7) low - `validation_dispatch` writes its prompt before it asks the pins: a stop leaves an orphan prompt file.\n(9) low - the pre-check's stop ends the step for every member, so a member whose executor returned waits on another member's skill. That is the rule as written; the `owes_executor` docstring overclaims.\n(10) low BY READING - a wave member's pinned directory is hashed up to three times in the opening step; 'one read per step' holds only from `dispatch` to the command.\n(11) low - `resume_writer(consume=False)`: one caller, always true; the default is a branch nothing takes.\n(5, the drive's half) low - mutations that left the suite green: four `owes_executor` branches (parked, not ready, stale brief, proof held) though PLUGIN-BUILD-GUIDE cites spd17 for two of them; `break` -> `continue` after a shape-2 stop.\n\nTHE RULE TO BUILD. Two invariants, each held by ONE derived case rather than a case per place.\nA. A STEP THAT STOPS HAS WRITTEN NOTHING THE NEXT STEP READS - AND THE PLAN AND THE LOCK ARE PART OF WHAT IT READS. Widen the kept-state snapshot of the task before this one (`_kept_state` in tests/test_drive_phase.py) to the plan's task fields the drive reads (status, attempts, startedAt, the dispatch-relevant notes) and the lock's holder, and compare it whole before and after EVERY pin stop the drive can reach: single task on each route, wave member first and second on each route, resume, review-fix, the phase-level validation prompt. Derive the list of stop routes from the code (every call that can raise `PinStop` or return a pin stop, the way spd1 derives hand-out callers), so a stop route added later without a row is red by name. Where the comparison cannot be whole for a reason (a journal row recording the stop is a record, not state; the lock released because NOTHING is pending and nothing is out is correct), the case states the exception with its reason, and the exceptions are a short table checked in both directions. Concretely the code then must: keep the lock on a stop while a decision is pending or a dispatch is out (the usage arm already does this - one rule, not two); ask a serial task's pins before `start_task`, as the wave does; ask `review_fix_dispatch`'s and `validation_dispatch`'s pins before any mark or write. If a write genuinely cannot move ahead of its stop, the stop says what it left and the next step reads it correctly - say which and why.\nB. A PIN IS JUDGED ON THE COPY THAT WILL BE LOADED. On the session route that is the member's tree: before a tree exists, judge the commit the trees will be cut from (the skill directory's bytes at that commit, read from git without a checkout, for a project-level skill inside the repository; a personal or plugin skill lies outside the cut and its on-disk copy is the copy loaded); once a tree exists, judge the tree. The stop's remedy then names what to do for THAT copy ('restore the bytes and commit them' when the copy is a commit's). On the subagent route state, in the code and in SECURITY.md's pinned-skill section, which copy the brief judges and that which copy the Skill tool then loads is Claude Code's - do not claim more. Decide whether a working-tree copy that differs from HEAD for a project skill should itself be a stop or a warning on the serial session route (the session there also runs in a tree cut from HEAD? read where a single task's session runs before deciding) and say why.\nC. The lows that are not the class: fix (4) so the main loop's signal line carries the warning; reword (9)'s docstring to what the rule is; remove (11)'s dead default or give it a caller; (10) is a cost to state in a docstring, not to fix, unless B's change removes it. The missing cases of (5): make each branch of `owes_executor` and the `break` able to fail, each with its allow twin.\n\nALLOW CASES: everything the task before this one held stays green line for line (a wave whose pins match, a plan with no pins, a matching resume); a stop while nothing is pending and nothing is out still gives the lock back; a personal skill pinned and unchanged on disk dispatches; a project skill committed with the pinned bytes dispatches even when the working copy is being edited, if B decides the commit is the copy loaded.\n\nHOW TO PROVE. Red first on the tree as it stands: the reviewer's probes `wave_probe.py r1` (lock), `w4s` (copy), `p1a`/`p1s` (serial start), `w2s` (signal) and `open_items_probe.py` O2/O3 - run them from the review's directory against the worktree, and copy any you extend into S/sg2.17/. A mutation probe (copies of the working tree, each mutation asserted applied, caches purged, never `git archive HEAD`), each deny with its allow twin: the lock given back on any stop again; the serial pin ask moved after the start; the pin judged on the project copy again; review-fix asked after the mark; validation's prompt written before the ask; a stop route removed from the derived list (the derivation's own power); each `owes_executor` branch; `break` -> `continue`. The drive suite's touched blocks alone, then the whole suite once through the sweep. Name how many repositories each new case builds - this suite is among the slowest on the windows runner.\n\nNOT in this task: the reader in `_skill_places.py` (its lows go to the phase's low batch); the verb that writes a pin; how a wave is formed.\n\nAcceptance:\n(1) After any pin stop the drive can reach, the kept state - the drive's state, briefs and sessions on disk, the plan's task fields it reads, and the lock's holder - equals what it was before the step, held by one case over a list of stop routes derived from the code, with a short table of stated exceptions checked both ways.\n(2) A stop keeps the phase lock while a decision is pending or a dispatch is out, and gives it back otherwise.\n(3) On the session route a pin is judged on the copy the session will load, and the stop's remedy names that copy; the subagent route's documents claim no more than the brief checks.\n(4) The shape-2 warning reaches the main loop's signal line, and the `owes_executor` branches and the shape-2 `break` are each held by a case that can fail.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "SECURITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: after every pin stop the drive can reach - a list derived from the code - the drive's kept state, the plan's task fields and the lock's holder equal what they were before the step; a stop keeps the lock while a decision is pending or a dispatch is out; a wave member's pin is judged on the copy its session will load"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-20T13:40:58Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-20T13:40:54Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-20T13:40:54Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-20T13:40:54Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-20T13:40:54Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-20T13:40:54Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tests/test_hooks.py"
+        },
+        {
+          "at": "2026-11-20T13:40:54Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-20T13:40:54Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-20T13:40:54Z",
+          "text": "the fail-mode table this file reads is not edited; the task registers no hook",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-20T13:40:54Z",
+          "text": "the fail-mode table row this file quotes is not edited",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-20T13:40:54Z",
+          "text": "a research note quoting a section of SECURITY.md the task does not edit",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-20T13:40:54Z",
+          "text": "the task edits its own entry under the Unreleased heading and leaves the heading",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-20T13:40:54Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-20T13:40:54Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-20T13:40:54Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tests/test__floor_guard.py"
+        },
+        {
+          "at": "2026-11-20T13:40:54Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tests/test__refs.py"
+        },
+        {
+          "at": "2026-11-20T13:40:54Z",
+          "text": "the heading this file quotes is not edited and the task adds no module, so the generated map does not move",
+          "waives": "tools/lints/_deps.py"
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-20T13:40:58Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-25T09:32:38Z.87a238",
+        "status": "passed",
+        "at": "2026-11-25T09:32:38Z"
       }
     }
   ],

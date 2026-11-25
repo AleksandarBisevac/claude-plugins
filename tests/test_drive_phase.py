@@ -18977,6 +18977,9 @@ _HANDOUT_EXEMPT = {
     "audit-status.py:_scope_line": "a status line printing the review skill's name",
     "_doctor_policy.py:check_policy": "the doctor's capability-policy check over "
                                       "the names; it starts nothing",
+    "drive-phase.py:ask_member_pins": "names the skill directories to read at a commit; "
+                                      "the pins are asked through session_skills "
+                                      "(`_STOP_ROUTES`, spd22)",
     "drive-phase.py:review_due": "whether sign-off dispatches the phase reviewer; the "
                                  "name reaches it only through the phase brief, "
                                  "whose review_skill_lines asks",
@@ -18985,20 +18988,24 @@ _HANDOUT_EXEMPT = {
 }
 
 
-def _own_calls(fn):
-    """The names every call in `fn`'s own body reaches - a nested function's
-    calls are its own, a lambda's are `fn`'s."""
-    names, stack = set(), list(ast.iter_child_nodes(fn))
+def _own_call_nodes(fn):
+    """Every call in `fn`'s own body - a nested function's calls are its own, a
+    lambda's are `fn`'s."""
+    nodes, stack = [], list(ast.iter_child_nodes(fn))
     while stack:
         node = stack.pop()
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         if isinstance(node, ast.Call):
-            func = node.func
-            names.add(func.attr if isinstance(func, ast.Attribute)
-                      else getattr(func, "id", None))
+            nodes.append(node)
         stack.extend(ast.iter_child_nodes(node))
-    return names
+    return nodes
+
+
+def _own_calls(fn):
+    """The names every call in `fn`'s own body reaches."""
+    return set(node.func.attr if isinstance(node.func, ast.Attribute)
+               else getattr(node.func, "id", None) for node in _own_call_nodes(fn))
 
 
 def _skill_callers(sources):
@@ -19309,26 +19316,42 @@ def _files_under(top, prefixes=None):
     return out
 
 
-def _kept_state(root):
-    """What a next step reads to tell a task dispatched or a decision pending, whole:
-    the drive's own state as it reads it (a state file that is not there reads as
-    an empty one), every brief the drive wrote and every session file under the
-    state directory (a prompt, a record), and the claims the phase lock holds (its
+# The fields of a plan's task the drive reads to tell where the task stands.
+_PLAN_READ = ("status", "attempts", "startedAt", "completedAt", "commit", "notes",
+              "blockedReason")
+
+
+def _plan_read(mpath):
+    """`{task id: {field: value}}` for `_PLAN_READ` over every task of the plan at
+    `mpath`."""
+    with open(mpath, encoding="utf-8") as fh:
+        plan = json.load(fh)
+    return dict((task.get("id"), dict((f, task.get(f)) for f in _PLAN_READ))
+                for phase in plan.get("phases") or []
+                for task in phase.get("tasks") or [])
+
+
+def _kept_state(root, mpath):
+    """What a next step reads, whole: the drive's own state as it reads it (a state
+    file that is not there reads as an empty one - its `lock` key is the lock
+    this drive holds), the plan's tasks as far as the drive reads them
+    (`_plan_read`: status, attempts, `startedAt`, notes), every brief the drive
+    wrote and every file under the state directory a session leaves (a prompt, a
+    record), and the claims the phase lock holds with what each one says (the
     serialiser's own dot file, made the first time any lock is taken, is no claim).
 
-    LEFT OUT, each for its reason: `attempts/`, the start verb's counter, read
-    when a task is started again and never to tell a hand-out; the state
-    directory's own ignore file and a hook's cache file, written on the way by
-    tools that are not the drive; the plan and the journal, the verbs' record - a
-    task started is not a task dispatched, a journal row saying the step stopped
-    is a record and no state a step reads as done - a case that wants the plan
-    compares it itself."""
-    out = {"state": _drive_state(root)}
+    LEFT OUT, each for its reason: the state directory's own ignore file and a
+    hook's cache file, written on the way by tools that are not the drive; the
+    journal - a row saying the step stopped is a record, and no step reads it as
+    something done; the files the plan's tasks declare, which a stopped step never
+    reaches (the case that hands out work reads them itself)."""
+    out = {"state": _drive_state(root), "plan": _plan_read(mpath)}
     out.update(_files_under(os.path.join(root, ".claude", "state"),
-                            ("briefs/", "sessions/")))
+                            ("briefs/", "sessions/", "attempts/")))
     locks = os.path.join(root, ".git", "audit-locks")
-    out["locks"] = sorted(n for n in os.listdir(locks) if not n.startswith(".")) \
-        if os.path.isdir(locks) else []
+    out["locks"] = dict(
+        (n, _read(os.path.join(locks, n))) for n in sorted(os.listdir(locks))
+        if not n.startswith(".")) if os.path.isdir(locks) else {}
     return out
 
 
@@ -19351,10 +19374,32 @@ def _normalised(text, root):
             for ln in text.splitlines() if not ln.startswith("[drive-phase]")]
 
 
-def _pin_single_runs(M):
-    """`{route: (code, lines handed out, keys that differ)}`: one task whose pinned
-    skill is not the bytes pinned, `next` run on each route."""
-    out = {}
+def _stop_run(hits, root, mpath, run):
+    """One step, `run()` -> `(code, text)`, expected to stop over a pin: `{"stopped",
+    "code", "handed", "hits", "diff", "text"}` - the lines it handed out, the
+    routes a pin stop passed through while it ran (`hits`, `_watch`), and the keys
+    at which the state before and after differ (`_kept_state`)."""
+    mark, before = len(hits), _kept_state(root, mpath)
+    code, text = run()
+    return {"stopped": code != 0, "code": code, "handed": _handed_out(text),
+            "hits": set(hits[mark:]), "text": text,
+            "diff": _kept_diff(before, _kept_state(root, mpath))}
+
+
+def _next_task(M, root, mpath, task_id):
+    """`(code, text)` of one `next` for the one task `task_id`."""
+    with _Env(root):
+        said = []
+        code = M.main(["next", task_id, mpath, "--project-dir", root],
+                      out=said.append)
+    return code, "\n".join(said)
+
+
+def _pin_single_runs(M, hits, ran):
+    """One task whose pinned skill is not the bytes pinned, on each route, one
+    repository for each: `next` for the phase, `next` for the task alone, and -
+    the task started by hand, as a stopped start would have left it - `next`
+    again; each stopped step is registered in `ran` (`_pin_route_cases`)."""
     for route, executor in (("agent", None), ("session", dict(WRITER_EXECUTOR))):
         root, mpath = _repo("spn-st-%s" % (route,), task_ids=TASKS[:1],
                             per_task="phase", executor=executor)
@@ -19366,10 +19411,14 @@ def _pin_single_runs(M):
             plan["meta"]["skillPins"] = {"pin-a": {"sha256": pinned}}
             plan["phases"][0]["tasks"][0]["skills"] = ["pin-a"]
         _commit_plan(root, mpath, edit, "fixture: a pinned skill, changed")
-        before = _kept_state(root)
-        code, text = _next(M, root, mpath)
-        out[route] = (code, _handed_out(text), _kept_diff(before, _kept_state(root)))
-    return out
+        ran["single-%s" % (route,)] = _stop_run(
+            hits, root, mpath, lambda: _next(M, root, mpath))
+        ran["only-%s" % (route,)] = _stop_run(
+            hits, root, mpath, lambda: _next_task(M, root, mpath, "P1.1"))
+        with _Env(root):
+            _verb(root, "audit-task.py", ["start", "P1.1", mpath, "--project-dir", root])
+        ran["started-%s" % (route,)] = _stop_run(
+            hits, root, mpath, lambda: _next(M, root, mpath))
 
 
 def _pin_wave(prefix, route, pinned=True):
@@ -19398,27 +19447,36 @@ def _pin_wave(prefix, route, pinned=True):
     return root, mpath
 
 
-def _pin_wave_runs(M, route):
+def _pin_wave_runs(M, route, hits, ran):
     """What `next` does over a wave whose second member's pinned skill changed,
     then whose first member's did, then with both restored - one repository, the
-    stopped steps' state compared whole: `{label: (code, lines handed out, keys
-    that differ, plan untouched, text)}`, and the normalised print of the same
-    wave in a plan with no pins, under `plain`."""
+    stopped steps' state compared whole and registered in `ran`
+    (`_pin_route_cases`): `{label: (code, lines handed out, keys that differ,
+    plan untouched, text)}`, and the normalised print of the same wave in a plan
+    with no pins, under `plain`. On the session route the second member's skill
+    is also restored in the project and NOT committed, which is no remedy: the
+    trees are cut from the commit."""
     root, mpath = _pin_wave("spn-wv-%s" % (route,), route)
     seen = {}
     for label, bad in (("second", "pin-b"), ("first", "pin-a")):
         _pin_skill_dir(root, bad, _changed(_PIN_BODIES[bad]))
         _harness.git(root, "commit", "-qam", "fixture: %s changed" % (bad,))
-        plan_before, before = _read(mpath), _kept_state(root)
-        code, text = _next_wave(M, root, mpath)
-        seen[label] = (code, _handed_out(text), _kept_diff(before, _kept_state(root)),
-                       _read(mpath) == plan_before, text)
+        plan_before = _read(mpath)
+        stopped = ran["wave-%s-%s" % (route, label)] = _stop_run(
+            hits, root, mpath, lambda: _next_wave(M, root, mpath))
+        seen[label] = (stopped["code"], stopped["handed"], stopped["diff"],
+                       _read(mpath) == plan_before, stopped["text"])
         _pin_skill_dir(root, bad, _PIN_BODIES[bad])
+        if route == "session" and label == "second":
+            ran["wave-session-uncommitted"] = _stop_run(
+                hits, root, mpath, lambda: _next_wave(M, root, mpath))
         _harness.git(root, "commit", "-qam", "fixture: %s restored" % (bad,))
     code, text = _next_wave(M, root, mpath)
     seen["again"] = (code, _handed_out(text), _normalised(text, root), text)
     plain_root, plain_path = _pin_wave("spn-wp-%s" % (route,), route, pinned=False)
     seen["plain"] = _normalised(_next_wave(M, plain_root, plain_path)[1], plain_root)
+    seen["walk"] = _pin_walk_run(M, hits, ran, route, root, mpath)
+    seen["root"] = root
     return seen
 
 
@@ -19436,13 +19494,37 @@ def _pin_resume_world(label, route_config, pinned=True):
     digest = _pin_digest(_pin_skill_dir(project, "pin-a", _PIN_BODIES["pin-a"]))
     task_u = _step_task(skills=["pin-a"])
     phase = _step_phase([task_u], key="phase")
-    _step_rig(R, phase, meta={"skillPins": {"pin-a": {"sha256": digest}}}
-              if pinned else {})
+    calls = _step_rig(R, phase, meta={"skillPins": {"pin-a": {"sha256": digest}}}
+                      if pinned else {})
     R.tree_head = lambda ctx, tree=None: None
     ctx = _step_ctx(stateDir=os.path.join(project, ".claude", "state"),
                     project=project, gitRoot=project, config=route_config)
     return {"M": R, "ctx": ctx, "phase": phase, "task": task_u, "project": project,
-            "plan": R.load_phase(None)[0], "digest": digest}
+            "plan": R.load_phase(None)[0], "digest": digest, "calls": calls,
+            "hits": _watch(R, _STOP_ROUTES)}
+
+
+def _unit_kept(world, state):
+    """What a next step reads in a unit world, whole - the in-memory `state` a caller
+    holds, when it holds one (a decision dropped there and never written is
+    dropped for the rest of that step), the state file less its lock, every other
+    file under the state directory, the lock the state records, the plan's task
+    as the rig holds it, and the verbs the step ran, the lock's own aside: a verb
+    run is a write somewhere else."""
+    R, ctx = world["M"], world["ctx"]
+    on_disk = R.read_state(ctx)
+    own = os.path.relpath(R.state_path(ctx), ctx["stateDir"]).replace(os.sep, "/")
+    out = {"state": json.dumps(dict((k, v) for k, v in on_disk.items()
+                                    if k != "lock"), sort_keys=True),
+           "lock": on_disk.get("lock"),
+           "files": dict((rel, blob) for rel, blob in _files_under(
+               ctx["stateDir"]).items() if rel != own),
+           "plan": json.dumps(world["plan"], sort_keys=True),
+           "verbs": [(s, (a or [""])[0]) for s, a, _i in world["calls"]
+                     if s != "audit-lock.py"]}
+    if state is not None:
+        out["memory"] = json.dumps(state, sort_keys=True)
+    return out
 
 
 def _pin_pending_state(world, pending, **marks):
@@ -19477,12 +19559,12 @@ def _pin_answer_runs(label, answer, pending, **marks):
     R, ctx = world["M"], world["ctx"]
     _pin_skill_dir(world["project"], "pin-a", _changed(_PIN_BODIES["pin-a"]))
     state = _pin_pending_state(world, pending, **marks)
-    mem_before = json.dumps(state, sort_keys=True)
-    disk_before = _files_under(ctx["stateDir"])
+    before, mark = _unit_kept(world, state), len(world["hits"])
     said = _caught(R.apply_answer, ctx, state, world["plan"], world["phase"],
                    state["pending"], answer, "")
-    world.update(stopped=said, kept=(json.dumps(state, sort_keys=True) == mem_before
-                                     and _files_under(ctx["stateDir"]) == disk_before))
+    after = _unit_kept(world, state)
+    world.update(stopped=said, diff=_kept_diff(before, after),
+                 kept=before == after, through=set(world["hits"][mark:]))
     _pin_skill_dir(world["project"], "pin-a", _PIN_BODIES["pin-a"])
     again = R.read_state(ctx)
     gave = (_caught(R.apply_answer, ctx, again, world["plan"], world["phase"],
@@ -19500,16 +19582,24 @@ def _pin_stop_state_cases(check):
     if M is None:
         check("spd10 the driver loads", False, why)
         return
-    single = _pin_single_runs(M)
+    hits, ran = _watch(M, _STOP_ROUTES), {}
+    _pin_single_runs(M, hits, ran)
+    single = dict((route, (ran["single-%s" % (route,)]["code"],
+                           ran["single-%s" % (route,)]["handed"],
+                           ran["single-%s" % (route,)]["diff"]))
+                  for route in ("agent", "session"))
     check("spd10 one task whose pinned skill changed: `next` stops and hands "
-          "nothing out on the subagent route and on the session route, and the "
-          "state the drive keeps - its state, its briefs, its sessions' files, "
-          "the phase lock - is whole as it was; the plan, which holds the task "
-          "started, is left out (`_kept_state` says why): %r" % (single,),
+          "nothing out on the subagent route and on the session route, and what "
+          "the drive keeps - its state, its briefs, its sessions' files, the "
+          "plan's task as the drive reads it (the task is NOT started: status, "
+          "attempts and startedAt as they were) and the phase lock - is whole as "
+          "it was (`_kept_state`; spd24 holds it for every route the code has): %r"
+          % (single,),
           sorted(single) == ["agent", "session"]
           and all(code != 0 and out == [] and diff == []
                   for code, out, diff in single.values()))
-    waves = dict((route, _pin_wave_runs(M, route)) for route in ("agent", "session"))
+    waves = dict((route, _pin_wave_runs(M, route, hits, ran))
+                 for route in ("agent", "session"))
     for case, label, member, name in (("spd11", "second", "P1.2", "pin-b"),
                                       ("spd12", "first", "P1.1", "pin-a")):
         got = dict((route, waves[route][label]) for route in waves)
@@ -19532,18 +19622,20 @@ def _pin_stop_state_cases(check):
               and "P1.2" in v[1][1] and "no-executor-return" not in v[3]
               and v[2] == waves[r]["plain"] and len(v[2]) >= 3
               for r, v in again.items()))
-    _pin_answer_cases(check)
+    _pin_answer_cases(check, ran)
     _pin_member_cases(check)
+    _pin_route_cases(check, M, hits, ran, waves)
 
 
-def _pin_answer_cases(check):
+def _pin_answer_cases(check, ran):
     """The human's answer is consumed once the step it answers can no longer
-    stop over a pin: a resume, and a re-dispatch of the reviewer."""
+    stop over a pin: a resume, a retry and a re-dispatch of the reviewer."""
     resume = _pin_answer_runs("resume", "resume", _RESUME_PENDING, gated={"runId": "r1"},
                               writer={"seq": 1, "dispatches": [], "resumes": 0})
     if "why" in resume:
         check("spd14 the driver loads", False, resume["why"])
         return
+    ran["answer-resume"] = _unit_ran(resume)
     stop_text = str(resume["stopped"])
     check("spd14 `--answer resume` over a pinned skill whose bytes changed stops "
           "with the skill named and leaves the decision, the gated mark, the "
@@ -19577,37 +19669,89 @@ def _pin_answer_cases(check):
           "--resume 1b4f0a52" in _text_of(said) and "pending" not in state
           and "gated" not in state and "--skill-pin" not in " ".join(
               plain["M"].writer_state(state, plain["task"])["dispatches"][-1]["argv"]))
-    again = _pin_redispatch_run()
-    check("spd16 THE ANSWER NOT HELD TO THE SNAPSHOT, and why: `--answer "
-          "redispatch` over a pinned skill whose bytes changed stops, and what the "
-          "answer did stays recorded - the decision dropped, the reviewer's old "
-          "dispatch mark spent - because that is what the drive does on its own "
-          "next; with the bytes restored the reviewer session is handed out with "
-          "no decision asked again (the human's word is not lost, as a resume's "
-          "would be): %r" % (again,),
-          again is not None and again[0].startswith("('raised', 'PinStop:")
-          and again[1] == [] and "dispatch run-agent-session.py --role reviewer"
-          in again[2])
+    redispatch = _pin_answer_runs("redispatch", "redispatch",
+                                  {"decision": "no-reviewer-return", "why": ""},
+                                  dispatched_reviewer=True)
+    retry = _pin_answer_runs("retry", "retry", _RESUME_PENDING, gated={"runId": "r1"},
+                             writer={"seq": 1, "dispatches": [], "resumes": 0})
+    if "why" in redispatch or "why" in retry:
+        check("spd16 the driver loads", False, redispatch.get("why") or retry["why"])
+        return
+    ran["answer-redispatch"] = _unit_ran(redispatch)
+    ran["answer-retry"] = _unit_ran(retry)
+    check("spd16 `--answer redispatch` over a pinned skill whose bytes changed stops "
+          "with the decision and the reviewer's old dispatch mark exactly as they "
+          "were - the human's word is not spent over a skill - and once the bytes "
+          "are restored the same answer hands the reviewer session out and spends "
+          "both: %r" % ((str(redispatch["stopped"])[:100], redispatch["diff"],
+                         _text_of(redispatch["again"])[:100],
+                         sorted(redispatch["after"])),),
+          _pin_stopped(redispatch["stopped"])
+          and redispatch["kept"] is True
+          and "dispatch run-agent-session.py --role reviewer"
+          in _text_of(redispatch["again"]) and "pending" not in redispatch["after"])
+    started = [(s, (a or [""])[0]) for s, a, _i in retry["calls"]
+               if s == "audit-task.py"]
+    check("spd16a `--answer retry` over a pinned skill whose bytes changed stops "
+          "BEFORE the task is started again: the decision, the marks and the plan "
+          "are as they were and the start verb was not run; with the bytes "
+          "restored the same answer starts the task and spends the decision: %r"
+          % ((str(retry["stopped"])[:100], retry["diff"], started,
+              sorted(retry["after"])),),
+          _pin_stopped(retry["stopped"])
+          and retry["kept"] is True and started == [("audit-task.py", "start")]
+          and "pending" not in retry["after"])
+    tree_runs = _pin_resume_tree_runs(ran)
+    check("spd16b `--answer resume` of a wave member whose session runs in a tree of "
+          "its own judges the TREE's copy: the tree's skill changed stops it with the "
+          "stop naming the tree as the copy and leaves the state whole, the same "
+          "change in the project alone (the tree holding the pinned bytes) does not, "
+          "and the resume is handed out: %r" % (tree_runs,),
+          tree_runs is not None and tree_runs["tree"][0] and tree_runs["tree"][1] == []
+          and "own tree" in tree_runs["tree"][2]
+          and tree_runs["project"][0] is False
+          and "--resume 1b4f0a52" in tree_runs["project"][1])
 
 
-def _pin_redispatch_run():
-    """`(the stopped answer, the decision and mark keys left on disk, the hand-out
-    once the bytes are restored)`, or None when the driver does not load."""
-    world = _pin_resume_world("redispatch", _WRITER_CONFIG)
-    if "why" in world:
-        return None
-    R, ctx, task_u = world["M"], world["ctx"], world["task"]
-    _pin_skill_dir(world["project"], "pin-a", _changed(_PIN_BODIES["pin-a"]))
-    state = _pin_pending_state(world, {"decision": "no-reviewer-return", "why": ""},
-                               dispatched_reviewer=True)
-    stopped = _caught(R.apply_answer, ctx, state, world["plan"], world["phase"],
-                      state["pending"], "redispatch", "")
-    left = sorted(k for k, v in R.read_state(ctx).items()
-                  if k in ("pending", "dispatched-reviewer") and v)
-    _pin_skill_dir(world["project"], "pin-a", _PIN_BODIES["pin-a"])
-    handed = _caught(R.dispatch, ctx, R.read_state(ctx), world["phase"], task_u,
-                     "reviewer", None, world["plan"])
-    return str(stopped)[:120], left, _text_of(handed)[:160]
+def _pin_stopped(said):
+    """True when `said` is what `_caught` returns for a step that raised `PinStop` -
+    read off the pair, not off its printed form, whose quoting depends on the
+    words."""
+    return (isinstance(said, tuple) and len(said) == 2 and said[0] == "raised"
+            and str(said[1]).startswith("PinStop:"))
+
+
+def _pin_resume_tree_runs(ran):
+    """`--answer resume` over a wave member's own tree: `{"tree": (stopped, keys
+    that differ, the stop's words), "project": (stopped, the hand-out)}`, or None
+    when the driver does not load. The stop is registered in `ran`."""
+    out = {}
+    for label, in_tree in (("tree", True), ("project", False)):
+        world = _pin_resume_world("resume-in-%s" % (label,), _WRITER_CONFIG)
+        if "why" in world:
+            return None
+        R, ctx = world["M"], world["ctx"]
+        R.unsettled_stop = lambda ctx_, task_, tree_: None      # a plain directory
+        tree = os.path.realpath(_harness.fixture_root("drive-spn-restree-"))
+        _pin_skill_dir(tree, "pin-a", _PIN_BODIES["pin-a"])
+        changed = tree if in_tree else world["project"]
+        _pin_skill_dir(changed, "pin-a", _changed(_PIN_BODIES["pin-a"]))
+        state = _pin_pending_state(world, _RESUME_PENDING, gated={"runId": "r1"},
+                                   writer={"seq": 1, "dispatches": [], "resumes": 0})
+        state["wave"] = {"id": "P1-w1", "base": _WAVE_BASE, "tasks": ["P1.1"],
+                         "trees": {"P1.1": tree}, "parked": {}}
+        R.write_state(ctx, state)
+        before, mark = _unit_kept(world, state), len(world["hits"])
+        said = _caught(R.apply_answer, ctx, state, world["plan"], world["phase"],
+                       state["pending"], "resume", "")
+        stopped = _pin_stopped(said)
+        out[label] = (stopped, _kept_diff(before, _unit_kept(world, state)),
+                      str(said)) if stopped else (False, _text_of(said))
+        if in_tree:
+            ran["answer-resume-tree"] = {
+                "stopped": stopped, "diff": out[label][1],
+                "hits": set(world["hits"][mark:])}
+    return out
 
 
 def _pin_member_cases(check):
@@ -19671,8 +19815,61 @@ def _pin_member_cases(check):
     check("spd17a ALLOW: a wave step over a plan with no skillPins asks no member "
           "and reads no journal for one, whatever its skills' bytes are: %r"
           % ((asked_plain, reads),), asked_plain is None and reads == [])
+    _pin_owes_cases(check, project)
     _pin_walk_cases(check, project)
     _pin_window_cases(check, project)
+
+
+def _pin_owes_cases(check, project):
+    """Each reading of `owes_executor` that decides whether a member is asked its pin,
+    with its twin: a member parked on a decision, one waiting on a dependency, one
+    whose brief went out under the scope it holds and one whose writer's proof is
+    held are not asked; the same member not parked, ready, whose brief is stale
+    (issued again), with no proof held, is. Every member holds the changed skill."""
+    O, why = _load("drive_phase_pin_owes")
+    if O is None:
+        check("spd29 the driver loads", False, why)
+        return
+    good = _pin_digest(os.path.join(project, ".claude", "skills", "pin-a"))
+    pins = {"pin-a": {"sha256": good}, "pin-b": {"sha256": "e" * 64}}
+
+    def member(tid, skill="pin-b", **extra):
+        return _step_task(tid, skills=[skill], **extra)
+    waiting = member("P1.3", status="pending", startedAt=None, dependsOn=["P1.9"])
+    tasks = [member("P1.1"), member("P1.2"), waiting,
+             member("P1.4", status="pending", startedAt=None), member("P1.5"),
+             member("P1.6"), member("P1.7"), member("P1.8"),
+             member("P1.9", "pin-a", status="pending", startedAt=None)]
+    phase = _step_phase(tasks)
+    _step_rig(O, phase, meta={"skillPins": pins})
+    plan_u = O.load_phase(None)[0]
+    state = {"wave": {"parked": {"P1.1": {"decision": "gate-red"}}}}
+    by_id = dict((t["id"], t) for t in tasks)
+    O._mark(state, "dispatched-executor", by_id["P1.5"], {"scope": "an older scope"})
+    O._mark(state, "dispatched-executor", by_id["P1.6"],
+            {"scope": O.brief_scope(by_id["P1.6"])})
+    record = _invoked_record(project, "owes-held.jsonl", None)
+    O._mark(state, "writer", by_id["P1.7"], {
+        "seq": 1, "dispatches": [{"seq": 0, "record": record, "argv": []}],
+        "proof": {"status": "proved"}})
+    ctx = _step_ctx(project=project, gitRoot=project)
+
+    def asked(task_id):
+        stop = _caught(O.ask_member_pins, ctx, state, plan_u, phase, [task_id])
+        return (isinstance(stop, tuple) and stop[0] == "raised"
+                and stop[1].startswith("PinStop: %s: " % (task_id,)))
+    got = dict((tid, asked(tid)) for tid in sorted(by_id, key=O._id_key))
+    check("spd29 each reading in `owes_executor` that decides whether a member is "
+          "asked its pin is held by a case that can fail, with its twin: a member "
+          "PARKED on a decision (P1.1) is not "
+          "asked and the same member not parked (P1.2) is; one NOT READY (P1.3, "
+          "waiting on a task) is not and a ready one (P1.4) is; one whose brief is "
+          "STALE (P1.5, issued again) is and one whose brief is current and out (P1.6) "
+          "is not; one whose writer's PROOF IS HELD (P1.7) is not and one with none "
+          "(P1.8) is: %r" % (got,),
+          got["P1.1"] is False and got["P1.2"] is True and got["P1.3"] is False
+          and got["P1.4"] is True and got["P1.5"] is True and got["P1.6"] is False
+          and got["P1.7"] is False and got["P1.8"] is True)
 
 
 def _pin_walk_cases(check, project):
@@ -19785,37 +19982,691 @@ def _pin_shape_cases(check):
     if S is None:
         check("spd20 the driver loads", False, why)
         return
-    phase = _step_phase([_step_task("P1.1"), _step_task("P1.2")])
+    phase = _step_phase([_step_task("P1.1"), _step_task("P1.2"), _step_task("P1.3")])
     _step_rig(S, phase)
     ctx = _step_ctx()
     first = S.dispatch_said(ctx, "executor", "P1.1", "audit:audit-executor", "sonnet",
                             "b.md")
-    seen = {}
-    for label, second in (("returned", lambda c: ("stop", S._stopped(c, "planted stop"))),
+    seen, stepped, lines = {}, [], {}
+    # A stop's words as long as a path-laden one is: the warning's own clause then
+    # does not fit the signal line, which is the case `spd20a` is about.
+    long_words = "planted stop " + "." * 230
+    for label, second in (("returned", lambda c: ("stop", S._stopped(c, long_words))),
                           ("raised", None)):
         def step(c, state_, task_id, second=second):
-            if task_id == "P1.1":
+            stepped.append(task_id)
+            if task_id != "P1.2":
                 return "dispatch", first
             if second is None:
-                raise ValueError("planted raise")
+                raise ValueError("planted raise " + "." * 230)
             return second(c)
         S.step_member = step
         ctx = _step_ctx()
-        said = _caught(S.walk_wave, ctx, _wave_state({}))
-        seen[label] = (_text_of(said)[:80], ctx.get("warnings"), ctx.get("stop"))
+        del stepped[:]
+        said = _caught(S.walk_wave, ctx, _wave_state(
+            {}, tasks=("P1.1", "P1.2", "P1.3")))
+        seen[label] = (_text_of(said)[:80], ctx.get("warnings"), ctx.get("stop"),
+                       list(stepped))
+        lines[label] = S.signal(ctx, 0, said)["line"] if isinstance(said, dict) else ""
     S.step_member = lambda c, state_, task_id: (
         ("stop", S._stopped(c, "planted stop")) if task_id == "P1.1"
         else ("dispatch", first))
     alone = _caught(S.walk_wave, _step_ctx(), _wave_state({}))
     check("spd20 a member that stops - by a returned stop or a raised one - after "
           "an earlier member was marked and printed leaves that member's dispatch "
-          "printed with the stop a warning on it, and no stop kind left set; a stop "
-          "with nothing marked before it is the stop as it was: %r"
+          "printed with the stop a warning on it, and no stop kind left set; the "
+          "walk ENDS there - a third member that would hand out is not stepped, "
+          "so nothing is marked that the print does not name; a stop with nothing "
+          "marked before it is the stop as it was: %r"
           % ((seen, str(alone)[:80]),),
           all("dispatch audit:audit-executor P1.1" in v[0] and v[2] is None
               and len(v[1] or []) == 1 and "P1.2" in v[1][0] and "planted" in v[1][0]
+              and v[3] == ["P1.1", "P1.2"]
               for v in seen.values())
           and isinstance(alone, tuple) and "planted stop" in alone[1])
+    check("spd20a the signal line the main loop reads names the member that stopped "
+          "the step, where the warning's own clause is cut whole to `+1`; a wave "
+          "that no member stopped carries no such words: %r" % (lines,),
+          all("P1.2 stopped the step" in line and " +1 " in line
+              and "planted" not in line and S._width(line) <= S.SIGNAL_BYTES
+              for line in lines.values()) and len(lines) == 2
+          and "stopped the step" not in S.signal(
+              _step_ctx(), 0, S.wave_said(_step_ctx(), [first]))["line"])
+
+
+# --- every route a pin can stop a step by, derived from the code --------------------
+# A stop over a pin that leaves the state as it found it was held place by place -
+# one case for the single task, one for a wave, one for a resume - and each time a
+# route the cases did not name left a write behind (the task started before it was
+# asked, the lock given back with a decision pending, the prompt written before the
+# pin). So the routes are DERIVED: every function of the driver whose own body asks a
+# pin (`_PIN_ASKS`), starts or records something a stop must come before
+# (`_PIN_STARTS`) or decides what a stop does with the lock (`_PIN_LOCKS`) is a route,
+# and it is either a row of `_STOP_ROUTES` - run, stopped over a changed skill, its
+# state compared whole before and after - or exempt with its reason, and an exemption
+# naming the functions that may call it is held to exactly those. A route added later
+# is in neither table and is red by name.
+_PIN_ASKS = ("session_skills", "session_hand", "runner_review_skill",
+             "ask_member_pins", "ask_task_pins", "require_pins", "pin_stops")
+_PIN_STARTS = ("start_task", "add_tree", "open_wave", "open_dispatch")
+_PIN_LOCKS = ("lock_to_give_back",)
+# route -> the scenarios (`ran`) every one of which a pin stop must pass through it.
+_STOP_ROUTES = {
+    "drive_phase": ("single-agent", "single-session"),
+    "drive_task": ("only-agent", "only-session"),
+    "ask_task_pins": ("single-agent", "single-session", "only-agent", "only-session"),
+    "wave_step": ("wave-agent-second", "wave-agent-first", "wave-session-second",
+                  "wave-session-first", "wave-session-uncommitted"),
+    "ask_member_pins": ("wave-agent-second", "wave-session-second", "walk-agent",
+                        "walk-session", "answer-retry", "answer-redispatch"),
+    "walk_wave": ("walk-agent", "walk-session"),
+    "apply_answer": ("answer-resume", "answer-retry", "answer-redispatch"),
+    "resume_writer": ("answer-resume", "answer-resume-tree"),
+    "dispatch": ("started-agent", "started-session", "dispatch-reviewer",
+                 "dispatch-review-fix"),
+    "validation_dispatch": ("validation",),
+    "drive": ("lock-pending", "lock-out", "lock-idle"),
+}
+# route -> (why it needs no scenario, the only functions that may call it or None).
+_STOP_ROUTES_EXEMPT = {
+    "session_skills": ("the reader every route asks through, which raises the stop; "
+                       "its callers are the rows", None),
+    "session_hand": ("session_skills and the flags of the pins that held; its "
+                     "callers are the rows", None),
+    "runner_review_skill": ("the review skill's pin, asked by session_skills and by "
+                            "validation_dispatch, both rows", None),
+    "hand_in_tree": ("session_hand over the copy the session in the tree loads, the "
+                     "stop worded for that copy; its callers are the rows",
+                     ("dispatch", "resume_writer")),
+    "writer_argv": ("asks only when no caller handed it `held`; every call does "
+                    "(`_calls_without`, spd22)", None),
+    "reviewer_dispatch": ("builds the per-task reviewer's command from the `held` "
+                          "dispatch asked before its mark", ("dispatch",)),
+    "review_fix_dispatch": ("builds the review fix's command from the `held` "
+                            "dispatch asked before its mark", ("dispatch",)),
+    "step_member": ("steps a member whose pins walk_wave and wave_step asked, for "
+                    "every member, before any was stepped", ("walk_wave",)),
+    "recut_tree": ("cuts a tree again for a member whose executor was handed out "
+                   "and asked its pins then; it hands nothing out", ("apply_answer",)),
+}
+# scenario -> (the keys at which its state before and after differ, why).
+_STOP_EXCEPTIONS = {
+    "lock-idle": (["lock"], "nothing is pending and no dispatch is out, so a stop gives "
+                  "the phase lock back: the rule's other half"),
+}
+_PIN_ROUTE_EMPTY = {"neither": [], "stale": [], "both": [], "via": []}
+
+
+def _drive_source():
+    """The driver's source text."""
+    return dict(_plugin_sources())["drive-phase.py"]
+
+
+def _stop_route_functions(text):
+    """`{function: the pin asks, starts and lock reads its own body makes}` for every
+    function of `text` that makes one."""
+    wanted = set(_PIN_ASKS + _PIN_STARTS + _PIN_LOCKS)
+    out = {}
+    for fn in ast.walk(ast.parse(text)):
+        if isinstance(fn, ast.FunctionDef) and _own_calls(fn) & wanted:
+            out[fn.name] = sorted(_own_calls(fn) & wanted)
+    return out
+
+
+def _callers_of(text, name):
+    """The functions of `text` whose own body calls `name`, sorted."""
+    return sorted(fn.name for fn in ast.walk(ast.parse(text))
+                  if isinstance(fn, ast.FunctionDef) and name in _own_calls(fn))
+
+
+def _calls_without(text, callee, keyword):
+    """The functions of `text` with a call of `callee` that carries no `keyword=`."""
+    return sorted(set(
+        fn.name for fn in ast.walk(ast.parse(text)) if isinstance(fn, ast.FunctionDef)
+        for call in _own_call_nodes(fn)
+        if getattr(call.func, "id", getattr(call.func, "attr", None)) == callee
+        and keyword not in [k.arg for k in call.keywords]))
+
+
+def _route_verdict(found, rows, exempt, callers):
+    """What the tables leave open over `found`: a route in neither table, a row
+    naming no route, a row in both, and an exemption whose route is called from
+    somewhere its row does not name (`callers(name)`)."""
+    return {"neither": sorted(k for k in found if k not in rows and k not in exempt),
+            "stale": sorted(k for k in list(rows) + list(exempt) if k not in found),
+            "both": sorted(k for k in rows if k in exempt),
+            "via": sorted(k for k, (_why, via) in exempt.items()
+                          if via is not None and k in found
+                          and callers(k) != sorted(via))}
+
+
+def _watch(M, names):
+    """Wrap each of `names` the driver copy `M` has, so that `hits` - returned -
+    gains a function's name each time a pin stop passes through it: raised as
+    `PinStop`, or returned as a stop carrying a pin's words (a subagent route's
+    brief says it through the verb that refused). Calls resolve the wrapper by
+    name at call time, so a stop reached through the real `main` is seen."""
+    hits = []
+
+    def wrap(name, real):
+        def seen(*args, **kwargs):
+            try:
+                out = real(*args, **kwargs)
+            except Exception as exc:                           # noqa: BLE001
+                if isinstance(exc, M._skill_places.PinStop):
+                    hits.append(name)
+                raise
+            if _PIN_STUCK_WORDS in _text_of(out):
+                hits.append(name)
+            return out
+        return seen
+    for name in names:
+        if hasattr(M, name):
+            setattr(M, name, wrap(name, getattr(M, name)))
+    return hits
+
+
+def _unit_ran(world):
+    """A unit world's stopped answer as `ran` registers it."""
+    said = world["stopped"]
+    return {"stopped": isinstance(said, tuple) and said[:1] == ("raised",)
+            and "PinStop" in said[1], "diff": world["diff"], "hits": world["through"]}
+
+
+def _pin_walk_run(M, hits, ran, route, root, mpath):
+    """The wave `_pin_wave_runs` left open - both members handed out, their trees
+    cut - whose first member then owes its brief again, the scope it printed under
+    widened, and whose pinned skill changes: the walk asks the member's pins
+    before it steps any, in the copy its session loads (the member's tree on the
+    session route, the project on the subagent route), so the same change in the
+    OTHER copy is no stop. `(the stopped step's handed-out lines, the allow step's
+    code, its handed-out lines, the scope verb's exit)`; the stop is registered
+    in `ran`."""
+    with _Env(root):
+        scoped = _verb(root, "audit-task.py", [
+            "scope", "P1.1", mpath, "--project-dir", root, "--files",
+            "src/f1.txt,README.md"])
+    tree = _tree_of(root, "P1.1")
+    if not tree:
+        # No tree was cut for the first member: the wave never opened as the runs
+        # before this one expect, which is the cases' red to report, not a crash.
+        return None
+    where = {"agent": (root, tree), "session": (tree, root)}[route]
+    _pin_skill_dir(where[0], "pin-a", _changed(_PIN_BODIES["pin-a"]))
+    stopped = ran["walk-%s" % (route,)] = _stop_run(
+        hits, root, mpath, lambda: _next_wave(M, root, mpath))
+    _pin_skill_dir(where[0], "pin-a", _PIN_BODIES["pin-a"])
+    _pin_skill_dir(where[1], "pin-a", _changed(_PIN_BODIES["pin-a"]))
+    code, text = _next_wave(M, root, mpath)
+    return stopped["handed"], code, _handed_out(text), scoped[0]
+
+
+def _pin_dispatch_world(label):
+    """A unit world whose task holds `pin-a` changed and whose writer is a session:
+    `(world, project)`, or `(None, why)`."""
+    world = _pin_resume_world(label, _WRITER_CONFIG)
+    if "why" in world:
+        return None, world["why"]
+    _pin_skill_dir(world["project"], "pin-a", _changed(_PIN_BODIES["pin-a"]))
+    return world, world["project"]
+
+
+def _unit_dispatch(world, role, state):
+    """`(said, state's keys that differ, the pin stops it passed through)` for
+    `dispatch` over `world`'s task."""
+    R = world["M"]
+    before, mark = _unit_kept(world, state), len(world["hits"])
+    said = _caught(R.dispatch, world["ctx"], state, world["phase"], world["task"],
+                   role, None, world["plan"])
+    return said, _kept_diff(before, _unit_kept(world, state)), set(world["hits"][mark:])
+
+
+def _pin_dispatch_runs(ran):
+    """The per-task reviewer's dispatch and a re-opened task's writer dispatch over
+    a changed pinned skill, registered in `ran`; and the review fix's own stop - its
+    brief cannot be read - which leaves no mark behind it. `(the allow runs)`."""
+    out = {}
+    world, why = _pin_dispatch_world("dreviewer")
+    if world is None:
+        return {"why": why}
+    said, diff, through = _unit_dispatch(world, "reviewer", {})
+    ran["dispatch-reviewer"] = {"stopped": _pin_stopped(said),
+                                "diff": diff, "hits": through}
+    fixing = {"findings": ["P1-R1"], "session": None}
+    fixed = {"id": "P1-R1", "severity": "med", "file": "src/f1.txt:1", "issue": "i",
+             "resolution": "r"}
+    fworld, _why = _pin_dispatch_world("dfix")
+    fworld["phase"]["review"]["findings"] = [fixed]
+    R = fworld["M"]
+    R.standing_review_fix = lambda ctx_, state_, task_: (fixing, None, None)
+    state = {R.REVIEW_FIX_FIELD: {"P1.1": fixing}}
+    said, diff, through = _unit_dispatch(fworld, "executor", state)
+    ran["dispatch-review-fix"] = {"stopped": _pin_stopped(said),
+                                  "diff": diff, "hits": through}
+    # The bytes restored, the brief absent: the prompt cannot be made, and nothing
+    # is marked before that stop.
+    _pin_skill_dir(fworld["project"], "pin-a", _PIN_BODIES["pin-a"])
+    state2 = {R.REVIEW_FIX_FIELD: {"P1.1": fixing}}
+    out["no-brief"] = _unit_dispatch(fworld, "executor", state2) + (
+        sorted(k for k in state2 if k.startswith("dispatched")),)
+    # The brief there, and the skill changing between the pre-check and the command:
+    # the command is built from the pre-check's read, and carries the pinned digest.
+    brief = os.path.join(fworld["project"], ".claude", "state", "briefs", "P1.1", "b.md")
+    os.makedirs(os.path.dirname(brief), exist_ok=True)
+    with open(brief, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("the brief\n")
+    real_open = R.open_dispatch
+
+    def changed_then_open(ctx_, state_, task_, round_n, build, tree=None, key="writer",
+                          kind=None):
+        _pin_skill_dir(fworld["project"], "pin-a", _changed(_PIN_BODIES["pin-a"]))
+        return real_open(ctx_, state_, task_, round_n, build, tree, key, kind)
+    R.open_dispatch = changed_then_open
+    state3 = {R.REVIEW_FIX_FIELD: {"P1.1": fixing}}
+    said3 = _caught(R.dispatch, fworld["ctx"], state3, fworld["phase"],
+                    fworld["task"], "executor", None, fworld["plan"])
+    held = R.writer_state(state3, fworld["task"])["dispatches"]
+    argv = held[-1]["argv"] if held else []
+    out["fix-allow"] = (str(said3)[:120], [argv[i + 1] for i, a in enumerate(argv[:-1])
+                                           if a == "--skill-pin"], fworld["digest"])
+    return out
+
+
+def _pin_validation_run(ran):
+    """`validation_dispatch` over a pinned review skill whose bytes changed: it
+    stops with no prompt file and nothing recorded, registered in `ran`;
+    `(the files left, the allow's command flags)`."""
+    V, why = _load("drive_phase_pin_validation")
+    if V is None:
+        return {"why": why}
+    project = os.path.realpath(_harness.fixture_root("drive-spn-validation-"))
+    folder = _pin_skill_dir(project, "pin-review", _PIN_BODIES["pin-a"])
+    digest = _pin_digest(folder)
+    _pin_skill_dir(project, "pin-review", _changed(_PIN_BODIES["pin-a"]))
+    phase = _step_phase([_step_task()], key="phase")
+    calls = _step_rig(V, phase, meta={"reviewSkill": "pin-review",
+                                      "skillPins": {"pin-review": {"sha256": digest}}})
+    V.tree_head = lambda ctx, tree=None: None
+    hits = _watch(V, _STOP_ROUTES)
+    ctx = _step_ctx(stateDir=os.path.join(project, ".claude", "state"),
+                    project=project, gitRoot=project, config=_WRITER_CONFIG)
+    world = {"M": V, "ctx": ctx, "plan": V.load_phase(None)[0], "calls": calls}
+    finding = {"id": "P1-R1", "severity": "med", "file": "src/f1.txt:1", "issue": "i",
+               "resolution": "r"}
+    state = {}
+    before = _unit_kept(world, state)
+    said = _caught(V.validation_dispatch, ctx, state, phase, "a" * 40, [finding])
+    ran["validation"] = {"stopped": _pin_stopped(said),
+                         "diff": _kept_diff(before, _unit_kept(world, state)),
+                         "hits": set(hits)}
+    _pin_skill_dir(project, "pin-review", _PIN_BODIES["pin-a"])
+    again = {}
+    argv_said = _caught(V.validation_dispatch, ctx, again, phase, "a" * 40, [finding])
+    held = V.writer_state(again, V.validation_node(phase, "a" * 40), V.VALIDATE_KEY)
+    argv = (held.get("dispatches") or [{}])[-1].get("argv") or []
+    return {"allow": (_text_of(argv_said)[:60], [argv[i + 1] for i, a in enumerate(
+        argv[:-1]) if a == "--skill-pin"], digest)}
+
+
+def _pin_lock_world(label, changed, tasks, pending=None, out=()):
+    """A unit world of `tasks` ({id: skill}) all in progress, the plan pinning
+    `pin-a` and `pin-b`, the skills named in `changed` not the bytes pinned: the
+    phase lock taken as a previous `next` left it, `pending` the decision waiting,
+    each of `out` a task whose executor was handed out and is not filed."""
+    R, why = _load("drive_phase_pin_lock_%s" % (label,))
+    if R is None:
+        return {"why": why}
+    project = os.path.realpath(_harness.fixture_root("drive-spn-lock-"))
+    pins = {}
+    for name, body in sorted(_PIN_BODIES.items()):
+        pins[name] = {"sha256": _pin_digest(_pin_skill_dir(project, name, body))}
+        if name in changed:
+            _pin_skill_dir(project, name, _changed(body))
+    task_us = [_step_task(tid, skills=[skill]) for tid, skill in sorted(tasks.items())]
+    phase = _step_phase(task_us, key="phase")
+    calls = _step_rig(R, phase, meta={"skillPins": pins})
+    R.tree_head = lambda ctx, tree=None: None
+    R.sweep_base_trees = lambda ctx, state: None
+    ctx = _step_ctx(stateDir=os.path.join(project, ".claude", "state"),
+                    project=project, gitRoot=project, config=_WRITER_CONFIG)
+    plan = R.load_phase(None)[0]
+    state = {"lock": "taken"}
+    if pending:
+        state["pending"] = dict(pending, task=task_us[0]["id"],
+                                start=R.start_key(task_us[0]))
+    for task_u in task_us:
+        if task_u["id"] in out:
+            R._mark(state, "dispatched-executor", task_u,
+                    {"scope": R.brief_scope(task_u)})
+    os.makedirs(os.path.dirname(R.state_path(ctx)), exist_ok=True)
+    R.write_state(ctx, state)
+    return {"M": R, "ctx": ctx, "plan": plan, "phase": phase, "tasks": task_us,
+            "calls": calls, "hits": _watch(R, _STOP_ROUTES)}
+
+
+def _pin_lock_runs(ran):
+    """`drive` over a stop a pin makes, in three states of the phase - a decision
+    pending, a dispatch out, neither - registered in `ran`: the lock is kept in the
+    first two and given back in the third (`lock-idle`, the one exception). The
+    stop is the real route's - the answer `resume` of the pending decision, and
+    `dispatch` of a task that is not the one out - run through the real `drive`.
+    Another session's `next` is held off while the lock is kept (`lock_rule`)."""
+    out = {}
+    for sid, label, changed, tasks, pending, held_out, route in (
+            ("lock-pending", "pend", ("pin-a",), {"P1.1": "pin-a"},
+             dict(_RESUME_PENDING, decision="gate-red-writer"), (), "resume"),
+            ("lock-out", "out", ("pin-b",), {"P1.1": "pin-a", "P1.2": "pin-b"},
+             None, ("P1.1",), "dispatch"),
+            ("lock-idle", "idle", ("pin-a",), {"P1.1": "pin-a"}, None, (), "dispatch")):
+        world = _pin_lock_world(label, changed, tasks, pending, held_out)
+        if "why" in world:
+            return {"why": world["why"]}
+        R, ctx = world["M"], world["ctx"]
+        if pending:
+            state = R.read_state(ctx)
+            R._mark(state, "gated", world["tasks"][0], {"runId": "r1"})
+            R._mark(state, "writer", world["tasks"][0],
+                    {"seq": 1, "dispatches": [], "resumes": 0})
+            R.write_state(ctx, state)
+
+        def locked(ctx_, state_, answer, reason, fixes, R=R, route=route, world=world):
+            task = world["tasks"][-1]
+            if route == "resume":
+                return R.apply_answer(ctx_, state_, world["plan"], world["phase"],
+                                      state_["pending"], "resume", "")
+            return R.dispatch(ctx_, state_, world["phase"], task, "executor", None,
+                              world["plan"])
+        R.drive_locked = locked
+        before, mark = _unit_kept(world, None), len(world["hits"])
+        code, said = R.drive(ctx)
+        after = _unit_kept(world, None)
+        ran[sid] = {"stopped": code != 0, "diff": _kept_diff(before, after),
+                    "hits": set(world["hits"][mark:])}
+        out[sid] = (code, "lock kept" if after["lock"] == "taken" else "lock given back")
+    return out
+
+
+def _pin_route_cases(check, M, hits, ran, waves):
+    """The routes of a pin stop, derived from the driver, each stopped and compared
+    whole before and after, over one table of exceptions checked both ways. `waves`
+    is `_pin_wave_runs`' answer for each route: the walk's runs, and the session
+    route's repository, which the copy cases go on to use."""
+    text = _drive_source()
+    found = _stop_route_functions(text)
+    verdict = _route_verdict(found, _STOP_ROUTES, _STOP_ROUTES_EXEMPT,
+                             lambda name: _callers_of(text, name))
+    loose = _calls_without(text, "writer_argv", "held")
+    check("spd22 the stop routes are DERIVED from the driver - every function whose "
+          "own body asks a pin, starts or records what a stop must come before, or "
+          "decides the lock - and each is a row of `_STOP_ROUTES` or exempt with a "
+          "reason, no row stale, none in both, an exemption's callers exactly the "
+          "ones it names, and no call of writer_argv without the `held` its pre-check "
+          "read: %r"
+          % ((found, verdict, loose),),
+          len(found) >= len(_STOP_ROUTES) and verdict == _PIN_ROUTE_EMPTY
+          and loose == [] and all(why for why, _via in _STOP_ROUTES_EXEMPT.values()))
+    planted = text + (
+        "\ndef new_route(ctx, task):\n    return start_task(ctx, task)\n"
+        "\ndef quiet_route(ctx, task):\n    return session_hand(ctx, task)\n"
+        "\ndef rogue(ctx, task, w, p, r):\n    return writer_argv(ctx, task, w, p, r)\n")
+    planted_found = _stop_route_functions(planted)
+    planted_verdict = _route_verdict(planted_found, _STOP_ROUTES, _STOP_ROUTES_EXEMPT,
+                                     lambda name: _callers_of(planted, name))
+    stale_verdict = _route_verdict(
+        found, dict(_STOP_ROUTES, ghost=("single-agent",)), _STOP_ROUTES_EXEMPT,
+        lambda name: _callers_of(text, name))
+    straying = text + "\ndef stray(ctx, s, t, d):\n    return step_member(ctx, s, t)\n"
+    stray_verdict = _route_verdict(found, _STOP_ROUTES, _STOP_ROUTES_EXEMPT,
+                                   lambda name: _callers_of(straying, name))
+    check("spd23 THE POWER of spd22: a route added later with no row is reported by "
+          "name, a call of writer_argv with no `held` is reported by name, a row "
+          "naming no route is reported stale, and a call of an exempt route from a "
+          "function its row does not name is reported: %r"
+          % ((planted_verdict, _calls_without(planted, "writer_argv", "held"),
+              stale_verdict["stale"], stray_verdict["via"]),),
+          planted_verdict["neither"] == ["new_route", "quiet_route"]
+          and _calls_without(planted, "writer_argv", "held") == ["rogue"]
+          and stale_verdict["stale"] == ["ghost"]
+          and stray_verdict["via"] == ["step_member"])
+    walks = dict((route, waves[route]["walk"]) for route in waves)
+    dispatches = _pin_dispatch_runs(ran)
+    validated = _pin_validation_run(ran)
+    locks = _pin_lock_runs(ran)
+    if "why" in dispatches or "why" in validated or "why" in locks:
+        check("spd24 the drivers load", False, str(
+            (dispatches.get("why"), validated.get("why"), locks.get("why"))))
+        return
+    bad, silent = {}, []
+    for sid in sorted(ran):
+        want = _STOP_EXCEPTIONS.get(sid, ([], ""))[0]
+        if not ran[sid]["stopped"] or ran[sid]["diff"] != want:
+            bad[sid] = (ran[sid]["stopped"], ran[sid]["diff"], want)
+    for row, ids in sorted(_STOP_ROUTES.items()):
+        silent += ["%s via %s" % (row, sid) for sid in ids
+                   if row not in (ran.get(sid) or {}).get("hits", ())]
+    unran = sorted(sid for ids in _STOP_ROUTES.values() for sid in ids if sid not in ran)
+    stale = sorted(sid for sid in _STOP_EXCEPTIONS if sid not in ran)
+    check("spd24 EVERY ROUTE spd22 derives, stopped over a changed skill and compared "
+          "whole before and after - the drive's state, its briefs and sessions' "
+          "files, the plan's task fields it reads, the verbs run, the lock's holder - "
+          "differs at no key but the stated exceptions' (an exception that shows "
+          "no difference is red), every row's scenarios stopped THROUGH it, and "
+          "none was left unran: %r"
+          % (dict(bad=bad, silent=silent, unran=unran, stale=stale,
+                  ran=dict((sid, (r["stopped"], r["diff"], sorted(r["hits"])))
+                           for sid, r in sorted(ran.items()))),),
+          not bad and not silent and not unran and not stale
+          and len(ran) >= len(_STOP_ROUTES)
+          and _STOP_EXCEPTIONS["lock-idle"][0] == ran["lock-idle"]["diff"])
+    held_back = dict((sid, state_) for sid, state_ in locks.items())
+    check("spd25 a stop keeps the phase lock while a decision is pending or a dispatch "
+          "is out and gives it back otherwise - through the real `drive`: %r"
+          % (held_back,),
+          held_back == {"lock-pending": (1, "lock kept"), "lock-out": (1, "lock kept"),
+                        "lock-idle": (1, "lock given back")})
+    _pin_lock_rule_case(check)
+    _pin_copy_cases(check, walks, dispatches, validated, waves["session"]["root"])
+
+
+def _pin_lock_rule_case(check):
+    """`lock_to_give_back`, the rule alone, over every code and state, in both
+    directions: the taken lock is given back only when no decision is pending and
+    no dispatch is out, whichever code ended the drive."""
+    L, why = _load("drive_phase_pin_lock_rule")
+    if L is None:
+        check("spd25a the driver loads", False, why)
+        return
+    task_u = _step_task()
+    _step_rig(L, _step_phase([task_u]))
+    ctx = _step_ctx()
+    marked = {}
+    L._mark(marked, "dispatched-executor", task_u, {"scope": L.brief_scope(task_u)})
+    table = {}
+    for code in (L.E_STOPPED, L.E_USAGE, L.E_OK):
+        for label, state in (("idle", {"lock": "taken"}),
+                             ("pending", {"lock": "taken", "pending": {"decision": "d"}}),
+                             ("out", dict(marked, lock="taken")),
+                             ("unheld", {})):
+            table["%s %s" % (code, label)] = L.lock_to_give_back(code, state, ctx)
+    want = {}
+    for code in (L.E_STOPPED, L.E_USAGE):
+        want.update({"%s idle" % (code,): (True, None),
+                     "%s pending" % (code,): (False, None),
+                     "%s out" % (code,): (False, None),
+                     "%s unheld" % (code,): (False, None)})
+    want.update(dict(("%s %s" % (L.E_OK, label), (False, None))
+                     for label in ("idle", "pending", "out", "unheld")))
+    check("spd25a lock_to_give_back, the rule alone: a taken lock is given back only "
+          "when the code is a stop or a usage refusal, no decision is pending and no "
+          "dispatch is out - a stop is no different from a usage refusal here, and "
+          "a lock never taken is not given back: %r" % (table,), table == want)
+
+
+def _pin_git(root, *argv):
+    """git in `root`, the identity and the line-ending conversion pinned."""
+    return _harness.git(root, "-c", "user.name=t", "-c", "user.email=t@example.com",
+                        "-c", "core.autocrlf=false", *argv)
+
+
+def _scratch_left():
+    """How many scratch directories of the commit reader the temp directory holds."""
+    return len([n for n in os.listdir(tempfile.gettempdir())
+                if n.startswith("drive-skills-")])
+
+
+def _pin_copy_cases(check, walks, dispatches, validated, root):
+    """Which copy of a skill a pin is asked of, on each route: the real walk's runs
+    (`walks`), the other routes' allow runs, and `ask_member_pins` over the
+    repository the session route's wave run left (`root`, its commit holding the
+    pinned bytes) whose commit, working copy and member tree are made to differ -
+    no repository of its own."""
+    check("spd26 a wave member the walk asks the pins of is asked in the copy its "
+          "session loads: on the session route its OWN TREE (a change there stops "
+          "the step; the same change in the project does not), on the subagent route "
+          "the project (the reverse) - the stopped step handed nothing out, and the "
+          "step over the other copy is no stop (on the subagent route it issues the "
+          "stale brief again): %r" % (walks,),
+          all(w is not None and w[0] == [] and w[1] == 0 and w[3] == 0
+              for w in walks.values())
+          and walks["agent"] is not None and len(walks["agent"][2]) == 1
+          and "P1.1" in walks["agent"][2][0])
+    check("spd26a the review fix's dispatch stops before it marks anything when its "
+          "brief cannot be read - the brief's own verb is the only thing that ran - "
+          "and with the brief there builds its command from the pin pre-check's "
+          "read - the pinned digest on it, though the skill changed after the check - "
+          "and is handed out; the validation dispatch, the same, leaves no prompt "
+          "behind a stop and carries the digest: %r"
+          % ((dispatches.get("no-brief"), dispatches.get("fix-allow"),
+              validated.get("allow")),),
+          "the writer brief could not be read" in _text_of(dispatches["no-brief"][0])
+          and dispatches["no-brief"][1] == ["verbs"] and dispatches["no-brief"][3] == []
+          and dispatches["fix-allow"][0].startswith("{")
+          and dispatches["fix-allow"][1] == ["pin-a=" + dispatches["fix-allow"][2]]
+          and validated["allow"][0].startswith("dispatch")
+          and validated["allow"][1] == ["pin-review=" + validated["allow"][2]])
+    C, why = _load("drive_phase_pin_copy")
+    if C is None:
+        check("spd27 the driver loads", False, why)
+        return
+    for name, body in sorted(_PIN_BODIES.items()):
+        _pin_skill_dir(root, name, body)
+    commit = _pin_git(root, "rev-parse", "HEAD").strip()
+    pins = dict((n, {"sha256": _pin_digest(os.path.join(root, ".claude", "skills", n))})
+                for n in sorted(_PIN_BODIES))
+    members = [_step_task("P1.1", skills=["pin-a"], status="pending", startedAt=None),
+               _step_task("P1.2", skills=["pin-b"], status="pending", startedAt=None)]
+    phase = _step_phase(members)
+    _step_rig(C, phase, meta={"skillPins": pins})
+    plan = C.load_phase(None)[0]
+    tree = os.path.realpath(_harness.fixture_root("drive-spn-copy-tree-"))
+    for name, body in sorted(_PIN_BODIES.items()):
+        _pin_skill_dir(tree, name, body)
+
+    def asked(route, ids, wave=None, base=commit):
+        """The stop's words a step over `ids` raises on `route`, or None."""
+        ctx = _step_ctx(project=root, gitRoot=root, config=(
+            _WRITER_CONFIG if route == "session" else {}))
+        try:
+            C.ask_member_pins(ctx, {"wave": wave} if wave else {}, plan, phase, ids,
+                              base=base)
+        except C._skill_places.PinStop as exc:
+            return str(exc)
+        return None
+
+    def both(ids, wave=None, base=commit):
+        return asked("session", ids, wave, base), asked("agent", ids, wave, base)
+    left, rows = _scratch_left(), {}
+    # The project's working copy edited, the commit holding the pinned bytes.
+    _pin_skill_dir(root, "pin-a", _changed(_PIN_BODIES["pin-a"]))
+    rows["edited"] = both(["P1.1", "P1.2"])
+    # The changed bytes committed, the pinned ones restored and NOT committed.
+    _pin_git(root, "commit", "-qam", "changed")
+    changed_head = _pin_git(root, "rev-parse", "HEAD").strip()
+    _pin_skill_dir(root, "pin-a", _PIN_BODIES["pin-a"])
+    rows["restored"] = both(["P1.1", "P1.2"], base=changed_head)
+    # A tree cut for the second member, its copy changed; the project and the
+    # commit the wave was cut from hold the pinned bytes.
+    _pin_skill_dir(tree, "pin-b", _changed(_PIN_BODIES["pin-b"]))
+    cut = {"tasks": ["P1.1", "P1.2"], "trees": {"P1.2": tree}, "base": commit}
+    rows["tree"] = both(["P1.1", "P1.2"], cut)
+    # The tree holds the pinned bytes, the project's copy is changed.
+    _pin_skill_dir(tree, "pin-b", _PIN_BODIES["pin-b"])
+    _pin_skill_dir(root, "pin-b", _changed(_PIN_BODIES["pin-b"]))
+    rows["tree-good"] = both(["P1.2"], cut)
+    check("spd27 on the SESSION route a member's pin is asked of the copy its tree "
+          "will be cut with - the commit - and of its own tree once it is cut, never "
+          "of the project's working copy; on the SUBAGENT route of the project's, "
+          "which the brief reads; each stop names that copy and what to do for it: "
+          "%r" % (rows,),
+          rows["edited"][0] is None and "pin-a" in (rows["edited"][1] or "")
+          and "commit %s" % (changed_head[:12],) in (rows["restored"][0] or "")
+          and "COMMIT them" in (rows["restored"][0] or "")
+          and rows["restored"][1] is None
+          and "own tree" in (rows["tree"][0] or "") and "pin-b" in (rows["tree"][0] or "")
+          and rows["tree"][1] is None
+          and rows["tree-good"][0] is None and "pin-b" in (rows["tree-good"][1] or "")
+          and _scratch_left() == left)
+    _pin_commit_reader_cases(check, C, root)
+
+
+def _pin_commit_reader_cases(check, C, root):
+    """The digest of a skill directory read from a commit is the digest of a
+    checkout of that commit - the same reader over the same bytes - and what a
+    checkout holds that git's objects cannot be made to hold is refused."""
+    import _skill_places as sp
+    folder = os.path.join(root, ".claude", "skills", "tricky")
+    os.makedirs(os.path.join(folder, "sub"), exist_ok=True)
+    big = b"x" * 65535 + b"\r\n" + b"tail\r\n"
+    for rel, data in (("SKILL.md", b"---\nname: tricky\n---\r\nbody\r\n"),
+                      ("REF.MD", big), ("run.py", b"print(1)\r\n"),
+                      ("sub/deep.bin", bytes(range(256))), ("z.txt", b"z\n")):
+        with open(os.path.join(folder, *rel.split("/")), "wb") as fh:
+            fh.write(data)
+    linked = False
+    try:
+        os.symlink("SKILL.md", os.path.join(folder, "alias.md"))
+        linked = True
+    except (OSError, NotImplementedError, AttributeError):
+        pass
+    _pin_git(root, "add", "-A")
+    _pin_git(root, "commit", "-qm", "tricky")
+    head = _pin_git(root, "rev-parse", "HEAD").strip()
+    ctx = _step_ctx(project=root, gitRoot=root)
+    scratch, label = C.skills_at_commit(ctx, head, ["tricky"])
+    try:
+        from_commit = sp.skill_digest(os.path.join(scratch, ".claude", "skills",
+                                                   "tricky"))
+        from_checkout = sp.skill_digest(folder)
+        names = sorted(os.listdir(os.path.join(scratch, ".claude", "skills")))
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    refused = {}
+    for what, entry in (("submodule", "160000,%s,.claude/skills/tricky/mod" % head),):
+        _pin_git(root, "update-index", "--add", "--cacheinfo", entry)
+        _pin_git(root, "commit", "-qm", what)
+        bad = _pin_git(root, "rev-parse", "HEAD").strip()
+        try:
+            C.skills_at_commit(ctx, bad, ["tricky"])
+            refused[what] = None
+        except C._skill_places.PinStop as exc:
+            refused[what] = str(exc)[:120]
+        except Exception as exc:                               # noqa: BLE001
+            refused[what] = "raised %s: %s" % (type(exc).__name__, exc)
+    check("spd28 a skill directory read from a commit with no checkout has the digest "
+          "of the same directory checked out - CRLF kept in a file that is not "
+          "Markdown, read as LF in Markdown whatever the case of its suffix and "
+          "across a read's chunk boundary, a nested directory, a link inside the "
+          "directory (where this platform makes one) - and the digest the case "
+          "works out by hand; a commit holding a submodule entry in it is refused, "
+          "and only the skill asked for is read: %r"
+          % ((from_commit["digest"], from_checkout["digest"], from_commit["files"],
+              from_checkout["files"], names, linked, refused),),
+          from_commit["digest"] is not None
+          and from_commit["digest"] == from_checkout["digest"]
+          and from_commit["digest"] == _pin_digest(folder)
+          and from_commit["files"] == from_checkout["files"]
+          and "submodule" in (refused["submodule"] or "")
+          and names == ["tricky"] and label.startswith("commit "))
 
 
 def _vk_validation_argv(M, root, phase, meta, project=None, ctx_out=None):

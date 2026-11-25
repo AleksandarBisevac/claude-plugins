@@ -5675,29 +5675,55 @@ the wave with what it waits on, and the walk goes on with the rest (`rf8`, `rf9`
 by the verb - through the call the dispatch makes, then reads it back as it reads any other
 (`run_brief`; `rf10`, `rf11`).
 
-**A step that stops marks nothing the next step reads as done**, in two shapes, held by
-whole-state cases (`_kept_state` before and after, which says what it leaves out: `spd10` one
-task on each route, `spd11` and `spd12` a wave with its second or its first member's pinned
-skill changed). What can be asked of every member before any is touched is asked first:
-`ask_member_pins` reads the pin of each member `owes_executor` finds about to be handed its
-executor - not one that is done, blocked, parked, not ready, or whose executor returned or is
-out - before the wave is recorded, a member started or a tree cut, and names the member
-(`spd17`); a plan that pins nothing asks nothing. What can only be known once an earlier member
-was handed out - a later member's start, tree or hand-out refused for any reason, the reviewer's
-pin among them, which waits on the gate - leaves that member printed with the stop as a warning
-on its print, never dropped (`walk_wave`; `spd20`). `dispatch` asks everything it can refuse
-over before it marks: the tree, the writer setting, the pins - read once by `session_hand`,
-which the session's command is built from, so a skill that changes after the check cannot stop
-the command after the mark (`spd18`) - and whether the writer takes a phase review's findings
-(`spd19`). An answer whose effect lives only in the hand-out it makes is consumed by that
-hand-out: `--answer resume` drops the pending decision and spends the gated mark inside
-`resume_writer`, after the tree, the writer setting, the pins and the prompt, so a stop leaves
-the decision standing and the same answer works again (`spd14`, `spd15`). `--answer redispatch`
-is not held to that, and `spd16` says why: what it did stays recorded and the reviewer is the
-drive's own next move. A stop gives the phase lock back (`lock_to_give_back`), even one a pending
-decision had kept - that is `drive`'s, after `apply_answer` returns, so `spd14` holds
-`apply_answer`'s own writes whole and does not compare the lock's release; the next step takes
-the lock as its first act.
+**A step that stops over a pin has written nothing the next step reads - the plan and the lock
+are part of what it reads.** The routes by which a pin can stop a step are not listed here and
+not listed by hand in the suite: `tests/test_drive_phase.py` derives them from the driver (`spd22`
+- every function whose own body asks a pin, starts or records what a stop must come before, or
+decides the lock), requires each to be a row of `_STOP_ROUTES` or exempt with a reason, and runs
+each row's scenarios to a stop over a changed skill, comparing the whole kept state before and
+after (`spd24`: the drive's state, its briefs and sessions' files, the plan's task fields it
+reads - status, attempts, `startedAt`, notes - the verbs run and the lock's holder). A route
+added later is in neither table and is red by name (`spd23`). The one stated exception is the
+lock given back when nothing is pending and nothing is out; an exception that shows no
+difference is red too. What the code does to hold it: a serial task's pins are asked before the
+task is started (`ask_task_pins`), as a wave's are before the wave is recorded
+(`ask_member_pins`, which reads each member `owes_executor` finds about to be handed its
+executor and names the one that fails; a plan that pins nothing asks nothing - `spd17`, and
+`spd29` holds each reading of `owes_executor` with its twin); an answer that goes on to a
+hand-out - `retry` and `redispatch` - asks the pins before it drops the decision, and `resume`
+drops the decision and spends the gated mark only inside `resume_writer`, after the tree, the
+writer setting, the pins and the prompt (`spd14`, `spd15`, `spd16`); `dispatch` asks everything
+it can refuse over before it marks - the tree, the writer setting, the pins, read once by
+`session_hand`, which the session's command is built from, so a skill that changes after the
+check cannot stop the command after the mark (`spd18`), whether the writer takes a phase
+review's findings (`spd19`), and for a review fix the brief it reads and the prompt it writes
+(`review_fix_prompt`, `spd26a`); `validation_dispatch` asks its pins before it writes its prompt.
+What can only be known once an earlier member was handed out - a later member's start, tree or
+hand-out refused for any reason, the reviewer's pin among them, which waits on the gate - leaves
+that member printed with the stop as a warning on its print, never dropped, and ends the walk
+there (`walk_wave`; `spd20`); the member that stopped it is named on the signal line the main
+loop reads (`spd20a`).
+
+**The lock follows the same rule as the decision.** A stop keeps the phase lock while a decision
+is pending or a dispatch is out and gives it back otherwise, as a usage refusal does
+(`lock_to_give_back`, `spd25a`; through the real `drive`, `spd25`): giving it back with a
+decision pending let a second session take the phase and refused the first session's own answer.
+
+**A pin is asked of the copy that will be loaded, which is not the same on every route.** On the
+session route a wave member runs in a tree of its own, cut from the wave's base commit: its pins
+are asked of that commit's project skill directories before the tree is cut and of the tree once
+it is (`ask_member_pins`, `skills_at_commit`; `spd26`, `spd27`) - so a working copy restored and
+not committed is no remedy, and the stop says to commit it. The commit is read from git's objects
+with no checkout into a scratch directory holding only the skills asked for, which the one reader
+(`_skill_places.skill_digest`) then hashes as it hashes a tree: the same digest over the same
+bytes (`spd28`), with a submodule entry refused. A personal or plugin skill lies outside the cut
+and is read where it is. A serial session runs in the project itself, so the project's copy is
+the one asked, and a working copy that differs from HEAD is neither a stop nor a warning there.
+On the subagent route the brief asks the project's copy for a serial task and a wave member alike;
+which copy a subagent's Skill tool then loads is Claude Code's, and nothing here reads it. A
+pinned directory is read again at each of the opening of a wave, its walk and the dispatch that
+builds the command (the callers of `ask_member_pins` and `session_hand` are the places), and only
+the last read builds the command: a hash of each pinned skill per read, for a plan that pins.
 
 **Sign-off is the same loop.** When every task is terminal, `sign_off` takes over from `finish`.
 The phase reviewer is dispatched (`dispatch_phase_review`, with the brief `audit-lookup.py brief
@@ -7067,7 +7093,8 @@ resolver, finds it in the project — the runner refuses to start over a `--skil
 so another plugin's skill is left out and the dispatch warns, naming it and the runner's reason
 (`runner_review_skill`, `vk1`, `vk2`, `vk4`) — and the per-task reviewer never does (`vk3`,
 through `reviewer_dispatch`). A PINNED review skill is never left out that way: `runner_review_skill`
-and `session_skills` each ask `_skill_places.require_pins` over the project's copy, and `dispatch`
+and `session_skills` each ask `_skill_places.require_pins` over the copy the session loads (the
+project's, or a wave member's tree or base commit - `session_skills`' `where`), and `dispatch`
 asks `session_hand` - `session_skills` and the `--skill-pin` flags, one read - before it marks a
 session route dispatched, so a pinned skill that is not the bytes pinned stops `next` with no
 dispatch line (`spd4`, `spd5`); `writer_argv` then adds a `--skill-pin` per pinned name it hands

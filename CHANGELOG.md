@@ -42,7 +42,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   digest does not see a file's mode or an empty directory; a headless session started by
   hand without `--skill-pin` checks nothing; and a plugin that does not read the key ignores
   it. `SECURITY.md` and `COMPATIBILITY.md` say so, and the key is not yet under the
-  compatibility promise.
+  compatibility promise. A step the drive stops over a pin writes nothing the next step reads:
+  the plan's task is not started first (a serial task's pins are asked before `start`, as a
+  wave's are before the wave is recorded), no mark, prompt file or consumed answer is left
+  behind - `--answer retry` and `redispatch` included - and the phase lock is kept while a
+  decision is pending or a dispatch is out, as it is for a usage refusal, instead of being
+  given back to a second session. The routes that can stop a step are derived from the
+  driver by a case and each is stopped over a changed skill and compared whole before and
+  after. On the headless route a wave member's pin is asked of the copy its session loads:
+  the project's skills as the commit its tree is cut from holds them, then the tree's own
+  copy - so restoring the bytes in the working copy without committing them is no remedy, and
+  the stop says to commit - while a serial task is asked of the project it runs in, and the
+  subagent route's brief asks the project's copy. The signal line the main loop reads names
+  the member that stopped a step after another was handed out.
 - **A task can record where its wall time went.** The optional task key `timing` holds
   `firstStartedAt` and a list of `stages` - each a `kind` (writer, gate, selection, base,
   reviewer, commit or wait), a start, a length in milliseconds and the record the length was

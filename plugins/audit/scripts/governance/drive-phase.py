@@ -328,6 +328,7 @@ import datetime
 import json
 import os
 import pathlib
+import posixpath
 import re
 import shlex
 import shutil
@@ -2044,14 +2045,20 @@ def writer_said(ctx, task_id, model, prompt, argv, resume=None, round_n=0,
         step, task_id, basis, command, runs=[command]))
 
 
-def wave_said(ctx, members):
-    """One print of every member dispatch that is due, sent together."""
+def wave_said(ctx, members, stopped=None):
+    """One print of every member dispatch that is due, sent together. `stopped`
+    is the member whose stop ended the step after these were handed out: the
+    print says why as a warning, and the signal line - which cuts a clause that
+    does not fit whole - leads its basis with the member's id, so the main loop
+    reads that the step stopped and which member stopped it."""
     ids = [m["signal"]["subject"] for m in members]
     subject = ",".join(ids)
     if len(subject.encode("utf-8")) > 60:
         subject = "%s+%d" % (ids[0], len(ids) - 1)
     basis = "wave of %d: %s" % (len(ids), "; ".join(sorted(set(
         m["signal"]["basis"] for m in members))))
+    if stopped:
+        basis = "%s stopped the step; %s" % (stopped, basis)
     # Only a member's first line is printed, so the rules of a member with a
     # process of its own - a session's, a gate's: a run: line to launch in the
     # background - are carried here, each once; an Agent member has no process.
@@ -2404,8 +2411,15 @@ def dispatch(ctx, state, phase, task, role, tree=None, manifest=None):
     asked before the mark and the brief: the tree, the writer setting, the pins
     (a session route hands the skills out after the mark, so they are read here,
     once - `session_hand`, which raises `PinStop` - and the command is built from
-    that read), and whether the writer takes a phase review's findings; a subagent
-    route's pins are asked by the brief, which is written before the mark too."""
+    that read), whether the writer takes a phase review's findings, and, for a
+    review fix, the brief's text and the prompt written from it
+    (`review_fix_prompt`); a subagent route's pins are asked by the brief, which
+    is written before the mark too.
+
+    THE COPY THE PINS ARE ASKED OF is the one the session loads: the member's
+    tree when it runs in one, else the project, where a serial session runs.
+    A subagent route's brief asks the project's copy - which copy a subagent's
+    Skill tool then loads is Claude Code's, and nothing here reads it."""
     stop = unsettled_stop(ctx, task, tree)
     if stop is not None:
         return stop
@@ -2415,7 +2429,7 @@ def dispatch(ctx, state, phase, task, role, tree=None, manifest=None):
         return _stopped(ctx, problem)
     held = None
     if session and (manifest is None or _skill_places.skill_pins(manifest) is not None):
-        held = session_hand(ctx, task)
+        held = hand_in_tree(ctx, task, tree)
     writer = session if role == "executor" else None
     fix, spent, why_fix = (standing_review_fix(ctx, state, task) if writer
                            else (None, None, None))
@@ -2432,6 +2446,12 @@ def dispatch(ctx, state, phase, task, role, tree=None, manifest=None):
         return relay_refusal(ctx, "audit-lookup.py", 0,
                              "%s\n(the driver found no `written:` path in this)"
                              % (out,))
+    prompt = os.path.abspath(os.path.join(ctx["project"], found.group(1).strip()))
+    fixing = None
+    if fix is not None:
+        fixing, stop = review_fix_prompt(ctx, state, task, prompt, fix, tree)
+        if stop is not None:
+            return stop
     _mark(state, "dispatched-%s" % (role,), task,
           {"scope": brief_scope(task)} if role == "executor" else True)
     write_state(ctx, state)
@@ -2439,10 +2459,8 @@ def dispatch(ctx, state, phase, task, role, tree=None, manifest=None):
     if spent:
         ctx["did"].append(_clip(spent, 160))
     if fix is not None:
-        return review_fix_dispatch(ctx, state, phase, task, writer, os.path.abspath(
-            os.path.join(ctx["project"], found.group(1).strip())), fix, tree, held)
+        return review_fix_dispatch(ctx, state, task, writer, fixing, fix, tree, held)
     if writer:
-        prompt = os.path.abspath(os.path.join(ctx["project"], found.group(1).strip()))
         _record, argv = open_dispatch(ctx, state, task, 0, lambda record: writer_argv(
             ctx, task, writer, prompt, record, tree, held=held), tree)
         return writer_said(ctx, task["id"], writer["model"], brief, argv)
@@ -2479,7 +2497,7 @@ def session_record(ctx, task, seq, role="writer"):
         "" if role == "writer" else role + ".", seq))
 
 
-def session_skills(ctx, task, phase_review=False, plan=None):
+def session_skills(ctx, task, phase_review=False, plan=None, where=None):
     """The skills `task`'s session starts with: `_areas.resolve_skills` over the
     plan as it stands now - the one resolver, so the writer, the reviewer and the
     executor subagent are given the same names. A session reviewing at phase
@@ -2488,28 +2506,45 @@ def session_skills(ctx, task, phase_review=False, plan=None):
     the session runner can find it (`runner_review_skill`); a per-task reviewer
     never does, since `mode: task` takes no review skill. A pinned skill that
     is not the bytes pinned raises `_skill_places.PinStop` - the drive's stop.
-    `plan` is `load_phase`'s answer when the caller already holds it."""
+    `plan` is `load_phase`'s answer when the caller already holds it.
+
+    `where` is the directory a project skill is read from - the one the session
+    will load it from. It is the project itself unless the session runs in a
+    tree of its own (`member_project`), or the tree is not cut yet and the pins
+    are asked of the commit it will be cut from (`ask_member_pins`)."""
     manifest, phase = plan if plan is not None else load_phase(ctx)
     skills = _areas.resolve_skills(manifest, phase, task)
     if phase_review:
         review, _left_out = runner_review_skill(ctx, manifest, phase)
         skills = skills + [review] if review and review not in skills else skills
-    return _skill_places.require_pins(skills, manifest, ctx["project"],
+    return _skill_places.require_pins(skills, manifest, where or ctx["project"],
                                       _claude_home.claude_home(), _output.PLUGIN_ROOT)
 
 
-def session_hand(ctx, task, phase_review=False, plan=None):
+def session_hand(ctx, task, phase_review=False, plan=None, where=None):
     """`(names, flags)`: `session_skills`' answer and the `--skill-pin` flags the
     pins that hold them give - the ONE read of the pins a hand-out makes. The
     session's command is built from this and from nothing asked again
     (`writer_argv`'s `held`), so a skill that changes after the check cannot stop
     the command after the dispatch was marked: the runner holds the bytes to the
     digest on the command when it starts. `plan` is `load_phase`'s answer when
-    the caller already holds it."""
+    the caller already holds it; `where` is `session_skills`'."""
     plan = plan if plan is not None else load_phase(ctx)
-    names = session_skills(ctx, task, phase_review, plan)
-    return names, _skill_places.pin_flags(names, plan[0], ctx["project"],
+    names = session_skills(ctx, task, phase_review, plan, where)
+    return names, _skill_places.pin_flags(names, plan[0], where or ctx["project"],
                                           _claude_home.claude_home(), _output.PLUGIN_ROOT)
+
+
+def hand_in_tree(ctx, task, tree):
+    """`session_hand` over the copy the session in `tree` loads - the tree's own
+    when the task runs in one, else the project's - a stop naming that copy and
+    what to do for it (`_copy_words`)."""
+    where = member_project(ctx, tree)
+    try:
+        return session_hand(ctx, task, where=where)
+    except _skill_places.PinStop as exc:
+        raise _skill_places.PinStop(_copy_words(exc, where, ("tree", None)
+                                                if tree else None))
 
 
 def runner_review_skill(ctx, manifest, phase):
@@ -2561,7 +2596,7 @@ def writer_argv(ctx, task, writer, prompt, record, tree=None, resume=None,
     is built from it without a second read; without it the plan is loaded once
     and asked here."""
     names, flags = held if held is not None else session_hand(
-        ctx, task, phase_review)
+        ctx, task, phase_review, where=member_project(ctx, tree))
     skills = [flag for name in names for flag in ("--skill", name)]
     skills += flags
     argv = ["python3", _loader.script_path(WRITER_RUNNER), "--role", role,
@@ -3098,18 +3133,19 @@ def without_writer_way(name):
         " with --reason" if "block" in needs else "", WRITER_MODEL_KEY)
 
 
-def resume_writer(ctx, state, task, pending, tree=None, consume=False):
+def resume_writer(ctx, state, task, pending, tree=None):
     """`--answer resume` on a red gate: the failing lines go to the recorded
     session as its prompt, in the next round, and no attempt is spent - never
     into a tree a move's copy stands beside (`unsettled_stop`), asked before
     the prompt is written or the dispatch opened, as `dispatch` asks.
 
-    THE ANSWER IS CONSUMED HERE, NOT BEFORE: with `consume`, the pending decision
-    is dropped and the gated mark spent only once nothing can refuse the resume
-    any more - the tree, the writer setting, the skills' pins (`session_hand`,
-    read once; the command is built from it) and the prompt - and it is the
-    dispatch's own write that records both. A stop before that leaves the state
-    as it found it, so the same `--answer` given again works."""
+    THE ANSWER IS CONSUMED HERE, NOT BEFORE: the pending decision is dropped and
+    the gated mark spent only once nothing can refuse the resume any more - the
+    tree, the writer setting, the skills' pins (`session_hand`, read once, in
+    the copy the session loads - the tree's when it runs in one; the command is
+    built from it) and the prompt - and it is the dispatch's own write that
+    records both. A stop before that leaves the state as it found it, so the
+    same `--answer` given again works."""
     stop = unsettled_stop(ctx, task, tree)
     if stop is not None:
         return stop
@@ -3118,7 +3154,7 @@ def resume_writer(ctx, state, task, pending, tree=None, consume=False):
         return _stopped(ctx, problem or "executor.%s is no longer set, so there "
                         "is no writer session to resume; %s" % (
                             WRITER_MODEL_KEY, without_writer_way(pending["decision"])))
-    hand = session_hand(ctx, task)
+    hand = hand_in_tree(ctx, task, tree)
     held = writer_state(state, task)
     round_n = held["resumes"] + 1
     prompt = session_record(ctx, task, held["seq"])[:-len(".jsonl")] + ".prompt.md"
@@ -3130,9 +3166,8 @@ def resume_writer(ctx, state, task, pending, tree=None, consume=False):
         return _stopped(ctx, paths_last(
             "the resume prompt for %s could not be written" % (task["id"],),
             [("why", exc), ("prompt", prompt)]))
-    if consume:
-        state.pop("pending", None)
-        _spend(state, "gated", task)
+    state.pop("pending", None)
+    _spend(state, "gated", task)
     _record, argv = open_dispatch(ctx, state, task, round_n, lambda record: writer_argv(
         ctx, task, writer, prompt, record, tree, resume=pending["session"],
         held=hand), tree, kind=RESUME_ROUTES.get(pending["decision"]))
@@ -9504,10 +9539,16 @@ def owes_executor(ctx, state, manifest, task):
     """Whether the step is about to hand `task` its executor - the first hand-out
     of its start, or one issued again - read off the facts `advance` decides it
     on (`_writer_turn`), without acting. A member that is done, blocked, parked
-    on a decision, not yet ready, whose executor returned or is out is not: a
-    changed skill is no reason to stop what such a member is owed. It leans to
-    asking - a member `advance` would stop before the hand-out is still asked -
-    and what it cannot ask is the reviewer's hand-out, which waits on the gate."""
+    on a decision, not yet ready, whose executor returned or is out owes no
+    hand-out, so its OWN skill is not asked. It leans to asking - a member
+    `advance` would stop before the hand-out is still asked - and what it cannot
+    ask is the reviewer's hand-out, which waits on the gate.
+
+    THIS IS NOT A PROMISE THAT SUCH A MEMBER IS LEFT ALONE: the step that one
+    member's pin stops stops for every member (`ask_member_pins` raises before
+    anything is stepped), so a member whose executor returned waits for its gate
+    and its close on another member's skill. That is the rule that leaves all of
+    them as they were."""
     status = task.get("status")
     if status in _mio.TERMINAL or status == "blocked":
         return False
@@ -9521,25 +9562,199 @@ def owes_executor(ctx, state, manifest, task):
     return turn in ("dispatch", "redispatch-stale")
 
 
-def ask_member_pins(ctx, state, manifest, phase, task_ids):
-    """Before a wave step marks, starts or records anything: the pins of every
-    member of `task_ids` that is about to be handed its executor, in id order.
-    The first whose skill is not the bytes pinned stops the step, naming the
-    member (`PinStop`, which `drive` words as the stop) - with nothing started, no
-    tree cut and no mark made for ANY member, so a member that comes later in the
-    order cannot leave an earlier one marked dispatched with no dispatch printed.
-    A plan that pins nothing asks nothing and reads no file."""
+# --- the copy of a skill a pin is asked of --------------------------------------------
+def skills_at_commit(ctx, commit, wanted):
+    """`(scratch, label)`: a scratch directory holding, under `.claude/skills/`,
+    the project's skill directories as `commit` holds them whose names are in
+    `wanted` (in any case) - read from git's objects, never from a checkout - so
+    `_skill_places` reads them exactly as it reads a tree cut from `commit`: one
+    digest, the reader's own, over the same bytes. A link to a file of its own
+    skill directory is written as that file's bytes under the link's name, which
+    is the line the reader gives a link; the plugin's own source makes no link
+    (`lc5`). The caller removes `scratch`; `label` words the copy.
+
+    Raises `_skill_places.PinStop` for what a tree cut from `commit` would hold
+    differently from what could be written here - git refusing, a submodule
+    entry (a tree gets an empty directory, or another repository's files, not
+    this skill's), a link the reader would refuse (one leading out of its
+    directory, to a directory or nowhere), a name that leaves the directory - or
+    more than a skill's ceilings (`_skill_places.MAX_SKILL_*`) selected: a pin
+    that cannot be judged is no reason to hand the skill out.
+    Bytes are the committed blobs: a checkout that converts line endings
+    (`core.autocrlf`, `.gitattributes`) holds other bytes in a file that is not
+    Markdown, which the runner then refuses in the tree it checks."""
+    top = os.path.relpath(ctx["project"], ctx["gitRoot"])
+    skills = (".claude/skills" if top == "."
+              else "%s/.claude/skills" % (top.replace(os.sep, "/"),))
+    label = "commit %s" % (commit[:12],)
+
+    def refuse(why):
+        raise _skill_places.PinStop(
+            "the skills of %s could not be read as a tree cut from it would hold "
+            "them (%s), so no pinned skill is handed out for it" % (label, why))
+    code, out, err = carry_git(ctx["gitRoot"], [
+        "ls-tree", "-r", "-z", "-l", commit, "--", skills])
+    if code != 0:
+        refuse(err or "git ls-tree exited %d" % (code,))
+    listed = []
+    for record in out.split(b"\0"):
+        meta, _tab, path = record.partition(b"\t")
+        fields = meta.split()
+        if len(fields) == 4:
+            rest = os.fsdecode(path)[len(skills) + 1:]
+            listed.append(dict(zip(("mode", "kind", "sha", "size"), fields), rest=rest))
+    tops = set(w.lower() for w in wanted)
+    picked = dict((e["rest"], e) for e in listed
+                  if e["rest"].split("/")[0].lower() in tops)
+    if any(e["kind"] == b"commit" for e in picked.values()):
+        refuse("%s is a submodule entry" % (sorted(
+            r for r, e in picked.items() if e["kind"] == b"commit")[0],))
+    ceiling = max(1, len(set(r.split("/")[0] for r in picked)))
+    if (len(picked) > _skill_places.MAX_SKILL_ENTRIES * ceiling
+            or sum(int(e["size"]) for e in picked.values() if e["size"].isdigit())
+            > _skill_places.MAX_SKILL_BYTES * ceiling):
+        refuse("more than a skill's ceilings of entries or bytes")
+    blobs = {}
+    need = sorted(set(e["sha"] for e in picked.values()))
+    if need:
+        code, out, err = carry_git(ctx["gitRoot"], ["cat-file", "--batch"],
+                                   stdin=b"\n".join(need) + b"\n")
+        if code != 0:
+            refuse(err or "git cat-file exited %d" % (code,))
+        at = 0
+        for sha in need:
+            end = out.index(b"\n", at)
+            header = out[at:end].split()
+            if len(header) != 3 or header[1] != b"blob":
+                refuse("object %s is not a file" % (sha.decode("ascii", "replace"),))
+            size = int(header[2])
+            blobs[sha] = out[end + 1:end + 1 + size]
+            at = end + 1 + size + 1
+
+    def bytes_of(rest):
+        """The bytes a tree cut from `commit` reads for `rest`: a file's own, and a
+        link's TARGET's when it leads, inside the same skill directory, to a file -
+        which is how `_skill_places.skill_digest` reads a link; any other link it
+        refuses, so none is written."""
+        here = rest
+        for _hop in range(8):
+            entry = picked[here]
+            if entry["mode"] != b"120000":
+                return blobs[entry["sha"]]
+            led = posixpath.normpath(posixpath.join(
+                posixpath.dirname(here), os.fsdecode(blobs[entry["sha"]])))
+            if (led.startswith(("..", "/")) or led not in picked
+                    or led.split("/")[0].lower() != rest.split("/")[0].lower()):
+                refuse("%s is a link that does not lead to a file of its own skill "
+                       "directory" % (rest,))
+            here = led
+        refuse("%s is a chain of links" % (rest,))
+    scratch = tempfile.mkdtemp(prefix="drive-skills-")
+    try:
+        for rest in sorted(picked):
+            parts = rest.split("/")
+            if any(p in ("", ".", "..") for p in parts):
+                refuse("%r is not a name inside the directory" % (rest,))
+            dest = os.path.join(scratch, ".claude", "skills", *parts)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, "wb") as fh:
+                fh.write(bytes_of(rest))
+    except BaseException as exc:
+        shutil.rmtree(scratch, ignore_errors=True)
+        if isinstance(exc, (OSError, NotImplementedError)):
+            refuse("%s could not be written here: %s" % (
+                exc.__class__.__name__, exc))
+        raise
+    return scratch, label
+
+
+def _copy_words(exc, where, how):
+    """`exc`'s words for a pin asked of a copy that is not the project's: the
+    scratch directory named as the commit it stands for, and what to do for THAT
+    copy - restore and commit the bytes when it is a commit's, restore them in the
+    member's own tree when it is a tree's. The project's copy is worded as
+    `_skill_places` words it."""
+    text = str(exc)
+    if how is None:
+        return text
+    kind, label = how
+    if kind == "commit":
+        return ("%s That copy is %s's: the member's tree will be cut from that "
+                "commit, so the project's working copy is not what its session "
+                "loads - restore the pinned bytes and COMMIT them, or re-pin to "
+                "the reviewed digest." % (text.replace(where, label), label))
+    return ("%s That copy is the member's own tree, where its session runs - "
+            "restore the pinned bytes there, not in the project." % (text,))
+
+
+def ask_member_pins(ctx, state, manifest, phase, task_ids, base=None, owed=True):
+    """Before a step marks, starts or records anything: the pins of every member
+    of `task_ids` that is about to be handed its executor - with `owed` False,
+    every one listed, for a task about to be started or whose answer is about to
+    be taken - in id order. The first whose skill is not the bytes pinned stops
+    the step, naming the member (`PinStop`, which `drive` words as the stop) -
+    with nothing started, no tree cut and no mark made for ANY member, so a
+    member that comes later in the order cannot leave an earlier one marked
+    dispatched with no dispatch printed. A plan that pins nothing asks nothing
+    and reads no file.
+
+    WHICH COPY IS ASKED is the one the session will load. A session route runs a
+    member in its own tree, cut from the wave's base: the tree once it exists
+    (`member_project`); before it is cut, the project's skill directories as
+    the commit it will be cut from (`base`, else the wave's) holds them
+    (`skills_at_commit`), so the project's working copy, edited or restored and
+    not committed, is not the copy asked. A personal or plugin skill lies
+    outside the cut and is read where it is. A serial task, and every task on the
+    subagent route, is asked of the project: a serial session runs in it, and
+    the subagent's brief asks it too - which copy a subagent's Skill tool loads is
+    Claude Code's, and nothing here reads it.
+
+    A pinned directory is read again at each of the opening of a wave, its walk
+    (both here) and the dispatch that builds the command (`session_hand`), and
+    only the last read builds the command; the cost is a hash of each pinned
+    skill per read, for a plan that pins, and a change between two reads still
+    stops before the mark the later one guards."""
     if _skill_places.skill_pins(manifest) is None:
         return
     by_id = _mio.tasks_by_id(manifest)
-    for task_id in sorted(task_ids, key=_id_key):
-        task = by_id.get(task_id)
-        if task is None or not owes_executor(ctx, state, manifest, task):
-            continue
-        try:
-            session_skills(ctx, task, plan=(manifest, phase))
-        except _skill_places.PinStop as exc:
-            raise _skill_places.PinStop("%s: %s" % (task_id, exc))
+    asked = [by_id[t] for t in sorted(task_ids, key=_id_key) if t in by_id
+             and (not owed or owes_executor(ctx, state, manifest, by_id[t]))]
+    wave = state.get("wave") or {}
+    trees = wave.get("trees") or {}
+    session = writer_setting(ctx["config"])[0]
+    commit = base or wave.get("base")
+    uncut = [t for t in asked if session and commit and not trees.get(t["id"])]
+    copy = None
+    if uncut:
+        pins = _skill_places.skill_pins(manifest)
+        names = [n for t in uncut for n in _areas.resolve_skills(manifest, phase, t)]
+        wanted = [str(n).rpartition(":")[2] for n in
+                  names + (list(pins) if isinstance(pins, dict) else [])]
+        copy = skills_at_commit(ctx, commit, wanted)
+    try:
+        for task in asked:
+            tree = trees.get(task["id"]) if session else None
+            where, how = ((member_project(ctx, tree), ("tree", None)) if tree
+                          else (copy[0], ("commit", copy[1])) if copy and task in uncut
+                          else (None, None))
+            try:
+                session_skills(ctx, task, plan=(manifest, phase), where=where)
+            except _skill_places.PinStop as exc:
+                raise _skill_places.PinStop(
+                    "%s: %s" % (task["id"], _copy_words(exc, where, how)))
+    finally:
+        if copy:
+            shutil.rmtree(copy[0], ignore_errors=True)
+
+
+def ask_task_pins(ctx, state, manifest, phase, task):
+    """A serial task's pins, asked before it is started: a task started and then
+    stopped over a skill is a task whose start the stop did not leave as it
+    found it (status, attempts, `startedAt`). The copy is the project's - a
+    serial session runs in the project itself, and so does the brief's read - so
+    a working copy that differs from HEAD is neither a stop nor a warning here:
+    it is the copy the session loads."""
+    ask_member_pins(ctx, state, manifest, phase, [task["id"]], owed=False)
 
 
 def walk_wave(ctx, state, manifest=None, phase=None):
@@ -9553,11 +9768,13 @@ def walk_wave(ctx, state, manifest=None, phase=None):
     start, tree or hand-out refused for any reason - leaves that member printed
     with the stop as a warning on its print, never dropped: marked in the drive's
     state and printed nowhere, it would read next step as an executor that
-    returned nothing. `manifest` and `phase` are the step's own read of the plan."""
+    returned nothing. The member that stopped it is named on the signal line the
+    main loop reads (`wave_said`), where the warning's own clause does not fit.
+    `manifest` and `phase` are the step's own read of the plan."""
     if manifest is None:
         manifest, phase = load_phase(ctx)
     ask_member_pins(ctx, state, manifest, phase, state["wave"]["tasks"])
-    sent = []
+    sent, held_back = [], None
     for task_id in sorted(state["wave"]["tasks"], key=_id_key):
         try:
             kind, said = step_member(ctx, state, task_id)
@@ -9573,6 +9790,7 @@ def walk_wave(ctx, state, manifest=None, phase=None):
             warn(ctx, "%s stopped the step after %s was handed out: %s" % (
                 task_id, ", ".join(m["signal"]["subject"] for m in sent),
                 said[1].partition("stopped - ")[2] or said[1]))
+            held_back = task_id
             break
         if kind == "dispatch":
             sent.append(said)
@@ -9583,7 +9801,7 @@ def walk_wave(ctx, state, manifest=None, phase=None):
             ctx["did"].append("%s dropped from wave %s, not started: %s" % (
                 task_id, state["wave"].get("id"), said))
     if sent:
-        return wave_said(ctx, sent)
+        return wave_said(ctx, sent, held_back)
     manifest, _phase = load_phase(ctx)
     by_id = _mio.tasks_by_id(manifest)
     parked = state["wave"].get("parked") or {}
@@ -9713,7 +9931,7 @@ def wave_step(ctx, state, manifest, phase, width, basis):
         # Every picked member's pins before anything is written - the scope gap
         # below can park a decision, and the wave's opening records it: a stop
         # over a pin leaves no wave recorded, nothing started and no tree cut.
-        ask_member_pins(ctx, state, manifest, phase, picked)
+        ask_member_pins(ctx, state, manifest, phase, picked, base=git_head(ctx))
         by_id = _mio.tasks_by_id(manifest)
         for task_id in picked:
             stop = scope_gap(ctx, state, by_id[task_id])
@@ -9901,7 +10119,13 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         # run, so the next `next` measures the session's fix. A clause gap is
         # asked at a GREEN gate, whose mark is spent there for it.
         return resume_writer(ctx, state, task, pending, (
-            (state.get("wave") or {}).get("trees") or {}).get(task["id"]), True)
+            (state.get("wave") or {}).get("trees") or {}).get(task["id"]))
+    if (task is not None and pending["decision"] not in PHASE_DECISIONS
+            and answer in ("retry", "redispatch")):
+        # The two answers that go on to a hand-out whose pins the drive asks:
+        # asked here, before the decision is dropped or the start taken, so a
+        # stop over a pin leaves the human's word unspent, as `resume` does.
+        ask_member_pins(ctx, state, manifest, phase, [task["id"]], owed=False)
     state.pop("pending", None)
     write_state(ctx, state)
     if pending["decision"] in PHASE_DECISIONS:
@@ -11291,9 +11515,18 @@ def validation_node(phase, head):
 def validation_dispatch(ctx, state, phase, head, candidates):
     """The validation session's dispatch: its prompt - every candidate, then
     `VALIDATE_RULE` - written beside the sessions, the reviewer's runner role on
-    the reviewer session's model, and the ids it was asked about kept."""
+    the reviewer session's model, and the ids it was asked about kept.
+
+    THE PINS ARE ASKED BEFORE THE PROMPT IS WRITTEN, `runner_review_skill` for
+    the review skill and `session_hand` for the session's own: a pin that stops
+    this dispatch leaves no prompt file behind, and nothing is read about the
+    skills after the mark - the command is built from `session_hand`'s answer
+    and the review skill's warning is the one `runner_review_skill` gave."""
     setting = reviewer_session_setting(phase, writer_setting(ctx["config"])[0])
     node = validation_node(phase, head)
+    plan = load_phase(ctx)
+    _skill, left_out = runner_review_skill(ctx, plan[0], phase)
+    hand = session_hand(ctx, node, phase_review=True, plan=plan)
     ids = [f["id"] for f in candidates]
     seq = writer_state(state, node, VALIDATE_KEY)["seq"]
     prompt = os.path.join(sessions_dir(ctx), "scratch", phase["id"],
@@ -11313,9 +11546,8 @@ def validation_dispatch(ctx, state, phase, head, candidates):
     with open(prompt, "w", encoding="utf-8", newline="\n") as fh:
         fh.write("\n".join(lines + ["", VALIDATE_RULE]) + "\n")
     _record, argv = open_dispatch(ctx, state, node, 0, lambda record: writer_argv(
-        ctx, node, setting, prompt, record, role="reviewer", phase_review=True),
-        None, VALIDATE_KEY)
-    _skill, left_out = runner_review_skill(ctx, load_phase(ctx)[0], phase)
+        ctx, node, setting, prompt, record, role="reviewer", phase_review=True,
+        held=hand), None, VALIDATE_KEY)
     if left_out:
         warn(ctx, left_out)
     held = writer_state(state, node, VALIDATE_KEY)
@@ -11557,16 +11789,18 @@ def warm_session(ctx, fix, tree=None):
     return (fix["session"] if idle < CACHE_LIFE_SECONDS else None), said
 
 
-def review_fix_dispatch(ctx, state, phase, task, writer, brief, fix, tree=None,
-                        hand=None):
-    """A re-opened task's writer dispatch, carrying the confirmed findings:
-    the first one `--resume`s its last session while that is warm
-    (`warm_session`), prompted with the findings alone; otherwise - a cold
-    session, or any dispatch after the first, which a resume would hand only
-    the findings and not the brief it was re-issued for - a fresh session
-    whose prompt is the task's own brief - its text - and then the findings.
-    `fix` is the entry `standing_review_fix` found standing; `hand` is
-    `session_hand`'s answer, which `writer_argv` builds the command from."""
+def review_fix_prompt(ctx, state, task, brief, fix, tree=None):
+    """`((prompt, session, why, carried), None)` - or `(None, stop)` - for a
+    re-opened task's writer dispatch: the confirmed findings and the brief at
+    `brief` written as the prompt the session is started with, the session the
+    first dispatch resumes while it is warm (`warm_session`), and the starts whose
+    dispatch already carried them. ASKED BEFORE THE DISPATCH IS MARKED
+    (`dispatch`): what can refuse this dispatch - the brief that cannot be
+    read - leaves nothing marked behind it. The first dispatch `--resume`s its
+    last session, prompted with the findings alone; otherwise - a cold session,
+    or any dispatch after the first, which a resume would hand only the findings
+    and not the brief it was re-issued for - a fresh session whose prompt is
+    the task's own brief - its text - and then the findings."""
     carried = _fix_dispatched(fix)
     _manifest, phase = load_phase(ctx)
     held = dict((f.get("id"), f) for f in (phase.get("review") or {}).get("findings")
@@ -11590,13 +11824,24 @@ def review_fix_dispatch(ctx, state, phase, task, writer, brief, fix, tree=None,
         with open(brief, "r", encoding="utf-8") as fh:
             text = fh.read()
     except OSError as exc:
-        return _stopped(ctx, paths_last("the writer brief could not be read",
-                                        [("why", exc), ("brief", brief)]))
+        return None, _stopped(ctx, paths_last("the writer brief could not be read",
+                                              [("why", exc), ("brief", brief)]))
     os.makedirs(os.path.dirname(prompt), exist_ok=True)
     with open(prompt, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(resume_prompt(lines, REVIEW_FIX_HEAD) if session else
                  "%s\n\n%s\n\n%s\n" % (text.rstrip("\n"), REVIEW_FIX_HEAD,
                                        "\n".join(lines)))
+    return (prompt, session, why, carried), None
+
+
+def review_fix_dispatch(ctx, state, task, writer, prepared, fix, tree=None,
+                        hand=None):
+    """A re-opened task's writer dispatch, carrying the confirmed findings:
+    the command for the prompt `review_fix_prompt` wrote, opened, recorded
+    against the fix and said. `fix` is the entry `standing_review_fix` found
+    standing; `hand` is `session_hand`'s answer, which `writer_argv` builds the
+    command from."""
+    prompt, session, why, carried = prepared
     _record, argv = open_dispatch(ctx, state, task, 0, lambda record: writer_argv(
         ctx, task, writer, prompt, record, tree, resume=session, held=hand), tree)
     state[REVIEW_FIX_FIELD][task["id"]] = dict(
@@ -12552,6 +12797,7 @@ def drive_task(ctx, state):
                 "stop-blocked", [task], phase=ctx["phase"], task=task["id"],
                 why=_clip(str(task.get("blockedReason") or "no reason recorded"), 120)))
         if task.get("status") != "in_progress":
+            ask_task_pins(ctx, state, manifest, phase, task)
             stop = scope_gap(ctx, state, task) or start_task(ctx, task)
             if stop is not None:
                 return stop
@@ -12570,10 +12816,11 @@ def drive(ctx, answer=None, reason=None, fixes=()):
     it) or a dispatch is OUT (a task started whose executor or reviewer return
     is not filed yet); every other non-zero return after it was taken
     gives it back here, the one exit every arm shares, so no refusal strands it.
-    The one exception is a usage refusal whose plan cannot be read to tell
-    whether a dispatch is out: the lock is kept, because releasing it could let
-    a second session take a phase whose executor may still be running, and the
-    next drive over a readable plan gives it back."""
+    That holds for a stop as for a usage refusal (`lock_to_give_back`). The one
+    exception is a return whose plan cannot be read to tell whether a dispatch
+    is out: the lock is kept, because releasing it could let a second session
+    take a phase whose executor may still be running, and the next drive over a
+    readable plan gives it back."""
     state = read_state(ctx)
     stop = take_lock(ctx, state)
     if stop is not None:
@@ -12602,14 +12849,18 @@ def drive(ctx, answer=None, reason=None, fixes=()):
 
 def lock_to_give_back(code, state, ctx):
     """`(give_back, note)`: whether a drive that returned `code` still holds a
-    lock nobody will answer for - the lock is taken and the return is a stop,
-    or a usage refusal with no decision pending and no dispatch out to keep it
-    for - and a line to print when the lock was kept for want of an answer."""
+    lock nobody will answer for - the lock is taken and the return is a stop or
+    a usage refusal with no decision pending and no dispatch out to keep it
+    for - and a line to print when the lock was kept for want of an answer.
+
+    ONE RULE FOR BOTH CODES. A stop that leaves a decision pending is one whose
+    `--answer` the next step must find, and a stop with a dispatch out is one
+    whose executor may still be running: giving the lock back there lets a
+    second session take a phase that is not idle and refuses the first
+    session's own answer."""
     if state.get("lock") != "taken":
         return False, None
-    if code == E_STOPPED:
-        return True, None
-    if code != E_USAGE or state.get("pending") is not None:
+    if code not in (E_STOPPED, E_USAGE) or state.get("pending") is not None:
         return False, None
     out, why = dispatch_out(ctx, state)
     if why:
@@ -12806,6 +13057,7 @@ def drive_phase(ctx, state, phase):
                       if t.get("status") not in _mio.TERMINAL],
                 stalled_why(manifest, phase))
         if how == "ready":
+            ask_task_pins(ctx, state, manifest, phase, task)
             stop = scope_gap(ctx, state, task) or start_task(ctx, task)
             if stop is not None:
                 return stop

@@ -1,0 +1,89 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass",
+    "python3 tests/test_drive_phase.py --selftest --stage spn-block": "pass",
+    "tests/test__worktrees.py --selftest": "pass",
+    "tests/test__panel_page.py, test_guard_secrets_read.py, test_hooks.py, test__affected_tests.py, test__doctor_trail.py, test__floor_guard.py, test__refs.py, test__deps.py, test__output_lints.py": "pass",
+    "tools/check-committed-pii.py, tools/check-git-pipeline.py, tools/gate-parity.py, tools/prove-gates.py --list, tools/release.py --selftest, tools/lints/_deps.py --render --contracts": "pass",
+    "tools/measure-context.py --gate": "pass",
+    "ruff check plugins/audit tools tests .claude/hooks": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints": "pass",
+    "run-test-gate.py SG2 --task SG2.17-xk1 (unrecorded, the orchestrator's own gate)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-25T09:14:29Z",
+    "basis": "`python3 tests/test_drive_phase.py --selftest --stage spn-block` in a throwaway tree at HEAD exited 1 with 15 of 36 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - spd1 (house FAIL), spd10 (house FAIL), spd12 (house FAIL), spd13 (house FAIL), spd16 (house FAIL), spd16a (house FAIL), spd16b (house FAIL), spd20a (house FAIL) and 7 more: SELFTEST FAILED: 20/36 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: lock_to_give_back gives one rule for a stop and a usage refusal (kept while a decision is pending or a dispatch is out). A serial task's pins are asked before start_task (ask_task_pins, in drive_phase and drive_task); apply_answer asks retry's and redispatch's pins before it drops the decision; resume_writer always consumes and judges the member's tree (hand_in_tree; the consume parameter is gone); the review fix reads its brief and writes its prompt before the dispatch mark (review_fix_prompt); validation_dispatch asks both pins before it writes its prompt. A pin is judged on the copy the session loads: a wave member on the session route is asked of the commit its tree will be cut from (skills_at_commit: git ls-tree and cat-file into a scratch directory, hashed by the one reader skill_digest, no second digest; a submodule or a link the reader would refuse is a stop) and of its own tree once it is cut; a serial session and the subagent route's brief are asked of the project; the stop's words name that copy and its remedy (restore and commit, or restore in the tree). The signal line names the member that stopped a wave step; owes_executor's docstring says what the rule is. tests/test_drive_phase.py (spn-block): spd22 derives every stop route from the driver, spd23 is its power, spd24 stops every row's scenarios over a changed skill and compares the whole kept state (drive state, briefs, session files, plan task fields, verbs run, lock claims) before and after, over a table of one stated exception checked both ways; spd25/25a the lock; spd26/26a/27/28 the copy judged and the commit reader; spd16a/16b retry and resume in a tree; spd20a the signal line; spd29 each owes_executor branch with its twin. SECURITY.md, PLUGIN-BUILD-GUIDE.md and CHANGELOG.md state the same and no more. _skill_places.py is not touched. Whole drive suite through the sweep: 1/1 files ok, 1092 cases; spn-block alone 37/37; mutation probe 47 rows all answered as owed (S/sg2.17/mutations.py).",
+    "descriptive": "A step the drive stops over a pin leaves the plan, the drive's files and the phase lock as it found them, and a pin is judged on the copy its session will load."
+  },
+  "testsAdded": [
+    "one derived list of stop routes (spd22) with its power case (spd23) and one comparison over every route's stopped scenario - drive state, briefs, session files, plan task fields, verbs run, lock claims - before and after, with a stated-exception table checked both ways (spd24); the lock rule through the real drive and alone (spd25, spd25a); the copy a pin is judged on, per route (spd26, spd27), the commit reader's digest equal to a checkout's (spd28); retry and resume-in-a-tree stops (spd16a, spd16b); the signal line (spd20a); each owes_executor branch with its twin (spd29); spd10, spd16 and spd20 widened"
+  ],
+  "casesAdded": [
+    [
+      "spd16a",
+      "spd16b",
+      "spd20a",
+      "spd22",
+      "spd23",
+      "spd24",
+      "spd25",
+      "spd25a",
+      "spd26",
+      "spd26a",
+      "spd27",
+      "spd28",
+      "spd29"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py lock_to_give_back (one rule for E_STOPPED and E_USAGE), ask_task_pins before start_task in drive_phase/drive_task, skills_at_commit and ask_member_pins for the copy, hand_in_tree for resume and dispatch, review_fix_prompt before the mark, validation_dispatch asks before the prompt; SECURITY.md, PLUGIN-BUILD-GUIDE.md and CHANGELOG.md say only what those do and name the subagent route's copy as the brief's, with the Skill tool's copy Claude Code's\n2 47 mutation rows in S/sg2.17/mutations.py, each anchor asserted once, caches purged, each deny with an allow twin or a power row: lock given back on any stop, serial ask after start, project copy again, review-fix prompt after the mark, validation prompt before the ask, a stop route added or removed, each owes_executor branch, break to continue; all answered as owed; SG2.16's own rows re-run - 11 of 22 applied and caught, the rest named in the hand-back\n3 grep of the bare shapes in drive-phase.py: the stop sites reach lock_to_give_back, ask_task_pins, ask_member_pins, hand_in_tree, review_fix_prompt, validation_dispatch; spd22 derives the list so the class is held by name, not by this grep; left: a link-out refusal in skills_at_commit has no case of its own\n4 the rules are held by spd22-spd25a in tests/test_drive_phase.py, named in PLUGIN-BUILD-GUIDE.md; the document says a pin is not a lock and that the subagent route's copy is unproven\n5 the spn-block alone, before and after, run twice with a gap of thirty seconds: 8.9 s and 9.4 s on HEAD, 13.9 s and 14.6 s on the tree; measured on one machine, once each pair, not on a windows runner\n6 the pin decision reads the operation: the copy a session loads (tree, commit, project), never the command's spelling; the allow cases (spd13, spd26 other-copy step, spd27 tree-good) were green before the deny widened\n7 no number is written in prose by hand: the documents name cases by id and derive nothing else; the timings above carry the command that re-derives them (blocks_alone.out)",
+  "stamp": "audit-stamp: {\"content\":\"sha256:4a49fbb6b713a69340c19f5b213f812d1e925ae06abd6abb1e2c75db07389e18\",\"dirtyDigest\":\"sha256:46b06bac01f8296e086cec714f7b7891840762cad7ade3c09c30976b0b6ea9b6\",\"dirtyPaths\":{\"CHANGELOG.md\":\"359e725b429b2b90\",\"PLUGIN-BUILD-GUIDE.md\":\"1ac3132f3cee14e6\",\"SECURITY.md\":\"9a123ec1eb84f79e\",\"plugins/audit/scripts/governance/drive-phase.py\":\"e946f2ee7bf22574\",\"tests/test_drive_phase.py\":\"b624dd5bc30cbee4\"},\"head\":\"8e6ea40b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:f239e470b384c97b121b3a15e4711ba4b5c11a5d73419d1a6898d8271835725a\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 1 of the diff's 5 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 3 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md; 1 file(s) that could hold a move not compared: tests/test_drive_phase.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_drive_phase.py",
+        "move": "definition-changed",
+        "reason": "code outside its test definitions was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 18970 (`_HANDOUT_EXEMPT = {`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "8e6ea40b95a04a2da642a52ea34c6f9a6a860c53"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-25T09:14:46Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

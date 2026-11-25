@@ -1289,7 +1289,14 @@ directory as it was reviewed. Before the drive hands a pinned skill to an agent'
 (`drive-phase.py`'s `session_skills`, and `run-agent-session.py --skill-pin`, which
 checks the copy in the session's own tree before claude starts), it asks
 `_skill_places.require_pins` - one reader, over the copy `_skill_places.resolve_skill`
-finds, so a personal copy shadowing the project's is the copy judged. A pin holds the
+finds, so a personal copy shadowing the project's is the copy judged. For a PROJECT skill
+the copy asked is the one the session will load: a serial task's session runs in the
+project itself, so its working copy; a wave member on the headless route runs in a tree of
+its own, cut from the wave's base commit, so the skill directory as that commit holds it
+until the tree is cut (read from git's objects with no checkout; a submodule entry in it is
+refused) and the tree's own copy once it is - a working copy restored and not committed is
+then no remedy, and the stop says to commit it; the subagent route's brief asks the project's
+copy. A pin holds the
 DIRECTORY its name resolves to, so every spelling that reaches that directory - the bare
 name, the running plugin's `plugin:skill`, another case of the name on a volume that folds
 case - is held by it (`_skill_places.covering_pins`). Any answer but a match - another
@@ -1307,13 +1314,18 @@ it starts writes no cache (point 8 says what that does not reach). That every ha
 derives the callers from the code (`tests/test_drive_phase.py`, `spd1`): every caller of
 `_areas.resolve_skills` and `_areas.resolve_review_skill` asks the reader or is exempt with
 a reason. A route that read a plan's skill lists without either function would be outside
-what that case derives.
+what that case derives. That a step stopped over a pin leaves nothing written that the next
+step reads - the plan's task and the phase lock included - is held the same way, over the
+routes `spd22` derives from the driver and `spd24` runs.
 
 What it does **not** hold, stated so nothing leans on it:
 
 1. **A pin proves the bytes are the ones pinned, not that they are safe.** Whoever
    pinned them reviewed them, or did not; the digest records which bytes, not a verdict.
-2. **On both routes the plugin checks the copy its own resolver finds, at hand-out; what
+2. **On both routes the plugin checks the copy its own resolver finds, at hand-out - on the
+   headless route the copy of the tree or commit the session runs in, on the subagent route
+   the project's, which is all the brief reads: which copy a subagent's Skill tool loads from
+   a member's own tree is Claude Code's, and nothing here asserts it. What
    then loads the skill is Claude Code, from wherever it resolves the name, later.** A
    subagent and a headless session alike load a skill's body through Claude Code's own
    Skill tool, through a lookup the plugin cannot see - an enterprise tier, another
