@@ -1521,7 +1521,79 @@ def _selftest():
         _binding_cases(check)
         _ci_cadence_cases(check)
         _harness.stage(check, "ds-hd", _unborn_head_entry_cases)
+        _harness.stage(check, "ds-ur", _unreadable_plan_cases)
     return _harness.run(body)
+
+
+def _unreadable_plan_cases(check):
+    """(ds) A plan that will not read is worded as one by the doctor: the
+    plan-gate row names the file, the key and the hand repair - never "holds
+    phases but none is in_progress ... Start a phase" - and the manifest
+    row's hint follows the refusal's class."""
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="doctor-unreadable-")
+    try:
+        os.makedirs(os.path.join(tmp, ".claude"))
+        with open(os.path.join(tmp, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({}, fh)
+        cfg, cfg_mod = M.check_config(base.Report(), tmp)
+        mrel = "docs/audit/audit-plan.json"
+        mpath = os.path.join(tmp, mrel)
+        os.makedirs(os.path.dirname(mpath))
+        doc = _manifest()
+        doc["phases"][0]["title"] = "One"
+        text = json.dumps(doc, indent=2)
+        twice = text.replace('"title": "One",',
+                             '"title": "One",\n      "title": "Uno",', 1)
+        assert twice != text
+        with open(mpath, "w", encoding="utf-8") as fh:
+            fh.write(twice)
+        rep = base.Report()
+        M.check_plan_gate(rep, tmp, cfg, cfg_mod, mrel)
+        said = _detail(rep, "plan gate")
+        fixes = " ".join(r["fix"] or "" for r in rep.rows)
+        check("ds-ur1 RED-FIRST: the doctor's plan-gate row over a plan writing "
+              "a key twice says the plan cannot be read, naming the key and the "
+              "hand repair, as a WARNING - never 'holds phases but none is "
+              "in_progress' or 'Start a phase': %r %r"
+              % (_levels(rep, "plan gate"), said[:400]),
+              _levels(rep, "plan gate") == ["WARNING"]
+              and "cannot be read" in said and "/phases/0/title" in said
+              and "by hand" in (said + fixes)
+              and "none is in_progress" not in said
+              and "Start a phase" not in said)
+        rep = base.Report()
+        M.check_manifest(rep, tmp, cfg)
+        row = [r for r in rep.rows if r["check"] == "manifest"]
+        check("ds-ur2 RED-FIRST: the manifest row's hint follows the refusal's "
+              "class - for a key written twice it is the hand delete, with the "
+              "validator named, never 'check the index's shard refs': %r"
+              % ([(r["level"], r["fix"]) for r in row],),
+              len(row) >= 1 and row[0]["level"] == "FINDING"
+              and "delete by hand" in (row[0]["fix"] or "")
+              and "validate-manifest.py" in (row[0]["fix"] or "")
+              and "shard refs" not in (row[0]["fix"] or ""))
+        # THE OVER-FIRE: a plan that will not PARSE keeps the shard hint, and
+        # a clean plan's rows are what they were.
+        with open(mpath, "w", encoding="utf-8") as fh:
+            fh.write(text.replace('"tasks": [', '<<<<<<< ours\n "tasks": [', 1))
+        rep = base.Report()
+        M.check_manifest(rep, tmp, cfg)
+        row = [r for r in rep.rows if r["check"] == "manifest"]
+        with open(mpath, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        clean = base.Report()
+        M.check_plan_gate(clean, tmp, cfg, cfg_mod, mrel)
+        check("ds-ur3 ...a plan that will not parse keeps the shard hint, and a "
+              "clean plan's gate row is the deny step it always was: %r %r"
+              % ([r["fix"] for r in row], _detail(clean, "plan gate")[:200]),
+              row and "shard refs" in (row[0]["fix"] or "")
+              and _detail(clean, "plan gate").startswith(
+                  "deny past the free file")
+              and "cannot be read" not in _detail(clean, "plan gate"))
+    finally:
+        _harness.remove_tree(tmp)
 
 
 def _unborn_head_entry_cases(check):

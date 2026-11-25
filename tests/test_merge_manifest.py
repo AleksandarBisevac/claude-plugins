@@ -140,6 +140,11 @@ def _cases(check):
     tmp = tempfile.mkdtemp(prefix="merge-manifest-selftest-")
     try:
         _driver_cases(check, tmp)
+        ran, why = _harness.attempt(_driver_twice_cases, check, tmp)
+        if not ran:
+            check("mk0 the driver's key-written-twice block ran to its end "
+                  "(%s)" % (why,), False)
+        _merge_parse_cases(check)
         _install_cases(check, tmp)
         _git_cases(check, tmp)
     finally:
@@ -402,6 +407,9 @@ def _git_cases(check, tmp):
               code != 0 and "<<<<<<< ours" in text and "without writing" in out,
               "%s\n%s" % (out, text))
         _resolve_cases(check, tmp, env)
+        _resolve_twice_cases(check, tmp, env)
+        _base_twice_resolve_case(check, tmp, env)
+        _base_container_twice_cases(check, tmp, env)
         _run_record_cases(check, tmp, env)
         _window_cases(check, tmp, env)
     finally:
@@ -693,6 +701,285 @@ def _resolve(argv):
     finally:
         sys.stdout, sys.stderr = held
     return code, buf.getvalue()
+
+
+def _twice_found(path):
+    """The keys the file at `path` writes twice, as the door names them, or
+    None when it is not JSON (a file holding conflict markers)."""
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    try:
+        return _mio.parse_json_text(text)[1]
+    except ValueError:
+        return None
+
+
+def _driver_twice_cases(check, tmp):
+    """(mk) The driver never leaves %A writing a key twice: a side that writes
+    one is not merged by record over its last copy, and a line merge that
+    would come out clean holding one is written as one conflict block."""
+    base = _plan()
+    theirs = _add_phase(base, "BF11", "src/d.ts")
+    ours_text = _mio.json_document(_add_phase(base, "BF12", "src/c.ts"))
+    ours_twice = ours_text.replace('"title": "One",',
+                                   '"title": "One",\n      "title": "Uno",', 1)
+    assert ours_twice != ours_text
+    paths = _driver_files(tmp, "dk1", base, ours_twice, theirs)
+    code, err = _run_driver(paths)
+    left = _twice_found(paths[1])
+    check("mk1 RED-FIRST: a side that writes a key twice is not merged by "
+          "record over its last copy: %%A is left conflicted (markers, exit 1) "
+          "and the driver names the key written twice: exit %r, %%A writes "
+          "twice %r, said %r" % (code, left, err[-240:]),
+          code == 1 and left is None and "written twice" in err
+          and "/phases/0/title" in err)
+    # A line merge that comes out CLEAN holding a key twice: each side adds
+    # the same key in a different hunk. The record merge is made to crash so
+    # the driver's fallback - git's line merge - is what is written.
+    base_text = '{\n  "x": 1,\n  "y": 2,\n  "z": 3\n}\n'
+    ours_k = '{\n  "k": 1,\n  "x": 1,\n  "y": 2,\n  "z": 3\n}\n'
+    theirs_k = '{\n  "x": 1,\n  "y": 2,\n  "k": 2,\n  "z": 3\n}\n'
+    paths = _driver_files(tmp, "dk2", base_text, ours_k, theirs_k)
+    # THE FIXTURE BITES: git's own line merge of these sides is clean and
+    # writes `k` twice, so the case below can fail.
+    plain = subprocess.run(["git", "merge-file", "-p", paths[1], paths[0],
+                            paths[2]], stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE)
+    try:
+        bites = (plain.returncode, _mio.parse_json_text(
+            plain.stdout.decode("utf-8"))[1])
+    except ValueError as exc:
+        bites = (plain.returncode, "%s" % (exc,))
+    real = M._manifest_merge.merge3
+
+    def boom(*a):
+        raise RuntimeError("planted")
+    M._manifest_merge.merge3 = boom
+    try:
+        code, err = _run_driver(paths)
+    finally:
+        M._manifest_merge.merge3 = real
+    left = _twice_found(paths[1])
+    with open(paths[1], encoding="utf-8") as fh:
+        held = fh.read()
+    check("mk2 RED-FIRST: a line merge that would come out clean writing a "
+          "key twice (git's own: %r) is written as one conflict block instead "
+          "- %%A never parses to a key written twice: exit %r, writes twice "
+          "%r, %%A %r" % (bites, code, left, held[:120]),
+          bites == (0, ["/k"]) and code == 1 and left is None
+          and held.count("<<<<<<< ") == 1)
+    _base_twice_driver_cases(check, tmp)
+
+
+def _base_twice(doc):
+    """`doc`'s plugin spelling with phase 0's title written twice, the first
+    copy "One" and the last "Uno"."""
+    d = copy.deepcopy(doc)
+    d["phases"][0]["title"] = "One"
+    text = _mio.json_document(d)
+    twice = text.replace('"title": "One",', '"title": "One",\n      "title": "Uno",', 1)
+    assert twice != text
+    return twice
+
+
+def _base_twice_driver_cases(check, tmp):
+    """(mk) A key written twice on the merge BASE alone - committed, then
+    repaired on both sides - blocks nothing: the base is read only to tell
+    which side changed what, and is never written back, so its key written
+    twice reads as absent there. Equal sides merge; sides that differ at it
+    conflict, never settled by either copy."""
+    base = _plan()
+    base["phases"][0]["title"] = "One"
+    ours = _add_phase(base, "BF12", "src/c.ts")
+    theirs = _add_phase(base, "BF11", "src/d.ts")
+    paths = _driver_files(tmp, "bt1", _base_twice(base), ours, theirs)
+    code, err = _run_driver(paths)
+    doc = _load_or_empty(paths[1])
+    ids = sorted(p.get("id") for p in doc.get("phases") or [])
+    check("mk6 RED-FIRST: a merge whose BASE alone writes a key twice, the two "
+          "sides clean, merges by record as it did before the door - exit 0, "
+          "both sides' phases, %%A writing each key once, no advice to delete a "
+          "copy no file in the tree holds: exit %r, ids %r, twice %r, said %r"
+          % (code, ids, _twice_found(paths[1]), err[-240:]),
+          code == 0 and "BF11" in ids and "BF12" in ids
+          and _twice_found(paths[1]) == [] and "written twice" not in err)
+    # The two sides settle the base's key differently, and one of them keeps
+    # the base's LAST copy: read as that copy, the base would make that side
+    # "unchanged" and hand the record to the other silently.
+    ours = copy.deepcopy(base)
+    theirs = copy.deepcopy(base)
+    theirs["phases"][0]["title"] = "Uno"
+    paths = _driver_files(tmp, "bt2", _base_twice(base), ours, theirs)
+    code, err = _run_driver(paths)
+    with open(paths[1], encoding="utf-8") as fh:
+        held = fh.read()
+    check("mk7 RED-FIRST: ...and where the sides settle that key differently - "
+          "one keeping the base's first copy, one its last - it is a conflict "
+          "left to the person, never decided by whichever copy the base's "
+          "reader kept: exit %r, markers %r, said %r"
+          % (code, held.count("<<<<<<< "), err[-240:]),
+          code == 1 and "<<<<<<< " in held and "One" in held and "Uno" in held)
+
+
+def _tasks_twice_sides():
+    """`(base text, ours, theirs)`: the base writes phase P1's `tasks` twice
+    (first copy P1.1 pending, last copy P1.1 done, P1.2 pending in both);
+    ours and theirs are clean and differ only on P1.2's status."""
+    base = _plan()
+    base["phases"][0]["tasks"] = [
+        {"id": "P1.1", "title": "a", "status": "done", "files": ["src/a.ts"]},
+        {"id": "P1.2", "title": "b", "status": "pending", "files": ["src/a.ts"]}]
+    first = copy.deepcopy(base["phases"][0]["tasks"])
+    first[0]["status"] = "pending"
+    text = _mio.json_document(base)
+    twice = text.replace('"title": "One",', '"title": "One",\n      "tasks": %s,'
+                         % (json.dumps(first),), 1)
+    assert twice != text and _mio.parse_json_text(twice)[1] == ["/phases/0/tasks"]
+    ours = copy.deepcopy(base)
+    theirs = copy.deepcopy(base)
+    theirs["phases"][0]["tasks"][1]["status"] = "done"
+    return twice, ours, theirs
+
+
+def _base_container_twice_cases(check, tmp, env):
+    """(mk) A CONTAINER the base writes twice leaves the base unknown there:
+    no id under it is minted on both sides, the conflict says the base's
+    copy could not be read and offers no renumbering, and `resolve` renumbers
+    nothing - a renumbering would put one task under two ids."""
+    base_text, ours, theirs = _tasks_twice_sides()
+    paths = _driver_files(tmp, "bct", base_text, ours, theirs)
+    code, err = _run_driver(paths)
+    check("mk9 RED-FIRST: the driver over a base writing `tasks` twice, the "
+          "sides differing on one task, conflicts saying the base writes "
+          "/phases/0/tasks twice - never 'added on both sides', never "
+          "offering --renumber: exit %r, said %r" % (code, err[-500:]),
+          code == 1 and "/phases/0/tasks twice" in err
+          and "added on both sides" not in err and "--renumber" not in err)
+    # A record holding the unknown value, deleted on one side and kept as is
+    # on the other: against a base that is not known, "changed on the other
+    # side" is a claim nothing established.
+    ours_del = copy.deepcopy(ours)
+    ours_del["phases"] = [p for p in ours_del["phases"] if p["id"] != "P1"]
+    paths = _driver_files(tmp, "bct-del", base_text, ours_del,
+                          copy.deepcopy(ours))
+    code, err = _run_driver(paths)
+    check("mk11 RED-FIRST: a record the base holds an unknown value in, deleted "
+          "on one side and kept on the other, conflicts saying the base writes "
+          "/phases/0/tasks twice - never 'deleted on one side and changed on "
+          "the other', which the kept side did not do: exit %r, said %r"
+          % (code, err[-400:]),
+          code == 1 and "phases[P1] - the merge base writes /phases/0/tasks "
+          "twice" in err and "changed on the other" not in err)
+    repo, plan = _repo(tmp, "rct", env, _plan())
+    with open(plan, "w", encoding="utf-8") as fh:
+        fh.write(base_text)
+    _install(plan)
+    _git(repo, env, "add", "-A")
+    _git(repo, env, "commit", "-qm", "tasks written twice, committed")
+    _branches(repo, env, plan, ours, theirs)
+    _merge(repo, env, plan)
+    with open(plan, encoding="utf-8") as fh:
+        held = fh.read()
+    code, out = _resolve(["resolve", plan, "--renumber", "theirs"])
+    with open(plan, encoding="utf-8") as fh:
+        after = fh.read()
+    check("mk10 RED-FIRST: resolve over that merge - through the real git "
+          "merge - renumbers nothing and writes nothing, saying the base "
+          "writes /phases/0/tasks twice: never 'P1.2 -> P1.3', one task "
+          "under two ids: exit %r, same %r, said %r"
+          % (code, after == held, out[-400:]),
+          code == 1 and after == held and "P1.3" not in after
+          and "/phases/0/tasks" in out and "none is renumbered" in out
+          and "->" not in out)
+
+
+def _base_twice_resolve_case(check, tmp, env):
+    """(mk) `resolve` reads the merge base the same way: a base writing a key
+    twice does not refuse a renumbering the two clean sides call for."""
+    base = _plan()
+    base["phases"][0]["title"] = "One"
+    ours = _add_bug(base, "BUG-1")
+    ours["bugs"][0]["title"] = "ours bug"
+    theirs = _add_bug(base, "BUG-1")
+    theirs["bugs"][0]["title"] = "theirs bug"
+    repo, plan = _repo(tmp, "rbt", env, base)
+    with open(plan, "w", encoding="utf-8") as fh:
+        fh.write(_base_twice(base))
+    _install(plan)
+    _git(repo, env, "add", "-A")
+    _git(repo, env, "commit", "-qm", "a key written twice, committed")
+    _branches(repo, env, plan, ours, theirs)
+    _merge(repo, env, plan)
+    code, out = _resolve(["resolve", plan, "--renumber", "theirs"])
+    doc = _load_or_empty(plan)
+    bugs = dict((b["id"], b.get("title")) for b in doc.get("bugs") or [])
+    check("mk8 RED-FIRST: resolve over a merge whose BASE alone writes a key "
+          "twice renumbers as it would over a clean base - exit 0, both bugs "
+          "kept, the plan writing each key once: exit %r, bugs %r, said %r"
+          % (code, bugs, out[-300:]),
+          code == 0 and bugs.get("BUG-1") == "ours bug"
+          and bugs.get("BUG-2") == "theirs bug" and _twice_found(plan) == [])
+
+
+def _resolve_twice_cases(check, tmp, env):
+    """(mk) `resolve` asks the door of every text it is about to write, before
+    the first write: one that writes a key twice refuses the whole write."""
+    base = _plan()
+    ours = _add_bug(base, "BUG-1")
+    ours["bugs"][0]["title"] = "ours bug"
+    theirs = _add_bug(base, "BUG-1")
+    theirs["bugs"][0]["title"] = "theirs bug"
+    repo, plan = _repo(tmp, "rk1", env, base)
+    _install(plan)
+    _git(repo, env, "add", ".gitattributes")
+    _git(repo, env, "commit", "-qm", "attrs")
+    _branches(repo, env, plan, ours, theirs)
+    _merge(repo, env, plan)
+    with open(plan, encoding="utf-8") as fh:
+        held = fh.read()
+    real = M._render_plan
+
+    def twice(path, result, sharded):
+        out = real(path, result, sharded)
+        target, text = out[0]
+        planted = text.replace('"version": 2', '"version": 2,\n    "version": 2', 1)
+        assert planted != text
+        return [(target, planted)] + out[1:]
+    M._render_plan = twice
+    try:
+        code, out = _resolve(["resolve", plan, "--renumber", "theirs"])
+    finally:
+        M._render_plan = real
+    with open(plan, encoding="utf-8") as fh:
+        after = fh.read()
+    check("mk3 RED-FIRST: a text resolve is about to write that writes a key "
+          "twice refuses the whole write - nothing written, the file as git's "
+          "merge left it, the key and the hand step named: exit %r, same %r, "
+          "said %r" % (code, after == held, out[-240:]),
+          code == 1 and after == held and "nothing was written" in out
+          and "written twice" in out and "/meta/version" in out)
+    # THE OVER-FIRE: the same resolve, its texts as rendered, writes.
+    code, out = _resolve(["resolve", plan, "--renumber", "theirs"])
+    check("mk4 ...and with its texts as rendered the same resolve writes, the "
+          "plan holding each key once: exit %r, writes twice %r"
+          % (code, _twice_found(plan)),
+          code == 0 and _twice_found(plan) == [])
+
+
+def _merge_parse_cases(check):
+    """(mk) The merge resolver parses a plan's text only through the door."""
+    import ast
+    with open(M.__file__, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    raw = sorted("%s:%d" % (n.func.attr, n.lineno) for n in ast.walk(tree)
+                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                 and n.func.attr in ("load", "loads")
+                 and isinstance(n.func.value, ast.Name)
+                 and n.func.value.id == "json")
+    check("mk5 RED-FIRST: merge-manifest.py parses no JSON itself - every side, "
+          "reading and output is parsed by `_manifest_io`'s door, which names "
+          "a key written twice: json.load/loads calls %r" % (raw,),
+          raw == [])
 
 
 def _resolve_cases(check, tmp, env):

@@ -2661,6 +2661,39 @@ def _cases(check):
               "that names the task and the tree: %r" % (_got,),
               _got.get("bound") is True and "T9" in (_got.get("error") or "")
               and _ptree in (_got.get("error") or ""))
+        _tb_plan = json.dumps({"meta": {"version": 2}, "fileIndex": {},
+                               "phases": [{"id": "P1", "status": "in_progress",
+                                           "title": "One", "tasks": [
+                                               {"id": "T1", "status": "in_progress",
+                                                "files": []}]}]}, indent=2)
+        _tb_bad = {}
+        for _tb_kind, _tb_old, _tb_new in (
+                ("twice", '"title": "One",',
+                 '"title": "One",\n      "title": "Uno",'),
+                ("markers", '"tasks": [', '<<<<<<< ours\n      "tasks": [')):
+            assert _tb_plan.count(_tb_old) == 1, _tb_old
+            _ptree = os.path.join(_tb, "phase-" + _tb_kind)
+            os.makedirs(_ptree)
+            with open(os.path.join(_ptree, "p.json"), "w") as fh:
+                fh.write(_tb_plan.replace(_tb_old, _tb_new, 1))
+            _tb_bad[_tb_kind] = (_ptree, M.task_binding(_tb_tree(
+                "wt-" + _tb_kind, {"createdBy": "audit", "taskId": "T1",
+                                   "phaseTree": _ptree}), "p.json"))
+
+        def _tb_unreadable(kind, named):
+            ptree, got = _tb_bad[kind]
+            err = got.get("error") or ""
+            return (got.get("bound") is True and "taskId" not in got
+                    and "cannot be read" in err and ptree in err
+                    and named in err and "does not hold" not in err)
+        check("tb10b RED-FIRST: a marker over a phase tree whose plan will not "
+              "read - a key written twice, or a conflict left in it - binds to "
+              "an error naming that problem (the pointer, or the parse), never "
+              "to 'does not hold', which sends the reader to the wrong repair, "
+              "and never to the copy JSON's reader keeps: %r"
+              % ([g for _p, g in _tb_bad.values()],),
+              _tb_unreadable("twice", "/phases/0/title")
+              and _tb_unreadable("markers", "cannot be read as a plan"))
         # task_covered_files: the one coverage reader both gate arms ask.
         _cv_phase = os.path.join(_tb, "phase-cover")
         os.makedirs(_cv_phase)
@@ -5413,8 +5446,120 @@ def _files_half_report(sources, exempt, reach=None):
     return {"names": names, "unexcused": unexcused, "stale": stale}
 
 
+def _gu_plan(root, text):
+    """A one-file plan of `text` at `root`'s default manifest path."""
+    path = Path(root) / "docs" / "audit" / "audit-plan.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return "docs/audit/audit-plan.json"
+
+
+_GU_PLAN = json.dumps({"meta": {"version": 2}, "phases": [
+    {"id": "P1", "title": "One", "status": "in_progress", "tasks": [
+        {"id": "P1.1", "title": "t", "status": "in_progress",
+         "files": ["src/a.py"]}]}]}, indent=2)
+
+
+def _unreadable_plan_state_cases(check):
+    """(gu) A plan that exists and will not read is not no plan:
+    `manifest_state` carries the reason and the step denies past the free
+    file - through `_manifest_io`, and through the hook's own fallback read
+    when that module cannot be loaded - while a clean plan's state is the
+    dict it always was."""
+    tmp = Path(_harness.fixture_root("config-unreadable-plan-"))
+    twice = _GU_PLAN.replace('"title": "One",',
+                             '"title": "One",\n      "title": "Uno",', 1)
+    marks = _GU_PLAN.replace('"tasks": [', '<<<<<<< ours\n      "tasks": [', 1)
+    assert twice != _GU_PLAN and marks != _GU_PLAN
+    real = M._load_scripts_module
+
+    def states(no_mio):
+        """`{variant: (state, mode, step, cause)}` over the three plans."""
+        out = {}
+        if no_mio:
+            M._load_scripts_module = lambda *_a, **_k: None
+        try:
+            for name, text in (("clean", _GU_PLAN), ("twice", twice),
+                               ("markers", marks)):
+                root = tmp / ("%s-%s" % ("fallback" if no_mio else "door", name))
+                rel = _gu_plan(root, text)
+                st = M.manifest_state(str(root), rel)
+                out[name] = (st, M.plan_gate_mode({}, st),
+                             M.plan_gate_step({}, st),
+                             M.plan_gate_cause({}, st, rel))
+        finally:
+            M._load_scripts_module = real
+        return out
+
+    try:
+        door = states(False)
+        st, mode, step, cause = door["twice"]
+        check("gu1 RED-FIRST: a plan writing a key twice under a running phase "
+              "is not read as no plan - the state carries the reason, the tier "
+              "is deny on the step past the free file, and the cause names the "
+              "file, the key's pointer and the hand step: %r"
+              % ((mode, step, st.get("unreadable"), cause[:300]),),
+              st["exists"] is True and mode == "deny"
+              and step == "nothing-running"
+              and "/phases/0/title" in (st.get("unreadable") or "")
+              and "audit-plan.json" in cause and "/phases/0/title" in cause
+              and "by hand" in cause)
+        st, mode, step, cause = door["markers"]
+        check("gu2 RED-FIRST: ...and a plan holding a conflict marker is the "
+              "same - unreadable, deny, the file named: %r"
+              % ((mode, st.get("unreadable")),),
+              mode == "deny" and "audit-plan.json" in (st.get("unreadable") or "")
+              and "cannot be read as a plan" in cause)
+        st = door["twice"][0]
+        pinned = [M.plan_gate_cause(pin, st, "docs/audit/audit-plan.json")
+                  for pin in ({"planGate": "deny"}, {"enforce": True})]
+        clean_pinned = M.plan_gate_cause({"planGate": "deny"},
+                                         door["clean"][0],
+                                         "docs/audit/audit-plan.json")
+        check("gu2b RED-FIRST: a PINNED tier (planGate deny, enforce) over a "
+              "plan that will not read still names the plan, the key's "
+              "pointer and the hand step after its pin - and a clean plan's "
+              "pinned cause says nothing of it: %r"
+              % ([p[:260] for p in pinned] + [clean_pinned],),
+              all("audit-plan.json" in p and "/phases/0/title" in p
+                  and "by hand" in p for p in pinned)
+              and pinned[0].startswith("planGate is set")
+              and pinned[1].startswith("enforce: true is set")
+              and "cannot be read" not in clean_pinned)
+        fall = states(True)
+        st, mode, _step, cause = fall["twice"]
+        check("gu3 RED-FIRST: THE FALLBACK - with `_manifest_io` not loadable "
+              "the hook's own read does not keep the last copy silently: the "
+              "key written twice is named at its pointer and the tier is deny: "
+              "%r" % ((mode, st.get("unreadable")),),
+              mode == "deny" and "/phases/0/title" in (st.get("unreadable") or ""))
+        check("gu3b ...and the fallback refuses a conflict marker too: %r"
+              % ((fall["markers"][1], fall["markers"][0].get("unreadable")),),
+              fall["markers"][1] == "deny"
+              and fall["markers"][0].get("unreadable"))
+        # THE OVER-FIRE: a clean plan read either way is the state it always
+        # was - no `unreadable` key - and so is no plan at all.
+        # (Without `_manifest_io` a clean plan's phases cannot be judged at
+        # all, so its state stops at `exists` - as it always did.)
+        want = {"exists": True, "hasPhases": True, "phaseRunning": True,
+                "runningPhase": "P1", "staleClosedPhase": None,
+                "signoffDuePhase": None, "signoffDueStatus": None}
+        want_fall = dict(M._NO_PHASE_STATE, exists=True)
+        absent = M.manifest_state(str(tmp / "none"), "docs/audit/audit-plan.json")
+        check("gu4 ...a clean plan's state is the dict it always was, through "
+              "the door and through the fallback, with nothing unreadable said, "
+              "and an absent plan is still no plan: %r"
+              % ((door["clean"][0], fall["clean"][0], absent),),
+              door["clean"][0] == want and fall["clean"][0] == want_fall
+              and "unreadable" not in absent and absent["exists"] is False)
+    finally:
+        M._load_scripts_module = real
+        _harness.remove_tree(str(tmp))
+
+
 def _all_cases(check):
     _cases(check)
+    _unreadable_plan_state_cases(check)
     _declared_outputs_cases(check)
     _status_listing_cases(check)
     _shared_payload_cases(check)

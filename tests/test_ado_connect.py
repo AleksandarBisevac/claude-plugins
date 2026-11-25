@@ -489,6 +489,21 @@ def _cases(check):
         check("c1b ...and unparseable counts as unreadable, since a manifest "
               "that cannot be read carries no meta.ado to plan against",
               M.main([broken]) == 2)
+        twice = os.path.join(tmp, "twice.json")
+        with open(twice, "w", encoding="utf-8") as fh:
+            fh.write('{"meta": {"version": 2, "version": 2}}')
+        err, real = io.StringIO(), sys.stderr
+        sys.stderr = err
+        try:
+            code_twice = _main([twice])[0]
+        finally:
+            sys.stderr = real
+        check("c1c RED-FIRST: ...and so is a manifest writing a key twice, "
+              "read through the plan's door - refused, the key's pointer "
+              "named, never planned against whichever copy came last: %r"
+              % ((code_twice, err.getvalue()[-200:]),),
+              code_twice == 2 and "/meta/version" in err.getvalue()
+              and "written twice" in err.getvalue())
         check("c2 --probe naming a file that does not exist is 2 and NOT 1: a "
               "1 says a rung refused this board, and saying that about an "
               "envelope we could not read is the confident wrong answer",

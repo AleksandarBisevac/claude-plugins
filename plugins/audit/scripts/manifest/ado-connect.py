@@ -70,6 +70,7 @@ _output.install_path()
 
 import _ado_connect as _conn  # noqa: E402  (every decision this door reports)
 import _excerpt  # noqa: E402  (a tool's output that is not JSON is quoted both ends)
+import _manifest_io as _mio  # noqa: E402  (the plan's one door: read_json)
 import _utc_stamp  # noqa: E402  (utc_stamp: the one spelling of this moment)
 
 USAGE = ("usage: ado-connect.py <manifest> [--transport auto|mcp|az] "
@@ -426,8 +427,9 @@ def main(argv):
         return 2
 
     try:
-        with open(manifest_path, "r", encoding="utf-8") as fh:
-            manifest = json.load(fh)
+        # Through the plan's one door: an index writing a key twice is
+        # refused, never read as whichever copy came last.
+        manifest = _mio.read_json(manifest_path)
     except Exception as exc:
         sys.stderr.write("ERROR: cannot read/parse %s: %s\n"
                          % (manifest_path, exc))

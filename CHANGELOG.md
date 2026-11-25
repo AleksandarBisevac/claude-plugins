@@ -33,6 +33,38 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   no longer imports `tempfile`, so with calls not recorded the journal hook imports nothing
   beyond what loading it already imported.
 
+### Breaking — a plan file that writes a key twice is refused
+- **Every plan file is now parsed through one door, which refuses a key written twice
+  anywhere in it; no verb keeps one copy silently any more.** A merge resolved by keeping
+  both sides leaves an object writing one key twice - a task's `lastRun`, a phase's `tasks`,
+  the index's `phases`, a title, a bug. JSON's reader kept the last copy and every save wrote
+  that one back, so one unrelated verb rewrote the file with the other copy gone and the gate
+  could then repeat an older green over a newer red. Now every read that answers from the
+  plan (`/audit:status`, the report, `/audit:doctor`, the panel, every verb) refuses the file
+  in its own channel, naming the file, the key's JSON pointer and the hand step; every save
+  through `_manifest_io` refuses to write over it before its first write; the run-record
+  reader also treats a phase's `tasks` or the index's `phases` written twice as making every
+  record under it unreadable; `validate-manifest.py` names every key written twice, in the
+  index and each shard, as a finding (exit 1); and the merge driver neither merges a side
+  holding the shape by record nor leaves a clean line merge holding it, and `resolve` checks
+  every text it writes. The way through is to delete by hand the copy that is not meant. A
+  plan writing each key once reads and saves byte for byte as before. The plan gate does not
+  read a plan that will not read as no plan: a key written twice, a conflict left in a plan
+  file (which opened the gate before this release) or a missing shard keeps it denying past the
+  session's free file, naming the file and the hand step, while an edit to the plan's own files
+  stays allowed. `ado-connect.py` and `check-ado-item.py` read the index through the same door,
+  and so does the reader `/audit:status` and the panel use for a phase in flight in another
+  worktree. A merge whose BASE alone writes a key twice - committed, then repaired on both
+  branches - still merges: the base is read only to compare, and its key written twice reads as
+  unknown there, so equal sides merge and differing sides conflict on the whole value; no record
+  under it is offered for renumbering. The price of "unknown, never guessed": such a merge
+  can stop where 3.9.0 finished it clean - one side changed the value, or deleted the record
+  holding it, the other kept it - and the conflict says the base writes the key twice; keep
+  by hand the side meant, and the merge completes.
+  This is a
+  MAJOR change: COMPATIBILITY.md section 1 records it as a broken "validation stays
+  additive" promise and says why no warning release came first.
+
 ### Added
 - **A phase's CI run is recorded on the phase, and the sign-off commit carries it.** The
   optional phase key `ci` holds the run id, the head the run graded (`sha`), its `conclusion`

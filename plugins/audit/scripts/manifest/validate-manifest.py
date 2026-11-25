@@ -162,6 +162,18 @@ def main(argv):
         sys.stderr.write("usage: validate-manifest.py <manifest-path> "
                          "[--verbose] [--strict]\n")
         return 2
+    # A KEY WRITTEN TWICE is the one plan this command names in full rather
+    # than refusing at the first: every read through the door stops at it, and
+    # the hand step that clears it needs every copy, in every file - the index
+    # and each shard, any object at any depth.
+    twice = _mio.written_twice(paths[0])
+    if twice:
+        for path, pointer in twice:
+            print("FINDING: %s: %s is written twice - which copy is meant is "
+                  "not established, so no reader answers from the file; "
+                  "delete by hand the copy that is not meant" % (path, pointer))
+        print("\nINVALID: %d finding(s) in %s" % (len(twice), paths[0]))
+        return 1
     try:
         manifest = _mio.load_manifest(paths[0])
     except Exception as exc:

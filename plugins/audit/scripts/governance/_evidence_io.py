@@ -2925,23 +2925,22 @@ def write_plan_file(project, path, change, note, session_id=None, wait=None,
     refused, answer, problem, pointers, saved = None, None, None, [], False
     try:
         try:
-            # A record that wrote a field twice is read as one that will not
-            # read (`plan_json`, `duplicate_key_problem`), under the lock too.
-            body = plan_json(path)
+            # THROUGH THE DOOR, under the lock: a file that writes a key twice
+            # - the shape a merge that kept both sides leaves - is refused
+            # before `change` sees it, since saving it would keep one copy and
+            # drop the other unsaid. The way out is a person's.
+            body = _mio.read_json(path)
+        except _mio.DuplicateKeyError as exc:
+            problem = ("%s (a record's subject is then measured and recorded "
+                       "anew with `run-test-gate.py <plan> <phase> [--task "
+                       "<id>] --record`)" % (_mio.DuplicateKeyError(
+                           _journal_io.repo_relative_or_token(project, path),
+                           exc.pointers, writing=True),))
         except Exception as exc:
             problem = "cannot read %s: %s" % (
                 _journal_io.repo_relative_or_token(project, path), exc)
         else:
-            # A FILE THAT WRITES A KEY TWICE IS NOT REWRITTEN: saving it would
-            # keep one copy and drop the other unsaid - the shape a merge that
-            # kept both sides leaves. The way out is a person's.
-            twice = duplicate_key_problem(body, "")
-            new = None
-            if twice:
-                problem = written_twice_refusal(
-                    _journal_io.repo_relative_or_token(project, path), twice)
-            else:
-                new, problem, answer = change(body)
+            new, problem, answer = change(body)
             if new is not None and problem is None:
                 try:
                     pointers = _mio.save_plan_json(path, new)
@@ -4320,43 +4319,37 @@ def record_problem(record, doc, where=RECORD_KEY, scope=None):
     return {"field": why.split(" ", 1)[0], "why": why}
 
 
-class DuplicatedKeys(dict):
-    """A JSON object a plan file wrote some key of more than once, as
-    `plan_json` reads it: each key's LAST value, as every JSON reader of the
-    plan takes it, with `duplicated` naming the keys written twice. A plain
-    dict to every reader but `duplicate_key_problem`, and saved back as one."""
-    duplicated = ()
+# The door's mark (`_manifest_io.DuplicatedKeys`): an object a plan file wrote
+# some key of more than once, each key's last value, `duplicated` naming the
+# keys. Named here because every rule below asks it.
+DuplicatedKeys = _mio.DuplicatedKeys
 
 
-def _object_pairs(pairs):
-    """`json`'s object hook for a plan file: a plain dict, or a
-    `DuplicatedKeys` when a key came more than once."""
-    out = dict(pairs)
-    if len(out) == len(pairs):
-        return out
-    seen, twice = set(), []
-    for key, _value in pairs:
-        if key in seen and key not in twice:
-            twice.append(key)
-        seen.add(key)
-    marked = DuplicatedKeys(out)
-    marked.duplicated = tuple(twice)
-    return marked
+class HeldUnderTwice(DuplicatedKeys):
+    """A phase body read out of an index that wrote `phases` twice
+    (`walk_plan`): which copy of the phase list is meant is not established,
+    so no record in the phase can be read as the plan's. `twice` names the
+    key, said in the reason; `duplicated` keeps the keys the body itself
+    writes twice. A plain dict to every other reader."""
+    twice = ""
 
 
 def plan_json_text(text):
-    """A plan file's text parsed as `plan_json` parses the file."""
-    return json.loads(text, object_pairs_hook=_object_pairs)
+    """A plan file's text parsed through the door (`_manifest_io.
+    parse_json_text`), every object that wrote a key twice marked - the
+    branch tip's read."""
+    return _mio.parse_json_text(text)[0]
 
 
 def plan_json(path):
-    """A plan file parsed as `_manifest_io.read_json` parses it, every object
-    that wrote a key twice marked (`DuplicatedKeys`) - THE READ every reader
-    of a run record takes it through (`plan_bodies`, the shard read under the
-    lock), so a record whose JSON holds two values for one field is not read
-    as whichever came last. Raises as `read_json` does."""
-    with open(path, "r", encoding="utf-8") as fh:
-        return json.load(fh, object_pairs_hook=_object_pairs)
+    """A plan file parsed through the door, every object that wrote a key
+    twice marked (`DuplicatedKeys`) and nothing refused - THE READ every
+    reader of a run record takes it through (`plan_bodies`), whose stricter
+    rule makes the record under such an object unreadable rather than the
+    whole plan, so a record whose JSON holds two values for one field is not
+    read as whichever came last. Raises as `read_json` does on a file that
+    will not parse."""
+    return _mio.parse_json_file(path)[0]
 
 
 def duplicate_key_problem(value, where=RECORD_KEY):
@@ -4378,15 +4371,22 @@ def duplicate_key_problem(value, where=RECORD_KEY):
     return None
 
 
-def written_twice_refusal(label, twice):
-    """The sentence a writer refuses the plan file `label` with when it
-    writes a key twice (`twice`, `duplicate_key_problem`'s sentence from the
-    file's top): what is wrong, that nothing was written, and the way out."""
-    return ("%s writes a key twice (%s), so saving it would keep one copy "
-            "and drop the other - nothing was written; delete the copy that is "
-            "not meant by hand, then run this again (a record's subject is "
-            "measured and recorded anew with `run-test-gate.py <plan> <phase> "
-            "[--task <id>] --record`)" % (label, twice.lstrip(".")))
+def container_twice_problem(phase, scope):
+    """The key written twice on an object ABOVE a record's holder whose value
+    holds that record - the index's `phases` above every phase
+    (`HeldUnderTwice`), a phase's `tasks` above each task - said, or None.
+    Either copy of such a key may be the one that holds the record, so no
+    record under it is the plan's. A key written twice above that holds no
+    record - a phase's title - takes none of them."""
+    if isinstance(phase, HeldUnderTwice):
+        return ("%s is written twice on the index above the phase holding "
+                "the record, so which copy holds it is not established"
+                % (phase.twice,))
+    if scope == "task" and isinstance(phase, DuplicatedKeys) \
+            and "tasks" in phase.duplicated:
+        return ("tasks is written twice on the phase above the task holding "
+                "the record, so which copy holds it is not established")
+    return None
 
 
 def holder_duplicate_problem(holder, scope):
@@ -4469,6 +4469,12 @@ def reader_rule_problems(bodies):
         if not isinstance(phase, dict):
             continue
         for scope, subject, holder in _record_holders(phase):
+            above = container_twice_problem(phase, scope)
+            if above:
+                out.append({"file": label, "scope": scope, "subject": subject,
+                            "rule": "duplicate-key",
+                            "why": _journal_io._clip(above)})
+                continue
             # A record the published schema refuses is said in the schema's
             # channel; the projection is asked here of the others only.
             schema_says = doc is None or _first_finding(
@@ -4504,10 +4510,12 @@ def _plan_records(phase, doc):
     phase body `phase` holds, its own then each task's: `record` the
     projected record (`project_record`) a reader reads, or None beside the
     first way the record or its holder is not the writer's (`problem`,
-    `record_problem`'s shape) - a key its holder writes twice first."""
+    `record_problem`'s shape) - a key written twice above the holder
+    (`container_twice_problem`) or on it first."""
     out = []
     for scope, subject, holder in _record_holders(phase):
-        why = holder_duplicate_problem(holder, scope)
+        why = (container_twice_problem(phase, scope)
+               or holder_duplicate_problem(holder, scope))
         found = ({"field": why.split(" ", 1)[0], "rule": "duplicate-key",
                   "why": _journal_io._clip(why)} if why else
                  record_problem(holder[RECORD_KEY], doc, scope=scope))
@@ -4771,12 +4779,17 @@ def walk_plan(index_path, read, label, join):
         return [], [label(index_path)]
     if index is None:
         return [], []
+    # AN INDEX WRITING `phases` TWICE holds two phase lists and no reader can
+    # say which is the plan's, so every body is handed on marked
+    # (`HeldUnderTwice`) and no record in it reads.
+    twice = (isinstance(index, DuplicatedKeys)
+             and "phases" in index.duplicated)
     bodies, lost = [], []
     for stub in (index.get("phases") or []) if isinstance(index, dict) else []:
         if not isinstance(stub, dict):
             continue
         if not stub.get("shard"):
-            bodies.append((label(index_path), stub))
+            bodies.append((label(index_path), _held(stub, twice)))
             continue
         path = join(index_path, str(stub["shard"]))
         try:
@@ -4784,10 +4797,22 @@ def walk_plan(index_path, read, label, join):
         except Exception:
             body = None
         if isinstance(body, dict):
-            bodies.append((label(path), body))
+            bodies.append((label(path), _held(body, twice)))
         else:
             lost.append(label(path))
     return bodies, lost
+
+
+def _held(body, twice):
+    """`body`, or - when its index wrote `phases` twice - the same body marked
+    `HeldUnderTwice`, its own marks kept on the mark's `duplicated` so a key
+    the body itself writes twice is still said."""
+    if not twice:
+        return body
+    held = HeldUnderTwice(body)
+    held.twice = "phases"
+    held.duplicated = tuple(getattr(body, "duplicated", ()))
+    return held
 
 
 def _disk_json(path):

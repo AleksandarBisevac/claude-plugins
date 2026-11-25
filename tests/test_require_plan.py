@@ -2342,6 +2342,7 @@ def _cases(check):
 
     _harness.stage(check, "ss", _shell_slot_cases)
     _harness.stage(check, "dp", _declared_predicate_cases)
+    _harness.stage(check, "ur", _unreadable_plan_cases)
 
 
 # One plan whose `files` and `fileIndex` reach paths every way a declaration can
@@ -2519,6 +2520,145 @@ def _shell_slot_cases(check):
             os.environ.pop("CLAUDE_PROJECT_DIR", None)
         else:
             os.environ["CLAUDE_PROJECT_DIR"] = held
+
+
+def _ur_project(name, edit=None):
+    """A sharded plan with phase P1 in progress, task P1.1 declaring
+    `src/declared.py`, under a fresh fixture; `edit` (old, new) planted into
+    the P1 shard. -> `(root, shard path)`."""
+    import _manifest_io
+    root = Path(_harness.fixture_root("require-plan-unreadable-%s-" % name))
+    (root / "src").mkdir(parents=True)
+    index = root / "docs" / "audit" / "audit-plan.json"
+    index.parent.mkdir(parents=True)
+    _manifest_io.save_sharded(str(index), {
+        "meta": {"version": 3}, "phases": [
+            {"id": "P1", "title": "One", "status": "in_progress", "tasks": [
+                {"id": "P1.1", "title": "t", "status": "in_progress",
+                 "files": ["src/declared.py"]}]}]})
+    shard = root / "docs" / "audit" / "phases" / "P1.json"
+    if edit is not None:
+        text = shard.read_text(encoding="utf-8")
+        assert text.count(edit[0]) == 1, edit
+        shard.write_text(text.replace(edit[0], edit[1], 1), encoding="utf-8")
+    return root, shard
+
+
+def _unreadable_plan_cases(check):
+    """(ur) A plan that exists and will not read is not no plan: with a phase
+    in progress, a key written twice in a shard - or a conflict left in it -
+    keeps the gate denying past the free file, naming the file, the key and
+    the hand step, while the repair, an edit to the plan's own file, stays
+    allowed; a clean plan answers exactly as before."""
+    held = os.environ.get("CLAUDE_PROJECT_DIR")
+    roots = []
+
+    def write(root, sid, rel, agent=None):
+        data = {"tool_name": "Write", "session_id": sid, "cwd": str(root),
+                "tool_input": {"file_path": str(root / rel),
+                               "content": "\n".join("x%d = 1" % i
+                                                    for i in range(60))}}
+        if agent:
+            data["agent_id"] = agent
+        os.environ["CLAUDE_PROJECT_DIR"] = str(root)
+        ok, got = _harness.attempt(M.decide, data, event="PreToolUse")
+        return got if ok else ("raised", str(got))
+
+    def run(root, sid):
+        """The session's free file, a second uncovered file, and an edit of
+        the P1 shard itself."""
+        return (write(root, sid, "src/first.py"),
+                write(root, sid, "src/second.py"),
+                write(root, sid, "docs/audit/phases/P1.json"))
+
+    try:
+        clean, _s = _ur_project("clean")
+        roots.append(clean)
+        twice, _s = _ur_project("twice", ('"title": "One",',
+                                          '"title": "One",\n  "title": "Uno",'))
+        roots.append(twice)
+        marks, _s = _ur_project("markers", ('"tasks": [',
+                                            '<<<<<<< ours\n  "tasks": ['))
+        roots.append(marks)
+        c = run(clean, "ur-clean")
+        t = run(twice, "ur-twice")
+        k = run(marks, "ur-markers")
+        sub = (write(twice, "ur-sub", "src/sub-first.py", agent="ag-ur"),
+               write(twice, "ur-sub", "src/sub-second.py", agent="ag-ur"))
+        pins = []
+        for i, pin in enumerate(({"planGate": "deny"}, {"enforce": True})):
+            proot, _s = _ur_project("pin%d" % i, ('"title": "One",',
+                                                 '"title": "One",\n  "title": "Uno",'))
+            roots.append(proot)
+            (proot / ".claude").mkdir(exist_ok=True)
+            (proot / ".claude" / "audit.config.json").write_text(
+                json.dumps(pin), encoding="utf-8")
+            pins.append(run(proot, "ur-pin%d" % i))
+        stale = ("No task in", "Start a phase", "/audit:phase add",
+                 "Two ways forward")
+        check("ur1 RED-FIRST: a shard writing a key twice under a running "
+              "phase keeps the gate denying the second uncovered file, the "
+              "refusal naming the shard, the key's pointer and the hand step "
+              "- never the allow a plan read as absent gets: %r"
+              % ((t[0][0], t[1][0], t[1][1][-700:]),),
+              t[0][0] == "allow" and t[1][0] == "block"
+              and "phases/P1.json" in t[1][1] and "/title" in t[1][1]
+              and "written twice" in t[1][1] and "by hand" in t[1][1])
+        check("ur2 RED-FIRST: ...and so does a shard holding a conflict "
+              "marker, naming the shard that will not parse: %r"
+              % ((k[0][0], k[1][0], k[1][1][-500:]),),
+              k[0][0] == "allow" and k[1][0] == "block"
+              and "phases/P1.json" in k[1][1]
+              and "cannot be read as a plan" in k[1][1])
+        # THE OVER-FIRE, both halves: the repair - an edit to the plan file
+        # that will not read - is allowed, and a clean plan answers as it
+        # always did, with no word about a plan that cannot be read.
+        check("ur3 the repair stays open: an edit of the shard that writes a "
+              "key twice, or holds a conflict, is allowed: %r"
+              % ((t[2], k[2]),),
+              t[2][0] == "allow" and k[2][0] == "allow")
+        check("ur4 ...and a clean plan answers exactly as before: the free "
+              "file, the deny naming the running phase, the plan file allowed, "
+              "and nothing said of a plan that cannot be read: %r"
+              % ((c[0][0], c[1][0], c[2][0], c[1][1][:300]),),
+              c[0][0] == "allow" and c[1][0] == "block"
+              and "Phase P1 is in_progress" in c[1][1]
+              and "cannot be read" not in c[1][1] and c[2][0] == "allow")
+        check("ur5 RED-FIRST: the main loop's refusal over a plan that will "
+              "not read ends in the hand repair, and says none of the remedies "
+              "of a readable plan - no task declares, start a phase, two ways "
+              "forward - since a plan that will not read declares and starts "
+              "nothing: %r" % ((t[1][1][-400:], k[1][1][-400:]),),
+              all(v[1][0] == "block" and "Repair the plan file named above by "
+                  "hand" in v[1][1] and "YOU ARE A SUBAGENT" not in v[1][1]
+                  and not any(s in v[1][1] for s in stale) for v in (t, k)))
+        check("ur6 RED-FIRST: ...and a subagent's refusal tells it to STOP and "
+              "report, with no repair of its own to make and no readable-plan "
+              "remedy: %r" % ((sub[0][0], sub[1][0], sub[1][1][-400:]),),
+              sub[0][0] == "allow" and sub[1][0] == "block"
+              and "YOU ARE A SUBAGENT: STOP" in sub[1][1]
+              and "/title" in sub[1][1]
+              and "Repair the plan file named above" not in sub[1][1]
+              and not any(s in sub[1][1] for s in stale))
+        check("ur7 RED-FIRST: with the tier PINNED - planGate deny, or the "
+              "legacy enforce - over a plan writing a key twice, the refusal "
+              "still names the pin AND the unreadable plan: the shard, the "
+              "key's pointer and the hand step the repair line points at: %r"
+              % ([(p[1][0], p[1][1][-500:]) for p in pins],),
+              len(pins) == 2
+              and all(p[1][0] == "block" and "phases/P1.json" in p[1][1]
+                      and "/title" in p[1][1] and "written twice" in p[1][1]
+                      and "Repair the plan file named above" in p[1][1]
+                      for p in pins)
+              and "planGate is set" in pins[0][1][1]
+              and "enforce: true is set" in pins[1][1][1])
+    finally:
+        if held is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = held
+        for root in roots:
+            _harness.remove_tree(str(root))
 
 
 def _selftest():

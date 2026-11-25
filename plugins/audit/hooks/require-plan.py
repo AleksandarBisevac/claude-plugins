@@ -1256,6 +1256,23 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     # decision is still `in_progress` coverage alone, so nothing here can widen
     # what the gate allows — a task the plan has not started opens no file, and
     # saying which task it is does not start it.
+    if state.get("unreadable"):
+        # A PLAN THAT WILL NOT READ declares nothing and starts nothing, so
+        # neither "no task declares" nor "start a phase" is true of it: the
+        # one remedy is the hand repair `cause` names, and only the reader
+        # who owns the plan may make it.
+        return (
+            "block",
+            "Outside the running plan (%s): %s\n%s\n%s"
+            % (reason, rel, cause,
+               "YOU ARE A SUBAGENT: STOP, and report to the orchestrator that "
+               "the plan will not read - repairing it is the orchestrator's, "
+               "and you will not be re-spawned for it."
+               if _config.is_subagent(data) else
+               "Repair the plan file named above by hand "
+               "(validate-manifest.py names every key written twice; a "
+               "conflict is resolved as any merge conflict), then retry."),
+        )
     note = _declaration_note(root, manifest_rel, rel, state.get("exists"))
     head = "Outside the running plan (%s): %s\n%s\n" % (reason, rel, cause)
     if note["stated"]:

@@ -3351,7 +3351,8 @@
       "P156.7",
       "P156.16-3st",
       "P159.2",
-      "P169.9"
+      "P169.9",
+      "P169.32-6l3"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -3650,7 +3651,8 @@
       "P131.1",
       "P131.2",
       "P155.8",
-      "P155.45-gfj"
+      "P155.45-gfj",
+      "P169.32-6l3"
     ],
     "plugins/audit/reference/execute-task.md": [
       "P55.21",
@@ -5995,7 +5997,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P169.15-6l3"
+      "P169.15-6l3",
+      "P169.32-6l3"
     ],
     "plugins/audit/scripts/panel/_panel_settings.py": [
       "P12.1",
@@ -6417,7 +6420,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P155.1"
+      "P155.1",
+      "P169.32-6l3"
     ],
     "plugins/audit/scripts/status/_doctor_trail.py": [
       "P36.9",
@@ -11295,7 +11299,8 @@
       "P123.41-64p",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P169.32-6l3"
     ],
     "plugins/audit/tests/test__live_copy.py": [
       "P115.3-4yc",
@@ -11967,13 +11972,15 @@
       "P130.4",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P169.32-6l3"
     ],
     "plugins/audit/scripts/manifest/check-ado-item.py": [
       "P122.8-z4y",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P169.32-6l3"
     ],
     "plugins/audit/scripts/manifest/explain-ado-drift.py": [
       "P122.8-z4y",
@@ -12930,7 +12937,8 @@
       "P156.4",
       "P156.16-3st",
       "P159.2",
-      "P169.9"
+      "P169.9",
+      "P169.32-6l3"
     ],
     "tests/test__config_rules.py": [
       "P131.1",
@@ -13016,7 +13024,8 @@
       "P131.1",
       "P109.2",
       "P86.1",
-      "P155.1"
+      "P155.1",
+      "P169.32-6l3"
     ],
     "tests/test__doctor_trail.py": [
       "P131.1",
@@ -13149,7 +13158,8 @@
       "P169.21-6l3"
     ],
     "tests/test__live_copy.py": [
-      "P131.1"
+      "P131.1",
+      "P169.32-6l3"
     ],
     "tests/test__loader.py": [
       "P131.1"
@@ -13275,7 +13285,8 @@
       "P131.1"
     ],
     "tests/test__panel_runstate.py": [
-      "P131.1"
+      "P131.1",
+      "P169.32-6l3"
     ],
     "tests/test__panel_settings.py": [
       "P131.1",
@@ -13546,7 +13557,8 @@
       "P156.16-3st"
     ],
     "tests/test_ado_connect.py": [
-      "P131.1"
+      "P131.1",
+      "P169.32-6l3"
     ],
     "tests/test_audit_doctor.py": [
       "P131.1",
@@ -13615,7 +13627,8 @@
       "P167.7-fge",
       "P169.2",
       "P169.19-6l3",
-      "P169.31-6l3"
+      "P169.31-6l3",
+      "P169.32-6l3"
     ],
     "tests/test_audit_task.py": [
       "P131.1",
@@ -13696,7 +13709,8 @@
       "P131.1"
     ],
     "tests/test_check_ado_item.py": [
-      "P131.1"
+      "P131.1",
+      "P169.32-6l3"
     ],
     "tests/test_close_phase.py": [
       "P131.1",
@@ -14102,7 +14116,8 @@
       "P131.1",
       "P155.8",
       "P155.19-gfj",
-      "P155.45-gfj"
+      "P155.45-gfj",
+      "P169.32-6l3"
     ],
     "tests/test_resolve_ado_parent.py": [
       "P131.1"

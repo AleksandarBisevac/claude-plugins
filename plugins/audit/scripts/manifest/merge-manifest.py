@@ -51,7 +51,6 @@ This script carries no `--selftest` of its own; its cases live in
 `tests/test_merge_manifest.py`.
 """
 import argparse
-import json
 import os
 import posixpath
 import shutil
@@ -136,13 +135,27 @@ def _line_merge(base_p, ours_p, theirs_p):
                             "-L", "theirs", ours_p, base_p, theirs_p],
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if 0 <= r.returncode < 128:
-            return r.stdout.decode("utf-8", "replace")
+            text = r.stdout.decode("utf-8", "replace")
+            # A LINE MERGE THAT COMES OUT CLEAN CAN STILL WRITE A KEY TWICE -
+            # each side adding the same key in a different hunk - and git would
+            # commit it. Such a text is written as the one block below instead.
+            if not _written_twice_in(text):
+                return text
     except OSError:
         pass
     ours, theirs = _read(ours_p), _read(theirs_p)
     return "<<<<<<< ours\n%s%s=======\n%s%s>>>>>>> theirs\n" % (
         ours, "" if ours.endswith("\n") else "\n",
         theirs, "" if theirs.endswith("\n") else "\n")
+
+
+def _written_twice_in(text):
+    """The JSON pointers of the keys `text` writes twice, as the door names them
+    - [] for text that writes each once or is not JSON (markers)."""
+    try:
+        return _mio.parse_json_text(text)[1]
+    except ValueError:
+        return []
 
 
 def _kind(doc):
@@ -164,6 +177,63 @@ def _new_findings(merged, ours, theirs):
     return [f for f in _manifest_rules.validate(merged)[0] if f not in before]
 
 
+def _base_unknown(base):
+    """`[(label, pointer)]` - where the merge base writes a key twice, so its
+    value there is unknown (`_mio.without_written_twice`): `label` in the
+    record merge's own spelling (`phases[P1].tasks`), `pointer` the key's JSON
+    pointer in the base."""
+    out = []
+    for path, unknown in _mio.unknown_in_base(base):
+        parts = []
+        for p in path:
+            if isinstance(p, tuple):
+                parts.append("[%s]" % (p[1],))
+            else:
+                parts.append(("." if parts else "") + "%s" % (p,))
+        out.append(("".join(parts) or "(document)", unknown.pointer))
+    return out
+
+
+def _under(label, conflict_path):
+    """True when the record merge's conflict at `conflict_path` is at, inside
+    or AROUND the value the base left unknown at `label` - a unit spelled
+    `parent.{a,b}` included when one of its keys is that value. Around: a
+    record one side deleted while the other kept it is "changed on the other
+    side" only against a base that is known, and a record holding an unknown
+    value is not."""
+    if conflict_path == label or conflict_path.startswith(label + "[") \
+            or conflict_path.startswith(label + "."):
+        return True
+    if conflict_path != "(document)" and (
+            label.startswith(conflict_path + "[")
+            or label.startswith(conflict_path + ".")):
+        return True
+    parent, _sep, key = label.rpartition(".")
+    head = parent + "." if parent else ""
+    if conflict_path.startswith(head + "{") and conflict_path.endswith("}"):
+        return key in conflict_path[len(head) + 1:-1].split(",")
+    return False
+
+
+def _base_unknown_reason(pointer):
+    return ("the merge base writes %s twice, so what it held there is not "
+            "established and the two sides differ - keep the one meant by hand "
+            "(nothing is renumbered: the base cannot say whether a record here "
+            "was added on a side or was there before)" % (pointer,))
+
+
+def _mark_base_unknown(conflicts, unknown):
+    """Each conflict at or inside a value the base left unknown, reworded to
+    say so: never "added on both sides", which would offer a renumbering of
+    a record that may be one record held two ways."""
+    for c in conflicts:
+        for label, pointer in unknown:
+            if _under(label, c["path"]):
+                c["reason"] = _base_unknown_reason(pointer)
+                break
+    return conflicts
+
+
 def run_driver(base_p, ours_p, theirs_p, path_label):
     """Merge in place into `ours_p`. Returns (exit code, message lines)."""
     label = path_label or os.path.basename(ours_p)
@@ -172,12 +242,32 @@ def run_driver(base_p, ours_p, theirs_p, path_label):
     # a state, not a malformed input, so it is told apart before parsing.
     added_both = not texts[0].strip()
     try:
-        docs = [None if added_both and i == 0 else json.loads(t)
-                for i, t in enumerate(texts)]
+        parsed = [(None, []) if added_both and i == 0 else _mio.parse_json_text(t)
+                  for i, t in enumerate(texts)]
     except ValueError as exc:
         _write(ours_p, _line_merge(base_p, ours_p, theirs_p))
         return 1, ["%s %s: a side is not valid JSON (%s) - fell back to a line merge "
                    "with conflict markers" % (_TAG, label, exc)]
+    # A SIDE THAT WRITES A KEY TWICE is not merged by record: its parse keeps
+    # the last copy, and merging that would write one copy back with the other
+    # dropped unsaid. It is left to the person, as markers, with the key named.
+    # THE BASE is not a side: it is read only to tell which side changed what
+    # and is never written back, so a key it alone writes twice (committed,
+    # then repaired on both branches) reads as UNKNOWN there - the sides
+    # settle it, or conflict at it, and no id under it is offered for
+    # renumbering (`_mio.without_written_twice`, `_mark_base_unknown`).
+    twice = [(side, pointer) for side, (_doc, found)
+             in zip(("ours", "theirs"), parsed[1:]) for pointer in found]
+    if twice:
+        _write(ours_p, _line_merge(base_p, ours_p, theirs_p))
+        return 1, ["%s %s: %s %s written twice - which copy is meant is not "
+                   "established, so nothing was merged by record; fell back to a "
+                   "line merge with conflict markers: delete by hand the copy "
+                   "that is not meant" % (_TAG, label, ", ".join(
+                       "%s on %s" % (pointer, side) for side, pointer in twice),
+                       "is" if len(twice) == 1 else "are")]
+    docs = [doc for doc, _found in parsed]
+    docs[0] = _mio.without_written_twice(docs[0])
 
     if added_both and _kind(docs[1]) == "shard":
         result = _manifest_merge.collision(
@@ -187,7 +277,12 @@ def run_driver(base_p, ours_p, theirs_p, path_label):
         if added_both:
             docs[0] = {}
         result = _manifest_merge.merge3(docs[0], docs[1], docs[2])
+        _mark_base_unknown(result["conflicts"], _base_unknown(docs[0]))
     text = _manifest_merge.render(result, _mio.json_document)
+    # The door asks the text before %A is written; one that writes a key twice
+    # raises, and `driver_main` falls back to the line merge, which never
+    # leaves such a text clean (`_line_merge`).
+    _mio.check_plan_text(ours_p, text)
     counts = "ours %d, theirs %d record(s) changed" % (result["counts"]["ours"],
                                                        result["counts"]["theirs"])
     notes = []
@@ -368,6 +463,9 @@ def _collisions(base, ours, theirs):
     """Ids BOTH sides added, where the record merge reports a collision. Identical
     additions merge on their own and are not in this list."""
     added = (_namespace(ours) - _namespace(base)) & (_namespace(theirs) - _namespace(base))
+    # An id under a container the base writes twice is never counted here:
+    # the base holds an `UnknownInBase` there, so the record merge conflicts
+    # on the whole container and reports no collision inside it.
     result = _manifest_merge.merge3(base, ours, theirs)
     conflicted = " ".join(c["path"] for c in result["conflicts"]
                           if c["reason"].startswith(_COLLISION))
@@ -454,7 +552,11 @@ def resolve(path, side):
     for rev, name in (("HEAD", "HEAD"), ("MERGE_HEAD", "MERGE_HEAD"),
                       (base_rev, "the merge base")):
         try:
-            plans[name] = _plan_at(top, rev, rel) if rev else None
+            # The base is read as the driver reads it: only to compare, so a
+            # key it alone writes twice is absent there, never refused.
+            plans[name] = (_plan_at(top, rev, rel,
+                                    as_base=(name == "the merge base"))
+                           if rev else None)
         except (OSError, ValueError, AttributeError, TypeError, KeyError) as exc:
             return 1, ("%s refused: nothing was written - the plan %s holds at %s (its "
                        "index or one of its phase files) cannot be read: %s"
@@ -467,9 +569,16 @@ def resolve(path, side):
     ids = _collisions(base, ours, theirs)
     if not ids:
         foreign = _foreign_records(top, path, rel, (base, ours, theirs))
+        unknown = _base_unknown(base)
         return 1, ("%s refused: no id in %s was minted on both sides; what conflicts "
-                   "is a real disagreement, which the marker blocks show%s"
-                   % (_TAG, rel, _foreign_lines(foreign, "nothing was written, and ")))
+                   "is a real disagreement, which the marker blocks show%s%s"
+                   % (_TAG, rel, "" if not unknown else
+                      " - the merge base writes %s twice, so whether a record "
+                      "under it was added on a side or was there before is not "
+                      "established, and none is renumbered: keep by hand the "
+                      "copy each block means" % (_output.some_of(
+                          [p for _l, p in unknown]),),
+                      _foreign_lines(foreign, "nothing was written, and ")))
     named, other = (theirs, ours) if side == "theirs" else (ours, theirs)
     mapping, refused = _renumbering(ids, named, other, _id_shape.suffix_here(top, named))
     if refused:
@@ -499,6 +608,13 @@ def resolve(path, side):
             return 1, "%s refused: nothing was written - %s" % (_TAG, problem)
         if strays:
             return 1, _stray_refusal(strays, answer) + _foreign_lines(foreign, "")
+        # THE DOOR asks every text before the first is written: one that
+        # writes a key twice refuses the whole write.
+        try:
+            for target, text in files:
+                _mio.check_plan_text(target, text)
+        except _mio.DuplicateKeyError as exc:
+            return 1, "%s refused: %s" % (_TAG, exc)
         for target, text in files:
             _write(target, text)
     finally:
@@ -1027,7 +1143,7 @@ def _foreign_records(top, path, rel, plans):
             continue
         for reading in _readings(held, _marker_size(top, label)):
             try:
-                doc = json.loads(reading)
+                doc = _mio.parse_json_text(reading)[0]
             except ValueError:
                 continue
             for f in _manifest_merge.foreign_values(sides[0], sides[1], sides[2], doc,
@@ -1040,7 +1156,7 @@ def _foreign_records(top, path, rel, plans):
 def _parsed(text):
     """`text` as JSON, or None when it is not - a file holding markers is not."""
     try:
-        return json.loads(text)
+        return _mio.parse_json_text(text)[0]
     except ValueError:
         return None
 
@@ -1065,7 +1181,7 @@ def _sharded_at(top, rel):
     plan carries no `shard` refs, and the working copy may be full of markers."""
     code, text = _mi.git(top, "show", "HEAD:%s" % (rel,))
     try:
-        return code == 0 and _mio.is_sharded(json.loads(text))
+        return code == 0 and _mio.is_sharded(_mio.parse_json_text(text)[0])
     except ValueError:
         return False
 

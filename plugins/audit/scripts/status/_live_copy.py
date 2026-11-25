@@ -28,7 +28,6 @@ This module carries no `--selftest` of its own; its cases live in
 `tests/test__live_copy.py` - see `tests/_harness.py`.
 The cases that drive it through `/audit:status` stay in `test_audit_status.py`.
 """
-import json
 import os
 import sys
 
@@ -100,8 +99,9 @@ def _tree_copy(path, phase_id):
     another checkout's file is a read; nothing here writes to it.
     """
     try:
-        with open(path, encoding="utf-8") as fh:
-            doc = json.load(fh)
+        # Through the plan's door: a copy writing a key twice is refused,
+        # in the `why` channel, never counted off whichever copy came last.
+        doc = _mio.read_plan(path)
     except (OSError, ValueError) as exc:
         return None, "%s could not be read (%s)" % (path, exc)
     body = _phase_body(doc, phase_id)
@@ -118,9 +118,15 @@ def _show_phase(git_root, rev, rel, phase_id):
         return None, "git show %s answered %s: %s" % (
             spec, code, " ".join(_excerpt.reason_of(err).split()) or "no output")
     try:
-        body = _phase_body(json.loads(out), phase_id)
+        doc, twice = _mio.parse_json_text(out)
     except ValueError as exc:
         return None, "git show %s is not readable JSON (%s)" % (spec, exc)
+    if twice:
+        # The door's refusal, in this reader's own channel: which copy the
+        # commit means is not established, so neither is counted.
+        return None, "git show %s cannot be read: %s" % (
+            spec, _mio.DuplicateKeyError(spec, twice))
+    body = _phase_body(doc, phase_id)
     if body is None:
         return None, "git show %s holds no phase %s" % (spec, phase_id)
     return body, None

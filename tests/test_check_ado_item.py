@@ -93,6 +93,21 @@ def _cases(check):
         check("ci1b ...and unparseable counts as unreadable, since a manifest "
               "that cannot be read carries no conventions to apply either",
               M.main([_broken, "--item", item_good]) == 2)
+        _twice = os.path.join(tmp, "twice.json")
+        with open(_twice, "w", encoding="utf-8") as fh:
+            fh.write('{"meta": {"version": 2, "version": 2}}')
+        _err, _real = io.StringIO(), sys.stderr
+        sys.stderr = _err
+        try:
+            _code = _run([_twice, "--item", item_good])[0]
+        finally:
+            sys.stderr = _real
+        check("ci1c RED-FIRST: ...and so is a manifest writing a key twice, "
+              "read through the plan's door - refused, the key's pointer "
+              "named, never graded against whichever copy came last: %r"
+              % ((_code, _err.getvalue()[-200:]),),
+              _code == 2 and "/meta/version" in _err.getvalue()
+              and "written twice" in _err.getvalue())
         m_std = _write(tmp, "with.json", {"meta": {"ado": {"conventions": BOARD}}})
         m_none = _write(tmp, "without.json", {"meta": {"ado": {}}})
         m_bare = _write(tmp, "bare.json", {})

@@ -429,7 +429,7 @@ L8:
   _report_page -> _fmt, _manifest_io, _output, _report_html, _report_md, _report_ui, _report_usage, _status_facts
 
 L9:
-  ado-connect -> _ado_connect, _excerpt, _output, _utc_stamp
+  ado-connect -> _ado_connect, _excerpt, _manifest_io, _output, _utc_stamp
   audit-doctor -> _claude_home, _cli_fmt, _doctor_ado, _doctor_completions, _doctor_hygiene, _doctor_policy, _doctor_report, _doctor_setup, _doctor_trail, _output, _panel_runstate
   audit-journal -> _claude_home, _evidence_io, _journal_io, _output
   audit-lock -> _claude_home, _locks, _output
@@ -439,7 +439,7 @@ L9:
   audit-task -> _affected_tests, _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _impact, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _task_timing, _tree_stamp, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
-  check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
+  check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _manifest_io, _output
   close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _scoped_commit, _tree_stamp, _utc_stamp, _verdict_binding, _worktrees
   commit-task-work -> _claude_home, _commit_trail, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _panel_write, _scoped_commit, _verdict_binding, usage_ledger
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _invariants, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _utc_stamp
@@ -3251,6 +3251,10 @@ because every plan written before the verbs stored derived values carries some.
 `--strict` moves every line the published schema raised (`rules.schema.*` from the whole-plan
 check, `crossrefs.bugs.schema-*` from the bug values) from the warnings to the findings, so the
 command rejects exactly where `ajv` rejects - the reading `COMPATIBILITY.md` announces for 4.0.0.
+A plan file that writes a key twice is asked before the plan is loaded
+(`_manifest_io.written_twice`): each key, in the index and in every shard, at any depth, is one
+`FINDING:` naming its file and JSON pointer, and the command exits 1 without validating a copy -
+every other reader stops at the first, and the hand step that clears the file needs them all.
 
 ### `plugins/audit/scripts/status/_status_facts.py`
 What the manifest SAYS, as a machine-readable answer — the half of status that
@@ -4347,21 +4351,23 @@ hand-edited row is read as written and only `verify`'s hash chain names it.
 
 **What makes a record unreadable is one list, `READER_RULES`, asked beside the schema**: a key its
 holder - the task, or the phase outside its tasks - writes twice (`holder_duplicate_problem()`, over
-`DuplicatedKeys` from `plan_json()`, the parse every read of a plan file a record is taken from goes
-through: the walk, the shard read under the lock, the branch tip), a share that would rewrite a
-verdict, and the projection. `_plan_records()` asks them for every reader, and `held_record()` for a
-writer under the lock; `write_plan_file()` refuses to rewrite a file that writes any key twice,
-naming the way out - delete the copy not meant by hand, then record again. `rf1` proves, over every
+`DuplicatedKeys` from `plan_json()`, which is `_manifest_io`'s door parse with nothing refused: the
+walk and the branch tip take it), a key written twice above the holder whose value holds it - a
+phase's `tasks`, the index's `phases` (`container_twice_problem()`, the latter marked by
+`walk_plan()` as `HeldUnderTwice`) - a share that would rewrite a verdict, and the projection.
+`_plan_records()` asks them for every reader, and `held_record()` for a writer under the lock;
+`write_plan_file()` reads its file through the door (`_manifest_io.read_json`), which refuses one
+that writes any key twice before `change` sees it, naming the way out - delete the copy not meant
+by hand, then record again. `rf1` proves, over every
 `.py` under the plugin's `scripts/` and `hooks/` and `.claude/hooks/`, that every load of a record's
 key sits in a door `_RF_DOORS` names; it cannot see the key bound to another name, `getattr`, a walk
 over a holder's items, or a reader that is not Python. `rf2` breaks every leaf the table holds and
 fails when one is not named; `rf3` takes away each field an object of the table requires, at every
 depth, and `rf4` plants a key the table does not name in each of those objects, which neither the
-writer's egress nor the projection may keep. The plan's other readers - `_manifest_io` among them - still take the
-last copy of a key written twice, and its writers save that copy alone, so a verb other than the
-gate that rewrites such a file leaves one copy where there were two; a phase writing its `tasks`
-key twice is read from the last copy by every reader. The release guard refuses such a plan for
-itself.
+writer's egress nor the projection may keep. The plan's other readers go through the same door
+and refuse the file outright (see `_manifest_io.py`'s *one door*), so the stricter rule here is
+what remains for the reads that must still answer for the rest of the plan. The release guard
+refuses such a plan for itself.
 `validate-manifest.py` warns on each record `reader_rule_problems()` lists.
 
 **The subject's newest run decides whether anything is repeated.** `reusable_run()` repeats the
@@ -7353,6 +7359,47 @@ name them in a refusal. A config naming a path that does not exist is never foll
 default — that would silently render some other plan than the one the project points at — so
 `resolve_manifest` reports no path found there instead of falling through.
 
+**It is also the one door a plan file is parsed and saved through, and the door refuses a key
+written twice** - the shape a merge resolved by keeping both sides leaves. `parse_json_text()` is
+the parse: an object hook builds a plain dict and compares lengths, so a file writing each key
+once pays nothing more, and an object that wrote one twice comes back a `DuplicatedKeys` naming
+the keys, with the JSON pointer of each beside the document. `read_json()` (for a plan document:
+`meta` or `phases` at the top, or a phase body), `read_plan()`, `load_manifest()` and
+`load_manifest_at()` raise `DuplicateKeyError` - a `ValueError`, so it travels every channel an
+unparseable plan already used - naming the file, each pointer and the hand step;
+`raw_atomic_write_json()`, which every JSON save here reaches, refuses to replace a target that
+writes a key twice, and `save_sharded()` asks every target before its first write;
+`check_plan_text()` asks a text a caller is about to write itself (the merge driver, which keeps
+its own `_write` because what it writes is TEXT - a rendered plan that may hold conflict markers,
+which no JSON saver can take - so it asks the door of each text before its first write instead of
+handing the door a document);
+`written_twice()` lists every key written twice in the index and each shard for the validator.
+**How the one door is held:** `tests/test__manifest_io.py`'s `kt9` derives the plan writers from
+`_deps.PLAN_WRITERS` and follows each write chain (the writers lint's own `_pw_units`/`_pw_sites`)
+until it passes a `PLAN_SAVERS` function, and derives the plan readers as every function under
+`scripts/` and `hooks/` calling `json.load`/`json.loads` on a file `_deps._pw_tie` ties to the
+plan, or whose parsed value is used as a plan - handed to a callee named for a phase, plan,
+manifest or shard (`_phase_body`), or read at `phases`/`meta`/`fileIndex`; a chain reaching a write
+another way, or a reader parsing another way, fails by name unless it carries a reason in that
+suite's table. **One reader is lenient on purpose:** a merge's BASE (`read_base_plan`,
+`load_manifest(..., as_base=True)`), which is read only to tell which side changed what and is never
+written back, reads a key it writes twice as UNKNOWN (`without_written_twice` puts an
+`UnknownInBase` there, equal to nothing) - so a duplicate committed and then repaired on both
+branches blocks no merge, two sides agreeing on the key merge, and two differing conflict on the
+whole value, with neither copy deciding. One rule covers a scalar and a container: under a
+container written twice the base holds no record, so no id there is ever counted as minted on
+both sides, the driver's conflict says the base writes it twice instead of offering
+`--renumber`, and `resolve` renumbers nothing (`mk9`, `mk10`). **What it cannot see:** a JSON file
+`read_json()` is handed that is not plan-shaped keeps the last copy (a config, a cache); a reader
+the tie does not reach - a path built from no plan name whose parsed value is only returned, and
+used as a plan by a caller; and the hooks, which are importless and reach
+this module by path: `_config._read_manifest_assembled()` calls `load_manifest()` and turns its
+refusal into the reason `manifest_state` carries as `unreadable` - the gate denies on it, SECURITY.md
+says how - and when the module cannot be loaded its own fallback reads the index file alone,
+refusing a key written twice there with a parse hook of its own (a second copy of the rule that
+`tests/test__config.py`'s `gu3` holds) but reading no shard, so a shard's duplicate is not seen on
+that path.
+
 ### `plugins/audit/scripts/manifest/_manifest_merge.py` + `merge-manifest.py` + `_merge_install.py`
 **The manifest merged by record, so appends stop conflicting.** Every structural writer appends at
 a list tail - a phase, a task, a bug, a `fileIndex` row - so two branches that each add a different
@@ -7405,7 +7452,12 @@ a RECORD new on both sides is an id collision, and so is a shard `git` reports a
 What git does with a driver was measured rather than read (git 2.50.1, recorded in the module
 docstring): a driver that fails without writing leaves `%A` as ours with NO markers, and an exit
 above 128 aborts the whole merge - so every failure path writes git's own line merge before exiting
-1. A merged single-file plan is revalidated and only findings NEITHER side had fail it; an index or
+1. **No file it writes holds a key twice.** Every side, reading and output is parsed through
+`_manifest_io`'s door (`parse_json_text`; the module calls no `json.load` of its own, `mk5`): a
+side writing a key twice is not merged by record but left as markers with each key named, a line
+merge that comes out clean holding one - each side adding the same key in a different hunk - is
+written as one whole-file block instead, and the merged text and every text `resolve` writes are
+asked by `check_plan_text` first, `resolve` refusing the whole write. A merged single-file plan is revalidated and only findings NEITHER side had fail it; an index or
 shard cannot be validated alone and the driver says so. git config names a POSIX-sh shim under the
 git common dir, never the plugin cache (which moves on every upgrade): the shim records the plugin
 root, and when that root is gone - or the driver exits non-zero with `%A` unchanged, the

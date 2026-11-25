@@ -5278,8 +5278,10 @@ def _trail_render_cases(check):
 # green ("on") and with no ledger at all ("off"). The pointer beside the record
 # says `passed` throughout: it is the cache the tests word used to be read from.
 _RU_FILE = "docs/audit/phases/P1.json"
-_RU_DUP = "@@written-twice@@"
-_RU_SHAPES = (("twice", "lastRun.status"), ("moment", "lastRun.at"),
+# A record whose JSON writes one of its fields twice is not among these: the
+# plan file holding it is refused whole by `_manifest_io`'s door, which
+# `_written_twice_case` holds through the command.
+_RU_SHAPES = (("moment", "lastRun.at"),
               ("steps", "lastRun.steps"))
 
 
@@ -5326,14 +5328,11 @@ def _ru_project(root, shape, subject, ledger):
                   "mergedAt": "2026-11-18T12:30:00Z", "testGate": ["sweep"],
                   "tasks": tasks}, rows[2])
     rec = (shard if subject == "phase" else tasks[0]).get(_ebio.RECORD_KEY)
-    if shape == "twice":
-        rec["status"] = _RU_DUP
-    elif shape == "moment":
+    if shape == "moment":
         rec["at"] = "not-a-moment"
     elif shape == "steps":
         rec["steps"] = 5
-    text = json.dumps(shard, indent=2).replace(
-        '"status": "%s"' % (_RU_DUP,), '"status": "failed", "status": "passed"')
+    text = json.dumps(shard, indent=2)
     with open(os.path.join(root, _RU_FILE), "w", encoding="utf-8") as fh:
         fh.write(text)
     mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
@@ -5516,7 +5515,41 @@ def _unreadable_record_cases(check):
               % (bad[:2],), bad == [])
     finally:
         _harness.remove_tree(tmp)
+    _written_twice_case(check)
     _unreadable_door_cases(check)
+
+
+def _written_twice_case(check):
+    """(ru) A shard that writes a key twice is refused by status whole, in
+    its error channel: exit 2, the shard and the key's pointer named, and no
+    table rendered from either copy - plain, --json and --gate alike."""
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="audit-status-twice-")
+    try:
+        root = os.path.join(tmp, "twice")
+        mpath = _ru_project(root, None, "task", "off")
+        shard = os.path.join(root, _RU_FILE)
+        with open(shard, encoding="utf-8") as fh:
+            text = fh.read()
+        old = '"title": "one",'
+        assert text.count(old) == 1, old
+        with open(shard, "w", encoding="utf-8") as fh:
+            fh.write(text.replace(old, old + '\n  "title": "uno",', 1))
+        said = []
+        with _main_loop_env():
+            for argv in ([mpath], [mpath, "--json"], [mpath, "--gate"]):
+                code, out, err = _in_project(root, argv)
+                said.append((argv[1:], code, out, err))
+        wrong = [(a, c, (o + e)[-300:]) for a, c, o, e in said
+                 if c != 2 or _RU_FILE not in e.replace(os.sep, "/")
+                 or "/title" not in e or "written twice" not in e
+                 or "P1.1" in o]
+        check("ru9 RED-FIRST: status over a shard writing a key twice exits "
+              "2 naming the shard and the key's pointer on stderr, and "
+              "renders nothing from either copy - plain, --json and --gate: "
+              "wrong %r" % (wrong,), len(said) == 3 and wrong == [])
+    finally:
+        _harness.remove_tree(tmp)
 
 
 def _ru_params(tree):

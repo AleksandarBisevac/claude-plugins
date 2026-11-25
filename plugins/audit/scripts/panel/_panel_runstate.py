@@ -383,6 +383,12 @@ def _gate_block(project, config):
         elif step == "phase-running":
             out["source"] = ("graded on evidence: phase %s is in_progress"
                              % state.get("runningPhase"))
+        elif step == "nothing-running" and state.get("unreadable"):
+            out["source"] = ("graded on evidence: the plan in %s cannot be "
+                             "read, so which phases run is not established - "
+                             "edits past the free file are refused until it is "
+                             "repaired by hand: %s"
+                             % (manifest_rel, state["unreadable"]))
         elif step == "nothing-running":
             out["source"] = ("graded on evidence: the plan holds phases, none "
                              "in_progress - edits past the free file are "
@@ -390,6 +396,11 @@ def _gate_block(project, config):
         else:
             out["source"] = ("graded on evidence: manifest present, holding "
                              "no phase")
+        if state.get("unreadable") and step != "nothing-running":
+            # A pinned tier still sits over a plan that will not read, and the
+            # card says so rather than presenting the plan as fine.
+            out["source"] += (" - the plan in %s cannot be read: %s"
+                              % (manifest_rel, state["unreadable"]))
         sd = os.path.join(str(project),
                           str(config.get("stateDir")
                               or cfg_mod.DEFAULTS["stateDir"]))

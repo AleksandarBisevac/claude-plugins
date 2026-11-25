@@ -480,6 +480,57 @@ interpreter branch was the exception for a long time — it refused a file an `i
 declared, at every tier, while printing the plan gate's name — and the secret rules beside it
 are still graded by nothing at all, which is the distinction that branch had erased.
 
+**A plan that exists and will not read is not "no plan": the plan gate denies past the free file
+on it, naming the file and why.** A plan file holding a conflict, a shard the index names that is
+missing, or a key written twice - which `_manifest_io`'s door refuses rather than answering from
+the copy JSON's own reader keeps - gives `_config.manifest_state` a state carrying `unreadable`
+(`_config._read_manifest_assembled`), and the step is the one that denies past the session's free
+file: which phases the plan holds, and whether one runs, is not established, and a guard that
+cannot establish fails loud. The refusal names the file, each key's JSON pointer and the hand step;
+an edit to the plan's own files stays allowed, since it is how the repair lands. When
+`_manifest_io` cannot be loaded, the hook's own fallback reads the index file alone: a key written
+twice IN THAT FILE, or a conflict left in it, is refused the same way, but the fallback does not
+read shards - so in the sharded layout a key written twice in a shard, or a missing shard, is not
+seen there, and the state stops at "a manifest exists", which is the warn step. Before this
+change a conflict marker OPENED the gate, watched rather than inferred: a scratch project with a
+phase `in_progress` denied a second uncovered file, and the same project with one conflict marker
+line allowed it. A key written twice did not open it then - the hook read the last copy and kept
+denying, with that copy's phases - and the door, by refusing such a plan, would have made it read
+as `{}` and opened the gate, which this change closes in the same step.
+`tests/test_require_plan.py` (`ur1`-`ur7`) and `tests/test__config.py` (`gu1`-`gu4`) hold it. A
+crash in the reading code (an exception that is not a parse or file error) still relaxes the gate,
+as the fail-mode table's `require-plan` row says; only the plan's own data is read as a refusal.
+Pinned tiers (`planGate`, `enforce`) outrank this as they outrank every step, but their refusal
+still names the plan that will not read, its key and the hand step. The refusal's remedy is the
+hand repair - a subagent is told to stop and report - never "start a phase" or "no task
+declares", which a plan that will not read makes untrue; and a task worktree whose phase tree's
+plan will not read is refused naming that problem (`_config.task_binding`). The doctor's and the
+panel's account of the tier say the same (`plan_gate_cause`, `state["unreadable"]`).
+
+These readers of plan data in the hooks still answer from nothing - `{}`, or the copy JSON's own
+reader keeps - for such a plan WITHOUT SAYING SO. Every one of them is advisory or fails open, and
+none is yet closed:
+
+- **the capability policy's area rules** (`_config.active_area_tags`, read by
+  `guard-capabilities.py`) - the policy runs without its area rules while the plan is
+  unreadable;
+- **the history-rewrite guard's recorded commits** (`guard-history-rewrite.recorded_shas`) - with
+  no recorded SHAs the guard has nothing to orphan, so it refuses nothing while the plan is
+  unreadable;
+- **the usage meter** (`meter-usage.py`'s `session_start_check` and `meter`, through
+  `_config._load_manifest_assembled`) - pricing and attribution read no plan, so spend is
+  recorded `unattributed`;
+- **require-plan's owner note** (`require-plan.py`'s `_owner_note`, the same read) - the
+  advisory that a covered edit's area is owned by someone else is not given;
+- **the journal's diff of a plan write** (`journal-writes._read_json`, a plain `json.load`) - a
+  plan file written with a key twice is diffed as its last copy;
+- **guard-edits' state-flip check** (`guard-edits._touches_state`, a plain `json.load` /
+  `json.loads` of the file before and after a Write) - it decides whether a Write changes a
+  task's or phase's state from the last copies.
+
+The in-progress coverage map reads `{}` the same way, which is moot: the gate already denies on
+such a plan.
+
 **The plan gate speaks to two audiences, and since 2.1.1 it says different things to them.** A
 subagent's payload carries `agent_id` and the main agent's does not. A subagent is told to stop and
 report the path to the orchestrator; it is not told to add a task, because it may not edit the
@@ -742,7 +793,9 @@ in the session's state; a source file keeps its notice. The write is never rever
 
 Both `_config.manifest_state` and `_config.plan_gate_mode` degrade to the **least** aggressive
 verdict on any internal error, in keeping with the fail-open posture above: a crash in the
-evidence check can only relax the gate, never manufacture a denial.
+evidence check can only relax the gate, never manufacture a denial. A plan that exists and will
+not read is not an internal error: it is the plan's own data, and the gate denies past the free
+file on it (see *A plan that exists and will not read*, above).
 
 ### The one guard that fails loud (`.claude/hooks/guard-release.py`)
 
@@ -779,8 +832,9 @@ case: `merged_phase` selects it, and it holds the release as unanswerable.
 Each list is read and reported on its own. A list the guard could not read is named UNKNOWN with the
 reason; the list it did read is still named by what it holds, so an unreadable bug list never hides
 a phase that holds the release, nor the reverse. Reading the plan includes its STRUCTURE: a key
-written twice in one object of the index or a shard - a run record's own objects included, though
-the plan's other readers take the last copy - a shard that will not parse as JSON, a `meta` that is
+written twice in one object of the index or a shard - a run record's own objects included, as the
+plan's other readers now refuse it too, through `_manifest_io`'s door - a shard that will not parse
+as JSON, a `meta` that is
 not an object, `phases` that is not a list, a phase, task or bug entry that is not an object, or a
 phase's `tasks` that is not a list is UNKNOWN, named by file and place (a shard by its own path,
 never the index's), rather than read as a plan holding less. A `bugs` that is not a list - `null`

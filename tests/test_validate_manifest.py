@@ -319,9 +319,97 @@ def _cases(record):
         _cases_never_raises(record, path2)
         _cases_directory_entries(record)
         _cases_default_skills(record, path2)
+        _cases_written_twice(record)
     finally:
         if os.path.exists(path2):
             os.unlink(path2)
+
+
+def _twice(text, old, new):
+    """`text` with its one `old` replaced by `new` - an edit that must land."""
+    assert text.count(old) == 1, old
+    return text.replace(old, new, 1)
+
+
+def _vd_said(line, root):
+    """`(file relative to root, pointer)` of one `FINDING: <file>: <pointer>
+    is written twice ...` line."""
+    _tag, path, rest = line.split(": ", 2)
+    return (os.path.relpath(path, root).replace(os.sep, "/"),
+            rest.split(" ", 1)[0])
+
+
+def _cases_written_twice(record):
+    """(vd) The validator names every key a plan file writes twice - any
+    object, every file, both layouts - each as a finding at its pointer."""
+    import shutil                                                 # noqa: E402
+    import _manifest_io as _mio                                   # noqa: E402
+    tmp = tempfile.mkdtemp(prefix="validate-twice-")
+    try:
+        plan = _valid_manifest()
+        one = os.path.join(tmp, "one", "audit-plan.json")
+        os.makedirs(os.path.dirname(one))
+        text = json.dumps(plan)
+        text = _twice(text, '"version": 2', '"version": 2, "version": 2')
+        text = _twice(text, '"title": "Phase"',
+                      '"title": "Phase", "title": "Phase uno"')
+        text = _twice(text, '"files": ["src/a.ts"]',
+                      '"files": ["src/a.ts"], "files": []')
+        with open(one, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        code, out = _run([one])
+        found = sorted(_vd_said(ln, os.path.dirname(one))
+                       for ln in out.splitlines()
+                       if ln.startswith("FINDING: ") and "written twice" in ln)
+        record("vd1 RED-FIRST: a one-file plan writing three keys twice - in "
+               "`meta`, on a phase, on a task - is three findings, each naming "
+               "the file and the key's pointer, and the plan is invalid (exit "
+               "1): %r / %r" % (code, found),
+               code == 1 and found == [
+                   ("audit-plan.json", "/meta/version"),
+                   ("audit-plan.json", "/phases/0/tasks/0/files"),
+                   ("audit-plan.json", "/phases/0/title")]
+               and "INVALID: 3 finding(s)" in out)
+        root = os.path.join(tmp, "sharded")
+        os.makedirs(root)
+        index = os.path.join(root, "audit-plan.json")
+        two = copy.deepcopy(plan)
+        two["phases"].append({"id": "P2", "title": "Two", "status": "pending",
+                              "tasks": [{"id": "P2.1", "title": "t",
+                                         "status": "pending", "files": []}]})
+        _mio.save_sharded(index, two)
+        edits = ((index, '"phases": [', '"phases": [],\n  "phases": ['),
+                 (os.path.join(root, "phases", "P0.json"), '"id": "P0",',
+                  '"id": "P0",\n  "id": "P0",'),
+                 (os.path.join(root, "phases", "P2.json"), '"status": "pending",\n'
+                  '      "files"', '"status": "pending",\n      "status": '
+                  '"done",\n      "files"'))
+        for path, old, new in edits:
+            with open(path, encoding="utf-8") as fh:
+                body = fh.read()
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(_twice(body, old, new))
+        code_s, out_s = _run([index])
+        named = sorted(_vd_said(ln, root) for ln in out_s.splitlines()
+                       if ln.startswith("FINDING: ") and "written twice" in ln)
+        record("vd2 RED-FIRST: ...and a sharded plan writing a key twice in "
+               "its index and in two shards is a finding for each, naming "
+               "the file that holds it: %r / %r" % (code_s, named),
+               code_s == 1 and named == [
+                   ("audit-plan.json", "/phases"),
+                   ("phases/P0.json", "/id"),
+                   ("phases/P2.json", "/tasks/0/status")])
+        # THE OVER-FIRE: the same plan with each key written once has no
+        # finding of this kind.
+        clean = os.path.join(tmp, "clean.json")
+        with open(clean, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh)
+        code_c, out_c = _run([clean])
+        record("vd3 ...and the plan with each key written once validates with "
+               "no key said written twice: %r" % ((code_c, out_c[-160:]),),
+               code_c == 0 and "written twice" not in out_c)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _cli(argv):
@@ -627,6 +715,10 @@ def _cases_run_record_schema(record, path):
            and "`status`" in said["a never-shared key"][1])
 
 
+# Where `_ru_project` writes the record's `status` twice, as the validator's
+# finding names it: the plan file is refused whole by the door it reads through.
+_RU_TWICE_AT = "/phases/0/tasks/0/lastRun/status"
+
 # Each way a record breaks a rule of the reader's, planted in the plan's text,
 # beside one the schema itself refuses: (label, field the warning names, plant).
 _RU_SHAPES = (
@@ -709,8 +801,13 @@ def _cases_reader_rules(record):
         try:
             mpath = _ru_project(root, plant)
             code, out = _run([mpath, "--verbose"])
-            said = [ln for ln in out.splitlines() if field in ln
-                    and "(a warning in 3.x)" in ln]
+            # A KEY WRITTEN TWICE IS THE DOOR'S FINDING: the plan file is
+            # refused whole, the key named at its pointer, rather than one
+            # record warned about in a plan that otherwise validates.
+            said = [ln for ln in out.splitlines()
+                    if (ln.startswith("FINDING: ") and _RU_TWICE_AT in ln
+                        if plant is None else
+                        field in ln and "(a warning in 3.x)" in ln)]
             entries = _ev.plan_unreadable(mpath, root)["unreadableRecords"]
             commands = [c for e in entries for c in _ev.rerecord_commands(e)]
             if plant is None:
@@ -744,7 +841,8 @@ def _cases_reader_rules(record):
     record("ru1 RED-FIRST: each record the reader refuses is one warning, in "
            "the channel and sentence a schema-refused record gets, naming its "
            "file and field - an `at` that names no moment, a repeated run's, "
-           "a field written twice, a share beside the field it shares - and "
+           "a share beside the field it shares - or, for a field written "
+           "twice, the one finding naming its file and pointer - and "
            "the reader's own remedy, run as printed, records over it - for a "
            "key written twice, once the copy not meant is deleted by hand, "
            "as the sentence says, the command refusing before that - after "
@@ -762,10 +860,13 @@ def _ru_ok(seen):
     nothing said and nothing unreadable."""
     label, code, said, commands, ran, after_code, left, lost = seen
     field = dict((lab, f) for lab, f, _p in _RU_SHAPES)[label]
+    twice = dict((lab, p) for lab, _f, p in _RU_SHAPES)[label] is None
     named = len(said) == 1 and (
         ("docs/audit/audit-plan.json: task P1.1's %s" % (field,)) in said[0]
-        or ("phases[0].tasks[0].%s" % (field,)) in said[0])
-    return (code == 0 and named
+        or ("phases[0].tasks[0].%s" % (field,)) in said[0]
+        or (twice and "audit-plan.json" in said[0].replace(os.sep, "/")
+            and _RU_TWICE_AT in said[0]))
+    return (code == (1 if twice else 0) and named
             and commands == ["run-test-gate.py docs/audit/audit-plan.json P1 "
                              "--task P1.1 --record"]
             and [r[0] for r in ran] == [0]

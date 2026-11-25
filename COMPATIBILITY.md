@@ -163,6 +163,37 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   the merge driver (`merge-manifest.py`), `repair-commits.py`, `repair-tests-add.py`,
   `migrate-json-encoding.py` and `migrate-manifest.py`. On a broken install those can
   still write a plan no schema was checked against, and say so as that warning.
+
+  **A plan file that writes a key twice breaks this promise in 4.0.0, a major, and
+  with no warning release before it.** JSON leaves a name written twice in one object
+  to the reader: RFC 8259 says the names within an object SHOULD be unique, and that
+  when they are not, implementations differ in which value they report. Through 3.9.0
+  every reader here took the last copy, validated it, and every save wrote that one copy
+  back — so an unrelated verb rewrote the file with the other copy gone, and from then
+  every reader answered from whichever came last, a green repeated over a newer red
+  included. Now every plan file is parsed through one door in `_manifest_io`: a read
+  that answers from the plan refuses the file, naming it, the JSON pointer of each key
+  and the hand step; every save refuses to write over it; `validate-manifest.py` names
+  every key written twice in the index and in each shard as a finding (exit 1) rather
+  than validating the last copy. **The way through is one hand edit**: delete the copy
+  that is not meant, and the file reads and saves as before. **Why no warning first**,
+  which is the order the two announcements above kept: a warning leaves the silent save
+  in place for the whole minor line, and that save is the loss — a copy dropped unsaid,
+  which no later release can restore. **Who it reaches**, read off the writers rather
+  than assumed: every writer of a plan file in a released plugin serialises a Python
+  dict (`_manifest_io.json_document`), which cannot hold a key twice, so no verb wrote
+  this shape. A merge did: a person resolving a conflict by keeping both sides' lines,
+  git's own line merge on a clone with no merge driver, and the driver's fallback to
+  that line merge when the record merge could not run — a clean line merge of two sides
+  that each added one key in a different hunk holds it twice. The driver now refuses a
+  side holding the shape and writes such a line merge as one conflict block. **A merge
+  whose BASE writes a key twice can stop where 3.9.0 finished it clean**: the base's
+  value there is unknown rather than guessed, so a side that changed it, or deleted the
+  record holding it, is a conflict even when the other side kept it — keep by hand the
+  side meant, and the merge completes. A plan
+  that writes each key once reads and saves byte for byte as before;
+  `tests/test__manifest_io.py` (`kt7`) holds that over this repository's plan, the
+  shipped example and the starter.
 - **A manifest key a released version READS keeps being read** — the promise the
   config section below makes about a config key, made here for the same reason: the
   manifest is a file you wrote. `phases[].adoTracked` is the newest one. A phase

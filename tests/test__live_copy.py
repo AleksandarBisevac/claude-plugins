@@ -221,6 +221,47 @@ def _reader_cases(check):
         _harness.remove_tree(root)
 
 
+def _twice_reader_cases(check):
+    """(lr) A copy of a phase in flight that writes a key twice is refused in
+    the reader's own `why` channel, naming the key - read off the other
+    worktree's file and off the branch's commit alike - never counted from
+    whichever copy came last."""
+    labels = ("lr3", "lr4")
+    if not shutil.which("git"):
+        for lbl in labels:
+            _harness.skip(check, lbl, "git is not on PATH, and the worktree "
+                          "and the branch live in git", True)
+        return
+    lc, why = _reader()
+    root = _harness.fixture_root("live-copy-twice-")
+    try:
+        fx = worktree_fixture(os.path.join(root, "linked"), True)
+        shard = os.path.join(fx["tree"], "docs", "audit", "phases", "P1.json")
+        with open(shard, encoding="utf-8") as fh:
+            text = fh.read()
+        old = '"title": "fixer",'
+        assert text.count(old) == 1, old
+        with open(shard, "w", encoding="utf-8") as fh:
+            fh.write(text.replace(old, old + ' "title": "fixer again",', 1))
+        body, said = lc._tree_copy(shard, "P1") if lc else (None, why)
+        check("lr3 RED-FIRST: the worktree's own file writing a key twice is "
+              "refused in the reader's `why`, the key named - no body: %r"
+              % ((body is None, said),),
+              lc is not None and body is None
+              and "written twice" in (said or "") and "/title" in (said or ""))
+        _harness.git(fx["tree"], "commit", "-qam", "a key written twice",
+                     prefix=_git_cmd(), timeout=60)
+        body, said = (lc._show_phase(fx["repo"], "refs/heads/audit/p1-fixer",
+                                     "docs/audit/phases/P1.json", "P1")
+                      if lc else (None, why))
+        check("lr4 RED-FIRST: ...and so is the branch's committed copy, read "
+              "out of git: %r" % ((body is None, said),),
+              lc is not None and body is None
+              and "written twice" in (said or "") and "/title" in (said or ""))
+    finally:
+        _harness.remove_tree(root)
+
+
 def _lookup_cases(check):
     """A lock directory that could not be looked up is not the absence of a
     repository. Both make `_locks.lock_dir` answer None; only the second means
@@ -272,6 +313,7 @@ def _selftest():
         _harness.stage(check, "lc", _moved_cases)
         _harness.stage(check, "lv", _overlay_cases)
         _harness.stage(check, "lr", _reader_cases)
+        _harness.stage(check, "lr-twice", _twice_reader_cases)
         _harness.stage(check, "lk", _lookup_cases)
     return _harness.run(body)
 

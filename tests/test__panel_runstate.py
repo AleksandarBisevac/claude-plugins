@@ -506,7 +506,58 @@ def _selftest():
     def body(check):
         _cases(check)
         _harness.stage(check, "wf", _worktree_fingerprint_cases)
+        _harness.stage(check, "pr-ur", _unreadable_gate_cases)
     return _harness.run(body)
+
+
+def _unreadable_gate_cases(check):
+    """(pr) The panel's gate card words a plan that will not read as one: the
+    file, the key and the hand repair - never "the plan holds phases, none
+    in_progress ... until one runs" - and a pinned tier over such a plan
+    still says the plan cannot be read."""
+    import tempfile
+    root = tempfile.mkdtemp(prefix="panel-gate-unreadable-")
+    try:
+        proj = os.path.join(root, "proj")
+        os.makedirs(os.path.join(proj, ".claude"))
+        mpath = _paths._manifest_path(proj, _paths.read_config(proj))
+        os.makedirs(os.path.dirname(mpath))
+        text = json.dumps({"meta": {"version": 2}, "phases": [
+            {"id": "P1", "title": "One", "status": "pending",
+             "tasks": [{"id": "P1.1", "title": "T", "status": "pending"}]}]},
+            indent=2)
+        twice = text.replace('"title": "One",',
+                             '"title": "One",\n      "title": "Uno",', 1)
+        assert twice != text
+        with open(mpath, "w", encoding="utf-8") as fh:
+            fh.write(twice)
+        got = M._gate_block(proj, {})
+        pinned = [M._gate_block(proj, pin).get("source") or ""
+                  for pin in ({"planGate": "deny"}, {"enforce": True})]
+        with open(mpath, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        clean = M._gate_block(proj, {})
+        src = got.get("source") or ""
+        check("pr-ur1 RED-FIRST: the gate card over a plan writing a key twice "
+              "says it cannot be read, naming the key and the hand repair, at "
+              "deny - never 'none in_progress ... until one runs': %r"
+              % ((got.get("mode"), src[:300]),),
+              got.get("mode") == "deny" and "cannot be read" in src
+              and "/phases/0/title" in src and "by hand" in src
+              and "none in_progress" not in src)
+        check("pr-ur2 RED-FIRST: ...and a pinned tier (planGate deny, enforce) "
+              "names its pin and still says the plan cannot be read: %r"
+              % ([p[:200] for p in pinned],),
+              all("cannot be read" in p and "/phases/0/title" in p
+                  for p in pinned)
+              and "planGate" in pinned[0] and "enforce" in pinned[1])
+        check("pr-ur3 ...and a clean plan's card is what it was: %r"
+              % ((clean.get("mode"), clean.get("source")),),
+              clean.get("mode") == "deny"
+              and "none in_progress" in (clean.get("source") or "")
+              and "cannot be read" not in (clean.get("source") or ""))
+    finally:
+        _harness.remove_tree(root)
 
 
 if __name__ == "__main__":

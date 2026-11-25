@@ -10136,7 +10136,7 @@ def _duplicate_key_cases(check, doc):
     not read - at every read of a plan file a record is taken from: the walk
     (`plan_bodies`), the shard read under the lock (`write_plan_file`) and
     the branch tip (close-phase's `_tip_json`) - and the plan's own readers
-    otherwise still take the last copy."""
+    refuse the file through `_manifest_io`'s door."""
     tmp = _harness.fixture_root("audit-evidence-duplicate-")
     try:
         root = os.path.join(tmp, "dk")
@@ -10152,18 +10152,20 @@ def _duplicate_key_cases(check, doc):
         read = M.read_rows(root, manifest_path=mpath)
         lost = [(e.get("subject"), e.get("field"))
                 for e in read.get("unreadableRecords") or []]
-        plain = M._mio.read_json(shards["P1"])
-        plain_status = [t.get(M.RECORD_KEY, {}).get("status")
-                        for t in plain.get("tasks") or []
-                        if t.get("id") == "P1.1"]
+        try:
+            M._mio.read_json(shards["P1"])
+            plain_status = "read, a copy kept"
+        except M._mio.DuplicateKeyError as exc:
+            plain_status = exc.pointers
         check("dk1 RED-FIRST: a record writing `status` twice, the green word "
               "last, is a record that will not read - named by that field - "
-              "never a green; the plan's other readers still take the last "
-              "copy: lost %r, picked %r, plain read %r"
+              "never a green; the plan's other readers refuse the file through "
+              "the door, naming the key: lost %r, picked %r, plain read %r"
               % (lost, [r.get("runId") for r in read["rows"]
                         if r.get("taskId") == "P1.1"], plain_status),
               lost == [("P1.1", "lastRun.status")]
-              and plain_status == ["passed"]
+              and isinstance(plain_status, list) and len(plain_status) == 1
+              and plain_status[0].endswith("/lastRun/status")
               and not any(r.get("taskId") == "P1.1"
                           and r.get("status") == "passed"
                           for r in read["rows"]))
@@ -11213,7 +11215,13 @@ def _bb_remedy(rel, spec, fx):
         if command not in commands:
             commands.append(command)
     _harness.git(fx["root"], "checkout", "-q", _BB_BRANCH)
-    by_hand = "delete by hand the copy of each key written twice" in text
+    # THE DOOR'S REFUSAL (`_manifest_io.DuplicateKeyError`) comes before any
+    # record is read, and its one step is the hand step: it names no command,
+    # so the step itself is what was taken.
+    door = "delete by hand the copy that is not meant" in text
+    if door and not commands:
+        commands.append("the door's hand step")
+    by_hand = door or "delete by hand the copy of each key written twice" in text
     if by_hand:
         # THE HAND STEP THE ADVICE NAMES FIRST: each plan file saved with one
         # copy of every key - the first, the run's own word; the fixture
@@ -11230,6 +11238,8 @@ def _bb_remedy(rel, spec, fx):
                         json.dump(once, fh, indent=2)
     codes = []
     for command in commands:
+        if not command.startswith("run-test-gate.py"):
+            continue
         argv = command.split()
         code, said = _bb_text(*_harness.run_script(
             _BB_RTG, argv[1:], fx["root"],
@@ -11361,7 +11371,8 @@ def _black_box_cases(check):
               "refusal's own steps, taken exactly as printed, measure the "
               "subject - a red, never a repeat, but where the advice first "
               "deletes a key's second copy by hand and the record's own red "
-              "then reads - and the same refusal asked "
+              "then reads, the door's refusal of a file writing a key twice "
+              "naming that hand step alone - and the same refusal asked "
               "again stands on that red, naming no unreadable record: "
               "(variant, commands, their exits, exit after, why) %r"
               % (remedy,),
@@ -11852,6 +11863,214 @@ def _guard_structure_cases(check):
         _harness.remove_tree(tmp)
 
 
+# --- a keep-both merge, then any verb ---------------------------------------------
+# The shape a merge resolved by keeping both sides leaves: a task holding its
+# newest red record, and after it a second copy of the key holding an older
+# green. JSON's reader takes the last copy, so a verb that read the shard and
+# saved it back would leave the green alone, and from then the lookup, the
+# gate's reuse and `done` would answer from it. Every verb's save goes through
+# `_manifest_io`'s door, which refuses the file; the ledger is read on and off.
+def _kv_keep_both(tmp, name, ledger):
+    """`(root, mpath, spath, ids, text)` - a sharded git project whose task
+    P1.1 writes `lastRun` twice, the newer red first and an older green last;
+    with `ledger`, the green's row is in the evidence ledger as well."""
+    root, mpath, spath = _lr_project(tmp, name)
+    ids = {"taskId": "P1.1", "phaseId": "P1"}
+    green, red = _ho_rows("task")
+    red = dict(red, scope="task", gateSource="task")
+    M.write_record(root, mpath, "task", ids, M.run_record(red))
+    if ledger:
+        M.append_row(root, green)
+    body = _lr_shard(spath)
+    held = json.dumps(body["tasks"][0][M.RECORD_KEY])
+    text = json.dumps(body)
+    twice = text.replace('"%s": %s' % (M.RECORD_KEY, held),
+                         '"%s": %s, "%s": %s' % (
+                             M.RECORD_KEY, held, M.RECORD_KEY,
+                             json.dumps(M.run_record(green))), 1)
+    assert twice != text
+    with io.open(spath, "w", encoding="utf-8") as fh:
+        fh.write(twice)
+    return root, mpath, spath, ids, twice
+
+
+def _kv_verbs(root, mpath):
+    """`[(label, script, argv)]` - verbs that save the plan, each aimed at the
+    task the keep-both shape sits on."""
+    return [
+        ("note", "audit-task.py", ["note", "P1.1", "--text", "unrelated",
+                                   "--project-dir", root]),
+        ("block", "audit-task.py", ["block", "P1.1", "--reason", "waiting",
+                                    "--project-dir", root]),
+        ("done", "audit-task.py", ["done", "P1.1", "--no-change", "--reason",
+                                   "nothing to change", "--project-dir",
+                                   root]),
+        ("the gate's record", "run-test-gate.py", [mpath, "P1", "--task",
+                                                   "P1.1", "--record"]),
+    ]
+
+
+def _keep_both_verb_cases(check):
+    """(kv) After a keep-both merge shape, no verb's save leaves the older
+    copy for the gate to reuse, ledger on and off."""
+    statuses = frozenset(("passed", "failed"))
+    tmp = _harness.fixture_root("audit-evidence-keep-both-")
+    try:
+        env = dict((k, v) for k, v in os.environ.items()
+                   if k not in ("CLAUDE_PROJECT_DIR", _locks.TOKEN_ENV))
+        seen, after = [], []
+        for ledger in (False, True):
+            root, mpath, spath, ids, twice = _kv_keep_both(
+                tmp, "kv-%s" % ("on" if ledger else "off"), ledger)
+            for label, script, argv in _kv_verbs(root, mpath):
+                code, out, err = _harness.run_script(
+                    _loader.script_path(script), argv, root, env=env)
+                said = (out + err).decode("utf-8", "replace").replace(
+                    os.sep, "/")
+                with io.open(spath, encoding="utf-8") as fh:
+                    held = fh.read()
+                seen.append((ledger, label, code != 0, held == twice,
+                             "phases/P1.json" in said
+                             and "/tasks/0/%s" % (M.RECORD_KEY,) in said
+                             and "by hand" in said, said[-200:]))
+            read = M.read_rows(root, manifest_path=mpath)
+            reuse = M.reusable_run(read["rows"], "task", ids, "sha256:key",
+                                   statuses)
+            after.append((ledger, [r.get("runId") for r in read["rows"]
+                                   if r.get("taskId") == "P1.1"
+                                   and r.get("status") == "passed"],
+                          reuse and reuse.get("runId"),
+                          [(e.get("subject"), e.get("rule"))
+                           for e in read.get("unreadableRecords") or []]))
+        wrong = [s for s in seen if not (s[2] and s[3] and s[4])]
+        check("kv1 RED-FIRST: after a keep-both merge leaves task P1.1 "
+              "writing `lastRun` twice (the newer red first, an older green "
+              "last), every verb that saves the plan - note, block, done, the "
+              "gate's own record - refuses, the shard byte for byte as it "
+              "was, naming the shard, the key and the hand step, ledger off "
+              "and on: wrong %r of %d" % (wrong, len(seen)),
+              len(seen) == 8 and not wrong)
+        check("kv2 RED-FIRST: ...so the older copy is never left for the gate "
+              "to reuse: no passing run of P1.1 is read, the reuse lookup "
+              "finds none and the record is named unreadable as a key "
+              "written twice, ledger off and on: %r" % (after,),
+              [a[0] for a in after] == [False, True]
+              and all(not a[1] and a[2] is None
+                      and a[3] == [("P1.1", "duplicate-key")] for a in after))
+    except Exception as exc:                                   # noqa: BLE001
+        check("kv0 the keep-both block ran to its end (%s: %s)"
+              % (type(exc).__name__, exc), False)
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _container_twice_cases(check):
+    """(kv) A key written twice on an object that holds records below it - a
+    phase's `tasks`, the index's `phases` - makes every record under it
+    unreadable at every read of runs, and the validator names it, both
+    layouts."""
+    tmp = _harness.fixture_root("audit-evidence-container-twice-")
+    try:
+        doc = M.record_schema()[0]
+        green, red = _ho_rows("task")
+        red = dict(red, scope="task", gateSource="task")
+        red_text = json.dumps(M.run_record(red))
+        green_text = json.dumps(M.run_record(green))
+        # The phase's `tasks` written twice: the first copy holds the newer
+        # red, the last the same task with an older green.
+        phase_text = ('{"id": "P1", "title": "one", "status": "in_progress", '
+                      '"testGate": [], "tasks": [{"id": "P1.1", "title": "t", '
+                      '"status": "in_progress", "lastRun": %s}], "tasks": '
+                      '[{"id": "P1.1", "title": "t", "status": "in_progress", '
+                      '"lastRun": %s}]}' % (red_text, green_text))
+        tip = [(s, i, (p or {}).get("rule")) for s, i, _r, p
+               in M._plan_records(M.plan_json_text(phase_text), doc)]
+        root, mpath, spath = _lr_project(tmp, "kv-tasks")
+        with io.open(spath, "w", encoding="utf-8") as fh:
+            fh.write(phase_text)
+        read = M.read_rows(root, manifest_path=mpath)
+        lost = [(e.get("subject"), e.get("rule"))
+                for e in read.get("unreadableRecords") or []]
+        passed = [r.get("runId") for r in read["rows"]
+                  if r.get("status") == "passed"]
+        val = _loader.load_script("validate-manifest.py", "kv_validate")
+        code, said = _kv_validate(val, mpath)
+        check("kv3 RED-FIRST: a phase writing `tasks` twice - the newer red "
+              "in the first copy, an older green in the last - holds no "
+              "readable task record: the shard's walk and the branch tip's "
+              "parse both name P1.1's record unreadable and read no green, "
+              "and the validator names the key: tip %r, walk %r, passed %r, "
+              "validator %r" % (tip, lost, passed, (code, said[-200:])),
+              tip == [("task", "P1.1", "duplicate-key")]
+              and lost == [("P1.1", "duplicate-key")] and not passed
+              and code == 1 and "/tasks" in said and "phases/P1.json" in said)
+        # The one-file layout: the index's `phases` written twice, the first
+        # copy holding the newer red and the last the same phase with an
+        # older green.
+        phase = ('{"id": "P1", "title": "one", "status": "in_progress", '
+                 '"testGate": [], "tasks": [{"id": "P1.1", "title": "t", '
+                 '"status": "in_progress", "lastRun": %s}]}')
+        plan = ('{"meta": {"version": 2}, "phases": [%s], "phases": [%s]}'
+                % (phase % (red_text,), phase % (green_text,)))
+        one = os.path.join(tmp, "kv-one")
+        os.makedirs(os.path.join(one, ".claude"))
+        with io.open(os.path.join(one, ".claude", "audit.config.json"), "w",
+                     encoding="utf-8") as fh:
+            json.dump({"manifestPath": "audit-plan.json"}, fh)
+        one_path = os.path.join(one, "audit-plan.json")
+        with io.open(one_path, "w", encoding="utf-8") as fh:
+            fh.write(plan)
+        read_one = M.read_rows(one, manifest_path=one_path)
+        lost_one = [(e.get("subject"), e.get("rule"))
+                    for e in read_one.get("unreadableRecords") or []]
+        code_one, said_one = _kv_validate(val, one_path)
+        check("kv4 RED-FIRST: ...and an index writing `phases` twice in the "
+              "one-file layout leaves no record under it readable, the "
+              "validator naming `/phases`: walk %r, validator %r"
+              % (lost_one, (code_one, said_one[-200:])),
+              lost_one and all(rule == "duplicate-key"
+                               for _s, rule in lost_one)
+              and code_one == 1 and "/phases" in said_one)
+        # The checker's own list (`reader_rule_problems`), asked of the same
+        # two plans' walked bodies directly: the validator now stops at the
+        # key before it asks, so only a direct call reaches it.
+        listed = [sorted((e["subject"], e["rule"]) for e in
+                         M.reader_rule_problems(M.plan_bodies(p, r)[0]))
+                  for p, r in ((mpath, root), (one_path, one))]
+        check("kv6 RED-FIRST: ...and the checker's list of records the reader "
+              "refuses names P1.1's record under each - the phase's `tasks` "
+              "written twice, the index's `phases` written twice - as a key "
+              "written twice: %r" % (listed,),
+              listed == [[("P1.1", "duplicate-key")]] * 2)
+        # THE OVER-FIRE: a phase writing a key twice that holds no record -
+        # its title - leaves its tasks' records readable.
+        title_twice = M.plan_json_text(
+            '{"id": "P1", "title": "one", "title": "uno", "tasks": [{"id": '
+            '"P1.1", "title": "t", "lastRun": %s}]}' % (red_text,))
+        over = [(s, i, (p or {}).get("rule")) for s, i, _r, p
+                in M._plan_records(title_twice, doc)]
+        check("kv5 THE OVER-FIRE: a phase writing its title twice leaves its "
+              "task's record readable - only a key whose value holds records "
+              "takes the records under it: %r" % (over,),
+              over == [("task", "P1.1", None)])
+    except Exception as exc:                                   # noqa: BLE001
+        check("kv0b the container block ran to its end (%s: %s)"
+              % (type(exc).__name__, exc), False)
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _kv_validate(val, path):
+    """`(exit code, what validate-manifest printed)` for the plan at `path`."""
+    buf, real = io.StringIO(), sys.stdout
+    sys.stdout = buf
+    try:
+        code = val.main([path])
+    finally:
+        sys.stdout = real
+    return code, buf.getvalue().replace(os.sep, "/")
+
+
 def _types_namespace(**kw):
     import types
     return types.SimpleNamespace(**kw)
@@ -11884,7 +12103,9 @@ STAGES = (("wh-block", "_withheld_cases"), ("rf-block", "_read_field_cases"),
           ("tk-block", "_tree_key_cases"), ("bn-block", "_banner_cases"),
           ("grr-block", "_gate_reach_row_cases"),
           ("pc-block", "_project_config_cases"), ("mr-block", "_moment_reader_cases"),
-          ("rfg-block", "_runnable_full_gate_cases"))
+          ("rfg-block", "_runnable_full_gate_cases"),
+          ("kv-block", "_keep_both_verb_cases"),
+          ("kc-block", "_container_twice_cases"))
 # The prefix of the directory a full run's blocks report into.
 _STAGE_PREFIX = "evidence-io-stages-"
 

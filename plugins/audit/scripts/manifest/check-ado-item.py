@@ -102,6 +102,7 @@ _output.install_path()
 import _ado_conventions as _conv  # noqa: E402  (the rule this command enforces)
 import _ado_fields as _fields  # noqa: E402  (the template merged in before it)
 import _ado_parent as _parent  # noqa: E402  (which kinds a push leaves unparented)
+import _manifest_io as _mio  # noqa: E402  (the plan's one door: read_json)
 
 USAGE = ("usage: check-ado-item.py <manifest> --item <file.json|-> [--json]\n"
          "       check-ado-item.py <manifest> --fetched <fetched.json|-> "
@@ -546,8 +547,9 @@ def main(argv):
     as_json = "--json" in argv
 
     try:
-        with open(manifest_path, "r", encoding="utf-8") as fh:
-            manifest = json.load(fh)
+        # Through the plan's one door: an index writing a key twice is
+        # refused, never read as whichever copy came last.
+        manifest = _mio.read_json(manifest_path)
     except Exception as exc:
         sys.stderr.write("ERROR: cannot read/parse %s: %s\n" % (manifest_path, exc))
         return 2

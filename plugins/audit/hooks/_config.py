@@ -1524,8 +1524,15 @@ def task_binding(tree, manifest_rel):
         return {"bound": True, "error": (
             "the task marker for %s names phase tree %r, which does not exist"
             % (tid, phase_tree))}
-    declared = [d for d in _declared_task_ids(phase_tree, manifest_rel)
-                if d["taskId"] == tid]
+    manifest, problem = _read_manifest_assembled(Path(phase_tree) / manifest_rel)
+    if problem:
+        # A plan that will not read holds no task this tree can be bound to,
+        # and saying "does not hold" of it would send the reader to the wrong
+        # repair.
+        return {"bound": True, "error": (
+            "the plan in phase tree %s cannot be read, so task %s cannot be "
+            "found in it: %s" % (phase_tree, tid, problem))}
+    declared = [d for d in _declared_task_ids(manifest) if d["taskId"] == tid]
     if not declared:
         return {"bound": True, "error": (
             "the task marker names %s, which the plan in phase tree %s does not "
@@ -1581,9 +1588,8 @@ def task_covered_outputs(tree, manifest_rel, binding=None):
     return in_progress_outputs(tree, manifest_rel)
 
 
-def _declared_task_ids(root, manifest_rel):
-    """[{"taskId", "status"}] for every task of the plan in `root`."""
-    manifest = _load_manifest_assembled(Path(root) / manifest_rel)
+def _declared_task_ids(manifest):
+    """[{"taskId", "status"}] for every task of the assembled `manifest`."""
     out = []
     for phase in (manifest.get("phases") or []) if isinstance(manifest, dict) else []:
         for task in (phase.get("tasks") or []) if isinstance(phase, dict) else []:
@@ -3898,19 +3904,132 @@ def _load_manifest_assembled(path):
     does not exist. Costs 0.136 ms per call, measured, because importlib by
     path does not cache in sys.modules — against a 10-second hook budget and at
     most three calls in a run, that is not worth a second mechanism to avoid (D5's
-    reasoning, one module down)."""
-    mio = _load_scripts_module("_manifest_io", "_manifest_io.py")
-    if mio is not None:
-        try:
-            return mio.load_manifest_safe(str(path))
-        except Exception:
-            pass
+    reasoning, one module down).
+
+    A PLAN THAT EXISTS AND WILL NOT READ is {} here too, which is right for a
+    reader that only wants what the plan holds - and wrong for the gate, which
+    must not read it as no plan. `_read_manifest_assembled` is the same read
+    with the reason beside it; `manifest_state` and `task_binding` ask that."""
+    return _read_manifest_assembled(path)[0]
+
+
+def _read_manifest_assembled(path):
+    """`(manifest, problem)` - `_load_manifest_assembled`'s read, with `problem`
+    the sentence saying why a plan file that EXISTS could not be read, or None.
+
+    Unreadable is a fact about the plan's files - one will not parse (a
+    conflict left in it), one the index names is missing, or one writes a key
+    twice, which `_manifest_io`'s door refuses rather than answering from the
+    copy JSON's reader keeps. It is not a crash of this code: an exception that
+    is not a ValueError or an OSError (a bug here or in the loaded module) still
+    reads as {} with no problem, so a crash can only relax the gate.
+
+    The fallback, when `_manifest_io` cannot be loaded, reads the one file with
+    the standard library and refuses a key written twice the same way - it no
+    longer keeps the last copy silently."""
     try:
-        with open(path, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        return data if isinstance(data, dict) else {}
+        if not os.path.exists(str(path)):
+            return {}, None
     except Exception:
-        return {}
+        return {}, None
+    mio = _load_scripts_module("_manifest_io", "_manifest_io.py")
+    load = getattr(mio, "load_manifest", None) if mio is not None else None
+    if load is not None:
+        try:
+            data = load(str(path))
+        except (ValueError, OSError) as exc:
+            return {}, _unreadable_plan(path, exc)
+        except Exception:
+            return {}, None
+        return (data if isinstance(data, dict) else {}), None
+    try:
+        with open(str(path), "r", encoding="utf-8") as fh:
+            text = fh.read()
+        marked = {}
+        data = json.loads(text, object_pairs_hook=_twice_hook(marked))
+    except (ValueError, OSError) as exc:
+        return {}, _unreadable_plan(path, exc)
+    except Exception:
+        return {}, None
+    if marked:
+        return {}, _unreadable_plan(path, ValueError(
+            "in %s, %s written twice, so which copy is meant is not "
+            "established and nothing was read from it - delete by hand the "
+            "copy that is not meant, then run this again"
+            % (path, ", ".join(_twice_pointers(data, marked)))))
+    return (data if isinstance(data, dict) else {}), None
+
+
+def _twice_hook(marked):
+    """`json`'s object hook for the fallback read: a plain dict, recorded in
+    `marked` (by id, with the keys it wrote twice) when a key came twice."""
+    def hook(pairs):
+        out = dict(pairs)
+        if len(out) != len(pairs):
+            held, twice = set(), []
+            for key, _value in pairs:
+                if key in held and key not in twice:
+                    twice.append(key)
+                held.add(key)
+            marked[id(out)] = twice
+        return out
+    return hook
+
+
+def _twice_pointers(value, marked, at=""):
+    """The JSON pointer of every key `marked` records as written twice inside
+    `value`, in document order."""
+    found = ["%s/%s" % (at, str(k).replace("~", "~0").replace("/", "~1"))
+             for k in marked.get(id(value), ())]
+    items = (value.items() if isinstance(value, dict) else
+             enumerate(value) if isinstance(value, list) else ())
+    for key, inner in items:
+        found.extend(_twice_pointers(
+            inner, marked,
+            "%s/%s" % (at, str(key).replace("~", "~0").replace("/", "~1"))))
+    return found
+
+
+def _unreadable_plan(path, exc):
+    """The sentence a plan that will not read is refused under: the reason,
+    and - when the reason names no file (a parse error carries an offset
+    only) - the plan file that does not parse, found by reading each."""
+    why = " ".join(str(exc).split()) or type(exc).__name__
+    # The door's refusal (it carries `pointers`) already names its file.
+    if str(path) in why or getattr(exc, "pointers", None) is not None:
+        return why
+    where = str(path)
+    try:
+        with open(str(path), "r", encoding="utf-8") as fh:
+            index = json.load(fh)
+        base = os.path.dirname(os.path.abspath(str(path)))
+        for stub in (index.get("phases") or []) if isinstance(index, dict) else []:
+            shard = stub.get("shard") if isinstance(stub, dict) else None
+            if not shard:
+                continue
+            try:
+                with open(os.path.join(base, str(shard)), "r",
+                          encoding="utf-8") as fh:
+                    json.load(fh)
+            except (ValueError, OSError):
+                where = os.path.join(base, str(shard))
+                break
+    except (ValueError, OSError):
+        pass
+    except Exception:
+        pass
+    return ("%s cannot be read as a plan (%s) - a conflict left in it, or a "
+            "file the index names that is missing, is repaired by hand"
+            % (where, why))
+
+
+def manifest_problem(root, manifest_rel):
+    """The sentence saying why the plan at `root`/`manifest_rel` exists and
+    cannot be read (`_read_manifest_assembled`), or None. Never raises."""
+    try:
+        return _read_manifest_assembled(Path(root) / manifest_rel)[1]
+    except Exception:
+        return None
 
 
 def _load_lock_lib():
@@ -4488,6 +4607,16 @@ def manifest_state(root, manifest_rel):
     than the raw `status` column would suggest, rather than leaving a reader to
     notice the contradiction alone.
 
+    A PLAN THAT EXISTS AND WILL NOT READ IS NOT NO PLAN. A file of it that will
+    not parse, a shard the index names that is missing, or a key written twice
+    (`_read_manifest_assembled`) gives a state carrying `unreadable` - the
+    sentence naming the file, the key's path and the hand step - and
+    `hasPhases` True: which phases it holds, and whether one runs, is not
+    established, and a guard that cannot establish fails loud (SECURITY.md),
+    so the step is the one that denies past the free file and
+    `plan_gate_cause` names the plan instead of a phase. The key is present
+    only on such a state, so every other state is the dict it always was.
+
     Never raises. On any error it reports the LEAST aggressive state, so a crash in
     here can only relax the gate, never invent a denial."""
     state = dict(_NO_PHASE_STATE)
@@ -4496,7 +4625,9 @@ def manifest_state(root, manifest_rel):
         if not path.exists():
             return state
         state["exists"] = True
-        manifest = _load_manifest_assembled(path)
+        manifest, problem = _read_manifest_assembled(path)
+        if problem:
+            return dict(state, hasPhases=True, unreadable=problem)
         mio = _load_scripts_module("_manifest_io", "_manifest_io.py")
         if not isinstance(manifest, dict) or mio is None:
             return state
@@ -4834,13 +4965,27 @@ def plan_gate_cause(cfg, state, manifest_rel):
     hook said once the ladder grew a deny step with nothing running. Asked only
     once the tier is deny, so a `planGate` pin here is the "deny" pin."""
     step = plan_gate_step(cfg, state)
+    unreadable = (state or {}).get("unreadable")
+    # A plan that will not read is named whatever step chose the tier: a pin
+    # outranks the evidence, but the reader still needs the file, the key and
+    # the repair, which no pinned sentence carries.
+    also = ("" if not unreadable else
+            " The plan in %s also cannot be read: %s. An edit to the plan's "
+            "own files is how the repair lands, and stays allowed."
+            % (manifest_rel, unreadable))
     if step == "planGate":
         return ("planGate is set to \"deny\" in .claude/audit.config.json - "
-                "refused regardless of what is running.")
+                "refused regardless of what is running.%s" % also)
     if step == "enforce":
         return ("enforce: true is set in .claude/audit.config.json (legacy; "
                 "planGate: \"deny\" says the same) - refused regardless of "
-                "what is running.")
+                "what is running.%s" % also)
+    if step == "nothing-running" and unreadable:
+        return ("The plan in %s cannot be read, so which phases run is not "
+                "established and an edit past this session's free file is "
+                "refused until it is repaired: %s. An edit to the plan's own "
+                "files is how the repair lands, and stays allowed."
+                % (manifest_rel, state["unreadable"]))
     if step == "nothing-running":
         return ("The plan in %s holds phases, but no phase is in_progress, so "
                 "an edit past this session's free file is refused before it "

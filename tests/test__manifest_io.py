@@ -1757,8 +1757,706 @@ def _ignore_lines_cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# --- one door: a plan file that writes a key twice ------------------------------
+# The shape a merge resolved by keeping both sides leaves. JSON's own reader
+# takes the last copy and a save writes that copy alone, so every case below is
+# about the plan being parsed and saved through one door that notices it.
+def _kt_plan():
+    """A one-file plan holding each place the keep-both shapes write twice: a
+    task's run record, a phase's `tasks`, the index's `phases`, a title and
+    a bug."""
+    return {"meta": {"version": 2},
+            "phases": [{"id": "P1", "title": "One", "status": "in_progress",
+                        "tasks": [{"id": "P1.1", "title": "a",
+                                   "status": "in_progress",
+                                   "lastRun": {"runId": "KT-RED",
+                                               "status": "failed"}}]}],
+            "bugs": [{"id": "BUG-1", "title": "b", "status": "open",
+                      "severity": "low"}]}
+
+
+def _kt_shapes():
+    """`[(label, text, pointer, read(doc), the last copy's value)]` - the plan
+    as one line of JSON with ONE key written twice, the newer copy first and
+    the older last, as a keep-both resolution leaves them."""
+    clean = json.dumps(_kt_plan())
+    red = '"lastRun": {"runId": "KT-RED", "status": "failed"}'
+    rows = [
+        ("a task's run record", red,
+         red + ', "lastRun": {"runId": "KT-GREEN", "status": "passed"}',
+         "/phases/0/tasks/0/lastRun",
+         lambda d: d["phases"][0]["tasks"][0]["lastRun"]["runId"], "KT-GREEN"),
+        ("a phase's tasks", '"tasks": [',
+         '"tasks": [{"id": "P1.1", "title": "a", "status": "done"}], '
+         '"tasks": [', "/phases/0/tasks",
+         lambda d: d["phases"][0]["tasks"][0]["status"], "in_progress"),
+        ("the index's phases", '"phases": [', '"phases": [], "phases": [',
+         "/phases", lambda d: len(d["phases"]), 1),
+        ("a title", '"title": "One"', '"title": "One", "title": "Uno"',
+         "/phases/0/title", lambda d: d["phases"][0]["title"], "Uno"),
+        ("a bug", '"severity": "low"', '"severity": "low", "status": "closed"',
+         "/bugs/0/status", lambda d: d["bugs"][0]["status"], "closed"),
+    ]
+    out = []
+    for label, old, new, pointer, read, want in rows:
+        assert clean.count(old) == 1, (label, old)
+        out.append((label, clean.replace(old, new, 1), pointer, read, want))
+    return out
+
+
+def _kt_types(value):
+    """Every container type `value` holds, itself included - a parse that
+    marked nothing hands back plain dicts and lists only."""
+    if not isinstance(value, (dict, list)):
+        return set()
+    found = set([type(value)])
+    inner = value.values() if isinstance(value, dict) else value
+    for item in inner:
+        found |= _kt_types(item)
+    return found
+
+
+def _kt_refusal(fn):
+    """`(raised, message)` of `fn()`: whether it raised the door's
+    `DuplicateKeyError` and what it said, or `(False, what it answered)`."""
+    error = getattr(M, "DuplicateKeyError", None)
+    try:
+        answer = fn()
+    except Exception as exc:                                    # noqa: BLE001
+        return (error is not None and isinstance(exc, error),
+                "%s: %s" % (type(exc).__name__, exc))
+    return False, "answered %r" % (answer,)
+
+
+def _kt_names(message, path, pointer):
+    """The door's sentence names the file, the key's path and the hand step."""
+    return (path in message and pointer in message
+            and "written twice" in message and "by hand" in message)
+
+
+def _kt_sharded(root, plan, shard_text=None, index_text=None):
+    """`plan` saved sharded under `root` -> `(index path, P1 shard path)`;
+    `shard_text`/`index_text` (old, new) planted into the written text."""
+    index = os.path.join(root, "audit-plan.json")
+    os.makedirs(root, exist_ok=True)
+    M.save_sharded(index, plan)
+    shard = os.path.join(root, "phases", "P1.json")
+    for path, edit in ((shard, shard_text), (index, index_text)):
+        if edit is None:
+            continue
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        assert text.count(edit[0]) == 1, edit
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text.replace(edit[0], edit[1], 1))
+    return index, shard
+
+
+def _kt_shard_twice():
+    """`(old, new)` turning the P1 shard's one record, as `save_sharded`
+    spells it, into two copies of `lastRun` - the newer red first and an
+    older green after it: `/tasks/0/lastRun` is the key written twice."""
+    red = ('"lastRun": {\n        "runId": "KT-RED",\n'
+           '        "status": "failed"\n      }')
+    return red, red + (',\n      "lastRun": {\n        "runId": "KT-GREEN",\n'
+                       '        "status": "passed"\n      }')
+
+
+def _twice_parse_cases(check):
+    """(kt) The door's parse names every key written twice, with the last copy
+    as the value JSON's reader takes, and marks nothing in a plan that writes
+    each key once."""
+    parse = getattr(M, "parse_json_text", None)
+    seen, wrong = [], []
+    for label, text, pointer, read, want in _kt_shapes():
+        try:
+            doc, pointers = parse(text)
+            got = (pointers, read(doc))
+        except Exception as exc:                                # noqa: BLE001
+            got = ("%s: %s" % (type(exc).__name__, exc), None)
+        seen.append((label, got))
+        if got != ([pointer], want):
+            wrong.append((label, got, pointer, want))
+    check("kt1 RED-FIRST: the door's parse names the key written twice at its "
+          "JSON pointer - a task's run record, a phase's `tasks`, the index's "
+          "`phases`, a title, a bug - beside the last copy, which is the copy "
+          "JSON's own reader keeps: wrong %r of %d shapes" % (wrong, len(seen)),
+          parse is not None and len(seen) == 5 and not wrong)
+    clean = json.dumps(_kt_plan())
+    try:
+        doc, pointers = parse(clean)
+        plain = (pointers, doc == json.loads(clean), sorted(
+            t.__name__ for t in _kt_types(doc)))
+    except Exception as exc:                                    # noqa: BLE001
+        plain = ("%s: %s" % (type(exc).__name__, exc), None, None)
+    # THE OVER-FIRE: a parse that marked every object, or named a key that
+    # is written once, is red here and green in kt1.
+    check("kt1b ...and a plan that writes every key once is parsed to the "
+          "value json.loads gives, plain dicts and lists only, no key named: "
+          "%r" % (plain,),
+          plain == ([], True, ["dict", "list"]))
+
+
+def _twice_read_cases(check):
+    """(kt) Every read of a plan file through `_manifest_io` refuses a key
+    written twice, naming the file, the key and the hand step."""
+    tmp = tempfile.mkdtemp(prefix="manifest-io-twice-read-")
+    try:
+        refused = []
+        for i, (label, text, pointer, _r, _w) in enumerate(_kt_shapes()):
+            path = os.path.join(tmp, "one-%d" % (i,), "audit-plan.json")
+            _write_json(path, text)
+            for name in ("read_json", "load_manifest"):
+                raised, said = _kt_refusal(
+                    lambda name=name: getattr(M, name)(path))
+                refused.append((label, name, raised and _kt_names(
+                    said, path, pointer), said[:160]))
+            refused.append((label, "load_manifest_safe",
+                            M.load_manifest_safe(path) == {}, ""))
+        wrong = [r for r in refused if not r[2]]
+        check("kt2 RED-FIRST: read_json and load_manifest refuse a one-file "
+              "plan writing a key twice, each shape, with the file, the key's "
+              "path and the hand step said, and the hooks' safe read answers "
+              "{} as for any plan that will not read: wrong %r of %d reads"
+              % (wrong, len(refused)),
+              len(refused) == 15 and not wrong)
+
+        sharded = []
+        index, shard = _kt_sharded(os.path.join(tmp, "s-shard"), _kt_plan(),
+                                   shard_text=_kt_shard_twice())
+        raised, said = _kt_refusal(lambda: M.load_manifest(index))
+        sharded.append(("a shard", raised and _kt_names(
+            said, shard, "/tasks/0/lastRun"), said[:200]))
+        index2, _s = _kt_sharded(
+            os.path.join(tmp, "s-index"), _kt_plan(),
+            index_text=('"phases": [', '"phases": [],\n  "phases": ['))
+        raised, said = _kt_refusal(lambda: M.load_manifest(index2))
+        sharded.append(("the index", raised and _kt_names(
+            said, index2, "/phases"), said[:200]))
+        # A commit holding the shape: `load_manifest_at` assembles the plan
+        # exported from git, and the door is the same one.
+        repo = os.path.join(tmp, "repo")
+        rel = "docs/audit/audit-plan.json"
+        _kt_sharded(os.path.join(repo, "docs", "audit"), _kt_plan(),
+                    shard_text=_kt_shard_twice())
+        _harness.git(None, "init", "-q", repo, prefix=("git",))
+        for argv in (("config", "user.name", "kt"),
+                     ("config", "user.email", "kt@example.invalid"),
+                     ("add", "-A"), ("commit", "-q", "-m", "kept both")):
+            _harness.git(repo, *argv, prefix=("git",))
+        raised, said = _kt_refusal(
+            lambda: M.load_manifest_at(repo, "HEAD", rel))
+        sharded.append(("a commit", raised and "phases/P1.json" in said
+                        and "/tasks/0/lastRun" in said, said[:200]))
+        check("kt3 RED-FIRST: ...and so do a sharded plan's reads - a key "
+              "written twice in a shard, in the index, and in the plan a "
+              "commit holds (`load_manifest_at`) - each naming the file that "
+              "holds it: %r" % (sharded,),
+              len(sharded) == 3 and all(ok for _l, ok, _s in sharded))
+        # THE OVER-FIRE, AND THE DOOR'S EDGE: a JSON file that is no plan
+        # document (a config, a cache) is read as JSON reads it.
+        other = os.path.join(tmp, "config.json")
+        _write_json(other, '{"manifestPath": "a", "manifestPath": "b"}')
+        try:
+            other_read = M.read_json(other)
+        except Exception as exc:                                # noqa: BLE001
+            other_read = "%s: %s" % (type(exc).__name__, exc)
+        check("kt3b ...and a JSON file that is not a plan document - no "
+              "`meta`, no `phases`, no phase body - is read as JSON reads it, "
+              "the last copy kept: %r" % (other_read,),
+              other_read == {"manifestPath": "b"})
+    finally:
+        # kt3 builds a git repository here, whose read-only loose objects a
+        # bare rmtree leaves behind on windows.
+        _harness.remove_tree(tmp)
+
+
+def _kt_savers(doc):
+    """`[(name, save(path))]` - every way `_manifest_io` saves a plan."""
+    return [
+        ("save_plan_json", lambda p: M.save_plan_json(p, doc)),
+        ("atomic_write_json", lambda p: M.atomic_write_json(p, doc)),
+        ("raw_atomic_write_json", lambda p: M.raw_atomic_write_json(p, doc)),
+        ("save_single_file", lambda p: M.save_single_file(p, doc)),
+        ("save_sharded", lambda p: M.save_sharded(p, doc)),
+    ]
+
+
+def _twice_save_cases(check):
+    """(kt) Every save of a plan file refuses to write over a file that writes
+    a key twice, the file byte for byte as it was."""
+    tmp = tempfile.mkdtemp(prefix="manifest-io-twice-save-")
+    try:
+        doc = _kt_plan()
+        seen = []
+        for name, save in _kt_savers(doc):
+            for label, text, pointer, _r, _w in _kt_shapes():
+                path = os.path.join(tmp, "%s-%d" % (name, len(seen)),
+                                    "audit-plan.json")
+                _write_json(path, text)
+                raised, said = _kt_refusal(lambda save=save, path=path:
+                                           save(path))
+                with open(path, encoding="utf-8") as fh:
+                    after = fh.read()
+                left = sorted(os.listdir(os.path.dirname(path)))
+                seen.append((name, label, raised and _kt_names(
+                    said, path, pointer) and "nothing was written" in said
+                    and after == text and left == ["audit-plan.json"],
+                    said[:160]))
+        wrong = [s for s in seen if not s[2]]
+        check("kt4 RED-FIRST: every save of a plan through _manifest_io - "
+              "save_plan_json, atomic_write_json, raw_atomic_write_json, "
+              "save_single_file, save_sharded - refuses a target that writes "
+              "a key twice, before its first write (no shard directory made, "
+              "the file byte for byte as it was), naming the file, the key "
+              "and the hand step: wrong %r of %d" % (wrong[:3], len(seen)),
+              len(seen) == 25 and not wrong)
+        # A sharded target: the shard written twice, the index clean - the
+        # refusal still comes before the index or any other shard is written.
+        index, shard = _kt_sharded(os.path.join(tmp, "sh"), doc,
+                                   shard_text=_kt_shard_twice())
+        held = dict((p, open(p, encoding="utf-8").read())
+                    for p in (index, shard))
+        moved = dict(doc, bugs=[])
+        raised, said = _kt_refusal(lambda: M.save_sharded(index, moved))
+        same = all(open(p, encoding="utf-8").read() == t
+                   for p, t in held.items())
+        # The index written twice, the shard clean, and a save that changes
+        # the shard: the shard is written first, so only a check of every
+        # target before the first write leaves it as it was.
+        index2, shard2 = _kt_sharded(
+            os.path.join(tmp, "sh-index"), doc,
+            index_text=('"version": 3\n', '"version": 3,\n    "version": 3\n'))
+        held2 = dict((p, open(p, encoding="utf-8").read())
+                     for p in (index2, shard2))
+        retitled = json.loads(json.dumps(doc))
+        retitled["phases"][0]["title"] = "One, retitled"
+        raised2, said2 = _kt_refusal(lambda: M.save_sharded(index2, retitled))
+        same2 = all(open(p, encoding="utf-8").read() == t
+                    for p, t in held2.items())
+        check("kt4b RED-FIRST: ...a sharded save whose shard writes a key "
+              "twice refuses with the index and the shard as they were, and "
+              "so does one whose INDEX writes a key twice while the save "
+              "would rewrite a clean shard - every target is asked before the "
+              "first is written: %r"
+              % ((raised, same, said[:160], raised2, same2, said2[:160]),),
+              raised and same and _kt_names(said, shard, "/tasks/0/lastRun")
+              and raised2 and same2 and _kt_names(said2, index2,
+                                                  "/meta/version"))
+        # THE OVER-FIRE: a document that is no plan saved over a file that
+        # writes a key twice - a cache, a baseline - is written; a plan saved
+        # over a clean plan is written.
+        cache = os.path.join(tmp, "cache.json")
+        _write_json(cache, '{"a": 1, "a": 2}')
+        clean = os.path.join(tmp, "clean", "audit-plan.json")
+        _write_json(clean, json.dumps(doc))
+        outcomes = []
+        # A DICT that is no plan, so a door taking every dict for a plan is
+        # red here (a list would pass the shape check either way).
+        for label, fn in (("cache", lambda: M.atomic_write_json(
+                              cache, {"items": [1]})),
+                          ("clean plan", lambda: M.save_plan_json(clean, doc))):
+            try:
+                fn()
+                outcomes.append((label, "written"))
+            except Exception as exc:                            # noqa: BLE001
+                outcomes.append((label, "%s: %s" % (type(exc).__name__, exc)))
+        check("kt4c ...and a save the door has no question about is written: "
+              "a document that is no plan over a file writing a key twice, a "
+              "plan over a clean plan: %r" % (outcomes,),
+              outcomes == [("cache", "written"), ("clean plan", "written")]
+              and M.read_json(clean) == doc)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _twice_text_cases(check):
+    """(kt) The door's check of a text about to be written - what the merge
+    resolver asks of its own output - and the hand step that gets out."""
+    tmp = tempfile.mkdtemp(prefix="manifest-io-twice-text-")
+    try:
+        ask = getattr(M, "check_plan_text", None)
+        rows = []
+        twice_text = _kt_shapes()[0][1]
+        markers = "<<<<<<< ours\n{}\n=======\n{}\n>>>>>>> theirs\n"
+        clean = M.json_document(_kt_plan())
+        for label, text, want in (("a key written twice", twice_text, False),
+                                  ("conflict markers", markers, True),
+                                  ("a clean plan", clean, True)):
+            path = os.path.join(tmp, "t%d.json" % (len(rows),))
+            raised, said = _kt_refusal(lambda path=path, text=text:
+                                       ask(path, text))
+            got = (not raised and said == "answered None") if want else (
+                raised and _kt_names(said, path, "/phases/0/tasks/0/lastRun"))
+            rows.append((label, got, said[:160]))
+        check("kt5 RED-FIRST: the door's check of a text about to be written "
+              "refuses one that writes a key twice, naming the file, the key "
+              "and the hand step, and has nothing to say of text that is not "
+              "JSON (conflict markers) or holds each key once: %r" % (rows,),
+              ask is not None and all(ok for _l, ok, _s in rows))
+        # THE HAND STEP: the copy not meant deleted by hand, the plan reads
+        # and saves again.
+        path = os.path.join(tmp, "hand", "audit-plan.json")
+        _write_json(path, twice_text)
+        before = _kt_refusal(lambda: M.read_json(path))[0]
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        _write_json(path, text.replace(
+            ', "lastRun": {"runId": "KT-GREEN", "status": "passed"}', "", 1))
+        try:
+            doc = M.read_json(path)
+            M.save_plan_json(path, doc)
+            after = (doc == _kt_plan(),
+                     open(path, encoding="utf-8").read() == M.json_document(
+                         _kt_plan()))
+        except Exception as exc:                                # noqa: BLE001
+            after = "%s: %s" % (type(exc).__name__, exc)
+        check("kt6 RED-FIRST: THE HAND STEP - with the copy not meant deleted "
+              "by hand the plan that was refused reads and saves, written in "
+              "the plugin's spelling: refused first %r, then %r"
+              % (before, after), before is True and after == (True, True))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _kt_plain_assembled(index):
+    """The plan at `index` assembled from `json.load` alone - the read before
+    the door - for the byte-for-byte comparison."""
+    with open(index, encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not M.is_sharded(data):
+        return data
+    base = os.path.dirname(os.path.abspath(index))
+    out = dict(data)
+    phases = []
+    for stub in data.get("phases") or []:
+        if isinstance(stub, dict) and "shard" in stub:
+            with open(os.path.join(base, stub["shard"]), encoding="utf-8") as fh:
+                phases.append(M._merge_phase(stub, json.load(fh)))
+        else:
+            phases.append(stub)
+    out["phases"] = phases
+    return out
+
+
+def _twice_unchanged_cases(check):
+    """(kt) The over-fire, on the plans that exist: this repository's plan,
+    the shipped example and the starter read and save byte for byte as they
+    did before the door, each in a scratch copy - the committed files are
+    never written."""
+    import _output as _out
+    root = str(_out.REPO_ROOT)
+    plans = [os.path.join(root, "docs", "audit", "audit-plan.json"),
+             os.path.join(root, "examples", "acme-store", "audit-plan.json"),
+             os.path.join(_out.PLUGIN_ROOT, "templates",
+                          "audit-plan.starter.json")]
+    tmp = tempfile.mkdtemp(prefix="manifest-io-twice-same-")
+    try:
+        seen, wrong = [], []
+        for plan in plans:
+            if not os.path.isfile(plan):
+                wrong.append((plan, "absent"))
+                continue
+            try:
+                assembled = M.load_manifest(plan) == _kt_plain_assembled(plan)
+            except Exception as exc:                            # noqa: BLE001
+                assembled = "%s: %s" % (type(exc).__name__, exc)
+            files = [plan]
+            with open(plan, encoding="utf-8") as fh:
+                index = json.load(fh)
+            base = os.path.dirname(os.path.abspath(plan))
+            files += [os.path.join(base, stub["shard"])
+                      for stub in index.get("phases") or []
+                      if isinstance(stub, dict) and stub.get("shard")]
+            for path in files:
+                copy = os.path.join(tmp, "%d" % (len(seen),),
+                                    os.path.basename(path))
+                os.makedirs(os.path.dirname(copy))
+                shutil.copyfile(path, copy)
+                with open(path, encoding="utf-8") as fh:
+                    plain = json.load(fh)
+                want = M.json_document(M.scrubbed_plan(copy, plain))
+                try:
+                    read = M.read_json(path)
+                    same_read = (read == plain
+                                 and _kt_types(read) <= set([dict, list, str,
+                                                             int, float, bool,
+                                                             type(None)]))
+                    M.save_plan_json(copy, read)
+                    with open(copy, encoding="utf-8") as fh:
+                        same_save = fh.read() == want
+                except Exception as exc:                        # noqa: BLE001
+                    same_read = same_save = "%s: %s" % (type(exc).__name__,
+                                                       exc)
+                seen.append(path)
+                if same_read is not True or same_save is not True:
+                    wrong.append((os.path.relpath(path, root), same_read,
+                                  same_save))
+            if assembled is not True:
+                wrong.append((os.path.relpath(plan, root), "assembled",
+                              assembled))
+        check("kt7 THE OVER-FIRE, ON THE PLANS THAT EXIST: this repository's "
+              "plan, the shipped example and the starter (%d file(s), index "
+              "and shards) read through the door to exactly what json.load "
+              "reads, assemble to the plain assembly, and save - into a "
+              "scratch copy - byte for byte what the save wrote before: "
+              "wrong %r" % (len(seen), wrong[:4]),
+              len(seen) > 3 and not wrong)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _kt_project(root):
+    """A sharded git project under `root` whose P1 shard writes task P1.1's
+    `lastRun` twice -> `(index, shard)`."""
+    os.makedirs(os.path.join(root, ".claude"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    index, shard = _kt_sharded(os.path.join(root, "docs", "audit"),
+                               _kt_plan(), shard_text=_kt_shard_twice())
+    _harness.git(None, "init", "-q", root, prefix=("git",))
+    return index, shard
+
+
+def _twice_renderer_cases(check):
+    """(kt) Every read-only renderer says the file and the key in its own
+    channel and reads nothing from the copies: status, the report, the
+    doctor, the validator and the panel's state."""
+    import _loader
+    tmp = tempfile.mkdtemp(prefix="manifest-io-twice-render-")
+    try:
+        root = os.path.join(tmp, "proj")
+        index, _shard = _kt_project(root)
+        env = dict((k, v) for k, v in os.environ.items()
+                   if k != "CLAUDE_PROJECT_DIR")
+        env["CLAUDE_PROJECT_DIR"] = root
+        runs = (("audit-status.py", [index]),
+                ("render-report.py", [index, "--out-dir",
+                                      os.path.join(tmp, "out")]),
+                ("audit-doctor.py", ["--project", root]),
+                ("validate-manifest.py", [index]))
+        said = []
+        for script, argv in runs:
+            code, out, err = _harness.run_script(
+                _loader.script_path(script), argv, root, env=env)
+            text = (out + err).decode("utf-8", "replace")
+            said.append((script, code, "phases/P1.json" in text.replace(
+                os.sep, "/") and "/tasks/0/lastRun" in text, text[-240:]))
+        import _panel_state
+        state = _panel_state.build_state(root)
+        found = " ".join(str(f) for f in state.get("manifestFindings") or [])
+        said.append(("panel", None, "phases/P1.json" in found.replace(
+            os.sep, "/") and "/tasks/0/lastRun" in found, found[-240:]))
+        wrong = [s for s in said if not s[2] or s[1] == 0]
+        check("kt8 RED-FIRST: each read-only renderer names the shard and the "
+              "key written twice in its own channel and answers nothing from "
+              "the copies - status, the report and the doctor refuse with it, "
+              "the validator finds it, the panel's state carries it: wrong %r"
+              % (wrong,), len(said) == 5 and not wrong)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# THE PLACES A PLAN FILE IS PARSED OR SAVED OUTSIDE `_manifest_io`, each with
+# why the door is not needed there or what it is owed. Keyed by (module,
+# function). A NEW one is red by name in kt9; one the code no longer holds is
+# reported stale.
+_PARSED_OUTSIDE_DOOR = {
+    ("_config", "_unreadable_plan"):
+        "the hook's locator for a plan the door already refused: it parses "
+        "the index and each shard only to say WHICH file will not parse, "
+        "reads no value from either, and the hook cannot import the door "
+        "statically (hooks stay importless of scripts/)",
+    ("_invariants", "_materialize"):
+        "copies a commit's index and the shards it names, byte for byte, "
+        "into a scratch tree that `load_manifest` - the door - then reads; "
+        "the parse here only finds the shard files to copy, and a key "
+        "written twice is refused by the door's read of the copy",
+    ("_invariants", "_committed_pointers"):
+        "OWED THE DOOR: reads the committed phase file with json.loads to "
+        "check its run-record pointers, read-only, so a key written twice "
+        "there is read as its last copy - `_mio.parse_json_text` with the "
+        "refusal in its `why` list is the fix, outside the files of the task "
+        "that built the door",
+    ("_doctor_setup", "_check_shards"):
+        "the doctor's shard check, asked after `load_manifest` - the door - "
+        "has read the plan and the doctor has printed what it refused; this "
+        "read asks only which shard files the index names and whether they "
+        "parse",
+}
+_SAVED_OUTSIDE_DOOR = {
+    ("merge-manifest", "_write"):
+        "the merge resolver's writer, which writes TEXT - a rendered plan "
+        "that may hold conflict markers - and so cannot be handed to a JSON "
+        "saver; `resolve` asks the door of every text it is about to write "
+        "(`_manifest_io.check_plan_text`) before its first write, and "
+        "test_merge_manifest.py's mk cases hold that call and its refusal",
+    ("migrate-manifest", "_restore"):
+        "puts back the bytes a restore point kept of the file it replaced, "
+        "after a layout change failed - a copy of a file, never a parse and "
+        "a save, so no copy of a key can be dropped",
+}
+
+
+# What a parsed value is used FOR ties it to the plan when its path does not:
+# a callee whose name carries one of these words (`_phase_body`,
+# `_merge_phase`), or a subscript / `.get` of one of these top-level keys.
+# `tasks` and `bugs` are not among the keys: the integration and wave state
+# files key their own rows by `tasks`, and reading one is not reading a plan.
+_DOOR_USE_WORDS = frozenset(("phase", "plan", "manifest", "shard"))
+_DOOR_PLAN_KEYS = frozenset(("phases", "meta", "fileIndex"))
+
+
+def _door_used_as_plan(fn, parse, D):
+    """True when the value `parse` (a json.load/loads call in `fn`) is used
+    as a plan: handed to a callee named for one (`_DOOR_USE_WORDS`), or read
+    at a plan key (`_DOOR_PLAN_KEYS`) - directly, or through the one name it
+    is assigned to. A reader of a shard body whose path carries no plan word
+    is still a plan reader, and the path-word tie alone missed exactly that
+    (a phase in flight read off another worktree's file)."""
+    import ast
+    names = set(t.id for a in ast.walk(fn) if isinstance(a, ast.Assign)
+                and a.value is parse for t in a.targets
+                if isinstance(t, ast.Name))
+
+    def is_value(node):
+        return node is parse or (isinstance(node, ast.Name) and node.id in names)
+
+    def plan_key(node):
+        node = getattr(node, "value", node) if not isinstance(
+            node, ast.Constant) else node                 # 3.8 ast.Index
+        return isinstance(node, ast.Constant) and node.value in _DOOR_PLAN_KEYS
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Call):
+            callee = (node.func.attr if isinstance(node.func, ast.Attribute)
+                      else getattr(node.func, "id", ""))
+            if (D._pw_words(callee) & _DOOR_USE_WORDS
+                    and any(is_value(a) for a in node.args)):
+                return True
+            if (isinstance(node.func, ast.Attribute) and node.func.attr == "get"
+                    and is_value(node.func.value) and node.args
+                    and plan_key(node.args[0])):
+                return True
+        if (isinstance(node, ast.Subscript) and is_value(node.value)
+                and plan_key(node.slice)):
+            return True
+    return False
+
+
+def _door_scan():
+    """`(readers, writers)` derived from the code. `readers` is every
+    function under `scripts/` and `hooks/` that parses JSON with json.load or
+    json.loads where an `open` path or the parsed argument is tied to the
+    plan by the writers lint's own words (`_deps._pw_tie`), or the parsed
+    value is used as a plan (`_door_used_as_plan`); `writers` maps
+    each function whose own body writes a file on the write chain of a
+    `_deps.PLAN_WRITERS` row - followed down through every forwarder until a
+    `_manifest_io.PLAN_SAVERS` function is reached - to the chain that
+    reached it."""
+    import ast
+    import _output as _out
+    sys.path.insert(0, str(_out.LINTS_DIR))
+    import _deps as D
+    readers = []
+    for top in (str(_out.SCRIPTS_DIR), str(_out.HOOKS_DIR)):
+        for _rel, path in _out.py_files(top):
+            if os.path.basename(path) == "_manifest_io.py":
+                continue
+            with open(path, encoding="utf-8") as fh:
+                tree = ast.parse(fh.read())
+            module = os.path.splitext(os.path.basename(path))[0]
+            for fn in ast.walk(tree):
+                if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                calls = [n for n in ast.walk(fn) if isinstance(n, ast.Call)]
+                # `json.loads(json.dumps(x))` is a deep copy of a value
+                # already read, not a read of a file.
+                parses = [c for c in calls if isinstance(c.func, ast.Attribute)
+                          and c.func.attr in ("load", "loads")
+                          and isinstance(c.func.value, ast.Name)
+                          and c.func.value.id == "json" and c.args
+                          and not (isinstance(c.args[0], ast.Call)
+                                   and isinstance(c.args[0].func, ast.Attribute)
+                                   and c.args[0].func.attr == "dumps")]
+                opens = [c for c in calls if isinstance(c.func, ast.Name)
+                         and c.func.id == "open" and c.args]
+                if parses and (any(D._pw_tie(c.args[0])
+                                   for c in parses + opens)
+                               or any(_door_used_as_plan(fn, c, D)
+                                      for c in parses)):
+                    readers.append((module, fn.name))
+    units, _read, _unreadable = D._pw_units(None, None)
+    defined = set((u[1], u[2]) for u in units)
+    forwards, grew = {}, True
+    while grew:
+        grew = False
+        for unit in units:
+            key = (unit[1], unit[2])
+            own = dict((p, unit[7][p]) for _c, _t, _v, mine
+                       in D._pw_sites(unit, forwards, defined) if mine
+                       for p in mine)
+            if own and own != forwards.get(key):
+                forwards[key] = own
+                grew = True
+    by_key = dict(((u[1], u[2]), u) for u in units)
+    door = set(("_manifest_io", name)
+               for name in getattr(M, "PLAN_SAVERS", ()))
+    writers = {}
+
+    def walk(key, chain, seen):
+        if key in door or key in seen or key not in by_key:
+            return
+        seen.add(key)
+        for _call, _target, via, _own in D._pw_sites(by_key[key], forwards,
+                                                      defined):
+            if via == "<write>":
+                writers.setdefault(key, " > ".join(
+                    "%s.%s" % k for k in chain))
+                continue
+            mod, _sep, name = via.split(" (", 1)[0].partition(".")
+            walk((mod, name), chain + [(mod, name)], seen)
+    for row in D.PLAN_WRITERS:
+        start = (os.path.splitext(os.path.basename(row[0]))[0], row[1])
+        walk(start, [start], set())
+    return sorted(set(readers)), writers
+
+
+def _door_cases(check):
+    """(kt) The one door, held from the code rather than from a list."""
+    readers, writers = _door_scan()
+    new_readers = [r for r in readers if r not in _PARSED_OUTSIDE_DOOR]
+    stale_readers = sorted(k for k in _PARSED_OUTSIDE_DOOR if k not in readers)
+    new_writers = sorted("%s.%s <- %s" % (k[0], k[1], chain)
+                         for k, chain in writers.items()
+                         if k not in _SAVED_OUTSIDE_DOOR)
+    stale_writers = sorted(k for k in _SAVED_OUTSIDE_DOOR if k not in writers)
+    check("kt9 RED-FIRST: ONE DOOR - every write chain of a plan writer the "
+          "writers lint tables (_deps.PLAN_WRITERS) reaches the disk only "
+          "through a `_manifest_io.PLAN_SAVERS` function (%r), and no "
+          "function parses a file tied to the plan with json.load/loads "
+          "outside `_manifest_io`, but those named with a reason: writers "
+          "outside the door %r, readers outside the door %r, stale exemptions "
+          "%r / %r; derived: %d reader(s) %r, %d chain end(s) %r"
+          % (getattr(M, "PLAN_SAVERS", None), new_writers, new_readers,
+             stale_readers, stale_writers, len(readers), readers,
+             len(writers), sorted(writers)),
+          getattr(M, "PLAN_SAVERS", None) and not new_writers
+          and not new_readers and not stale_readers and not stale_writers)
+
+
+def _twice_cases(check):
+    _twice_parse_cases(check)
+    _twice_read_cases(check)
+    _twice_save_cases(check)
+    _twice_text_cases(check)
+    _twice_unchanged_cases(check)
+    _twice_renderer_cases(check)
+    _door_cases(check)
+
+
 def _selftest():
     def body(check):
+        _twice_cases(check)
         _ignore_lines_cases(check)
         _newline_cases(check)
         _executed_cases(check)

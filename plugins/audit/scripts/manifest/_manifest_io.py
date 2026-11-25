@@ -36,6 +36,12 @@ I/O contract: `load_manifest` raises (like open()/json.load) on a missing or inv
 index/shard, so existing callers' `try/except -> exit 2` keeps working. Hooks that must
 never raise use `load_manifest_safe` (returns {} on any error).
 
+Every plan file is parsed through ONE door (`parse_json_text`), which notices a key
+written twice - the shape a merge that kept both sides leaves - and every read that
+answers from the plan and every save through this module refuses it
+(`DuplicateKeyError`, a ValueError, so it travels the channel an unparseable plan
+already does). See the block of that name below.
+
 This module carries no `--selftest` of its own any more; its cases live in
 `tests/test__manifest_io.py`, byte-identical labels and all - see
 `tests/_harness.py`.
@@ -70,11 +76,275 @@ _output.install_path()
 import _machine_paths  # noqa: E402  (what a committed plan may not say, and its redaction)
 
 
+# --- the one door: a key written twice ----------------------------------------------
+# A PLAN FILE THAT WRITES A KEY TWICE is the shape a merge resolved by keeping
+# both sides leaves. JSON leaves which copy counts to the reader (RFC 8259 says
+# names SHOULD be unique and no more), Python's reader keeps the last, and a save
+# writes that one copy back - so one unrelated verb used to rewrite the file with
+# whichever copy happened to come last, and from then every reader answered from
+# it. Every plan file is parsed here, through `parse_json_text`, which notices the
+# shape; every read that answers from a plan refuses it (`read_plan`, `read_json`,
+# `load_manifest`), and every save through this module refuses to write over a
+# file that holds it (`raw_atomic_write_json`, which every JSON save here reaches,
+# and `save_sharded`, which asks before its first write). The way out is a
+# person's: delete the copy that is not meant, by hand.
+class DuplicatedKeys(dict):
+    """A JSON object a plan file wrote some key of more than once, as the door
+    parses it: each key's LAST value, as JSON's own reader keeps it, with
+    `duplicated` naming the keys written twice. A plain dict to every reader
+    but the ones that ask; the door refuses to save over the file it came from."""
+    duplicated = ()
+
+
+class DuplicateKeyError(ValueError):
+    """A plan file that writes a key twice, refused by a read or a save.
+
+    A `ValueError`, as an unparseable file's `json.JSONDecodeError` is, so every
+    caller that already reports a plan that will not read reports this one in
+    the same channel; the sentence names the file, the JSON pointer of each key
+    written twice and the hand step. `path` and `pointers` carry the same."""
+
+    def __init__(self, path, pointers, writing=False):
+        self.path = str(path)
+        self.pointers = list(pointers)
+        many = len(self.pointers) != 1
+        ValueError.__init__(self, (
+            "in %s, %s %s written twice, so %s - delete by hand the copy that "
+            "is not meant (validate-manifest.py names every key written twice "
+            "in the plan), then run this again"
+            % (self.path, _output.some_of(self.pointers),
+               "are" if many else "is",
+               "saving over it would keep one copy and drop the other - "
+               "nothing was written" if writing else
+               "which copy is meant is not established and nothing was read "
+               "from it")))
+
+
+def _marking_hook(marked):
+    """`json`'s object hook for the door: a plain dict, or a `DuplicatedKeys`
+    - appended to `marked` - when a key came more than once. A plain dict is
+    built in C and compared by length, so a file writing each key once pays
+    one function call per object and nothing more."""
+    def hook(pairs):
+        out = dict(pairs)
+        if len(out) == len(pairs):
+            return out
+        held, twice = set(), []
+        for key, _value in pairs:
+            if key in held and key not in twice:
+                twice.append(key)
+            held.add(key)
+        found = DuplicatedKeys(out)
+        found.duplicated = tuple(twice)
+        marked.append(found)
+        return found
+    return hook
+
+
+def written_twice_at(value, at=""):
+    """The JSON pointer of every key written twice inside `value` (as the door
+    parsed it), in document order - [] for a value that writes each once."""
+    found = []
+    if isinstance(value, DuplicatedKeys):
+        found.extend("%s/%s" % (at, _pointer_token(key))
+                     for key in value.duplicated)
+    if isinstance(value, dict):
+        items = value.items()
+    elif isinstance(value, list):
+        items = enumerate(value)
+    else:
+        return found
+    for key, inner in items:
+        found.extend(written_twice_at(inner, "%s/%s" % (at, _pointer_token(key))))
+    return found
+
+
+def parse_json_text(text):
+    """`(document, pointers)` - THE DOOR'S PARSE: `text` as JSON, every object
+    that wrote a key twice a `DuplicatedKeys`, and the JSON pointer of each
+    such key ([] when there is none). Raises as `json.loads` does on text that
+    is not JSON."""
+    marked = []
+    doc = json.loads(text, object_pairs_hook=_marking_hook(marked))
+    return doc, (written_twice_at(doc) if marked else [])
+
+
+def parse_json_file(path):
+    """`parse_json_text` over the file at `path`, read as UTF-8. Raises like
+    open()/json.load on a missing or invalid file."""
+    with open(path, "r", encoding="utf-8") as fh:
+        return parse_json_text(fh.read())
+
+
+def is_plan_document(doc):
+    """True for what a plan file holds: a whole plan or an index (`meta` or
+    `phases` at the top) or a phase body (an `id` beside `tasks` or a
+    `title`). The door refuses a key written twice in these; any other JSON a
+    caller reads through `read_json` - a config, a cache of board items - is
+    read as JSON reads it."""
+    if not isinstance(doc, dict):
+        return False
+    return ("meta" in doc or "phases" in doc
+            or ("id" in doc and ("tasks" in doc or "title" in doc)))
+
+
+def read_plan(path):
+    """A plan file parsed through the door, refused (`DuplicateKeyError`) when
+    it writes any key twice. Raises like open()/json.load otherwise."""
+    doc, twice = parse_json_file(path)
+    if twice:
+        raise DuplicateKeyError(path, twice)
+    return doc
+
+
+class UnknownInBase(object):
+    """The value of a key a merge's BASE writes twice: NOT ESTABLISHED.
+
+    It equals nothing (not even another of its kind), so a three-way merge
+    reading it can take neither side as "unchanged" against it; it is falsy
+    and iterates as empty, so a reader walking the base for ids finds none
+    under it. It is never written: a merge only ever writes a side's value."""
+
+    def __init__(self, pointer):
+        self.pointer = pointer
+
+    def __eq__(self, other):
+        return False
+
+    def __ne__(self, other):
+        return True
+
+    __hash__ = object.__hash__
+
+    def __bool__(self):
+        return False
+
+    def __iter__(self):
+        return iter(())
+
+    def __len__(self):
+        return 0
+
+    def get(self, _key, default=None):
+        return default
+
+    def __repr__(self):
+        return "<%s written twice in the merge base>" % (self.pointer,)
+
+
+def without_written_twice(value, at=""):
+    """A plain copy of `value` (as the door parsed it) in which every key
+    some object wrote twice holds an `UnknownInBase` - THE MERGE BASE'S
+    READING, and no other.
+
+    A three-way merge reads its base only to tell which side changed what,
+    and never writes it back. A key the base writes twice has no established
+    value there, so ONE RULE covers a scalar and a container alike: its base
+    is unknown. Two sides that agree on it merge; two that differ conflict on
+    the whole value, and neither copy decides - as reading the last copy
+    would, by making the side that kept it look unchanged. Under a container
+    (`tasks`, `phases`) written twice no record is in the base at all, so no
+    id under it is ever counted as minted on both sides, and nothing offers
+    to renumber one: the base cannot vouch for what was there before."""
+    if isinstance(value, dict):
+        twice = (set(value.duplicated) if isinstance(value, DuplicatedKeys)
+                 else set())
+        return dict((k, UnknownInBase("%s/%s" % (at, _pointer_token(k)))
+                     if k in twice else
+                     without_written_twice(v, "%s/%s" % (at, _pointer_token(k))))
+                    for k, v in value.items())
+    if isinstance(value, list):
+        return [without_written_twice(v, "%s/%d" % (at, i))
+                for i, v in enumerate(value)]
+    return value
+
+
+def unknown_in_base(value, at=()):
+    """`[(path, UnknownInBase)]` - where `without_written_twice` left the
+    base unknown, `path` the keys down to it (a record in a list named by its
+    `id` when it has one, else its index)."""
+    if isinstance(value, UnknownInBase):
+        return [(at, value)]
+    found = []
+    if isinstance(value, dict):
+        for k, v in value.items():
+            found.extend(unknown_in_base(v, at + (k,)))
+    elif isinstance(value, list):
+        for i, v in enumerate(value):
+            key = (("id", v["id"]) if isinstance(v, dict)
+                   and isinstance(v.get("id"), str) else i)
+            found.extend(unknown_in_base(v, at + (key,)))
+    return found
+
+
+def read_base_plan(path):
+    """A plan file read as a merge's BASE (`without_written_twice`): a key
+    written twice is unknown rather than refused. Only a merge's base may be
+    read so - a reader whose answer is shown, kept or written back goes
+    through `read_plan`."""
+    return without_written_twice(parse_json_file(path)[0])
+
+
+def check_plan_text(path, text):
+    """None, or `DuplicateKeyError` raised when `text` - about to be written
+    to `path` - is JSON that writes a key twice. Text that is not JSON (a file
+    holding conflict markers) is not this question's: the door refuses only
+    the shape it can read."""
+    try:
+        _doc, twice = parse_json_text(text)
+    except ValueError:
+        return None
+    if twice:
+        raise DuplicateKeyError(path, twice, writing=True)
+    return None
+
+
+def refuse_written_twice(path):
+    """Raise `DuplicateKeyError` when the file a save is about to replace
+    writes a key twice. A file that is absent, unreadable or not JSON is not
+    this question's: whatever reads it next says so."""
+    try:
+        _doc, twice = parse_json_file(path)
+    except (OSError, ValueError):
+        return
+    if twice:
+        raise DuplicateKeyError(path, twice, writing=True)
+
+
+def written_twice(path):
+    """`[(file, pointer)]` - every key written twice in every file of the plan
+    at `path`: the index, then each shard its stubs name (the last copy's,
+    when the index writes `phases` twice). A file that will not read is left
+    to the reader that reports it."""
+    try:
+        index, twice = parse_json_file(path)
+    except (OSError, ValueError):
+        return []
+    out = [(path, pointer) for pointer in twice]
+    if not is_sharded(index):
+        return out
+    base = os.path.dirname(os.path.abspath(path))
+    for stub in index.get("phases") or []:
+        if not isinstance(stub, dict) or "shard" not in stub:
+            continue
+        shard = os.path.join(base, str(stub["shard"]))
+        try:
+            _body, found = parse_json_file(shard)
+        except (OSError, ValueError):
+            continue
+        out.extend((shard, pointer) for pointer in found)
+    return out
+
+
 # --- reading + assembly ---------------------------------------------------------
 def read_json(path):
-    """Parse a JSON file. Raises like open()/json.load on a missing/invalid file."""
-    with open(path, "r", encoding="utf-8") as fh:
-        return json.load(fh)
+    """Parse a JSON file through the door. A plan document (`is_plan_document`)
+    that writes a key twice is refused (`DuplicateKeyError`); raises like
+    open()/json.load on a missing/invalid file."""
+    doc, twice = parse_json_file(path)
+    if twice and is_plan_document(doc):
+        raise DuplicateKeyError(path, twice)
+    return doc
 
 
 # Back-compat private alias — other modules in this file (and historically,
@@ -229,8 +499,9 @@ def index_without_stub_claim(index, phase_id):
     return index, None
 
 
-def load_manifest_at(git_root, commit, rel):
+def load_manifest_at(git_root, commit, rel, as_base=False):
     """The assembled plan as `commit` holds it, or None when it holds none.
+    `as_base` is `load_manifest`'s: a merge base, read only to compare.
 
     `rel` is the manifest's path relative to `git_root`. The directory beside it is
     exported whole, so a sharded plan arrives with its shards. The imports are
@@ -255,27 +526,34 @@ def load_manifest_at(git_root, commit, rel):
         with tarfile.open(fileobj=io.BytesIO(r.stdout)) as tar:
             tar.extractall(tmp)
         path = os.path.join(tmp, rel)
-        return load_manifest(path) if os.path.isfile(path) else None
+        return (load_manifest(path, as_base=as_base) if os.path.isfile(path)
+                else None)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def load_manifest(path):
+def load_manifest(path, as_base=False):
     """Return the fully-assembled manifest dict for either storage format.
+
+    `as_base` reads every file as a merge's base (`read_base_plan`), for the
+    one caller that reads a plan only to compare against it.
 
     LEGACY -> the parsed file unchanged. SHARDED -> the index with every `shard`
     stub replaced by its assembled phase body (read from a sibling file resolved
     relative to the index's directory). Raises on an unreadable/unparseable index
-    or shard — callers already treat that as exit 2.
+    or shard — callers already treat that as exit 2 — and on one that writes a
+    key twice (`DuplicateKeyError`, a ValueError), which every reader refuses
+    as it refuses one that will not parse.
     """
-    data = _read_json(path)
+    read = read_base_plan if as_base else read_plan
+    data = read(path)
     if not is_sharded(data):
         return data
     base = os.path.dirname(os.path.abspath(path))
     assembled = []
     for stub in data.get("phases", []):
         if isinstance(stub, dict) and "shard" in stub:
-            body = _read_json(os.path.join(base, stub["shard"]))
+            body = read(os.path.join(base, stub["shard"]))
             assembled.append(_merge_phase(stub, body))
         else:
             assembled.append(stub)          # already an inline phase (mixed/defensive)
@@ -361,7 +639,9 @@ def stale_stubs(path):
 def load_manifest_safe(path):
     """Like `load_manifest` but returns {} on ANY error — for the hooks' read path,
     which must never raise (a blocking guard degrades to 'no in-progress coverage'
-    safely rather than crashing the tool call)."""
+    safely rather than crashing the tool call). A plan file writing a key twice is
+    one of those errors: the hooks read it as a plan that will not read, which
+    SECURITY.md's fail-mode table states."""
     try:
         result = load_manifest(path)
         return result if isinstance(result, dict) else {}
@@ -1240,8 +1520,24 @@ def raw_atomic_write_json(path, obj, indent=2):
     for which way and why. `indent` stays a parameter because it is a shape a
     caller may legitimately want; every caller in this tree asks for the
     readable one.
+
+    THE DOOR'S SAVE. Every JSON save in this module reaches the disk here, so
+    a plan document is refused (`DuplicateKeyError`) when the file it would
+    replace writes a key twice, before anything is written: writing it would
+    keep the one copy the reader took and drop the other unsaid.
+    `PLAN_SAVERS` names this function for the case that holds every plan
+    writer's chain to it.
     """
+    if is_plan_document(obj):
+        refuse_written_twice(path)
     atomic_write_text(path, json_document(obj, indent))
+
+
+# The functions of this module through which a plan file reaches the disk, each
+# refusing a target that writes a key twice: `tests/test__manifest_io.py`'s
+# kt9 follows the write chain of every plan writer `_deps.PLAN_WRITERS` tables
+# and fails one that reaches a write without passing through one of these.
+PLAN_SAVERS = ("raw_atomic_write_json",)
 
 
 def _pointer_token(key):
@@ -1660,7 +1956,10 @@ def save_sharded(index_path, manifest, shard_rel_dir="phases"):
     every caller is a rule the next caller does not know about.
 
     Nothing is created before the check, so a refused save leaves the shard
-    directory exactly as it found it — including not existing.
+    directory exactly as it found it — including not existing. The same holds
+    for a target that writes a key twice: every file this save would replace
+    is asked (`refuse_written_twice`) before the first is written, so a refusal
+    never leaves some shards rewritten and the index not.
     """
     collisions = shard_name_collisions(manifest, shard_rel_dir)
     if collisions:
@@ -1673,12 +1972,15 @@ def save_sharded(index_path, manifest, shard_rel_dir="phases"):
             % (index_path, describe_shard_collisions(collisions)))
     index, shards = split_manifest(manifest, shard_rel_dir)
     base = os.path.dirname(os.path.abspath(index_path))
+    # Through `shard_rel_path` so the file opened here IS the file the stub in
+    # `index` points at; the two used to be composed separately.
+    targets = [(os.path.join(base, shard_rel_path(pid, shard_rel_dir)), body)
+               for pid, body in shards.items()]
+    for p in [p for p, _body in targets] + [index_path]:
+        refuse_written_twice(p)
     os.makedirs(os.path.join(base, shard_rel_dir), exist_ok=True)
     written = []
-    for pid, body in shards.items():
-        # Through `shard_rel_path` so the file opened here IS the file the stub
-        # in `index` points at; the two used to be composed separately.
-        p = os.path.join(base, shard_rel_path(pid, shard_rel_dir))
+    for p, body in targets:
         _atomic_write_json(p, body)
         written.append(p)
     _atomic_write_json(index_path, index)

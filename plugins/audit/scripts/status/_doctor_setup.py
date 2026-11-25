@@ -810,6 +810,17 @@ def check_plan_gate(rep, project, cfg, cfg_mod, manifest_rel):
                             "present), so it denies regardless of whether a plan "
                             "is running")
         return
+    if state.get("unreadable"):
+        # A plan that will not read holds no phase this line could name, and
+        # "start a phase" is no remedy for it: the tier is deny because nothing
+        # can be established, and the cause is `plan_gate_cause`'s one copy.
+        rep.warn("plan gate",
+                 "%s past the free file - %s" % (
+                     mode, cfg_mod.plan_gate_cause(cfg, state, manifest_rel)),
+                 "repair the plan file named above by hand "
+                 "(validate-manifest.py names every key written twice), then "
+                 "run /audit:doctor again")
+        return
     if mode == "observe":
         # The shell-write guard shares this tier and does NOT behave the same way
         # in it: the plan gate records and reports at observe, guard-bash-writes
@@ -877,7 +888,13 @@ def check_manifest(rep, project, cfg):
     try:
         manifest = mio.load_manifest(path)
     except Exception as exc:
+        # The hint follows the refusal's class: a key written twice is a hand
+        # delete of one copy, which no shard ref or missing file explains.
+        twice = isinstance(exc, getattr(mio, "DuplicateKeyError", ()))
         rep.finding("manifest", "%s cannot be assembled: %s" % (manifest_rel, exc),
+                    "delete by hand the copy that is not meant - "
+                    "validate-manifest.py names every key written twice in "
+                    "the plan" if twice else
                     "check the index's shard refs and that every shard file exists")
         # A missing shard is exactly what makes assembly fail, so the layout check
         # is most useful here rather than skipped. It reads the index directly.
