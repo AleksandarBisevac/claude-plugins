@@ -1291,8 +1291,9 @@ def index_scope(phase, git_root, project, index_rel, phase_file_rel,
 # --- evidence committed -------------------------------------------------------
 EVIDENCE_COMMITTED_BASIS = (
     "every `testEvidence.runId` in the phase's COMMITTED state at HEAD, against "
-    "the `runId`s in the evidence rows HEAD holds - the plan and the record as a "
-    "clone would receive them, not as this working tree happens to have them")
+    "the run record its own holder carries there (`lastRun`) and the `runId`s "
+    "in the evidence rows HEAD holds - the plan and the record as a clone would "
+    "receive them, not as this working tree happens to have them")
 
 
 def _committed_run_ids(git_root, evidence_rel):
@@ -1333,7 +1334,10 @@ def _committed_run_ids(git_root, evidence_rel):
 
 
 def _committed_pointers(git_root, phase_file_rel):
-    """`(pointers, gaps)` - `(subject, runId)` for every pointer HEAD's plan carries.
+    """`(pointers, gaps)` - `(subject, runId, recordRunId)` for every pointer
+    HEAD's plan carries, `recordRunId` the run its holder's own committed
+    record names (`_evidence_io.readable_record`), None when it holds none
+    its reader would read.
 
     The PHASE's own pointer is collected beside its tasks': a sign-off gate's run
     is the one a reader most wants to follow, and walking only tasks would clear
@@ -1361,8 +1365,14 @@ def _committed_pointers(git_root, phase_file_rel):
                 (t, "task %s" % (t.get("id"),))
                 for t in (phase.get("tasks") or []) if isinstance(t, dict)]:
             pointer = holder.get("testEvidence")
+            # Through the one door a record is read by, so a record its reader
+            # would refuse backs no pointer here either.
+            record = _evidence_io.readable_record(
+                holder, None if holder is phase else holder)
+            own = (str(record["runId"]) if isinstance(record, dict)
+                   and record.get("runId") else None)
             if isinstance(pointer, dict) and pointer.get("runId"):
-                out.append((subject, str(pointer["runId"])))
+                out.append((subject, str(pointer["runId"]), own))
     return out, []
 
 
@@ -1370,9 +1380,11 @@ def evidence_committed(git_root, phase_file_rel, evidence_rel):
     """A committed pointer names a run the repository actually holds.
 
     THE OTHER HALF OF `audit-state-scope`. That one grades what a commit STAGED;
-    this grades what the committed plan POINTS AT. A `testEvidence` block is a
-    cache at a row in the ledger, so a pointer that survives a clone while its row
-    does not is a plan referring to evidence that did not travel with it - and the
+    this grades what the committed plan POINTS AT. A `testEvidence` block points
+    at its holder's own record in the plan, or - written by an earlier release -
+    at a row in the ledger. So a pointer is backed when the committed holder's
+    record names its run, or when a committed row does; a pointer naming neither
+    is a plan referring to evidence that did not travel with it - and the
     working tree is exactly where that looks fine.
 
     THE CLAIM IS NARROWER THAN THE INVARIANT, AND THE DIFFERENCE IS STATED. It
@@ -1402,12 +1414,13 @@ def evidence_committed(git_root, phase_file_rel, evidence_rel):
     known, more_gaps = _committed_run_ids(git_root, evidence_rel)
     gaps = gaps + more_gaps
     breaches = []
-    for subject, run_id in pointers:
-        if run_id not in known:
+    for subject, run_id, own in pointers:
+        if run_id != own and run_id not in known:
             breaches.append(found(
-                "%s points at run %s, and no evidence row HEAD holds carries "
-                "that id - the plan as cloned refers to a run the repository "
-                "does not have" % (subject, run_id),
+                "%s points at run %s, and neither its own committed record nor "
+                "any evidence row HEAD holds carries that id - the plan as "
+                "cloned refers to a run the repository does not have"
+                % (subject, run_id),
                 "%s run %s" % (subject, run_id)))
     return result("evidence-committed", EVIDENCE_COMMITTED_BASIS, breaches, gaps,
                   len(pointers))

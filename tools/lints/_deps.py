@@ -928,16 +928,6 @@ LAYERS = (
      # It reaches `_manifest_io` for the loader, the phase resolver and `TERMINAL`,
      # and `_journal_io` for the row.
      "record-risk-confirmation",
-     # `record-outside-run` is the writer that makes the gate's own
-     # contested-verdict question answerable at all: a suite can run where this
-     # plugin cannot see it - a pre-push hook, a second terminal - taking the same
-     # cores, ports and scratch directories, and until a row said so a red that
-     # such a run had caused was recorded and read as the gate's verdict on the
-     # work. An entry point for this layer's usual reason, and DECLARED rather
-     # than sniffed: guessing an outside suite from the spelling of a command is
-     # the class this product keeps being repaired for. It reaches `_evidence_io`
-     # for the row and the ledger and `_manifest_io` for the loader.
-     "record-outside-run",
      # `import-evidence` is the same question one machine LATER: a CI runner
      # made its own gate run and recorded its own ledger file, and until now the
      # only way that file reached a clone was a hand copy nothing verified - a
@@ -2808,7 +2798,8 @@ PLAN_WRITERS = (
     ("scripts/governance/full-gate.py", "write_ci", _PW_HELPER_VIA,
      _PW_CASE % ("pf5",), _PW_HELPER),
     ("scripts/governance/run-test-gate.py", "_record_run",
-     "_evidence_io.write_evidence_since", _PW_CASE % ("pf7",), _PW_HELPER),
+     ("_evidence_io.write_evidence_since", "_evidence_io.write_record"),
+     _PW_CASE % ("pf7",), _PW_HELPER),
     (_PW_AT, "_cmd_batch_add", _PW_VERB_VIA, _PW_CASE % ("pm3",), _PW_VERB),
     (_PW_AT, "_group_door", _PW_VERB_VIA, _PW_DOOR_CASE, _PW_VERB),
     (_PW_AT, "cmd_add", _PW_VERB_VIA, "tests/test__evidence_io.py pa10",
@@ -3540,7 +3531,16 @@ def _pw_carriers(fn, params, bindings):
     stores, plain, bound = {}, set(), []
     for stmt in fn.body:
         for node in ast.walk(stmt):
-            if isinstance(node, ast.Assign):
+            if isinstance(node, (ast.For, ast.AsyncFor)) \
+                    and isinstance(node.target, ast.Name) \
+                    and isinstance(node.iter, (ast.Tuple, ast.List)):
+                # A loop over a DISPLAY binds each element in turn, so it
+                # carries what every element carries - and nothing when one
+                # element is anything else (an empty display binds nothing).
+                stores.setdefault(node.target.id, []).extend(
+                    node.iter.elts or [None])
+                plain.add(id(node.target))
+            elif isinstance(node, ast.Assign):
                 for target in node.targets:
                     if isinstance(target, ast.Name):
                         stores.setdefault(target.id, []).append(node.value)
@@ -3644,6 +3644,12 @@ def _pw_sites(unit, forwards, defined):
                        for name, (position, default)
                        in sorted(forwards[key].items(), key=_pw_param_order)]
         for via, (target, why), default in located:
+            if why == "omitted" and isinstance(default, ast.Constant) \
+                    and default.value is None:
+                # Left to a None default, the parameter hands the forwarder no
+                # path: it carries one only when a caller names it, and a write
+                # through None opens nothing.
+                continue
             if why == "omitted" and default is not None:
                 out.append((call, default, via, False))
             elif why:

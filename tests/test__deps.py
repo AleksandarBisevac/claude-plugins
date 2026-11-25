@@ -4410,6 +4410,49 @@ _PW_NEW_HOOK_SRC = (
     "    atomic_write_text(os.path.join(root, 'docs', 'audit', 'audit-plan.json'), '{}')\n")
 
 
+# A writer saving two caller-handed paths through one loop over a display, and
+# an optional third path defaulting to None; the callers of each shape.
+_PW_DISPLAY_SRC = (
+    "import os\n\n\n"
+    "def both(first, second, d, extra=None):\n"
+    "    for target in (first, second):\n"
+    "        with open(target, 'w') as fh:\n"
+    "            fh.write(d)\n"
+    "    if extra is not None:\n"
+    "        with open(extra, 'w') as fh:\n"
+    "            fh.write(d)\n\n\n"
+    "def mixed(first, d):\n"
+    "    for target in (first, os.path.join(first, 'x.json')):\n"
+    "        with open(target, 'w') as fh:\n"
+    "            fh.write(d)\n\n\n"
+    "def relay_both(a, b, d):\n"
+    "    both(a, b, d)\n\n\n"
+    "def caller(root, d):\n"
+    "    both(os.path.join(root, 'p.json'), os.path.join(root, 'q.json'), d)\n\n\n"
+    "def caller_extra(a, b, root, d):\n"
+    "    both(a, b, d, extra=os.path.join(root, 'r.json'))\n")
+
+
+def _display_cases(check):
+    """(pw20) A loop over a display of parameters writes the paths its caller
+    handed in, and a parameter left to a None default hands in none."""
+    tree = _ck_tree((("display.py", _PW_DISPLAY_SRC),))
+    hooks = os.path.join(tree, "no-hooks-here")
+    try:
+        bare = M.plan_writer_violations(tree, hooks, (), (), (), repo=tree)
+        found = _pw_names([v for v in bare if v[0] == "scripts/display.py"])
+        check("pw20 A LOOP OVER A DISPLAY OF PARAMETERS FORWARDS THEM, AND A "
+              "NONE DEFAULT LEFT OMITTED IS NO SITE: `both` saves its two "
+              "parameters through one `for` and decides nothing, so the caller "
+              "naming them is the decider, as is the one naming `extra`; the "
+              "relay handing its own on and leaving `extra` to None is not; a "
+              "display holding a path of its own making decides it: %r"
+              % (sorted(found),),
+              sorted(found) == ["caller", "caller_extra", "mixed"])
+    finally:
+        shutil.rmtree(tree, ignore_errors=True)
+
+
 def _carry_cases(check):
     """(pw19) A path parameter handed on through a path-preserving call is still
     that parameter: the writer forwards it, and each caller is a site."""
@@ -4441,6 +4484,7 @@ def _carry_cases(check):
     finally:
         shutil.rmtree(tree, ignore_errors=True)
         shutil.rmtree(hooks, ignore_errors=True)
+    _display_cases(check)
 
 
 def _shape_cases(check):

@@ -157,7 +157,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    task — that refusal narrowed to `cancelled` alone,
    and a `done` task will take a widening — one that settles the `fileIndex` and deliberately
    records no new work: the task's `outcome` still describes the run that happened, so the finding
-   would get no commit, no gate run and no evidence row of its own — and the task stays `done`,
+   would get no commit, no gate run and no record of its own — and the task stays `done`,
    which is exactly the state the plan gate will not open a file for. The verb prints that
    reasoning itself when it accepts one, which is the line to read if you reach for it anyway.
 
@@ -171,7 +171,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    never the rule; the rule is that sign-off has no running task.
 
    And the reason it is a new task rather than a widened one: the fix is **new work**. It needs its
-   own commit, its own gate run and its own evidence row. Widening a finished task would make it
+   own commit, its own gate run and its own record. Widening a finished task would make it
    claim a file its recorded commit never staged, and its `outcome` describe a run that did not
    happen.
 2a. **When `meta.phaseGate.mode` is set, derive before you gate.** Run this first, before the
@@ -190,9 +190,10 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
        <manifestPath> <phaseId> --record
    ```
    (the script applies `meta.nodePreamble` itself). Its exit code: `0` passed, `1` the work
-   failed, `2` usage, and **`3` the gate passed but `--record` stored no evidence row** (the
-   output says `GATE NOT RECORDED` and `evidence: NOT recorded - <why>`): repair the ledger it
-   names and run again, because a sign-off needs the row. A verdict the script reuses at an
+   failed, `2` usage, and **`3` `--record` did not write the phase's record into its shard**
+   (the output says `GATE NOT RECORDED` and `evidence: NOT recorded - <why>`, and no file holds
+   the run): run again once the plan file can be written, because a sign-off needs the record.
+   A verdict the script reuses at an
    unchanged tree repeats the `NO OVERLAP WITH THIS WORK` and `TREE CHANGED OUTSIDE THIS WORK`
    banners of the run it reuses — or says `banners not recorded` when that run predates them.
    All commands must pass **after** any
@@ -239,22 +240,22 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    of the review graded a tree that no longer exists by the time the phase is signed off, so it
    has to be run again. Review, then the fixes, then the gate measures this phase a single time;
    gating first measures it twice and signs off on the second measurement anyway. **Nothing
-   measures whether you held the order.** A second phase-scope run simply supersedes the first in
-   the evidence ledger — `_evidence_io.latest_by_subject` keeps the newest row per subject, and no
-   reader counts the rows a phase left behind — so the order is held here or nowhere.
+   measures whether you held the order.** A second phase-scope run simply replaces the first as
+   the phase's record — one record per subject, the newest — so the order is held here or
+   nowhere.
 
-   `--record` writes the row, anchors it in the trail and points `phase.testEvidence` at it — the
-   phase's own gate run, kept apart from its tasks' so a reader can follow either. As at task
-   level, a **refused pointer is not a failure**: the row stands and `--reconcile` catches the plan
-   up. It does not block sign-off either — step 5a grades the phase's NEWEST ledger row, not the
-   pointer — but reconcile before signing off, so the plan's cache names the run that backs the
-   verdict. Everything it writes happens after the verdict is complete, so the recording can never
-   appear in the tree comparison it is being judged by.
+   `--record` writes the run as the phase's record (`lastRun`) and points `phase.testEvidence` at
+   it, in one write of the shard — the phase's own gate run, kept apart from its tasks' so a
+   reader can follow either. No evidence row is written and no journal row anchors one: the
+   record is the run's only copy, so a record that could not be written is exit 3, never a
+   pointer to catch up later. Step 5a grades the phase's NEWEST recorded run. Everything it writes
+   happens after the verdict is complete, so the recording can never appear in the tree
+   comparison it is being judged by.
 
    **A phase gate expected to outlast the Bash tool's foreground bound runs under
    `run_in_background`, and its verdict is read from the ledger, never from a truncated
-   terminal.** The command is unchanged; `evidence: recorded <runId>` prints only once the row is
-   already written, so the run has recorded before its own terminal is ever read again. Read the
+   terminal.** The command is unchanged; `evidence: recorded <runId>` prints only once the record
+   is already written, so the run has recorded before its own terminal is ever read again. Read the
    verdict back with `scripts/status/audit-lookup.py <manifestPath> run <runId>` (the id off that
    line) or `run latest --phase <phaseId>` — never by re-reading a background job's scrolled-past
    output — exactly as `reference/orchestrator.md`'s **Answering one question about the trail**
@@ -486,7 +487,7 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
           [--no-evidence-reason "<why no gate run backs a passed verdict>"]
       ```
       **`--verdict passed` is refused unless step 2's run binds the phase's work** — the same
-      rule a task commit is bound by (`_verdict_binding`): the phase's newest ledger row is
+      rule a task commit is bound by (`_verdict_binding`): the phase's newest recorded run is
       `passed`, measured under the gate the phase declares now, over its declared files as they
       stand (the recorder's own writes left out), and a verdict the gate REPEATED is graded
       against the run it repeats; a phase whose gate declares no entry is bound to no run. The
@@ -512,9 +513,9 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    b. **Sign-off commit** on the phase branch (`<meta.commit.type>(<phaseId>): phase sign-off — …`, no
       co-author trailer: it carries the plan's record of a review, not a task's work;
       the subject and body rule is `reference/execute-task.md`'s step 4c, and a phase TITLE pasted in whole is what overruns it here).
-      Stage the journal directory **and the evidence directory** here too, for the same reason as
-      the task commits: the sign-off gate's own run was recorded a moment ago, and its row has to
-      reach the same clone as the pointer that names it.
+      Stage the journal directory here too, for the same reason as the task commits: the
+      sign-off gate's own run was recorded a moment ago, as the phase's record in its shard. The
+      run writes no evidence row, so the evidence directory has nothing new to stage.
    c. **Land the phase — through the script, not by hand:**
       ```
       python3 "${CLAUDE_PLUGIN_ROOT}/scripts/git/close-phase.py" <manifestPath> <phaseId> \
@@ -676,7 +677,7 @@ sign-off they are refused, naming it, with nothing written. Then, in this order:
    gate, and prints its `run-test-gate.py … --also <the others> --record` call. `--also` makes the
    one run own the union of every member's files, so a rewrite of a file only another member
    declares reads `gate-mutated` rather than passing, the tree stamp covers all of them, and the
-   run's ledger row names the members it owned (`groupWith`).
+   run's record names the members it owned (`groupWith`).
 4. **One invariants run**: `verify-invariants.py <manifestPath> --all`, the one spelling that
    covers more than one phase — read the rows for the group's members. A breach is the human
    decision it is in step 3.

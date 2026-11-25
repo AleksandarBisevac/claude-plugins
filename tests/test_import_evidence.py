@@ -3,9 +3,8 @@
 The cases for `import-evidence.py` - a CI build's evidence ledger file brought
 into this checkout WHOLE, after its own chain verifies.
 
-`import-evidence.py` is hyphenated, so it comes through `_loader.load_script`;
-`test_record_outside_run.py` is the precedent for that shape and for the
-one-`tempfile.mkdtemp()`-removed-in-`finally` fixture.
+`import-evidence.py` is hyphenated, so it comes through `_loader.load_script`,
+and its fixture is one `tempfile.mkdtemp()` removed in `finally`.
 
 WHAT IS PINNED, and why each one is here rather than trusted:
 

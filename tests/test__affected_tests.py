@@ -589,7 +589,7 @@ def _dogfood_cases(check):
     derived = (meta.get("phaseGate") or {}).get("derived") or {}
     template = M.listing_templates(meta).get("related") or ""
     selector = _tool_module("dogfood_affected", "affected.py")
-    leaf = "plugins/audit/scripts/governance/record-outside-run.py"
+    leaf = "plugins/audit/scripts/manifest/migrate-json-encoding.py"
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         listed_exit = selector.main(["--list-related", leaf])
@@ -624,7 +624,7 @@ def _dogfood_cases(check):
              res["widen"]),
           "tools/affected.py --list-related" in template and listed_exit == 0
           and blanket and res["widen"] is None
-          and "tests/test_record_outside_run.py" in picked
+          and "tests/test_migrate_json_encoding.py" in picked
           and not set(picked) & set(blanket))
 
     # A module the release hooks and the tools import: `--json` names gates

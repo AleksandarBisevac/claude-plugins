@@ -1995,9 +1995,12 @@ def _squashed_state_commit(fx, scoped_first):
 def _ledger_append(fx, rel, run_id, ts, task, session):
     """One run appended to the ledger file `rel`, chained by the product's own
     `chain_onto`, and anchored by a journal row naming the file - the pair
-    `_evidence_io.record` writes. `session` names the journal file the anchor
-    lands in, so two branches anchor in two files and only the ledger
-    conflicts."""
+    `_evidence_io.record` writes for a `--full` run now, and wrote for every
+    recorded run in earlier releases, so a ledger two branches appended to is
+    a full run's file or an older one. The row's `scope` is `task` because
+    that older shape is the one most ledgers in the field hold; the merge
+    reads rows, not scopes. `session` names the journal file the anchor lands
+    in, so two branches anchor in two files and only the ledger conflicts."""
     import _evidence_io
     import _journal_io
     path = os.path.join(fx["root"], rel.replace("/", os.sep))
