@@ -1,7 +1,7 @@
 {
   "id": "SG2",
   "title": "A named skill is the one that was reviewed",
-  "status": "in_progress",
+  "status": "done",
   "description": "Follows SG1 on the same integration branch. The study report (quality-gates-internal reports/2026-11-16-agent-skills) holds the evidence: the headless route records a digest of each skill file after the session and nothing compares it; the subagent route does not resolve a named skill before the spawn. The main branch has since changed how a missing review skill is handled on the review route, so each task of this phase reads the main branch's current behaviour before it is written in full.",
   "desiredOutcome": "A plan can pin the content of a skill it names, and a pinned skill whose content changed stops a session before it starts, with the skill named; a skill a plan names that does not resolve stops the subagent route the way it stops the headless route; a guide says how to vendor an outside skill; and the low findings of the SG1 review are fixed or recorded as not reproducing.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "4724c37f47099fcdb7806ac99a4111fd8f285c8c",
   "branch": "audit/sg2-a-named-skill-is-the-one-that",
-  "mergedAt": null,
+  "mergedAt": "2026-11-25T19:58:38Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -3500,5 +3500,6 @@
     "runId": "2026-11-25T19:45:08Z.fc66c5",
     "status": "passed",
     "at": "2026-11-25T19:45:08Z"
-  }
+  },
+  "mergedHead": "7b6fb72becd7c7d3de8bbb91d0478aefd53a53b5"
 }

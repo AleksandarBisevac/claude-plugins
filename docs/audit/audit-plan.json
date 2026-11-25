@@ -1088,7 +1088,7 @@
     {
       "id": "SG2",
       "title": "A named skill is the one that was reviewed",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/SG2.json"
     }
   ],
