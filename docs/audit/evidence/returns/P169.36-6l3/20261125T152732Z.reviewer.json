@@ -1,0 +1,23 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tests/test__manifest_io.py:2092-2102",
+   "issue": "kt4d's 'no mixed separator' conjunct (`not mixed`, where mixed = os.sep != '/' and 'phases/' in said) is vacuously true on any posix run, so on the platforms a developer can run it only the ntpath/posixpath/join equalities and the 'shard_d in said' checks bite; the mixed-separator property itself is decided only by the Windows leg. The executor states this limit; the ntpath equality (nt == 'C:\\\\plan\\\\phases\\\\P1.json') does carry the helper's behaviour on posix, so the helper is covered, the end-to-end message property is not.",
+   "resolution": "Optional: add an end-to-end arm that forces the decision through the helper's pathmod (e.g. assert the message-building site calls shard_file) or accept the Windows leg as the check; no change needed for release."}
+ ],
+ "preExisting": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/panel/_panel_runstate.py:277 and others listed in executor claims item 3",
+   "issue": "Other readers still join a posix shard ref with a bare os.path.join (panel, audit-task.py, derive-phase-gate.py, commit-task-work.py, _invariants.py, _evidence_io.py). Those that put the path in a message could show a mixed separator on Windows.",
+   "resolution": "Follow-up task to route them through shard_file after judging which name the path in a message."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'Fix at the one place shard paths are built for the door's reads, saves and messages (join the ref's parts, or normpath, once, in one helper every site uses)'. Diff: shard_file(base, ref, pathmod=os.path) = pathmod.join(base, ref.replace('/', pathmod.sep)) at _manifest_io.py:1316, used at written_twice (330), load_manifest read (556), index_only_in_bodies (593), stale_stubs (627), save_sharded targets and makedirs (1990, 1994) and shard_dir_to_retire (2080); grep of shard.*join in the file shows no bare join left. Clause 'keep the posix ref wherever it is DATA': split_manifest/shard_rel_path unchanged. Clause 'cases hold on Windows, build expected path the way the platform does': kt3/ur1/ur7 expectations now os.path.join('phases','P1.json'), kt4d decides ntpath/posixpath explicitly. Clause 'own plan reads and saves byte for byte': on posix replace('/','/') is identity and join is unchanged. Executor claim (shard_file routed through every site; kt4d added; test_require_plan widened to ur1/ur7; Windows proven by CI 45649499978, not reproducible here) describes the diff accurately; I could not verify the CI runs. I ran tests/test__manifest_io.py --selftest once: kt4d PASS, 207/207 cases passed. Dependants: only one case added to the test file and one public name added to _manifest_io.py, no signature changed, so the listed dependants are still correct.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed 'not-attempted': regression task with expectRedFirst false, red is the CI run 45638311139 (Windows legs, kt3 and kt4b) which cannot be reproduced on darwin; it additionally reports mutating shard_file to a bare join made kt4d fail 206/207. The reason is recorded and the task owes none, so the word is echoed; the mutation claim is the executor's, not seen by me.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Gate command `python3 tools/sweep-selftests.py tests/test__manifest_io.py` selects that single file (read; it was also run once via --selftest, 207/207). The edited existing assertions (kt3 'a commit' arm at test__manifest_io.py:1951, ur1/ur7 in test_require_plan.py) were tightened from a posix literal to os.path.join, which is the same on posix and only differs on Windows; I read no test in that file that would still pass with shard_file deleted other than the posix-vacuous parts noted in finding 1."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

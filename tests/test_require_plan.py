@@ -2602,8 +2602,9 @@ def _unreadable_plan_cases(check):
               "- never the allow a plan read as absent gets: %r"
               % ((t[0][0], t[1][0], t[1][1][-700:]),),
               t[0][0] == "allow" and t[1][0] == "block"
-              and "phases/P1.json" in t[1][1] and "/title" in t[1][1]
-              and "written twice" in t[1][1] and "by hand" in t[1][1])
+              and os.path.join("phases", "P1.json") in t[1][1]
+              and "/title" in t[1][1] and "written twice" in t[1][1]
+              and "by hand" in t[1][1])
         check("ur2 RED-FIRST: ...and so does a shard holding a conflict "
               "marker, naming the shard that will not parse: %r"
               % ((k[0][0], k[1][0], k[1][1][-500:]),),
@@ -2646,7 +2647,8 @@ def _unreadable_plan_cases(check):
               "key's pointer and the hand step the repair line points at: %r"
               % ([(p[1][0], p[1][1][-500:]) for p in pins],),
               len(pins) == 2
-              and all(p[1][0] == "block" and "phases/P1.json" in p[1][1]
+              and all(p[1][0] == "block"
+                      and os.path.join("phases", "P1.json") in p[1][1]
                       and "/title" in p[1][1] and "written twice" in p[1][1]
                       and "Repair the plan file named above" in p[1][1]
                       for p in pins)
