@@ -1496,7 +1496,8 @@
       "SG2.15-xk1",
       "SG2.16-xk1",
       "SG2.17-xk1",
-      "SG2.18-xk1"
+      "SG2.18-xk1",
+      "SG2.19-xk1"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2242,7 +2243,8 @@
       "SG2.15-xk1",
       "SG2.16-xk1",
       "SG2.17-xk1",
-      "SG2.18-xk1"
+      "SG2.18-xk1",
+      "SG2.19-xk1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2371,7 +2373,8 @@
       "SG2.14-xk1",
       "SG2.15-xk1",
       "SG2.17-xk1",
-      "SG2.18-xk1"
+      "SG2.18-xk1",
+      "SG2.19-xk1"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -11633,7 +11636,8 @@
       "SG2.15-xk1",
       "SG2.16-xk1",
       "SG2.17-xk1",
-      "SG2.18-xk1"
+      "SG2.18-xk1",
+      "SG2.19-xk1"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -13942,7 +13946,8 @@
       "SG2.15-xk1",
       "SG2.16-xk1",
       "SG2.17-xk1",
-      "SG2.18-xk1"
+      "SG2.18-xk1",
+      "SG2.19-xk1"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"

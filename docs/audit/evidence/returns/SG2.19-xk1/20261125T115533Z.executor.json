@@ -1,0 +1,97 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py (via run-test-gate.py SG2 --task SG2.19-xk1, no --record)": "pass",
+    "tests/test_drive_phase.py --selftest --stage spn-block": "pass",
+    "sweep-selftests.py --jobs 4 over the dependant suites (21 files)": "pass",
+    "ruff check + vermin -t=3.8- over drive-phase.py and tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-25T13:09:27Z",
+    "basis": "`python3 tests/test_drive_phase.py --selftest --stage spn-block` in a throwaway tree at HEAD exited 1 with 9 of 53 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - spd1 (house FAIL), spd22 (house FAIL), spd23 (house FAIL), spd24 (house FAIL), spd34 (house FAIL), spd34a (house FAIL), spd35 (house FAIL), spd33a (house FAIL) and 1 more: SELFTEST FAILED: 44/53 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "DRIVER (drive-phase.py). Rule A: the step owns the scratch checkout - own_checkouts(ctx, run) wraps drive_locked in drive() and holds {commit: (tree, holder)} under ctx[SCRATCH_KEY]; step_checkout(ctx, commit) makes it at the first ask that needs it and reuses it for every later ask of the step (the wave opening's and the walk's); the owner's finally removes each one through drop_checkout/remove_base_tree, KeyboardInterrupt included; an ask made outside a step owns its own (ask_member_pins wraps itself when no owner is set). E1: names_a_pin - a member needs the checkout only when one of its resolved skills is pinned by name (_skill_places.unused_pins) or resolves in the project's copy to a pinned directory (covering_pins); none for skillPins {} or no pins. Rule B: scratch_holder(ctx, prefix) is the one placement for the checkout and the base measurement's tree: it refuses (making nothing) a temp directory under any ancestor whose .git shares the project's common git dir (read off the .git file/commondir, no git process) or within the repository top; _base_in's own check is gone. Low 7b: _loaded_tier/_stop_sentence - a project skill whose directory resolves outside the copy keeps the reader's remedy and names its real place. Windows finding (scope added): commit_label(text, checkout, sha, where, sep) is the one builder of the commit form, spelling the path under the commit with '/' on every OS and keeping a blank in the project directory; pin_stop_words is its only caller (grep of '\"commit %s' in the driver: one other hit, a decision message unrelated to paths). TESTS (tests/test_drive_phase.py). Rule C: every stop scenario is judged by _observed snapshots (kind, mode, sha256) of the project tree, the trees root (executor.worktreeRoot), the lock and git's HEAD, packed-refs, index, refs, worktrees and audit-locks - before the step and at each PinStop construction (the constructor is hooked in _recorded, put back after); _stop_changes compares them minus _STOP_OWN_RECORD (lock: the state's lock key, a state file holding only the lock where none was and the directories made for it, audit-locks; scratch: the step's own registration). The audit hook stays as an aid naming the call behind a difference and the processes; _early_writes, _path_state and the old record are gone. Rule D: the driver's derivation is rewritten as an over-approximating resolver (_stop_* functions): calls resolve through names, from-imports, local imports, module aliases, parameters (values callers and defaults pass), plain local assignments, returns, IfExp/BoolOp branches, lambdas, and methods by name over top-level functions and class methods; anything else - and any raise not of a name resolving to a class - is a may-stop key unless the target is a builtin (not eval/exec) or a function of a module in _NOT_STOPPING_MODULES (named stdlib modules only). _UNRESOLVED_EXEMPT holds three rows (_fact's held, _at_point's turn, main opened by _output.terse_cli), checked both ways by spd38; _PIN_BLIND_LISTED and _pin_blind_spots are deleted; open_dispatch and step_checkout joined _STOP_ROUTES_EXEMPT, checkout_at's via is step_checkout; names_a_pin joined spd1's exemption table. Measurement (S/sg2.19/derive_measure.py over this driver, 633 top-level functions): HEAD's derivation marks 33 top routes, this one 35 with the table (2 newly marked, open_dispatch among them - a real may-stop, exempt with the old blind-list reason) and 65 without it (32 newly marked, all reached from the three table keys). Without by-name method resolution (literal reading) it marked 562 - recorded as a judgement for the orchestrator, not adopted. Windows finding (scope added): the process recorder read a Windows Popen event as one joined string (CPython's windows _execute_child runs list2cmdline before sys.audit, read in Lib/subprocess.py), so spd31 saw no git; _popen_argv splits it back (_split_cmdline), _is_git matches git/git.exe/a full path, and spd31 now says NO PROCESS RECORDED on an empty record. Low 6: spd24b's stop half compares the held re-dispatch count and asked ids before and after the stopped step. Docs: SECURITY.md, PLUGIN-BUILD-GUIDE.md and CHANGELOG.md pinned-skill passages state rule A (one checkout per step, the placement), rule C (snapshot judge, aid only), rule D (the rule, not a shape list), low 5 (checkout runs the repository's hooks and filters, why faithful), low 8 (tree_unsettled None keeps and says the tree), the windows add cost 123-139 ms (2026-11-20) with the removal figure owed. Counts: spn-block 44 cases at HEAD, 53 now (tests/test_drive_phase.py --selftest --stage spn-block, ALL PASS); over HEAD's code with the new test file 44/53, the 9 red: spd1, spd22, spd23, spd24 (bookkeeping rows naming new functions), spd33a, spd34, spd34a, spd35, spd39. Mutations (S/sg2.19/mutations.py, 23 rows + 5 re-anchored + 4 windows rows): all answered as owed, private TMPDIR per run, caches purged, anchors asserted applied.",
+    "descriptive": "A pin step makes one placed checkout per commit, a stop is judged by the whole state when it is raised, the stop-route derivation counts what it cannot resolve as a stop, and the two Windows CI failures are fixed at their cause."
+  },
+  "testsAdded": [
+    "spd34: a wave-opening real next makes one scratch add and one remove with pins named; none when members name no pinned skill, for skillPins {} and for no pins",
+    "spd34a: two asks in one step share one checkout, removed by the step's finally under an interrupt",
+    "spd35: the one placement refuses a temp directory inside the project or a linked tree of it, allows an unrelated repository, and places a base measurement's tree the same way",
+    "spd36: the snapshot at the stop names each kind of change (python write, rename, child write and new file, directory, chmod, link, write put back after the stop, third value, trees root, ref, worktree registration, index, drive state, a new state holding more than the lock) and not its honest twins",
+    "spd37: each shape the old blind list missed is a route and its honest twin is not",
+    "spd38: the over-count table is checked both ways",
+    "spd39: a project skill linked out of the repository keeps the reader's remedy at the commit",
+    "spd31a: a Windows-shaped Popen event (one joined command line, git spelled any way) is read back as its argv and counted as git",
+    "spd33a: the commit form names a path inside the commit with '/' on every platform, with a blank in the project directory kept",
+    "spd24b stop half: the held re-dispatch count and ids are unchanged by the stopped step"
+  ],
+  "casesAdded": [
+    [
+      "spd34",
+      "spd34a",
+      "spd35",
+      "spd36",
+      "spd37",
+      "spd38",
+      "spd39",
+      "spd31a",
+      "spd33a"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py own_checkouts/step_checkout/names_a_pin/ask_member_pins hold one checkout per commit per step; scratch_holder is called by checkout_at and measure_base; commit_label is pin_stop_words' only commit-form builder; _loaded_tier/_stop_sentence give an out-of-copy project skill the reader's remedy; tests _observed/_recorded/_stop_changes judge the stop; _stop_settle counts may-stop keys\n2 mutations.py: every rule row red (spd34/34a/35/36/37/38/39/24b/31a/33a), each with its over-fire twin red (E1 no member, B any repository, C everything own, D every call stops, low 7 always outside); allow row 61/61 green; anchors asserted applied, caches purged, private TMPDIR\n3 grep '\"commit %s' drive-phase.py: 2 hits - pin_stop_words' label (now commit_label) and a decision message naming a commit, not a path, left; grep _record_processes/_git_argvs: every git count reads _is_git now; SG2.18's table rerun: 14 of 24 answered, the 10 others annotated in prev_mutations.out and re-anchored where the mutation still means something\n4 the rule D table rows and _STOP_OWN_RECORD rows are held by spd38 and spd36, named in the guide's sentence; the windows removal figure is stated as owed, unenforced\n5 spn-block wall before 21.9 s and 18.4 s (gap of hours), after 27.6 s and 27.6 s (91 s gap); git processes per block 367 -> 633, measured once each\n6 scratch_holder decides on the resolved temp directory and the common git directory read from .git files, not a path pattern; allow case (unrelated repository) proven green before the deny rows\n7 numbers in the docs: 123-139 ms carries its date (history); no other number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:59bbe5e3b2ff59a3dbe67312859896a94ed4db15f67fed0f16639fb450fbd050\",\"dirtyDigest\":\"sha256:46b06bac01f8296e086cec714f7b7891840762cad7ade3c09c30976b0b6ea9b6\",\"dirtyPaths\":{\"CHANGELOG.md\":\"a96f50ecdef32677\",\"PLUGIN-BUILD-GUIDE.md\":\"90f790bacc5b837b\",\"SECURITY.md\":\"2c4ea048bd77721e\",\"plugins/audit/scripts/governance/drive-phase.py\":\"2be5b3a633cc90e2\",\"tests/test_drive_phase.py\":\"f879a69711f8fbc1\"},\"head\":\"fff769ee\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:4917d29d4a91cdff5098e7fe2b0ae22b7806adc9adfd0fd1b8b56527d3ff6cb7\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "1 move(s) that lower the bar across 5 file(s) of the diff; 3 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md; 1 file(s) that could hold a move not compared: tests/test_drive_phase.py",
+    "findings": [
+      {
+        "move": "stub-added",
+        "path": "plugins/audit/scripts/governance/drive-phase.py",
+        "line": 9593,
+        "side": "tree",
+        "what": "stub added (empty except): except (OSError, ValueError):"
+      }
+    ],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_drive_phase.py",
+        "move": "definition-changed",
+        "reason": "code outside its test definitions was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 18984 (`_HANDOUT_EXEMPT = {`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "fff769ee325c4b5041f2fec0c086e4e49ee5e2de"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-25T13:09:39Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

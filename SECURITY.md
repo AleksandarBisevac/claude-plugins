@@ -1294,10 +1294,19 @@ the copy asked is the one the session will load: a serial task's session runs in
 project itself, so its working copy; a wave member on the headless route runs in a tree of
 its own, cut from the wave's base commit, so the skill directory as that commit holds it
 until the tree is cut - in a detached checkout of that commit made by `git worktree add`,
-the operation that cuts the member's tree, in a scratch directory under the temp directory
-and removed with its registration however the ask ends, so a link, a submodule entry and a
-converted line ending are whatever the member's tree will hold and the same reader judges
-them - and the tree's own copy once it is. What a member's tree gets after git (its
+the operation that cuts the member's tree, so a link, a submodule entry and a converted line
+ending are whatever the member's tree will hold and the same reader judges them - and the
+tree's own copy once it is. A step makes at most one such checkout of a commit, at the
+first ask that needs one - a member on the headless route with no tree yet that names a
+pinned skill - holds it for every later ask of the step and removes it, its registration
+with it, in the step's own `finally`, an interrupt included (`own_checkouts`); a step whose
+members name no pinned skill makes none. It is placed, as a base measurement's tree is, by
+the one placement (`scratch_holder`): a scratch directory under the temp directory, refused
+- no checkout made, the step stopped naming the place - when the temp directory lies inside
+any checkout of the project's repository, the main one or a linked tree. The checkout runs
+the repository's own checkout hooks and filters, as the cut of the member's tree does: that
+is the faithful choice, because a filter that rewrites a skill's bytes rewrites them in the
+tree the session loads too, and a checkout without them would judge bytes no session reads. What a member's tree gets after git (its
 `.worktreeinclude` copies and setup command) is not in that checkout; the tree's own copy is
 asked once it exists, and the runner checks the copy it starts over. A working copy restored
 and not committed is then no remedy, and the stop's remedy says to commit it - for a PROJECT
@@ -1323,17 +1332,25 @@ derives the callers from the code (`tests/test_drive_phase.py`, `spd1`): every c
 a reason. A route that read a plan's skill lists without either function would be outside
 what that case derives. That a step stopped over a pin leaves nothing written that the next
 step reads - the plan's task and the phase lock included - is held the same way: `spd22`
-derives the routes from the driver's call graph, every function that reaches a raise of
-`PinStop` - in the driver or in a module it imports - through any chain of direct calls, and
+derives the routes from the driver's calls, every function that reaches a raise of
+`PinStop` - in the driver or in a function another module holds that raises it - and
 `spd24` stops each one over a changed skill or holds it exempt with a reason (an exemption no
-route needs, or one a scenario stops through, is red), recording every write the step makes
-in the order made and failing a stop that came after a write it did not undo. A static graph
-cannot follow a call it cannot name: a route used as a value (kept in a table, passed as an
-argument, returned) or called inside a lambda, `getattr` on a module that holds a stop,
-`globals`, `vars`, `locals`, `eval`, `exec`, `__import__` and `sys.modules`. The case finds
-each such place in the driver and is red on one it does not list; it lists a lambda over
-`writer_argv` passed to `open_dispatch` and `main` passed to `_output.terse_cli`, each with
-the reason it reaches no stop after a write.
+route needs, or one a scenario stops through, is red). The derivation over-approximates
+rather than listing what it cannot see: a call of the driver it cannot resolve to one
+definite function, and a raise of anything but a name resolving to a class, counts as one
+that may stop, unless its target is a builtin or a function of a standard module the case
+names as known not to stop; an over-count is answered by a row of its own with a reason,
+and a row naming a call the derivation never meets is red. The modules other than the
+driver are read by their direct calls only. A stop is judged by the state at the moment it
+is raised: each scenario snapshots the project tree, the trees root, the phase lock and
+git's refs, HEAD, index and worktree registrations - kind, mode and content digest - before
+the step and when `PinStop` is constructed, and fails a stop at which they differ, but for
+the stop's own record (the lock it holds, its own scratch checkout). The interpreter's
+audit events are kept only as an aid to name the call behind a difference; they are no
+part of the verdict. A scratch checkout or base tree is removed only when
+`_worktrees.tree_unsettled` answers False; when it answers None - git would not name the
+tree's admin directory, so whether anything is in progress there cannot be told - the tree
+is kept and said, never removed.
 
 What it does **not** hold, stated so nothing leans on it:
 

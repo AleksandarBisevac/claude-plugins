@@ -49,6 +49,7 @@ twice or never and a green run looks the same either way.
 """
 import argparse
 import ast
+import builtins
 import contextlib
 import hashlib
 import io
@@ -58,6 +59,7 @@ import re
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -75,6 +77,7 @@ import _evidence_io as _evio                       # noqa: E402  (read_rows, pro
 import _locks                                      # noqa: E402  (STALE_MINUTES: the age bound a claim naming no pid is judged by)
 import _tree_stamp                                 # noqa: E402  (the dirty digest a row records)
 import _filed_returns as _fr                       # noqa: E402  (return_path)
+import _skill_places                               # noqa: E402  (PinStop: the class a stop scenario's snapshot hooks)
 import _machine_paths as _mpaths                   # noqa: E402  (machine_path_shape)
 
 DRIVER = "drive-phase.py"
@@ -18996,6 +18999,9 @@ _HANDOUT_EXEMPT = {
                                  "whose review_skill_lines asks",
     "drive-phase.py:skipped_review_skill": "reads a filed return for the skill's name",
     "drive-phase.py:unavailable_skill_finding": "files a finding about a filed return",
+    "drive-phase.py:names_a_pin": "whether a member needs the step's checkout of a "
+                                  "commit to be asked of; the names then reach the "
+                                  "reader through session_skills, which asks",
 }
 
 
@@ -19410,8 +19416,9 @@ def _kept_state(root, mpath):
     something done; the files the plan's tasks declare, which a stopped step never
     reaches (the case that hands out work reads them itself); git's index and
     object store, which a ref or a worktree must name before any step reads what
-    they hold. A write this snapshot does not cover is still the runtime record's
-    (`_early_writes`), which judges every file this process writes."""
+    they hold. What a stop is judged by at the moment it is raised is the snapshot
+    of every entry under the parts `_stop_parts` names (`_observed`) - the index
+    included."""
     out = {"state": _drive_state(root), "plan": _plan_read(mpath)}
     out.update(_files_under(os.path.join(root, ".claude", "state"),
                             ("briefs/", "sessions/", "attempts/")))
@@ -19446,13 +19453,30 @@ def _stop_run(hits, root, mpath, run):
     """One step, `run()` -> `(code, text)`, expected to stop over a pin: `{"stopped",
     "code", "handed", "hits", "diff", "early", "text"}` - the lines it handed out,
     the routes a pin stop passed through while it ran (`hits`, `_watch`), the keys
-    at which the state before and after differ (`_kept_state`), and the files it
-    wrote before it stopped and left changed (`_early_writes`)."""
+    at which the state before and after differ (`_kept_state`), and what differed
+    at the instant the stop was raised (`early`, `_stop_changes` over
+    `_stop_parts`)."""
     mark, before = len(hits), _kept_state(root, mpath)
-    (code, text), rec = _recorded(run)
+    (code, text), rec = _recorded(run, _stop_parts(root))
     return {"stopped": code != 0, "code": code, "handed": _handed_out(text),
-            "hits": set(hits[mark:]), "text": text, "early": _early_writes(rec),
+            "hits": set(hits[mark:]), "text": text, "early": _stop_changes(rec),
             "diff": _kept_diff(before, _kept_state(root, mpath))}
+
+
+def _stop_parts(root, *more):
+    """What a step over the repository `root` can change, as `_observed` parts: the
+    project's tree with its git directory, the trees root its config names
+    (`executor.worktreeRoot`), when it names one, and `more` ([(label, root)])."""
+    parts = [("project", root)]
+    try:
+        with open(os.path.join(root, ".claude", "audit.config.json"),
+                  encoding="utf-8") as fh:
+            trees = (json.load(fh).get("executor") or {}).get("worktreeRoot")
+    except (OSError, ValueError, AttributeError):
+        trees = None
+    if trees:
+        parts.append(("trees", trees))
+    return parts + list(more)
 
 
 def _next_task(M, root, mpath, task_id):
@@ -19490,10 +19514,11 @@ def _pin_single_runs(M, hits, ran):
             hits, root, mpath, lambda: _next(M, root, mpath))
 
 
-def _pin_wave(prefix, route, pinned=True):
+def _pin_wave(prefix, route, pinned=True, named=True):
     """`(root, mpath)`: a wave fixture of two members, each handed one skill of
-    `_PIN_BODIES`, the plan pinning both (not when `pinned` is False); on the
-    session route the writer's keys are set in the config."""
+    `_PIN_BODIES` (none when `named` is False), the plan pinning both (not when
+    `pinned` is False; an empty `skillPins` when it is "empty"); on the session
+    route the writer's keys are set in the config."""
     root, mpath = _wave_repo(prefix, 2, per_task="phase")
     digests = dict((name, _pin_digest(_pin_skill_dir(root, name, body)))
                    for name, body in sorted(_PIN_BODIES.items()))
@@ -19508,10 +19533,10 @@ def _pin_wave(prefix, route, pinned=True):
 
     def edit(plan):
         if pinned:
-            plan["meta"]["skillPins"] = dict((n, {"sha256": d})
-                                             for n, d in digests.items())
+            plan["meta"]["skillPins"] = {} if pinned == "empty" else dict(
+                (n, {"sha256": d}) for n, d in digests.items())
         for task, name in zip(plan["phases"][0]["tasks"], sorted(_PIN_BODIES)):
-            task["skills"] = [name]
+            task["skills"] = [name] if named else []
     _commit_plan(root, mpath, edit, "fixture: pinned skills")
     return root, mpath
 
@@ -19631,9 +19656,9 @@ def _pin_answer_runs(label, answer, pending, **marks):
     before, mark = _unit_kept(world, state), len(world["hits"])
     said, rec = _recorded(lambda: _caught(
         R.apply_answer, ctx, state, world["plan"], world["phase"], state["pending"],
-        answer, ""))
+        answer, ""), _stop_parts(world["project"]))
     after = _unit_kept(world, state)
-    world.update(stopped=said, diff=_kept_diff(before, after), early=_early_writes(rec),
+    world.update(stopped=said, diff=_kept_diff(before, after), early=_stop_changes(rec),
                  kept=before == after, through=set(world["hits"][mark:]))
     _pin_skill_dir(world["project"], "pin-a", _PIN_BODIES["pin-a"])
     again = R.read_state(ctx)
@@ -19814,14 +19839,15 @@ def _pin_resume_tree_runs(ran):
         before, mark = _unit_kept(world, state), len(world["hits"])
         said, rec = _recorded(lambda R=R, ctx=ctx, state=state, world=world: _caught(
             R.apply_answer, ctx, state, world["plan"], world["phase"],
-            state["pending"], "resume", ""))
+            state["pending"], "resume", ""), _stop_parts(world["project"],
+                                                          ("tree", tree)))
         stopped = _pin_stopped(said)
         out[label] = (stopped, _kept_diff(before, _unit_kept(world, state)),
                       str(said)) if stopped else (False, _text_of(said))
         if in_tree:
             ran["answer-resume-tree"] = {
                 "stopped": stopped, "diff": out[label][1],
-                "hits": set(world["hits"][mark:]), "early": _early_writes(rec)}
+                "hits": set(world["hits"][mark:]), "early": _stop_changes(rec)}
     return out
 
 
@@ -20112,31 +20138,51 @@ def _pin_shape_cases(check):
 # the driver is a stop route when it can reach a pin stop - it raises `PinStop`, it
 # calls a function of another module that can raise it (`_pin_stop_raisers`), or it
 # calls, through any chain of the driver's own functions, one that does
-# (`_pin_routes`). What a static graph cannot follow - a function that can reach a
-# stop used as a value (passed, held in a table, assigned, returned, made into a
-# lambda) and a lookup by name at run time (`getattr` on a module, `globals()`,
-# `sys.modules`) - is reported by `_pin_blind_spots` wherever it occurs in the driver,
-# and the only ones it may find are `_PIN_BLIND_LISTED`'s, each with its reason. A
-# route is then either stopped by a scenario of spd24 - whose writes the runtime
-# record watches in the order made (`_record_open`) - or exempt with its reason in
-# `_STOP_ROUTES_EXEMPT`; an exemption naming the functions that may call it is held
-# to exactly those, and one whose route a scenario does stop through is stale.
-# blind spot -> why the graph need not follow it.
-_PIN_BLIND_LISTED = {
-    "a lambda over writer_argv passed to open_dispatch": (
-        "open_dispatch calls its `build` before its first write, and the only call "
-        "built is writer_argv with the `held` its caller asked before it marked "
-        "anything (`_calls_without`), which reads no pin"),
-    "main passed to _output.terse_cli": (
-        "the entry point handed to the CLI wrapper, which calls it once; every "
-        "route starts there"),
+# (`_stop_settle`). THE DERIVATION OVER-APPROXIMATES, it does not list what it cannot
+# see: every call of the driver is RESOLVED to the functions it can reach - a function
+# of the driver or of a module the derivation reads, a parameter to the values its
+# callers pass, a local name to what it is assigned, a call's value to what the callee
+# returns, a method of a value by its name to every top-level function and method of
+# those modules bearing it - or it is a call that MAY STOP, unless its target is a
+# builtin or a function of a standard module named in `_NOT_STOPPING_MODULES`; a
+# raise of anything but a name resolving to a class counts the same. So a shape
+# nobody listed is over-counted rather than missed, and an over-count is answered in
+# `_UNRESOLVED_EXEMPT`, each row with its reason and checked both ways. A route is
+# then either stopped by a scenario of spd24 - judged by the snapshot at the stop
+# (`_recorded`) - or exempt with its reason in `_STOP_ROUTES_EXEMPT`; an exemption
+# naming the functions that may call it is held to exactly those, and one whose
+# route a scenario does stop through is stale. The modules other than the driver
+# are read by their direct calls (`_pin_stop_raisers`).
+# Every name of `builtins` is known not to stop but these, which run text as code.
+_RUNS_TEXT = ("eval", "exec")
+# Standard modules a call of whose function is known not to stop, each named.
+_NOT_STOPPING_MODULES = (
+    "argparse", "ast", "base64", "codecs", "collections", "contextlib", "copy",
+    "datetime", "difflib", "errno", "fnmatch", "functools", "glob", "hashlib",
+    "importlib", "io", "itertools", "json", "locale", "math", "operator", "os",
+    "pathlib", "platform", "random", "re", "shlex", "shutil", "signal", "socket",
+    "stat", "string", "struct", "subprocess", "sys", "tempfile", "textwrap",
+    "threading", "time", "traceback", "types", "unicodedata", "uuid", "zlib")
+# An unresolved call (`_stop_facts`' key) -> why it reaches no pin stop.
+_UNRESOLVED_EXEMPT = {
+    "_fact: a call of the local value held": (
+        "a planner's fact, read from the facts dict a `_*_facts` builder makes; "
+        "every callable fact is a lambda over a reader of the drive's own state or "
+        "the plan (`writer_holds`, `filed`, ...), none of which asks a pin"),
+    "_at_point: a call of the local value turn": (
+        "a planner's arm, read from its table of `_*_turn` functions; each arm "
+        "reads only the facts it is handed"),
+    "main: called where the derivation cannot read - passed to _output.terse_cli": (
+        "the entry point handed to the CLI wrapper, which calls it as `run(rest)`, "
+        "so every parameter but `argv` keeps its default (`out` is print)"),
 }
 # route -> (why no scenario stops through it, the only functions that may call it or
 # None for any).
 _STOP_ROUTES_EXEMPT = {
     "main": ("the entry: a stop reaches it as the exit code and the words drive "
              "returned, printed through `out`, so the watch sees it at drive - and "
-             "every real `next` scenario runs through it under the runtime record",
+             "every real `next` scenario runs through it, judged by the snapshot at "
+             "its stop",
              None),
     "step_member": ("steps a member whose pins walk_wave and wave_step asked, for "
                     "every member, before any was stepped", ("walk_wave",)),
@@ -20156,11 +20202,17 @@ _STOP_ROUTES_EXEMPT = {
     "checkout_at": ("its one stop - git refusing to check the commit out - is "
                     "spd30's scenario, run after this coverage over a commit made "
                     "to be refused, which watches the stop pass through it and "
-                    "records no write before it", ("ask_member_pins",)),
+                    "records no write before it", ("step_checkout",)),
+    "step_checkout": ("its one stop is checkout_at's, held as checkout_at's is",
+                      ("ask_member_pins",)),
     "sign_off": ("the phase's sign-off, which reaches a pin only through "
                  "review_findings_step", None),
     "triage": ("sign-off's triage of findings, which reaches a pin only through "
                "review_findings_step", None),
+    "open_dispatch": ("calls its `build` before its first write, and the only "
+                      "build passed is a lambda over writer_argv with the `held` its "
+                      "caller asked before it marked anything (`_calls_without`), "
+                      "which reads no pin", None),
 }
 # scenario -> (the keys at which its state before and after differ, why).
 _STOP_EXCEPTIONS = {
@@ -20169,27 +20221,26 @@ _STOP_EXCEPTIONS = {
 }
 _PIN_ROUTE_EMPTY = {"unseen": [], "stale": [], "via": []}
 # A shape a stop route can take, planted after the driver's last line, and what
-# spd22's halves must see of it: a route no scenario stops through, a blind spot not
-# listed, a call of writer_argv without `held`.
+# spd22's halves must see of it: a route no scenario stops through, a call of
+# writer_argv without `held`.
 _PIN_PLANTS = (
     ("a call by name", "def planted(ctx, task):\n    return session_hand(ctx, task)\n",
      ("route",)),
     ("a lambda in the body", "def planted(ctx, task):\n"
-     "    ask = lambda: session_hand(ctx, task)\n    return ask()\n",
-     ("route", "blind")),
+     "    ask = lambda: session_hand(ctx, task)\n    return ask()\n", ("route",)),
     ("getattr on the driver through sys.modules", "def planted(ctx, task):\n"
      "    return getattr(sys.modules[__name__], 'session_hand')(ctx, task)\n",
-     ("blind",)),
+     ("route",)),
     ("getattr on the reader's module", "def planted(names, manifest):\n"
      "    return getattr(_skill_places, 'require_pins')(names, manifest, '.', '.', '.')\n",
-     ("blind",)),
+     ("route",)),
     ("a lookup in globals()", "def planted(ctx, task):\n"
-     "    return globals()['session_hand'](ctx, task)\n", ("blind",)),
+     "    return globals()['session_hand'](ctx, task)\n", ("route",)),
     ("a table of functions", "_ASKS = {'hand': session_hand}\n\n"
-     "def planted(ctx, task):\n    return _ASKS['hand'](ctx, task)\n", ("blind",)),
+     "def planted(ctx, task):\n    return _ASKS['hand'](ctx, task)\n", ("route",)),
     ("a function passed as a value", "def planted(ctx, task):\n"
      "    return _call_with(session_hand, ctx, task)\n\n"
-     "def _call_with(fn, *a):\n    return fn(*a)\n", ("blind",)),
+     "def _call_with(fn, *a):\n    return fn(*a)\n", ("route",)),
     ("a raise of PinStop itself", "def planted(ctx, task):\n"
      "    raise _skill_places.PinStop('x')\n", ("route",)),
     ("a call of the reader's own module", "def planted(names, manifest):\n"
@@ -20208,8 +20259,61 @@ _PIN_PLANTS = (
     ("writer_argv with held=None spelled out", "def planted(ctx, task, w, p, r):\n"
      "    return writer_argv(ctx, task, w, p, r, held=None)\n", ("route", "held")),
 )
-# Calls that look a function up by name while the driver runs.
-_DYNAMIC_CALLS = ("getattr", "globals", "vars", "locals", "eval", "exec", "__import__")
+# Shapes a list of blind spots once missed, each planted after a write and paired with
+# an honest twin - the same shape reaching no pin stop - that must stay quiet, so a
+# derivation counting every call as a stop is red here too.
+_W = "    state.pop('pending', None)\n    write_state(ctx, state)\n"
+_PIN_RESOLVE_PLANTS = (
+    ("a from-import of the reader's function called by its bare name",
+     "from _skill_places import require_pins\n\ndef planted(ctx, state, n, m):\n" + _W
+     + "    return require_pins(n, m, '.', '.', '.')\n",
+     "from _skill_places import plugin_name\n\ndef planted(ctx, state, n, m):\n" + _W
+     + "    return plugin_name('.')\n"),
+    ("a function-local import of the reader's module",
+     "def planted(ctx, state, n, m):\n" + _W + "    import _skill_places\n"
+     "    return _skill_places.require_pins(n, m, '.', '.', '.')\n",
+     "def planted(ctx, state, n, m):\n" + _W + "    import _skill_places\n"
+     "    return _skill_places.plugin_name('.')\n"),
+    ("a method of a class that asks, called on an instance",
+     "class _Asker(object):\n    def ask_it(self, ctx, task):\n"
+     "        return session_hand(ctx, task)\n\ndef planted(ctx, state, task):\n" + _W
+     + "    return _Asker().ask_it(ctx, task)\n",
+     "class _Teller(object):\n    def tell_it(self, task):\n"
+     "        return brief_scope(task)\n\ndef planted(ctx, state, task):\n" + _W
+     + "    return _Teller().tell_it(task)\n"),
+    ("a route reached through a module the driver imports by its own name",
+     "def planted(ctx, state, task):\n" + _W + "    import importlib\n"
+     "    return importlib.import_module('drive_phase').session_hand(ctx, task)\n",
+     "def planted(ctx, state, task):\n" + _W + "    import importlib\n"
+     "    return importlib.import_module('json').dumps(task)\n"),
+    ("the reader's module imported under another alias",
+     "import _skill_places as _sp2\n\ndef planted(ctx, state, n, m):\n" + _W
+     + "    return _sp2.require_pins(n, m, '.', '.', '.')\n",
+     "import _skill_places as _sp2\n\ndef planted(ctx, state, n, m):\n" + _W
+     + "    return _sp2.plugin_name('.')\n"),
+    ("a module of the driver's own name imported under an alias",
+     "import drive_phase as _me\n\ndef planted(ctx, state, task):\n" + _W
+     + "    return _me.session_hand(ctx, task)\n",
+     "import json as _j\n\ndef planted(ctx, state, task):\n" + _W
+     + "    return _j.dumps(task)\n"),
+    ("a raise of a name bound to PinStop",
+     "_STOP = _skill_places.PinStop\n\ndef planted(ctx, state, task):\n" + _W
+     + "    raise _STOP('x')\n",
+     "def planted(ctx, state, task):\n" + _W + "    raise ValueError('x')\n"),
+    ("operator.attrgetter on the reader's module, its result called",
+     "import operator\n\ndef planted(ctx, state, n, m):\n" + _W
+     + "    return operator.attrgetter('require_pins')(_skill_places)(n, m, '.', '.', '.')\n",
+     "import operator\n\ndef planted(ctx, state, n, m):\n" + _W
+     + "    return operator.attrgetter('require_pins')\n"),
+    ("a route as a default argument",
+     "def planted(ctx, state, task, ask=session_hand):\n" + _W + "    return ask(ctx, task)\n",
+     "def planted(ctx, state, task, ask=brief_scope):\n" + _W + "    return ask(task)\n"),
+    ("functools.partial over a route, called",
+     "import functools\n\ndef planted(ctx, state, task):\n" + _W
+     + "    return functools.partial(session_hand, ctx)(task)\n",
+     "import functools\n\ndef planted(ctx, state, task):\n" + _W
+     + "    return functools.partial(brief_scope, task)\n"),
+)
 
 
 def _drive_source():
@@ -20351,33 +20455,465 @@ def _pin_stop_raisers(sources):
             return raisers
 
 
+# --- the over-approximating resolution of the driver's calls ------------------------
+# A target a call (or a raise) of the driver can reach: ("seed",) a pin stop raised;
+# ("may", key) a call or raise not resolved to one definite function, `key` naming
+# where and what; ("fn", module, name); ("name", attr) a method of a value, resolved
+# by its name; ("param", module, fn, param) a call of a parameter; ("returns",
+# module, fn) a call of the value `fn` returns; ("all", [targets]) a lambda's calls.
+_DEFS = (ast.FunctionDef, ast.AsyncFunctionDef)
+_RESOLVE_DEPTH = 6
+
+
+def _stop_imports(nodes):
+    """`({alias: module}, {name: (module, attr)})` the imports among `nodes` bind."""
+    mods, names = {}, {}
+    for node in nodes:
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                mods[a.asname or a.name.split(".")[0]] = (
+                    a.name if a.asname else a.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for a in node.names:
+                names[a.asname or a.name] = (node.module or "", a.name)
+    return mods, names
+
+
+def _stop_defs(tree):
+    """`[(name, def, class or None, at the module's top)]`, nested and methods too."""
+    out, stack = [], [(tree, None, True)]
+    while stack:
+        node, cls, top = stack.pop()
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, _DEFS):
+                out.append((child.name, child, cls, top and cls is None))
+                stack.append((child, None, False))
+            elif isinstance(child, ast.ClassDef):
+                stack.append((child, child.name, False))
+            else:
+                stack.append((child, cls, top))
+    return out
+
+
+def _stop_module(name, tree, plugin, context=None):
+    """What a call of module `name` (parsed `tree`) resolves against; `context`, the
+    module whose text `tree` is added to, lends it every name it binds."""
+    mods, names = _stop_imports(tree.body)
+    defs = _stop_defs(tree)
+    classes = dict((n.name, n) for n in ast.walk(tree) if isinstance(n, ast.ClassDef))
+    aliases, assigned = {}, set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    assigned.add(t.id)
+                    aliases.setdefault(t.id, []).append(node.value)
+    m = {"name": name, "plugin": plugin, "mods": mods, "names": names, "defs": defs,
+         "def_names": set(d[0] for d in defs), "classes": classes, "aliases": aliases,
+         "assigned": assigned,
+         "reach": set(d[0] for d in defs if d[3] or d[2] is not None)}
+    if context is not None:
+        for key in ("mods", "names", "classes", "aliases"):
+            m[key] = dict(context[key], **m[key])
+        for key in ("def_names", "assigned", "reach"):
+            m[key] = context[key] | m[key]
+    return m
+
+
+def _stop_scope(m, fn):
+    """What a name inside `fn` means: what it binds itself, imports, its parameters
+    (not reassigned) and the values its plain assignments give each local name."""
+    bound = _locals_of(fn)
+    nodes = _own_body(fn)
+    l_mods, l_names = _stop_imports(nodes)
+    a = fn.args
+    params = [x.arg for x in list(getattr(a, "posonlyargs", None) or []) + a.args
+              + a.kwonlyargs]
+    stored = set(n.id for n in nodes if isinstance(n, ast.Name)
+                 and isinstance(n.ctx, (ast.Store, ast.Del)))
+    plain, loose = {}, set()
+    for node in nodes:
+        if isinstance(node, ast.Assign) and all(isinstance(t, ast.Name)
+                                                for t in node.targets):
+            for t in node.targets:
+                plain.setdefault(t.id, []).append(node.value)
+    for node in nodes:
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and (
+                node.id not in plain):
+            loose.add(node.id)
+    loose |= set(n.id for node in nodes if isinstance(node, (ast.AugAssign, ast.For,
+                                                              ast.With, ast.comprehension))
+                 for n in ast.walk(node) if isinstance(n, ast.Name)
+                 and isinstance(n.ctx, ast.Store))
+    return {"bound": bound, "mods": dict(m["mods"], **l_mods),
+            "names": dict(m["names"], **l_names), "local_mods": set(l_mods) | set(l_names),
+            "params": set(params) - stored, "fn": fn.name, "plain": plain,
+            "loose": loose}
+
+
+def _stop_known(module):
+    """True when a call of a function of `module` is known not to stop."""
+    return module.split(".")[0] in _NOT_STOPPING_MODULES
+
+
+def _stop_of_module(m, sc, module, attr):
+    """The target of `module.attr`: a function of a plugin module, nothing for a
+    module known not to stop, and a call that may stop otherwise."""
+    if module in m["plugin"]:
+        return [("fn", module, attr)]
+    if _stop_known(module):
+        return []
+    return [("may", "%s: a call of %s.%s, a module the derivation does not read"
+             % (sc["fn"], module, attr))]
+
+
+def _stop_name(m, sc, nid, depth):
+    """The targets a call of the bare name `nid` may reach."""
+    if nid in sc["names"]:
+        module, attr = sc["names"][nid]
+        return _stop_of_module(m, sc, module, attr)
+    if nid in sc["params"]:
+        return [("param", m["name"], sc["fn"], nid)]
+    if nid in sc["bound"]:
+        return _stop_local(m, sc, nid, depth)
+    if nid in m["def_names"]:
+        return [("fn", m["name"], nid)]
+    if nid in m["classes"]:
+        return [("fn", m["name"], "__init__")]
+    if nid in m["aliases"] and depth < _RESOLVE_DEPTH:
+        return [t for v in m["aliases"][nid] for t in _stop_value(m, sc, v, depth + 1)]
+    if nid in sc["mods"] or nid in m["assigned"]:
+        return [("may", "%s: a call of the module's value %s" % (sc["fn"], nid))]
+    if hasattr(builtins, nid) and nid not in _RUNS_TEXT:
+        return []
+    return [("may", "%s: a call of %s" % (sc["fn"], nid))]
+
+
+def _stop_local(m, sc, nid, depth):
+    """A call of a local name: what each of its plain assignments gives it, or a
+    call that may stop when it is bound any other way."""
+    values = sc["plain"].get(nid)
+    if nid in sc["loose"] or not values or depth >= _RESOLVE_DEPTH:
+        return [("may", "%s: a call of the local value %s" % (sc["fn"], nid))]
+    out = [t for v in values for t in _stop_value(m, sc, v, depth + 1)]
+    if any(t[0] == "may" for t in out):
+        return [("may", "%s: a call of the local value %s" % (sc["fn"], nid))] + [
+            t for t in out if t[0] != "may"]
+    return out
+
+
+def _stop_callee(m, sc, e, depth=0):
+    """The targets a call of the expression `e` may reach."""
+    if isinstance(e, ast.Name):
+        return _stop_name(m, sc, e.id, depth)
+    if isinstance(e, ast.Attribute):
+        base, chain = e.value, 0
+        while isinstance(base, ast.Attribute):
+            chain, base = chain + 1, base.value
+        if isinstance(base, ast.Name) and (base.id not in sc["bound"]
+                                           or base.id in sc["local_mods"]):
+            if base.id in sc["mods"]:
+                module = sc["mods"][base.id]
+                if not chain:
+                    return _stop_of_module(m, sc, module, e.attr)
+                if _stop_known(module):
+                    return []
+            if base.id in sc["names"] and _stop_known(sc["names"][base.id][0]):
+                return []
+        return [("name", e.attr)]
+    if isinstance(e, (ast.IfExp, ast.BoolOp)):
+        parts = [e.body, e.orelse] if isinstance(e, ast.IfExp) else e.values
+        return [t for v in parts for t in _stop_callee(m, sc, v, depth)]
+    if isinstance(e, ast.Lambda):
+        return [("all", _stop_lambda(m, sc, e))]
+    if isinstance(e, ast.Call):
+        return _stop_value(m, sc, e, depth)
+    return [("may", "%s: a call of a %s" % (sc["fn"], type(e).__name__))]
+
+
+def _stop_lambda(m, sc, lam):
+    """The targets the calls in a lambda's body may reach."""
+    own = set(a.arg for a in lam.args.args)
+    inner = dict(sc, bound=sc["bound"] | own, params=sc["params"] - own)
+    return [t for n in ast.walk(lam.body) if isinstance(n, ast.Call)
+            for t in _stop_callee(m, inner, n.func)]
+
+
+def _stop_value(m, sc, e, depth=0):
+    """What a call of the value `e` may reach, wherever the value goes."""
+    if isinstance(e, (ast.Constant, ast.JoinedStr, ast.BinOp, ast.Compare,
+                      ast.UnaryOp)):
+        return []
+    if isinstance(e, (ast.List, ast.Tuple, ast.Set)):
+        return [t for x in e.elts for t in _stop_value(m, sc, x, depth)]
+    if isinstance(e, ast.Dict):
+        return [t for x in e.values if x is not None for t in _stop_value(m, sc, x, depth)]
+    if isinstance(e, ast.Call):
+        got = _stop_callee(m, sc, e.func, depth)
+        if not got:
+            # A builtin's or a known module's function: what it returns is not read.
+            return [("may", "%s: a call of the value %s returns" % (sc["fn"], getattr(
+                e.func, "id", getattr(e.func, "attr", "a call"))))]
+        return [("returns", t[1], t[2]) if t[0] == "fn" else t if t[0] == "may"
+                else ("may", "%s: a call of the value a call returns" % (sc["fn"],))
+                for t in got]
+    return _stop_callee(m, sc, e, depth)
+
+
+def _stop_raise(m, sc, exc):
+    """A raise of `exc`: a pin stop, nothing for a name resolving to a class that is
+    not one, a raise that may stop otherwise."""
+    e = exc.func if isinstance(exc, ast.Call) else exc
+    if isinstance(e, ast.Attribute) and e.attr == "PinStop":
+        return [("seed",)]
+    if isinstance(e, ast.Name) and e.id not in sc["bound"]:
+        if e.id in sc["names"]:
+            module, attr = sc["names"][e.id]
+            if attr == "PinStop":
+                return [("seed",)]
+            if _stop_known(module):
+                return []
+        elif e.id in m["classes"]:
+            bases = [getattr(b, "id", getattr(b, "attr", "")) for b in m["classes"][e.id].bases]
+            return [("seed",)] if "PinStop" in bases else []
+        elif isinstance(getattr(builtins, e.id, None), type):
+            return []
+    if isinstance(e, ast.Attribute) and isinstance(e.value, ast.Name) \
+            and e.value.id not in sc["bound"] and _stop_known(sc["mods"].get(
+                e.value.id, "")):
+        return []
+    return [("may", "%s: a raise of %s" % (sc["fn"], getattr(e, "id", getattr(
+        e, "attr", type(e).__name__))))]
+
+
+def _stop_held_as(parent):
+    """How a function named as a value is used, in an opened function's words."""
+    if isinstance(parent, ast.Call):
+        f = parent.func
+        return "passed to %s" % (f.id if isinstance(f, ast.Name) else "%s.%s" % (
+            getattr(f.value, "id", "?"), f.attr) if isinstance(f, ast.Attribute)
+            else "a call",)
+    if isinstance(parent, (ast.Dict, ast.List, ast.Tuple, ast.Set)):
+        return "held in a %s" % (type(parent).__name__,)
+    return {ast.Assign: "assigned", ast.Return: "returned"}.get(
+        type(parent), "used in a %s" % (type(parent).__name__,))
+
+
+def _stop_bind(m, sc, node, t, facts, params):
+    """Record what the call `node` passes to the parameters of `t`, a function of
+    module `m`; a call whose arguments cannot be matched opens the function."""
+    if t[0] != "fn" or t[1] != m["name"] or t[2] not in params:
+        return
+    for pos, kw in params[t[2]]:
+        if any(isinstance(a, ast.Starred) for a in node.args) or any(
+                k.arg is None for k in node.keywords) or len(node.args) > len(pos):
+            facts["open"].setdefault(t[2], set()).add(
+                "called by %s with arguments it cannot match" % (sc["fn"],))
+            continue
+        for i, a in enumerate(node.args):
+            facts["binds"].setdefault((t[2], pos[i]), []).extend(
+                _stop_passed(m, sc, a, t[2], pos[i]))
+        for k in node.keywords:
+            facts["binds"].setdefault((t[2], k.arg), []).extend(
+                _stop_passed(m, sc, k.value, t[2], k.arg))
+
+
+def _stop_passed(m, sc, a, callee, param):
+    """`_stop_value` of an argument, its may-stop keys naming the parameter."""
+    return [("may", "%s: passes %s's %s %s" % (sc["fn"], callee, param,
+                                               t[1].split(": ", 1)[1]))
+            if t[0] == "may" else t for t in _stop_value(m, sc, a)]
+
+
+def _stop_facts(m, tree):
+    """`{"fns", "binds", "open", "returns"}` of the functions `tree` defines in
+    module `m`: what each one's calls and raises may reach, what each parameter
+    is passed, the functions used where their callers cannot be read (and how),
+    and what each returns."""
+    facts = {"fns": {}, "binds": {}, "open": {}, "returns": {}}
+    params = {}
+    for name, fn, cls, _top in m["defs"]:
+        a = fn.args
+        params.setdefault(name, []).append((
+            [x.arg for x in list(getattr(a, "posonlyargs", None) or []) + a.args],
+            [x.arg for x in a.kwonlyargs]))
+        if cls is not None:
+            facts["open"].setdefault(name, set()).add("a method of %s" % (cls,))
+        sc = _stop_scope(m, fn)
+        for arg, dflt in list(zip(reversed(a.args), reversed(a.defaults))) + [
+                (x, d) for x, d in zip(a.kwonlyargs, a.kw_defaults) if d is not None]:
+            facts["binds"].setdefault((name, arg.arg), []).extend(
+                _stop_passed(m, sc, dflt, name, arg.arg))
+    for name, fn, _cls, _top in m["defs"]:
+        sc = _stop_scope(m, fn)
+        out = facts["fns"].setdefault(name, [])
+        facts["returns"].setdefault(name, []).extend(
+            t for n in _own_body(fn) if isinstance(n, ast.Return) and n.value is not None
+            for t in _stop_value(m, sc, n.value))
+        callees = set()
+        for node in _own_body(fn):
+            if isinstance(node, ast.Raise) and node.exc is not None:
+                out.extend(_stop_raise(m, sc, node.exc))
+            if isinstance(node, ast.Call):
+                callees.add(id(node.func))
+                got = _stop_callee(m, sc, node.func)
+                out.extend(got)
+                for t in got:
+                    _stop_bind(m, sc, node, t, facts, params)
+        _stop_uses(m, sc, fn, callees, out, facts)
+    at_top = {"bound": set(), "fn": "module level", "names": m["names"],
+              "mods": m["mods"], "params": set(), "plain": {}, "loose": set(),
+              "local_mods": set()}
+    for node in m["tree_body"]:
+        if isinstance(node, _DEFS + (ast.ClassDef, ast.Import, ast.ImportFrom)):
+            continue
+        _stop_uses(m, at_top, node, set(), [], facts)
+        for call in [node] + _own_body(node):
+            if isinstance(call, ast.Call):
+                for t in _stop_callee(m, at_top, call.func):
+                    _stop_bind(m, at_top, call, t, facts, params)
+    return facts
+
+
+def _stop_uses(m, sc, top, callees, out, facts):
+    """Every function of the driver named as a value inside `top` (not as a call's
+    callee): the function naming it may reach it, and it is opened - its callers
+    can no longer be read - with how it was used."""
+    stack = [(child, top) for child in ast.iter_child_nodes(top)]
+    while stack:
+        node, parent = stack.pop()
+        if isinstance(node, _DEFS) and node is not top:
+            continue
+        called = isinstance(parent, ast.Call) and parent.func is node
+        if (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+                and not called and id(node) not in callees
+                and node.id not in sc["bound"] and node.id in m["def_names"]):
+            out.append(("fn", m["name"], node.id))
+            facts["open"].setdefault(node.id, set()).add(_stop_held_as(parent))
+        elif (isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load)
+              and not called and id(node) not in callees
+              and isinstance(node.value, ast.Name)
+              and sc["mods"].get(node.value.id) in m["plugin"]):
+            out.append(("fn", sc["mods"][node.value.id], node.attr))
+        stack.extend((child, node) for child in ast.iter_child_nodes(node))
+
+
+def _stop_settle(world, exempt=()):
+    """`{(module, fn)}` that may stop, and every may-stop key the settling met:
+    a function whose own calls or raises reach a seed, a call that may stop
+    (unless `exempt` holds its key), a function that may, a method of that name, a
+    parameter passed a value that may - or one of a function used where its
+    callers cannot be read - or the value of a function's return that may."""
+    stops, pstops, met = set(), set(), set()
+    by_name = {}
+    for mod, f in world.items():
+        for name in f["reach"]:
+            by_name.setdefault(name, set()).add((mod, name))
+    rets = {}
+
+    def hits(mod, t):
+        kind = t[0]
+        if kind == "seed":
+            return True
+        if kind == "may":
+            met.add(t[1])
+            return t[1] not in exempt
+        if kind == "fn":
+            return (t[1], t[2]) in stops
+        if kind == "name":
+            return any(k in stops for k in by_name.get(t[1], ()))
+        if kind == "param":
+            if (t[1], t[2], t[3]) in pstops:
+                return True
+            opened = world.get(t[1], {}).get("open", {}).get(t[2])
+            if opened:
+                key = "%s: called where the derivation cannot read - %s" % (
+                    t[2], "; ".join(sorted(opened)))
+                met.add(key)
+                return key not in exempt
+            return False
+        if kind == "returns":
+            return (t[1], t[2]) in rets
+        return any(hits(mod, x) for x in t[1])
+    changed = True
+    while changed:
+        changed = False
+        for mod, f in world.items():
+            for (fn, param), targets in f["binds"].items():
+                if (mod, fn, param) not in pstops and any(hits(mod, t) for t in targets):
+                    pstops.add((mod, fn, param))
+                    changed = True
+            for name, targets in f["returns"].items():
+                if (mod, name) not in rets and any(hits(mod, t) for t in targets):
+                    rets[(mod, name)] = True
+                    changed = True
+            for name, targets in f["fns"].items():
+                if (mod, name) not in stops and any(hits(mod, t) for t in targets):
+                    stops.add((mod, name))
+                    changed = True
+    return stops, met
+
+
+def _stop_driver(module):
+    """`(m, facts)` of the driver's parsed `module`: what its names mean, and what
+    each of its functions' calls may reach."""
+    m = _stop_module("drive-phase", module, set(b[:-3] for b, _t in _plugin_sources()))
+    m["tree_body"] = module.body
+    return m, _stop_facts(m, module)
+
+
+def _stop_world(m, facts, raisers, plant=None):
+    """The world the settling reads: the driver's `facts` (with those of the text
+    `plant` added after its last line, resolved against the driver's `m`), and
+    every other module's functions that can raise a pin stop (`raisers`) as
+    seeds."""
+    if plant is not None:
+        extra = ast.parse(plant)
+        pm = _stop_module("drive-phase", extra, m["plugin"], m)
+        pm["tree_body"] = extra.body
+        more = _stop_facts(pm, extra)
+        merged = {}
+        for key in ("fns", "binds", "returns", "open"):
+            merged[key] = dict((k, list(v) if key != "open" else set(v))
+                               for k, v in facts[key].items())
+            for k, v in more[key].items():
+                if key == "open":
+                    merged[key].setdefault(k, set()).update(v)
+                else:
+                    merged[key].setdefault(k, []).extend(v)
+        facts, m = merged, pm
+    world = {"drive-phase": dict(facts, reach=m["reach"])}
+    for mod, names in raisers.items():
+        world[mod] = {"fns": dict((n, [("seed",)]) for n in names), "binds": {},
+                      "open": {}, "returns": {}, "reach": set(names)}
+    return world
+
+
 def _derive_routes(text):
-    """`{"module", "graph", "raisers", "routes", "top", "names", "imports",
-    "blind"}` for the driver's source `text`: every function that can reach a pin
-    stop, those of them defined at the module's top - the ones a scenario can
-    watch - and the places the graph cannot follow (`_pin_blind_spots`)."""
+    """`{"module", "graph", "raisers", "routes", "top", "names", "met", "world"}`
+    for the driver's source `text`: every function that can reach a pin stop as
+    the over-approximating resolution reads it, those defined at the module's
+    top - the ones a scenario can watch - and every may-stop key it met."""
     module = ast.parse(text)
-    graph = _pin_graph(module)
     raisers = _pin_stop_raisers(_plugin_sources())
-    routes = _pin_routes([graph], raisers)
-    top = set(n.name for n in module.body
-              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))
-    return {"module": module, "graph": graph, "raisers": raisers, "routes": routes,
-            "top": routes & top, "names": set(_defs_named(module)),
-            "imports": _module_aliases(module),
-            "blind": _pin_blind_spots(module, routes, set(raisers))}
+    m, facts = _stop_driver(module)
+    world = _stop_world(m, facts, raisers)
+    stops, met = _stop_settle(world, _UNRESOLVED_EXEMPT)
+    routes = set(n for mod, n in stops if mod == "drive-phase")
+    top = set(n.name for n in module.body if isinstance(n, _DEFS))
+    return {"module": module, "graph": _pin_graph(module), "raisers": raisers,
+            "routes": routes, "top": routes & top, "names": set(_defs_named(module)),
+            "imports": _module_aliases(module), "met": met, "world": world,
+            "m": m, "facts": facts}
 
 
-def _planted(derived, source):
-    """`(routes, the blind spots the added text brings, its writer_argv calls
-    without held)` of the driver with `source` added after its last line - only
-    the added text parsed."""
-    plant = ast.parse(source)
-    graph = _pin_graph(plant, derived["names"], derived["imports"])
-    routes = _pin_routes([derived["graph"], graph], derived["raisers"])
-    blind = sorted(set(_pin_blind_spots(plant, routes, set(derived["raisers"]),
-                                        derived["imports"])) - set(derived["blind"]))
-    return routes, blind, _calls_without(plant, "writer_argv", "held")
+def _planted(derived, source, exempt=None):
+    """`(routes, its writer_argv calls without held)` of the driver with `source`
+    added after its last line - the added text resolved against the driver."""
+    world = _stop_world(derived["m"], derived["facts"], derived["raisers"], source)
+    stops, _met = _stop_settle(world, _UNRESOLVED_EXEMPT if exempt is None else exempt)
+    return (set(n for mod, n in stops if mod == "drive-phase"),
+            _calls_without(ast.parse(source), "writer_argv", "held"))
 
 
 _DERIVED = {}
@@ -20398,60 +20934,6 @@ def _stop_routes():
     """The driver's stop routes defined at its top, sorted - the ones `_watch`
     wraps."""
     return sorted(_derived()["top"])
-
-
-def _held_as(parent):
-    """How a value whose parent node is `parent` is used, in a blind spot's words."""
-    if isinstance(parent, ast.Call):
-        f = parent.func
-        name = (f.id if isinstance(f, ast.Name) else "%s.%s" % (
-            getattr(f.value, "id", "?"), f.attr) if isinstance(f, ast.Attribute)
-            else type(f).__name__)
-        return "passed to %s" % (name,)
-    if isinstance(parent, (ast.Dict, ast.List, ast.Tuple, ast.Set)):
-        return "held in a %s" % (type(parent).__name__,)
-    return {ast.Assign: "assigned", ast.Return: "returned"}.get(
-        type(parent), "used in a %s" % (type(parent).__name__,))
-
-
-def _pin_blind_spots(module, routes, stopping=(), imports=None):
-    """Every place in `module` the call graph cannot follow to a pin stop, as a key
-    naming what and how, sorted and once each: a function of `routes` used other
-    than as the callee of a direct call, a lambda whose calls reach one, and a
-    lookup by name while the driver runs (`_DYNAMIC_CALLS` - `getattr` only on a
-    module of `stopping`, one holding a function that can raise PinStop - and
-    `sys.modules`, which reaches the driver itself). `imports` are the aliases of
-    the module `module`'s text is added to."""
-    aliases = set(a for a, mod in dict(imports or {}, **_module_aliases(module)).items()
-                  if mod in set(stopping))
-    keys = set()
-    stack = [(module, None, None, set())]
-    while stack:
-        node, fn, parent, bound = stack.pop()
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            fn, bound = node, _locals_of(node)
-        where = fn.name if fn is not None else "module level"
-        if (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
-                and node.id in routes and node.id not in bound
-                and not (isinstance(parent, ast.Call) and parent.func is node)):
-            keys.add("%s %s" % (node.id, _held_as(parent)))
-        elif isinstance(node, ast.Lambda):
-            over = sorted(set(
-                n.func.id for n in ast.walk(node.body) if isinstance(n, ast.Call)
-                and isinstance(n.func, ast.Name) and n.func.id in routes
-                and n.func.id not in bound))
-            if over:
-                keys.add("a lambda over %s %s" % (", ".join(over), _held_as(parent)))
-        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-              and node.func.id in _DYNAMIC_CALLS and node.func.id not in bound
-              and (node.func.id != "getattr" or (
-                  node.args and getattr(node.args[0], "id", None) in aliases))):
-            keys.add("%s() in %s" % (node.func.id, where))
-        elif (isinstance(node, ast.Attribute) and node.attr == "modules"
-              and getattr(node.value, "id", None) == "sys"):
-            keys.add("sys.modules in %s" % (where,))
-        stack.extend((child, fn, node, bound) for child in ast.iter_child_nodes(node))
-    return sorted(keys)
 
 
 def _callers_in(graph, name):
@@ -20484,15 +20966,25 @@ def _route_coverage(routes, observed, exempt, callers):
                           and callers(r) != sorted(via))}
 
 
-# --- the writes a step makes, in the order made ------------------------------------
-# The interpreter's own audit events (PEP 578) name every file this process opens to
-# write, renames, removes or links and every process it starts, whichever function
-# makes them - the driver's, or a verb it runs in this interpreter - so the record
-# needs no list of the driver's writers. One hook for the process, added the first
-# time a record is opened; a hook cannot be taken off again, so it does nothing while
-# no record is open. A directory made is recorded only so that one made and removed
-# again reads as never there; it is no write of its own (`_early_writes`), since it
-# holds no state, and a file written into it is one.
+# --- a stop is judged by the state at the moment it is raised ----------------------
+# THE GUARANTEE IS A COMPARISON OF STATES, NOT A LOG OF EVENTS. A log can name only
+# the events it subscribes to, in the process it runs in: a verb or git started as a
+# process of its own writes where no audit hook of this one sees, and a chmod, a
+# directory left or a write put back after the stop read as nothing. So every stop
+# scenario snapshots what a step can change (`_observed`: the project tree - the plan,
+# the drive's state, briefs and prompts - the trees root, the phase lock, and git's
+# HEAD, refs, index and worktree registrations, each entry by kind, mode and content
+# digest) once before the step and once at the instant a `PinStop` is constructed -
+# the constructor is hooked while the scenario runs (`_recorded`), so the driver
+# imports nothing of this - and the two must be equal but for the stop's own record
+# (`_STOP_OWN_RECORD`), each part named with its reason. A stop the driver only
+# RETURNS - a verb's refusal worded as a pin stop - is judged at the first watched
+# route it is returned through (`_record_stop`), the earliest moment this process
+# sees it. The interpreter's audit events (PEP 578) are kept only as an AID: they name
+# the processes a step started (what `spd31` and `spd34` count) and the call that
+# touched a path the snapshot found changed (`_stop_changes`), and they are no part of
+# the verdict. One hook for the process, added the first time a record is opened; a
+# hook cannot be taken off again, so it does nothing while no record is open.
 _RECORD_SINK = {"open": [], "hooked": False}
 
 
@@ -20522,23 +21014,68 @@ def _written_paths(event, args):
     return []
 
 
-def _path_state(path):
-    """What `path` holds, comparable between two moments: a link's target, a file's
-    bytes, every file under a directory, or None when nothing is there."""
-    if os.path.islink(path):
-        return ("link", os.readlink(path))
-    if os.path.isfile(path):
-        with open(path, "rb") as fh:
-            return ("file", fh.read())
-    if os.path.isdir(path):
-        return ("dir", _files_under(path))
-    return None
+def _popen_argv(args):
+    """The argv of a `subprocess.Popen` audit event's `args`, as a list of str.
+
+    ON WINDOWS THE EVENT CARRIES ONE STRING: `subprocess` joins the argv into the
+    command line (`list2cmdline`) before it raises the event, so a list was never
+    what the recorder saw there, and a process counted by argv word read as none.
+    The string is split back by the rules that joined it (`_split_cmdline`)."""
+    if isinstance(args, (str, bytes)):
+        return _split_cmdline(os.fsdecode(args))
+    return [os.fsdecode(w) if isinstance(w, (str, bytes)) else str(w)
+            for w in (args if isinstance(args, (list, tuple)) else [args])]
+
+
+def _split_cmdline(line):
+    """The argv `subprocess.list2cmdline` joined into `line`, by the windows rules it
+    writes for: a run of backslashes is literal unless a quote follows it, where
+    each pair is one backslash and an odd one escapes the quote; a quote outside
+    one opens a quoted span, in which blanks do not split."""
+    out, word, quoted, slashes, started = [], [], False, 0, False
+    for ch in line:
+        if ch == "\\":
+            slashes += 1
+            continue
+        if ch == '"':
+            word.append("\\" * (slashes // 2))
+            if slashes % 2:
+                word.append('"')
+            else:
+                quoted = not quoted
+            slashes, started = 0, True
+            continue
+        if slashes:
+            word.append("\\" * slashes)
+            slashes, started = 0, True
+        if ch in " \t" and not quoted:
+            if started:
+                out.append("".join(word))
+            word, started = [], False
+            continue
+        word.append(ch)
+        started = True
+    if slashes:
+        word.append("\\" * slashes)
+        started = True
+    if started:
+        out.append("".join(word))
+    return out
+
+
+def _is_git(argv):
+    """True when `argv` starts git, however its first word spells it: `git`, a full
+    path to it, `git.exe` in any case."""
+    if not argv:
+        return False
+    name = os.path.basename(argv[0].replace("\\", "/")).lower()
+    return name in ("git", "git.exe")
 
 
 def _audit_hook(event, args):
-    """The process's one audit hook: each write and each process started goes to
-    the innermost open record, the state of a path read the first time the record
-    sees it written. Never raises - an exception here would refuse the write."""
+    """The process's one audit hook, an aid and no part of any verdict: each write
+    and each process started goes to the innermost open record, in order. Never
+    raises - an exception here would refuse the write."""
     opened = _RECORD_SINK["open"]
     if not opened or opened[-1]["busy"]:
         return
@@ -20546,99 +21083,257 @@ def _audit_hook(event, args):
     rec["busy"] = True
     try:
         if event == "subprocess.Popen":
-            argv = args[1] if isinstance(args[1], (list, tuple)) else [args[1]]
-            rec["events"].append(("process", [os.fsdecode(w) if isinstance(
-                w, (str, bytes)) else str(w) for w in argv]))
+            rec["events"].append(("process", _popen_argv(args[1])))
         for path in _written_paths(event, args):
             full = os.path.abspath(os.fsdecode(path))
-            if "__pycache__" in full:
-                continue
-            if full not in rec["before"]:
-                rec["before"][full] = _path_state(full)
-            rec["events"].append(("write", full, event))
+            if "__pycache__" not in full:
+                rec["events"].append(("write", full, event))
     except Exception as exc:                                   # noqa: BLE001
         rec["events"].append(("hook-error", "%s: %s" % (type(exc).__name__, exc)))
     finally:
         rec["busy"] = False
 
 
-def _record_open():
-    """A new record, innermost: `{"events", "before", "after", "busy"}`."""
+# What of git's directory a step can change and a next step reads: HEAD, the refs, the
+# index, the worktrees registered and the phase lock's claims. Its object store is left
+# out - an object no ref, index or registration names is read by no step.
+_GIT_OBSERVED = ("HEAD", "packed-refs", "index", "refs", "worktrees", "audit-locks")
+# What may differ at the instant a stop is raised - the stop's own record - by class.
+_STOP_OWN_RECORD = {
+    "lock": "the phase lock the running step holds - the drive state's `lock`, a "
+            "drive state file holding nothing else where there was none and the "
+            "directories made to hold it, and the claims under git's `audit-locks` - "
+            "taken when the step began, before any pin is asked; whether the "
+            "stop keeps it or gives it back is judged after the step (`_STOP_EXCEPTIONS`, "
+            "`spd25`)",
+    "scratch": "the step's own scratch checkout of the commit a member's tree is cut "
+               "from - its registration under git's `worktrees` - held to the step's end "
+               "and removed by the step's own finally (`own_checkouts`); after the step "
+               "no scratch checkout is left (`_scratch_left`) and the registrations are "
+               "compared whole (`_git_kept`)",
+}
+
+
+def _digest_of(full, mode):
+    """A regular file's entry: `("file", mode, sha256 of its bytes)`."""
+    with open(full, "rb") as fh:
+        data = fh.read()
+    return ("file", mode, hashlib.sha256(data).hexdigest())
+
+
+def _entry_of(full):
+    """What the entry at `full` is, by kind, mode and content: a link by its target,
+    a directory by its mode, a file by its mode and digest, anything else by its
+    type bits; None when nothing is there."""
+    try:
+        st = os.lstat(full)
+    except OSError:
+        return None
+    mode = stat.S_IMODE(st.st_mode)
+    if stat.S_ISLNK(st.st_mode):
+        return ("link", None, os.readlink(full))
+    if stat.S_ISDIR(st.st_mode):
+        return ("dir", mode, None)
+    if stat.S_ISREG(st.st_mode):
+        return _digest_of(full, mode)
+    return ("other", stat.S_IFMT(st.st_mode), None)
+
+
+def _walk_entries(top, label, prefix=""):
+    """`{key: entry}` for every entry under `top` - links not followed, bytecode
+    caches left out - keyed `<label>:<prefix><relative posix path>`."""
+    out = {}
+    for here, dirs, files in os.walk(top):
+        dirs[:] = sorted(d for d in dirs if d != "__pycache__"
+                         and not (here == top and not prefix and d == ".git"))
+        for name in dirs + sorted(files):
+            full = os.path.join(here, name)
+            rel = os.path.relpath(full, top).replace(os.sep, "/")
+            out["%s:%s%s" % (label, prefix, rel)] = _entry_of(full)
+    return out
+
+
+def _drive_state_lock(full):
+    """`(the state's body less its lock, as a digest, the lock)` of a drive state
+    file at `full`; None for a file that is not one's JSON."""
+    try:
+        with open(full, encoding="utf-8") as fh:
+            body = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    lock = body.pop("lock", None)
+    return hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest(), lock
+
+
+def _observed(parts):
+    """A snapshot of everything a step can change under `parts` ([(label, root)]):
+    `{key: (kind, mode, digest)}` for every entry of each root's tree - and of a
+    root's git directory, what `_GIT_OBSERVED` names - plus a key for a root that
+    is not there. A drive state file (`.../state/drive/<phase>.json`) is keyed by
+    its body less its lock, and the lock apart (`#lock`); a registration whose
+    tree is a scratch checkout of the drive's (`drive-pin-checkout-`) is marked
+    (`#scratch`)."""
+    out = {}
+    for label, root in parts:
+        if not root or not os.path.isdir(root):
+            out["%s:" % (label,)] = None
+            continue
+        out.update(_walk_entries(root, label))
+        git_dir = os.path.join(root, ".git")
+        out["%s:.git" % (label,)] = _entry_of(git_dir)
+        for name in _GIT_OBSERVED if os.path.isdir(git_dir) else ():
+            full = os.path.join(git_dir, name)
+            out["%s:.git/%s" % (label, name)] = _entry_of(full)
+            if os.path.isdir(full):
+                out.update(_walk_entries(full, label, ".git/%s/" % (name,)))
+        trees = os.path.join(git_dir, "worktrees")
+        for name in sorted(os.listdir(trees)) if os.path.isdir(trees) else ():
+            gitdir = os.path.join(trees, name, "gitdir")
+            if os.path.isfile(gitdir) and b"drive-pin-checkout-" in _read(gitdir):
+                out["%s:.git/worktrees/%s#scratch" % (label, name)] = True
+        for key in [k for k in out if k.startswith(label + ":") and re.search(
+                r"(^|/)state/drive/[^/]+\.json$", k.partition(":")[2])]:
+            held = _drive_state_lock(os.path.join(root, key.partition(":")[2]))
+            if held is not None:
+                out[key] = ("file", out[key][1], held[0])
+                out[key + "#lock"] = held[1]
+    return out
+
+
+_LOCK_ONLY = re.compile(r"(^|/)state/drive/[^/]+\.json$")
+# The body of a drive state file that holds the lock and nothing else, less its lock.
+_NOTHING_BUT_LOCK = hashlib.sha256(json.dumps({}, sort_keys=True).encode()).hexdigest()
+
+
+def _own_record(key, before, at_stop):
+    """The class of `_STOP_OWN_RECORD` the key `key` is part of at a stop, or None:
+    the lock, or a scratch checkout the stop's snapshot `at_stop` marks - its
+    registration, or git's `worktrees` directory when every registration made
+    since `before` is one."""
+    path = key.partition(":")[2]
+    if key.endswith("#lock") or path == ".git/audit-locks" \
+            or path.startswith(".git/audit-locks/"):
+        return "lock"
+    if key not in before and _LOCK_ONLY.search(path) and at_stop.get(key + "#lock") \
+            and (at_stop.get(key) or (None,) * 3)[2] == _NOTHING_BUT_LOCK:
+        return "lock"
+    if key not in before and (at_stop.get(key) or (None,))[0] == "dir":
+        newer = [k for k in at_stop if k.startswith(key + "/") and k not in before
+                 and not k.endswith("#lock")]
+        if newer and all(_own_record(k, before, at_stop) == "lock" for k in newer):
+            return "lock"
+    label = key.partition(":")[0]
+    made = [k for k in at_stop if k.startswith(label + ":.git/worktrees/")
+            and k.count("/") == 2 and not k.endswith("#scratch") and k not in before]
+    if path == ".git/worktrees" and made and all(
+            at_stop.get(k + "#scratch") for k in made):
+        return "scratch"
+    hit = re.match(r"^\.git/worktrees/([^/#]+)", path)
+    if hit and at_stop.get("%s:.git/worktrees/%s#scratch" % (label, hit.group(1))):
+        return "scratch"
+    return None
+
+
+def _record_open(parts=()):
+    """A new record, innermost: `{"parts", "before", "at_stop", "after", "events",
+    "busy"}` - the snapshot of `parts` taken now."""
     if not _RECORD_SINK["hooked"]:
         sys.addaudithook(_audit_hook)
         _RECORD_SINK["hooked"] = True
-    rec = {"events": [], "before": {}, "after": {}, "busy": False}
+    rec = {"parts": list(parts), "events": [], "at_stop": [], "after": {},
+           "busy": True}
+    rec["before"] = _observed(rec["parts"])
+    rec["busy"] = False
     _RECORD_SINK["open"].append(rec)
     return rec
 
 
+def _record_moment(rec, how):
+    """The snapshot of `rec`'s parts at the moment a stop is raised (`how` says which
+    moment), kept beside the record's other stops."""
+    was, rec["busy"] = rec["busy"], True
+    try:
+        rec["at_stop"].append((how, _observed(rec["parts"])))
+    finally:
+        rec["busy"] = was
+    rec["events"].append(("stop", how))
+
+
 def _record_close(rec):
-    """Close `rec`, reading what each path it saw written holds now."""
+    """Close `rec`, with the snapshot of its parts now."""
     _RECORD_SINK["open"].remove(rec)
-    rec["after"] = dict((p, _path_state(p)) for p in rec["before"])
+    rec["busy"] = True
+    rec["after"] = _observed(rec["parts"])
     return rec
 
 
-def _record_stop(name):
-    """Mark the moment a pin stop passed through the route `name` in the open
-    record, if one is open - the first time, with what each path written so far
-    holds at that moment."""
+def _record_stop(name, returned=False):
+    """A pin stop passed through the route `name` while a record is open: a stop the
+    route RETURNED, worded by a verb that refused, is judged here, the first moment
+    this process sees it; one RAISED was judged when it was constructed."""
     if not _RECORD_SINK["open"]:
         return
     rec = _RECORD_SINK["open"][-1]
-    if "at_stop" not in rec:
-        rec["busy"] = True
-        try:
-            rec["at_stop"] = dict((p, _path_state(p)) for p in rec["before"])
-        finally:
-            rec["busy"] = False
-    rec["events"].append(("stop", name))
+    if returned and not rec["at_stop"]:
+        _record_moment(rec, "returned through %s" % (name,))
+    else:
+        rec["events"].append(("through", name))
 
 
-def _recorded(call):
-    """`(what call() returned, its closed record)`."""
-    rec = _record_open()
+def _recorded(call, parts=()):
+    """`(what call() returned, its closed record)`: the snapshot of `parts` before
+    `call()`, one at each `PinStop` constructed while it runs - the constructor
+    hooked for its length and put back after - and one when it ends."""
+    rec = _record_open(parts)
+    stop = _skill_places.PinStop
+    own = stop.__dict__.get("__init__")
+    real = stop.__init__
+
+    def constructed(self, *args, **kwargs):
+        _record_moment(rec, "constructed")
+        real(self, *args, **kwargs)
+    stop.__init__ = constructed
     try:
         out = call()
     finally:
+        if own is None:
+            del stop.__init__
+        else:
+            stop.__init__ = own
         _record_close(rec)
     return out, rec
 
 
-def _lock_serialiser(path):
-    """True for the phase lock's own serialiser file - a dot file of the lock
-    directory, made the first time any lock is taken and no claim (`_kept_state`
-    leaves it out for the same reason)."""
-    return (os.path.basename(path).startswith(".")
-            and os.path.basename(os.path.dirname(path)) == "audit-locks")
+def _stop_changes(rec):
+    """What a record's snapshots say a step changed: every key at which a snapshot
+    taken at a stop differs from the one before the step, but for the stop's own
+    record (`_own_record`) - or, when no stop was raised, every key at which the
+    snapshot after differs, the lock aside. Sorted, once each, each followed by the
+    calls the aid saw write under it (`_RECORD_SINK`), when it saw any."""
+    before = rec["before"]
+    moments = [snap for _how, snap in rec["at_stop"]] or [rec["after"]]
+    changed = set()
+    for snap in moments:
+        for key in set(before) | set(snap):
+            if before.get(key) != snap.get(key) and not key.endswith("#scratch") \
+                    and _own_record(key, before, snap if rec["at_stop"] else {}) is None:
+                changed.add(key)
+    roots = dict(rec["parts"])
+    out = []
+    for key in sorted(changed):
+        label, _sep, rel = key.partition(":")
+        full = os.path.join(roots.get(label) or "", *rel.split("#")[0].split("/"))
+        by = sorted(set(e[2] for e in rec["events"] if e[0] == "write"
+                        and os.path.normcase(e[1]) == os.path.normcase(full)))
+        out.append("%s (%s)" % (key, ", ".join(by)) if by else key)
+    return out
 
 
-def _early_writes(rec):
-    """The paths a record saw written BEFORE its first stop that held something else
-    both at the stop and at its close than before they were written - a write
-    the stop came after and nothing put back - sorted, once each; every write
-    changed at the close when it saw no stop at all. The lock's serialiser file
-    is no state (`_lock_serialiser`), and neither is a directory being made: what
-    is written into it is recorded as its own write and judged there, and the
-    making is recorded only so that a directory made and removed again reads as
-    never there."""
-    at_stop = rec.get("at_stop", rec["after"])
-    early = set()
-    for event in rec["events"]:
-        if event[0] == "stop":
-            break
-        if (event[0] != "write" or event[2] == "os.mkdir"
-                or _lock_serialiser(event[1])):
-            continue
-        was = rec["before"].get(event[1])
-        if at_stop.get(event[1]) != was and rec["after"].get(event[1]) != was:
-            early.add(event[1])
-    return sorted(early)
-
-
-def _record_processes(rec, word):
-    """The processes a record saw started whose argv holds `word`, as argv lists."""
-    return [e[1] for e in rec["events"] if e[0] == "process" and word in e[1]]
+def _record_processes(rec):
+    """Every process a record saw started, as argv lists."""
+    return [e[1] for e in rec["events"] if e[0] == "process"]
 
 
 def _watch(M, names):
@@ -20661,7 +21356,7 @@ def _watch(M, names):
                 raise
             if _PIN_STUCK_WORDS in _text_of(out):
                 hits.append(name)
-                _record_stop(name)
+                _record_stop(name, returned=True)
             return out
         return seen
     for name in names:
@@ -20724,9 +21419,9 @@ def _unit_dispatch(world, role, state):
     before, mark = _unit_kept(world, state), len(world["hits"])
     said, rec = _recorded(lambda: _caught(
         R.dispatch, world["ctx"], state, world["phase"], world["task"], role, None,
-        world["plan"]))
+        world["plan"]), _stop_parts(world["ctx"]["project"]))
     return (said, _kept_diff(before, _unit_kept(world, state)),
-            set(world["hits"][mark:]), _early_writes(rec))
+            set(world["hits"][mark:]), _stop_changes(rec))
 
 
 def _pin_dispatch_runs(ran):
@@ -20804,10 +21499,10 @@ def _pin_validation_run(ran):
     state = {}
     before = _unit_kept(world, state)
     said, rec = _recorded(lambda: _caught(V.validation_dispatch, ctx, state, phase,
-                                          "a" * 40, [finding]))
+                                          "a" * 40, [finding]), _stop_parts(project))
     ran["validation"] = {"stopped": _pin_stopped(said),
                          "diff": _kept_diff(before, _unit_kept(world, state)),
-                         "hits": set(hits), "early": _early_writes(rec)}
+                         "hits": set(hits), "early": _stop_changes(rec)}
     _pin_skill_dir(project, "pin-review", _PIN_BODIES["pin-a"])
     again = {}
     argv_said = _caught(V.validation_dispatch, ctx, again, phase, "a" * 40, [finding])
@@ -20824,17 +21519,22 @@ def _pin_validation_run(ran):
     V.write_state(ctx, again)
     _pin_skill_dir(project, "pin-review", _changed(_PIN_BODIES["pin-a"]))
     before, mark = _unit_kept(world, again), len(hits)
+    held_was = V.writer_state(again, node, V.VALIDATE_KEY)
+    counted_was = (held_was.get("redispatched"), list(held_was.get("asked") or []))
     said, rec = _recorded(lambda: _caught(V.validation_step, ctx, again, phase,
-                                          "a" * 40, [finding]))
+                                          "a" * 40, [finding]), _stop_parts(project))
+    held_now = V.writer_state(again, node, V.VALIDATE_KEY)
+    stopped_counts = (_pin_stopped(said), counted_was,
+                      (held_now.get("redispatched"), list(held_now.get("asked") or [])))
     ran["validation-again"] = {"stopped": _pin_stopped(said),
                                "diff": _kept_diff(before, _unit_kept(world, again)),
-                               "hits": set(hits[mark:]), "early": _early_writes(rec)}
+                               "hits": set(hits[mark:]), "early": _stop_changes(rec)}
     _pin_skill_dir(project, "pin-review", _PIN_BODIES["pin-a"])
     redone = _caught(V.validation_step, ctx, again, phase, "a" * 40, [finding])
     if isinstance(redone, tuple) and len(redone) == 2 and redone[0] is None:
         redone = redone[1]
     held = V.writer_state(again, node, V.VALIDATE_KEY)
-    return {"allow": allow, "again": (
+    return {"allow": allow, "stop": stopped_counts, "again": (
         _text_of(redone)[:60], held.get("redispatched"), held.get("asked"),
         len(held.get("dispatches") or []))}
 
@@ -20909,48 +21609,94 @@ def _pin_lock_runs(ran):
                               world["plan"])
         R.drive_locked = locked
         before, mark = _unit_kept(world, None), len(world["hits"])
-        (code, said), rec = _recorded(lambda R=R, ctx=ctx: R.drive(ctx))
+        (code, said), rec = _recorded(lambda R=R, ctx=ctx: R.drive(ctx),
+                                      _stop_parts(ctx["project"]))
         after = _unit_kept(world, None)
         ran[sid] = {"stopped": code != 0, "diff": _kept_diff(before, after),
-                    "hits": set(world["hits"][mark:]), "early": _early_writes(rec)}
+                    "hits": set(world["hits"][mark:]), "early": _stop_changes(rec)}
         out[sid] = (code, "lock kept" if after["lock"] == "taken" else "lock given back")
     return out
 
 
+def _pin_resolve_cases(check, derived):
+    """The over-approximation's own power: every shape a list of blind spots once
+    missed is a route when it reaches a stop and quiet in its honest twin; and the
+    over-count table answers its rows both ways - each row's key is one the
+    derivation meets, and taking any row out marks functions no scenario stops
+    through."""
+    routes = derived["top"]
+
+    def is_route(source):
+        p_routes, _loose = _planted(derived, source)
+        return _route_coverage(p_routes & (routes | set(["planted"])), routes,
+                               _STOP_ROUTES_EXEMPT, lambda n: [])["unseen"] == ["planted"]
+    rows = dict((label, (is_route(deny), is_route(twin)))
+                for label, deny, twin in _PIN_RESOLVE_PLANTS)
+    check("spd37 the derivation resolves a call or counts it as one that may stop: "
+          "a from-import of the reader's function, a function-local import, the "
+          "reader under another alias, a method called on an instance, a module "
+          "imported by its name at run time, the driver's own module under an "
+          "alias, a raise of a name bound to PinStop, an attrgetter's result "
+          "called, a route as a default argument and functools.partial over one "
+          "are each a route, and each honest twin - the same shape reaching no "
+          "stop - is not (route, twin a route): %r" % (rows,),
+          len(rows) == len(_PIN_RESOLVE_PLANTS)
+          and all(r == (True, False) for r in rows.values()))
+    dropped = {}
+    for key in sorted(_UNRESOLVED_EXEMPT):
+        rest = dict((k, v) for k, v in _UNRESOLVED_EXEMPT.items() if k != key)
+        stops, _met = _stop_settle(derived["world"], rest)
+        now = set(n for mod, n in stops if mod == "drive-phase") & set(
+            n.name for n in derived["module"].body if isinstance(n, _DEFS))
+        dropped[key] = sorted(now - routes)
+    ghost = "ghost: a call of nothing the driver holds"
+    _stops, met = _stop_settle(derived["world"], dict(_UNRESOLVED_EXEMPT, **{ghost: "x"}))
+    check("spd38 the over-count table is checked both ways: taking any one of its "
+          "rows out marks functions no scenario stops through - so each row answers "
+          "an over-count - and a row naming a key the derivation never meets is "
+          "found stale (marked without each row, the ghost met): %r"
+          % ((dropped, ghost in met),),
+          len(dropped) == len(_UNRESOLVED_EXEMPT)
+          and all(v for v in dropped.values()) and ghost not in met
+          and all(k in met for k in _UNRESOLVED_EXEMPT))
+
+
 def _pin_route_cases(check, M, hits, ran, waves):
-    """The routes of a pin stop, derived over the driver's call graph, each stopped
-    by a scenario whose writes are recorded in the order made and whose state is
+    """The routes of a pin stop, derived over the driver's calls, each stopped by a
+    scenario judged by the snapshot at its stop and whose state is
     compared whole before and after, over one table of exceptions checked both
     ways. `waves` is `_pin_wave_runs`' answer for each route: the walk's runs, and
     the session route's repository, which the copy cases go on to use."""
     derived = _derived()
-    routes, blind = derived["top"], derived["blind"]
+    routes = derived["top"]
     loose = _calls_without(derived["module"], "writer_argv", "held")
-    check("spd22 the stop routes are DERIVED over the driver's call graph - every "
-          "function that raises PinStop, calls a function of another module that can "
-          "raise it, or reaches either through any chain of the driver's own calls - "
-          "the reader every route asks through and the entry among them; every place "
-          "the graph cannot follow (a function that can stop used as a value, a "
-          "lookup by name at run time) is a listed one with its reason, no listed one "
-          "stale; every exemption has a reason and names a route; and no call of "
-          "writer_argv lacks the `held` its pre-check read: %r"
-          % ((sorted(routes), blind, loose),),
+    stale_rows = sorted(k for k in _UNRESOLVED_EXEMPT if k not in derived["met"])
+    check("spd22 the stop routes are DERIVED over the driver's calls, over-"
+          "approximated - every function that raises PinStop, calls a function of "
+          "another module that can raise it, holds a call or a raise the derivation "
+          "cannot resolve to one definite function (none known not to stop), or "
+          "reaches any of them through the driver's calls, parameters, assignments "
+          "and returns - the reader every route asks through and the entry among "
+          "them; every row of the over-count table names a may-stop key the "
+          "derivation meets, with its reason; every route exemption has a reason "
+          "and names a route; and no call of writer_argv lacks the `held` its "
+          "pre-check read (routes, stale over-count rows, loose calls): %r"
+          % ((sorted(routes), stale_rows, loose),),
           set(["session_skills", "dispatch", "drive", "main"]) <= routes
-          and blind == sorted(_PIN_BLIND_LISTED)
+          and stale_rows == [] and all(_UNRESOLVED_EXEMPT.values())
           and loose == [] and all(why for why, _via in _STOP_ROUTES_EXEMPT.values())
           and set(_STOP_ROUTES_EXEMPT) <= routes)
     seen = {}
     for label, source, want in _PIN_PLANTS:
-        p_routes, p_blind, p_loose = _planted(derived, source)
+        p_routes, p_loose = _planted(derived, source)
         got = set()
         if _route_coverage(p_routes & (routes | set(["planted"])), routes,
                            _STOP_ROUTES_EXEMPT, lambda n: [])["unseen"] == ["planted"]:
             got.add("route")
-        if sorted(set(p_blind) - set(_PIN_BLIND_LISTED)):
-            got.add("blind")
         if p_loose:
             got.add("held")
         seen[label] = (sorted(got), sorted(want))
+    _pin_resolve_cases(check, derived)
     graph = derived["graph"]
     stale = _route_coverage(routes, set(["sign_off"]), dict(
         _STOP_ROUTES_EXEMPT, ghost=("x", None)), lambda n: _callers_in(graph, n))
@@ -20966,8 +21712,8 @@ def _pin_route_cases(check, M, hits, ran, waves):
           "a value, a raise of PinStop itself, a call of the reader's own module, a "
           "caller of dispatch, resume_writer or validation_dispatch that spends the "
           "human's answer first, writer_argv with `held=None` spelled out - is SEEN: "
-          "a route no scenario stops through and no exemption names, a place the "
-          "graph cannot follow that is not listed, or a call without `held`; an "
+          "a route no scenario stops through and no exemption names, or a call "
+          "without `held`; an "
           "exemption naming no route or a route a scenario stops through is stale; "
           "and a call of an exempt route from a function its row does not name is "
           "reported: %r" % ((seen, stale["stale"], strayed["via"]),),
@@ -20994,10 +21740,10 @@ def _pin_route_cases(check, M, hits, ran, waves):
                                lambda n: _callers_in(graph, n))
     unexcepted = sorted(sid for sid in _STOP_EXCEPTIONS if sid not in ran)
     check("spd24 EVERY ROUTE spd22 derives is stopped through by a scenario or exempt "
-          "with its reason, and every scenario - stopped over a changed skill - wrote "
-          "nothing before its stop that it did not put back (the runtime record: every "
-          "file this process opened to write, renamed, removed or linked, in the order "
-          "made) and is whole after it at every key but the stated exceptions' - the "
+          "with its reason, and every scenario - stopped over a changed skill - is "
+          "judged by the snapshot at the instant its stop is raised, equal to the one "
+          "before the step but for the stop's own record (`_STOP_OWN_RECORD`), and "
+          "is whole after it at every key but the stated exceptions' - the "
           "drive's state, its briefs and sessions' files, the plan's task and phase "
           "fields, git's refs and worktrees, the verbs run, the lock's holder: %r"
           % (dict(bad=bad, coverage=coverage, unexcepted=unexcepted,
@@ -21008,13 +21754,16 @@ def _pin_route_cases(check, M, hits, ran, waves):
           not bad and coverage == _PIN_ROUTE_EMPTY and not unexcepted
           and "validation-again" in ran and "validation_step" in observed
           and _STOP_EXCEPTIONS["lock-idle"][0] == ran["lock-idle"]["diff"])
-    again = validated["again"]
+    again, stop = validated["again"], validated["stop"]
     check("spd24b the validation session that opened no file is dispatched once more "
           "only once its pins hold: over a changed review skill the step stops with "
-          "the re-dispatch count and the ids asked as they were (spd24's "
-          "validation-again), and with the bytes restored the same step dispatches, "
-          "counting one re-dispatch and asking every id again: %r" % (again,),
-          again[0].startswith("dispatch") and again[1] == 1 and again[2] == ["P1-R1"]
+          "the re-dispatch count and the ids asked as they were - read off the "
+          "state the step holds, before and after the stop - and with the bytes "
+          "restored the same step dispatches, counting one re-dispatch and asking "
+          "every id again (stop: stopped, count and ids before, after; again): %r"
+          % ((stop, again),),
+          stop[0] is True and stop[1] == stop[2] and stop[1][1] == ["P1-R1"]
+          and again[0].startswith("dispatch") and again[1] == 1 and again[2] == ["P1-R1"]
           and again[3] == 2)
     _pin_record_power_case(check, M, routes, observed, graph)
     _pin_except_arm_case(check)
@@ -21025,43 +21774,57 @@ def _pin_route_cases(check, M, hits, ran, waves):
           held_back == {"lock-pending": (1, "lock kept"), "lock-out": (1, "lock kept"),
                         "lock-idle": (1, "lock given back")})
     _pin_lock_rule_case(check)
+    _pin_one_checkout_case(check, M)
     _pin_copy_cases(check, walks, dispatches, validated, waves["session"]["root"])
 
 
-def _pin_record_power_case(check, M, routes, observed, graph):
-    """THE POWER of spd24's two halves: a route the scenarios stop through taken out
-    of what they observed is named unseen; and the runtime record, over a route
-    that writes a file and then stops, names the file - while a write put back
-    before the stop, a write made after it, and the same write with no stop at all
-    are each judged the way they are, so a record that always or never names a
-    write is red."""
-    top = os.path.realpath(_harness.fixture_root("drive-spn-record-"))
-    path = os.path.join(top, "state.json")
+def _git_argvs(rec):
+    """The git processes a record's aid saw started, as argv lists."""
+    return [e[1] for e in rec["events"] if e[0] == "process" and _is_git(e[1])]
 
-    def put(text):
-        with open(path, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(text)
-    fake = types.SimpleNamespace(_skill_places=M._skill_places)
 
-    def ask():
-        raise M._skill_places.PinStop("the skill x is pinned, and the copy differs")
-    fake.ask = ask
-    _watch(fake, ["ask"])
+def _scratch_adds(argvs):
+    """The `git worktree add` of a scratch checkout among `argvs`."""
+    return [a for a in argvs if "worktree" in a and "add" in a
+            and any("drive-pin-checkout-" in w for w in a)]
 
-    def stop_then_write():
-        try:
-            fake.ask()
-        finally:
-            put("after")
+
+def _pin_one_checkout_case(check, M):
+    """The step owns the scratch checkout: a wave-opening `next` over a session wave
+    whose members name pinned skills makes ONE checkout of the base commit - the
+    wave's opening and its walk ask the same copy - and removes it; a wave whose
+    members name no pinned skill, an empty `skillPins` and a plan with no pins make
+    none. `{label: (exit, dispatches, scratch adds, git processes)}`."""
     rows = {}
-    for label, body in (("write then stop", lambda: (put("after"), fake.ask())),
-                        ("write, put back, stop", lambda: (
-                            put("after"), put("before"), fake.ask())),
-                        ("stop then write", stop_then_write),
-                        ("write and no stop", lambda: put("after"))):
-        put("before")
-        _said, rec = _recorded(lambda body=body: _caught(body))
-        rows[label] = [os.path.basename(p) for p in _early_writes(rec)]
+    for label, pinned, named in (("pins, named", True, True),
+                                 ("pins, named by no member", True, False),
+                                 ("skillPins {}", "empty", True),
+                                 ("no pins", False, True)):
+        root, mpath = _pin_wave("spn-one-%s" % (len(rows),), "session", pinned, named)
+        left = _scratch_left()
+        (code, text), rec = _recorded(lambda: _next_wave(M, root, mpath))
+        gits = _git_argvs(rec)
+        rows[label] = (code, len(_handed_out(text)), len(_scratch_adds(gits)),
+                       len([a for a in gits if "worktree" in a and "remove" in a
+                            and any("drive-pin-checkout-" in w for w in a)]),
+                       len(gits), _scratch_left() == left)
+    check("spd34 a wave-opening step makes at most ONE scratch checkout of the commit, "
+          "made by the first ask that needs it and removed when the step ends - the "
+          "opening's ask and the walk's read the same copy - and none when no asked "
+          "member names a pinned skill, for an empty skillPins or for a plan with no "
+          "pins; every step dispatches both members and leaves no scratch behind "
+          "(exit, dispatches, scratch adds, scratch removes, git processes, nothing "
+          "left): %r" % (rows,),
+          rows["pins, named"][:4] == (0, 2, 1, 1)
+          and all(rows[k][:4] == (0, 2, 0, 0) for k in (
+              "pins, named by no member", "skillPins {}", "no pins"))
+          and all(r[5] for r in rows.values()))
+
+
+def _pin_record_power_case(check, M, routes, observed, graph):
+    """THE POWER of spd24's coverage half: a route the scenarios stop through taken
+    out of what they observed is named unseen. The power of its state half - the
+    snapshot at the stop - is `spd36`'s."""
     taken = sorted(observed & set(routes))[:1]
 
     def unseen_of(seen):
@@ -21069,13 +21832,194 @@ def _pin_record_power_case(check, M, routes, observed, graph):
                                lambda n: _callers_in(graph, n))["unseen"]
     unseen = sorted(set(unseen_of(observed - set(taken))) - set(unseen_of(observed)))
     check("spd24a THE POWER of spd24: a route taken out of what the scenarios observed "
-          "is named unseen, and the runtime record names a file written before a stop "
-          "and left changed - and not one put back before the stop, nor one written "
-          "after it - while a run that never stops has every write it made named: %r"
-          % ((taken, unseen, rows),),
-          taken != [] and unseen == taken
-          and rows == {"write then stop": ["state.json"], "write, put back, stop": [],
-                       "stop then write": [], "write and no stop": ["state.json"]})
+          "is named unseen: %r" % ((taken, unseen),),
+          taken != [] and unseen == taken)
+    _pin_snapshot_power_case(check, M)
+
+
+def _snapshot_world(M):
+    """A repository whose config roots trees in a directory of its own, a drive state
+    file holding a lock, and a route `ask` (watched) that raises a pin stop:
+    `{"top", "trees", "state", "ask", "parts"}`."""
+    top = os.path.realpath(_harness.fixture_root("drive-spn-snap-"))
+    trees = os.path.realpath(_harness.fixture_root("drive-spn-snap-trees-"))
+    os.makedirs(os.path.join(top, ".claude", "state", "drive"))
+    with open(os.path.join(top, ".claude", "audit.config.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"executor": {"worktreeRoot": trees}}, fh)
+    state = os.path.join(top, ".claude", "state", "drive", "P1.json")
+    with open(state, "w", encoding="utf-8") as fh:
+        json.dump({"lock": "taken", "wave": {"id": "w"}}, fh)
+    with open(os.path.join(top, "state.json"), "w", encoding="utf-8") as fh:
+        fh.write("before")
+    _pin_git(top, "init", "-q")
+    _pin_git(top, "add", "-A")
+    _pin_git(top, "commit", "-qm", "fixture")
+    fake = types.SimpleNamespace(_skill_places=M._skill_places)
+
+    def ask():
+        raise M._skill_places.PinStop("the skill x is pinned, and the copy differs")
+    fake.ask = ask
+    _watch(fake, ["ask"])
+    return {"top": top, "trees": trees, "state": state, "ask": lambda: fake.ask(),
+            "parts": _stop_parts(top)}
+
+
+def _snapshot_rows(world):
+    """`[(label, body, the keys spd36 expects named)]`: each kind of change a step
+    can make before its stop - in this process, by a child process, by git - and
+    the honest twins a judge that always names something fails."""
+    top, trees, ask = world["top"], world["trees"], world["ask"]
+    f = os.path.join(top, "state.json")
+
+    def put(text, path=f):
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+
+    def child(code):
+        subprocess.run([sys.executable, "-c", code], check=True)
+
+    def replace():
+        put("after", f + ".tmp")
+        os.replace(f + ".tmp", f)
+
+    def then_put_back(first):
+        first()
+        try:
+            ask()
+        finally:
+            put("before")
+
+    def stop_then(after):
+        try:
+            ask()
+        finally:
+            after()
+
+    def lock_given():
+        with open(world["state"], "w", encoding="utf-8") as fh:
+            json.dump({"wave": {"id": "w"}}, fh)
+
+    def state_changed():
+        with open(world["state"], "w", encoding="utf-8") as fh:
+            json.dump({"lock": "taken", "wave": {"id": "w2"}}, fh)
+
+    def new_state(body):
+        with open(os.path.join(os.path.dirname(world["state"]), "P2.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump(body, fh)
+    # Named as the drive names its scratch holders, which is what marks one - one
+    # level down, so no count of the temp directory's own scratch holders sees it.
+    scratch = os.path.join(os.path.realpath(_harness.fixture_root(
+        "drive-spn-snap-sc-")), "drive-pin-checkout-snap", "tree")
+    plain = os.path.join(os.path.realpath(_harness.fixture_root("drive-spn-snap-wt-")),
+                         "tree")
+    rows = [
+        ("a python write", lambda: (put("after"), ask()), ["project:state.json"]),
+        ("a temp file renamed over it", lambda: (replace(), ask()),
+         ["project:state.json"]),
+        ("a child process rewriting it", lambda: (child(
+            "open(%r, 'w').write('after')" % (f,)), ask()), ["project:state.json"]),
+        ("a child process creating a file", lambda: (child(
+            "open(%r, 'w').write('new')" % (os.path.join(top, "new.json"),)), ask()),
+         ["project:new.json"]),
+        ("a directory made and left", lambda: (os.mkdir(os.path.join(top, "made")),
+                                               ask()), ["project:made"]),
+        ("a mode changed", lambda: (os.chmod(f, 0o400), ask()), ["project:state.json"]),
+        ("a write put back after the stop", lambda: then_put_back(lambda: put("after")),
+         ["project:state.json"]),
+        ("a write, the stop, a third value", lambda: (put("after"), stop_then(
+            lambda: put("third"))), ["project:state.json"]),
+        ("a link made", lambda: (os.symlink("x", os.path.join(top, "lnk")), ask()),
+         ["project:lnk"]),
+        ("a write into the trees root", lambda: (put("x", os.path.join(trees, "t")),
+                                                 ask()), ["trees:t"]),
+        ("a ref moved by git", lambda: (_pin_git(top, "update-ref", "refs/heads/x",
+                                                 "HEAD"), ask()),
+         ["project:.git/refs/heads/x"]),
+        ("a worktree registered by git", lambda: (_pin_git(
+            top, "worktree", "add", "--detach", "-q", plain, "HEAD"), ask()),
+         [".git/worktrees"]),
+        ("the index written by git", lambda: (put("x", os.path.join(top, "i.txt")),
+                                              _pin_git(top, "add", "i.txt"), ask()),
+         ["project:.git/index", "project:i.txt"]),
+        ("the drive state's body changed", lambda: (state_changed(), ask()),
+         ["project:.claude/state/drive/P1.json"]),
+        ("a new drive state holding more than the lock", lambda: (new_state(
+            {"lock": "taken", "wave": {"id": "w"}}), ask()),
+         ["project:.claude/state/drive/P2.json"]),
+        # The honest twins.
+        ("nothing written before the stop", ask, []),
+        ("a write after the stop", lambda: stop_then(lambda: put("after")), []),
+        ("a write put back before the stop", lambda: (put("after"), put("before"),
+                                                      ask()), []),
+        ("the step's own lock given back", lambda: (lock_given(), ask()), []),
+        ("the step's own lock taken where no state was", lambda: (new_state(
+            {"lock": "taken"}), ask()), []),
+        ("the step's own scratch checkout held at the stop", lambda: (_pin_git(
+            top, "worktree", "add", "--detach", "-q", scratch, "HEAD"), ask()), []),
+    ]
+    return rows, (scratch, plain)
+
+
+def _pin_snapshot_power_case(check, M):
+    """THE POWER of the snapshot a stop is judged by: each kind of change a step can
+    make before its stop - a write in this process, a rename, a child process's
+    write and its new file, a directory left, a mode changed, a write put back
+    after the stop, the trees root, a ref, a worktree registered, the index, the
+    drive state's body - is named; nothing before the stop, a write after it, a
+    write put back before it, the step's own lock and its own scratch checkout are
+    not. A judge blind to one part, or taken at the end of the step rather than at
+    the stop, is red on a row here."""
+    world = _snapshot_world(M)
+    rows, made = _snapshot_rows(world)
+    got, bad = {}, {}
+    for label, body, want in rows:
+        _said, rec = _recorded(lambda body=body: _caught(body), world["parts"])
+        named = [k.split(" (")[0] for k in _stop_changes(rec)]
+        got[label] = named
+        if want and want[0].startswith(".git/"):
+            ok = any(want[0] in k for k in named)
+        else:
+            ok = named == want
+        if not ok or not rec["at_stop"]:
+            bad[label] = (named, want, len(rec["at_stop"]))
+        _snapshot_reset(world, made)
+    check("spd36 a stop is judged by a snapshot of the whole observable state at the "
+          "instant PinStop is constructed - kind, mode and content digest of the "
+          "project tree, the trees root, the lock and git's HEAD, refs, index and "
+          "worktree registrations: a python write, a rename, a child process's write "
+          "and new file, a directory left, a chmod, a write put back after the stop, "
+          "the trees root, a ref, a registration, the index and the drive state are "
+          "each named, and the honest twins - nothing written, a write after the "
+          "stop or put back before it, the step's own lock and scratch checkout - "
+          "are not: %r" % ((bad, got),),
+          not bad and len(got) == len(rows))
+
+
+def _snapshot_reset(world, made):
+    """Put `_snapshot_world`'s repository back between rows."""
+    top = world["top"]
+    os.chmod(os.path.join(top, "state.json"), 0o644)
+    with open(os.path.join(top, "state.json"), "wb") as fh:
+        fh.write(b"before")
+    with open(world["state"], "w", encoding="utf-8") as fh:
+        json.dump({"lock": "taken", "wave": {"id": "w"}}, fh)
+    for rel in ("new.json", "i.txt", "state.json.tmp", "lnk",
+                os.path.join(".claude", "state", "drive", "P2.json")):
+        if os.path.lexists(os.path.join(top, rel)):
+            os.remove(os.path.join(top, rel))
+    for path in (os.path.join(top, "made"), os.path.join(world["trees"], "t")):
+        if os.path.isdir(path):
+            os.rmdir(path)
+        elif os.path.exists(path):
+            os.remove(path)
+    # Each a step back that may find nothing to undo: git's refusal is no failure.
+    _pin_git_in(top, b"", "read-tree", "HEAD")
+    _pin_git_in(top, b"", "update-ref", "-d", "refs/heads/x")
+    for tree in made:
+        _pin_git_in(top, b"", "worktree", "remove", "--force", tree)
+        _harness.remove_tree(tree)
 
 
 def _pin_except_arm_case(check):
@@ -21212,8 +22156,8 @@ def _pin_copy_cases(check, walks, dispatches, validated, root):
         ctx = _step_ctx(project=root, gitRoot=root, config=(
             _WRITER_CONFIG if route == "session" else {}))
         try:
-            C.ask_member_pins(ctx, {"wave": wave} if wave else {}, plan, phase, ids,
-                              base=base)
+            _in_step(C, ctx, lambda: C.ask_member_pins(
+                ctx, {"wave": wave} if wave else {}, plan, phase, ids, base=base))
         except C._skill_places.PinStop as exc:
             return str(exc)
         return None
@@ -21270,11 +22214,20 @@ def _ask_members(C, root, plan, phase, ids, route, wave=None, base=None, project
     ctx = _step_ctx(project=project or root, gitRoot=root, config=(
         _WRITER_CONFIG if route == "session" else {}))
     try:
-        C.ask_member_pins(ctx, {"wave": wave} if wave else {}, plan, phase, ids,
-                          base=base, owed=False)
+        _in_step(C, ctx, lambda: C.ask_member_pins(
+            ctx, {"wave": wave} if wave else {}, plan, phase, ids, base=base,
+            owed=False))
     except C._skill_places.PinStop as exc:
         return str(exc)
     return None
+
+
+def _in_step(C, ctx, run):
+    """`run()` as one step of the driver copy `C` - the step that owns the scratch
+    checkouts made in it (`own_checkouts`) - or bare, on a driver that has no such
+    owner."""
+    own = getattr(C, "own_checkouts", None)
+    return own(ctx, run) if own is not None else run()
 
 
 def _pin_link(target, where):
@@ -21380,9 +22333,13 @@ def _pin_checkout_cases(check, C, root):
               nested is None and denied is not None and "pin-v" in denied
               and "commit %s" % (changed_head[:12],) in denied))
           and _scratch_left(root) == left)
-    gits = [argv for argv in _record_processes(rec, "git")]
+    gits = _git_argvs(rec)
+    # An empty record where processes are owed is said as such: the recorder saw
+    # nothing, which is no count of git and no mismatch to puzzle over.
     counted = {"pins, uncut": [w for argv in gits for w in argv
-                               if w in ("add", "remove", "prune")]}
+                               if w in ("add", "remove", "prune")] if gits else
+               "NO PROCESS RECORDED (%d process events, none git): %r" % (
+                   len(_record_processes(rec)), _record_processes(rec)[:3])}
     for label, meta, wave, route in (
             ("no pins, uncut", {}, None, "session"),
             ("pins, cut", None, {"base": head, "trees": {"P1.1": root}}, "session"),
@@ -21405,7 +22362,36 @@ def _pin_checkout_cases(check, C, root):
           and counted["no pins, uncut"] == (None, 0)
           and counted["pins, cut"] == (None, 0)
           and counted["pins, subagent route"] == (None, 0))
+    _process_recorder_case(check)
     _pin_checkout_end_cases(check, C, root, world)
+
+
+def _process_recorder_case(check):
+    """THE POWER of the process recorder the git counts read: a `subprocess.Popen`
+    audit event shaped as windows raises it - the argv already joined into one
+    command line, the first word `git`, `git.exe` or a full path to it - is read
+    back as the argv it was, so a git process is counted on every platform; and a
+    process that is not git is not counted. Fed to the hook directly, so it is
+    red on any platform where a joined line reads as no git."""
+    argvs = [["git", "worktree", "add", "--detach", "C:\\Temp\\a b\\tree", "abc"],
+             ["C:\\Program Files\\Git\\cmd\\git.exe", "rev-parse", "--git-dir"],
+             ["GIT.EXE", "worktree", "remove", "--force", 'q"uote\\', ""],
+             ["python", "-c", "print('git')"]]
+    rec = _record_open()
+    try:
+        for argv in argvs:
+            _audit_hook("subprocess.Popen", (None, subprocess.list2cmdline(argv), None,
+                                             None))
+        _audit_hook("subprocess.Popen", (None, ["git", "status"], None, None))
+    finally:
+        _record_close(rec)
+    got = _git_argvs(rec)
+    check("spd31a the process recorder reads a windows-shaped Popen event - one joined "
+          "command line - back into its argv, and counts git however its first word "
+          "spells it (`git`, `git.exe`, a full path), a list-shaped event as it is, "
+          "and no process that is not git: %r" % (got,),
+          got == argvs[:3] + [["git", "status"]]
+          and _record_processes(rec)[3] == argvs[3])
 
 
 def _pin_checkout_end_cases(check, C, root, world):
@@ -21439,7 +22425,7 @@ def _pin_checkout_end_cases(check, C, root, world):
         finally:
             if real_checkout is not None:
                 C.checkout_at = real_checkout
-        early = _early_writes(rec)
+        early = _stop_changes(rec)
         for here in (tempfile.gettempdir(), root, os.path.dirname(root)):
             escaped += [os.path.join(here, n) for n in ("pwned.md",)
                         if os.path.exists(os.path.join(here, n))]
@@ -21488,6 +22474,111 @@ def _pin_checkout_end_cases(check, C, root, world):
                                     and "could not be read whole" in s
                                     for s in cross))
           and _scratch_left(root) == left)
+    _pin_step_owner_case(check, C, root, world)
+    _pin_placement_case(check, C, root, world)
+
+
+def _pin_step_owner_case(check, C, root, world):
+    """Two asks in one step read ONE checkout of the commit, and the step's own
+    finally removes it - an interrupt raised after the asks included - while a step
+    that asks nothing needing it makes none."""
+    plan, phase, head = world["plan"], world["phase"], world["head"]
+    ctx = _step_ctx(project=root, gitRoot=root, config=_WRITER_CONFIG)
+    left = _scratch_left(root)
+    seen = []
+
+    def two_asks():
+        for _ in range(2):
+            C.ask_member_pins(ctx, {}, plan, phase, ["P1.1"], base=head, owed=False)
+            seen.append(_scratch_left()[0] - left[0])
+        raise KeyboardInterrupt()
+    try:
+        _said, rec = _recorded(lambda: _in_step(C, ctx, two_asks))
+        broke, adds = "no interrupt", None
+    except KeyboardInterrupt:
+        broke = "interrupted"
+        adds = None
+    if broke == "interrupted":
+        # The record closed under the interrupt: count from a second run that ends
+        # normally, the same two asks.
+        def two_quiet():
+            for _ in range(2):
+                C.ask_member_pins(ctx, {}, plan, phase, ["P1.1"], base=head, owed=False)
+        _said, rec = _recorded(lambda: _in_step(C, ctx, two_quiet))
+        adds = len(_scratch_adds(_git_argvs(rec)))
+    check("spd34a the step owns the scratch checkout: two asks in one step make ONE "
+          "checkout of the commit and read it, it is still there for the second "
+          "ask, and the step's own finally removes it and its registration - an "
+          "interrupt raised after the asks included, which still surfaces "
+          "(interrupt, checkouts held at each ask, scratch adds of a quiet step, "
+          "left after): %r" % ((broke, seen, adds, _scratch_left(root), left),),
+          broke == "interrupted" and seen == [1, 1] and adds == 1
+          and _scratch_left(root) == left)
+
+
+def _pin_placement_case(check, C, root, world):
+    """The scratch checkout is placed by the one placement every scratch tree the
+    drive cuts takes (`scratch_holder`), which refuses a place inside a checkout
+    of the project - the repository's own, or a linked tree of it - and allows one
+    inside an unrelated repository; a base measurement is refused by the same
+    placement."""
+    plan, phase, head = world["plan"], world["phase"], world["head"]
+    linked = os.path.join(os.path.realpath(_harness.fixture_root("drive-spn-lt-")), "lt")
+    _pin_git(root, "worktree", "add", "--detach", "-q", linked, "HEAD")
+    other = os.path.realpath(_harness.fixture_root("drive-spn-other-"))
+    _pin_git(other, "init", "-q")
+    rows = {}
+    real_tmp = tempfile.tempdir
+    try:
+        for label, place in (("inside the project", os.path.join(root, "tmp-in")),
+                             ("inside a linked tree", os.path.join(linked, "tmp-in")),
+                             ("inside another repository", os.path.join(other, "tmp"))):
+            os.makedirs(place, exist_ok=True)
+            tempfile.tempdir = place
+            said, rec = _recorded(lambda: _ask_members(
+                C, root, plan, phase, ["P1.1"], "session", base=head))
+            rows[label] = ((said or "")[:600], len(_scratch_adds(_git_argvs(rec))),
+                           sorted(os.listdir(place)))
+        ctx = _step_ctx(project=root, gitRoot=root, config=_WRITER_CONFIG)
+        real = dict((n, getattr(C, n)) for n in ("code_moved", "tree_head",
+                                                  "run_verb_bounded"))
+        C.code_moved = lambda ctx_, since, now: None
+        C.tree_head = lambda ctx_, tree=None: head
+        # A base run that is not refused stops at its verb, which is not run here.
+        C.run_verb_bounded = lambda *a, **k: (1, "", "not run by this case", None)
+        try:
+            for label, place in (("base inside a linked tree", os.path.join(
+                    linked, "tmp-in")), ("base inside another repository",
+                                         os.path.join(other, "tmp"))):
+                tempfile.tempdir = place
+                said, rec = _recorded(lambda: _caught(C.measure_base, ctx, {"id": "P1"}, {
+                    "taskId": "P1.1", "runId": "r1", _evio.BASE_RED_KEY: {"head": head}}))
+                rows[label] = (str(said.get("said") if isinstance(said, dict)
+                                   else said)[:600],
+                               len([a for a in _git_argvs(rec) if "worktree" in a
+                                    and "add" in a]), sorted(os.listdir(place)))
+        finally:
+            for name, fn in real.items():
+                setattr(C, name, fn)
+    finally:
+        tempfile.tempdir = real_tmp
+        _pin_git_in(root, b"", "worktree", "remove", "--force", linked)
+        _harness.remove_tree(os.path.join(root, "tmp-in"))
+    inside = [rows[k] for k in ("inside the project", "inside a linked tree")]
+    check("spd35 the scratch checkout is placed by the one placement every scratch "
+          "tree of the drive takes, which refuses a temp directory inside the "
+          "project's checkout or a linked tree of it - a stop naming the place, no "
+          "checkout made, nothing left there - allows one inside an unrelated "
+          "repository, and places a base measurement's tree by the same rule "
+          "(said, worktree adds, left in the place): %r" % (rows,),
+          all("inside" in said and "could not be" in said and adds == 0 and left == []
+              for said, adds, left in inside)
+          and rows["inside another repository"][:2] == ("", 1)
+          and rows["inside another repository"][2] == []
+          and "inside" in rows["base inside a linked tree"][0]
+          and rows["base inside a linked tree"][1:] == (0, [])
+          and "inside" not in rows["base inside another repository"][0]
+          and rows["base inside another repository"][1:] == (1, []))
 
 
 def _pin_remedy_cases(check, C, root):
@@ -21576,6 +22667,73 @@ def _pin_remedy_cases(check, C, root):
           and "%s/.claude/skills/pin-g" % (label,) in rows["commit"]["pin-g"]
           and "drive-pin-checkout-" not in rows["commit"]["pin-g"]
           and all(one(r[n], tail) for r in rows.values() for n in names))
+    _commit_label_case(check, C)
+    _pin_outside_remedy_case(check, C, root)
+
+
+def _commit_label_case(check, C):
+    """The commit form is git's path on every platform: a stop worded over a windows
+    checkout - backslashes, a blank in the project's directory - is labelled
+    `commit <sha>/...` with `/` throughout, in the read path and in the places
+    looked in alike, a path outside the checkout untouched; the same text over a
+    posix checkout reads the same. Run with windows' separator handed in, so it is
+    red on any platform where the label keeps the OS's separator."""
+    sha = "7f4ccca2c894" + "0" * 28
+    out = {}
+    for label, sep, top in (("windows", "\\", "C:\\T\\drive-pin-checkout-x\\tree"),
+                            ("posix", "/", "/t/drive-pin-checkout-x/tree")):
+        def p(*parts, sep=sep, top=top):
+            return sep.join((top,) + parts)
+        where = p("my proj")
+        text = ("the skill pin-c ...: %s has digest d, the plan pinned e. looked in %s, "
+                "%s; nothing" % (p("my proj", ".claude", "skills", "pin-c", "SKILL.md"),
+                                 sep.join(("C:" if sep == "\\" else "", "home", "skills",
+                                           "pin-g")),
+                                 p("my proj", ".claude", "skills", "pin-g")))
+        out[label] = C.commit_label(text, top, sha, where, sep=sep) \
+            if hasattr(C, "commit_label") else "no commit_label in this driver"
+    want_read = "commit 7f4ccca2c894/my proj/.claude/skills/pin-c/SKILL.md has digest"
+    want_look = "commit 7f4ccca2c894/my proj/.claude/skills/pin-g; nothing"
+    check("spd33a the commit form of a stop names a path inside the commit with `/` on "
+          "every platform - the read path and the places looked in, a blank in the "
+          "project's directory kept, a path outside the checkout untouched: %r" % (out,),
+          all(want_read in t and want_look in t for t in out.values())
+          and "C:\\home\\skills\\pin-g" in out["windows"]
+          and "/home/skills/pin-g" in out["posix"]
+          and "drive-pin-checkout" not in "".join(out.values()))
+
+
+def _pin_outside_remedy_case(check, C, root):
+    """A project skill whose directory is a committed link to a place outside the
+    repository is loaded from that place, which no commit holds: its stop at the
+    commit keeps the reader's own remedy rather than telling a commit to change
+    what is loaded - while a project skill the commit holds is still told to
+    commit (`spd33`)."""
+    outside = os.path.realpath(_harness.fixture_root("drive-spn-outside-"))
+    _pin_skill_dir(outside, "pin-o", _PIN_BODIES["pin-a"].replace("pin-a", "pin-o"))
+    target = os.path.join(outside, ".claude", "skills", "pin-o")
+    digest = _pin_digest(target)
+    made = _pin_link(target, os.path.join(root, ".claude", "skills", "pin-o"))
+    said = None
+    if made:
+        _pin_git(root, "add", os.path.join(".claude", "skills", "pin-o"))
+        _pin_git(root, "commit", "-qm", "fixture: pin-o linked out of the repository")
+        head = _pin_git(root, "rev-parse", "HEAD").strip()
+        with open(os.path.join(target, "SKILL.md"), "a", encoding="utf-8",
+                  newline="\n") as fh:
+            fh.write("changed\n")
+        member = _step_task("P1.1", skills=["pin-o"], status="pending", startedAt=None)
+        phase = _step_phase([member])
+        _step_rig(C, phase, meta={"skillPins": {"pin-o": {"sha256": digest}}})
+        said = _ask_members(C, root, C.load_phase(None)[0], phase, ["P1.1"], "session",
+                            base=head)
+    reader = C._skill_places._STOP_REMEDY
+    check("spd39 a project skill whose directory is a committed link out of the "
+          "repository keeps the reader's own remedy at the commit - no commit "
+          "changes what is loaded - naming the place it is read from (where this "
+          "platform makes a link): %r" % ((made, said),),
+          not made or (said is not None and "pin-o" in said and reader in said
+                       and "COMMIT" not in said and outside in said))
 
 
 def _remedy_rows(said, names):

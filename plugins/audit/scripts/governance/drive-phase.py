@@ -3546,7 +3546,11 @@ def measure_base(ctx, phase, row, tree=None, placed=None, started=None,
                 "moved": True,
                 "said": "%s's base not measured: %s" % (row.get("taskId"),
                                                         moved)}
-    holder = tempfile.mkdtemp(prefix=BASE_TREE_PREFIX)
+    holder, refused = scratch_holder(ctx, BASE_TREE_PREFIX)
+    if refused is not None:
+        return {"reading": None, "kept": None, "cut": None, "measurable": True,
+                "moved": False, "said": "%s's base not measured: %s" % (
+                    row.get("taskId"), refused)}
     try:
         if placed is not None:
             placed(holder)
@@ -3637,9 +3641,6 @@ def _base_in(ctx, phase, row, head, holder, started=None,
     answered that no red step of `row` can be run again at the base
     (`base_unrunnable`)."""
     path = os.path.join(holder, "tree")
-    if _worktrees.within_tree(ctx["gitRoot"], holder):
-        return None, ("%s's base not measured: the temp directory %s is inside "
-                      "the repository" % (row.get("taskId"), holder)), None, True
     code, _out, err = carry_git(ctx["gitRoot"], [
         "worktree", "add", "--detach", "--quiet", path, head])
     if code != 0:
@@ -9560,27 +9561,135 @@ def owes_executor(ctx, state, manifest, task):
 
 
 # --- the copy of a skill a pin is asked of --------------------------------------------
+# The ctx key holding the step's scratch checkouts, `{commit: (tree, holder)}`, while
+# a step that owns them runs (`own_checkouts`).
+SCRATCH_KEY = "scratchCheckouts"
+PIN_CHECKOUT_PREFIX = "drive-pin-checkout-"
+
+
+def _git_common_of(top):
+    """The common git directory of the checkout whose top is `top` - its `.git`
+    directory, or for a linked tree the directory its `.git` file's `gitdir:` names
+    and that one's `commondir` - normalised; None when `top` holds no `.git` or it
+    cannot be read. Read off the files, with no git process."""
+    dot = os.path.join(top, ".git")
+    if os.path.isdir(dot):
+        admin = dot
+    elif os.path.isfile(dot):
+        try:
+            with open(dot, encoding="utf-8") as fh:
+                line = fh.readline()
+        except (OSError, ValueError):
+            return None
+        if not line.startswith("gitdir:"):
+            return None
+        admin = os.path.join(top, line[len("gitdir:"):].strip())
+    else:
+        return None
+    common = admin
+    try:
+        with open(os.path.join(admin, "commondir"), encoding="utf-8") as fh:
+            common = os.path.join(admin, fh.read().strip())
+    except (OSError, ValueError):
+        pass
+    return os.path.normcase(os.path.realpath(common))
+
+
+def _project_common(ctx):
+    """The common git directory of the checkout holding `ctx["gitRoot"]`, from its
+    nearest ancestor holding a `.git`; None when none does."""
+    here = os.path.realpath(ctx["gitRoot"])
+    while True:
+        common = _git_common_of(here)
+        if common is not None:
+            return common
+        up = os.path.dirname(here)
+        if up == here:
+            return None
+        here = up
+
+
+def scratch_holder(ctx, prefix):
+    """`(holder, None)` - a fresh directory named `prefix...` under the temp
+    directory, for a scratch tree the drive cuts (a base measurement's, the
+    checkout a pin at a commit is judged over) - or `(None, why)` when the temp
+    directory lies inside a checkout of the project: under the repository's own
+    top (`_worktrees.within_tree`) or under any directory whose `.git` shares the
+    project's common git directory - the main checkout or any linked tree of it.
+    THE ONE PLACEMENT every scratch tree takes; nothing is made when it refuses."""
+    place = os.path.realpath(tempfile.gettempdir())
+    mine, here = _project_common(ctx), place
+    while mine is not None:
+        if _git_common_of(here) == mine:
+            return None, ("the temp directory %s is inside %s, a checkout of the "
+                          "project's repository" % (place, here))
+        up = os.path.dirname(here)
+        if up == here:
+            break
+        here = up
+    if _worktrees.within_tree(ctx["gitRoot"], place):
+        return None, ("the temp directory %s is inside the repository %s"
+                      % (place, ctx["gitRoot"]))
+    return tempfile.mkdtemp(prefix=prefix), None
+
+
+def own_checkouts(ctx, run):
+    """`run()` as the step that owns every scratch checkout made in it: a checkout
+    of a commit is made once, by the first ask that needs it (`step_checkout`), held
+    to the step's end and removed - its registration with it - by this `finally`,
+    an interrupt included. Inside a step that already owns them, `run()` alone."""
+    if ctx.get(SCRATCH_KEY) is not None:
+        return run()
+    ctx[SCRATCH_KEY] = {}
+    try:
+        return run()
+    finally:
+        held = ctx.pop(SCRATCH_KEY, None) or {}
+        for commit in sorted(held):
+            drop_checkout(ctx, held[commit])
+
+
+def step_checkout(ctx, commit):
+    """The running step's checkout of `commit` - made now when the step holds none
+    (`checkout_at`). Raises RuntimeError outside a step that owns its checkouts:
+    one made there would have nobody to remove it."""
+    held = ctx.get(SCRATCH_KEY)
+    if held is None:
+        raise RuntimeError("a scratch checkout of %s was asked for outside a step "
+                           "that owns it (own_checkouts)" % (commit[:12],))
+    if commit not in held:
+        held[commit] = checkout_at(ctx, commit)
+    return held[commit]
+
+
 def checkout_at(ctx, commit):
     """`(tree, holder)`: a detached checkout of `commit` at `tree`, inside the
-    scratch directory `holder` under the temp directory - outside every checkout
-    of the project - made by `git worktree add --detach`, the operation that cuts
-    a member's tree. So a link (a skill directory, or `.claude/skills` itself), a
-    submodule entry, a line ending a checkout converts and a filter git runs are
+    scratch directory `holder` the one placement gives (`scratch_holder`) -
+    outside every checkout of the project - made by `git worktree add --detach`,
+    the operation that cuts a member's tree. So a link (a skill directory, or
+    `.claude/skills` itself), a submodule entry, a line ending a checkout
+    converts, and the checkout hooks and filters the repository configures, are
     whatever the member's tree will hold, and the pins are judged there by the
-    reader every other route asks. The caller removes it, its registration with
-    it, in a `finally` (`drop_checkout`).
+    reader every other route asks. The step that made it removes it
+    (`own_checkouts`).
 
-    Raises `_skill_places.PinStop` when git cannot check the commit out: a pin
-    that cannot be judged is no reason to hand the skill out. What a member's
-    tree gets AFTER git - the `.worktreeinclude` copies and the setup command
-    `task-add` runs in it - is not made here; the walk asks the tree itself once
-    it is cut, and the runner checks the copy it starts over.
+    Raises `_skill_places.PinStop` when no place outside the project can be had
+    or git cannot check the commit out: a pin that cannot be judged is no reason
+    to hand the skill out. What a member's tree gets AFTER git - the
+    `.worktreeinclude` copies and the setup command `task-add` runs in it - is not
+    made here; the walk asks the tree itself once it is cut, and the runner checks
+    the copy it starts over.
 
-    The cost is three git processes for each ask that makes one (`git worktree
-    add`, the one question's read of its admin directory, `git worktree
-    remove`) and a checkout of the whole commit, made only when the plan pins a
-    skill and a member on the session route has no tree yet."""
-    holder = tempfile.mkdtemp(prefix="drive-pin-checkout-")
+    The cost is three git processes for each step that makes one (`git worktree
+    add`, the one question's read of its admin directory, `git worktree remove`)
+    and a checkout of the whole commit, made only when a member on the session
+    route has no tree yet and names a pinned skill."""
+    holder, refused = scratch_holder(ctx, PIN_CHECKOUT_PREFIX)
+    if refused is not None:
+        raise _skill_places.PinStop(
+            "the skills of commit %s could not be checked out as the member's tree "
+            "will be cut from it: %s, so no pinned skill is handed out for it"
+            % (commit[:12], refused))
     tree = os.path.join(holder, "tree")
     try:
         code, _out, err = carry_git(ctx["gitRoot"], [
@@ -9634,11 +9743,61 @@ def pin_stop_words(exc, names, manifest, where, how):
              else [])
     if stops:
         running = _skill_places.plugin_name(plugin)
-        text = "\n".join(_copy_remedy(v, _skill_places.resolve_skill(
-            v["name"], where, home, plugin, running)["source"], how) for v in stops)
+        text = "\n".join(_stop_sentence(v, _skill_places.resolve_skill(
+            v["name"], where, home, plugin, running), how) for v in stops)
     if how[0] == "commit":
-        text = text.replace(how[2], "commit %s" % (how[1][:12],))
+        text = commit_label(text, how[2], how[1], where)
     return text
+
+
+def commit_label(text, checkout, sha, where=None, sep=None):
+    """`text` with every path under the scratch `checkout` of commit `sha` named as
+    the commit holds it - `commit <sha12>/<path>`, the path spelled with `/` on every
+    platform: a path inside a commit is git's, never the OS's (`sep` is the OS's
+    separator, `os.sep` when None). The project directory the skills were read
+    from (`where`, under the checkout) is matched whole, so a blank in it is kept;
+    below it a path runs to the first blank, comma or semicolon - no skill name
+    holds one (`_skill_places.is_skill_name`), and a file under a skill directory
+    whose name does is relabelled only up to it. THE ONE BUILDER of the commit
+    form."""
+    sep = sep or os.sep
+    seps = re.escape(sep) + ("" if sep == "/" else "/")
+    tail = r"((?:[%s][^%s\s,;]*)*)" % (seps, seps)
+    for base in ([where] if where and where.startswith(checkout) else []) + [checkout]:
+        head = "commit %s%s" % (sha[:12], base[len(checkout):].replace(sep, "/"))
+        text = re.sub(re.escape(base) + tail, lambda hit, head=head: head + hit.group(
+            1).replace(sep, "/"), text)
+    return text
+
+
+def _stop_sentence(verdict, hit, how):
+    """One stopped `verdict`'s sentence for the copy `how` names: the remedy of the
+    tier the skill `hit` loads from (`_copy_remedy`) - and for a project skill
+    read from outside that copy, the place it is read from named in place of the
+    link the copy holds."""
+    tier = _loaded_tier(hit, how)
+    words = _copy_remedy(verdict, tier, how)
+    if tier == "outside":
+        folder = os.path.dirname(hit["path"])
+        words = words.replace(folder, os.path.realpath(folder))
+    return words
+
+
+def _loaded_tier(hit, how):
+    """The tier of the skill `hit` (`_skill_places.resolve_skill`'s answer) for the
+    remedy: "project" only when its directory resolves inside the copy `how` names
+    - the checkout of a commit, or a member's tree. A project skill whose
+    directory resolves outside it (a link to a place the repository does not
+    hold) is read where it is, as a personal skill is, so no commit or tree
+    changes it."""
+    tier = hit.get("source")
+    if tier != "project" or not hit.get("path"):
+        return tier
+    copy = how[2] if how[0] == "commit" else how[1]
+    folder = os.path.realpath(os.path.dirname(hit["path"]))
+    if _worktrees.within_tree(os.path.realpath(copy), folder):
+        return tier
+    return "outside"
 
 
 def _copy_remedy(verdict, tier, how):
@@ -9646,9 +9805,10 @@ def _copy_remedy(verdict, tier, how):
     the one for the copy `tier` loads: a PROJECT skill judged at a commit is told
     to commit the restored bytes, since the member's tree is cut from the commit
     and not from the working copy; one judged in a member's tree, to restore them
-    there. A personal or plugin skill - and one found nowhere - is read where it
-    is, which no commit or tree holds, so the reader's own remedy stands. The way
-    to re-pin is the reader's, whichever copy."""
+    there. A personal or plugin skill - one found nowhere, and a project skill
+    whose directory resolves outside the copy (`_loaded_tier`'s "outside") - is
+    read where it is, which no commit or tree holds, so the reader's own remedy
+    stands. The way to re-pin is the reader's, whichever copy."""
     words = _skill_places.stop_words(verdict)
     if tier != "project":
         return words
@@ -9692,9 +9852,13 @@ def ask_member_pins(ctx, state, manifest, phase, task_ids, base=None, owed=True)
     WHICH COPY IS ASKED is the one the session will load. A session route runs a
     member in its own tree, cut from the wave's base: the tree once it exists
     (`member_project`); before it is cut, a real checkout of the commit it will
-    be cut from (`base`, else the wave's; `checkout_at`), one for every uncut
-    member of the ask and removed before it returns, so the project's working
-    copy, edited or restored and not committed, is not the copy asked. A
+    be cut from (`base`, else the wave's), the step's one checkout of that commit
+    (`step_checkout`) - made by the first ask that needs it, read by every later
+    ask of the step and removed when the step ends (`own_checkouts`; an ask made
+    outside a step owns its own) - so the project's working copy, edited or
+    restored and not committed, is not the copy asked. A member that names no
+    pinned skill - by its name, or by the directory it resolves to in the
+    project's copy (`_skill_places.covering_pins`) - needs no checkout. A
     personal or plugin skill lies outside the cut and is read where it is; the
     stop's remedy names the copy each skill's tier loads (`pin_stop_words`). A
     serial task, and every task on the subagent route, is asked of the project:
@@ -9707,8 +9871,12 @@ def ask_member_pins(ctx, state, manifest, phase, task_ids, base=None, owed=True)
     only the last read builds the command; the cost is a hash of each pinned
     skill per read, for a plan that pins, and a change between two reads still
     stops before the mark the later one guards."""
-    if _skill_places.skill_pins(manifest) is None:
+    pins = _skill_places.skill_pins(manifest)
+    if pins is None:
         return
+    if ctx.get(SCRATCH_KEY) is None:
+        return own_checkouts(ctx, lambda: ask_member_pins(
+            ctx, state, manifest, phase, task_ids, base, owed))
     by_id = _mio.tasks_by_id(manifest)
     asked = [by_id[t] for t in sorted(task_ids, key=_id_key) if t in by_id
              and (not owed or owes_executor(ctx, state, manifest, by_id[t]))]
@@ -9716,21 +9884,33 @@ def ask_member_pins(ctx, state, manifest, phase, task_ids, base=None, owed=True)
     trees = wave.get("trees") or {}
     session = writer_setting(ctx["config"])[0]
     commit = base or wave.get("base")
-    uncut = [t for t in asked if session and commit and not trees.get(t["id"])]
-    copy = checkout_at(ctx, commit) if uncut else None
-    try:
-        for task in asked:
-            tree = trees.get(task["id"]) if session else None
-            where, how = ((member_project(ctx, tree), ("tree", tree)) if tree
-                          else (member_project(ctx, copy[0]), ("commit", commit, copy[0]))
-                          if copy and task in uncut else (None, None))
-            try:
-                session_skills(ctx, task, plan=(manifest, phase), where=where, how=how)
-            except _skill_places.PinStop as exc:
-                raise _skill_places.PinStop("%s: %s" % (task["id"], exc))
-    finally:
-        if copy:
-            drop_checkout(ctx, copy)
+    uncut = [t for t in asked if session and commit and not trees.get(t["id"])
+             and names_a_pin(ctx, manifest, phase, t, pins)]
+    for task in asked:
+        tree = trees.get(task["id"]) if session else None
+        copy = step_checkout(ctx, commit) if task in uncut else None
+        where, how = ((member_project(ctx, tree), ("tree", tree)) if tree
+                      else (member_project(ctx, copy[0]), ("commit", commit, copy[0]))
+                      if copy else (None, None))
+        try:
+            session_skills(ctx, task, plan=(manifest, phase), where=where, how=how)
+        except _skill_places.PinStop as exc:
+            raise _skill_places.PinStop("%s: %s" % (task["id"], exc))
+
+
+def names_a_pin(ctx, manifest, phase, task, pins):
+    """Whether a skill `task`'s session starts with is one `pins` holds - under the
+    pin's name in any spelling (`_skill_places.unused_pins`), or resolving in the
+    project's copy to a pinned directory (`_skill_places.covering_pins`). A task
+    naming none needs no copy of a commit to be asked of."""
+    names = _areas.resolve_skills(manifest, phase, task)
+    if not names or not isinstance(pins, dict) or not pins:
+        return False
+    if len(_skill_places.unused_pins(pins, names)) < len(pins):
+        return True
+    return bool(_skill_places.covering_pins(names, pins, ctx["project"],
+                                            _claude_home.claude_home(),
+                                            _output.PLUGIN_ROOT))
 
 
 def ask_task_pins(ctx, state, manifest, phase, task):
@@ -12819,7 +12999,9 @@ def drive(ctx, answer=None, reason=None, fixes=()):
         return stop
     try:
         sweep_base_trees(ctx, state)
-        code, said = drive_locked(ctx, state, answer, reason, fixes)
+        # The step owns its scratch checkouts: one per commit, removed here.
+        code, said = own_checkouts(ctx, lambda: drive_locked(
+            ctx, state, answer, reason, fixes))
         settle_redo_pins(ctx)
     except ValueError as exc:
         code, said = E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], exc)

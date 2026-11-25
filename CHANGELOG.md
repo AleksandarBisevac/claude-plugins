@@ -49,19 +49,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   decision is pending or a dispatch is out, as it is for a usage refusal, instead of being
   given back to a second session - and an exception the drive does not word as a stop
   gives the lock back by the same rule. The routes that can stop a step are derived by a
-  case from the driver's call graph, every function that reaches a pin stop through any
-  chain of calls; each is stopped over a changed skill and compared whole before and after,
-  plan phase fields and git's refs and worktrees included, with every write the step made
-  recorded in order and a stop that came after one it did not undo failing. The validation
+  case from the driver's calls, every function that reaches a pin stop, with a call it
+  cannot resolve to one definite function counted as one that may stop; each is stopped
+  over a changed skill and compared whole before and after, plan phase fields and git's refs
+  and worktrees included, and judged by a snapshot of the whole observable state taken at
+  the moment its stop is raised, which must equal the one before the step but for the
+  stop's own lock and scratch checkout. The validation
   session's dispatch once more over a session that opened no file is counted only after its
   pins are asked. On the headless route a wave member's pin is asked of the copy its session
   loads: before its tree is cut, a real detached checkout of the commit it will be cut from,
-  made in the temp directory by `git worktree add` and removed with its registration however
-  the ask ends, judged by the same reader as every other copy; then the tree's own copy. A
+  made by `git worktree add` - at most one per commit per step, only for a member that names
+  a pinned skill, and removed with its registration when the step ends - in a temp directory
+  that is refused when it lies inside a checkout of the project, judged by the same reader
+  as every other copy; then the tree's own copy. A
   plan that pins nothing runs no git for it. The stop's remedy names the copy each stopped
   skill's tier loads: a project skill judged at the commit is told to commit the restored
   bytes, one judged in the member's tree to restore them there, and a personal or plugin
-  skill keeps the reader's own remedy - while a serial task is asked of the project it runs
+  skill, or a project skill whose directory resolves outside the repository, keeps the
+  reader's own remedy - while a serial task is asked of the project it runs
   in, and the subagent route's brief asks the project's copy. The signal line the main loop
   reads names the member that stopped a step after another was handed out.
 - **A task can record where its wall time went.** The optional task key `timing` holds

@@ -2259,7 +2259,7 @@
     {
       "id": "SG2.18-xk1",
       "title": "A pin at a commit is judged by the one reader over a real checkout of that commit, the stop routes are derived over the call graph rather than by name, and a stop's remedy names the copy its tier loads",
-      "status": "in_progress",
+      "status": "done",
       "description": "An independent review of the task before this one (the orchestrator's prompt names its file; every finding RUN unless it says by reading, probes beside it) found one high, two med and three low. This is the THIRD round of one class - a pin stop that reaches the user in a state, or with words, the code promised it would not - and the three causes are each a second copy of something that already has one owner: a second reader of skill bytes, a list of names standing in for a call graph, a remedy sentence appended to the reader's own. So the fix removes the copies; it does not add rows.\n\nWHAT THE REVIEW SHOWED.\n(1) high, a regression, fails closed - `skills_at_commit` reads a commit's skill directory from `git ls-tree`/`cat-file` and refuses what a checkout reads: a skill directory that is a committed link (`.claude/skills/x -> ../../vendor/x`) is refused, and a `.claude/skills` that is itself a link picks nothing ('no copy is found'). The pin matches; the project and a real checkout of the commit give the same digest, because `skill_digest` follows a directory link. So a plan that vendors its skills behind a link cannot run a wave on the session route at all - at the commit before, it dispatched. A submodule entry is the same root: a checkout reads an empty directory and digests it; the commit reader refuses. Probe link_probe.py L1/L2 on the real `next`, commit_probe.py c1/c6.\n(2) med - `_stop_route_functions` counts a function as a stop route only when its OWN body calls one of a fixed list of names. Planted variants: two seen, nine missed - getattr, a table of functions, a function passed as a value, a body raising the stop itself, a caller of `skills_at_commit`, `writer_argv(held=None)` spelled out, and THE shape this work exists for: `state.pop('pending'); write_state(); return dispatch(...)` (and over `resume_writer`, `validation_dispatch`). One such route exists today BY READING: `validation_step` writes `redispatched + 1` and `asked = []` and only then calls `validation_dispatch`, which can stop over a pin. PLUGIN-BUILD-GUIDE.md, CHANGELOG.md and SECURITY.md say a route added later is red by name - more than the code does.\n(3) med - `_copy_words` appends 'commit them' / 'restore in the member's own tree' to every session-route member's stop whatever the skill's tier: for a personal skill (in the claude home, which no commit or tree holds) the remedy touches nothing that is loaded; and in the commit form the reader's own 'Restore the pinned bytes there' stays, with 'there' a commit path.\n(4) low - four refusals of the commit reader have no case (the `..`/`.`/empty name check, a link to another skill's file, case-folded names, the ceilings).\n(5) low BY READING - `drive`'s `except BaseException` arm gives the lock back while a decision is pending or a dispatch is out (an uncaught OSError from `review_fix_prompt`'s prompt write gets there); the new docstring states the lock rule without that arm.\n(6) low BY READING - `_kept_state` leaves out git's own state (worktrees, branches, refs) and the PHASE-level plan fields; no route writes them before a stop today.\n\nTHE RULE TO BUILD.\nA. ONE READER OF SKILL BYTES. A pin at a commit is judged by `_skill_places.resolve_skill` + `skill_digest` - the same functions every other route asks - over a real, detached checkout of that commit in a scratch directory outside every watched tree (`git worktree add --detach`, removed in `finally` together with its registration, including on KeyboardInterrupt; or another git-native way that yields exactly what a cut tree yields - say which and why). Then links, submodules and line endings are whatever a member's tree will hold, because it is the same operation that cuts one. `skills_at_commit`'s own reading of git objects is removed, not kept beside it. One checkout per base commit per step, made only when the plan pins a skill and a member on the session route has no tree yet; ZERO git processes for a plan with no pins (held by a count). State the cost per step on a windows runner from the measured figures in the phase's notes (a worktree add measured at 123-139 ms there, 2026-11-20) rather than a new guess, and measure here twice with a gap.\nB. THE STOP ROUTES ARE DERIVED OVER THE CALL GRAPH. A function is a stop route when it can reach a pin stop - it raises the stop, or calls (transitively, through the module's own call graph) a function that does - and the table of exempt functions reduces that set, each with its reason, checked both ways as today. What a static call graph cannot see (getattr, a table of functions, a function passed as a value) is either absent from drive-phase.py - assert that, by an AST scan that fails on those shapes in any function that reaches a pin stop - or listed, and the three documents say exactly that set and no more. Then add the RUNTIME half the static half cannot be: over every scenario spd24 runs, record each write the drive makes (state file, plan, briefs, prompts, lock, trees) in the order made, and fail a scenario whose PinStop came after any write it does not undo - so a route the graph misses is still caught when a scenario reaches it. Fix `validation_step` by the rule (ask before the counter is written), and add its scenario.\nC. A STOP'S REMEDY IS THE READER'S, WITH THE COPY NAMED - NOT A SECOND SENTENCE. The verdict carries `source` (project, personal, plugin): the copy's words name the copy that tier loads (the commit and 'commit them' only for a project skill judged at a commit; the member's tree only for a project skill judged in a tree; a personal or plugin skill's own path and the reader's own remedy unchanged), and they REPLACE the reader's remedy sentence rather than following it. One function builds the sentence; every stop calls it.\nD. Lows: (4) one row per refusal of the reader's that A keeps, each with its allow twin, and the two link shapes and the submodule entry as allow cases that dispatch; (5) the except arm takes the same lock rule, or the docstring names it with the reason - choose by what is structurally correct and say why; (6) add the worktree list and the phase's plan fields to `_kept_state`, or list them under what it leaves out with the reason.\n\nALLOW CASES: a skill directory that is a committed link inside the repository; a `.claude/skills` that is a link; a skill directory holding a submodule entry; a plan with no pins (zero git processes, real `next` byte for byte as at the commit before); a matching pin on every route; a personal skill pinned and unchanged.\n\nHOW TO PROVE. Red first on the tree as it stands: the review's link_probe.py L1/L2 (the real `next`), commit_probe.py c1/c5/c6, derive_probe.py (all nine missed shapes then seen or refused by the AST scan), rv_mutations.py rows; run them from the review's directory against the worktree and copy any you extend into the task's own directory. The previous task's mutation table (its directory) still answers as owed except rows whose code A removes - name each and why. A mutation probe of your own (copies of the working tree, each mutation asserted applied, caches purged, never `git archive HEAD`), each deny with its allow twin: the scratch checkout replaced by reading the index or HEAD's tree directly again; the scratch not removed on an exception; a write moved before a stop on a route the graph does not see (the runtime half must catch it); the graph derivation made non-transitive; the copy's words appended instead of replacing; the personal tier given the commit's words. The drive suite's touched blocks alone, then the whole suite once through the sweep; the block's time before and after, twice with a gap.\n\nNOT in this task: the reader in `_skill_places.py` itself (its lows are the phase's low batch) - if A needs a change there, stop and say what and why; the verb that writes a pin; how a wave is formed.\n\nAcceptance:\n(1) A pin at a commit is judged by the same reader as every other route over a real checkout of that commit, so a committed directory link, a `.claude/skills` link and a submodule entry dispatch when the pin matches, and a plan with no pins starts no git process for it.\n(2) The stop routes are derived over the call graph, the shapes a static graph cannot see are absent from the routes or listed, and a runtime record over every stop scenario fails a write made before a stop it does not undo - with `validation_step` fixed and held.\n(3) A stop's remedy is one sentence that names the copy the skill's tier loads, replacing the reader's, for every tier.\n(4) The four reader refusals, the lock's except arm and the snapshot's coverage are each held or stated with the reason.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2286,14 +2286,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "fff769ee325c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py. RULE A: skills_at_commit (its own ls-tree/cat-file reading of git objects, the posixpath import with it) and _copy_words are removed. checkout_at(ctx, commit) makes a detached checkout with `git worktree add --detach --quiet <mkdtemp(prefix=drive-pin-checkout-)>/tree <commit>` (the operation task-add cuts a member's tree with), a git refusal being a PinStop naming the commit; drop_checkout removes it through remove_base_tree (same holder/tree layout, the one removal question tree_unsettled asked first, worktree remove --force --force, rmtree), warning if anything is left. ask_member_pins makes ONE checkout per ask only when the plan pins (skill_pins not None) and a session-route member has no tree, asks every uncut member over member_project(checkout), and drops it in a finally (KeyboardInterrupt included); it no longer calls _areas.resolve_skills itself, so its _HANDOUT_EXEMPT row is gone. Git processes per ask: 3 with pins and an uncut member (worktree add, the removal question's rev-parse --git-dir, worktree remove), 0 for a plan with no pins, a cut member or the subagent route (spd31); the commit reader it replaced started 2 (ls-tree, cat-file) and no checkout. What a member tree gets after git (.worktreeinclude copies, setup) is not in the checkout - stated in the docstring and SECURITY.md. RULE C: one builder, pin_stop_words(exc, names, manifest, where, how) + _copy_remedy(verdict, tier, how): on a stop over a commit or tree copy it re-asks _skill_places.pin_stops over the same copy and, per stopped skill, takes the tier from resolve_skill(...)['source']; a project skill gets _STOP_REMEDY REPLACED (commit: 'That copy is commit <12>'s ... Restore the pinned bytes and COMMIT them, or <reader's re-pin tail>'; tree: 'That copy is the member's own tree ... Restore the pinned bytes there, not in the project, or <tail>'); personal, plugin and not-found keep the reader's words; the checkout path is renamed 'commit <12>'. ask_pins() is the drive's one call of require_pins (session_skills, runner_review_skill), session_skills/session_hand take `how`, hand_in_tree passes ('tree', tree). RULE B fix: validation_step no longer writes redispatched/asked before validation_dispatch; validation_dispatch(again=True) counts the re-dispatch in the same write as the ids, after its pins. LOW 5: drive's except BaseException arm gives the lock back only if lock_to_give_back(E_STOPPED, ...) says so; a rule that raises (the plan read failing again) keeps the lock, as an unreadable plan does on a return, and the original exception surfaces. tests/test_drive_phase.py (written first): the hand-kept _PIN_ASKS/_PIN_STARTS/_PIN_LOCKS/_STOP_ROUTES and _stop_route_functions/_route_verdict are replaced by a call-graph derivation (_pin_graph, _pin_routes: transitive over callers, seeded by raises of PinStop and calls into modules whose functions can raise it - _pin_stop_raisers, to a fixpoint) reduced by _STOP_ROUTES_EXEMPT (each row a reason and the callers it allows; stale and via checked both ways); _pin_blind_spots fails on a route used as a value, a lambda over one, getattr on a module holding a stop, globals/vars/locals/eval/exec/__import__ and sys.modules, with exactly two listed in _PIN_BLIND_LISTED; a PEP 578 audit-hook runtime record (_audit_hook/_record_*/_early_writes) on every scenario fails a write made before the first stop and not put back; _kept_state adds every phase field and git's HEAD/refs/packed-refs/worktrees (_git_kept). spd1's verdict now accepts reaching the reader through the module's own calls (_reader_reach). dl6 now holds both halves of low 5. spn-block 44/44 and dl-block 10/10 on this tree; final tests over the committed driver: spn-block 33/44 (red: spd1, spd2, spd22, spd23, spd24, spd25b, spd28, spd30, spd31, spd32, spd33, each by assertion), dl-block 9/10 (dl6). spd24a (the record's power) and spd24b (the validation allow twin) are green there by construction. Whole suite through the sweep: 1099 cases, exit 0. Docs: the pinned-skill passage of SECURITY.md, the CHANGELOG entry and the drive/copy paragraphs of PLUGIN-BUILD-GUIDE.md state the checkout, the call-graph derivation and exactly its blind-spot set, the runtime record and the remedy tiers. Command narrowed for submit's proof: `python3 -B tests/test_drive_phase.py --selftest --stage spn-block --stage dl-block` (every case of this task is in those two blocks; about 20 s), because the whole-suite sweep does not fit the proof deadline. Orchestrator gate run once without --record: first run RED on tools/_suite.py s23 (two bare shutil.rmtree in a test fixture that builds a git repository), fixed with _harness.remove_tree; second run GATE GREEN, exit 0.",
+        "descriptive": "A pin at a commit is now judged by the one reader over a real checkout of that commit, so vendored-behind-a-link skills and submodule entries dispatch on the session route again; stop routes are derived from the call graph and backed by a runtime write record; a stop's remedy names the copy its tier loads."
       },
       "startedAt": "2026-11-25T09:50:32Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-25T11:35:42Z",
+      "verifiedBy": [
+        "spd22/spd23: the stop routes derived over the driver's call graph, the blind-spot scan, the exemption table checked both ways, and their power over planted shapes (a call by name, a lambda, getattr on the driver or the reader's module, globals(), a table, a function passed as a value, a raise of PinStop, a call of the reader's module, callers of dispatch/resume_writer/validation_dispatch that write first, writer_argv(held=None))",
+        "spd24/spd24a/spd24b: every derived route stopped through or exempt, every scenario's runtime write record clean before its stop and its kept state (phase fields and git refs/worktrees included) whole; the record's power; validation_step's re-dispatch counted only after its pins, with its allow twin",
+        "spd25b and dl6: the except arm follows the lock rule - kept while a decision is pending or a dispatch is out, or when the plan cannot be read to tell; given back otherwise; the exception surfaces",
+        "spd28/spd31: a commit judged over a real checkout - a committed directory link, a submodule entry and a nested .claude/skills link dispatch, changed vendored bytes in a commit stop; git processes per ask counted (zero for no pins, a cut member, the subagent route)",
+        "spd30/spd32: the checkout and its registration removed when git refuses a crafted commit and on KeyboardInterrupt; the reader's refusals (a SKILL.md linked to another skill's file, a name in another case) answered the same at a commit as in the project",
+        "spd33: the remedy per tier at a commit, in a member tree and through hand_in_tree - project replaced with the copy's words, personal and plugin and not-found keeping the reader's remedy, the re-pin tail once"
+      ],
       "notes": [
         {
           "at": "2026-11-25T09:50:30Z",
@@ -2377,7 +2384,40 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-25T11:20:32Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 5397000,
+            "startedAt": "2026-11-25T09:50:35Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-25T11:26:25Z.51a44c",
+            "kind": "wait",
+            "ms": 3000,
+            "startedAt": "2026-11-25T11:21:27Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-25T11:26:25Z.51a44c, ending at its startedAt",
+            "kind": "selection",
+            "ms": 23255,
+            "runId": "2026-11-25T11:26:25Z.51a44c",
+            "startedAt": "2026-11-25T11:21:30Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-25T11:26:25Z.51a44c",
+            "kind": "gate",
+            "ms": 270287,
+            "runId": "2026-11-25T11:26:25Z.51a44c",
+            "startedAt": "2026-11-25T11:21:54Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit fff769ee325c",
+            "kind": "commit",
+            "ms": 1699,
+            "startedAt": "2026-11-25T11:35:39Z"
+          }
+        ],
         "firstStartedAt": "2026-11-25T09:50:32Z"
       },
       "reviewPerTask": "signals",
@@ -2385,6 +2425,149 @@
         "runId": "2026-11-25T11:35:38Z.6f78ab",
         "status": "passed",
         "at": "2026-11-25T11:35:38Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "fff769ee325c",
+        "at": "2026-11-25T11:35:42Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-25T11:20:18Z",
+        "basis": "`python3 -B tests/test_drive_phase.py --selftest --stage spn-block --stage dl-block` in a throwaway tree at HEAD exited 1 with 12 of 54 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dl6 (house FAIL), spd1 (house FAIL), spd2 (house FAIL), spd22 (house FAIL), spd23 (house FAIL), spd24 (house FAIL), spd25b (house FAIL), spd28 (house FAIL) and 4 more: SELFTEST FAILED: 42/54 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "SG2.19-xk1",
+      "title": "A step makes at most one scratch checkout of a commit and places it outside the project, a stop is judged by the whole observable state at the moment it is raised, and a call the stop-route derivation cannot resolve counts as one that may stop",
+      "status": "in_progress",
+      "description": "An independent review of the task before this one (SG2.18-xk1; the orchestrator's prompt names the review's directory - REVIEW.md, probes/, out/; every finding RUN unless it says BY READING) found no high and no user-visible regression, and four med. This is the FOURTH round of one class: a mechanism whose documents promise more than its code holds, each time because the mechanism ENUMERATES (shapes, events, asks) where the promise is about an invariant. So this task replaces each enumeration with the invariant it stands for; it does not add rows to a list.\n\nWHAT THE REVIEW SHOWED (re-run by the orchestrator on a fresh export of fff769ee, same results).\n(1) med - two scratch checkouts per wave-opening step, not one: the asks at drive-phase.py:9920 and :9762 (via walk_wave) each make their own (cli_probe.py G1: 4 worktree adds, 2 of them drive-pin-checkout-*, 55 git processes against 49 with no pins). The task promised one checkout per base commit per step; the documents say 'per ask'; the per-step cost on a windows runner the task asked to be stated is in no document. And (low) a checkout is made for `skillPins: {}` and for pins no asked member names (E1).\n(2) med - the runtime write record does not hold what PLUGIN-BUILD-GUIDE.md and CHANGELOG.md say: a write put back after the stop is forgiven (the guide says red); writes by a child process (how verbs write the plan and git cuts trees), a directory made and left, and a chmod are not seen (record_probe.py: five GAP rows). The cause is the shape: an event log from an audit hook can only see the events it subscribes to, in this process.\n(3) med - the static derivation misses direct-call shapes the documents say it follows (derive2_probe.py: a from-import called by bare name, a function-local import, a method called on an instance, a module attribute of the driver's own name, a raise of a name bound to PinStop, operator.methodcaller/attrgetter). The cause is the shape again: a list of blind shapes the scan refuses, with everything else assumed resolved.\n(4) med - `checkout_at` (drive-phase.py:9563) has no refusal of a place inside the project, unlike `_base_in` (:3632): with TMPDIR inside the project the scratch checkout is cut there (cli_probe.py T1), while its docstring and PLUGIN-BUILD-GUIDE.md say 'outside every checkout of the project'.\nLows: (5) the checkout runs the repository's hooks and filters (H1: post-checkout ran 5 times per opening against 3 at the parent) and no document says the pin check now runs repository-configured code; (6) spd24b cannot go red alone under the old validation_step order (mut_M1); (7) BY READING `_copy_remedy` depends on `_skill_places._STOP_REMEDY` and its ', or ' text, and a project skill behind an absolute link out of the repository is told to COMMIT; (8) BY READING `remove_base_tree` keeps the directory and its registration with a warning when `tree_unsettled` answers None, while SECURITY.md says the removal happens however the ask ends.\n\nTHE RULE TO BUILD.\nA. THE STEP OWNS THE CHECKOUT. A scratch checkout of a commit is made at most once per step per commit, lazily, by the first ask that needs it - a member on the session route with no tree whose resolved skills include a pinned one - held for the rest of the step and removed when the step ends (one owner: the step's own finally, KeyboardInterrupt included), so every ask in the step reads the same copy. No pinned skill among the asked members' skills means no checkout (E1 at zero). Count it: git processes per wave-opening step with pins, before and after, on the review's G1 shape and on a no-pins plan (unchanged, byte for byte). State the per-step cost on a windows runner from the phase notes' measured worktree-add figure (123-139 ms, 2026-11-20) plus a removal figure - measured on windows by the owner if you cannot, in which case write the case and the command and say it is owed, never a guess.\nB. ONE PLACEMENT FOR EVERY TREE THE DRIVE CUTS. The scratch checkout is placed by the same function that places a base tree (or one both call), which refuses a place inside any checkout of the project; the scratch inherits that refusal rather than carrying a copy of it. Allow case: TMPDIR outside, unchanged. Deny: T1.\nC. A STOP IS JUDGED BY THE STATE AT THE MOMENT IT IS RAISED. In every stop scenario the test harness takes a snapshot of everything a step can change - the project tree including the plan, state, briefs and prompts; the trees root; the lock; git's refs, HEAD, index and worktree registrations - by kind, mode and content digest, once before the step and once at the instant PinStop is constructed (hook the constructor in the test, not a log of events), and the two must be equal except for what the scenario names as the stop's own record, each named with its reason. This sees child-process writes, a directory left, a chmod and a write put back later, because it compares states rather than listening for events. The audit hook may stay only as an aid that names which call made a difference the snapshot found; the documents then say exactly that. Every GAP row of record_probe.py becomes a case that is red on the mechanism at fff769ee and green here, each with an honest twin (a step that writes nothing before its stop).\nD. THE STATIC HALF OVER-APPROXIMATES. A function is a stop route when it can reach a pin stop; a call whose target the derivation cannot resolve to one definite function - a function of drive-phase.py, or a function of a module the derivation reads - counts as a call that may stop, unless the target is in a stated set known not to stop (builtins and named stdlib modules, each named), and a raise of anything but a name that resolves to a class counts likewise. So a shape nobody listed cannot be missed: it is over-counted, and the exemption table (checked both ways, as today) is where an over-count is answered, each row with its reason. Measure how many functions this marks on the current tree against today's derivation, and say what each new one is. Every MISSED row of derive2_probe.py becomes a case, each with an honest twin. The three documents then state the rule (resolve or count as may-stop), not a list of blind shapes.\nE. Lows: (5) say in SECURITY.md that the scratch checkout runs the repository's checkout hooks and filters exactly as a member's tree does, and why that is the faithful choice - or disable them and say why that is still faithful; choose by what is structurally correct and say which; (6) give spd24b a stop half that is red under the old order alone; (7) make the reader's remedy a public value or function of `_skill_places.py` that `_copy_remedy` calls - if that needs a change in `_skill_places.py`, stop and say what - and give a project skill whose directory resolves out of the repository the reader's own remedy; (8) state the condition in SECURITY.md or remove it, choosing by structure.\n\nALLOW CASES: a plan with no pins (zero git processes for the pin check, real `next` byte for byte as at fff769ee); pins that no asked member names; a committed directory link, a `.claude/skills` link and a submodule entry dispatching with a matching pin (as at fff769ee); every scenario of today in which a stop writes nothing.\n\nHOW TO PROVE. Red first on the tree as it stands: the review's cli_probe.py G1/T1/E1, record_probe.py, derive2_probe.py (copy any you extend into the task's own directory). A mutation probe of your own (copies of the working tree, each mutation asserted applied, caches purged, never `git archive HEAD`), each deny with its allow twin: the step's checkout made per ask again; the checkout dropped before the step's last ask; the placement refusal removed; the snapshot taken at the end of the step instead of at the stop; the snapshot blind to one part (each part: project tree, trees root, refs, worktree registrations); an unresolved call counted as not stopping; the known-not-to-stop set widened to the driver's own module. The previous task's mutation table still answers as owed except rows whose code this removes - name each and why. The drive suite's touched blocks alone, then the whole suite once through the sweep with --jobs 4; the block's time before and after, twice with a gap.\n\nNOT in this task: the reader in `_skill_places.py` (see E7); the verb that writes a pin; how a wave is formed.\n\nAcceptance:\n(1) A wave-opening step with pins makes at most one scratch checkout per commit, none when no asked member names a pinned skill, placed by the one placement that refuses a place inside the project.\n(2) In every stop scenario the observable state at the instant the stop is raised equals the state before the step, judged by a snapshot that sees child-process writes, directories, modes and writes put back.\n(3) A call the stop-route derivation cannot resolve counts as one that may stop, and the documents state that rule rather than a list of shapes.\n(4) The four lows are each held or stated with the reason.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "SECURITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a step makes at most one scratch checkout per commit, placed outside the project; a stop is judged by a snapshot of the whole observable state at the instant it is raised; an unresolved call counts as one that may stop"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-25T11:55:33Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-25T11:55:31Z",
+          "text": "it quotes SECURITY.md's reporting link text; SG2.19 edits only the pinned-skill stop passages (scratch checkout, stop routes, stop state record)",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-25T11:55:31Z",
+          "text": "it quotes SECURITY.md's 'Test-file exemption' heading; SG2.19 edits only the pinned-skill stop passages (scratch checkout, stop routes, stop state record)",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-25T11:55:31Z",
+          "text": "it quotes SECURITY.md's capability-policy sentence; SG2.19 edits only the pinned-skill stop passages (scratch checkout, stop routes, stop state record)",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-25T11:55:31Z",
+          "text": "it quotes SECURITY.md's secret-read residual; SG2.19 edits only the pinned-skill stop passages (scratch checkout, stop routes, stop state record)",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-25T11:55:31Z",
+          "text": "it quotes SECURITY.md's after-the-fact shell-write notice; SG2.19 edits only the pinned-skill stop passages (scratch checkout, stop routes, stop state record)",
+          "waives": "tests/test_hooks.py"
+        },
+        {
+          "at": "2026-11-25T11:55:31Z",
+          "text": "it quotes a SECURITY.md passage on committed paths; SG2.19 edits only the pinned-skill stop passages (scratch checkout, stop routes, stop state record)",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-25T11:55:31Z",
+          "text": "it quotes SECURITY.md's 'deliberately loud rather than silent'; SG2.19 edits only the pinned-skill stop passages (scratch checkout, stop routes, stop state record)",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-25T11:55:31Z",
+          "text": "it reads SECURITY.md's fail-mode table by its heading; SG2.19 edits only the pinned-skill stop passages (scratch checkout, stop routes, stop state record), and no row or heading of that table",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-25T11:55:31Z",
+          "text": "it quotes SECURITY.md's guard-edits fail-mode row; SG2.19 edits only the pinned-skill stop passages (scratch checkout, stop routes, stop state record)",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-25T11:55:31Z",
+          "text": "it has a section headed by SECURITY.md's path; SG2.19 renames and moves nothing",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-25T11:55:31Z",
+          "text": "it reads CHANGELOG.md's '## [Unreleased]' heading; SG2.19 adds lines under that heading and keeps it",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-25T11:55:31Z",
+          "text": "it quotes PLUGIN-BUILD-GUIDE.md's related-listing passage; SG2.19 edits only the pinned-skill stop passages (scratch checkout, stop routes, stop state record)",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-25T11:55:31Z",
+          "text": "it quotes PLUGIN-BUILD-GUIDE.md's doctor-trail passage; SG2.19 edits only the pinned-skill stop passages (scratch checkout, stop routes, stop state record)",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-25T11:55:31Z",
+          "text": "it quotes PLUGIN-BUILD-GUIDE.md's floor-guard passage; SG2.19 edits only the pinned-skill stop passages (scratch checkout, stop routes, stop state record)",
+          "waives": "tests/test__floor_guard.py"
+        },
+        {
+          "at": "2026-11-25T11:55:31Z",
+          "text": "it quotes PLUGIN-BUILD-GUIDE.md's executor-brief skills sentence; SG2.19 edits only the pinned-skill stop passages (scratch checkout, stop routes, stop state record)",
+          "waives": "tests/test__refs.py"
+        },
+        {
+          "at": "2026-11-25T11:55:31Z",
+          "text": "it reads PLUGIN-BUILD-GUIDE.md's generated module map; SG2.19 adds and moves no module",
+          "waives": "tools/lints/_deps.py"
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-25T11:55:33Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-25T13:31:42Z.b950af",
+        "status": "passed",
+        "at": "2026-11-25T13:31:42Z"
       }
     }
   ],

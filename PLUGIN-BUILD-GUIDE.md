@@ -5678,26 +5678,32 @@ by the verb - through the call the dispatch makes, then reads it back as it read
 
 **A step that stops over a pin has written nothing the next step reads - the plan and the lock
 are part of what it reads.** The routes by which a pin can stop a step are not listed here and
-not listed by hand in the suite: `tests/test_drive_phase.py` derives them from the driver's call
-graph (`spd22` - every function that reaches a raise of `PinStop`, in the driver or in a module
-it imports, through any chain of direct calls), and each is either stopped through by a scenario
+not listed by hand in the suite: `tests/test_drive_phase.py` derives them from the driver's calls
+(`spd22` - every function that reaches a raise of `PinStop`, in the driver or in a function
+another module holds that raises it, through the driver's calls, the values its parameters are
+passed, its local assignments and its returns), and each is either stopped through by a scenario
 over a changed skill or exempt with a reason in `_STOP_ROUTES_EXEMPT`, whose rows are checked
 both ways - a row no route needs, or one a scenario stops through, is stale, and a call of an
 exempt route from a function its row does not name is reported (`spd23`). Every scenario
 compares the whole kept state before and after (`spd24`: the drive's state, its briefs and
 sessions' files, the plan's task fields it reads - status, attempts, `startedAt`, notes - and
-its phase fields, git's refs and worktrees, the verbs run and the lock's holder), and runs under
-a runtime record - a PEP 578 audit hook writing down every file opened to write, renamed,
-removed, made or linked and every process started, in order - so a stop that came after a write
-it did not undo is red even when a later write put the state back (`spd24a` holds the record's
-power). A static graph cannot follow a call it cannot name: a route used as a value (kept in a
-table, passed as an argument, returned) or called inside a lambda, `getattr` on a module that
-holds a stop, `globals`, `vars`, `locals`, `eval`, `exec`, `__import__` and `sys.modules`.
-`spd22` finds each such place in the driver and is red on one `_PIN_BLIND_LISTED` does not name;
-it names a lambda over `writer_argv` passed to `open_dispatch` and `main` passed to
-`_output.terse_cli`, each with the reason it reaches no stop after a write. A route added later
-is derived, and is red by name until a scenario stops through it or a row exempts it (`spd23`
-plants each shape). The one stated exception is the lock given back when nothing is pending and
+its phase fields, git's refs and worktrees, the verbs run and the lock's holder), and is judged
+by the state at the moment its stop is raised: the project tree, the trees root, the lock and
+git's refs, HEAD, index and worktree registrations are snapshotted - kind, mode and content
+digest - before the step and at the instant `PinStop` is constructed (the constructor is hooked
+by the suite, so the driver imports nothing of it), and a stop at which they differ is red but
+for the stop's own record (`_STOP_OWN_RECORD`: the lock, the step's own scratch checkout), each
+with its reason (`spd36` holds the snapshot's power over each kind of change and each part). The
+interpreter's audit events are an aid only - they name the call behind a difference and the
+processes a step started - and no part of the verdict. THE DERIVATION OVER-APPROXIMATES: a call
+of the driver it cannot resolve to one definite function, and a raise of anything but a name
+resolving to a class, counts as one that may stop, unless its target is a builtin or a function
+of a standard module `_NOT_STOPPING_MODULES` names; an over-count is answered by a row of
+`_UNRESOLVED_EXEMPT` with its reason, checked both ways (`spd38`: taking a row out marks routes,
+a row naming a call the derivation never meets is stale), and the shapes a list once missed are
+each a route with an honest twin that is not (`spd37`). The modules other than the driver are
+read by their direct calls only. A route added later is derived, and is red by name until a
+scenario stops through it or a row exempts it (`spd23` plants each shape). The one stated exception is the lock given back when nothing is pending and
 nothing is out; an exception that shows no difference is red too. What the code does to hold it: a serial task's pins are asked before the
 task is started (`ask_task_pins`), as a wave's are before the wave is recorded
 (`ask_member_pins`, which reads each member `owes_executor` finds about to be handed its
@@ -5734,20 +5740,27 @@ checkout made by `git worktree add` - the operation that cuts the member's tree 
 directory under the temp directory, outside every checkout of the project, so a link (a skill
 directory's, or `.claude/skills` itself), a submodule entry and a converted line ending are
 whatever the member's tree will hold, and the one reader (`_skill_places.resolve_skill`,
-`skill_digest`) judges it as it judges any copy (`spd28`, `spd31`, `spd32`). One checkout serves
-every uncut member of the ask, made only when the plan pins a skill and a member on the session
-route has no tree yet, and `drop_checkout` removes it and its registration in a `finally`, by the
+`skill_digest`) judges it as it judges any copy (`spd28`, `spd31`, `spd32`). THE STEP OWNS THE
+CHECKOUT: one per commit per step (`step_checkout`), made by the first ask that needs it - a
+member on the session route with no tree yet that names a pinned skill (`names_a_pin`) - read
+by every later ask of the step, the wave's opening and its walk alike, and removed with its
+registration by the step's own `finally` (`own_checkouts`, around `drive_locked`), by the
 removal a base measurement's tree takes and after the one question every remover asks
-(`remove_base_tree`) -
-an interrupt and a commit git refuses to check out included (`spd30`); a plan that pins nothing
-starts no git for it. What the member's tree gets after git - its `.worktreeinclude` copies and
+(`remove_base_tree`) - an interrupt and a commit git refuses to check out included (`spd30`,
+`spd34`, `spd34a`); a plan that pins nothing, or a step whose members name no pinned skill,
+starts no git for it. On windows a `git worktree add` measured 123-139 ms on 2026-11-20, so the
+saving is one add and one removal per wave-opening step; the removal's own figure was not
+measured on windows and is owed. Both the checkout and a base measurement's tree are placed by
+one placement (`scratch_holder`), which refuses a temp directory inside any checkout of the
+project's repository - the main one or a linked tree - and makes nothing there (`spd35`). What the member's tree gets after git - its `.worktreeinclude` copies and
 setup command - is not in the checkout; the tree's own copy is asked once it exists. A personal
 or plugin skill lies outside the cut and is read where it is. **The stop's remedy names the copy
 each stopped skill's tier loads**, built in one place (`pin_stop_words`, `_copy_remedy`): a
 project skill judged at the commit is told to restore the bytes and commit them, one judged in a
 member's tree to restore them there, each replacing the reader's remedy rather than following
-it; a personal or plugin skill, and one found nowhere, keeps the reader's own remedy and names
-its own path, the checkout's named as the commit (`spd33`). A serial session runs in the project itself, so the project's copy is
+it; a personal or plugin skill, one found nowhere, and a project skill whose directory resolves
+outside the copy, keeps the reader's own remedy and names its own path, the checkout's named as
+the commit (`spd33`, `spd39`). A serial session runs in the project itself, so the project's copy is
 the one asked, and a working copy that differs from HEAD is neither a stop nor a warning there.
 On the subagent route the brief asks the project's copy for a serial task and a wave member alike;
 which copy a subagent's Skill tool then loads is Claude Code's, and nothing here reads it. A
