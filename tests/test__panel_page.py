@@ -799,6 +799,12 @@ def _cases(check):
           '[data-evstatus="ledger-unreadable"]' in _ev_warn
           and '[data-evstatus="dangling"]' in _ev_warn
           and M.UI_HTML.count('[data-evstatus="ledger-unreadable"]') == 1)
+    check("ev2c CONSTRUCT: a subject whose own run record cannot be read wears the "
+          "same warn ink - `unreadable` is in that group, named once, and not "
+          "left to the muted default `.st` falls to, which is the colour of an "
+          "absence: %r" % (_ev_warn,),
+          '[data-evstatus="unreadable"]' in _ev_warn
+          and M.UI_HTML.count('[data-evstatus="unreadable"]') == 1)
     check("ev3 an unrecognised verdict is NAMED rather than folded into "
           "'failed' - the schema leaves the enum open and says so, so the "
           "default arm humanises the word it did not recognise, and a run that "

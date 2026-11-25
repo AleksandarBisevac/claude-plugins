@@ -310,3 +310,155 @@ describe('renderOver draws the payload\'s copyHeadline beside the live-copy erro
     expect(texts).not.toContain('take a phase');
   });
 });
+
+// A SUBJECT WHOSE OWN RUN RECORD CANNOT BE READ. The server counts it
+// `unreadable` in `rollup.testEvidence` and lists it in `failing` with the
+// read's own sentence, because the pointer and the ledger's older run both
+// answer for an EARLIER run than the record does. The badge used to read the
+// pointer plus `evidence.runs[rid]` alone, so the row that was listed as
+// unreadable still drew `Passed` - which is the claim these cases refuse.
+//
+// The page is driven through `renderOver` with the phase opened - the roll-up is
+// read where `renderOver` holds it and handed to the detail, so a case that
+// called `ovDetail` alone would not see the wiring - and what it built is read back from
+// two recorders: every element `el()` created (the sandbox's stub elements keep
+// no children, so a pill is found by the attribute it was given) and every text
+// node.
+describe('an unreadable run record is drawn as unreadable, with its sentence', () => {
+  // What the server ships: the entry's own reason on the `failing` row, and the
+  // read's one sentence - file, subject, field and the --record step - beside
+  // the runs in `evidence.unreadablePlanSaid`.
+  const WHY = 'lastRun.at is "not-a-moment", where the writer writes a moment as '
+    + '%Y-%m-%dT%H:%M:%SZ';
+  const SAID = '1 run record(s) the plan holds could not be read, so the run each '
+    + "holds is not counted - docs/audit/phases/P1.json: task P1.1's " + WHY
+    + '; measure and record the subject again with `run-test-gate.py '
+    + 'docs/audit/audit-plan.json P1 --task P1.1 --record`';
+  const FIELDS = ['runId', 'scope', 'status', 'at', 'attempt', 'durationMs',
+    'ranTotal', 'countsBasis', 'treeMutated', 'treeBasis', 'coverage',
+    'coverageBasis', 'steps'];
+  const OLDER = ['r-old', 'task', 'passed', '2026-08-20T10:00:00Z', 1, 1500, 12,
+    'counted', 0, 'git described the tree', 1, 'the task declares files', []];
+  const pointer = { runId: 'r-old', status: 'passed', at: 'x' };
+  const task = (id) => ({ id, phaseId: 'P1', title: 'Task ' + id, status: 'done',
+    gateSource: 'task', testEvidence: pointer });
+  const lost = (over) => Object.assign({ scope: 'task', id: 'P1.1', status: 'unreadable',
+    file: 'docs/audit/phases/P1.json', field: 'lastRun.at', why: WHY }, over || {});
+
+  function draw(failing, ids, evExtra) {
+    const { ctx } = loadPanel();
+    const made = [];
+    const origCreate = ctx.document.createElement;
+    ctx.document.createElement = (tag) => {
+      const node = origCreate(tag);
+      made.push(node);
+      return node;
+    };
+    setState(ctx, {
+      manifestExists: true,
+      composition: { phases: [{ id: 'P1', status: 'merged' }],
+        tasks: (ids || ['P1.1', 'P1.2']).map(task) },
+      evidence: Object.assign({ fields: FIELDS, stepFields: ['name', 'exit', 'ran', 'durationMs', 'outcome'],
+        runs: { 'r-old': OLDER }, files: 1, unreadable: 0,
+        unreadablePlanSaid: SAID }, evExtra || {}),
+      rollup: Object.assign(baseRollup(), {
+        phases: [{ id: 'P1', title: 'One', status: 'merged', area: [], done: 2,
+          total: 2, porder: 0 }],
+        tasks: { total: 2, byStatus: { done: 2 } },
+        phaseTaskStatus: { P1: { done: 2 } },
+      }, failing === undefined ? {} : { testEvidence: { failing } }),
+    });
+    vm.runInContext("OVF.view = 'all'; OVF.open['P1'] = true;", ctx);
+    const { renderOver } = reach(ctx, ['renderOver']);
+    const texts = renderedTexts(ctx, renderOver).split('\n');
+    const words = (w) => made.filter((n) => n.getAttribute('data-evstatus') === w).length;
+    return { words, texts, ctx };
+  }
+
+  it('ou1 the listed subject draws unreadable - and its neighbour keeps the pointer\'s word', () => {
+    const out = draw([lost()]);
+    // one pill in the task's own cell and one in the phase's roll-up
+    expect(out.words('unreadable')).toBe(2);
+    // P1.2 is not listed, so it is `passed` exactly as before
+    expect(out.words('passed')).toBe(2);
+  });
+
+  it('ou2 the listed subject never draws the pointer\'s passed', () => {
+    const out = draw([lost(), lost({ id: 'P1.2' })]);
+    expect(out.words('passed')).toBe(0);
+    expect(out.words('unreadable')).toBe(3);
+  });
+
+  it('ou3 the word is one the page can say, not the humaniser\'s guess', () => {
+    const { ctx } = loadPanel();
+    const { evWord } = reach(ctx, ['evWord']);
+    expect(evWord('unreadable')).toBe('Run record unreadable');
+  });
+
+  it('ou4 the read\'s own sentence is visible text, not only a tooltip', () => {
+    const out = draw([lost()]);
+    expect(out.texts.filter((t) => t === SAID)).toHaveLength(1);
+  });
+
+  it('ou5 two unreadable subjects in one phase say it once, not once each', () => {
+    const out = draw([lost(), lost({ id: 'P1.2' })]);
+    expect(out.texts.filter((t) => t === SAID)).toHaveLength(1);
+  });
+
+  it('ou6 the phase\'s own sign-off record is a subject too, scope `phase`', () => {
+    const out = draw([lost({ scope: 'phase', id: 'P1' })]);
+    // the sign-off cell, and nothing else: both tasks keep the pointer's word
+    expect(out.words('unreadable')).toBe(1);
+    expect(out.words('passed')).toBe(3);
+    expect(out.texts.filter((t) => t === SAID)).toHaveLength(1);
+  });
+
+  it('ou7 a row listed with no sentence from the server says what the row itself knows', () => {
+    // the sentence is `unreadablePlanSaid`; a payload that lists the row and
+    // lacks it must not draw nothing - it names the file and the field
+    const out = draw([lost()], undefined, { unreadablePlanSaid: undefined });
+    const said = out.texts.filter((t) => t.includes('docs/audit/phases/P1.json'));
+    expect(said.length).toBeGreaterThan(0);
+    expect(said.join('\n')).toContain('lastRun.at');
+  });
+
+  it('ou8 the payload\'s own rows are never written to', () => {
+    // the mark rides a copy; STATE is what the next repaint reads again
+    const out = draw([lost(), lost({ scope: 'phase', id: 'P1' })]);
+    const marked = vm.runInContext(
+      "STATE.composition.tasks.concat(STATE.composition.phases)"
+      + ".filter((n) => 'evLost' in n).length", out.ctx);
+    expect(marked).toBe(0);
+  });
+
+  it('ou9 a row of another scope with the same id does not turn the task', () => {
+    // the over-fire direction on the lookup: scope is part of the key
+    const out = draw([lost({ scope: 'phase', id: 'P1.1' })]);
+    expect(out.words('unreadable')).toBe(0);
+    expect(out.words('passed')).toBe(3);
+    expect(out.texts).not.toContain(SAID);
+  });
+
+  it('ou10 a listed failure that is not an unreadable record is not drawn as one', () => {
+    const out = draw([lost({ status: 'failed' })]);
+    expect(out.words('unreadable')).toBe(0);
+    expect(out.texts).not.toContain(SAID);
+  });
+
+  it('ou11 a payload with no testEvidence rollup, or an empty list, draws what it drew', () => {
+    for (const failing of [undefined, []]) {
+      const out = draw(failing);
+      expect(out.words('unreadable')).toBe(0);
+      expect(out.words('passed')).toBe(3);
+    }
+  });
+
+  it('ou12 a subject whose id is an Object.prototype name is a subject, not a property', () => {
+    // a lookup built as a plain object answers `constructor` for a task that
+    // was never listed, which would draw it unreadable
+    const out = draw([lost({ id: 'P1.1' })], ['constructor', '__proto__', 'P1.1']);
+    // P1.1: its cell and the roll-up chip; the other two: two cells and one chip
+    expect(out.words('unreadable')).toBe(2);
+    expect(out.words('passed')).toBe(3);
+  });
+});

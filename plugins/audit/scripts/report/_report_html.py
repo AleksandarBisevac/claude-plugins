@@ -429,6 +429,15 @@ TEV_RUN_STATUSES = ("passed", "failed", "gate-mutated", "no-checks",
 # EXCUSES - work finished before the recorder existed - and until they had a word
 # of their own the surface said `No evidence` on every one of them while the gate
 # reported green. Excused and neglected are not one fact.
+#
+# `unreadable` IS NOT A RUN'S STATUS. It is the word of a subject whose own run
+# record the plan holds and cannot read, so no run answers for it and the
+# pointer's cached `passed` is an older run's. The key is `_status_facts`'s,
+# spelled here because the two files are layer-mates and `tests/test__report_html.py`
+# holds the spellings equal; its words come from `_ui_theme.EVIDENCE_WORD`, the
+# one table the panel's `label()` reads too.
+TEV_UNREADABLE = "unreadable"
+
 TEV_LABELS = {
     "passed": "Passed",
     "failed": "Failed",
@@ -454,6 +463,7 @@ TEV_LABELS = {
     # whether the ledger holds that run is unknown - "without evidence" would be
     # a claim about a ledger nobody managed to read.
     "ledger-unreadable": "Ledger unreadable",
+    TEV_UNREADABLE: _theme.EVIDENCE_WORD[TEV_UNREADABLE],
 }
 
 # Which badge key each of `_status_facts.evidence_gap`'s classes renders as.
@@ -506,9 +516,13 @@ TEV_FLAG_LABELS = {
 #
 # `ledger-unreadable` HEADS THE TAIL, ahead of `dangling`: the read failing is
 # what a reader has to repair before any pointer below it can be judged at all.
+# `unreadable` stands ahead of it: one subject's own record being unreadable is
+# the same kind of repair, narrower, and a record nobody can read signs nothing
+# off (`_status_facts.test_evidence_summary` lists it in `failing`).
 TEV_ORDER = ("passed", "failed", "gate-mutated", "no-checks", "timed-out",
-             "cancelled", "could-not-run", "empty-gate", "ledger-unreadable",
-             "dangling", "undated", "no-evidence", "before-recording", "no-gate")
+             "cancelled", "could-not-run", "empty-gate", TEV_UNREADABLE,
+             "ledger-unreadable", "dangling", "undated", "no-evidence",
+             "before-recording", "no-gate")
 
 _TEV_WHY = {
     "no-gate": "this task declares no tests.gate and its phase declares no "
@@ -777,11 +791,25 @@ def _tev_marks(view):
     return _tev_mark_spans(view.get("flags"))
 
 
+def _tev_note(view):
+    """The read's own sentence for a subject whose run record cannot be read, as
+    text on the page - or "" for every other view.
+
+    THE BADGE'S TITLE HOLDS THE SAME SENTENCE AND IT IS NOT ENOUGH. A tooltip is
+    reached by a pointer, never by a printed copy or a reader who does not hover,
+    and the sentence is the only thing on the row that says which file to open and
+    which step gets out. Every other view says nothing here, so a plan whose
+    records all read renders byte for byte as before."""
+    if not isinstance(view, dict) or view.get("key") != TEV_UNREADABLE:
+        return ""
+    return ('<span class="tevnote">%s</span>' % e(view.get("why") or ""))
+
+
 def _tev_cell(view):
     """The compact row's cell: the badge, then whatever the run also noticed."""
     if not view:
         return '<span class="muted">—</span>'
-    return _tev_badge(view) + _tev_marks(view)
+    return _tev_badge(view) + _tev_marks(view) + _tev_note(view)
 
 
 def tev_bug_view(bug, tasks):
@@ -816,8 +844,8 @@ def _tev_bug_cell(bug, tasks):
     view, why = tev_bug_view(bug, tasks)
     if view is None:
         return '<span class="muted">%s</span>' % e(why)
-    return ('%s%s <span class="muted">via %s</span>'
-            % (_tev_badge(view), _tev_marks(view), e(why)))
+    return ('%s%s <span class="muted">via %s</span>%s'
+            % (_tev_badge(view), _tev_marks(view), e(why), _tev_note(view)))
 
 
 def _tev_checks_text(row):
@@ -1132,12 +1160,13 @@ def _tev_phase_marks(entry):
         # Another phase's run, and the label says whose before the badge does.
         out += ('<span class="ptev" title="the run of the group gate %s carried, '
                 'which graded this phase too">sign-off (graded by %s\'s run) '
-                '%s%s</span>' % (e(own["gradedBy"]), e(own["gradedBy"]),
-                                 _tev_badge(own), _tev_marks(own)))
+                '%s%s%s</span>' % (e(own["gradedBy"]), e(own["gradedBy"]),
+                                   _tev_badge(own), _tev_marks(own),
+                                   _tev_note(own)))
     elif own:
         out += ('<span class="ptev" title="the run the gate this phase signs '
-                'off with last recorded">sign-off %s%s</span>'
-                % (_tev_badge(own), _tev_marks(own)))
+                'off with last recorded">sign-off %s%s%s</span>'
+                % (_tev_badge(own), _tev_marks(own), _tev_note(own)))
     for item in (own or {}).get("acceptedCommits") or []:
         out += ('<span class="ptev" title="a commit on the group\'s branch no task '
                 'records, taken into its review at sign-off">accepted %s: %s</span>'

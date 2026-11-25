@@ -51,13 +51,18 @@
    files it was grading, and that repair is the gate's. The grey below is the
    other wrong answer, because grey means "absence of evidence is not a colour"
    and this is a finding rather than an absence. Urgency rides on `TEV_ORDER`
-   instead: hue carries the class, order carries the ranking. */
+   instead: hue carries the class, order carries the ranking.
+   `unreadable` is the subject whose OWN run record cannot be read: no run
+   answers for it, so it is not a verdict, and the pointer's cached word is an
+   older run's. It wears the amber of `ledger-unreadable` for the same reason —
+   somebody has to go and repair a file — and not the grey of an absence. */
 :where(.chip,.tevn)[data-tev="gate-mutated"],
 :where(.chip,.tevn)[data-tev="no-checks"],
 :where(.chip,.tevn)[data-tev="timed-out"],
 :where(.chip,.tevn)[data-tev="could-not-run"],
 :where(.chip,.tevn)[data-tev="undated"],
 :where(.chip,.tevn)[data-tev="ledger-unreadable"],
+:where(.chip,.tevn)[data-tev="unreadable"],
 :where(.chip,.tevn)[data-tev="dangling"]{--st:var(--st-prog);--st-ink:var(--st-prog-ink)}
 :where(.chip,.tevn)[data-tev="cancelled"]{--st:var(--st-cancelled);
   --st-ink:var(--st-cancelled-ink)}
@@ -104,3 +109,9 @@
    renderer does not emit. */
 .ptev[data-fullrun]{white-space:normal}
 .tevcell{line-height:1.8}
+/* The read's own sentence for a record that cannot be read, drawn under its
+   badge. It names a file and a command, so it breaks anywhere rather than widen
+   the cell, and it is a sentence rather than a mark, so it wraps whatever the
+   nowrap on `.ptev` says. */
+.tevnote{display:block;max-width:34rem;font-size:.76rem;font-weight:400;
+  line-height:1.4;color:var(--muted);white-space:normal;overflow-wrap:anywhere}

@@ -373,6 +373,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   (`TEV_LABELS`, the badge CSS, `EVWORD`), and neither shows the reader's sentence as text on
   the page - it is in the badge's tooltip in the report and in the state payload for the
   panel. A plan whose records all read renders, and serves its payload, byte for byte as before.
+- **The Overview and the report page draw a subject whose own run record cannot be read as
+  unreadable, and say why in text on the page.** Both pages still showed the pointer's `passed`
+  or the generic fallback for it: the panel's badge read the pointer and the older run the
+  ledger holds, and the report's evidence cell kept the read's sentence in the badge's tooltip
+  alone. The panel's Overview now reads the roll-up's `testEvidence.failing` rows the status
+  facts call `unreadable` and gives the subject's badge, the phase's roll-up count and the
+  sign-off line that word, with the read's own sentence (`evidence.unreadablePlanSaid`: file,
+  subject, field and the `--record` step) once in the phase's detail; the report's cell, the
+  bug row of the task that fixed it and the phase's sign-off mark carry the same sentence as
+  text under the badge, and the badge wears the amber of `ledger-unreadable` rather than the
+  grey of an absence. The word is one row, `_ui_theme.EVIDENCE_WORD` (`Run record
+  unreadable`): the report's `TEV_LABELS` takes it from there, the panel's `label()` reads it
+  out of `LABELS`, and `test__panel_page.py` holds the panel's `EVWORD` equal to the report's
+  words. The panel's pill wears the same warn tint as `ledger-unreadable`, not the muted ink of
+  an absence. A plan whose records all read renders the same page body and Markdown as before;
+  the report's inline stylesheet gains one selector and the `.tevnote` rule, so the committed
+  rendered pages carry that difference.
 - **A run record merges as one value, so a merge never reads a red back as passed.** The plan's
   merge driver merged a run record field by field: with a red on the base, a green recorded on
   one branch and a newer red on the other, it conflicted on the run id, the moment and the

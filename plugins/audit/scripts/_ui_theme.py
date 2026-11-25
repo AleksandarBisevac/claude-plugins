@@ -312,10 +312,18 @@ TESTS_MODE = {
     "gate-only": "Gate only",
 }
 USAGE_BUCKET = {"--": UNCATEGORIZED, "unattributed": UNCATEGORIZED}
+# The test-evidence word with no run behind it to name. A subject whose OWN run
+# record cannot be read has no verdict to speak: the pointer and the ledger
+# answer for an older run, so the one thing the page may say is that the record
+# is the thing it could not read. The word is the status facts' (`unreadable`);
+# the report's `TEV_LABELS` takes it from here and the panel's `label()` reads
+# it out of `LABELS`, so neither surface can word it for itself.
+EVIDENCE_WORD = {"unreadable": "Run record unreadable"}
 RISK = {"low": "Low", "med": "Medium", "high": "High"}
 
 ALL = {"status": STATUS, "bugStatus": BUG_STATUS, "testsMode": TESTS_MODE,
-       "risk": RISK, "gateTier": GATE_TIER, "usageBucket": USAGE_BUCKET}
+       "risk": RISK, "gateTier": GATE_TIER, "usageBucket": USAGE_BUCKET,
+       "evidence": EVIDENCE_WORD}
 
 # One flat map for the surfaces that render statuses and bug statuses in the same
 # table cell. The two disagree on nothing: `in_progress` reads the same either way.
@@ -323,6 +331,7 @@ LABELS = dict(STATUS)
 LABELS.update(BUG_STATUS)
 # ...and the usage bucket, which every surface renders in the same tables.
 LABELS.update(USAGE_BUCKET)
+LABELS.update(EVIDENCE_WORD)
 
 
 def label(value, mapping=None):

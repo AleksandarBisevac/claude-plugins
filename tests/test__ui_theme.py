@@ -408,6 +408,25 @@ def _cases(check):
           M.label(None) == "" and M.label("") == "")
     check("the flat map covers task AND bug statuses",
           set(M.STATUS) <= set(M.LABELS) and set(M.BUG_STATUS) <= set(M.LABELS))
+    # THE WORD OF A SUBJECT WHOSE OWN RUN RECORD CANNOT BE READ. One table
+    # (`EVIDENCE_WORD`), folded into the flat map both surfaces read - the
+    # report through `label()`, the panel through the map substituted into its
+    # page - so neither can word it for itself. Counted, not merely found: the
+    # humaniser answers `Unreadable` for any key it has no row for, which is the
+    # reading this row exists to replace.
+    check("ev-w1 the evidence word `unreadable` is one row, in the flat map, and "
+          "reads as the table's words and not the humaniser's guess: %r"
+          % (M.label("unreadable"),),
+          M.EVIDENCE_WORD == {"unreadable": "Run record unreadable"}
+          and M.LABELS.get("unreadable") == M.EVIDENCE_WORD["unreadable"]
+          and M.label("unreadable") == "Run record unreadable"
+          and M.label("unreadable") != M.label("unreadable-", {}))
+    check("ev-w2 ...and it adds no other key to the flat map: the statuses, the "
+          "bug statuses and the usage bucket keep their words, and the word is "
+          "not a status or a bug status (the filter chips compare those)",
+          set(M.LABELS) == (set(M.STATUS) | set(M.BUG_STATUS)
+                            | set(M.USAGE_BUCKET) | {"unreadable"})
+          and "unreadable" not in M.STATUS and "unreadable" not in M.BUG_STATUS)
     check("ua2 mutation proof: the same isfile test says NO to a name that is "
           "not in ui/, so the all() above is a result rather than a vacuous "
           "truth over an empty or wrong directory",

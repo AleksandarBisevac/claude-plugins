@@ -1,0 +1,50 @@
+{
+  "gates": {
+    "run-test-gate --own": "pass",
+    "npx vitest run": "pass",
+    "sweep-selftests (10-file wide list)": "pass",
+    "ruff": "pass",
+    "vermin": "pass",
+    "check-rendered-artifacts --before-commit": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-25T17:06:59Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__report_html.py` in a throwaway tree at HEAD exited 1 with 3 of 186 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - css-ur CONSTRUCT: a subject whose own run record cannot be read is TINTED - `unreadable` sits in the same amber group, and is named exactly once in the stylesheet - not left to the `.chip` default grey, which is the colour of an absence: ':where(.chip,.tevn)[data-tev=\"gate-mutated\"],\\n:where(.chip,.tevn)[data-tev=\"no-checks\"],\\n:where(.chip,.tevn)[data-tev=\"timed-out\"],\\n:where(.chip,.tevn)[data-tev=\"could-not-run\"],\\n:where(.chip,.tevn)[data-tev=\"undated\"],\\n:where(.chip,.tevn)[data-tev=\"ledger-unreadable\"],\\n:where(.chip,.tevn)[data-tev=\"dangling\"]' (house FAIL) and 2 more: SELFTEST FAILED: 182/186 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "An unreadable run record is drawn as unreadable on both pages. Panel (overview.js): renderOver reads rollup.testEvidence.failing rows with status unreadable and hands them to ovDetail; evMarkLost marks the matching task and phase rows (copies, payload untouched); evState answers key unreadable before reading the pointer, so badge, roll-up count and sign-off line agree; evidence.unreadablePlanSaid is shown once per phase detail (row facts when absent); EVWORD/EVORDER entries; status-colours.css puts unreadable in the warn group. Report (_report_html.py): TEV_UNREADABLE, TEV_LABELS/TEV_ORDER entries, _tev_note draws the read's sentence as escaped visible text in the cell, bug cell and phase marks; badges.css amber group plus .tevnote. One label row _ui_theme.EVIDENCE_WORD (Run record unreadable) in LABELS. Tests: overview-outcome.test.mjs ou1-ou12 (38 passed), test__report_html uv1-uv8 and css-ur (189/189), test__ui_theme ev-w1/ev-w2 (80/80), test__panel_page ev2c (red on a scratch copy without the selector). Mutation probes on a scratch copy: 11 vitest and 10 python mutants all red. Rendered followers regenerated (check-rendered-artifacts green); screenshots re-shot by the orchestrator. Plain report/panel body and Markdown byte-identical for plans with no unreadable record; only the inline stylesheet differs. Dependants: part list of _panel_ui unchanged; no helper-name collisions in ui/; Markdown twin uses the key so unchanged; test__panel_page pins ev1/ev10c/ev14/ev15/ps1-3 kept by leaving the pinned signatures and reading the roll-up in renderOver's existing alias.",
+    "descriptive": "The Overview and the report show a subject whose run record cannot be read as 'Run record unreadable' in the warn tint, with the read's sentence as visible text."
+  },
+  "testsAdded": [
+    "vitest: a subject the rollup lists as unreadable draws the unreadable badge, never the pointer's passed (12 cases incl. scope, status, prototype-name ids, once-per-phase sentence, payload not written)",
+    "report: the evidence cell of an unreadable record carries the read's sentence as visible text, the label and the amber tint (uv1-uv8, css-ur)",
+    "ui_theme: EVIDENCE_WORD is one row in LABELS (ev-w1, ev-w2)",
+    "panel page: unreadable sits in the warn group (ev2c)"
+  ],
+  "casesAdded": [
+    [
+      "ou1",
+      "ou2",
+      "ou3",
+      "ou4",
+      "ou5",
+      "ou6",
+      "ou7",
+      "ou8",
+      "ou9",
+      "ou10",
+      "ou11",
+      "ou12"
+    ],
+    [
+      "uv1",
+      "css-ur"
+    ]
+  ],
+  "claims": "claims:\n1 _report_html.py _tev_note and its four call sites; overview.js evMarkLost/evState/evLostNote; the CHANGELOG bullet claims only what these do\n2 11 vitest and 10 python mutants on a scratch copy all red (ou8 and uv8 added after two survived); ev2c red with the selector removed; allow cases uv4, ou9-ou11 stay green\n3 class is a surface drawing a word from the pointer: only overview.js calls evState; report draws through _tev_badge; panel tint and followers covered after scope widening\n4 n/a - no rule to an agent\n5 byte-for-byte render measured once per side back to back\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:11978b7a6683934f019f38deedb873e3669fd94a5b2ac3c5853bc5cfd29d429f\",\"dirtyDigest\":\"sha256:a9ebe021979230e0da2d301f9a29cc1e4559e7078abd4f0975d89bc15c534e7c\",\"dirtyPaths\":null,\"head\":\"98ae4b82\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"docs/demo-large.html\",\"docs/index.html\",\"docs/screenshots/areas.png\",\"docs/screenshots/authors.png\",\"docs/screenshots/captured-at.json\",\"docs/screenshots/dark.png\",\"docs/screenshots/expanded.png\",\"docs/screenshots/filtered.png\",\"docs/screenshots/filters.png\",\"docs/screenshots/mobile.png\",\"docs/screenshots/overview.png\",\"docs/screenshots/panel-appearance.png\",\"docs/screenshots/panel-blocks.png\",\"docs/screenshots/panel-composition-expanded.png\",\"docs/screenshots/panel-composition.png\",\"docs/screenshots/panel-confirm.png\",\"docs/screenshots/panel-dark.png\",\"docs/screenshots/panel-gate.png\",\"docs/screenshots/panel-guards.png\",\"docs/screenshots/panel-help.png\",\"docs/screenshots/panel-mobile.png\",\"docs/screenshots/panel-monthly.png\",\"docs/screenshots/panel-overview.png\",\"docs/screenshots/panel-person.png\",\"docs/screenshots/panel-policy-expanded.png\",\"docs/screenshots/panel-policy.png\",\"docs/screenshots/panel-proposals.png\",\"docs/screenshots/panel-usage.png\",\"examples/acme-store/acme-store-audit.html\",\"examples/acme-store/acme-store-audit.md\",\"plugins/audit/scripts/_ui_theme.py\",\"plugins/audit/scripts/report/_report_html.py\",\"plugins/audit/scripts/ui/panel-css/status-colours.css\",\"plugins/audit/scripts/ui/panel/overview.js\",\"plugins/audit/scripts/ui/report-css/badges.css\",\"tests/test__panel_page.py\",\"tests/test__report_html.py\",\"tests/test__ui_theme.py\",\"tools/ui-tests/overview-outcome.test.mjs\"],\"scopeDigest\":\"sha256:8ed4561b5c9caa6bdf3ae15ae09620261f00f885028daf3abb29c768f7ad7e1c\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

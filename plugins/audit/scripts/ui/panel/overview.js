@@ -355,7 +355,8 @@ const EVWORD={passed:'Passed',failed:'Failed',
  'timed-out':'Timed out',cancelled:'Cancelled','could-not-run':'Could not run',
  'empty-gate':'Empty gate',none:'No evidence','no-gate':'No gate configured',
  'before-recording':'Before recording',undated:'Completion undated',
- dangling:'Pointer without evidence','ledger-unreadable':'Ledger unreadable'};
+ dangling:'Pointer without evidence','ledger-unreadable':'Ledger unreadable',
+ unreadable:'Run record unreadable'};
 /**
  * @type {string} the class `_status_facts.evidence_gap` answers with for work
  * that finished before this plan could record anything. Spelled here because
@@ -364,6 +365,15 @@ const EVWORD={passed:'Passed',failed:'Failed',
  * so the two cannot drift into two vocabularies.
  */
 const EVGAP_BEFORE='beforeBoundary';
+/**
+ * @type {string} the word of a subject whose OWN run record the plan holds and
+ * cannot read: no run answers for it, so neither the pointer's cached verdict
+ * nor an older run in the ledger may speak. It is `_status_facts`'s
+ * `UNREADABLE_EVIDENCE`, spelled here because only the payload crosses from
+ * Python; `EVWORD` carries its words, held equal to the report's by
+ * `test__panel_page.py`.
+ */
+const EVUNREADABLE='unreadable';
 /**
  * @type {string} ...and for work the plan calls done without saying WHEN, which
  * cannot be placed against the boundary at all. `sinceBoundary` needs no
@@ -384,8 +394,8 @@ const EVGAP_UNDATED='undated';
  * most urgent thing on this page after a red suite.
  */
 const EVORDER=['failed','gate-mutated','could-not-run','timed-out','cancelled',
- 'no-checks','ledger-unreadable','dangling','undated','empty-gate','none',
- 'before-recording','no-gate','passed'];
+ 'no-checks','unreadable','ledger-unreadable','dangling','undated','empty-gate',
+ 'none','before-recording','no-gate','passed'];
 /**
  * The word for a verdict.
  * @param {string} k - a verdict key, from the ledger or from evState
@@ -437,6 +447,77 @@ function evReadNote(ev){
    +'reached this page')+' - whether it holds this run is unknown, so this is not '
    +'a missing record.';}
 /**
+ * The subjects the server lists as having a run record it cannot read.
+ *
+ * Read off the roll-up's `testEvidence.failing` - handed in, so this stays a
+ * function of its argument - where `_status_facts` puts them under the word
+ * `unreadable` with the record's `file`, `field` and reason. The
+ * pointer on the composition row and the run the ledger holds for it answer for
+ * an OLDER run than the record does, so neither can say whether the subject
+ * passed; this list is the only place the page learns it cannot be said.
+ * @param {{testEvidence: (object|undefined)}} rollup - the payload's roll-up block
+ * @returns {Array<{scope: string, id: string, file: (string|undefined),
+ *   field: (string|undefined), why: (string|undefined)}>} empty for a payload
+ *   with no roll-up, no `testEvidence` block or nothing listed - the plan whose
+ *   records all read, drawn exactly as before
+ */
+function evLostRows(rollup){
+ const te=(rollup||{}).testEvidence;
+ const failing=te&&Array.isArray(te.failing)?te.failing:[];
+ return failing.filter(r=>r&&typeof r==='object'&&r.status===EVUNREADABLE);}
+/**
+ * The listed record of one subject.
+ * @param {Array<object>} rows - `evLostRows(roll)`
+ * @param {string} scope - 'task' or 'phase': an id is only unique inside one
+ * @param {string} id - the subject's id
+ * @returns {object|null} null when the subject's record reads, or when there is
+ *   no id to ask about. An array search rather than an id-keyed object, so an
+ *   id spelled `constructor` is a subject and not an inherited property
+ */
+function evLostFor(rows,scope,id){
+ if(typeof id!=='string'||!id)return null;
+ return (rows||[]).find(r=>r.scope===scope&&r.id===id)||null;}
+/**
+ * A composition row carrying its subject's unreadable record, when it has one.
+ * @param {object} node - the composition row of a task or a phase
+ * @param {string} scope - 'task' or 'phase'
+ * @param {Array<object>} rows - `evLostRows`' answer
+ * @returns {object} `node` itself when its record reads - the same object, so a
+ *   plan whose records all read draws exactly as before - otherwise a copy with
+ *   `evLost` set; the payload's row is never written to
+ */
+function evMarkLost(node,scope,rows){
+ const lost=evLostFor(rows,scope,node&&node.id);
+ return lost?Object.assign({},node,{evLost:lost}):node;}
+/**
+ * Where a listed record is, and what is wrong with it, in the row's own words.
+ * @param {{file: (string|undefined), field: (string|undefined),
+ *   why: (string|undefined)}} lost - one `evLostRows(roll)` entry
+ * @returns {string} 'file: field - reason', each part only when the row has it
+ */
+function evLostWhere(lost){
+ const at=[lost.file,lost.field].filter(x=>typeof x==='string'&&x).join(': ');
+ const why=typeof lost.why==='string'&&lost.why?lost.why:'';
+ return at+(at&&why?' - ':'')+why;}
+/**
+ * The read's sentence for the unreadable subjects of one phase, as page text.
+ *
+ * `evidence.unreadablePlanSaid` is the one sentence every reader prints for the
+ * unreadable records - file, subject, field, and the command that records the
+ * subject again - so it is shown as it arrived and not recomposed here. A
+ * payload that lists the rows and carries no sentence says what the rows
+ * themselves know, which is less and says so by naming the file and the field.
+ * @param {Array<object>} lost - the phase's own and its tasks' listed records
+ * @param {{unreadablePlanSaid: (string|undefined)}} ev - `STATE.evidence`
+ * @param {string} phaseId - what the line is a note ON
+ * @returns {HTMLDivElement}
+ */
+function evLostNote(lost,ev,phaseId){
+ const said=ev&&typeof ev.unreadablePlanSaid==='string'?ev.unreadablePlanSaid:'';
+ return el('div',{class:'evunread mut small','data-evunreadable':phaseId},
+   said||('A run record the plan holds cannot be read, so no verdict is drawn for it: '
+     +lost.map(evLostWhere).join('; ')+'.'));}
+/**
  * What one subject's test evidence amounts to — as facts, not as a rendered cell.
  *
  * SEVERAL ANSWERS, AND THEY ARE NOT ONE GREY BLOB. No gate declared anywhere is a
@@ -455,8 +536,10 @@ function evReadNote(ev){
  * would drift in is the silent one: a page that excuses more than the gate does
  * reads as green while the build is red.
  * @param {{testEvidence: *, gateSource: (string|null|undefined),
- *   evidenceGap: (string|null|undefined)}} node - the composition row for a
- *   task or a phase
+ *   evidenceGap: (string|null|undefined), evLost: (object|undefined)}} node - the
+ *   composition row for a task or a phase. `evLost` is `evMarkLost`'s mark: when
+ *   a row carries one it answers BEFORE the pointer is read, because the record
+ *   is the subject's own newest run and the pointer and the ledger's run are older
  * @param {{runs: (Object<string, Array<*>>|undefined), fields: (string[]|undefined),
  *   files: (number|null|undefined), unreadable: (number|null|undefined),
  *   readError: (object|null|undefined)}} ev - `STATE.evidence`; the counts are
@@ -470,6 +553,11 @@ function evReadNote(ev){
  */
 function evState(node,ev,basis){
  const row=node||{},src=row.gateSource;
+ if(row.evLost){
+  const where=evLostWhere(row.evLost);
+  return {key:EVUNREADABLE,run:null,
+   why:'the run record the plan holds for this subject cannot be read'
+     +(where?' ('+where+')':'')+', so no verdict is drawn for it.'};}
  // A block with no runId points at nothing, so it is read as no block at all -
  // `_report_html.tev_pointer`'s reading, so the two surfaces give one word.
  const block=row.testEvidence,pointer=(block&&typeof block==='object'
@@ -783,7 +871,14 @@ function evFullRunLine(cph){
  *   sentence saying so rather than an empty table
  */
 function ovDetail(p){
- const tasks=((STATE.composition||{}).tasks||[]).filter(t=>t.phaseId===p.id);
+ // THE RECORDS THE SERVER LISTS AS UNREADABLE arrive on `p`, set by `phaseRow`
+ // where the roll-up is already in hand (`evLostRows`). A subject among them
+ // carries `evLost` from here on, so `evState` - and with it the badge, the
+ // roll-up count and the sign-off line - answers `unreadable` without any of
+ // them learning where the list came from.
+ const lostRows=Array.isArray(p.evLostRows)?p.evLostRows:[];
+ const tasks=((STATE.composition||{}).tasks||[]).filter(t=>t.phaseId===p.id)
+   .map(t=>evMarkLost(t,'task',lostRows));
  const ev=STATE.evidence||{};
  // The boundary's own sentence, read ONCE here and handed down. It is the same
  // block `/audit:status --gate` reads, carried on the rollup rather than copied
@@ -793,13 +888,17 @@ function ovDetail(p){
  // pointer and the gate. Looked up rather than assumed present: a phase the
  // rollup knows and the composition does not gets the same honest "no evidence"
  // as one that has never been run.
- const cph=((STATE.composition||{}).phases||[]).find(x=>x.id===p.id)||{};
+ const cph=evMarkLost(((STATE.composition||{}).phases||[]).find(x=>x.id===p.id)
+   ||{id:p.id},'phase',lostRows);
  const box=el('div',{class:'ovdetail','data-ovdetail':p.id});
  if(p.desiredOutcome)box.append(el('div',{class:'mut small','data-ovpurpose':p.id},
    'Desired: '+p.desiredOutcome));
  // BOTH, LABELLED APART. The phase's own sign-off run and the roll-up over its
  // tasks measure different things over different files, and a reader shown one
  // of them alone would take it for the other.
+ // The read's sentence is said once for the phase, not once per row.
+ const lostHere=[cph].concat(tasks).map(n=>n.evLost).filter(Boolean);
+ if(lostHere.length)box.append(evLostNote(lostHere,ev,p.id));
  const pcell=evCell(p.id,cph,ev,evbas);
  box.append(evLine('phase sign-off',pcell.badge));
  if(pcell.detail)box.append(pcell.detail);
@@ -1057,6 +1156,9 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
  // the comparator changed. `p.priority` stays on the badge, where a tier is what
  // a reader understands; an ordering index is not a thing to show them.
  else if(OVF.sort==='priority')ordered.sort((a,b)=>a.porder-b.porder);
+ // The records the server lists as unreadable, read off the roll-up once and
+ // handed to every open phase's detail.
+ const lostRows=evLostRows(r);
  /**
   * One phase as a pressable row, with its detail beneath when it is open.
   * @param {{id: string, status: string, title: (string|undefined),
@@ -1131,7 +1233,8 @@ function renderOver(){const c=$('#over');const r=STATE.rollup;
     'data-ovcopy':cn.live?'live':'stale',
     style:'margin:0 0 var(--sp-0) 1.6rem'},cn.text):null;
   if(!open)return note?el('div',{class:'ovwrap'},row,note):row;
-  return el('div',{class:'ovwrap'},row,note,ovDetail(p));}
+  return el('div',{class:'ovwrap'},row,note,
+   ovDetail(Object.assign({},p,{evLostRows:lostRows})));}
  if(!ordered.length){
   card.append(el('div',{class:'ovempty'},'No phase matches this filter. ',
     el('button',{class:'btn small',type:'button','data-ovclear':'1',

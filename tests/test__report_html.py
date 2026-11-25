@@ -15,6 +15,7 @@ or builds a path, so nothing in it changed meaning by sitting one directory over
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import html
 import json
 import re
 import os
@@ -34,6 +35,14 @@ import _fmt                                        # noqa: E402  (as _report_htm
 # compared HERE. A suite may import anything, which is what makes this the only
 # place the two spellings can be held equal.
 import _status_facts                                # noqa: E402
+import _evidence_io                                 # noqa: E402  (the read's own sentence, as the view carries it)
+import _evidence_view                               # noqa: E402  (builds the view of a subject whose record cannot be read)
+
+
+def _visible_text(markup):
+    """What a reader sees of `markup`: every tag removed, and with it every
+    attribute value, which a tooltip is and a sentence on the page is not."""
+    return html.unescape(re.sub(r"<[^>]*>", "", markup))
 
 
 # --- cases --------------------------------------------------------------------
@@ -1138,6 +1147,14 @@ def _cases(check):
           '[data-tev="ledger-unreadable"]' in _amber
           and '[data-tev="dangling"]' in _amber
           and _rcss.count('[data-tev="ledger-unreadable"]') == 1)
+    check("css-ur CONSTRUCT: a subject whose own run record cannot be read is TINTED "
+          "- `unreadable` sits in the same amber group, and is named exactly "
+          "once in the stylesheet - not left to the `.chip` default grey, "
+          "which is the colour of an absence: %r" % (_amber,),
+          '[data-tev="unreadable"]' in _amber
+          and _rcss.count('[data-tev="unreadable"]') == 1
+          # ...and the sentence's own rule is in the sheet, or the note is bare text
+          and ".tevnote{" in _rcss)
     # A `.ptev` mark that is bare text is a sentence of any length, and on one
     # unbreakable line it sets the phase cell's narrowest width to that length,
     # so a narrow viewport scrolls sideways. The rule that lets it wrap is pinned
@@ -1215,6 +1232,67 @@ def _cases(check):
           "basis: the interpreter was not on PATH" in _nogap_steps
           and "derivedGap:" not in _nogap_steps)
 
+    # --- a subject whose own run record cannot be read -------------------------
+    _ur_entry = {"scope": "task", "id": "T1", "file": "docs/audit/phases/P9.json",
+                 "field": "runs[0].at", "rule": "shape"}
+    _ur_view = _evidence_view._unreadable_view(
+        M.tev_view({"runId": "R"}, None, True), _ur_entry)
+    _ur_sentence = _evidence_io.unreadable_records_sentence([_ur_entry])
+    _ur_cell = M._tev_cell(_ur_view)
+    # The page's own text, with every tag AND every attribute value removed: a
+    # sentence that is only in a `title` is on the page for a pointer, not for a
+    # reader, and that is the claim these cases refuse.
+    _ur_text = _visible_text(_ur_cell)
+    check("uv1 the evidence cell of a subject whose run record cannot be read "
+          "carries the read's own sentence as visible text - once, outside any "
+          "attribute - beside a badge whose word is the table's, not the "
+          "humaniser's: %r" % (_ur_cell[:300],),
+          bool(_ur_sentence) and _ur_text.count(_ur_sentence) == 1
+          and _ur_cell.count('data-tev="unreadable"') == 1
+          and _ur_cell.count(">Run record unreadable<") == 1
+          and M.TEV_LABELS.get("unreadable") == "Run record unreadable"
+          and _theme.label("unreadable") == "Run record unreadable")
+    check("uv2 ...and the sentence is still the badge's tooltip, so a reader "
+          "who hovers finds what a reader who reads already has",
+          M.e(_ur_sentence) in _ur_cell.split('title="', 1)[1].split('"', 1)[0])
+    check("uv4 ALLOW: a readable run renders the cell it always rendered - no "
+          "sentence, no note - and a subject with no run at all renders none "
+          "either; this is what fails if the note starts firing on every badge",
+          "tevnote" not in M._tev_cell(M.tev_view(_ptr, _row(), True))
+          and "tevnote" not in M._tev_cell(M.tev_view(None, None, True))
+          and "tevnote" in _ur_cell)
+    check("uv5 the word `unreadable` is spelled here as the status facts spell "
+          "it, because the two files are layer-mates and cannot import each "
+          "other, and it is ranked among the words that are not a verdict: "
+          "%r vs %r" % (M.TEV_UNREADABLE, _status_facts.UNREADABLE_EVIDENCE),
+          M.TEV_UNREADABLE == _status_facts.UNREADABLE_EVIDENCE
+          and M.TEV_UNREADABLE in M.TEV_ORDER
+          and M.TEV_ORDER.index("empty-gate") < M.TEV_ORDER.index(M.TEV_UNREADABLE)
+          < M.TEV_ORDER.index("ledger-unreadable"))
+    # The sentence carries what the record's own file said, which a person may
+    # have edited: it reaches the page escaped, and as TEXT, once.
+    _ur_evil = dict(_ur_entry, why="<script>alert(1)</script> & \"quoted\"")
+    _ur_evil_cell = M._tev_cell(_evidence_view._unreadable_view(
+        M.tev_view({"runId": "R"}, None, True), _ur_evil))
+    check("uv8 a record whose reason holds markup reaches the page as escaped "
+          "text, in the note and in the tooltip alike - no raw tag, and the "
+          "words still readable once: %r" % (_ur_evil_cell[:200],),
+          "<script>" not in _ur_evil_cell
+          and "&lt;script&gt;alert(1)&lt;/script&gt;" in _ur_evil_cell
+          and "<script>alert(1)</script>" in _visible_text(_ur_evil_cell)
+          and _visible_text(_ur_evil_cell).count("<script>alert(1)</script>") == 1)
+    _ur_bug = M._tev_bug_cell({"taskId": "T1"}, {"T1": _ur_view})
+    check("uv6 a bug whose fixing task's record cannot be read shows the same "
+          "word and the same visible sentence, and still says which task it "
+          "borrowed it from",
+          _ur_bug.count('data-tev="unreadable"') == 1
+          and _visible_text(_ur_bug).count(_ur_sentence) == 1
+          and "via T1" in _ur_bug)
+    _ur_phase = M._tev_phase_marks({"own": _ur_view})
+    check("uv7 a phase's own sign-off mark carries the sentence too, so a phase "
+          "row does not say `unreadable` with its reason one click away",
+          _ur_phase.count('data-tev="unreadable"') == 1
+          and _ur_phase.count("tevnote") >= 1)
 
 
 def _selftest():

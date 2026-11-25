@@ -35,11 +35,16 @@
    command came back green, so red would send a reader looking for a failing test
    that does not exist. What it refuses is its own measurement — the gate rewrote
    the declared files it was grading. Urgency rides on `EVORDER`, which ranks it
-   second; hue carries only what kind of thing it is. */
+   second; hue carries only what kind of thing it is.
+   `unreadable` is the subject whose OWN run record cannot be read: no run
+   answers for it, so it is no verdict, and it wears the warn of
+   `ledger-unreadable` for the same reason - a file needs repairing - rather than
+   the muted ink of an absence. */
 [data-evstatus="gate-mutated"],
 [data-evstatus="no-checks"],[data-evstatus="timed-out"],
 [data-evstatus="could-not-run"],[data-evstatus="dangling"],
 [data-evstatus="ledger-unreadable"],
+[data-evstatus="unreadable"],
 [data-evstatus="undated"],
 [data-evstatus="unknown"]{--st:var(--warn)}
 /* Settled, not achieved — the bucket `cancelled` already sits in one vocabulary
