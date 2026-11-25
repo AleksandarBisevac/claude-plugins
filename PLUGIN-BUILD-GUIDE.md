@@ -7525,7 +7525,11 @@ batch. It is `run-test-gate.py`'s now, an observation of a task's measured run (
 section says how). The short output a verb prints without `--verbose` keeps a warning naming
 the id it wrote, and every line opening with a lead in `TASK_WARNING_LEADS` - the
 gate-directory warning - since it is about that task's gate and names an entry rather than the
-id (`_decided_lines`).
+id (`_decided_lines`). It keeps too the two warnings a verb makes of its own about the phase it
+wrote into, which name the phase and so no id (`_PHASE_NOTE`: the branch warning, and the phase
+entry's about an empty gate or a missing outcome); what it drops is the validator's, about the
+plan as a whole, re-printed by every write. `skill-pin` names a pin rather than an id, so its
+short form (`_pin_short_form`) keeps a warning by the pin it names instead.
 
 **`retarget <phaseId>` is the same verb one noun up** — a phase's gate, area, desired outcome,
 description or title, corrected after `/audit:init` or an ADO pull chose them. The title is
@@ -7741,8 +7745,13 @@ through `_manifest_rules.skill_pin_findings` - the half of `validate-manifest.py
 in-process validator cannot make, since it reads no file. The write goes through `_write_plan`
 (index-only, revalidated, rolled back on a finding) and records `skillpin.change` with the digest
 written or dropped as `from` and `to`; the last pin dropped takes the `skillPins` key with it.
+Run without `--verbose` it prints one line (`_pin_short_form`) holding the digest - a re-pin's old
+one and its new one - the directory read and the record written, then each `WARNING:` that names
+the pin: the verb's own two, which open with `meta.skillPins.<name>` for that reason, and the
+validator's about a pin nothing in the plan names; a clean pin prints none. The `sps` cases run
+the verb as a process, since the `spv` cases call `main` and print every line.
 `reference/vendoring-a-skill.md` is the page that says how an outside skill gets to be one a pin can
-name.
+name, with the `-text` attribute in place before the copy is first committed.
 
 ### `plugins/audit/scripts/usage/audit-usage.py`
 `/audit:usage` — token spend, attributed, rendering its own final ASCII output (no box

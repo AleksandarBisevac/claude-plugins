@@ -21168,6 +21168,20 @@ def _default_skills_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _put_skill(base, name, body="body\n"):
+    """A skill directory `name` under `base`: a `SKILL.md` and a script, written
+    byte for byte (no newline translation), and the folder's path."""
+    folder = os.path.join(base, name)
+    os.makedirs(os.path.join(folder, "scripts"), exist_ok=True)
+    with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8",
+              newline="") as fh:
+        fh.write("---\nname: %s\n---\n%s" % (name, body))
+    with open(os.path.join(folder, "scripts", "run.sh"), "w",
+              encoding="utf-8", newline="") as fh:
+        fh.write("echo %s\n" % (name,))
+    return folder
+
+
 SPV_VERB_CLAUSE = (
     "skill-pin pins the directory digest the reader matches, journals and "
     "revalidates, refuses an unplaced name, an unreadable directory and an "
@@ -21199,16 +21213,7 @@ def _skill_pin_cases(check):
             with open(path, "rb") as fh:
                 return fh.read()
 
-        def put(base, name, body="body\n"):
-            folder = os.path.join(base, name)
-            os.makedirs(os.path.join(folder, "scripts"), exist_ok=True)
-            with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8",
-                      newline="") as fh:
-                fh.write("---\nname: %s\n---\n%s" % (name, body))
-            with open(os.path.join(folder, "scripts", "run.sh"), "w",
-                      encoding="utf-8", newline="") as fh:
-                fh.write("echo %s\n" % (name,))
-            return folder
+        put = _put_skill
 
         def plan(name, names=("vendored-x",), pins=None, sharded=False):
             fx = base_manifest()
@@ -21613,6 +21618,229 @@ def _read_guide():
             return fh.read()
     except OSError:
         return ""
+
+
+def _skill_pin_short_cases(check):
+    """`skill-pin` as a person runs it: a process, the short form (no `--verbose`).
+
+    The `spv` cases call `M.main`, which prints every line, so they never see what
+    the verb's own `__main__` cuts. Here the verb runs as a process and the cases
+    read what survives: the digest on the headline's own line, a re-pin's old and
+    new digest, and every warning that is about the pin - the verb's own two and the
+    validator's one about this pin - while a clean pin prints one line and no
+    WARNING. Each deny has its allow twin: a clean pin beside a flagged one, and a
+    pin the plan names beside one it does not."""
+    import _skill_places as sp
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (_run, _run_on_stdin, base_manifest, mk, _mk_empty, _task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+    home = os.path.join(tmp, "home-sps")
+    os.makedirs(home)
+    try:
+        def short(argv, proj):
+            """`(exit, stdout lines)` of the verb as a process; the home it reads
+            personal skills from is the one this case planted."""
+            env = dict((k, v) for k, v in os.environ.items()
+                       if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+            env["CLAUDE_CONFIG_DIR"] = home
+            done = subprocess.run(
+                [sys.executable, _loader.script_path("audit-task.py"), "skill-pin"]
+                + argv + ["--project-dir", proj],
+                cwd=proj, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                universal_newlines=True, encoding="utf-8")
+            return done.returncode, done.stdout.splitlines()
+
+        def plan(name, names=("vendored-x",), pins=None):
+            fx = base_manifest()
+            fx["meta"]["defaultSkills"] = list(names)
+            if pins is not None:
+                fx["meta"]["skillPins"] = pins
+            proj, _mpath = mk(name, fx)
+            return proj, os.path.join(proj, ".claude", "skills")
+
+        def warns(lines):
+            return [ln for ln in lines if ln.startswith("WARNING")]
+
+        # ---- a personal copy, pinned on the flag: the pin fails on every other
+        # machine, and the short form says so -----------------------------------
+        proj, _skills = plan("sps-personal", names=("personal-x",))
+        personal = _put_skill(os.path.join(home, "skills"), "personal-x")
+        code, lines = short(["personal-x", "--allow-personal-copy"], proj)
+        digest = sp.skill_digest(personal)["digest"]
+        pw = warns(lines)
+        check("sps1 skill-pin run as a process without --verbose, on a personal "
+              "copy given --allow-personal-copy, prints the warning that the pin "
+              "fails on every machine without it, and the digest it pinned, on "
+              "the headline's own line: %r" % ((code, lines),),
+              code == 0 and len(lines) == 2 and len(pw) == 1
+              and lines[0].startswith("[audit-task] meta.skillPins.personal-x pinned")
+              and digest in lines[0] and lines[1] == pw[0]
+              and "--allow-personal-copy" in pw[0] and "every machine" in pw[0])
+
+        # ---- tool-written entries: the pin would mismatch the moment one is
+        # written or removed -------------------------------------------------
+        proj, skills = plan("sps-tool")
+        folder = _put_skill(skills, "vendored-x")
+        for rel in (("__pycache__", "h.pyc"), (".DS_Store",)):
+            os.makedirs(os.path.join(folder, *rel[:-1]), exist_ok=True)
+            with open(os.path.join(folder, *rel), "w") as fh:
+                fh.write("x")
+        code, lines = short(["vendored-x"], proj)
+        tw = warns(lines)
+        check("sps2 ...and a pin over a directory holding a bytecode cache and a "
+              ".DS_Store prints ONE warning naming both, after the headline "
+              "that carries the digest: %r" % ((code, lines),),
+              code == 0 and len(lines) == 2 and len(tw) == 1
+              and "__pycache__" in tw[0] and ".DS_Store" in tw[0]
+              and sp.skill_digest(folder)["digest"] in lines[0])
+
+        # ---- the allow twin of sps1 and sps2, and the case that goes red if the
+        # keep-rule becomes "keep everything": a clean pin is ONE line and no
+        # WARNING, though the plan it writes into holds a warning of its own - a
+        # pin on ANOTHER skill that nothing names, which every write re-prints
+        # and `--verbose` still shows ------------------------------------------
+        proj, skills = plan("sps-clean", pins={"vendored-idle": {"sha256": "0" * 64}})
+        folder = _put_skill(skills, "vendored-x")
+        code, lines = short(["vendored-x"], proj)
+        clean_digest = sp.skill_digest(folder)["digest"]
+        vcode, vlines = short(["vendored-x", "--verbose", "--source", "again"], proj)
+        check("sps3 a clean pin prints one line - the headline, the digest and "
+              "the record written - and no WARNING, while the plan's own warning "
+              "about another pin is still there under --verbose: %r"
+              % ((code, lines, vcode, vlines[-3:]),),
+              vcode == 0 and any("vendored-idle" in ln for ln in warns(vlines))
+              and code == 0 and len(lines) == 1 and "WARNING" not in lines[0]
+              and lines[0].startswith("[audit-task] meta.skillPins.vendored-x pinned")
+              and clean_digest in lines[0]
+              and lines[0].endswith("written: docs/audit/audit-plan.json"))
+
+        # ---- a re-pin keeps its old and new digest, on that one line ------------
+        with open(os.path.join(folder, "scripts", "run.sh"), "a",
+                  encoding="utf-8") as fh:
+            fh.write("x")
+        code, lines = short(["vendored-x"], proj)
+        new_digest = sp.skill_digest(folder)["digest"]
+        check("sps4 a re-pin prints one line holding the digest it replaced and "
+              "the digest it wrote, and no WARNING: %r" % ((code, lines),),
+              code == 0 and len(lines) == 1 and clean_digest != new_digest
+              and "re-pinned" in lines[0]
+              and "was %s, now %s" % (clean_digest, new_digest) in lines[0]
+              and lines[0].count(clean_digest) == 1
+              and lines[0].count(new_digest) == 1 and "WARNING" not in lines[0])
+
+        # ---- the validator's warning about THIS pin; a plan-wide one is not ---
+        proj, skills = plan("sps-unused", names=("other-skill",))
+        _put_skill(skills, "vendored-x")
+        code, lines = short(["vendored-x"], proj)
+        uw = warns(lines)
+        check("sps5 pinning a skill no level of the plan names prints the "
+              "validator's warning that the pin protects nothing, naming the "
+              "skill (its allow twin is sps3, where the plan names it): %r"
+              % ((code, lines),),
+              code == 0 and len(uw) == 1 and "vendored-x" in uw[0]
+              and "protects nothing" in uw[0])
+        # --remove is the verb's other write: a line, no digest, no WARNING.
+        code, lines = short(["vendored-x", "--remove", "--reason", "not used"],
+                            proj)
+        check("sps6 --remove prints one line carrying the reason and no digest: %r"
+              % ((code, lines),),
+              code == 0 and len(lines) == 1 and "removed: not used" in lines[0]
+              and not re.search(r"[0-9a-f]{64}", lines[0]))
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _short_form_branch_cases(check):
+    """The other warnings the short form lost: a verb's own, about the PHASE it
+    wrote into. A task write into a phase recorded on another branch prints the
+    warning that the shard now holds edits from two branches, and the start that
+    enters a phase says what sign-off will ask for that the phase lacks; the
+    short form kept a warning only when it named the task written, and these
+    name the phase. Run as a process, through the verb's own `__main__`."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (_run, _run_on_stdin, base_manifest, mk, _mk_empty, _task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+    try:
+        def repo(name, standing):
+            fx = base_manifest()
+            fx["phases"][1]["branch"] = "audit/p2-original"
+            proj, _mpath = mk(name, fx, sharded=True, git=True)
+            _harness.git(proj, "checkout", "-q", "-b", standing)
+            return proj
+
+        add = ["add", "Branch note", "--phase", "P2", "--tests-mode", "gate-only",
+               "--files", "src/q.ts"]
+        away = repo("sfb-away", "mainline")
+        code, txt = _cli(add + ["--project-dir", away], away)
+        notes = [ln for ln in txt.splitlines()
+                 if ln.strip().startswith("WARNING: phase P2 is recorded on branch")]
+        check("sfb1 a task added to a phase recorded on another branch keeps, in "
+              "the short form, the warning that the phase's shard now holds edits "
+              "from two branches - exactly once: %r" % ((code, txt[-400:]),),
+              code == 0 and len(notes) == 1 and "audit/p2-original" in notes[0]
+              and "mainline" in notes[0])
+        home = repo("sfb-home", "audit/p2-original")
+        code, txt = _cli(add + ["--project-dir", home], home)
+        check("sfb2 ...and standing on the phase's own branch prints no such "
+              "warning (the allow twin): %r" % ((code, txt[-300:]),),
+              code == 0 and "is recorded on branch" not in txt)
+
+        # ---- the start that enters a phase lacking a gate and an outcome -----
+        bare = base_manifest()
+        bare["phases"][2]["tasks"] = [{"id": "P3.1", "title": "first",
+                                       "status": "pending"}]
+        proj, _mp = mk("sfb-entry", bare)
+        code, txt = _cli(["start", "P3.1", "--project-dir", proj], proj)
+        entry = [ln for ln in txt.splitlines()
+                 if ln.startswith("WARNING: phase entry: ")]
+        check("sfb3 the start that enters a phase with an empty testGate and no "
+              "desiredOutcome keeps, in the short form, both entry warnings - the "
+              "one moment either is cheap to set: %r" % ((code, txt[-500:]),),
+              code == 0 and len(entry) == 2
+              and any("testGate" in ln for ln in entry)
+              and any("desiredOutcome" in ln for ln in entry))
+        full = base_manifest()
+        full["phases"][2].update(testGate=["test"], desiredOutcome="it ships")
+        full["phases"][2]["tasks"] = [{"id": "P3.1", "title": "first",
+                                       "status": "pending"}]
+        proj, _mp = mk("sfb-entry-ok", full)
+        code, txt = _cli(["start", "P3.1", "--project-dir", proj], proj)
+        check("sfb4 ...and a phase that has both draws none (the allow twin): %r"
+              % ((code, txt[-300:]),),
+              code == 0 and "phase entry" not in txt.lower())
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _vendoring_order_cases(check):
+    """The vendoring page's order, in the sentence it is read in: the line-ending
+    attribute is in place before the first commit of the copy - under
+    `core.autocrlf=true` a copy pinned while its checkout holds CRLF is stored LF,
+    and the attribute added afterwards repairs nothing without a renormalize - in
+    the steps and in the checklist, and the README row says the same."""
+    root = os.path.join(_output.PLUGIN_ROOT)
+    with open(os.path.join(root, "reference", "vendoring-a-skill.md"), "r",
+              encoding="utf-8") as fh:
+        page = fh.read()
+    with open(os.path.join(root, "README.md"), "r", encoding="utf-8") as fh:
+        readme = fh.read()
+    steps, _sep, checklist = page.partition("\n## Checklist\n")
+    attr_step = steps.find("/** -text")
+    pin_step = steps.find("/audit:task skill-pin <name>")
+    attr_item = checklist.find("/** -text")
+    pin_item = checklist.find("/audit:task skill-pin <name>")
+    row = [ln for ln in readme.splitlines() if ln.startswith("| `skillPins` | ")]
+    check("vo1 the vendoring page puts the attribute line before the step that "
+          "pins and commits the copy, and its checklist lists it before the pin "
+          "(steps at %r and %r, checklist at %r and %r)"
+          % (attr_step, pin_step, attr_item, pin_item),
+          0 <= attr_step < pin_step and 0 <= attr_item < pin_item)
+    check("vo2 ...and says how to repair a copy committed without it: "
+          "`git add --renormalize`, then a re-pin, then a commit - in the page "
+          "and in the README row that names the attribute",
+          steps.count("git add --renormalize") == 1
+          and len(row) == 1 and row[0].count("git add --renormalize") == 1
+          and "before" in row[0].split("not text for git", 1)[-1][:120])
 
 
 def _bcm_plan_holder_cases(check):
@@ -24578,6 +24806,9 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("bcp-block", "_bcm_plan_holder_cases"),
           ("dsv-block", "_default_skills_cases"),
           ("spv-block", "_skill_pin_cases"),
+          ("sps-block", "_skill_pin_short_cases"),
+          ("sfb-block", "_short_form_branch_cases"),
+          ("vo-block", "_vendoring_order_cases"),
           ("xf-block", "_crossfile_cases"),
           ("rf-block", "_retired_flag_cases"),
           ("gx-block", "_gate_entry_cases"),

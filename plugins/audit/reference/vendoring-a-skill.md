@@ -45,40 +45,60 @@ are described in full in `verbs-in-full.md`, in this directory, and this page re
    `--source` when pinning, and the plan carries them beside the digest; keep the licence
    text in the directory.
 
-7. **Pin it, and commit the directory with the plan.**
+7. **Mark the directory as not text for git, before the copy is first committed.** A checkout
+   that converts line endings (`core.autocrlf`, `eol=crlf`) changes the digest of every file
+   but a Markdown one: a Markdown file is read with CRLF as LF and every other file as its
+   bytes. Under `core.autocrlf=true`, which is Git for Windows' default, the copy is pinned
+   with the CRLF its checkout holds while git stores LF, so every clone then holds other
+   bytes than the ones pinned and every wave stops. Put the line
+
+   ```
+   .claude/skills/<name>/** -text
+   ```
+
+   in the repository's `.gitattributes` before the first `git add` of the directory, and
+   commit it with the directory. Adding it afterwards changes neither the blobs already
+   stored nor the working copy. For a copy that was committed without it: add the line, run
+   `git add --renormalize .claude/skills/<name>`, run `skill-pin <name>` again (it says so
+   and writes nothing when the digest still matches, and updates the pin when it does not),
+   and commit the attribute, the renormalized copy and the plan together.
+
+8. **Pin it, and commit the directory with the plan.**
 
    ```
    /audit:task skill-pin <name> --source "<repository>@<commit>, <licence>"
    ```
 
-   The verb prints the directory it pinned and the digest, and refuses - writing nothing -
-   a name nothing resolves, a directory with no digest (it prints the entry and its kind) and
-   an unflagged personal copy. `/audit:doctor`'s `skill pins` rows then say, for each pinned
+   The verb prints one line holding the digest it pinned, the directory it read and the
+   record it wrote, and a re-pin's line holds the old digest and the new one. A `WARNING:`
+   line follows it for each of: a personal copy pinned on `--allow-personal-copy` (the pin
+   fails on every machine without that copy), a bytecode cache, `.DS_Store` or `.git` in the
+   directory, and a skill the plan names nowhere (the pin protects nothing). A pin with
+   none of those prints no `WARNING:` line. The verb refuses - writing nothing - a name
+   nothing resolves, a directory with no digest (it prints the entry and its kind) and an
+   unflagged personal copy. `/audit:doctor`'s `skill pins` rows then say, for each pinned
    skill, whether it matches, does not match, cannot be found or cannot be read whole; which
    pins nothing names any more (stale); and which skills the plan names that nothing pins.
 
-8. **Keep the bytes the bytes.**
-   - A checkout that converts line endings (`core.autocrlf`, `eol=crlf`) changes the digest of
-     every file but a Markdown one: a Markdown file is read with CRLF as LF and every other
-     file as its bytes. Mark the skill's directory as not text for git, and commit the line:
-
-     ```
-     .claude/skills/<name>/** -text
-     ```
-
-     in the repository's `.gitattributes`.
+9. **Keep the bytes the bytes.**
    - A bytecode cache or a `.DS_Store` written into the directory after pinning makes the pin
      mismatch, and the mismatch row names it. Run the skill's scripts with
      `PYTHONDONTWRITEBYTECODE=1` (the plugin's own session runner does) and remove what a
      tool left behind.
    - A wave's sessions each run in a tree cut from a commit and load that commit's copy, so
-     bytes restored in the working copy count only once committed. `/audit:doctor` says so
-     when a pinned project skill's working copy differs from HEAD.
+     bytes restored in the working copy count only once committed, while a session run in
+     this tree and a subagent dispatched from it read the working copy. `/audit:doctor`
+     prints a `skill pins` row for each route, opening `for <route>:` - `a session run in
+     this tree` or `a subagent dispatched from this tree`, and `a wave's sessions` - and a
+     WARNING row for a route whose copy is not the bytes pinned, in the words `the skill
+     <name> is pinned, and the copy an agent or a session would load is not the bytes
+     pinned: <path> has digest <digest>, the plan pinned <digest>`. A pinned skill edited
+     after its commit warns on the first two routes and matches on the wave's.
 
-9. **To upgrade, replace the directory, read the diff, and pin again.** Copy the new version
-   over the old one so that a file the new version dropped is gone too, read `git diff` of
-   the directory as carefully as the first copy, and run `skill-pin` again: it prints the
-   old and the new digest and journals them.
+10. **To upgrade, replace the directory, read the diff, and pin again.** Copy the new version
+    over the old one so that a file the new version dropped is gone too, read `git diff` of
+    the directory as carefully as the first copy, and run `skill-pin` again: its line holds
+    the old and the new digest, and the verb journals them.
 
 ## What a pin does not buy
 
@@ -95,6 +115,8 @@ check the work.
 - [ ] every file read before commit, steps that commit, push, spawn agents or fetch removed
 - [ ] a `## Checklist` section in `SKILL.md`
 - [ ] repository, commit and licence passed as `--source`, the licence text kept beside it
-- [ ] `/audit:task skill-pin <name>` run, and the directory committed with the plan
-- [ ] `.claude/skills/<name>/** -text` in `.gitattributes`
+- [ ] `.claude/skills/<name>/** -text` in `.gitattributes` before the directory is first
+      added; a copy committed without it: the line, `git add --renormalize`, a re-pin, a commit
+- [ ] `/audit:task skill-pin <name>` run, its `WARNING:` lines (if any) read, and the
+      directory committed with the plan
 - [ ] `/audit:doctor`'s `skill pins` rows read

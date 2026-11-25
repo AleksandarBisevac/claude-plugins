@@ -1,0 +1,97 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_task.py": "pass",
+    "run-test-gate.py docs/audit/audit-plan.json SG2 --task SG2.27-xk1 (not recorded)": "pass",
+    "python3 tools/sweep-selftests.py --jobs 4 over the dependants' suites (test__doctor_trail, test__invariants, test__scoped_commit, test_close_phase, test_commit_task_work, test__floor_guard, test__deps, test__output_lints, test__refs)": "pass",
+    "ruff check plugins/audit/scripts/manifest/audit-task.py tests/test_audit_task.py": "pass",
+    "vermin -t=3.8- --violations over the same two files": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-25T19:23:01Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with 9 of 1312 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sps1 (house FAIL), sps2 (house FAIL), sps3 (house FAIL), sps4 (house FAIL), sps5 (house FAIL), sfb1 (house FAIL), sfb3 (house FAIL), vo1 (house FAIL) and 1 more: SELFTEST FAILED: 1303/1312 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) plugins/audit/scripts/manifest/audit-task.py: what drops a WARNING in the short form is success_line/_decided_lines (terse_cli keeps only lines naming a written TASK id or a TASK_WARNING_LEADS lead); a pin headline names meta.skillPins.<name>, so none of the verb's lines survived. New _pin_short_form (reached from success_line when the headline is meta.skillPins.<name>) returns (text, payload), printed whole: headline; digest (a re-pin: 'digest: <spelling> was <old>, now <new>'); the directory line; 'written: ...'; then one line per WARNING that names the pin. _skill_pin_report's two own warnings now open with the pin they are about ('WARNING: meta.skillPins.<name> pinned on --allow-personal-copy: ...', 'WARNING: meta.skillPins.<name>: Its directory holds entries ...'), the validator's 'meta.skillPins: <name> is pinned, but no level of the plan names it' is matched by its own text; tokens end where a spelling ends. The plan-wide validator warnings every write re-prints stay with --verbose (a clean pin prints ONE line and no WARNING; the fixture plan carries such warnings and sps3 proves they are absent). DECISION to read: I did not keep every WARNING, because acceptance 2 (a clean pin prints no warning) fails on any plan holding one plan-wide warning. Other verbs that lose a warning by the same path (survey of every out('WARNING...') site in audit-task.py: the rest are the validator's, via _wg.collapse): the phase-branch warning of _phase_branch_note (task add/scope/..., 5 callers) and _entry_warnings' 'WARNING: phase entry: ...' of `start`; both name the phase, so the id rule dropped them; new _PHASE_NOTE keeps both in _decided_lines. Not changed, outside the rule's word: the not-journaled line and the index-dirty note are not WARNING lines and are still dropped. (2) plugins/audit/reference/vendoring-a-skill.md: step 7 is now the -text attribute, before the first add, with the autocrlf reason and the repair (add the line, git add --renormalize, skill-pin again, commit - the repair measured in a scratch repo under core.autocrlf=true, S/sg2.27/eol_repair.out: stored CRs 0 after the commit, 0 after the attribute alone, 1 after --renormalize); step 8 pins and says what the verb prints; step 9's doctor sentence quotes what the doctor prints now (run on a scratch project, S/sg2.27/doctor_rows.out: 'for a session run in this tree:' / 'for a wave's sessions:' prefixes, the 'the skill X is pinned, and the copy an agent or a session would load is not the bytes pinned: <path> has digest ..., the plan pinned ...' words; session and subagent routes read the working copy, a wave's sessions the commit's); checklist reordered. README.md: the /audit:task row's skill-pin sentence and the skillPins row (before the first commit, renormalize). verbs-in-full.md: the verb's output paragraph. PLUGIN-BUILD-GUIDE.md: _decided_lines paragraph and the skill-pin paragraph. tests/test_audit_task.py: new blocks sps (the verb as a process), sfb, vo; _put_skill hoisted from _skill_pin_cases (which now binds it). Probes of the review re-run on an export of HEAD before the change (S/sg2.27/verbose_head.out: no warning, no digest; journey_head.out: s6 MISMATCH, s6b MATCH). Mutation probe S/sg2.27/mutations.py (the ROW lines of mutations.out, derived by grep -c '^ROW'): 15 DENY rows, 5 ALLOW over-fire rows and 1 benign-edit row that must stay green, every row applied once and judged as expected, baselines green, exit 0. Gates: sweep of tests/test_audit_task.py 1/1 files ok 1312 cases; run-test-gate (no --record) GATE GREEN; dependants' suites 9/9 files ok. DEPENDANTS: full-gate.py and run-test-gate.py reach audit-task.py by subprocess/basename only and read none of the changed lines - still correct (gate green); tests/test__doctor_trail.py, test__invariants.py (loads audit-task to ask its scope reader), test__scoped_commit.py (names it as a reader), test_close_phase.py (runs file-return as a process), test_commit_task_work.py (imports test_audit_task helpers and loads audit-task) - none touches skill-pin or the two kept warnings, still correct, their suites exit 0; tests/test_audit_task.py is the changed suite itself; reference/verbs-in-full.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md and manifest-conventions.md name the verb: the first three edited, manifest-conventions.md names review.* verbs only - unchanged. CHANGELOG.md (outside my files) already says the verb prints the digest and the warnings; it is now true, nothing to edit. Not done and outside the scope: the doctor is still a second reader for a pinned skill that is a link (HOLD-3) - SG2.26's change is in HEAD; I did not re-measure the eol case through the doctor.",
+    "descriptive": "The first pin a user makes now shows its digest and every warning about it without --verbose (and two phase warnings other verbs lost the same way), and the vendoring guide has the line-ending attribute in place before the first commit, with the repair for a copy already committed."
+  },
+  "testsAdded": [
+    "sps1-sps6: skill-pin run as a process, short form: personal copy on the flag, tool-written entries, a clean pin (one line, no WARNING, with the plan's own warning shown under --verbose), a re-pin's was/now, the validator's pin-protects-nothing, --remove",
+    "sfb1-sfb4: a task added into a phase recorded on another branch keeps the branch warning, a start entering a phase without gate and outcome keeps both entry warnings, each with its allow twin",
+    "vo1-vo2: the vendoring page's attribute step and checklist item precede the pin, and the repair is named in the page and in the README row"
+  ],
+  "casesAdded": [
+    [
+      "sps1",
+      "sps2",
+      "sps3",
+      "sps4",
+      "sps5",
+      "sps6",
+      "sfb1",
+      "sfb2",
+      "sfb3",
+      "sfb4",
+      "vo1",
+      "vo2"
+    ]
+  ],
+  "skillsInvoked": [
+    "writing-python",
+    "before-you-claim",
+    "no-silent-pass"
+  ],
+  "claims": "claims:\n1 audit-task.py:17350 _pin_short_form builds the line the guide and README describe (digest, was/now, directory, written, then each pin WARNING); success_line reaches it at :17395; the emitters open with the pin at :16004 and in the tool-written branch below it; _PHASE_NOTE at :17313 keeps the two phase warnings; guide step 7-9 text rewritten to say only what sps1-sps6, sfb1-sfb4 and vo1-vo2 observe\n2 the rows of S/sg2.27/mutations.out (grep -c '^ROW'), each CAUGHT or GREEN as expected, restored byte for byte; allow twins: every-WARNING-kept reddens sps3 sps4, branch note on the own branch reddens sfb2, entry warnings always on reddens sfb4, a benign guide rewording stays green\n3 grep -n 'out(\"WARNING' plugins/audit/scripts/manifest/audit-task.py and the loops over _entry_warnings / _wg.collapse: every site is either the validator's (collapse, plan-wide, dropped by design), the pin's own two (fixed), the branch note (fixed, sfb1), _entry_warnings (fixed, sfb3), or the add-phase side-branch warning, which names the written phase id and was already kept; left: the not-journaled line and the index-dirty note are not WARNING lines and are still dropped\n4 the rule 'the short form never drops a WARNING about what the write named' is enforced by sps1-sps5, sfb1, sfb3 in tests/test_audit_task.py, named in the _decided_lines and _pin_short_form docstrings and in PLUGIN-BUILD-GUIDE.md's section; the guide's order is enforced by vo1\n5 sweep of tests/test_audit_task.py run twice on this task's tree some minutes apart (1312 cases ok both; the first before the sps3 fixture's stale pin was added, the second on the final tree); the doctor rows quoted in the guide come from one run - measured once\n6 the short form keeps a warning by the pin the line names (a subject read from the verb's own headline), not by its wording; the allow case (clean pin, plan-wide warning present) is sps3, proven to redden when every WARNING is kept\n7 no number written into prose beyond what a command prints: the guide and README carry none; the digests in the tests are computed by skill_digest",
+  "stamp": "audit-stamp: {\"content\":\"sha256:621f0d2baa6739fef142779115d185b5ec0a4212e4c10048ffc06ee039c435f1\",\"dirtyDigest\":\"sha256:eeb939da61bb40f698cd5889264156c59c27b7fbc7bb74f23244b4de18847746\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"07d62d929176717e\",\"plugins/audit/README.md\":\"497dfd0c955ca10a\",\"plugins/audit/reference/vendoring-a-skill.md\":\"8f91ca87df37f8c9\",\"plugins/audit/reference/verbs-in-full.md\":\"bc1ebfa6e9ec7aaf\",\"plugins/audit/scripts/manifest/audit-task.py\":\"b6482d38800c49cd\",\"tests/test_audit_task.py\":\"6b736cdbbf1ac845\"},\"head\":\"de68f163\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/README.md\",\"plugins/audit/reference/vendoring-a-skill.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:b82df3bd51df9bb78f2ce25afc80f7b968a22199032bc664362274ea4bfbeade\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 1 of the diff's 6 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 4 file(s) not read that cannot hold a move as read here: PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md, plugins/audit/reference/vendoring-a-skill.md, plugins/audit/reference/verbs-in-full.md; 1 file(s) that could hold a move not compared: tests/test_audit_task.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/reference/vendoring-a-skill.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/reference/verbs-in-full.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_audit_task.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 21202 (`def put(base, name, body=\"body\\n\"):`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "de68f163e89c99c66344c2c58ec141730ed3589a"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-25T19:23:12Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

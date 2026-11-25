@@ -1598,7 +1598,13 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" skill-pin <name> 
 It computes nothing of its own: where `<name>` resolves is `_skill_places.resolve_skill`'s
 answer (a personal copy, then the project's, then the running plugin's), the digest is
 `_skill_places.skill_digest` of that copy's whole directory, and the output names the directory
-and the digest it pinned. It refuses, exit 2 with the plan's bytes and the journal untouched, a
+and the digest it pinned: run without `--verbose`, as the main loop runs it, it prints ONE line
+holding the digest (a re-pin's old one and its new one), the directory read and the record
+written, and after it a `WARNING:` line for each warning about this pin - a personal copy
+pinned on the flag (the pin fails on every machine without it), a bytecode cache, `.DS_Store` or
+`.git` in the directory, and a pin no level of the plan names (it protects nothing). A pin with
+none prints no `WARNING:` line; a warning about the plan as a whole, which every write
+re-prints, is `--verbose`'s. It refuses, exit 2 with the plan's bytes and the journal untouched, a
 string that is no skill name, a name nothing resolves (naming every place it looked), a
 directory with no digest (in the reader's own words, naming the entry and its kind) and a
 personal copy — a home directory no clone carries, so the pin would fail on every other machine

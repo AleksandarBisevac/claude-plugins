@@ -15996,11 +15996,18 @@ def _skill_pin_report(args, project, config, mpath, name, copy, edits, wrote, ou
     for spelling, was, new in edits:
         if was is not None and new is not None and was != new["sha256"]:
             out("  %s: was %s, now %s" % (spelling, was, new["sha256"]))
+    # EACH WARNING OPENS WITH THE PIN IT IS ABOUT (`meta.skillPins.<name>`, the
+    # token the headline opens with), because the short form keeps a warning by
+    # the subject the headline names (`_pin_short_form`) and these two read no
+    # task id.
     if copy and copy["graded"] and copy["graded"]["travels"] is False:
-        out("WARNING: pinned on --allow-personal-copy: %s, so this pin fails on "
-            "every machine without it" % (copy["graded"]["basis"],))
+        out("WARNING: %s.%s pinned on --allow-personal-copy: %s, so this pin "
+            "fails on every machine without it"
+            % (SKILL_PIN_FIELD, first, copy["graded"]["basis"]))
     if copy and copy["toolWritten"]:
-        out("WARNING:" + _skill_places._tool_written_words(copy["toolWritten"]))
+        out("WARNING: %s.%s:%s" % (SKILL_PIN_FIELD, first,
+                                   _skill_places._tool_written_words(
+                                       copy["toolWritten"])))
     _report_tail(out, jres, "skillpin.change", warnings, written_manifest,
                  written, index_note)
     return 0
@@ -17298,26 +17305,80 @@ def _batch_acceptance_key(tasks):
     return {"acceptanceReading": kept} if kept else {}
 
 
+# The two warnings a verb makes of its own about the PHASE it wrote into:
+# `_phase_branch_note`'s (computed from git) and `_entry_warnings`' (what sign-off
+# will ask for that the entered phase lacks). Each names the phase and so no task
+# id, which is what the id rule below keeps a warning by, and each is a fact
+# nothing else prints; `sfb1` and `sfb3` run them through the process.
+_PHASE_NOTE = re.compile(
+    r"^WARNING: (?:phase \S+ is recorded on branch |phase entry: )")
+
+
 def _decided_lines(body, ids):
     """The lines a write decided and the short form keeps: its gate basis, how
     the Acceptance list it wrote was read, the command that runs what it wrote,
     every warning about the gate and files of the task it wrote
-    (`TASK_WARNING_LEADS`), and every warning naming an id it wrote. Any other
+    (`TASK_WARNING_LEADS`), the warnings it made of its own about the phase it
+    wrote into (`_PHASE_NOTE`), and every warning naming an id it wrote. Any other
     warning - the validator's, about another item or the plan as a whole,
-    re-printed by every write, and a verb's warning about the phase rather than
-    the task - is what the short form drops and `--verbose` prints."""
+    re-printed by every write - is what the short form drops and `--verbose`
+    prints."""
     kept = []
     for line in body:
         text = line.strip()
         if text.startswith(("gate:", "acceptance:", "acceptance (",
                             "ready now -- ")):
             kept.append(text)
-        elif text.startswith(TASK_WARNING_LEADS):
+        elif text.startswith(TASK_WARNING_LEADS) or _PHASE_NOTE.match(text):
             kept.append(text)
         elif text.startswith("WARNING:") and ids & set(_HEADLINE_ID.findall(
                 text.split(" - ")[0])):
             kept.append(text)
     return kept
+
+
+# --- skill-pin: what its short form keeps ----------------------------------------
+# Its headline names a PIN, not a task id, so `_decided_lines`' id rule keeps none
+# of the verb's lines. The facts a pin is read for are the digest, a re-pin's old
+# and new digest, the directory read, and a warning about this pin; they are kept
+# whole and folded onto the headline's own line, because the digest is the answer
+# and a warning is the reason not to trust it.
+_PIN_HEADLINE = re.compile(r"^\[audit-task\] %s\.(\S+)" % (re.escape(SKILL_PIN_FIELD),))
+_PIN_WAS_NOW = re.compile(r"^(\S+): (was [0-9a-f]{64}, now [0-9a-f]{64})$")
+
+
+def _pin_short_form(headline, body, written, spelling):
+    """The short form of a pin write: `(text, payload)`, printed whole.
+
+    The payload carries, on the headline's line, the digest (`was A, now B` for
+    each spelling a re-pin moved), the directory read and the record written;
+    then a line for each WARNING about a pin this write named - the verb's own two
+    (`_skill_pin_report`, which open with the pin) and the validator's about a pin
+    no level of the plan names. A warning about another pin, or about the plan
+    as a whole, is what every write re-prints and stays with `--verbose`."""
+    stripped = [ln.strip() for ln in body]
+    moved = [_PIN_WAS_NOW.match(t) for t in stripped]
+    moved = [m.groups() for m in moved if m]
+    digest = [t[len("digest: "):] for t in stripped if t.startswith("digest: ")]
+    facts = []
+    if moved:
+        facts.append("digest: " + "; ".join("%s %s" % pair for pair in moved))
+    elif digest:
+        facts.append("digest: %s" % (digest[0],))
+    facts.extend(t for t in stripped if t.startswith("directory: "))
+    if written:
+        facts.append("written: %s" % (", ".join(written),))
+    spellings = [spelling] + [name for name, _words in moved]
+    # Each token ends where a spelling ends, so a pin named `a` does not keep a
+    # warning about the pin `ab`.
+    tokens = tuple(tok for name in spellings
+                   for tok in ("%s.%s " % (SKILL_PIN_FIELD, name),
+                               "%s.%s:" % (SKILL_PIN_FIELD, name),
+                               "%s: %s is pinned" % (SKILL_PIN_FIELD, name)))
+    warned = [t for t in stripped
+              if t.startswith("WARNING:") and any(tok in t for tok in tokens)]
+    return (headline.rstrip() + ";",
+            "; ".join(facts) + "".join("\n" + w for w in warned))
 
 
 def success_line(lines):
@@ -17330,6 +17391,9 @@ def success_line(lines):
     heads = [ln for ln in body if ln.startswith("[audit-task]")] or body
     written = [ln.strip()[len("written:"):].strip() for ln in body
                if ln.strip().startswith("written:")]
+    pinned = _PIN_HEADLINE.match(heads[0])
+    if pinned:
+        return _pin_short_form(heads[0], body, written, pinned.group(1))
     # The headline carries the caller's own text on some verbs (a note, a
     # title), so it is the part cut when the line will not fit - the file
     # written is the record, and is kept whole.

@@ -3212,7 +3212,7 @@
     {
       "id": "SG2.26-xk1",
       "title": "The doctor judges a pinned skill by the reader the drive uses for each route, so its row and a wave's start never disagree",
-      "status": "in_progress",
+      "status": "done",
       "description": "The phase review of SG2 (directory sg2-phase-review/pins in the orchestrator's durable scratch (the prompt names it), REVIEW.md HOLD-3 and HOLD-4, probes link_head_probe.py and journey_probe.py s2 s5b s6, outputs under out/; re-run by the orchestrator on an export of b16a5c49 with the same result) found the doctor's skill-pin rows and the drive's pin stop answering the same question with two different readers.\n\nWHAT HAPPENS. (1) A committed-link skill (.claude/skills/x -> ../../vendor/x, a layout the drive supports) changed and re-pinned without a commit: the doctor prints OK (match), the wave stops on the commit's copy. `_head_note` (plugins/audit/scripts/status/_doctor_policy.py) asks `git status` only when the folder's REAL path is under .claude/skills, so a link out is never asked. (2) Under core.autocrlf=true the working copy carries CRLF, git status is clean, the commit's bytes are LF: doctor OK, wave stops. (3) A skill edited only in the working copy after a commit: the doctor warns 'a session or a wave naming X will not start', yet the wave dispatches both members, because the session route judges the commit's copy; on the subagent route the reverse holds. So for one route or the other the row's words are false.\n\nTHE RULE (an invariant, not a list of cases). For every pinned skill the plan names, the doctor's verdict for each route is the verdict the drive would reach for that route, computed by the SAME function the drive calls (plugins/audit/scripts/governance/drive-phase.py around own_checkouts / step_checkout and the pin_stops / require_pins calls, and plugins/audit/scripts/status/_skill_places.py) - never a second reader such as git status. Where the drive judges the commit's copy, the doctor judges HEAD's copy the way the drive reads it; where it judges the working copy, the doctor does too. The row names the route it is about (a wave's sessions / a subagent dispatched from this tree) and its remedy is that route's. The doctor stays read-only: nothing it writes to the project, its .git or its worktree list survives the run; if reading HEAD's copy needs a scratch tree, it lives outside the project and is removed, and a failure to build it is said ('not judged: ...'), never read as a match.\n\nHOW TO PROVE. Red before, each through the doctor's real entry on a scratch git project: the link layout re-pinned uncommitted reads OK today; the autocrlf layout reads OK today; the working-copy-only edit reads 'will not start' for the session route today. After: each row matches what drive-phase.py next does on the same scratch project (assert both in the same case). Allow twins: a committed, unchanged pin reads OK on both routes; a plan with no skillPins prints no pin row. Mutation probe from the worktree root, each row asserted applied.\n\nNOT in this task: the skill-pin verb's output and the vendoring guide's order (a sibling task).\n\nAcceptance:\n(1) For a link-layout skill, an autocrlf checkout and a working-copy-only edit, the doctor's pin row and drive-phase next agree on whether a wave starts, proved in one case each.\n(2) Every pin row names the route it judges and gives that route's remedy.\n(3) The doctor and the drive call one function for the verdict; no git-status reading of a pinned skill is left in _doctor_policy.py.\n(4) The doctor leaves the project, its .git and its worktree list as it found them.",
       "files": [
         "plugins/audit/scripts/status/_doctor_policy.py",
@@ -3242,14 +3242,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "de68f163e89c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "The doctor's pin rows now judge each route by the drive's own reader over the copy the drive asks for that route. _doctor_policy._pin_routes names the routes from the config (executor.writerModel, executor.waveWidth): the project's working copy for 'a session run in this tree' or 'a subagent dispatched from this tree', and on the session route at a wave width above one also 'a wave's sessions', judged over HEAD's copy. Every row is prefixed 'for <route>:' and its fix is that route's (_pin_fix: a wave's skill held by a commit is told to commit; the working-copy route is told to restore where it reads). Both routes call _skill_places.pin_verdict, the function the drive calls. The git-status reader (_head_note, _under) is deleted; its stale GIT_PATH_BASE_EXEMPT row in tools/lints/_deps.py is deleted with it (a file outside the task's files list; the plan gate allowed the edit). HEAD's copy is read by _in_head_copy / _cut_head_copy: git rev-parse, then read-tree into a PRIVATE index file and checkout-index into a scratch directory under the temp directory, removed in a finally; nothing is written to the project, its .git or .git/worktrees. A copy that cannot be cut (no git, no repository, no commit, no scratch dir, git failed, temp dir inside the repository) is a WARNING row 'for a wave's sessions: not judged: <why>', and a scratch directory that could not be removed is its own warning. I chose this over a second `git worktree add --detach` (which checkout_at uses) because it needs no .git/worktrees entry, runs no post-checkout hook and so cannot leave a registration if the doctor is killed; the cost is that the bytes come from read-tree/checkout-index rather than the identical git operation, which I measured equal over core.autocrlf=true, text eol=crlf, -text and a committed directory link (S/sg2.26/exp_checkout.py: SAME in all four) and which dp70/dp71 hold against the real drive. The words of a stop for a copy that is not the project's moved out of drive-phase.py into _skill_places (commit_label, loaded_tier, copy_remedy, copy_stop_words; loaded_tier uses _inside instead of _worktrees.within_tree, same containment on resolved paths); drive-phase.pin_stop_words now calls copy_stop_words and the drive's four private helpers are gone, so the runner's stop and the doctor's wave row are one sentence (dp70 asserts the doctor's words occur verbatim in the drive's output). Tests: tests/test__doctor_policy.py gained a scenario block that builds real git projects and runs BOTH audit-doctor.py --json and drive-phase.py next on each (dp70, dp70b link layout and its committed twin, dp71, dp71b autocrlf and twin, dp72, dp72b, dp72c working-copy-only edit on the session and subagent routes and the matching twin, dp73 no pins draws no row, dp74 .git byte-for-byte, worktree list and private TMPDIR unchanged after the doctor runs, dp75, dp75b not-judged, dp76 a personal skill is not told to commit); dp68 rewritten for the route rows, dp68b asserts no git-status text and no _head_note. tests/test__skill_places.py gained sp52-sp55. tests/test_drive_phase.py: spd33a now calls _skill_places.commit_label (the driver no longer defines it). PLUGIN-BUILD-GUIDE.md: the _doctor_policy, _skill_places and drive-phase sections updated. Measured: red on HEAD's code with the new test files (S/sg2.26/red_first.out): doctor suite 73/84, skill_places 19/38, the reds including dp70, dp71, dp72 (OK where the wave stops; 'will not start' where it dispatches). The probes reproduce the review's disagreement on an export of HEAD (link_head_probe L1: doctor OK, next exit 1) and agree on the work in progress (S/sg2.26/out/link_head.after.txt, journey.after.txt: s2, s5, s6, s6b). Mutation probe S/sg2.26/mutations.py (16 rows on copies of the tree, each anchor asserted applied once, each deny with its allow twin, caches purged, private TMPDIR): ALL 16 APPLIED AND KILLED (S/sg2.26/mutations.out). Gates run: sweep of test__doctor_policy + test__skill_places + test_drive_phase --jobs 4: 3/3 ok (test_drive_phase 1125 cases); dependants' sweep test__doctor_policy test__skill_places test__deps test__doctor_report test__output_lints test_audit_doctor test__doctor_hygiene test__doctor_setup: 8/8 ok, 967 cases; ruff clean on the changed .py. The submit's own proof command is narrowed to the two suites that carry the new cases (test_drive_phase would not fit the helper's deadline and its one change, spd33a, was run green in the sweep above). Not run: the full affected-test gate and any browser gate. _deps.layer_violations() reports one violation (panel/_panel_state.py), identical on an export of HEAD, so not mine. Open items outside the task's files: reference/vendoring-a-skill.md:75-76 promises 'doctor says so when a pinned project skill's working copy differs from HEAD' (the sibling task owns the guide), and commands/doctor.md says 'no locks, no mutations' while the wave row now makes and removes a scratch directory under the temp dir.",
+        "descriptive": "The doctor's skill-pin rows now name the route they judge and reach, over a clean scratch copy of HEAD, the same verdict the drive's wave reaches - so a re-pinned committed link, an autocrlf checkout and a working-copy-only edit no longer read OK or 'will not start' where the drive does the opposite."
       },
       "startedAt": "2026-11-25T18:13:56Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-25T18:57:42Z",
+      "verifiedBy": [
+        "dp70/dp70b: a link-layout skill re-pinned uncommitted - the doctor's wave row warns exactly where drive-phase next stops, in the same words; the committed twin reads OK on both routes and the wave starts",
+        "dp71/dp71b: a core.autocrlf=true checkout (git status clean) - doctor and drive agree the wave stops; the same project without the conversion is quiet",
+        "dp72/dp72b/dp72c: a working-copy-only edit - on the session route the wave dispatches and the doctor warns only for the working-copy route, on the subagent route both stop; the matching subagent twin starts",
+        "dp73/dp74/dp75/dp75b/dp76: no pins draws no row; the doctor leaves .git, the worktree list and its temp dir as found; a copy of HEAD that cannot be cut is 'not judged'; a personal skill is never told to commit",
+        "dp68/dp68b: in-process route rows for an edited, clean and committed skill, and no git-status reading left in _doctor_policy",
+        "sp52-sp55: _skill_places.copy_stop_words, loaded_tier and commit_label"
+      ],
       "notes": [
         {
           "at": "2026-11-25T18:13:54Z",
@@ -3269,7 +3276,40 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-25T18:45:28Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1888000,
+            "startedAt": "2026-11-25T18:14:00Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-25T18:56:23Z.091502",
+            "kind": "wait",
+            "ms": 5000,
+            "startedAt": "2026-11-25T18:45:48Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-25T18:56:23Z.091502, ending at its startedAt",
+            "kind": "selection",
+            "ms": 24707,
+            "runId": "2026-11-25T18:56:23Z.091502",
+            "startedAt": "2026-11-25T18:45:53Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-25T18:56:23Z.091502",
+            "kind": "gate",
+            "ms": 605283,
+            "runId": "2026-11-25T18:56:23Z.091502",
+            "startedAt": "2026-11-25T18:46:18Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit de68f163e89c",
+            "kind": "commit",
+            "ms": 1787,
+            "startedAt": "2026-11-25T18:57:39Z"
+          }
+        ],
         "firstStartedAt": "2026-11-25T18:13:56Z"
       },
       "reviewPerTask": "signals",
@@ -3277,19 +3317,32 @@
         "runId": "2026-11-25T18:57:38Z.591d85",
         "status": "passed",
         "at": "2026-11-25T18:57:38Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "de68f163e89c",
+        "at": "2026-11-25T18:57:42Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-25T18:45:21Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__doctor_policy.py tests/test__skill_places.py` in a throwaway tree at HEAD exited 1 with 29 of 38 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dp68 (house FAIL), dp68b (house FAIL), dp70 (house FAIL), dp70b (house FAIL), dp71 (house FAIL), dp72 (house FAIL), dp72b (house FAIL), dp72c (house FAIL) and 21 more: SELFTEST FAILED: 19/38 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "SG2.27-xk1",
       "title": "The skill-pin verb's ordinary output says what it pinned and every warning, and the vendoring guide puts the line-ending attribute before the first commit",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The phase review of SG2 (directory sg2-phase-review/pins in the orchestrator's durable scratch (the prompt names it), REVIEW.md HOLD-1 and HOLD-2, probes verbose_probe.py and journey_probe.py s6 s6b, outputs under out/; re-run by the orchestrator on an export of b16a5c49 with the same result) found two things a user meets on the first pin.\n\n(1) Without --verbose, `/audit:task skill-pin` prints only '[audit-task] meta.skillPins.X pinned; written: ...'. The directory, the digest, the old and new digest on a re-pin, the --allow-personal-copy warning (the pin fails on every other machine), the tool-written-entries warning (__pycache__, .DS_Store, .git) and the validator's 'pin protects nothing' warning are dropped (plugins/audit/scripts/manifest/audit-task.py `_skill_pin_report` against the short form, terse_cli / success_line). reference/vendoring-a-skill.md, reference/verbs-in-full.md, plugins/audit/README.md and CHANGELOG.md say they are printed. The spv* cases call M.main in-process, so they never see the short form. RULE: the short form never drops a WARNING for this verb - and for any other verb whose warnings the same path swallows (find them by what terse_cli drops; if one lies outside this task's files, hand it back) - and keeps the digest, and a re-pin's was/now, on one line. Tests run the verb as a process, short form.\n\n(2) reference/vendoring-a-skill.md pins and commits (step 7) and only then adds `.claude/skills/<name>/** -text` (step 8). Under core.autocrlf=true the copy is pinned with CRLF while git stores LF; adding the attribute afterwards repairs nothing without `git add --renormalize`, so every clone mismatches and the wave stops. Done before the first commit (probe s6b) a clone matches. The guide's order and its checklist put the attribute before the first add, say what to do if it was committed already (renormalize, re-pin, commit), and the README passage on it says the same.\n\nHOW TO PROVE. Red before: the verb run as a process with an --allow-personal-copy pin prints no warning; a pin of a directory holding __pycache__ prints none. Allow twin: a clean pin prints one success line and no WARNING. A case pins the guide's step order (the attribute step precedes the commit step). Mutation probe from the worktree root.\n\nAcceptance:\n(1) Run as a process without --verbose, skill-pin prints every warning it computes, and the digest.\n(2) A clean pin prints no warning.\n(3) The vendoring guide and the README put the line-ending attribute before the first commit and say how to repair a copy committed without it.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
         "tests/test_audit_task.py",
         "plugins/audit/reference/vendoring-a-skill.md",
         "plugins/audit/README.md",
-        "plugins/audit/reference/verbs-in-full.md"
+        "plugins/audit/reference/verbs-in-full.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -3307,22 +3360,48 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-25T18:58:03Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
         {
           "at": "2026-11-25T18:43:57Z",
           "text": "From SG2.26-xk1: reference/vendoring-a-skill.md still promises the doctor says so when a pinned project skill's working copy differs from HEAD. SG2.26 replaced that row: the doctor now judges each route (a wave's sessions read the commit's copy; a subagent or a session in this tree, the working copy) by the drive's own reader and prefixes each row with its route. Reword the guide's sentence to what the doctor now prints - run the doctor on a scratch project and quote it, do not paraphrase."
+        },
+        {
+          "at": "2026-11-25T18:58:01Z",
+          "text": "it quotes README's floor-guard sentence; SG2.27 edits README only in the skill-pin and vendoring passages",
+          "waives": "tests/test__floor_guard.py"
+        },
+        {
+          "at": "2026-11-25T18:58:01Z",
+          "text": "it quotes README's decide-high-risk table row; SG2.27 edits README only in the skill-pin and vendoring passages",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-25T18:58:01Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/scripts/manifest/audit-task.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/manifest/audit-task.py - a section headed by its path"
         }
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-25T18:58:03Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-25T19:30:16Z.7b6297",
+        "status": "passed",
+        "at": "2026-11-25T19:30:16Z"
+      }
     }
   ],
   "parentBranch": "integration/skill-gates",
