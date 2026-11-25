@@ -22,131 +22,166 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "SG2-R1",
         "severity": "low",
         "file": "tests/test_guard_edits.py:1289-1292",
         "issue": "The not-run half of cf31c/cf31d is recorded through _harness.skip(check, other, ..., True): `absent` is the constant True, so the helper failing direction (skipped on a host that has the mechanism) can never fire. The half is chosen by the same top_folds read that picks the half that ran, so it is true by construction, but on a mixed volume (project tree folds and .claude tells case apart, or the reverse) cf31c label still says `on a real volume that folds case` while only the folder row is held, and nothing marks the mixed case as neither kind. Only SKIPPED HERE is printed, so a reader cannot tell a mixed volume from a plain one except through the printed pair of folds answers.",
-        "resolution": "Pass the evidence the helper asks for (for the not-run half, the negation of the disk read that selected the other half), and when top_folds != cdir_folds label the case as the mixed volume rather than as either kind."
+        "resolution": "Pass the evidence the helper asks for (for the not-run half, the negation of the disk read that selected the other half), and when top_folds != cdir_folds label the case as the mixed volume rather than as either kind.",
+        "status": "carried",
+        "carriedTo": "SG3.1-xk1"
       },
       {
         "id": "SG2-R2",
         "severity": "low",
         "file": "tests/test_guard_edits.py:1114-1117",
         "issue": "The cf29 budget for a write that creates its file allows `links` = len(rel) extra calls (2) while the measured extra by the question own source is 1 (cf-new.ts: 4 before, 5 now, allowance 2, in after.folding.out). A single disk call added to that write path still passes `within` (6 <= 6); only the call-for-call comparisons `now == today` and `now == off` catch it, so the claim that the budget is what turns an added call red holds for the existing-file write (allowance 0, exact) but not for the creating one. The mutation row for a disk call added to the config question path went red through the call-for-call half, not the budget.",
-        "resolution": "Say in the comment above _before (the call-for-call paragraph) that the added calls of a creating write are held by `now == today`, not by the budget; or tighten the allowance to the measured link count per host once windows CI has printed it."
+        "resolution": "Say in the comment above _before (the call-for-call paragraph) that the added calls of a creating write are held by `now == today`, not by the budget; or tighten the allowance to the measured link count per host once windows CI has printed it.",
+        "status": "carried",
+        "carriedTo": "SG3.1-xk1"
       },
       {
         "id": "SG2-R3",
         "severity": "med",
         "file": "tests/test_build_shop.py:1103-1141",
         "issue": "contradicts task clause: acceptance (1) and rule 1 say that on every host a builder that kept GIT_DIR leaves the other repository unchanged. kept_gitdir_faults() (line 1140) waives the unchanged check whenever refused_by_check(built) is true, so on a host where git lets the patched builder commit into the other repository (macOS) and the check then refuses with exit 3, esc47 asserts only not-exit-0 and a documented failure. The unconditional unchanged reading remains only for the shipped builder (esc45, esc46). The diff is honest about this: the block comment (1038-1048), the esc47 label (unless its own-repository check refused the build) and the executor outcome all say so, and the old esc47 never asserted anything about the other repository, so nothing is asserted more weakly than before. But the task text as written is not what the case holds, and a patched builder that writes the other repository and then refuses passes esc47 by design. I did not rerun the executor probe_victim.py to see the macOS write myself; the order is consistent with build-shop.sh (built() runs after every commit) and with the executor mutation rows.",
-        "resolution": "No code change needed if the owner accepts the narrowing: amend acceptance (1), or record it as a reconciled divergence, to say unchanged unconditionally for the shipped builder (esc45/esc46); for a GIT_DIR-keeping patch, unchanged unless the own-repository check refused. If the clause must stand literally, the only way is a patched builder that stops before git writes, which is not esc47 subject."
+        "resolution": "No code change needed if the owner accepts the narrowing: amend acceptance (1), or record it as a reconciled divergence, to say unchanged unconditionally for the shipped builder (esc45/esc46); for a GIT_DIR-keeping patch, unchanged unless the own-repository check refused. If the clause must stand literally, the only way is a patched builder that stops before git writes, which is not esc47 subject.",
+        "status": "accepted-open",
+        "acceptedReason": "The owner's 2026-11-25 rule opens a fix round only for a high, a regression, wrong behaviour or words reaching a user, or red CI. These four are test strength (R3, R5) and the windows block-cost table and an unsplit heavy block (R10, R11) - CI is green with them - so they go to the next release's batch, SG3.1-xk1, whose note names each."
       },
       {
         "id": "SG2-R4",
         "severity": "low",
         "file": "tests/test_build_shop.py:1085-1088,1171-1176",
         "issue": "check_reached() reads as not reached any exit 2 whose stderr has build-shop: git init|add|commit failed, whatever git own words were, and the skip goes through _harness.skip(..., True): the absent argument is the constant True, so the helper failure direction (skipped where the mechanism exists) can never fire. On a host where a patched builder fails at a git step for an unrelated reason, esc57 prints SKIPPED HERE and passes; only esc47 weaker conditions and esc58 (check held without GIT_DIR) remain. The words are printed in the label, so it is findable, but nothing requires them to be the work-tree refusal.",
-        "resolution": "Optional: have the esc57 skip branch also require git own words to name a work tree or GIT_DIR (a constant next to WINDOWS_WORDS), so an unrelated git failure fails esc57 instead of skipping it; or pass a computed absent argument that is not constant True."
+        "resolution": "Optional: have the esc57 skip branch also require git own words to name a work tree or GIT_DIR (a constant next to WINDOWS_WORDS), so an unrelated git failure fails esc57 instead of skipping it; or pass a computed absent argument that is not constant True.",
+        "status": "carried",
+        "carriedTo": "SG3.1-xk1"
       },
       {
         "id": "SG2-R5",
         "severity": "med",
         "file": "tests/test_build_shop.py:1943-1951",
         "issue": "The wiring from the whole-span judgement to a fault - `if grew > bound: faults.append(...)` in timing_faults - is held by no case that can go red without it. esc66, esc67 and esc68 call span_growth directly (lines 2006, 2033, 2055) and never timing_faults; its only caller is the real-engine pass at 2141, which is green for linear texts with or without that branch. The backtracking mutation rows go red by `killed at the 10s deadline`, not by `grew ... bound`, and no row mutates that branch. By reading, deleting the `if grew > bound` block leaves 76/76 green: the growth judgement is exercised as a pure function but not as the gate (the wiring of the ceiling is held - the 1 ms row reddens esc53 and esc55 - the wiring of the growth fault is not). It is the only real-engine path for a polynomial cost between the power of the bound and the ceiling: an exponent from 1.5 to about 1.9 whose time at 51200 units stays under 1.0 s (kinds 1, 7, 8 read about 0.26 s at n**1.7 on windows numbers), which neither the ceiling nor the deadline catches.",
-        "resolution": "Add a case that feeds timing_faults hand-built `runs` (name, counted, lengths, a mapping from engine to result): one with the lengths and times of the windows history (expect no fault, least room 2.87) and one with the same lengths and a quadratic series (expect a `grew ... bound` fault and least under 1); add a mutation row that removes the `if grew > bound:` block and expects that case red."
+        "resolution": "Add a case that feeds timing_faults hand-built `runs` (name, counted, lengths, a mapping from engine to result): one with the lengths and times of the windows history (expect no fault, least room 2.87) and one with the same lengths and a quadratic series (expect a `grew ... bound` fault and least under 1); add a mutation row that removes the `if grew > bound:` block and expects that case red.",
+        "status": "accepted-open",
+        "acceptedReason": "The owner's 2026-11-25 rule opens a fix round only for a high, a regression, wrong behaviour or words reaching a user, or red CI. These four are test strength (R3, R5) and the windows block-cost table and an unsplit heavy block (R10, R11) - CI is green with them - so they go to the next release's batch, SG3.1-xk1, whose note names each."
       },
       {
         "id": "SG2-R6",
         "severity": "low",
         "file": "tests/test_build_shop.py:2006-2012,2051-2058",
         "issue": "TRIPWIRE_POWER is held only inside a window by the new cases: esc66 needs the windows history to pass (power at least about 1.3) and a per-doubling read above 2 ** power (4.16 > 2 ** power, so power under about 2.06); the quadratic of esc68 is caught while the length ratio to the power stays under 59 thousand (power under about 1.97). A power of 1.9 survives every case by reading, though the task keeps the power unmoved. The mutation row raises it to 2.5 only.",
-        "resolution": "Give esc68 a second cost, a power law at 1.75 anchored the same way, so a power raised past it goes red."
+        "resolution": "Give esc68 a second cost, a power law at 1.75 anchored the same way, so a power raised past it goes red.",
+        "status": "carried",
+        "carriedTo": "SG3.1-xk1"
       },
       {
         "id": "SG2-R7",
         "severity": "low",
         "file": "tests/test_build_shop.py:1708-1740",
         "issue": "The load headroom of the ceiling and the room are argued from figures the evidence does not fully carry. (a) `about 0.63 s under such load` scales the 800-unit busy/idle ratio 2.35 from the 2026-11-19 CI log (not handed to me, not read) onto the 51200-unit search, while S/diag4/diag_windows_2025.txt:159,215,255 measure that search idle and loaded directly: 0.1875 s, 0.2031 s and 0.2656 s (1.42x). (b) The comment gives 2.87 as the least room; the suite run of its own on the windows runner read 2.83 (S/diag4/diag_windows_2025.txt:378, esc53), so readings span 2.83 to 3.66 and the margin to the factor of two is narrower than the comment reads. (c) `the longest text there is ... 1883359 characters` is a present-tense count with no command beside it; the stale check of esc66 guards the 1883333 of the history row, not the 26 characters of the twin added to it.",
-        "resolution": "Write the measured loaded figure beside or instead of the extrapolated 2.35, add the 2.83 reading to the room sentence as history, and carry the expression that prints the length of the longest text, or drop the figure."
+        "resolution": "Write the measured loaded figure beside or instead of the extrapolated 2.35, add the 2.83 reading to the room sentence as history, and carry the expression that prints the length of the longest text, or drop the figure.",
+        "status": "carried",
+        "carriedTo": "SG3.1-xk1"
       },
       {
         "id": "SG2-R8",
         "severity": "low",
         "file": "tests/test_build_shop.py:1731-1740,2141-2149",
         "issue": "One TRIPWIRE_CEILING serves both engines. Node longest search reads 0.005 to 0.009 s on the windows runner (diag4:158,214,254), so 1.0 s is 100 to 200 times its idle figure and catches for node nothing the deadline and the growth judgement (room about 15) do not; for python it catches only a search of about 1 to 2 s (past that, four searches exceed the 8 s series deadline first), a guard 5x over the idle 0.19-0.27 s.",
-        "resolution": "Derive a ceiling per engine (for node from its own loaded 0.0093 s), or say in the comment that the ceiling is python and node is held by growth and the deadline."
+        "resolution": "Derive a ceiling per engine (for node from its own loaded 0.0093 s), or say in the comment that the ceiling is python and node is held by growth and the deadline.",
+        "status": "carried",
+        "carriedTo": "SG3.1-xk1"
       },
       {
         "id": "SG2-R9",
         "severity": "low",
         "file": "tests/test_build_shop.py:2090-2094,2132-2146",
         "issue": "esc70 hand-built runs give repeats None in _answered, the shape of the node child. The python child always sends a list (diag_windows_2025.txt: repeats [2134, 2]), so the growth fault the real python pass produces carries the suffix \", over [..] searches a length\" (timing_faults 1957-1960). esc70 builds its owed text without that suffix, so deleting the suffix, or breaking its formatting, leaves every case green: a branch of the growth fault the real pass uses is held by no case.",
-        "resolution": "Let _answered take a repeats argument and give the cost at the 1.75 power a list as the python child sends it (for example [3, 2]); build the owed text with the suffix \", over [3, 2] searches a length\", so the whole growth fault the real python pass emits is compared."
+        "resolution": "Let _answered take a repeats argument and give the cost at the 1.75 power a list as the python child sends it (for example [3, 2]); build the owed text with the suffix \", over [3, 2] searches a length\", so the whole growth fault the real python pass emits is compared.",
+        "status": "carried",
+        "carriedTo": "SG3.1-xk1"
       },
       {
         "id": "SG2-R10",
         "severity": "med",
         "file": ".github/sweep-costs.json:blocks[tests/test_guard_edits.py], blocks[tests/test_journal_writes.py], costs[both]; tools/sweep-selftests.py:block_timeout, shard_units",
         "issue": "The twenty block figures of the two suites (and the two file figures, which are their sums) are this machine's macOS seconds under `platform: windows-2025`. I confirmed they equal sg2.8/sweep-costs.after-local.json (platform darwin) entry for entry, and that the committed table is identical to sg2.8/after/sweep-costs.json, so nothing is hand-edited beyond the two recorded commands; the other block figures cannot be checked here and come from the windows logs by the executor's account. What the mixed table does: (a) block_timeout is max(300, ceil(3 x figure)). Every one of the twenty comes out at the 300 s floor, ge-generated 71.4 -> 215 -> 300, jw-generated 60.6 -> 182 -> 300. A windows-recorded figure for ge-generated (about 235 s or more) would give about 705 s, the same rule that gives ar18-block 706 s. So the one block that matters keeps the 300 s that killed the whole suite twice, with the other nine blocks' seconds removed from it and nothing else. (b) shard_units deals by slot-seconds, and these twenty are weighed on a scale roughly three times lighter than every neighbour: ge-generated at 71.4 sorts below drive_phase's ab-block (123.1), though its windows seconds are about the size of ar18-block's 235.1, so it is not dealt among the heaviest first and the part that gets it is under-counted by roughly 160 s per suite. (c) The runner's own comment above load_costs says a timeout reads the figure itself and a darwin figure under-states a windows one, which is exactly this. No case could have gone red: the table has one `platform` field and no per-entry origin, and swp4 only checks that the field names a windows family. The executor's choice of `--costs-from-log ... --platform windows-2025` over a bare local `--record-costs` was right (the local write set platform darwin, which swp4 refuses), but merge_costs then kept the local block figures under the new label. The task text's own premise ('the table's figures are this machine's') was wrong about the table.",
-        "resolution": "Before this closes as green on the windows leg, record the twenty blocks from the first windows logs that carry them (`--costs-from-log ... --platform windows-2025 --record-costs`), and until then say in the closing note that the twenty figures are macOS. If the coordinator wants the table to state only what it knows, leave the two suites' blocks out of `blocks` so block_figure answers 'untimed' and block_timeout gives each the largest timeout any entry gives (706 s) - an honest basis and more headroom than the floor, at the price of the deal using the median estimate. Do not hand-scale the figures."
+        "resolution": "Before this closes as green on the windows leg, record the twenty blocks from the first windows logs that carry them (`--costs-from-log ... --platform windows-2025 --record-costs`), and until then say in the closing note that the twenty figures are macOS. If the coordinator wants the table to state only what it knows, leave the two suites' blocks out of `blocks` so block_figure answers 'untimed' and block_timeout gives each the largest timeout any entry gives (706 s) - an honest basis and more headroom than the floor, at the price of the deal using the median estimate. Do not hand-scale the figures.",
+        "status": "accepted-open",
+        "acceptedReason": "The owner's 2026-11-25 rule opens a fix round only for a high, a regression, wrong behaviour or words reaching a user, or red CI. These four are test strength (R3, R5) and the windows block-cost table and an unsplit heavy block (R10, R11) - CI is green with them - so they go to the next release's batch, SG3.1-xk1, whose note names each."
       },
       {
         "id": "SG2-R11",
         "severity": "med",
         "file": "tests/test_guard_edits.py:3665 (ge-generated, _generated_cases 2504); tests/test_journal_writes.py:4162 (jw-generated, _generated_question_cases)",
         "issue": "contradicts task clause 6 ('If a single block is itself heavier than the others together ... say so and split it where the seam is; do not raise a timeout to make a slow file fit'). The executor says so and does not split. I checked the arithmetic: ge-generated 71.4 vs the other nine 23.5 (94.9 - 71.4), jw-generated 60.6 vs 34.2 (94.8 - 60.6): both right, both heavier than the rest together. Against the logs: guard 236.1 s windows plain 1 (ci2 run-44573316400.log line 7938) against 31.6 s linux plain 1 (line 6238); in ci4 job-136040228539.log line 365 the same suite is killed at 300.0 s and job-136040228761.log line 367 kills journal at 300.0 s. A kill is a lower bound, not a measurement. The executor's 'at 3.3x ... about 236 s and 200 s, 0.79 and 0.67 of the timeout' treats the lower bound of the ratio (300/92) as its value; a suite killed at 300 s has a generated block of at least about 0.78 x 300 = 234 s, and the same leg went from 236 s to 300 s or more between runs, so the margin under the 300 s block timeout is not demonstrated. The local 92 s itself was taken with two suites sharing a loaded machine (the executor's own load figures 2.6-6.8, fseventsd at 90-180 percent), against 31.6 and 42.1 s on linux CI. Whether the staging was worth doing: it is not pointless - it takes the other 22-33 percent of each suite out of the block that can be killed, runs the nine small blocks in parallel (wall 91.5 s to 73.8 s locally), and it is what lets the table calibrate the block once windows figures exist - but with finding 1 standing it buys only that 22-33 percent against an unchanged 300 s, so the next windows run can fail the same way. The fixture-cost option the executor lists as (b) (a template repository copied per world; his profile: 27.7 s of 73.3 s building 364 worlds with 1497 repository-tool calls, about 20 s in the hook's own calls) keeps every label and was not tried; the seam in gen_sweep (tests/test_guard_edits.py:2462, each world built and visited independently) exists but cf36's single label summarises the whole sweep, so a split that keeps labels needs an aggregation the harness does not offer.",
-        "resolution": "Close this task with the open item as a plan task of its own, not as prose in a return: cut the generated-arrangements sweep's fixture cost (template-copy worlds, or per-family cases with new ids and an agreed label change), acceptance a measured windows figure for ge-generated and jw-generated well under the block timeout, or a timeout calibrated from a windows figure (finding 1). Record the open item against the phase so sign-off sees it; do not raise the timeout."
+        "resolution": "Close this task with the open item as a plan task of its own, not as prose in a return: cut the generated-arrangements sweep's fixture cost (template-copy worlds, or per-family cases with new ids and an agreed label change), acceptance a measured windows figure for ge-generated and jw-generated well under the block timeout, or a timeout calibrated from a windows figure (finding 1). Record the open item against the phase so sign-off sees it; do not raise the timeout.",
+        "status": "accepted-open",
+        "acceptedReason": "The owner's 2026-11-25 rule opens a fix round only for a high, a regression, wrong behaviour or words reaching a user, or red CI. These four are test strength (R3, R5) and the windows block-cost table and an unsplit heavy block (R10, R11) - CI is green with them - so they go to the next release's batch, SG3.1-xk1, whose note names each."
       },
       {
         "id": "SG2-R12",
         "severity": "low",
         "file": "tests/test_guard_edits.py:2712-2720 (_process_count_cases, cf37b at 2744)",
         "issue": "Answer to question 2: (a) for what cf37b's label says, with a residue. I ran the executor's probe_listing.py in a scratch directory: a cold process's first ordinary decide lists scripts/, scripts/config, scripts/git and scripts/governance (os.scandir, found by _config.find_script's os.walk while _load_journal_lib loads _journal_io.py), the second call lists none, and after `_config.journal_lib()` the first lists none. guard-edits.py reaches that load on an ordinary write through `_config.in_journal` (guard-edits.py:461, tree inside the project), so the comment's claim is true: those listings are a lookup of the plugin's own code, not the config question (the registrations the cf29-cf37 family counts). Separating them is correct, and the assertion's condition is unchanged. But before the change cf37b had only ever measured a warm process by accident, and it now does so on purpose; the shipped hook is a fresh process per call and pays the four-folder walk on every ordinary write. No case anywhere asserts that cold figure, so a growth in it (a fifth folder, a second walk) would be green. The cost existed before this diff and the diff does not add it, which is why this is not med, but this diff is what makes the suite blind to it. The executor reported it in his outcome as a batch finding; nothing in the tree records it.",
-        "resolution": "Route it to sign-off as a finding: add one case that counts the listings of a cold hook process for an ordinary write (the hook as a subprocess, as cf37 already does for its processes) and pins the measured number with its basis, or give find_script a direct path for the journal library so the walk is not paid per call."
+        "resolution": "Route it to sign-off as a finding: add one case that counts the listings of a cold hook process for an ordinary write (the hook as a subprocess, as cf37 already does for its processes) and pins the measured number with its basis, or give find_script a direct path for the journal library so the walk is not paid per call.",
+        "status": "carried",
+        "carriedTo": "SG3.1-xk1"
       },
       {
         "id": "SG2-R13",
         "severity": "low",
         "file": "tests/test_journal_writes.py:4157-4160 (STAGES comment)",
         "issue": "Two sentences claim more than the code shows. 'sn0 is the name that report carried before the suite was staged': before the change the raising block was reported as `sn0 the switch-reading cases` (the removed stage call labelled that way), now it is reported as `sn0`, so the name is shortened, not carried. 'nearly all of it is `oq5`' is a ratio with no basis in the file; its basis (a profile, oq5 50.5 s of 53.3 s) is only in the filed return.",
-        "resolution": "Say 'a label beginning sn0, as before' or drop the sentence, and either carry the basis (the command that profiled the block) or delete 'nearly all of it' and keep the pointer to oq5."
+        "resolution": "Say 'a label beginning sn0, as before' or drop the sentence, and either carry the basis (the command that profiled the block) or delete 'nearly all of it' and keep the pointer to oq5.",
+        "status": "carried",
+        "carriedTo": "SG3.1-xk1"
       },
       {
         "id": "SG2-R14",
         "severity": "low",
         "file": "tests/test_guard_edits.py:2674-2690",
         "issue": "cf36e puts its measured values (commit ids, object-file counts, lists) into the case LABEL, not the check's third detail argument. Its PASS line is about 1.2 kB and differs on every run (the commit ids move with the commit's second), where every other label of the suite is stable text. Anything that compares labels across runs (the before/after label comparison this task's rule 3 uses, a replay, a credit by label) sees a different case each time.",
-        "resolution": "Keep the label to the static sentence and pass the as_template ... placed values as the detail argument: check(label, cond, detail)."
+        "resolution": "Keep the label to the static sentence and pass the as_template ... placed values as the detail argument: check(label, cond, detail).",
+        "status": "carried",
+        "carriedTo": "SG3.1-xk1"
       },
       {
         "id": "SG2-R15",
         "severity": "low",
         "file": "tests/test_guard_edits.py:2279-2281, 2633-2690 (cf36e), 2304-2306 (_gen_init)",
         "issue": "The third template - the initialised-only repository _gen_init copies into nested-repo, repo and link-repo worlds - is held by no case: cf36e copies only the top template for independence and checks member placement for top and down; nothing asserts that a copy of the init template names no commit. The mutation table has rows for link, hard link, uncommitted template and wrong member template, none for the init template given a committed repository. The records comparison would not tell either, because the hook does not read those repositories' heads.",
-        "resolution": "Add to cf36e (or beside it) a copy of the init template read with _gen_repo_state asserting head None and an empty object count, and a mutation row giving _gen_init the committed template; show it red."
+        "resolution": "Add to cf36e (or beside it) a copy of the init template read with _gen_repo_state asserting head None and an empty object count, and a mutation row giving _gen_init the committed template; show it red.",
+        "status": "carried",
+        "carriedTo": "SG3.1-xk1"
       },
       {
         "id": "SG2-R16",
         "severity": "low",
         "file": "tests/test_guard_edits.py:2233-2236",
         "issue": "The section comment says a repository 'records nothing of where it stands' and that its index is 'the same bytes wherever git made them'. The index records each file's stat data (inode, ctime, mtime, device), so a copied index is stale against the copy's files; it stays correct only because the first status re-hashes. cf36e does show status clean for the copy, so the behaviour is held, but the sentence claims more than is true.",
-        "resolution": "Say that the index's stat data is stale in a copy and that a status re-hashes (cf36e reads it clean), instead of saying nothing records the place."
+        "resolution": "Say that the index's stat data is stale in a copy and that a status re-hashes (cf36e reads it clean), instead of saying nothing records the place.",
+        "status": "carried",
+        "carriedTo": "SG3.1-xk1"
       },
       {
         "id": "SG2-R17",
         "severity": "low",
         "file": ".github/sweep-costs.json:blocks of tests/test_guard_edits.py (ge-generated), blocks of tests/test_journal_writes.py (jw-generated), costs of both",
         "issue": "The 300.0 figures for the two generated blocks are the timeout the killed blocks were allowed (the recorder reads the log line's seconds), so they are a kill floor and not a measurement, and the table has no per-entry origin to say so. They give block_timeout 900 s each (3 x 300), which against the windows readings of the changed tree (function alone 155.1 s and 122.8 s; through the sweep 235.3 s and 204.0 s, 205.4 s and 175.5 s) is 3.8 to 5.1 times the observed seconds: a usable hang detector, but its basis is the old kill, and the file figures 354.4 and 385.6 sum those floors. The re-record the task says is owed from a log of the changed code exists only in the executor's return prose: I found no task or note in docs/audit/phases/SG2.json that carries it.",
-        "resolution": "Record the owed re-record against the phase as a plan task (acceptance: the two blocks' figures from a windows log of this change through --costs-from-log), as the previous review's resolution asked; until then the closing note must say the two generated figures are kill floors."
+        "resolution": "Record the owed re-record against the phase as a plan task (acceptance: the two blocks' figures from a windows log of this change through --costs-from-log), as the previous review's resolution asked; until then the closing note must say the two generated figures are kill floors.",
+        "status": "carried",
+        "carriedTo": "SG3.1-xk1"
       }
     ],
-    "outcome": "[findings: 17 - 0 high, 4 med, 13 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 17 - 0 high, 4 med, 13 low; 0 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "SG2 delivers meta.skillPins end to end (the skill-pin verb, the doctor judging each route by the drive's own reader, the stop before a session or a wave loads bytes other than those pinned, the vendoring guide), a skill the executor could not load said on the record, and the failed-call pass after registered in a second hooks file that an older host refuses alone. The phase review's four holds were fixed in SG2.26 and SG2.27; its lows and the per-task reviews' open findings are carried to SG3.1-xk1, four meds left open with the owner's rule as the reason. Per-task reviewer answers continued over: SG2.6-xk1 intent diverges: Nastavi + pomeri proveru (Recommended)",
   "tasks": [
     {
       "id": "SG2.2-ukq",
@@ -3334,7 +3369,7 @@
     {
       "id": "SG2.27-xk1",
       "title": "The skill-pin verb's ordinary output says what it pinned and every warning, and the vendoring guide puts the line-ending attribute before the first commit",
-      "status": "in_progress",
+      "status": "done",
       "description": "The phase review of SG2 (directory sg2-phase-review/pins in the orchestrator's durable scratch (the prompt names it), REVIEW.md HOLD-1 and HOLD-2, probes verbose_probe.py and journey_probe.py s6 s6b, outputs under out/; re-run by the orchestrator on an export of b16a5c49 with the same result) found two things a user meets on the first pin.\n\n(1) Without --verbose, `/audit:task skill-pin` prints only '[audit-task] meta.skillPins.X pinned; written: ...'. The directory, the digest, the old and new digest on a re-pin, the --allow-personal-copy warning (the pin fails on every other machine), the tool-written-entries warning (__pycache__, .DS_Store, .git) and the validator's 'pin protects nothing' warning are dropped (plugins/audit/scripts/manifest/audit-task.py `_skill_pin_report` against the short form, terse_cli / success_line). reference/vendoring-a-skill.md, reference/verbs-in-full.md, plugins/audit/README.md and CHANGELOG.md say they are printed. The spv* cases call M.main in-process, so they never see the short form. RULE: the short form never drops a WARNING for this verb - and for any other verb whose warnings the same path swallows (find them by what terse_cli drops; if one lies outside this task's files, hand it back) - and keeps the digest, and a re-pin's was/now, on one line. Tests run the verb as a process, short form.\n\n(2) reference/vendoring-a-skill.md pins and commits (step 7) and only then adds `.claude/skills/<name>/** -text` (step 8). Under core.autocrlf=true the copy is pinned with CRLF while git stores LF; adding the attribute afterwards repairs nothing without `git add --renormalize`, so every clone mismatches and the wave stops. Done before the first commit (probe s6b) a clone matches. The guide's order and its checklist put the attribute before the first add, say what to do if it was committed already (renormalize, re-pin, commit), and the README passage on it says the same.\n\nHOW TO PROVE. Red before: the verb run as a process with an --allow-personal-copy pin prints no warning; a pin of a directory holding __pycache__ prints none. Allow twin: a clean pin prints one success line and no WARNING. A case pins the guide's step order (the attribute step precedes the commit step). Mutation probe from the worktree root.\n\nAcceptance:\n(1) Run as a process without --verbose, skill-pin prints every warning it computes, and the digest.\n(2) A clean pin prints no warning.\n(3) The vendoring guide and the README put the line-ending attribute before the first commit and say how to repair a copy committed without it.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -3362,14 +3397,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0c8e542c86f6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) plugins/audit/scripts/manifest/audit-task.py: what drops a WARNING in the short form is success_line/_decided_lines (terse_cli keeps only lines naming a written TASK id or a TASK_WARNING_LEADS lead); a pin headline names meta.skillPins.<name>, so none of the verb's lines survived. New _pin_short_form (reached from success_line when the headline is meta.skillPins.<name>) returns (text, payload), printed whole: headline; digest (a re-pin: 'digest: <spelling> was <old>, now <new>'); the directory line; 'written: ...'; then one line per WARNING that names the pin. _skill_pin_report's two own warnings now open with the pin they are about ('WARNING: meta.skillPins.<name> pinned on --allow-personal-copy: ...', 'WARNING: meta.skillPins.<name>: Its directory holds entries ...'), the validator's 'meta.skillPins: <name> is pinned, but no level of the plan names it' is matched by its own text; tokens end where a spelling ends. The plan-wide validator warnings every write re-prints stay with --verbose (a clean pin prints ONE line and no WARNING; the fixture plan carries such warnings and sps3 proves they are absent). DECISION to read: I did not keep every WARNING, because acceptance 2 (a clean pin prints no warning) fails on any plan holding one plan-wide warning. Other verbs that lose a warning by the same path (survey of every out('WARNING...') site in audit-task.py: the rest are the validator's, via _wg.collapse): the phase-branch warning of _phase_branch_note (task add/scope/..., 5 callers) and _entry_warnings' 'WARNING: phase entry: ...' of `start`; both name the phase, so the id rule dropped them; new _PHASE_NOTE keeps both in _decided_lines. Not changed, outside the rule's word: the not-journaled line and the index-dirty note are not WARNING lines and are still dropped. (2) plugins/audit/reference/vendoring-a-skill.md: step 7 is now the -text attribute, before the first add, with the autocrlf reason and the repair (add the line, git add --renormalize, skill-pin again, commit - the repair measured in a scratch repo under core.autocrlf=true, S/sg2.27/eol_repair.out: stored CRs 0 after the commit, 0 after the attribute alone, 1 after --renormalize); step 8 pins and says what the verb prints; step 9's doctor sentence quotes what the doctor prints now (run on a scratch project, S/sg2.27/doctor_rows.out: 'for a session run in this tree:' / 'for a wave's sessions:' prefixes, the 'the skill X is pinned, and the copy an agent or a session would load is not the bytes pinned: <path> has digest ..., the plan pinned ...' words; session and subagent routes read the working copy, a wave's sessions the commit's); checklist reordered. README.md: the /audit:task row's skill-pin sentence and the skillPins row (before the first commit, renormalize). verbs-in-full.md: the verb's output paragraph. PLUGIN-BUILD-GUIDE.md: _decided_lines paragraph and the skill-pin paragraph. tests/test_audit_task.py: new blocks sps (the verb as a process), sfb, vo; _put_skill hoisted from _skill_pin_cases (which now binds it). Probes of the review re-run on an export of HEAD before the change (S/sg2.27/verbose_head.out: no warning, no digest; journey_head.out: s6 MISMATCH, s6b MATCH). Mutation probe S/sg2.27/mutations.py (the ROW lines of mutations.out, derived by grep -c '^ROW'): 15 DENY rows, 5 ALLOW over-fire rows and 1 benign-edit row that must stay green, every row applied once and judged as expected, baselines green, exit 0. Gates: sweep of tests/test_audit_task.py 1/1 files ok 1312 cases; run-test-gate (no --record) GATE GREEN; dependants' suites 9/9 files ok. DEPENDANTS: full-gate.py and run-test-gate.py reach audit-task.py by subprocess/basename only and read none of the changed lines - still correct (gate green); tests/test__doctor_trail.py, test__invariants.py (loads audit-task to ask its scope reader), test__scoped_commit.py (names it as a reader), test_close_phase.py (runs file-return as a process), test_commit_task_work.py (imports test_audit_task helpers and loads audit-task) - none touches skill-pin or the two kept warnings, still correct, their suites exit 0; tests/test_audit_task.py is the changed suite itself; reference/verbs-in-full.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md and manifest-conventions.md name the verb: the first three edited, manifest-conventions.md names review.* verbs only - unchanged. CHANGELOG.md (outside my files) already says the verb prints the digest and the warnings; it is now true, nothing to edit. Not done and outside the scope: the doctor is still a second reader for a pinned skill that is a link (HOLD-3) - SG2.26's change is in HEAD; I did not re-measure the eol case through the doctor.",
+        "descriptive": "The first pin a user makes now shows its digest and every warning about it without --verbose (and two phase warnings other verbs lost the same way), and the vendoring guide has the line-ending attribute in place before the first commit, with the repair for a copy already committed."
       },
       "startedAt": "2026-11-25T18:58:03Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-25T19:30:20Z",
+      "verifiedBy": [
+        "sps1-sps6: skill-pin run as a process, short form: personal copy on the flag, tool-written entries, a clean pin (one line, no WARNING, with the plan's own warning shown under --verbose), a re-pin's was/now, the validator's pin-protects-nothing, --remove",
+        "sfb1-sfb4: a task added into a phase recorded on another branch keeps the branch warning, a start entering a phase without gate and outcome keeps both entry warnings, each with its allow twin",
+        "vo1-vo2: the vendoring page's attribute step and checklist item precede the pin, and the repair is named in the page and in the README row"
+      ],
       "notes": [
         {
           "at": "2026-11-25T18:43:57Z",
@@ -3393,7 +3432,40 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-25T19:23:12Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1507000,
+            "startedAt": "2026-11-25T18:58:05Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-25T19:29:54Z.8b4218",
+            "kind": "wait",
+            "ms": 5000,
+            "startedAt": "2026-11-25T19:23:31Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-25T19:29:54Z.8b4218, ending at its startedAt",
+            "kind": "selection",
+            "ms": 24429,
+            "runId": "2026-11-25T19:29:54Z.8b4218",
+            "startedAt": "2026-11-25T19:23:36Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-25T19:29:54Z.8b4218",
+            "kind": "gate",
+            "ms": 352610,
+            "runId": "2026-11-25T19:29:54Z.8b4218",
+            "startedAt": "2026-11-25T19:24:01Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 0c8e542c86f6",
+            "kind": "commit",
+            "ms": 1803,
+            "startedAt": "2026-11-25T19:30:17Z"
+          }
+        ],
         "firstStartedAt": "2026-11-25T18:58:03Z"
       },
       "reviewPerTask": "signals",
@@ -3401,6 +3473,18 @@
         "runId": "2026-11-25T19:30:16Z.7b6297",
         "status": "passed",
         "at": "2026-11-25T19:30:16Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "0c8e542c86f6",
+        "at": "2026-11-25T19:30:20Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-25T19:23:01Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with 9 of 1312 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sps1 (house FAIL), sps2 (house FAIL), sps3 (house FAIL), sps4 (house FAIL), sps5 (house FAIL), sfb1 (house FAIL), sfb3 (house FAIL), vo1 (house FAIL) and 1 more: SELFTEST FAILED: 1303/1312 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
@@ -3411,10 +3495,10 @@
     "the low findings of the SG1 review are one task of this phase, by the owner's rule that lows are batched and only med or high findings hold a sign-off"
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "c445985d-439f-43a2-a6e0-523acc4ac52e",
-    "branch": "audit/sg2-a-named-skill-is-the-one-that",
-    "at": "2026-11-19T15:03:14Z"
-  },
-  "startedAt": "2026-11-19T15:03:14Z"
+  "startedAt": "2026-11-19T15:03:14Z",
+  "testEvidence": {
+    "runId": "2026-11-25T19:45:08Z.fc66c5",
+    "status": "passed",
+    "at": "2026-11-25T19:45:08Z"
+  }
 }
