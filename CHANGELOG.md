@@ -47,14 +47,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   wave's are before the wave is recorded), no mark, prompt file or consumed answer is left
   behind - `--answer retry` and `redispatch` included - and the phase lock is kept while a
   decision is pending or a dispatch is out, as it is for a usage refusal, instead of being
-  given back to a second session. The routes that can stop a step are derived from the
-  driver by a case and each is stopped over a changed skill and compared whole before and
-  after. On the headless route a wave member's pin is asked of the copy its session loads:
-  the project's skills as the commit its tree is cut from holds them, then the tree's own
-  copy - so restoring the bytes in the working copy without committing them is no remedy, and
-  the stop says to commit - while a serial task is asked of the project it runs in, and the
-  subagent route's brief asks the project's copy. The signal line the main loop reads names
-  the member that stopped a step after another was handed out.
+  given back to a second session - and an exception the drive does not word as a stop
+  gives the lock back by the same rule. The routes that can stop a step are derived by a
+  case from the driver's call graph, every function that reaches a pin stop through any
+  chain of calls; each is stopped over a changed skill and compared whole before and after,
+  plan phase fields and git's refs and worktrees included, with every write the step made
+  recorded in order and a stop that came after one it did not undo failing. The validation
+  session's dispatch once more over a session that opened no file is counted only after its
+  pins are asked. On the headless route a wave member's pin is asked of the copy its session
+  loads: before its tree is cut, a real detached checkout of the commit it will be cut from,
+  made in the temp directory by `git worktree add` and removed with its registration however
+  the ask ends, judged by the same reader as every other copy; then the tree's own copy. A
+  plan that pins nothing runs no git for it. The stop's remedy names the copy each stopped
+  skill's tier loads: a project skill judged at the commit is told to commit the restored
+  bytes, one judged in the member's tree to restore them there, and a personal or plugin
+  skill keeps the reader's own remedy - while a serial task is asked of the project it runs
+  in, and the subagent route's brief asks the project's copy. The signal line the main loop
+  reads names the member that stopped a step after another was handed out.
 - **A task can record where its wall time went.** The optional task key `timing` holds
   `firstStartedAt` and a list of `stages` - each a `kind` (writer, gate, selection, base,
   reviewer, commit or wait), a start, a length in milliseconds and the record the length was

@@ -328,7 +328,6 @@ import datetime
 import json
 import os
 import pathlib
-import posixpath
 import re
 import shlex
 import shutil
@@ -361,7 +360,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
-import _skill_places  # noqa: E402  (resolve_skill: whether the session runner finds a skill; require_pins, pin_flags: a pinned skill is handed out only as the bytes pinned; skill_pins: whether a plan pins anything at all)
+import _skill_places  # noqa: E402  (resolve_skill: whether the session runner finds a skill, and a stopped skill's tier; require_pins, pin_flags: a pinned skill is handed out only as the bytes pinned; skill_pins: whether a plan pins anything at all; pin_stops, stop_words: a stop's sentence per skill, its remedy replaced for the copy)
 import _loader  # noqa: E402  (script_path: every verb resolved by basename, never
 #                              loaded - the subprocess boundary is why no edge to
 #                              any of them is counted by `_deps`; load_hooks_config
@@ -2497,7 +2496,7 @@ def session_record(ctx, task, seq, role="writer"):
         "" if role == "writer" else role + ".", seq))
 
 
-def session_skills(ctx, task, phase_review=False, plan=None, where=None):
+def session_skills(ctx, task, phase_review=False, plan=None, where=None, how=None):
     """The skills `task`'s session starts with: `_areas.resolve_skills` over the
     plan as it stands now - the one resolver, so the writer, the reviewer and the
     executor subagent are given the same names. A session reviewing at phase
@@ -2511,26 +2510,27 @@ def session_skills(ctx, task, phase_review=False, plan=None, where=None):
     `where` is the directory a project skill is read from - the one the session
     will load it from. It is the project itself unless the session runs in a
     tree of its own (`member_project`), or the tree is not cut yet and the pins
-    are asked of the commit it will be cut from (`ask_member_pins`)."""
+    are asked of a checkout of the commit it will be cut from
+    (`ask_member_pins`); `how` names that copy for the stop's words
+    (`pin_stop_words`)."""
     manifest, phase = plan if plan is not None else load_phase(ctx)
     skills = _areas.resolve_skills(manifest, phase, task)
     if phase_review:
         review, _left_out = runner_review_skill(ctx, manifest, phase)
         skills = skills + [review] if review and review not in skills else skills
-    return _skill_places.require_pins(skills, manifest, where or ctx["project"],
-                                      _claude_home.claude_home(), _output.PLUGIN_ROOT)
+    return ask_pins(skills, manifest, where or ctx["project"], how)
 
 
-def session_hand(ctx, task, phase_review=False, plan=None, where=None):
+def session_hand(ctx, task, phase_review=False, plan=None, where=None, how=None):
     """`(names, flags)`: `session_skills`' answer and the `--skill-pin` flags the
     pins that hold them give - the ONE read of the pins a hand-out makes. The
     session's command is built from this and from nothing asked again
     (`writer_argv`'s `held`), so a skill that changes after the check cannot stop
     the command after the dispatch was marked: the runner holds the bytes to the
     digest on the command when it starts. `plan` is `load_phase`'s answer when
-    the caller already holds it; `where` is `session_skills`'."""
+    the caller already holds it; `where` and `how` are `session_skills`'."""
     plan = plan if plan is not None else load_phase(ctx)
-    names = session_skills(ctx, task, phase_review, plan, where)
+    names = session_skills(ctx, task, phase_review, plan, where, how)
     return names, _skill_places.pin_flags(names, plan[0], where or ctx["project"],
                                           _claude_home.claude_home(), _output.PLUGIN_ROOT)
 
@@ -2538,13 +2538,9 @@ def session_hand(ctx, task, phase_review=False, plan=None, where=None):
 def hand_in_tree(ctx, task, tree):
     """`session_hand` over the copy the session in `tree` loads - the tree's own
     when the task runs in one, else the project's - a stop naming that copy and
-    what to do for it (`_copy_words`)."""
-    where = member_project(ctx, tree)
-    try:
-        return session_hand(ctx, task, where=where)
-    except _skill_places.PinStop as exc:
-        raise _skill_places.PinStop(_copy_words(exc, where, ("tree", None)
-                                                if tree else None))
+    what to do for it (`pin_stop_words`)."""
+    return session_hand(ctx, task, where=member_project(ctx, tree),
+                        how=("tree", tree) if tree else None)
 
 
 def runner_review_skill(ctx, manifest, phase):
@@ -2564,8 +2560,7 @@ def runner_review_skill(ctx, manifest, phase):
     skill, _basis = _areas.resolve_review_skill(manifest, phase)
     if not skill:
         return None, None
-    _skill_places.require_pins([skill], manifest, ctx["project"],
-                               _claude_home.claude_home(), _output.PLUGIN_ROOT)
+    ask_pins([skill], manifest, ctx["project"])
     hit = _skill_places.resolve_skill(
         skill, ctx["project"], _claude_home.claude_home(), _output.PLUGIN_ROOT,
         _skill_places.plugin_name(_output.PLUGIN_ROOT))
@@ -3612,13 +3607,15 @@ def code_moved(ctx, since, now):
 
 
 def remove_base_tree(ctx, holder):
-    """`(kept, left)` - take a base measurement's tree down: `kept` the reason
-    a tree was not removed because the shared removal question said it is not
-    settled, `left` whether the holder is still on disk after the removal.
+    """`(kept, left)` - take a scratch tree at `<holder>/tree` down - a base
+    measurement's, or the checkout a pin at a commit is judged over
+    (`drop_checkout`): `kept` the reason a tree was not removed because the
+    shared removal question said it is not settled, `left` whether the holder
+    is still on disk after the removal.
 
     THE ONE QUESTION every remover asks, asked of this tree too: nothing but a
-    base run ever stood in it, so a move's copy beside it would be a defect to
-    keep in view, never work to delete. git's registration is removed even
+    base run or a pin's reader ever stood in it, so a move's copy beside it
+    would be a defect to keep in view, never work to delete. git's registration is removed even
     when the directory is already gone, and a tree that was never registered
     makes git refuse, which removes nothing."""
     path = os.path.join(holder, "tree")
@@ -9563,128 +9560,122 @@ def owes_executor(ctx, state, manifest, task):
 
 
 # --- the copy of a skill a pin is asked of --------------------------------------------
-def skills_at_commit(ctx, commit, wanted):
-    """`(scratch, label)`: a scratch directory holding, under `.claude/skills/`,
-    the project's skill directories as `commit` holds them whose names are in
-    `wanted` (in any case) - read from git's objects, never from a checkout - so
-    `_skill_places` reads them exactly as it reads a tree cut from `commit`: one
-    digest, the reader's own, over the same bytes. A link to a file of its own
-    skill directory is written as that file's bytes under the link's name, which
-    is the line the reader gives a link; the plugin's own source makes no link
-    (`lc5`). The caller removes `scratch`; `label` words the copy.
+def checkout_at(ctx, commit):
+    """`(tree, holder)`: a detached checkout of `commit` at `tree`, inside the
+    scratch directory `holder` under the temp directory - outside every checkout
+    of the project - made by `git worktree add --detach`, the operation that cuts
+    a member's tree. So a link (a skill directory, or `.claude/skills` itself), a
+    submodule entry, a line ending a checkout converts and a filter git runs are
+    whatever the member's tree will hold, and the pins are judged there by the
+    reader every other route asks. The caller removes it, its registration with
+    it, in a `finally` (`drop_checkout`).
 
-    Raises `_skill_places.PinStop` for what a tree cut from `commit` would hold
-    differently from what could be written here - git refusing, a submodule
-    entry (a tree gets an empty directory, or another repository's files, not
-    this skill's), a link the reader would refuse (one leading out of its
-    directory, to a directory or nowhere), a name that leaves the directory - or
-    more than a skill's ceilings (`_skill_places.MAX_SKILL_*`) selected: a pin
-    that cannot be judged is no reason to hand the skill out.
-    Bytes are the committed blobs: a checkout that converts line endings
-    (`core.autocrlf`, `.gitattributes`) holds other bytes in a file that is not
-    Markdown, which the runner then refuses in the tree it checks."""
-    top = os.path.relpath(ctx["project"], ctx["gitRoot"])
-    skills = (".claude/skills" if top == "."
-              else "%s/.claude/skills" % (top.replace(os.sep, "/"),))
-    label = "commit %s" % (commit[:12],)
+    Raises `_skill_places.PinStop` when git cannot check the commit out: a pin
+    that cannot be judged is no reason to hand the skill out. What a member's
+    tree gets AFTER git - the `.worktreeinclude` copies and the setup command
+    `task-add` runs in it - is not made here; the walk asks the tree itself once
+    it is cut, and the runner checks the copy it starts over.
 
-    def refuse(why):
-        raise _skill_places.PinStop(
-            "the skills of %s could not be read as a tree cut from it would hold "
-            "them (%s), so no pinned skill is handed out for it" % (label, why))
-    code, out, err = carry_git(ctx["gitRoot"], [
-        "ls-tree", "-r", "-z", "-l", commit, "--", skills])
-    if code != 0:
-        refuse(err or "git ls-tree exited %d" % (code,))
-    listed = []
-    for record in out.split(b"\0"):
-        meta, _tab, path = record.partition(b"\t")
-        fields = meta.split()
-        if len(fields) == 4:
-            rest = os.fsdecode(path)[len(skills) + 1:]
-            listed.append(dict(zip(("mode", "kind", "sha", "size"), fields), rest=rest))
-    tops = set(w.lower() for w in wanted)
-    picked = dict((e["rest"], e) for e in listed
-                  if e["rest"].split("/")[0].lower() in tops)
-    if any(e["kind"] == b"commit" for e in picked.values()):
-        refuse("%s is a submodule entry" % (sorted(
-            r for r, e in picked.items() if e["kind"] == b"commit")[0],))
-    ceiling = max(1, len(set(r.split("/")[0] for r in picked)))
-    if (len(picked) > _skill_places.MAX_SKILL_ENTRIES * ceiling
-            or sum(int(e["size"]) for e in picked.values() if e["size"].isdigit())
-            > _skill_places.MAX_SKILL_BYTES * ceiling):
-        refuse("more than a skill's ceilings of entries or bytes")
-    blobs = {}
-    need = sorted(set(e["sha"] for e in picked.values()))
-    if need:
-        code, out, err = carry_git(ctx["gitRoot"], ["cat-file", "--batch"],
-                                   stdin=b"\n".join(need) + b"\n")
-        if code != 0:
-            refuse(err or "git cat-file exited %d" % (code,))
-        at = 0
-        for sha in need:
-            end = out.index(b"\n", at)
-            header = out[at:end].split()
-            if len(header) != 3 or header[1] != b"blob":
-                refuse("object %s is not a file" % (sha.decode("ascii", "replace"),))
-            size = int(header[2])
-            blobs[sha] = out[end + 1:end + 1 + size]
-            at = end + 1 + size + 1
-
-    def bytes_of(rest):
-        """The bytes a tree cut from `commit` reads for `rest`: a file's own, and a
-        link's TARGET's when it leads, inside the same skill directory, to a file -
-        which is how `_skill_places.skill_digest` reads a link; any other link it
-        refuses, so none is written."""
-        here = rest
-        for _hop in range(8):
-            entry = picked[here]
-            if entry["mode"] != b"120000":
-                return blobs[entry["sha"]]
-            led = posixpath.normpath(posixpath.join(
-                posixpath.dirname(here), os.fsdecode(blobs[entry["sha"]])))
-            if (led.startswith(("..", "/")) or led not in picked
-                    or led.split("/")[0].lower() != rest.split("/")[0].lower()):
-                refuse("%s is a link that does not lead to a file of its own skill "
-                       "directory" % (rest,))
-            here = led
-        refuse("%s is a chain of links" % (rest,))
-    scratch = tempfile.mkdtemp(prefix="drive-skills-")
+    The cost is three git processes for each ask that makes one (`git worktree
+    add`, the one question's read of its admin directory, `git worktree
+    remove`) and a checkout of the whole commit, made only when the plan pins a
+    skill and a member on the session route has no tree yet."""
+    holder = tempfile.mkdtemp(prefix="drive-pin-checkout-")
+    tree = os.path.join(holder, "tree")
     try:
-        for rest in sorted(picked):
-            parts = rest.split("/")
-            if any(p in ("", ".", "..") for p in parts):
-                refuse("%r is not a name inside the directory" % (rest,))
-            dest = os.path.join(scratch, ".claude", "skills", *parts)
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            with open(dest, "wb") as fh:
-                fh.write(bytes_of(rest))
-    except BaseException as exc:
-        shutil.rmtree(scratch, ignore_errors=True)
-        if isinstance(exc, (OSError, NotImplementedError)):
-            refuse("%s could not be written here: %s" % (
-                exc.__class__.__name__, exc))
+        code, _out, err = carry_git(ctx["gitRoot"], [
+            "worktree", "add", "--detach", "--quiet", tree, commit], _own_index_env())
+    except BaseException:
+        drop_checkout(ctx, (tree, holder))
         raise
-    return scratch, label
+    if code != 0:
+        drop_checkout(ctx, (tree, holder))
+        raise _skill_places.PinStop(
+            "the skills of commit %s could not be checked out as the member's tree "
+            "will be cut from it (%s), so no pinned skill is handed out for it"
+            % (commit[:12], err or "git worktree add exited %d" % (code,)))
+    return tree, holder
 
 
-def _copy_words(exc, where, how):
-    """`exc`'s words for a pin asked of a copy that is not the project's: the
-    scratch directory named as the commit it stands for, and what to do for THAT
-    copy - restore and commit the bytes when it is a commit's, restore them in the
-    member's own tree when it is a tree's. The project's copy is worded as
-    `_skill_places` words it."""
+def drop_checkout(ctx, held):
+    """Remove the checkout `checkout_at` made (`held`) and its registration, by
+    the removal a base measurement's tree takes - the same layout, a `tree`
+    under a scratch holder, and the one question every remover asks first
+    (`remove_base_tree`). A tree kept by that question, or a directory that
+    outlives the removal, is said as a warning."""
+    kept, left = remove_base_tree(ctx, held[1])
+    if kept or left:
+        warn(ctx, "the scratch checkout %s, made to judge a pinned skill, was not "
+                  "removed (%s); remove it by hand" % (
+                      held[1], kept or "it is still on disk"))
+
+
+def pin_stop_words(exc, names, manifest, where, how):
+    """The words of a pin stop, built here and nowhere else: the reader's own
+    (`exc`) for the project's copy, and for a copy that is not - a member's tree
+    (`how` `("tree", tree)`) or the checkout of the commit it will be cut from
+    (`("commit", sha, checkout)`) - one sentence per pinned skill the reader
+    stopped over, its remedy REPLACED by the remedy for the copy that skill's TIER
+    loads (`_copy_remedy`). The checkout's path is named as the commit it stands
+    for.
+
+    The reader's stop carries words, not verdicts, so they are asked again of the
+    same copy (`_skill_places.pin_stops`, the same reader over the same bytes); a
+    stop with none to ask - `meta.skillPins` that cannot be read, or a copy that
+    holds when asked again - keeps the reader's words."""
     text = str(exc)
     if how is None:
         return text
-    kind, label = how
-    if kind == "commit":
-        return ("%s That copy is %s's: the member's tree will be cut from that "
+    pins = _skill_places.skill_pins(manifest)
+    home, plugin = _claude_home.claude_home(), _output.PLUGIN_ROOT
+    stops = (_skill_places.pin_stops(names, pins, where, home, plugin)
+             if isinstance(pins, dict) and not _skill_places.pin_shape_problems(pins)
+             and not _skill_places.pin_directory_problems(pins, where, home, plugin)
+             else [])
+    if stops:
+        running = _skill_places.plugin_name(plugin)
+        text = "\n".join(_copy_remedy(v, _skill_places.resolve_skill(
+            v["name"], where, home, plugin, running)["source"], how) for v in stops)
+    if how[0] == "commit":
+        text = text.replace(how[2], "commit %s" % (how[1][:12],))
+    return text
+
+
+def _copy_remedy(verdict, tier, how):
+    """The reader's sentence for one stopped `verdict` with its remedy replaced by
+    the one for the copy `tier` loads: a PROJECT skill judged at a commit is told
+    to commit the restored bytes, since the member's tree is cut from the commit
+    and not from the working copy; one judged in a member's tree, to restore them
+    there. A personal or plugin skill - and one found nowhere - is read where it
+    is, which no commit or tree holds, so the reader's own remedy stands. The way
+    to re-pin is the reader's, whichever copy."""
+    words = _skill_places.stop_words(verdict)
+    if tier != "project":
+        return words
+    repin = _skill_places._STOP_REMEDY.partition(", or ")[2]
+    if how[0] == "commit":
+        copy = ("That copy is commit %s's: the member's tree will be cut from that "
                 "commit, so the project's working copy is not what its session "
-                "loads - restore the pinned bytes and COMMIT them, or re-pin to "
-                "the reviewed digest." % (text.replace(where, label), label))
-    return ("%s That copy is the member's own tree, where its session runs - "
-            "restore the pinned bytes there, not in the project." % (text,))
+                "loads. Restore the pinned bytes and COMMIT them, or %s"
+                % (how[1][:12], repin))
+    else:
+        copy = ("That copy is the member's own tree, where its session runs. Restore "
+                "the pinned bytes there, not in the project, or %s" % (repin,))
+    return words.replace(_skill_places._STOP_REMEDY, copy)
+
+
+def ask_pins(names, manifest, where, how=None):
+    """`names`, unchanged, when every pinned one among them is the bytes pinned in
+    the copy at `where`; else raises `_skill_places.PinStop` worded by
+    `pin_stop_words` for the copy `how` names - the one place the drive asks
+    the reader (`_skill_places.require_pins`), so every stop is worded by the one
+    builder."""
+    try:
+        return _skill_places.require_pins(names, manifest, where,
+                                          _claude_home.claude_home(),
+                                          _output.PLUGIN_ROOT)
+    except _skill_places.PinStop as exc:
+        raise _skill_places.PinStop(pin_stop_words(exc, names, manifest, where, how))
 
 
 def ask_member_pins(ctx, state, manifest, phase, task_ids, base=None, owed=True):
@@ -9700,14 +9691,16 @@ def ask_member_pins(ctx, state, manifest, phase, task_ids, base=None, owed=True)
 
     WHICH COPY IS ASKED is the one the session will load. A session route runs a
     member in its own tree, cut from the wave's base: the tree once it exists
-    (`member_project`); before it is cut, the project's skill directories as
-    the commit it will be cut from (`base`, else the wave's) holds them
-    (`skills_at_commit`), so the project's working copy, edited or restored and
-    not committed, is not the copy asked. A personal or plugin skill lies
-    outside the cut and is read where it is. A serial task, and every task on the
-    subagent route, is asked of the project: a serial session runs in it, and
-    the subagent's brief asks it too - which copy a subagent's Skill tool loads is
-    Claude Code's, and nothing here reads it.
+    (`member_project`); before it is cut, a real checkout of the commit it will
+    be cut from (`base`, else the wave's; `checkout_at`), one for every uncut
+    member of the ask and removed before it returns, so the project's working
+    copy, edited or restored and not committed, is not the copy asked. A
+    personal or plugin skill lies outside the cut and is read where it is; the
+    stop's remedy names the copy each skill's tier loads (`pin_stop_words`). A
+    serial task, and every task on the subagent route, is asked of the project:
+    a serial session runs in it, and the subagent's brief asks it too - which
+    copy a subagent's Skill tool loads is Claude Code's, and nothing here reads
+    it.
 
     A pinned directory is read again at each of the opening of a wave, its walk
     (both here) and the dispatch that builds the command (`session_hand`), and
@@ -9724,27 +9717,20 @@ def ask_member_pins(ctx, state, manifest, phase, task_ids, base=None, owed=True)
     session = writer_setting(ctx["config"])[0]
     commit = base or wave.get("base")
     uncut = [t for t in asked if session and commit and not trees.get(t["id"])]
-    copy = None
-    if uncut:
-        pins = _skill_places.skill_pins(manifest)
-        names = [n for t in uncut for n in _areas.resolve_skills(manifest, phase, t)]
-        wanted = [str(n).rpartition(":")[2] for n in
-                  names + (list(pins) if isinstance(pins, dict) else [])]
-        copy = skills_at_commit(ctx, commit, wanted)
+    copy = checkout_at(ctx, commit) if uncut else None
     try:
         for task in asked:
             tree = trees.get(task["id"]) if session else None
-            where, how = ((member_project(ctx, tree), ("tree", None)) if tree
-                          else (copy[0], ("commit", copy[1])) if copy and task in uncut
-                          else (None, None))
+            where, how = ((member_project(ctx, tree), ("tree", tree)) if tree
+                          else (member_project(ctx, copy[0]), ("commit", commit, copy[0]))
+                          if copy and task in uncut else (None, None))
             try:
-                session_skills(ctx, task, plan=(manifest, phase), where=where)
+                session_skills(ctx, task, plan=(manifest, phase), where=where, how=how)
             except _skill_places.PinStop as exc:
-                raise _skill_places.PinStop(
-                    "%s: %s" % (task["id"], _copy_words(exc, where, how)))
+                raise _skill_places.PinStop("%s: %s" % (task["id"], exc))
     finally:
         if copy:
-            shutil.rmtree(copy[0], ignore_errors=True)
+            drop_checkout(ctx, copy)
 
 
 def ask_task_pins(ctx, state, manifest, phase, task):
@@ -11512,16 +11498,19 @@ def validation_node(phase, head):
     return {"id": phase["id"], "startedAt": "validate-%s" % (head,)}
 
 
-def validation_dispatch(ctx, state, phase, head, candidates):
+def validation_dispatch(ctx, state, phase, head, candidates, again=False):
     """The validation session's dispatch: its prompt - every candidate, then
     `VALIDATE_RULE` - written beside the sessions, the reviewer's runner role on
-    the reviewer session's model, and the ids it was asked about kept.
+    the reviewer session's model, and the ids it was asked about kept; `again`
+    for the dispatch once more of a session that opened no file, counted in the
+    same write as the ids.
 
     THE PINS ARE ASKED BEFORE THE PROMPT IS WRITTEN, `runner_review_skill` for
     the review skill and `session_hand` for the session's own: a pin that stops
-    this dispatch leaves no prompt file behind, and nothing is read about the
-    skills after the mark - the command is built from `session_hand`'s answer
-    and the review skill's warning is the one `runner_review_skill` gave."""
+    this dispatch leaves no prompt file behind and no count of a dispatch once
+    more, and nothing is read about the skills after the mark - the command is
+    built from `session_hand`'s answer and the review skill's warning is the one
+    `runner_review_skill` gave."""
     setting = reviewer_session_setting(phase, writer_setting(ctx["config"])[0])
     node = validation_node(phase, head)
     plan = load_phase(ctx)
@@ -11552,6 +11541,8 @@ def validation_dispatch(ctx, state, phase, head, candidates):
         warn(ctx, left_out)
     held = writer_state(state, node, VALIDATE_KEY)
     held["asked"] = ids
+    if again:
+        held["redispatched"] = held.get("redispatched", 0) + 1
     _mark(state, VALIDATE_KEY, node, held)
     write_state(ctx, state)
     return validation_said(ctx, phase["id"], setting["model"], ids,
@@ -11600,13 +11591,12 @@ def validation_step(ctx, state, phase, head, candidates):
                               % (run["session"], why))
     if calls == 0:
         if held.get("redispatched", 0) < MAX_REVIEWER_REDISPATCH:
-            held["redispatched"] = held.get("redispatched", 0) + 1
-            held["asked"] = []
-            _mark(state, VALIDATE_KEY, node, held)
-            write_state(ctx, state)
+            # Counted by the dispatch itself, after its pins are asked: a pin that
+            # stops it leaves the count and the ids asked as they were.
             warn(ctx, "validation session %s opened no file" % (
                 run["session"][:8],))
-            return None, validation_dispatch(ctx, state, phase, head, candidates)
+            return None, validation_dispatch(ctx, state, phase, head, candidates,
+                                             again=True)
         return None, _stopped(ctx, "validation sessions for %s opened no file, so "
                               "none of them re-read the cited code and no finding "
                               "was validated; there is no third dispatch" % (
@@ -12816,11 +12806,13 @@ def drive(ctx, answer=None, reason=None, fixes=()):
     it) or a dispatch is OUT (a task started whose executor or reviewer return
     is not filed yet); every other non-zero return after it was taken
     gives it back here, the one exit every arm shares, so no refusal strands it.
-    That holds for a stop as for a usage refusal (`lock_to_give_back`). The one
-    exception is a return whose plan cannot be read to tell whether a dispatch
-    is out: the lock is kept, because releasing it could let a second session
-    take a phase whose executor may still be running, and the next drive over a
-    readable plan gives it back."""
+    That holds for a stop as for a usage refusal, and for an exception this
+    driver does not word as a stop, which surfaces after the same rule
+    (`lock_to_give_back`): the state that decides the lock is the same whatever
+    ended the step. The one exception is a return whose plan cannot be read to
+    tell whether a dispatch is out: the lock is kept, because releasing it could
+    let a second session take a phase whose executor may still be running, and
+    the next drive over a readable plan gives it back."""
     state = read_state(ctx)
     stop = take_lock(ctx, state)
     if stop is not None:
@@ -12832,8 +12824,15 @@ def drive(ctx, answer=None, reason=None, fixes=()):
     except ValueError as exc:
         code, said = E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], exc)
     except BaseException:
-        # Not a stop this driver knows: give the lock back, then let it surface.
-        if state.get("lock") == "taken":
+        # Not a stop this driver knows: the lock by the same rule, then the
+        # exception surfaces as raised. A rule that cannot be asked - the plan
+        # read failing again - is a plan that cannot tell whether a dispatch is
+        # out, so the lock is kept, as on a return.
+        try:
+            give = lock_to_give_back(E_STOPPED, state, ctx)[0]
+        except Exception:                                      # noqa: BLE001
+            give = False
+        if give:
             give_back_lock(ctx, state)
         raise
     give, kept_why = lock_to_give_back(code, state, ctx)

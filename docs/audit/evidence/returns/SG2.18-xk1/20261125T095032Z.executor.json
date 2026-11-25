@@ -1,0 +1,85 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-25T11:20:18Z",
+    "basis": "`python3 -B tests/test_drive_phase.py --selftest --stage spn-block --stage dl-block` in a throwaway tree at HEAD exited 1 with 12 of 54 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dl6 (house FAIL), spd1 (house FAIL), spd2 (house FAIL), spd22 (house FAIL), spd23 (house FAIL), spd24 (house FAIL), spd25b (house FAIL), spd28 (house FAIL) and 4 more: SELFTEST FAILED: 42/54 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py. RULE A: skills_at_commit (its own ls-tree/cat-file reading of git objects, the posixpath import with it) and _copy_words are removed. checkout_at(ctx, commit) makes a detached checkout with `git worktree add --detach --quiet <mkdtemp(prefix=drive-pin-checkout-)>/tree <commit>` (the operation task-add cuts a member's tree with), a git refusal being a PinStop naming the commit; drop_checkout removes it through remove_base_tree (same holder/tree layout, the one removal question tree_unsettled asked first, worktree remove --force --force, rmtree), warning if anything is left. ask_member_pins makes ONE checkout per ask only when the plan pins (skill_pins not None) and a session-route member has no tree, asks every uncut member over member_project(checkout), and drops it in a finally (KeyboardInterrupt included); it no longer calls _areas.resolve_skills itself, so its _HANDOUT_EXEMPT row is gone. Git processes per ask: 3 with pins and an uncut member (worktree add, the removal question's rev-parse --git-dir, worktree remove), 0 for a plan with no pins, a cut member or the subagent route (spd31); the commit reader it replaced started 2 (ls-tree, cat-file) and no checkout. What a member tree gets after git (.worktreeinclude copies, setup) is not in the checkout - stated in the docstring and SECURITY.md. RULE C: one builder, pin_stop_words(exc, names, manifest, where, how) + _copy_remedy(verdict, tier, how): on a stop over a commit or tree copy it re-asks _skill_places.pin_stops over the same copy and, per stopped skill, takes the tier from resolve_skill(...)['source']; a project skill gets _STOP_REMEDY REPLACED (commit: 'That copy is commit <12>'s ... Restore the pinned bytes and COMMIT them, or <reader's re-pin tail>'; tree: 'That copy is the member's own tree ... Restore the pinned bytes there, not in the project, or <tail>'); personal, plugin and not-found keep the reader's words; the checkout path is renamed 'commit <12>'. ask_pins() is the drive's one call of require_pins (session_skills, runner_review_skill), session_skills/session_hand take `how`, hand_in_tree passes ('tree', tree). RULE B fix: validation_step no longer writes redispatched/asked before validation_dispatch; validation_dispatch(again=True) counts the re-dispatch in the same write as the ids, after its pins. LOW 5: drive's except BaseException arm gives the lock back only if lock_to_give_back(E_STOPPED, ...) says so; a rule that raises (the plan read failing again) keeps the lock, as an unreadable plan does on a return, and the original exception surfaces. tests/test_drive_phase.py (written first): the hand-kept _PIN_ASKS/_PIN_STARTS/_PIN_LOCKS/_STOP_ROUTES and _stop_route_functions/_route_verdict are replaced by a call-graph derivation (_pin_graph, _pin_routes: transitive over callers, seeded by raises of PinStop and calls into modules whose functions can raise it - _pin_stop_raisers, to a fixpoint) reduced by _STOP_ROUTES_EXEMPT (each row a reason and the callers it allows; stale and via checked both ways); _pin_blind_spots fails on a route used as a value, a lambda over one, getattr on a module holding a stop, globals/vars/locals/eval/exec/__import__ and sys.modules, with exactly two listed in _PIN_BLIND_LISTED; a PEP 578 audit-hook runtime record (_audit_hook/_record_*/_early_writes) on every scenario fails a write made before the first stop and not put back; _kept_state adds every phase field and git's HEAD/refs/packed-refs/worktrees (_git_kept). spd1's verdict now accepts reaching the reader through the module's own calls (_reader_reach). dl6 now holds both halves of low 5. spn-block 44/44 and dl-block 10/10 on this tree; final tests over the committed driver: spn-block 33/44 (red: spd1, spd2, spd22, spd23, spd24, spd25b, spd28, spd30, spd31, spd32, spd33, each by assertion), dl-block 9/10 (dl6). spd24a (the record's power) and spd24b (the validation allow twin) are green there by construction. Whole suite through the sweep: 1099 cases, exit 0. Docs: the pinned-skill passage of SECURITY.md, the CHANGELOG entry and the drive/copy paragraphs of PLUGIN-BUILD-GUIDE.md state the checkout, the call-graph derivation and exactly its blind-spot set, the runtime record and the remedy tiers. Command narrowed for submit's proof: `python3 -B tests/test_drive_phase.py --selftest --stage spn-block --stage dl-block` (every case of this task is in those two blocks; about 20 s), because the whole-suite sweep does not fit the proof deadline. Orchestrator gate run once without --record: first run RED on tools/_suite.py s23 (two bare shutil.rmtree in a test fixture that builds a git repository), fixed with _harness.remove_tree; second run GATE GREEN, exit 0.",
+    "descriptive": "A pin at a commit is now judged by the one reader over a real checkout of that commit, so vendored-behind-a-link skills and submodule entries dispatch on the session route again; stop routes are derived from the call graph and backed by a runtime write record; a stop's remedy names the copy its tier loads."
+  },
+  "testsAdded": [
+    "spd22/spd23: the stop routes derived over the driver's call graph, the blind-spot scan, the exemption table checked both ways, and their power over planted shapes (a call by name, a lambda, getattr on the driver or the reader's module, globals(), a table, a function passed as a value, a raise of PinStop, a call of the reader's module, callers of dispatch/resume_writer/validation_dispatch that write first, writer_argv(held=None))",
+    "spd24/spd24a/spd24b: every derived route stopped through or exempt, every scenario's runtime write record clean before its stop and its kept state (phase fields and git refs/worktrees included) whole; the record's power; validation_step's re-dispatch counted only after its pins, with its allow twin",
+    "spd25b and dl6: the except arm follows the lock rule - kept while a decision is pending or a dispatch is out, or when the plan cannot be read to tell; given back otherwise; the exception surfaces",
+    "spd28/spd31: a commit judged over a real checkout - a committed directory link, a submodule entry and a nested .claude/skills link dispatch, changed vendored bytes in a commit stop; git processes per ask counted (zero for no pins, a cut member, the subagent route)",
+    "spd30/spd32: the checkout and its registration removed when git refuses a crafted commit and on KeyboardInterrupt; the reader's refusals (a SKILL.md linked to another skill's file, a name in another case) answered the same at a commit as in the project",
+    "spd33: the remedy per tier at a commit, in a member tree and through hand_in_tree - project replaced with the copy's words, personal and plugin and not-found keeping the reader's remedy, the re-pin tail once"
+  ],
+  "casesAdded": [
+    [
+      "spd22",
+      "spd23",
+      "spd24",
+      "spd24a",
+      "spd24b",
+      "spd25b",
+      "spd28",
+      "spd30",
+      "spd31",
+      "spd32",
+      "spd33",
+      "dl6"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py checkout_at/drop_checkout (worktree add; remove_base_tree), ask_member_pins (one checkout, finally), pin_stop_words/_copy_remedy (tier from resolve_skill source, _STOP_REMEDY replaced), validation_dispatch(again=True), drive's except arm (lock_to_give_back, kept when it raises); the docs' sentences were rewritten to say only that\n2 own mutation table, 24 rows on copies of the working tree, every anchor applied once, caches purged, private TMPDIR per run: ALL ANSWERED AS OWED (exit 0); each task deny row has an over-fire twin; SG2.17's table on this tree: 37 caught, 10 rows annotated (6 do not apply - code removed by rule A - 4 apply and are caught by other ids or stronger)\n3 grep skills_at_commit|_copy_words|posixpath|_STOP_ROUTES over the tree: drive-phase.py and PLUGIN-BUILD-GUIDE.md hits replaced; the other posixpath hits are other modules' own imports, left; ut5 (test__worktrees) and s23 (tools/_suite.py) found by the dependants and the orchestrator gate, fixed in my files (remove_base_tree reused; _harness.remove_tree)\n4 the stop-route rule is enforced by spd22/spd23/spd24 and named in SECURITY.md and PLUGIN-BUILD-GUIDE.md beside it; the docs say which shapes the static half cannot see and that the runtime record is the backstop\n5 spn-block: committed tree 14.8 s twice (10:13 and 10:50 UTC), this tree 15.0 s (10:50) and 14.6 s (11:12); worktree add/remove on a clone of this repository: add median 445 then 428 ms, remove 203 then 204 ms (11:06 and 11:13 UTC, n=7 each); the windows figure is the phase notes' 123-139 ms (2026-11-20), not measured here\n6 n/a - no guard; the lints read the AST (call graph, blind-spot shapes) and the runtime record reads the interpreter's own audit events, not names\n7 the docs carry no count I wrote (a 'two' before the listed blind spots was deleted, the list kept); counts in this return carry their command (run_block.py, time_checkout.py, git_per_fn.py, mutations.py) in the task's scratch directory",
+  "stamp": "audit-stamp: {\"content\":\"sha256:6f879beda7f92d76246b685a977b64a384df20d0c0be57bdb4661b81ebe29c7c\",\"dirtyDigest\":\"sha256:46b06bac01f8296e086cec714f7b7891840762cad7ade3c09c30976b0b6ea9b6\",\"dirtyPaths\":{\"CHANGELOG.md\":\"25eb174570289836\",\"PLUGIN-BUILD-GUIDE.md\":\"09dc891f10fe66e8\",\"SECURITY.md\":\"2216a5105a077d2a\",\"plugins/audit/scripts/governance/drive-phase.py\":\"b343bec58b8330b6\",\"tests/test_drive_phase.py\":\"c0caafe8cadfffc1\"},\"head\":\"622e1cae\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:0158084b871dae23a8e77e06198e06168bc5cf1bb0f987be8ce1ab307143cf32\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 1 of the diff's 5 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 3 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md; 1 file(s) that could hold a move not compared: tests/test_drive_phase.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_drive_phase.py",
+        "move": "definition-changed",
+        "reason": "code outside its test definitions was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 5130 (`M.load_phase = broken`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "622e1cae0fd7a9329c39a560c45720fd5c649c28"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-25T11:20:32Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

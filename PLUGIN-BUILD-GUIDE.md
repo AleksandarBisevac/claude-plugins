@@ -3868,9 +3868,10 @@ and asks nothing - reads no file - of an unpinned name or of a plan with no key.
 `pin_shape_problems` is the key's shape, which `_manifest_rules` reports as findings;
 `unused_pins` is the pins no name of the plan can be a spelling of, which it reports as
 warnings. Every function that calls `_areas.resolve_skills` or
-`_areas.resolve_review_skill` either asks `require_pins` in its own body - `audit-lookup.py`'s
-`skills_lines` and `review_skill_lines`, `drive-phase.py`'s `session_skills` and
-`runner_review_skill` - or is listed in `tests/test_drive_phase.py` (`spd1`) with the reason it
+`_areas.resolve_review_skill` either asks `require_pins`, in its own body or through its
+module's own calls - `audit-lookup.py`'s `skills_lines` and `review_skill_lines`,
+`drive-phase.py`'s `session_skills` and `runner_review_skill`, which ask it through `ask_pins`
+so that every drive stop is worded by `pin_stop_words` - or is listed in `tests/test_drive_phase.py` (`spd1`) with the reason it
 hands nothing out; the case derives the callers of those two functions from the code, and a
 route that read the plan's skill lists without them would be outside it.
 
@@ -5677,15 +5678,27 @@ by the verb - through the call the dispatch makes, then reads it back as it read
 
 **A step that stops over a pin has written nothing the next step reads - the plan and the lock
 are part of what it reads.** The routes by which a pin can stop a step are not listed here and
-not listed by hand in the suite: `tests/test_drive_phase.py` derives them from the driver (`spd22`
-- every function whose own body asks a pin, starts or records what a stop must come before, or
-decides the lock), requires each to be a row of `_STOP_ROUTES` or exempt with a reason, and runs
-each row's scenarios to a stop over a changed skill, comparing the whole kept state before and
-after (`spd24`: the drive's state, its briefs and sessions' files, the plan's task fields it
-reads - status, attempts, `startedAt`, notes - the verbs run and the lock's holder). A route
-added later is in neither table and is red by name (`spd23`). The one stated exception is the
-lock given back when nothing is pending and nothing is out; an exception that shows no
-difference is red too. What the code does to hold it: a serial task's pins are asked before the
+not listed by hand in the suite: `tests/test_drive_phase.py` derives them from the driver's call
+graph (`spd22` - every function that reaches a raise of `PinStop`, in the driver or in a module
+it imports, through any chain of direct calls), and each is either stopped through by a scenario
+over a changed skill or exempt with a reason in `_STOP_ROUTES_EXEMPT`, whose rows are checked
+both ways - a row no route needs, or one a scenario stops through, is stale, and a call of an
+exempt route from a function its row does not name is reported (`spd23`). Every scenario
+compares the whole kept state before and after (`spd24`: the drive's state, its briefs and
+sessions' files, the plan's task fields it reads - status, attempts, `startedAt`, notes - and
+its phase fields, git's refs and worktrees, the verbs run and the lock's holder), and runs under
+a runtime record - a PEP 578 audit hook writing down every file opened to write, renamed,
+removed, made or linked and every process started, in order - so a stop that came after a write
+it did not undo is red even when a later write put the state back (`spd24a` holds the record's
+power). A static graph cannot follow a call it cannot name: a route used as a value (kept in a
+table, passed as an argument, returned) or called inside a lambda, `getattr` on a module that
+holds a stop, `globals`, `vars`, `locals`, `eval`, `exec`, `__import__` and `sys.modules`.
+`spd22` finds each such place in the driver and is red on one `_PIN_BLIND_LISTED` does not name;
+it names a lambda over `writer_argv` passed to `open_dispatch` and `main` passed to
+`_output.terse_cli`, each with the reason it reaches no stop after a write. A route added later
+is derived, and is red by name until a scenario stops through it or a row exempts it (`spd23`
+plants each shape). The one stated exception is the lock given back when nothing is pending and
+nothing is out; an exception that shows no difference is red too. What the code does to hold it: a serial task's pins are asked before the
 task is started (`ask_task_pins`), as a wave's are before the wave is recorded
 (`ask_member_pins`, which reads each member `owes_executor` finds about to be handed its
 executor and names the one that fails; a plan that pins nothing asks nothing - `spd17`, and
@@ -5697,7 +5710,9 @@ it can refuse over before it marks - the tree, the writer setting, the pins, rea
 `session_hand`, which the session's command is built from, so a skill that changes after the
 check cannot stop the command after the mark (`spd18`), whether the writer takes a phase
 review's findings (`spd19`), and for a review fix the brief it reads and the prompt it writes
-(`review_fix_prompt`, `spd26a`); `validation_dispatch` asks its pins before it writes its prompt.
+(`review_fix_prompt`, `spd26a`); `validation_dispatch` asks its pins before it writes its prompt
+and, for a validation session that opened no file, before it counts the dispatch once more
+(`validation_step`, `spd24b`).
 What can only be known once an earlier member was handed out - a later member's start, tree or
 hand-out refused for any reason, the reviewer's pin among them, which waits on the gate - leaves
 that member printed with the stop as a warning on its print, never dropped, and ends the walk
@@ -5708,16 +5723,31 @@ loop reads (`spd20a`).
 is pending or a dispatch is out and gives it back otherwise, as a usage refusal does
 (`lock_to_give_back`, `spd25a`; through the real `drive`, `spd25`): giving it back with a
 decision pending let a second session take the phase and refused the first session's own answer.
+An exception the drive does not word as a stop surfaces after the same rule (`spd25b`).
 
 **A pin is asked of the copy that will be loaded, which is not the same on every route.** On the
 session route a wave member runs in a tree of its own, cut from the wave's base commit: its pins
 are asked of that commit's project skill directories before the tree is cut and of the tree once
-it is (`ask_member_pins`, `skills_at_commit`; `spd26`, `spd27`) - so a working copy restored and
-not committed is no remedy, and the stop says to commit it. The commit is read from git's objects
-with no checkout into a scratch directory holding only the skills asked for, which the one reader
-(`_skill_places.skill_digest`) then hashes as it hashes a tree: the same digest over the same
-bytes (`spd28`), with a submodule entry refused. A personal or plugin skill lies outside the cut
-and is read where it is. A serial session runs in the project itself, so the project's copy is
+it is (`ask_member_pins`, `checkout_at`; `spd26`, `spd27`) - so a working copy restored and
+not committed is no remedy, and the stop says to commit it. The commit is a real detached
+checkout made by `git worktree add` - the operation that cuts the member's tree - in a scratch
+directory under the temp directory, outside every checkout of the project, so a link (a skill
+directory's, or `.claude/skills` itself), a submodule entry and a converted line ending are
+whatever the member's tree will hold, and the one reader (`_skill_places.resolve_skill`,
+`skill_digest`) judges it as it judges any copy (`spd28`, `spd31`, `spd32`). One checkout serves
+every uncut member of the ask, made only when the plan pins a skill and a member on the session
+route has no tree yet, and `drop_checkout` removes it and its registration in a `finally`, by the
+removal a base measurement's tree takes and after the one question every remover asks
+(`remove_base_tree`) -
+an interrupt and a commit git refuses to check out included (`spd30`); a plan that pins nothing
+starts no git for it. What the member's tree gets after git - its `.worktreeinclude` copies and
+setup command - is not in the checkout; the tree's own copy is asked once it exists. A personal
+or plugin skill lies outside the cut and is read where it is. **The stop's remedy names the copy
+each stopped skill's tier loads**, built in one place (`pin_stop_words`, `_copy_remedy`): a
+project skill judged at the commit is told to restore the bytes and commit them, one judged in a
+member's tree to restore them there, each replacing the reader's remedy rather than following
+it; a personal or plugin skill, and one found nowhere, keeps the reader's own remedy and names
+its own path, the checkout's named as the commit (`spd33`). A serial session runs in the project itself, so the project's copy is
 the one asked, and a working copy that differs from HEAD is neither a stop nor a warning there.
 On the subagent route the brief asks the project's copy for a serial task and a wave member alike;
 which copy a subagent's Skill tool then loads is Claude Code's, and nothing here reads it. A

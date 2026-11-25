@@ -1293,10 +1293,17 @@ finds, so a personal copy shadowing the project's is the copy judged. For a PROJ
 the copy asked is the one the session will load: a serial task's session runs in the
 project itself, so its working copy; a wave member on the headless route runs in a tree of
 its own, cut from the wave's base commit, so the skill directory as that commit holds it
-until the tree is cut (read from git's objects with no checkout; a submodule entry in it is
-refused) and the tree's own copy once it is - a working copy restored and not committed is
-then no remedy, and the stop says to commit it; the subagent route's brief asks the project's
-copy. A pin holds the
+until the tree is cut - in a detached checkout of that commit made by `git worktree add`,
+the operation that cuts the member's tree, in a scratch directory under the temp directory
+and removed with its registration however the ask ends, so a link, a submodule entry and a
+converted line ending are whatever the member's tree will hold and the same reader judges
+them - and the tree's own copy once it is. What a member's tree gets after git (its
+`.worktreeinclude` copies and setup command) is not in that checkout; the tree's own copy is
+asked once it exists, and the runner checks the copy it starts over. A working copy restored
+and not committed is then no remedy, and the stop's remedy says to commit it - for a PROJECT
+skill only: a personal or plugin skill lies outside the cut, and its stop keeps the reader's
+own remedy and names its own path. The subagent route's brief asks the project's copy. A pin
+holds the
 DIRECTORY its name resolves to, so every spelling that reaches that directory - the bare
 name, the running plugin's `plugin:skill`, another case of the name on a volume that folds
 case - is held by it (`_skill_places.covering_pins`). Any answer but a match - another
@@ -1315,8 +1322,18 @@ derives the callers from the code (`tests/test_drive_phase.py`, `spd1`): every c
 `_areas.resolve_skills` and `_areas.resolve_review_skill` asks the reader or is exempt with
 a reason. A route that read a plan's skill lists without either function would be outside
 what that case derives. That a step stopped over a pin leaves nothing written that the next
-step reads - the plan's task and the phase lock included - is held the same way, over the
-routes `spd22` derives from the driver and `spd24` runs.
+step reads - the plan's task and the phase lock included - is held the same way: `spd22`
+derives the routes from the driver's call graph, every function that reaches a raise of
+`PinStop` - in the driver or in a module it imports - through any chain of direct calls, and
+`spd24` stops each one over a changed skill or holds it exempt with a reason (an exemption no
+route needs, or one a scenario stops through, is red), recording every write the step makes
+in the order made and failing a stop that came after a write it did not undo. A static graph
+cannot follow a call it cannot name: a route used as a value (kept in a table, passed as an
+argument, returned) or called inside a lambda, `getattr` on a module that holds a stop,
+`globals`, `vars`, `locals`, `eval`, `exec`, `__import__` and `sys.modules`. The case finds
+each such place in the driver and is red on one it does not list; it lists a lambda over
+`writer_argv` passed to `open_dispatch` and `main` passed to `_output.terse_cli`, each with
+the reason it reaches no stop after a write.
 
 What it does **not** hold, stated so nothing leans on it:
 

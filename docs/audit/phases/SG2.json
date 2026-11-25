@@ -2081,7 +2081,7 @@
     {
       "id": "SG2.17-xk1",
       "title": "A pin is judged on the copy the session will load, and a step that stops gives back nothing a pending decision or an outstanding dispatch holds - the lock and the task's start included",
-      "status": "in_progress",
+      "status": "done",
       "description": "An independent review of the two tasks before this one (the orchestrator's prompt names its file; every finding below was RUN unless it says by reading, and its probes sit beside it) found two med defects and several lows of ONE class - the task before this one set out to make a stopped step write nothing the next step reads, and the review found writes it did not reach. This is the second time the class has come back, so the fix is the invariant held by a derived case, not the list of places.\n\nWHAT THE REVIEW SHOWED.\n(1) med - THE LOCK. `lock_to_give_back` returns true on any stop before it looks at `pending`, so a stopped `--answer resume` keeps the decision (the task before this one's fix) and gives the phase lock back anyway. Another session's `next` then takes the phase (exit 0) and the first session's same answer is refused: 'HELD by a live run -- another-session'. With the decision pending and no stop, the other session is refused. `drive`'s docstring promises the lock is kept while a decision is pending or a dispatch is out; the paragraph the task before this one added to PLUGIN-BUILD-GUIDE.md says the opposite. The same rule shows in a wave: a stop prints 'lock released' while an earlier member's executor is out.\n(2) med - THE COPY THAT IS JUDGED IS NOT THE COPY THAT IS LOADED. On the session route the drive's pre-check (`session_skills`, `session_hand`, `ask_member_pins`) hashes the skill in the PROJECT, while each wave member's session loads the copy in its own tree, cut from HEAD, and the runner checks that tree. Restoring the bytes in the project without committing - which is what the stop's remedy says to do - passes the pre-check, both members are marked, the runner exits 2 naming the tree's path, and the next `next` treats a session that never started as one with no result. No race is needed. Rooted in the pin's own task; the same at both later commits. On the subagent route the brief also judges the project's copy while the member's tree holds the changed bytes; which copy a subagent's Skill tool loads is Claude Code's and could not be run.\n(3) low - A SERIAL STEP STARTS THE TASK BEFORE IT ASKS. A single task stopped over a pin has gone pending -> in_progress, attempts 0 -> 1, startedAt set; the wave path asks before starting anything. The previous task's title promised the plan's state.\n(4) low - the shape-2 warning is dropped from the `--signal` line the main loop reads (`+1`, exit 0) on each step while an earlier member still prints; it surfaces only once nothing else is due.\n(6) low - `review_fix_dispatch` builds its command from the pre-check's read but no case holds it (dropping `held=hand` stays green), and it runs after the mark and can still stop, against `dispatch`'s docstring 'a dispatch that stops has marked nothing'.\n(7) low - `validation_dispatch` writes its prompt before it asks the pins: a stop leaves an orphan prompt file.\n(9) low - the pre-check's stop ends the step for every member, so a member whose executor returned waits on another member's skill. That is the rule as written; the `owes_executor` docstring overclaims.\n(10) low BY READING - a wave member's pinned directory is hashed up to three times in the opening step; 'one read per step' holds only from `dispatch` to the command.\n(11) low - `resume_writer(consume=False)`: one caller, always true; the default is a branch nothing takes.\n(5, the drive's half) low - mutations that left the suite green: four `owes_executor` branches (parked, not ready, stale brief, proof held) though PLUGIN-BUILD-GUIDE cites spd17 for two of them; `break` -> `continue` after a shape-2 stop.\n\nTHE RULE TO BUILD. Two invariants, each held by ONE derived case rather than a case per place.\nA. A STEP THAT STOPS HAS WRITTEN NOTHING THE NEXT STEP READS - AND THE PLAN AND THE LOCK ARE PART OF WHAT IT READS. Widen the kept-state snapshot of the task before this one (`_kept_state` in tests/test_drive_phase.py) to the plan's task fields the drive reads (status, attempts, startedAt, the dispatch-relevant notes) and the lock's holder, and compare it whole before and after EVERY pin stop the drive can reach: single task on each route, wave member first and second on each route, resume, review-fix, the phase-level validation prompt. Derive the list of stop routes from the code (every call that can raise `PinStop` or return a pin stop, the way spd1 derives hand-out callers), so a stop route added later without a row is red by name. Where the comparison cannot be whole for a reason (a journal row recording the stop is a record, not state; the lock released because NOTHING is pending and nothing is out is correct), the case states the exception with its reason, and the exceptions are a short table checked in both directions. Concretely the code then must: keep the lock on a stop while a decision is pending or a dispatch is out (the usage arm already does this - one rule, not two); ask a serial task's pins before `start_task`, as the wave does; ask `review_fix_dispatch`'s and `validation_dispatch`'s pins before any mark or write. If a write genuinely cannot move ahead of its stop, the stop says what it left and the next step reads it correctly - say which and why.\nB. A PIN IS JUDGED ON THE COPY THAT WILL BE LOADED. On the session route that is the member's tree: before a tree exists, judge the commit the trees will be cut from (the skill directory's bytes at that commit, read from git without a checkout, for a project-level skill inside the repository; a personal or plugin skill lies outside the cut and its on-disk copy is the copy loaded); once a tree exists, judge the tree. The stop's remedy then names what to do for THAT copy ('restore the bytes and commit them' when the copy is a commit's). On the subagent route state, in the code and in SECURITY.md's pinned-skill section, which copy the brief judges and that which copy the Skill tool then loads is Claude Code's - do not claim more. Decide whether a working-tree copy that differs from HEAD for a project skill should itself be a stop or a warning on the serial session route (the session there also runs in a tree cut from HEAD? read where a single task's session runs before deciding) and say why.\nC. The lows that are not the class: fix (4) so the main loop's signal line carries the warning; reword (9)'s docstring to what the rule is; remove (11)'s dead default or give it a caller; (10) is a cost to state in a docstring, not to fix, unless B's change removes it. The missing cases of (5): make each branch of `owes_executor` and the `break` able to fail, each with its allow twin.\n\nALLOW CASES: everything the task before this one held stays green line for line (a wave whose pins match, a plan with no pins, a matching resume); a stop while nothing is pending and nothing is out still gives the lock back; a personal skill pinned and unchanged on disk dispatches; a project skill committed with the pinned bytes dispatches even when the working copy is being edited, if B decides the commit is the copy loaded.\n\nHOW TO PROVE. Red first on the tree as it stands: the reviewer's probes `wave_probe.py r1` (lock), `w4s` (copy), `p1a`/`p1s` (serial start), `w2s` (signal) and `open_items_probe.py` O2/O3 - run them from the review's directory against the worktree, and copy any you extend into S/sg2.17/. A mutation probe (copies of the working tree, each mutation asserted applied, caches purged, never `git archive HEAD`), each deny with its allow twin: the lock given back on any stop again; the serial pin ask moved after the start; the pin judged on the project copy again; review-fix asked after the mark; validation's prompt written before the ask; a stop route removed from the derived list (the derivation's own power); each `owes_executor` branch; `break` -> `continue`. The drive suite's touched blocks alone, then the whole suite once through the sweep. Name how many repositories each new case builds - this suite is among the slowest on the windows runner.\n\nNOT in this task: the reader in `_skill_places.py` (its lows go to the phase's low batch); the verb that writes a pin; how a wave is formed.\n\nAcceptance:\n(1) After any pin stop the drive can reach, the kept state - the drive's state, briefs and sessions on disk, the plan's task fields it reads, and the lock's holder - equals what it was before the step, held by one case over a list of stop routes derived from the code, with a short table of stated exceptions checked both ways.\n(2) A stop keeps the phase lock while a decision is pending or a dispatch is out, and gives it back otherwise.\n(3) On the session route a pin is judged on the copy the session will load, and the stop's remedy names that copy; the subagent route's documents claim no more than the brief checks.\n(4) The shape-2 warning reaches the main loop's signal line, and the `owes_executor` branches and the shape-2 `break` are each held by a case that can fail.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2108,14 +2108,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "622e1cae0fd7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: lock_to_give_back gives one rule for a stop and a usage refusal (kept while a decision is pending or a dispatch is out). A serial task's pins are asked before start_task (ask_task_pins, in drive_phase and drive_task); apply_answer asks retry's and redispatch's pins before it drops the decision; resume_writer always consumes and judges the member's tree (hand_in_tree; the consume parameter is gone); the review fix reads its brief and writes its prompt before the dispatch mark (review_fix_prompt); validation_dispatch asks both pins before it writes its prompt. A pin is judged on the copy the session loads: a wave member on the session route is asked of the commit its tree will be cut from (skills_at_commit: git ls-tree and cat-file into a scratch directory, hashed by the one reader skill_digest, no second digest; a submodule or a link the reader would refuse is a stop) and of its own tree once it is cut; a serial session and the subagent route's brief are asked of the project; the stop's words name that copy and its remedy (restore and commit, or restore in the tree). The signal line names the member that stopped a wave step; owes_executor's docstring says what the rule is. tests/test_drive_phase.py (spn-block): spd22 derives every stop route from the driver, spd23 is its power, spd24 stops every row's scenarios over a changed skill and compares the whole kept state (drive state, briefs, session files, plan task fields, verbs run, lock claims) before and after, over a table of one stated exception checked both ways; spd25/25a the lock; spd26/26a/27/28 the copy judged and the commit reader; spd16a/16b retry and resume in a tree; spd20a the signal line; spd29 each owes_executor branch with its twin. SECURITY.md, PLUGIN-BUILD-GUIDE.md and CHANGELOG.md state the same and no more. _skill_places.py is not touched. Whole drive suite through the sweep: 1/1 files ok, 1092 cases; spn-block alone 37/37; mutation probe 47 rows all answered as owed (S/sg2.17/mutations.py).",
+        "descriptive": "A step the drive stops over a pin leaves the plan, the drive's files and the phase lock as it found them, and a pin is judged on the copy its session will load."
       },
       "startedAt": "2026-11-20T13:40:58Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-25T09:32:42Z",
+      "verifiedBy": [
+        "one derived list of stop routes (spd22) with its power case (spd23) and one comparison over every route's stopped scenario - drive state, briefs, session files, plan task fields, verbs run, lock claims - before and after, with a stated-exception table checked both ways (spd24); the lock rule through the real drive and alone (spd25, spd25a); the copy a pin is judged on, per route (spd26, spd27), the commit reader's digest equal to a checkout's (spd28); retry and resume-in-a-tree stops (spd16a, spd16b); the signal line (spd20a); each owes_executor branch with its twin (spd29); spd10, spd16 and spd20 widened"
+      ],
       "notes": [
         {
           "at": "2026-11-20T13:40:54Z",
@@ -2199,7 +2201,40 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-25T09:14:46Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 416023000,
+            "startedAt": "2026-11-20T13:41:03Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-25T09:20:46Z.3ff43e",
+            "kind": "wait",
+            "ms": 5000,
+            "startedAt": "2026-11-25T09:15:34Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-25T09:20:46Z.3ff43e, ending at its startedAt",
+            "kind": "selection",
+            "ms": 23308,
+            "runId": "2026-11-25T09:20:46Z.3ff43e",
+            "startedAt": "2026-11-25T09:15:39Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-25T09:20:46Z.3ff43e",
+            "kind": "gate",
+            "ms": 283030,
+            "runId": "2026-11-25T09:20:46Z.3ff43e",
+            "startedAt": "2026-11-25T09:16:03Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 622e1cae0fd7",
+            "kind": "commit",
+            "ms": 1678,
+            "startedAt": "2026-11-25T09:32:39Z"
+          }
+        ],
         "firstStartedAt": "2026-11-20T13:40:58Z"
       },
       "reviewPerTask": "signals",
@@ -2207,6 +2242,149 @@
         "runId": "2026-11-25T09:32:38Z.87a238",
         "status": "passed",
         "at": "2026-11-25T09:32:38Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "622e1cae0fd7",
+        "at": "2026-11-25T09:32:42Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-25T09:14:29Z",
+        "basis": "`python3 tests/test_drive_phase.py --selftest --stage spn-block` in a throwaway tree at HEAD exited 1 with 15 of 36 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - spd1 (house FAIL), spd10 (house FAIL), spd12 (house FAIL), spd13 (house FAIL), spd16 (house FAIL), spd16a (house FAIL), spd16b (house FAIL), spd20a (house FAIL) and 7 more: SELFTEST FAILED: 20/36 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "SG2.18-xk1",
+      "title": "A pin at a commit is judged by the one reader over a real checkout of that commit, the stop routes are derived over the call graph rather than by name, and a stop's remedy names the copy its tier loads",
+      "status": "in_progress",
+      "description": "An independent review of the task before this one (the orchestrator's prompt names its file; every finding RUN unless it says by reading, probes beside it) found one high, two med and three low. This is the THIRD round of one class - a pin stop that reaches the user in a state, or with words, the code promised it would not - and the three causes are each a second copy of something that already has one owner: a second reader of skill bytes, a list of names standing in for a call graph, a remedy sentence appended to the reader's own. So the fix removes the copies; it does not add rows.\n\nWHAT THE REVIEW SHOWED.\n(1) high, a regression, fails closed - `skills_at_commit` reads a commit's skill directory from `git ls-tree`/`cat-file` and refuses what a checkout reads: a skill directory that is a committed link (`.claude/skills/x -> ../../vendor/x`) is refused, and a `.claude/skills` that is itself a link picks nothing ('no copy is found'). The pin matches; the project and a real checkout of the commit give the same digest, because `skill_digest` follows a directory link. So a plan that vendors its skills behind a link cannot run a wave on the session route at all - at the commit before, it dispatched. A submodule entry is the same root: a checkout reads an empty directory and digests it; the commit reader refuses. Probe link_probe.py L1/L2 on the real `next`, commit_probe.py c1/c6.\n(2) med - `_stop_route_functions` counts a function as a stop route only when its OWN body calls one of a fixed list of names. Planted variants: two seen, nine missed - getattr, a table of functions, a function passed as a value, a body raising the stop itself, a caller of `skills_at_commit`, `writer_argv(held=None)` spelled out, and THE shape this work exists for: `state.pop('pending'); write_state(); return dispatch(...)` (and over `resume_writer`, `validation_dispatch`). One such route exists today BY READING: `validation_step` writes `redispatched + 1` and `asked = []` and only then calls `validation_dispatch`, which can stop over a pin. PLUGIN-BUILD-GUIDE.md, CHANGELOG.md and SECURITY.md say a route added later is red by name - more than the code does.\n(3) med - `_copy_words` appends 'commit them' / 'restore in the member's own tree' to every session-route member's stop whatever the skill's tier: for a personal skill (in the claude home, which no commit or tree holds) the remedy touches nothing that is loaded; and in the commit form the reader's own 'Restore the pinned bytes there' stays, with 'there' a commit path.\n(4) low - four refusals of the commit reader have no case (the `..`/`.`/empty name check, a link to another skill's file, case-folded names, the ceilings).\n(5) low BY READING - `drive`'s `except BaseException` arm gives the lock back while a decision is pending or a dispatch is out (an uncaught OSError from `review_fix_prompt`'s prompt write gets there); the new docstring states the lock rule without that arm.\n(6) low BY READING - `_kept_state` leaves out git's own state (worktrees, branches, refs) and the PHASE-level plan fields; no route writes them before a stop today.\n\nTHE RULE TO BUILD.\nA. ONE READER OF SKILL BYTES. A pin at a commit is judged by `_skill_places.resolve_skill` + `skill_digest` - the same functions every other route asks - over a real, detached checkout of that commit in a scratch directory outside every watched tree (`git worktree add --detach`, removed in `finally` together with its registration, including on KeyboardInterrupt; or another git-native way that yields exactly what a cut tree yields - say which and why). Then links, submodules and line endings are whatever a member's tree will hold, because it is the same operation that cuts one. `skills_at_commit`'s own reading of git objects is removed, not kept beside it. One checkout per base commit per step, made only when the plan pins a skill and a member on the session route has no tree yet; ZERO git processes for a plan with no pins (held by a count). State the cost per step on a windows runner from the measured figures in the phase's notes (a worktree add measured at 123-139 ms there, 2026-11-20) rather than a new guess, and measure here twice with a gap.\nB. THE STOP ROUTES ARE DERIVED OVER THE CALL GRAPH. A function is a stop route when it can reach a pin stop - it raises the stop, or calls (transitively, through the module's own call graph) a function that does - and the table of exempt functions reduces that set, each with its reason, checked both ways as today. What a static call graph cannot see (getattr, a table of functions, a function passed as a value) is either absent from drive-phase.py - assert that, by an AST scan that fails on those shapes in any function that reaches a pin stop - or listed, and the three documents say exactly that set and no more. Then add the RUNTIME half the static half cannot be: over every scenario spd24 runs, record each write the drive makes (state file, plan, briefs, prompts, lock, trees) in the order made, and fail a scenario whose PinStop came after any write it does not undo - so a route the graph misses is still caught when a scenario reaches it. Fix `validation_step` by the rule (ask before the counter is written), and add its scenario.\nC. A STOP'S REMEDY IS THE READER'S, WITH THE COPY NAMED - NOT A SECOND SENTENCE. The verdict carries `source` (project, personal, plugin): the copy's words name the copy that tier loads (the commit and 'commit them' only for a project skill judged at a commit; the member's tree only for a project skill judged in a tree; a personal or plugin skill's own path and the reader's own remedy unchanged), and they REPLACE the reader's remedy sentence rather than following it. One function builds the sentence; every stop calls it.\nD. Lows: (4) one row per refusal of the reader's that A keeps, each with its allow twin, and the two link shapes and the submodule entry as allow cases that dispatch; (5) the except arm takes the same lock rule, or the docstring names it with the reason - choose by what is structurally correct and say why; (6) add the worktree list and the phase's plan fields to `_kept_state`, or list them under what it leaves out with the reason.\n\nALLOW CASES: a skill directory that is a committed link inside the repository; a `.claude/skills` that is a link; a skill directory holding a submodule entry; a plan with no pins (zero git processes, real `next` byte for byte as at the commit before); a matching pin on every route; a personal skill pinned and unchanged.\n\nHOW TO PROVE. Red first on the tree as it stands: the review's link_probe.py L1/L2 (the real `next`), commit_probe.py c1/c5/c6, derive_probe.py (all nine missed shapes then seen or refused by the AST scan), rv_mutations.py rows; run them from the review's directory against the worktree and copy any you extend into the task's own directory. The previous task's mutation table (its directory) still answers as owed except rows whose code A removes - name each and why. A mutation probe of your own (copies of the working tree, each mutation asserted applied, caches purged, never `git archive HEAD`), each deny with its allow twin: the scratch checkout replaced by reading the index or HEAD's tree directly again; the scratch not removed on an exception; a write moved before a stop on a route the graph does not see (the runtime half must catch it); the graph derivation made non-transitive; the copy's words appended instead of replacing; the personal tier given the commit's words. The drive suite's touched blocks alone, then the whole suite once through the sweep; the block's time before and after, twice with a gap.\n\nNOT in this task: the reader in `_skill_places.py` itself (its lows are the phase's low batch) - if A needs a change there, stop and say what and why; the verb that writes a pin; how a wave is formed.\n\nAcceptance:\n(1) A pin at a commit is judged by the same reader as every other route over a real checkout of that commit, so a committed directory link, a `.claude/skills` link and a submodule entry dispatch when the pin matches, and a plan with no pins starts no git process for it.\n(2) The stop routes are derived over the call graph, the shapes a static graph cannot see are absent from the routes or listed, and a runtime record over every stop scenario fails a write made before a stop it does not undo - with `validation_step` fixed and held.\n(3) A stop's remedy is one sentence that names the copy the skill's tier loads, replacing the reader's, for every tier.\n(4) The four reader refusals, the lock's except arm and the snapshot's coverage are each held or stated with the reason.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "SECURITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a pin at a commit is judged by the one reader over a real checkout of it, so committed links and a submodule entry dispatch; the stop routes are derived over the call graph and a runtime record fails a write made before a stop; a stop's remedy names the copy its tier loads"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-25T09:50:32Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-25T09:50:30Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-25T09:50:30Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-25T09:50:30Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-25T09:50:30Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-25T09:50:30Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tests/test_hooks.py"
+        },
+        {
+          "at": "2026-11-25T09:50:30Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-25T09:50:30Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-25T09:50:30Z",
+          "text": "the fail-mode table this file reads is not edited; the task registers no hook",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-25T09:50:30Z",
+          "text": "the fail-mode table row this file quotes is not edited",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-25T09:50:30Z",
+          "text": "a research note quoting a section of SECURITY.md the task does not edit",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-25T09:50:30Z",
+          "text": "the task edits its own entry under the Unreleased heading and leaves the heading",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-25T09:50:30Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-25T09:50:30Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-25T09:50:30Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tests/test__floor_guard.py"
+        },
+        {
+          "at": "2026-11-25T09:50:30Z",
+          "text": "the task edits only the pinned-skill passages and the drive paragraph it owns, and leaves the sentence this file quotes byte for byte; the executor runs this reader",
+          "waives": "tests/test__refs.py"
+        },
+        {
+          "at": "2026-11-25T09:50:30Z",
+          "text": "the heading this file quotes is not edited and the task adds no module, so the generated map does not move",
+          "waives": "tools/lints/_deps.py"
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-25T09:50:32Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-25T11:35:38Z.6f78ab",
+        "status": "passed",
+        "at": "2026-11-25T11:35:38Z"
       }
     }
   ],
