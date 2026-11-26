@@ -59,7 +59,10 @@ phase's record, the plan's full-run record - and no ledger row is written for it
 so a `runId` resolves against those records (`record_runs`) as well as against the
 frozen rows an earlier release wrote. A pointer whose `runId` resolves NOWHERE is not a
 finding -- the ledger may have been archived, and the schema says an absent or
-unresolvable pointer means "no evidence recorded", never "failed".
+unresolvable pointer means "no evidence recorded", never "failed". A pointer whose
+`runId` is named by a record of the plan that is not its writer's shape IS one: the
+run was recorded and the record is corrupt, which `record_runs` cannot see and
+`unreadable_runs` can, so it is said with the record's file and field.
 
 BOTH HALVES READ ONE SET, THE WORKING TREE'S: the tracked manifests as they stand
 on disk, against every ledger the working tree holds, tracked or not. A task gate
@@ -415,6 +418,17 @@ def _holders(doc):
     return [(label, block) for label, block in out if isinstance(block, dict)]
 
 
+def _plan_bodies(doc, label):
+    """`[(label, phase body)]` of plan document `doc` (an index, or a shard
+    with no `phases` wrapper, held in the file `label`)."""
+    phases = doc.get("phases")
+    if isinstance(phases, list):
+        return [(label, p) for p in phases if isinstance(p, dict)]
+    if isinstance(doc.get("tasks"), list):
+        return [(label, doc)]
+    return []
+
+
 def record_runs(doc, label, schema):
     """`{runId: status}` - every run plan document `doc` (an index, or a shard
     with no `phases` wrapper, held in the file `label`) records: each phase's
@@ -422,29 +436,42 @@ def record_runs(doc, label, schema):
     (`_evidence_io.records_of_bodies`), and the plan's full-run record and its
     newest measured full run (`_evidence_io.full_run_entries`) - the join
     `_evidence_io.read_rows` makes, read off the document rather than off a
-    project. A record that is not its writer's shape gives no run, so a
-    pointer naming it stays unresolved rather than being read as agreeing."""
+    project. A record that is not its writer's shape gives no run here; the
+    run it names is `unreadable_runs`'."""
     if not isinstance(doc, dict):
         return {}
-    phases = doc.get("phases")
-    if isinstance(phases, list):
-        bodies = [(label, p) for p in phases if isinstance(p, dict)]
-    elif isinstance(doc.get("tasks"), list):
-        bodies = [(label, doc)]
-    else:
-        bodies = []
     rows = [row for row, _where in
-            _evidence_io.records_of_bodies(bodies, doc=schema)]
+            _evidence_io.records_of_bodies(_plan_bodies(doc, label),
+                                           doc=schema)]
     rows += [row for row, _where in
              _evidence_io.full_run_entries(doc, label, schema)[0]]
     return dict((str(row["runId"]), str(row["status"])) for row in rows
                 if row.get("runId") and row.get("status") is not None)
 
 
-def pointer_findings(rel, doc, known, by_run):
+def unreadable_runs(doc, label, schema):
+    """`{runId: entry}` - every run a record of plan document `doc` (held in
+    the file `label`) names while being something other than its writer's
+    shape, `entry` being `_evidence_io.unreadable_records`' (file, subject,
+    field, why). `record_runs` gives no run for such a record, and a pointer
+    naming it would otherwise read as one that merely resolves nowhere, which
+    the schema calls `no evidence recorded` - when the plan did record it, and
+    what it recorded is corrupt. A record naming no run is not here: it can
+    be no pointer's."""
+    if not isinstance(doc, dict):
+        return {}
+    return dict((run, entry) for entry, run in
+                _evidence_io.unreadable_record_runs(
+                    _plan_bodies(doc, label), doc=schema) if run)
+
+
+def pointer_findings(rel, doc, known, by_run, unreadable=None):
     """[(rel, label, why), ...] -- cached verdicts that are wrong or stale.
 
-    Two rules. A cached word outside the vocabulary is the same fault as in a row.
+    Three rules. A cache naming a run whose own record cannot be read
+    (`unreadable`, `unreadable_runs`' map) is a finding naming that record's
+    file, subject and field: the plan recorded the run and its record is
+    corrupt, which is a different state from no evidence recorded. A cached word outside the vocabulary is the same fault as in a row.
     A cached word that DISAGREES with the run its own `runId` names - a plan's
     record of it, or a frozen ledger row (`by_run` holds both) - is worse,
     because the schema calls this block a cache and a cache that can disagree with
@@ -453,8 +480,18 @@ def pointer_findings(rel, doc, known, by_run):
     evidence recorded", never "failed".
     """
     out = []
+    unreadable = unreadable or {}
     for label, block in _holders(doc):
         status = block.get("status")
+        held = unreadable.get(str(block.get("runId")))
+        if held is not None:
+            out.append((rel, label, (
+                "caches run %s, whose record cannot be read - %s %s's %s in "
+                "%s, field %s: the plan recorded this run and what it "
+                "recorded is corrupt, which is not the same as no evidence "
+                "recorded"
+                % (block.get("runId"), held.get("scope"), held.get("subject"),
+                   held.get("key"), held.get("file"), held.get("field")))))
         if status is not None and str(status) not in known:
             out.append((rel, label, (
                 "caches status %r, which the schema's published vocabulary does "
@@ -553,9 +590,11 @@ def gate_findings(rel, assembled):
     return out
 
 
-def pointer_reach(doc, by_run):
+def pointer_reach(doc, by_run, unreadable=None):
     """(pointers, resolved) -- how many cached pointers exist, and how many
-    name a run some committed ledger actually holds.
+    name a run some committed ledger or a plan's record holds - a record that
+    cannot be read included (`unreadable`), since the pointer reached it and
+    `pointer_findings` says what is wrong with it.
 
     The pair is what lets `findings()` tell "no cache disagrees" from "no cache
     was compared". A count of findings cannot: both are zero.
@@ -567,7 +606,7 @@ def pointer_reach(doc, by_run):
         if run_id is None:
             continue
         pointers += 1
-        if str(run_id) in by_run:
+        if str(run_id) in by_run or str(run_id) in (unreadable or {}):
             resolved += 1
     return pointers, resolved
 
@@ -601,7 +640,7 @@ def findings(repo=None):
     # project reaches after the upgrade, so only a tree holding NEITHER is a
     # run that compared nothing.
     manifests = manifest_rels(rels + loose)
-    docs, unread, recorded = [], [], {}
+    docs, unread, recorded, corrupt = [], [], {}, {}
     for rel in manifests:
         path = os.path.join(root, rel.replace("/", os.sep))
         try:
@@ -619,7 +658,8 @@ def findings(repo=None):
             continue
         docs.append((rel, doc))
         recorded.update(record_runs(doc, rel, schema))
-    if not ledgers and not recorded:
+        corrupt.update(unreadable_runs(doc, rel, schema))
+    if not ledgers and not recorded and not corrupt:
         return [], {}, (
             "no evidence ledger, tracked or not, was found under any %s/ "
             "directory and no plan records a run, so this run compared nothing "
@@ -643,7 +683,7 @@ def findings(repo=None):
         out.extend(status_findings(rel, rows, known))
         out.extend(contradiction_findings(rel, rows))
 
-    if ledgers and not seen_rows and not out and not recorded:
+    if ledgers and not seen_rows and not out and not recorded and not corrupt:
         return [], {}, (
             "%d ledger(s) were found and every one of them is empty, and no "
             "plan records a run, so no verdict was actually read"
@@ -672,10 +712,11 @@ def findings(repo=None):
     commits = 0
     for rel, doc in docs:
         checked_manifests += 1
-        held, hit = pointer_reach(doc, by_run)
+        held, hit = pointer_reach(doc, by_run, corrupt)
         pointers += held
         resolved += hit
-        for rel_, label, why in pointer_findings(rel, doc, known, by_run):
+        for rel_, label, why in pointer_findings(rel, doc, known, by_run,
+                                                 corrupt):
             out.append((rel_, label, why))
         if can_ask:
             commits += len(_commit_trail.referenced(doc))
@@ -1209,6 +1250,30 @@ def _cases(check):
               _dp is None and len(_dr) == 1 and _dr[0][1] == "P1.1"
               and "caches status 'failed'" in _dr[0][2]
               and "'passed'" in _dr[0][2])
+        # el34. A pointer naming a run whose own record cannot be read.
+        # `record_runs` gives no run for such a record, so without a finding of
+        # its own the pointer was counted merely unresolved and the check
+        # exited 0 over a plan whose record was corrupt.
+        _kr, _kp = _fx["corrupt_rows"], _fx["corrupt_problem"]
+        check("el34 RED-FIRST: a pointer naming a run whose RECORD is not its "
+              "writer's shape (status 7) is a FINDING on "
+              "the manifest, the task and the record's field - not a pointer "
+              "that merely resolves nowhere: %r / %s" % (_kr, _kp),
+              _kp is None and len(_kr) == 1
+              and _kr[0][0] == "x/audit-plan.json" and _kr[0][1] == "P1.1"
+              and "r-rec" in _kr[0][2] and "lastRun.status" in _kr[0][2]
+              and "cannot be read" in _kr[0][2])
+        # el35. The over-fire direction: a corrupt record nobody points at is
+        # validate-manifest's to warn about, and a pointer that resolves
+        # through a record that reads is not touched by it.
+        _ur, _up = _fx["unnamed_rows"], _fx["unnamed_problem"]
+        check("el35 ...while a corrupt record naming a run NO pointer names is "
+              "not a finding of this check, and the pointer beside it, which "
+              "resolves through a record that reads, still agrees: %r / %s"
+              % (_ur, _up),
+              _up is None and _ur == []
+              and _fx["unnamed_counts"].get("pointers") == 1
+              and _fx["unnamed_counts"].get("resolved") == 1)
     finally:
         from _suite import remove_tree
         remove_tree(_rec)
@@ -1237,13 +1302,13 @@ def _record_fixture(root):
         "scope": "task", "taskId": "P1.1", "phaseId": "P1",
         "status": "passed", "steps": [], "durationMs": 5})
 
-    def plan(pointers):
+    def plan(pointers, first=None):
         tasks = []
         for n, (run, status) in enumerate(pointers):
             node = {"id": "P1.%d" % (n + 1), "commit": base,
                     "testEvidence": {"runId": run, "status": status}}
             if n == 0:
-                node[_evidence_io.RECORD_KEY] = record
+                node[_evidence_io.RECORD_KEY] = first or record
             tasks.append(node)
         return json.dumps({"phases": [{"id": "P1", "tasks": tasks}]}, indent=1)
 
@@ -1254,6 +1319,23 @@ def _record_fixture(root):
     _rows, out["ghost_counts"], out["ghost_problem"] = findings(root)
     _write_fixture(root, "x/audit-plan.json", plan([("r-rec", "failed")]))
     out["disagree_rows"], _counts, out["disagree_problem"] = findings(root)
+    # The record the pointer names is not its writer's shape: a status the
+    # schema does not publish.
+    _write_fixture(root, "x/audit-plan.json", plan(
+        [("r-rec", "passed")], first=dict(record, status=7)))
+    out["corrupt_rows"], out["corrupt_counts"], out["corrupt_problem"] = \
+        findings(root)
+    # The same corrupt record naming a run NO pointer names, beside a pointer
+    # that resolves through a record that reads.
+    _write_fixture(root, "x/audit-plan.json", json.dumps({"phases": [{
+        "id": "P1", "tasks": [
+            {"id": "P1.1", "commit": base,
+             _evidence_io.RECORD_KEY: dict(record, runId="r-other", status=7)},
+            {"id": "P1.2", "commit": base,
+             "testEvidence": {"runId": "r-rec", "status": "passed"},
+             _evidence_io.RECORD_KEY: record}]}]}, indent=1))
+    out["unnamed_rows"], out["unnamed_counts"], out["unnamed_problem"] = \
+        findings(root)
     return out
 
 

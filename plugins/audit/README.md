@@ -1480,8 +1480,9 @@ findings — so a recorded `failed` edited into a `passed` is a FINDING rather t
 rewrite of the thing a green gate points at. Tamper-**evident**, not tamper-proof, exactly
 as the trail is; [SECURITY.md](../../SECURITY.md) has what that does and does not cover. A
 ledger written before this shipped has rows carrying neither key: those are reported as a
-counted warning naming what is unprotected, never as tampering, and a full run recorded into
-that file links onto them.
+counted warning naming what is unprotected, never as tampering. No run appends to a ledger
+file any more - a full run records into the plan - so those rows at the head of the file stay
+unchained.
 
 Then a `testEvidence` pointer on the task or the phase that ran:
 

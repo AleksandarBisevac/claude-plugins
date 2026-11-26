@@ -1165,8 +1165,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/commit-task-work.py:390-393,1447-1450; plugins/audit/scripts/git/close-phase.py:1731-1733,1776-1777; plugins/audit/scripts/governance/_invariants.py:445-450",
         "issue": "contradicts task clause \"recorded_paths loses the evidence directory, and every reader follows through the one function: ... the commit scope and its label (commit-task-work.py), and the landing refusal's evidence half (close-phase.py's ignored-stamp refusal)\". These readers do not go through recorded_paths/record_rels: each still lists its record places by hand and was edited in parallel. commit-task-work.stage_targets (record_abs) and state_targets (wanted) each spell (MANIFEST, journal_dir, returns_dir); close-phase.pending_beyond_stamp and ignored_stamp_refusal each spell (journal_dir, returns_dir); _invariants._record_or_frozen builds a third spelling of the returns folder, posixpath.join(evidence_rel, _filed_returns.RETURNS_DIRNAME), apart from returns_dir. That gives five lists that agree only because this diff edited them together. A record place later added to recorded_paths would reach the reuse key, the stamp and the scope digest, but not the commit verb's staging, the landing's pending/ignored checks or commit-scope's allow arm. No case ties these lists to record_rels or recorded_paths: rcp1 checks recorded_paths alone, and ctw68b/cas17/ie1b/lt9b each check one list against a literal path.",
-        "resolution": "Return the labelled record places from one function, e.g. _invariants.record_places(project, config) -> [(label, abs)] for the journal and the filed returns' folder, which record_rels and recorded_paths are built from. Have stage_targets, state_targets, pending_beyond_stamp, ignored_stamp_refusal and _record_or_frozen (taking returns_rel from it rather than joining RETURNS_DIRNAME) read it. Or, at minimum, add a case asserting that each of those lists' directory entries equals the directory part of record_rels for the same fixture, and show the case red by adding a place to only one side.",
-        "fixTask": "P169.43-6l3"
+        "resolution": "fixed in P169.43-6l3 (b287d357be6a): Return the labelled record places from one function, e.g. _invariants.record_places(project, config) -> [(label, abs)] for the journal and the filed returns' folder, which record_rels and recorded_paths are built from. Have stage_targets, state_targets, pending_beyond_stamp, ignored_stamp_refusal and _record_or_frozen (taking returns_rel from it rather than joining RETURNS_DIRNAME) read it. Or, at minimum, add a case asserting that each of those lists' directory entries equals the directory part of record_rels for the same fixture, and show the case red by adding a place to only one side.",
+        "fixTask": "P169.43-6l3",
+        "commit": "b287d357be6a",
+        "status": "fixed"
       },
       {
         "id": "P169-R121",
@@ -1176,7 +1178,7 @@
         "resolution": "Reword to \"the records the plan holds\" the next time the file is touched (batch with the other lows); no behaviour changes."
       }
     ],
-    "outcome": "[findings: 121 - 12 high, 44 med, 65 low; 101 with a recorded fix commit]"
+    "outcome": "[findings: 121 - 12 high, 44 med, 65 low; 102 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -12143,7 +12145,7 @@
     {
       "id": "P169.43-6l3",
       "title": "fix P169-R120: contradicts task clause \"recorded_paths loses the evidence dir...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause \"recorded_paths loses the evidence directory, and every reader follows through the one function: ... the commit scope and its label (commit-task-work.py), and the landing refusal's evidence half (close-phase.py's ignored-stamp refusal)\". These readers do not go through recorded_paths/record_rels: each still lists its record places by hand and was edited in parallel. commit-task-work.stage_targets (record_abs) and state_targets (wanted) each spell (MANIFEST, journal_dir, returns_dir); close-phase.pending_beyond_stamp and ignored_stamp_refusal each spell (journal_dir, returns_dir); _invariants._record_or_frozen builds a third spelling of the returns folder, posixpath.join(evidence_rel, _filed_returns.RETURNS_DIRNAME), apart from returns_dir. That gives five lists that agree only because this diff edited them together. A record place later added to recorded_paths would reach the reuse key, the stamp and the scope digest, but not the commit verb's staging, the landing's pending/ignored checks or commit-scope's allow arm. No case ties these lists to record_rels or recorded_paths: rcp1 checks recorded_paths alone, and ctw68b/cas17/ie1b/lt9b each check one list against a literal path.\n\nResolution asked: Return the labelled record places from one function, e.g. _invariants.record_places(project, config) -> [(label, abs)] for the journal and the filed returns' folder, which record_rels and recorded_paths are built from. Have stage_targets, state_targets, pending_beyond_stamp, ignored_stamp_refusal and _record_or_frozen (taking returns_rel from it rather than joining RETURNS_DIRNAME) read it. Or, at minimum, add a case asserting that each of those lists' directory entries equals the directory part of record_rels for the same fixture, and show the case red by adding a place to only one side.",
       "files": [
         "plugins/audit/scripts/governance/commit-task-work.py",
@@ -12174,14 +12176,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b287d357be6a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added _evidence_io.record_places(project, config) -> [(place, abs)] (journal, returns; keys JOURNAL_PLACE/RETURNS_PLACE) and _evidence_io.returns_in(evidence, join) (the one definition of the returns folder under an evidence dir; returns_dir now calls it). Routed through them: recorded_paths and _invariants.record_rels (record_places); commit-task-work stage_targets and state_targets (via a small _record_places mapping places to JOURNAL_LABEL/RETURNS_LABEL, PLACE_LABELS; unknown place reported under its key); close-phase pending_beyond_stamp and ignored_stamp_refusal (record_places, label compare against RETURNS_PLACE); _invariants._record_or_frozen (returns_in with posixpath.join, so no hand join of RETURNS_DIRNAME; unused _filed_returns import removed). Behaviour unchanged: same directories, same labels, same message text. Tests: tests/test_commit_task_work.py new rp-block (rp1-rp7) monkeypatches record_places to add a seventh folder holding a file and asserts each reader follows, each paired with the unpatched reader which must not name it; rp7 patches returns_in. tests/test__evidence_io.py ev3p pins record_places/returns_in against the owning resolvers. PLUGIN-BUILD-GUIDE.md: added the record_places paragraph in the _evidence_io section and regenerated the module-map fence (python3 tools/lints/_deps.py --write-map) because _invariants lost its _filed_returns import edge (the only red of the first full sweep, test__deps g1). Final: gate command 4/4 files ok 1294 cases; full sweep 195/196 files ok 19663 cases before the map regeneration, the one red being test__deps g1, which then passed on re-run (1/1 files ok, 311 cases); ruff and vermin clean. Dependants: commit-task-work, close-phase, _invariants, _evidence_io importers (guard-release, integrate-task, _gate_derive, _verdict_binding, audit-journal, run-test-gate, stamp-verification and the suites) still correct: no signature or answer of an existing function changed, only record_places and returns_in added; test__invariants/test_close_phase/test_commit_task_work/test__evidence_io all green. commit-task-work line ~1653 (the audit-state row's target) still calls returns_dir, the single path the row names, not a list of places, and returns_dir is itself defined through returns_in. Nothing outside the declared files was edited.",
+        "descriptive": "The five hand-listed record-folder readers now ask one function, and a case goes red when any of them drifts from it."
       },
       "startedAt": "2026-11-26T03:46:11Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-26T04:10:17Z",
+      "verifiedBy": [
+        "rp-block in tests/test_commit_task_work.py: seven cases adding a place to record_places and asserting recorded_paths, record_rels, stage_targets, state_targets, pending_beyond_stamp, ignored_stamp_refusal and _record_or_frozen (via returns_in) each follow it, with the unpatched twin of each",
+        "ev3p in tests/test__evidence_io.py: record_places and returns_in agree with the resolvers that own them"
+      ],
       "notes": [
         {
           "at": "2026-11-26T03:45:55Z",
@@ -12224,6 +12229,24 @@
             "ms": 378298,
             "basis": "durationMs in run 2026-11-26T04:09:55Z.8a841c's record (run-test-gate --record)",
             "runId": "2026-11-26T04:09:55Z.8a841c"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-26T04:02:41Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 987000,
+            "startedAt": "2026-11-26T03:46:14Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-26T04:09:55Z.8a841c",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-26T04:03:14Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit b287d357be6a",
+            "kind": "commit",
+            "ms": 1767,
+            "startedAt": "2026-11-26T04:10:14Z"
           }
         ],
         "firstStartedAt": "2026-11-26T03:46:11Z"
@@ -12333,6 +12356,181 @@
         "runId": "2026-11-26T04:10:12Z.0dbbf2",
         "status": "passed",
         "at": "2026-11-26T04:10:12Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "b287d357be6a",
+        "at": "2026-11-26T04:10:17Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-26T04:02:40Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_commit_task_work.py tests/test_close_phase.py tests/test__invariants.py tests/test__evidence_io.py` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_evidence_io' has no attribute 'record_places'. Did you mean: 'record_stages'?\" (read as python), and the task introduces 'record_places': absent from HEAD's module-level bindings of plugins/audit/scripts/governance/_evidence_io.py and bound in the working tree's; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P169.44-6l3",
+      "title": "A corrupt plan record is a finding, and the doctor's trail rows say only what the plan and the ledger hold",
+      "status": "in_progress",
+      "description": "Phase sign-off review findings. (1) tools/check-example-ledgers.py record_runs (~418) takes rows from records_of_bodies, which drops a record not in its writer's shape, so a pointer whose record is corrupt (status 7, failed broken) counts as merely unresolved and the check exits 0; validate-manifest only warns. A record that names the pointer's run but cannot be read is a FINDING naming the file and field, the same as an out-of-vocabulary ledger row. (2) _doctor_trail run trail row (~1941/1944) prints read[records], which counts only runs no ledger row also holds, as 'run record(s) in the plan'; on this repo it says 10 where the plan holds 37. Count the plan's records as records and the frozen rows as rows, each by its own reader. (3) _evidence_io ~2031-2034: an unchained-head warning says a full run recorded into this file closes the gap; since the full scope appends no row it never closes - say so. (4) _doctor_trail ~1510-1511 gate patterns hint names the rows in the evidence ledger at <dir> on a records-only plan where that directory does not exist; name where the tally was read (the plan's records, and the ledger only when one is present); likewise ~1490 'no evidence rows recorded yet'. Repro outputs: session scratchpad cr-work-views/s5/.",
+      "files": [
+        "tools/check-example-ledgers.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "tests/test__doctor_trail.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test__evidence_io.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/README.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__doctor_trail.py tests/test__evidence_io.py"
+        ],
+        "gateBasis": "files"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-26T04:23:08Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-26T04:47:53Z",
+            "ms": 22555,
+            "basis": "selectionMs in run 2026-11-26T04:54:33Z.3e8eb7's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-26T04:54:33Z.3e8eb7"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-26T04:48:16Z",
+            "ms": 376334,
+            "basis": "durationMs in run 2026-11-26T04:54:33Z.3e8eb7's record (run-test-gate --record)",
+            "runId": "2026-11-26T04:54:33Z.3e8eb7"
+          }
+        ],
+        "firstStartedAt": "2026-11-26T04:23:08Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-26T04:54:50Z.a20eef",
+        "status": "passed",
+        "durationMs": 193,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:b45a16219d453ecfeaadb563fd1a4803bf1cbf75b82e70149b939cde290d8bdb",
+        "reuseKey": "1:sha256:65654acaa7bc0e7c21cf132de0d16b6812d60fe3bf89bf3585d40841f8d7f728",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-26T04:54:33Z.3e8eb7",
+          "ts": "2026-11-26T04:54:33Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+        "selectionMs": 14848,
+        "at": "2026-11-26T04:54:50Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "runId": "2026-11-26T04:54:33Z.3e8eb7",
+          "startedAt": "2026-11-26T04:48:16Z",
+          "durationMs": 376334,
+          "selectionMs": 22555,
+          "status": "passed",
+          "failed": [],
+          "reuseKey": "1:sha256:65654acaa7bc0e7c21cf132de0d16b6812d60fe3bf89bf3585d40841f8d7f728",
+          "gateDigest": "sha256:b45a16219d453ecfeaadb563fd1a4803bf1cbf75b82e70149b939cde290d8bdb",
+          "gateSource": "task",
+          "banners": [],
+          "machine": "this run had the machine to itself",
+          "launch": "2026-11-26T04:47:53Z-efad036b",
+          "gateReach": {
+            "gaps": []
+          },
+          "observations": {
+            "ranTotal": null,
+            "countsBasis": "no step printed a summary this reader can count (python3 tools/sweep-selftests.py tests/test__doctor_trail.py tests/test__evidence_io.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/g... (5378 more characters)), so the size of this gate is not knowable from its output",
+            "treeMutated": [],
+            "treeBasis": "git described the tree before and after",
+            "coverage": [
+              "tests/test__doctor_trail.py",
+              "tests/test__evidence_io.py",
+              "tools/check-example-ledgers.py"
+            ],
+            "coverageBasis": "the runner named 206 path(s); the work under test declares 7 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 193/193 and 201 more; declared but not named by the run: PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md, plugins/audit/scripts/governance/_evidence_io.py, plugins/audit/scripts/status/_doctor_trail.py; breadth: the run named 174 suite path(s) and this task declares 7 file(s), and 171 of them are suites the task neither declares nor is named after (test__deps.py, test__output.py, test_audit_task.py, test_close_phase.py, test_commit_task_work.py, test_drive_phase.py, test_stamp_verification.py and 164 more) - this gate asks more than the task changed; that is reported, not refused"
+          },
+          "via": "cli",
+          "attempt": 1,
+          "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+          "at": "2026-11-26T04:54:33Z",
+          "testedState": {
+            "head": "b287d357",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeDigest": "sha256:34a6973df5a7e502c5a4f34e89790562a0c86d6e3593dde4ee5e1d93ba3abfd4",
+            "scopeBasis": "7 declared file(s); 7 read, 0 missing",
+            "scopeListDigest": "sha256:51573174cc3d78614577dce80e196ed02f5693cc6d04aa27fa0d7731b05f8636",
+            "dirtyDigest": "sha256:6717405179b6c4f6fe8ce169bf5e9d4bcd86d92474b5952847d159e87b18d299",
+            "dirtyBasis": "git described the tree before the run; 11 dirty path(s)"
+          },
+          "steps": [
+            {
+              "name": "python3 tools/sweep-selftests.py tests/test__doctor_trail.py tests/test__evidence_io.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_run_test_gate.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 376282,
+              "suiteReader": "none",
+              "commandBytes": 5328,
+              "commandSha256": "7a951d17a37330fedcb0259705c9d1c89be44560addd9178a194ed32929eebb4",
+              "program": "python3"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-26T04:54:33Z.3e8eb7",
+            "launch": "2026-11-26T04:47:53Z-efad036b",
+            "status": "passed",
+            "at": "2026-11-26T04:54:33Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-26T04:54:50Z.a20eef",
+        "status": "passed",
+        "at": "2026-11-26T04:54:50Z"
       }
     }
   ],

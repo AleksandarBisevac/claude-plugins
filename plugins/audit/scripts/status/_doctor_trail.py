@@ -1465,6 +1465,20 @@ def _gate_tally_classes(rows, names):
     return {"thin": thin, "never_failed": never_failed, "failed": failed}
 
 
+def _tally_basis(eproject, econfig, manifest_rel):
+    """Where a gate tally was read, as a phrase: the run records in the plan,
+    and the frozen ledger only when there is a ledger file to have read. A
+    plan that only ever ran this release has no evidence directory, and a
+    sentence naming one would point a reader at a place the tally never
+    came from."""
+    said = "the run records in %s" % (manifest_rel
+                                      or "docs/audit/audit-plan.json",)
+    if _evidence_io.ledger_files(eproject, econfig):
+        said += " and the frozen ledger at %s" % (_output.posix_rel(
+            _evidence_io.evidence_dir(eproject, econfig), eproject),)
+    return said
+
+
 def check_gate_patterns(rep, project, manifest_rel, config=None):
     """Has any gate run enough times to say it has never once failed?
 
@@ -1493,8 +1507,9 @@ def check_gate_patterns(rep, project, manifest_rel, config=None):
     names = _evidence_io.gate_names_seen(rows)
     if not names:
         rep.warn("gate patterns",
-                 "no evidence rows recorded yet, so a gate's pass/fail "
-                 "pattern cannot be established",
+                 "no gate recorded yet in %s, so a gate's pass/fail "
+                 "pattern cannot be established"
+                 % (_tally_basis(eproject, econfig, manifest_rel),),
                  "run a phase gate to start recording; a pattern needs "
                  "repeated runs past the floor")
         return
@@ -1507,8 +1522,8 @@ def check_gate_patterns(rep, project, manifest_rel, config=None):
                  "past the floor and never failed once, which is a "
                  "candidate to drop rather than keep paying for: %s"
                  % ("; ".join(never_failed),),
-                 "the rows are in the evidence ledger at %s"
-                 % (_evidence_io.evidence_dir(eproject, econfig),))
+                 "tallied from %s"
+                 % (_tally_basis(eproject, econfig, manifest_rel),))
         return
     checked = len(names) - len(thin)
     if thin and checked:
@@ -1613,8 +1628,9 @@ def check_gate_economy(rep, project, manifest_rel, manifest, config=None):
     names = _evidence_io.gate_names_seen(rows)
     if not names:
         rep.warn("gate economy",
-                 "no evidence rows recorded yet, so no gate entry can be "
-                 "graded on cost",
+                 "no gate recorded yet in %s, so no gate entry can be "
+                 "graded on cost"
+                 % (_tally_basis(eproject, econfig, manifest_rel),),
                  "run a phase gate to start recording; cost is only graded "
                  "past the floor a pattern needs")
         return
@@ -1937,13 +1953,20 @@ def check_run_trail(rep, project, manifest_rel):
     if failure is not None:
         rep.warn(RUN_TRAIL_CHECK, failure)
         return
+    # EACH COUNT FROM ITS OWN READER. `read.records` counts the runs no
+    # ledger row also holds, so a plan whose runs a frozen ledger repeats
+    # would read fewer records here than it holds; the plan's records are
+    # `plan_run_entries`', the ledger's rows are the ones `read_rows` took
+    # from a ledger file.
     sources = read.get("rowSources") or []
-    records = read.get("records") or 0
+    records = len(_evidence_io.plan_run_entries(
+        os.path.join(project, manifest_rel or "docs/audit/audit-plan.json"),
+        eproject))
     frozen = sum(1 for s in sources if s == _evidence_io.ROW_FROM_LEDGER)
     plan_where = manifest_rel or "docs/audit/audit-plan.json"
     held = "%d run record(s) in the plan" % (records,)
     if frozen:
-        held += " and %d frozen ledger row(s) from an earlier release" % (frozen,)
+        held += " and %d frozen ledger row(s)" % (frozen,)
     found, why = _verdict_trail(eproject)
     if found is None:
         rep.warn(RUN_TRAIL_CHECK,

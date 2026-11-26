@@ -1281,7 +1281,7 @@ def _cases(check):
               % (_levels(rep, "gate economy"),),
               _levels(rep, "gate economy") == ["WARNING"]
               and "cannot be" not in _detail(rep, "gate economy")
-              and "no evidence rows recorded yet" in _detail(rep, "gate economy"))
+              and "no gate recorded yet" in _detail(rep, "gate economy"))
 
         # dge3 (RED-FIRST): past the floor, never failed, mean cost over the
         # budget - the repro this task exists to make FAIL on current code
@@ -2996,6 +2996,100 @@ def _frozen_trail_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _trail_two_records(tmp, name, ledger_rows=0):
+    """`_trail_project` with a second task, each holding its run as a record -
+    so a gate is past the floor from the plan's records alone."""
+    root, mpath = _trail_project(tmp, name)
+    shard = os.path.join(root, "docs", "audit", "phases", "P1.json")
+    with open(shard, encoding="utf-8") as fh:
+        body = json.load(fh)
+    body["tasks"].append({"id": "P1.2", "title": "u", "status": "in_progress"})
+    with open(shard, "w", encoding="utf-8") as fh:
+        json.dump(body, fh)
+    for task, run in (("P1.1", "REC1"), ("P1.2", "REC2")):
+        # A step that simply passed carries no `outcome`: any outcome at all
+        # is read as a gate that did not pass.
+        row = dict(_trail_row(run, "2026-11-18T05:04:19Z"), taskId=task)
+        row["steps"] = [{"name": "sweep", "exit": 0, "ran": 3,
+                         "measured": "measured", "durationMs": 8000}]
+        got = _evidence_io.write_record(
+            root, mpath, "task", {"taskId": task, "phaseId": "P1"},
+            _evidence_io.run_record(row))
+        if not got.get("written"):
+            raise RuntimeError("fixture record not written: %r" % (got,))
+    for i in range(ledger_rows):
+        row = _trail_row("OLD%d" % (i,), "2026-10-0%dT04:04:19Z" % (i + 1))
+        row["steps"] = [{"name": "sweep", "exit": 0, "ran": 3,
+                         "measured": "measured", "durationMs": 8000}]
+        _evidence_io.append_row(root, row)
+    return root
+
+
+def _patterns(root, check_name="gate patterns"):
+    rep = base.Report()
+    M.check_gate_patterns(rep, root, "docs/audit/audit-plan.json")
+    return rep
+
+
+def _trail_basis_cases(check):
+    """What the trail and the gate-pattern rows say they were read from:
+    the plan's records counted as records and the frozen ledger's rows as
+    rows, each from its own reader, and no ledger named where there is none."""
+    tmp = _harness.fixture_root("doctor-trail-basis-")
+    try:
+        RT, GP = "run trail", "gate patterns"
+        # A ledger row repeating the record's own run: the plan still holds
+        # one record, and the ledger one row.
+        root, _m = _trail_project(tmp, "repeat", record=True)
+        _evidence_io.append_row(root, _trail_row("REC1", "2026-11-18T04:04:19Z"))
+        _trail_commit(root, "ledger repeats the record")
+        rep = _run_trail(root)
+        check("dtb1 RED-FIRST: a plan record a frozen ledger row repeats is "
+              "still counted as the plan's record - one record and one frozen "
+              "row, each from its own reader, not none and one: %r"
+              % (_detail(rep, RT),),
+              "1 run record(s) in the plan" in _detail(rep, RT)
+              and "1 frozen ledger row(s)" in _detail(rep, RT)
+              and "from an earlier release" not in _detail(rep, RT))
+
+        # THE ALLOW CASE for dtb1: nothing in a ledger, so no frozen clause.
+        root, _m = _trail_project(tmp, "norepeat", record=True)
+        rep = _run_trail(root)
+        check("dtb2 ALLOW: a plan with a record and no ledger row names no "
+              "frozen ledger row at all: %r" % (_detail(rep, RT),),
+              "1 run record(s) in the plan" in _detail(rep, RT)
+              and "frozen" not in _detail(rep, RT))
+
+        # THE PATTERNS ROW, on a plan whose runs are records only.
+        root = _trail_two_records(tmp, "pat-records")
+        rep = _patterns(root)
+        check("dtb3 RED-FIRST: on a plan holding its runs as records and NO "
+              "ledger directory, the never-failed hint names the plan the "
+              "tally was read from and not an evidence ledger at a directory "
+              "that is not there: %r %r"
+              % (_detail(rep, GP), _fix(rep, GP)),
+              _levels(rep, GP) == ["WARNING"]
+              and "docs/audit/audit-plan.json" in _fix(rep, GP)
+              and "evidence" not in _fix(rep, GP))
+        root = _trail_two_records(tmp, "pat-ledger", ledger_rows=2)
+        rep = _patterns(root)
+        check("dtb4 ...and where a frozen ledger IS present the hint names it "
+              "beside the plan: %r" % (_fix(rep, GP),),
+              "docs/audit/audit-plan.json" in _fix(rep, GP)
+              and "docs/audit/evidence" in _fix(rep, GP))
+        root, _m = _trail_project(tmp, "pat-empty")
+        rep = _patterns(root)
+        check("dtb5 RED-FIRST: a plan with no run says where it looked and "
+              "not that no evidence ROW exists in a ledger it never had: %r"
+              % (_detail(rep, GP),),
+              _levels(rep, GP) == ["WARNING"]
+              and "docs/audit/audit-plan.json" in _detail(rep, GP)
+              and "evidence rows" not in _detail(rep, GP)
+              and "cannot be established" in _detail(rep, GP))
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _doctor_trail_cases(check):
     """The REAL doctor over four fixture repositories: records and no ledger, a
     present frozen ledger, a tampered one, and neither."""
@@ -3057,6 +3151,7 @@ def _selftest():
         _dispatch_cache_cases(check)
         _coupling_cases(check)
         _frozen_trail_cases(check)
+        _trail_basis_cases(check)
         _doctor_trail_cases(check)
     return _harness.run(body)
 

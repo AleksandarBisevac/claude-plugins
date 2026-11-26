@@ -1293,6 +1293,15 @@ def _cases(check):
               and old_only["unchained"] == 2
               and len(old_only["warnings"]) == 1
               and "carry no chain" in old_only["warnings"][0])
+        check("ec7b the unchained-head warning promises no repair that cannot "
+              "come: no scope appends a row to a ledger file any more, so it "
+              "says the rows stay unchained and does not say a full run "
+              "recorded into the file closes the gap: %r"
+              % (old_only["warnings"],),
+              "closes the gap" not in old_only["warnings"][0]
+              and "links onto them" not in old_only["warnings"][0]
+              and "stay unchained" in old_only["warnings"][0]
+              and "no run appends" in old_only["warnings"][0].lower())
 
         M.append_row(c4, _run("run-2", "passed", "2026-06-02T10:00:00Z"))
         healed = M.verify(c4)
@@ -12122,6 +12131,58 @@ def _plan_door_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _plan_readers_cases(check):
+    """(pk) The two readers beside `records_of_bodies`: the run a record that
+    will not read still names (`unreadable_record_runs`), and the runs a plan
+    records counted off the plan alone (`plan_run_entries`)."""
+    doc = _json_schema.load_document(_RK_SCHEMA)
+    good = M.run_record(_nu_row("PK-GOOD", "2026-11-18T12:00:00Z", "passed"))
+    bodies = [(_NU_FILE, {"id": "P1", "tasks": [
+        {"id": "P1.1", M.RECORD_KEY: good},
+        {"id": "P1.2", M.RECORD_KEY: dict(good, runId="PK-BAD", status=7)},
+        {"id": "P1.3", M.RECORD_KEY: dict(
+            (k, v) for k, v in good.items() if k != "runId")}]})]
+    got = M.unreadable_record_runs(bodies, doc, plan="docs/audit/p.json")
+    lost = M.unreadable_records(bodies, doc, plan="docs/audit/p.json")
+    check("pk1 a record that is not the record's shape still names its run: "
+          "the corrupt record gives its run id and the entry "
+          "`unreadable_records` gives it, the record that reads gives none, "
+          "and one naming no run gives None - never a made-up id: %r"
+          % (got,),
+          [(e.get("subject"), run) for e, run in got]
+          == [("P1.2", "PK-BAD"), ("P1.3", None)]
+          and [e for e, _run in got] == lost
+          and [e["field"] for e, _r in got] == ["%s.status" % M.RECORD_KEY,
+                                                "%s.runId" % M.RECORD_KEY])
+    check("pk2 ALLOW: bodies whose records all read name no unreadable run: %r"
+          % (M.unreadable_record_runs([(_NU_FILE, {"id": "P1", "tasks": [
+              {"id": "P1.1", M.RECORD_KEY: good}]})], doc),),
+          M.unreadable_record_runs([(_NU_FILE, {"id": "P1", "tasks": [
+              {"id": "P1.1", M.RECORD_KEY: good}]})], doc) == [])
+
+    tmp = _harness.fixture_root("audit-evidence-plan-runs-")
+    try:
+        # THE FIXTURE THAT TELLS THE READERS APART: the ledger repeats the
+        # record's own run, so `read_rows` counts that run as the ledger's
+        # and `records` reads none while the plan records one.
+        root, mpath, _shard = _wh_project(tmp, "ok", "task", malformed=False)
+        M.append_row(root, _wh_row(_WH_RED, "2026-11-18T12:00:00Z", "failed"))
+        read = M.read_rows(root, manifest_path=mpath)
+        ran = [row.get("runId") for row, _l in M.plan_run_entries(mpath, root)]
+        check("pk3 the runs a plan records are counted off the plan alone: "
+              "the record's run is one even when a ledger row repeats it, "
+              "where `read_rows`' `records` counts only the runs no ledger row "
+              "also holds: %r / records=%r" % (ran, read.get("records")),
+              ran == [_WH_RED] and read.get("records") == 0)
+        broot, bmpath, _s = _wh_project(tmp, "bad", "task")
+        check("pk4 ...and a record that will not read is no run of the "
+              "plan's: %r" % ([r.get("runId") for r, _l in
+                               M.plan_run_entries(bmpath, broot)],),
+              M.plan_run_entries(bmpath, broot) == [])
+    finally:
+        _harness.remove_tree(tmp)
+
+
 # --- the upgrade: records replace rows, and the frozen rows read as before -------
 def _bu_ledger(root, rows):
     """Write `rows` as the previous release left them - one chained file under
@@ -12509,7 +12570,8 @@ STAGES = (("wh-block", "_withheld_cases"), ("rf-block", "_read_field_cases"),
           ("kv-block", "_keep_both_verb_cases"),
           ("kc-block", "_container_twice_cases"),
           ("pd-block", "_plan_door_cases"),
-          ("bu-block", "_boundary_upgrade_cases"))
+          ("bu-block", "_boundary_upgrade_cases"),
+          ("pk-block", "_plan_readers_cases"))
 # The prefix of the directory a full run's blocks report into.
 _STAGE_PREFIX = "evidence-io-stages-"
 

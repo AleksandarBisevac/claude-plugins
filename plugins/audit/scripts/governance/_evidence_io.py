@@ -2029,9 +2029,9 @@ def verify_rows(rows, basename):
         out["warnings"].append(
             "%s: %d recorded run(s) at the head of this file carry no chain and "
             "nothing protects them -- they were written before the ledger was "
-            "chained. They are not evidence of tampering. A full run recorded "
-            "into this file links onto them and closes the gap; no other run "
-            "appends to a ledger file any more"
+            "chained. They are not evidence of tampering. No run appends to a "
+            "ledger file any more - a full run records into the plan - so "
+            "these rows stay unchained"
             % (basename, out["unchained"]))
     return out
 
@@ -4647,7 +4647,10 @@ def _plan_records(phase, doc):
     projected record (`project_record`) a reader reads, or None beside the
     first way the record or its holder is not the writer's (`problem`,
     `record_problem`'s shape) - a key written twice above the holder
-    (`container_twice_problem`) or on it first."""
+    (`container_twice_problem`) or on it first. A problem also carries
+    `runId`: the run the stored record names, as a string, or None when it
+    names none - the one thing a record that will not read still says
+    (`unreadable_record_runs`)."""
     out = []
     for scope, subject, holder in _record_holders(phase):
         why = (container_twice_problem(phase, scope)
@@ -4655,6 +4658,11 @@ def _plan_records(phase, doc):
         found = ({"field": why.split(" ", 1)[0], "rule": "duplicate-key",
                   "why": _journal_io._clip(why)} if why else
                  record_problem(holder[RECORD_KEY], doc, scope=scope))
+        if found:
+            named = (holder[RECORD_KEY].get("runId")
+                     if isinstance(holder[RECORD_KEY], dict) else None)
+            found = dict(found, runId=str(named) if named is not None
+                         else None)
         record = None if found else project_record(holder[RECORD_KEY],
                                                     scope)[0]
         out.append((scope, subject, record, found))
@@ -4912,6 +4920,46 @@ def records_of_bodies(bodies, doc=None, plan=None):
             seen.add(row["runId"])
             out.append((row, label))
     return out
+
+
+def unreadable_record_runs(bodies, doc=None, plan=None):
+    """`[(entry, runId)]` - every record the phase bodies `bodies` hold that
+    is not the record's shape, as `unreadable_records` names it, with the
+    run the record itself names (`runId`, as a string) or None when it names
+    none. `records_of_bodies` gives no run for such a record, so a reader
+    that must say which run a cache points at cannot be read, and why, asks
+    here: the run a corrupt record names is the one thing the shape check
+    leaves readable. The plan's full-run record is not a body's record and
+    is `full_run_entries`' (`malformed`)."""
+    doc = record_schema()[0] if doc is None else doc
+    return [(_record_entry(label, phase, scope, subject, found, plan),
+             found.get("runId"))
+            for label, phase in bodies or [] if isinstance(phase, dict)
+            for scope, subject, _record, found in _plan_records(phase, doc)
+            if found is not None]
+
+
+def plan_run_entries(manifest_path, project=None):
+    """`[(row, label)]` - every run the plan at `manifest_path` records, one
+    per run, and nothing a ledger holds: the plan's full runs
+    (`full_run_entries`) and each phase's and task's record
+    (`records_of_bodies`), read off the plan alone. A record that is not the
+    record's shape gives no entry, as it gives no run to `read_rows`.
+
+    `read_rows`' `records` is NOT this count: it counts the runs no ledger
+    row also holds, so a plan whose runs a frozen ledger repeats reads fewer
+    there than it holds. A reader saying how many runs the plan records
+    asks here, and how many rows a frozen ledger holds of `read_rows`'
+    `rowSources`."""
+    bodies, _lost = plan_bodies(manifest_path, project)
+    doc, _schema_lost = record_schema()
+    plan = plan_said(project, manifest_path)
+    index_label, index = plan_index(manifest_path, project)
+    full, _full_lost = full_run_entries(index, index_label, doc, plan=plan)
+    _rows, added = with_records([], full + records_of_bodies(bodies, doc,
+                                                             plan=plan))
+    return [(row, label) for row, label in added
+            if not is_unreadable_row(row)]
 
 
 def _unreadable_row_of(label, phase, held_tasks, scope, subject, found,

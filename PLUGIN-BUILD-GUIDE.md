@@ -3486,8 +3486,10 @@ nothing learns to read the row as noise), and a warning it does not recognise ge
 instead of a guessed cause.
 
 **What the trail is made of now that no row is appended.** `check_run_trail` reports the
-plan's run records (`_evidence_io.read_rows`, the one reader every surface asks), the rows of
-a frozen ledger beside them when one is there, and the verdicts the task commits carry in
+plan's run records (`_evidence_io.plan_run_entries`, off the plan alone - `read_rows`' `records`
+is not that count, since it leaves out a run a ledger row also holds), the rows of a frozen
+ledger beside them when one is there (the rows `read_rows` took from a ledger file, the one
+reader every surface asks), and the verdicts the task commits carry in
 their `Audit-Task`, `Audit-Gate` and `Audit-Run` trailers (`_commit_trail.task_verdicts`,
 git's own trailer reading), each count named for the store it came from because the three are
 different places to look. Nothing recorded is an OK row that says where it looked, a git that
@@ -3501,6 +3503,10 @@ files under it, which is a deletion and the one absence that is a FINDING. Both 
 printed from the seam `check_run_records` already sits at, the top of `check_gate_patterns`,
 so `audit-doctor.py` wires nothing of its own for them; the verification does not cover a
 ledger file rewritten whole with every hash recomputed, which is the anchor's and git's.
+**The gate rows name where their tally was read** (`_tally_basis`): the run records in the plan,
+and the frozen ledger's directory only when a ledger file is there to have read - a plan that
+only ever ran this release has no evidence directory, and a row pointing at one sends the
+reader to a place the tally never came from.
 
 `_journal_never_committed` rides `audit-journal`'s porcelain seam for the 7-day
 uncommitted-file warning, keyed by journal-relative path so a live and an archived month
@@ -4168,7 +4174,13 @@ no run, `unreadable_records()` names it with its file, scope, subject and first 
 bounded sentence every surface prints for both (`plan_unreadable()` gives the two plan-side
 answers to a reader that reads no ledger, and `plan_unreadable_records()` is the one door
 `/audit:status`, the report and the panel ask it through: it resolves the project as every reader
-does and, when the read itself raises, answers one whole-plan entry rather than an empty list). A writer replacing such a record reads it as no record
+does and, when the read itself raises, answers one whole-plan entry rather than an empty list).
+A record that will not read still names the run it carries, and `unreadable_record_runs()` hands
+that back beside the same entry (`_plan_records` puts `runId` on the problem it finds), so a
+reader asking which run a cache points at - `tools/check-example-ledgers.py` - can tell a pointer
+naming a corrupt record, a FINDING, from one naming no record at all;
+`plan_run_entries()` is every run the plan records, off the plan alone, which `read_rows`'
+`records` is not (it counts only the runs no ledger row also holds). A writer replacing such a record reads it as no record
 (`readable_record()`). **Where a record sits is its identity**: `record_row()` drops every key
 `RECORD_NOT_CARRIED` and `RECORD_ONLY_KEYS` name before it applies the placement, giving back of
 the record's own keys only `RECORD_ONLY_READ`, and `_record_of()` leaves `RECORD_ONLY_KEYS` out of
