@@ -1,0 +1,10 @@
+{"findings": [], "preExisting": [],
+ "intent": {"answer": "matches",
+  "note": "Clause 'Fix in the test: set pidsAt when the case names runner.pid, as the product does' - diff line `held.update(tree=live, pids=[runner.pid], pidsAt=M2._utc_stamp())` in bt4 (tests/test_drive_phase.py ~24324), mirroring drive-phase.py:4411 `keep(pids=list(pids), **{PIDS_AT: _utc_stamp()})`. base_liveness (drive-phase.py:3566-3590) drops a pid when `began > named + START_SLACK_SECONDS`; a pidsAt stamped after Popen cannot be earlier than the runner's start, so the slow-start shape no longer reads as a stranger. Only the test file changed; no product edit. The clauses 'prove the case still goes red under a broken liveness check' and 'slow-start now passes' are claimed as scratch-copy runs (original 3/4 red, fixed 4/4; liveness mutation 3/4 red, restored 4/4); I did not re-run them (not permitted), they are consistent with the code read. The executor's outcome describes the diff accurately: one line plus a comment, no defined name or case title changed, so the listed dependants (_Env, _actions, _base_mark, _base_measure_repo and the files importing the test module) are unaffected.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Task adds no tests (tests.add none) and expectRedFirst is false; executor filed not-attempted. Its scratch-copy reds (slow-start red/green, liveness mutation red) are reported but outside the red-first vocabulary for this task.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Gate is `python3 tools/sweep-selftests.py tests/test_drive_phase.py`, selecting the whole of tests/test_drive_phase.py (a very large file); I read only the bt-block neighbourhood (bt1-bt4, ~24270-24345) and the product's base_liveness. bt4's check asserts the tree and mark survive, which fails if base_liveness reads the runner as gone, so it does reach the behaviour. The rest of the file was not read, so no claim beyond that."},
+ "verdict": "clean",
+ "tasks": []}

@@ -1362,7 +1362,7 @@
     {
       "id": "P170.5-yl6",
       "title": "The follower-map wave cases read a note's text, so a Windows interpreter path in the recipe matches",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI release run 45780845992 on 3f9c2fd5 (P170.4) is red on four Windows cells, all in tests/test_drive_phase.py: 'a wave member that regenerated a generated file itself ... is integrated with the file widened on the owner's basis' (and its sharded twin). Cause: the case (~8042) builds notes as ' '.join(str(n) for n in task notes); a note is a dict, so str() is its repr and doubles every backslash, and _GEN_RECIPE (~8057, sys.executable, C:\\hostedtoolcache\\...\\python3.exe on the runner) never occurs in it. P170.4 repointed this case from _deps's real owner to a fixture owner whose recipe names sys.executable, which first exposed it. Fix: read each note's text field (or the plain string) and compare against that; keep every other conjunct. Prove it can still fail (drop the widening and see red) on posix; Windows is proven by the probe CI the orchestrator runs.",
       "files": [
         "tests/test_drive_phase.py"
@@ -1383,13 +1383,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "feed9498939f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_drive_phase.py: three sites built `notes` as ' '.join(str(n) for n in task.get('notes')), which is the repr of each note dict (backslashes doubled), at the follower-map case (_GEN_RECIPE conjunct, the failing one), the hand-edited-follower case ('owed by check_notes on run') and the fm2 shot case. All three now use the file's existing `_notes(mpath, 'P1.2')` reader, which takes each note's text field; every other conjunct is unchanged. Class sweep: grep for 'str(n) for n in', 'in str(', '\" \".join(str(' over the file shows no other note-repr join; the remaining str(...) uses are dict keys (_answer_json, _rw_answer), basis/id strings or exceptions, left because none holds a path matched against a note. Windows shape simulated in-process: recipe r'C:\\hostedtoolcache\\windows\\Python\\3.12\\x64\\python3.exe tools/regen.py' in a note text -> old join matches: False, text reader matches: True. Commands: sweep tests/test_drive_phase.py -> 1/1 files ok, 1098 cases; full sweep exit 0 -> 196/196 files ok, 19999 cases; ruff exit 0; vermin exit 0. Dependants (test_drive_without_model, sweep-costs, ci.yml, drive-phase.py, test__evidence_io, test__runner_output, test_run_test_gate, test_stamp_verification and the rest): none changed - only three assignments inside this suite's own cases changed, no defined name or fixture shape, so every dependant is still correct.",
+        "descriptive": "The follower-map wave cases now read a note's text, so a Windows interpreter path in the recipe matches instead of being compared against a backslash-doubled repr."
       },
       "startedAt": "2026-11-26T08:31:34Z",
-      "completedAt": null,
+      "completedAt": "2026-11-26T08:48:17Z",
       "verifiedBy": [],
       "timing": {
         "stages": [
@@ -1406,6 +1406,30 @@
             "ms": 190165,
             "basis": "durationMs in run 2026-11-26T08:47:16Z.7694ec's record (run-test-gate --record)",
             "runId": "2026-11-26T08:47:16Z.7694ec"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-26T08:43:29Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 714000,
+            "startedAt": "2026-11-26T08:31:35Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-26T08:47:16Z.7694ec",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-26T08:43:50Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-26T08:48:05Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 31000,
+            "startedAt": "2026-11-26T08:47:34Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit feed9498939f",
+            "kind": "commit",
+            "ms": 1732,
+            "startedAt": "2026-11-26T08:48:14Z"
           }
         ],
         "firstStartedAt": "2026-11-26T08:31:34Z"
@@ -1512,6 +1536,172 @@
         "runId": "2026-11-26T08:47:33Z.bf5473",
         "status": "passed",
         "at": "2026-11-26T08:47:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "feed9498939f",
+        "at": "2026-11-26T08:48:17Z",
+        "return": "docs/audit/evidence/returns/P170.5-yl6/20261126T083134Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with expectRedFirst false and no tests.add; no new case. The existing case's sensitivity was shown instead in a throwaway copy of the tree (rsync to the scratchpad, .git excluded), not the shared tree: drive-phase.py's follower-widening basis was changed to omit the recipe, and `python3 tests/test_drive_phase.py --selftest --stage fm-block` printed 'FAIL a wave member that regenerated a generated file itself ... SELFTEST FAILED: 0/1 cases passed'; the same stage on the real tree printed 'ALL PASS: 1/1 cases passed'.",
+        "at": "2026-11-26 (this session)"
+      }
+    },
+    {
+      "id": "P170.6-yl6",
+      "title": "The live-base-tree twin case records when its runner started, so a slow runner does not read as a stranger",
+      "status": "in_progress",
+      "description": "tests/test_drive_phase.py bt4 ('THE TWIN: a base tree whose mark names a run still alive is left in place') is timing-fragile: it writes new pids on a mark but keeps the old pidsAt, and base_liveness's START_SLACK_SECONDS then reads the runner as not the run's when the runner starts more than the slack after pidsAt. Red on CI twice: probe run 45694047602 (linux stress) and run 45786296493 on feed9498 (linux plain 1); reproduced on HEAD with a 2.5 s sleep before Popen. Fix in the test: set pidsAt when the case names runner.pid, as the product does. Prove the case still goes red when the product's liveness check is broken (a mutation), and that the slow-start shape (sleep before Popen) now passes.",
+      "files": [
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "files"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-26T09:08:49Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-26T09:22:35Z",
+            "ms": 15326,
+            "basis": "selectionMs in run 2026-11-26T09:26:01Z.5449d4's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-26T09:26:01Z.5449d4"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-26T09:22:51Z",
+            "ms": 190607,
+            "basis": "durationMs in run 2026-11-26T09:26:01Z.5449d4's record (run-test-gate --record)",
+            "runId": "2026-11-26T09:26:01Z.5449d4"
+          }
+        ],
+        "firstStartedAt": "2026-11-26T09:08:49Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-26T09:26:18Z.08bbe3",
+        "status": "passed",
+        "durationMs": 197,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:540201968a8778097427844b2ff7845bf6aa4fb7457eb6529fb7229219c3bd35",
+        "reuseKey": "1:sha256:272c90dfcdd99928dcc9ebc1cf6830723c2cc03739193d8c5b57ce8fafcec111",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-26T09:26:01Z.5449d4",
+          "ts": "2026-11-26T09:26:01Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+        "selectionMs": 14924,
+        "at": "2026-11-26T09:26:18Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "runId": "2026-11-26T09:26:01Z.5449d4",
+          "startedAt": "2026-11-26T09:22:51Z",
+          "durationMs": 190607,
+          "selectionMs": 15326,
+          "status": "passed",
+          "failed": [],
+          "reuseKey": "1:sha256:272c90dfcdd99928dcc9ebc1cf6830723c2cc03739193d8c5b57ce8fafcec111",
+          "gateDigest": "sha256:540201968a8778097427844b2ff7845bf6aa4fb7457eb6529fb7229219c3bd35",
+          "gateSource": "task",
+          "banners": [],
+          "machine": "this run had the machine to itself",
+          "launch": "2026-11-26T09:22:35Z-eaefa165",
+          "gateReach": {
+            "gaps": []
+          },
+          "observations": {
+            "ranTotal": null,
+            "countsBasis": "no step printed a summary this reader can count (python3 tools/sweep-selftests.py tests/test_drive_phase.py + affected/related: tests/test__refs.py, tests/test_drive_without_model.py + affected/walk: tests/tes... (306 more characters)), so the size of this gate is not knowable from its output",
+            "treeMutated": [],
+            "treeBasis": "git described the tree before and after",
+            "coverage": [
+              "tests/test_drive_phase.py"
+            ],
+            "coverageBasis": "the runner named 25 path(s); the work under test declares 1 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 15/15 and 20 more; every declared file was named by the run; breadth: the run named 16 suite path(s) and this task declares 1 file(s), and 14 of them are suites the task neither declares nor is named after (test__deps.py, test__output.py, test_stamp_verification.py, tests/_harness.py, tests/test__affected_tests.py, tests/test__deps.py, tests/test__output.py and 7 more) - this gate asks more than the task changed; that is reported, not refused"
+          },
+          "via": "cli",
+          "attempt": 1,
+          "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+          "at": "2026-11-26T09:26:01Z",
+          "testedState": {
+            "head": "feed9498",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeDigest": "sha256:d5110ead89c37e4725b5d7d023d66d3f0b40054e9090dc88ebec70066456ee3d",
+            "scopeBasis": "1 declared file(s); 1 read, 0 missing",
+            "scopeListDigest": "sha256:88c417416a30968eebb727c3aa592c5f7bdab0c54b3e11c8635508492091f3ca",
+            "dirtyDigest": "sha256:95a88c360d9f0a8d1f107cd46b090fdd5c29aea0e9a1ffe55ce7bb98caafbea2",
+            "dirtyBasis": "git described the tree before the run; 5 dirty path(s)"
+          },
+          "steps": [
+            {
+              "name": "python3 tools/sweep-selftests.py tests/test_drive_phase.py + affected/related: tests/test__refs.py, tests/test_drive_without_model.py + affected/walk: tests/test__affected_tests.py, tests/test__deps.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_settings.py, tests/test_derive_phase_gate.py, tests/test_run_test_gate.py, tests/test_stamp_verification.py, tools/_suite.py, tools/affected.py, tools/count-ui-pins.py, tools/sweep-selftests.py",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 190561,
+              "suiteReader": "none",
+              "commandBytes": 417,
+              "commandSha256": "a6b2ff054cad19867a983658e8615ac4578bc3d812a4ae64038e905009691602",
+              "program": "python3"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-26T09:26:01Z.5449d4",
+            "launch": "2026-11-26T09:22:35Z-eaefa165",
+            "status": "passed",
+            "at": "2026-11-26T09:26:01Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-26T09:26:18Z.08bbe3",
+        "status": "passed",
+        "at": "2026-11-26T09:26:18Z"
       }
     }
   ],

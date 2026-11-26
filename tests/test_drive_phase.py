@@ -24316,7 +24316,12 @@ def _base_bound_cases(check):
         with open(state_file, encoding="utf-8") as fh:
             state = json.load(fh)
         held = state["baseMeasured"]["P1.1"]["value"]
-        held.update(tree=live, pids=[runner.pid])
+        # The product names a pid and the moment it named it in one write
+        # (`pidsAt`), and a pid whose process began later than that moment is
+        # read as not the run's. The runner above began just now, so the
+        # moment is stamped now - a stale `pidsAt` from the earlier start
+        # makes a slow-starting runner read as a stranger.
+        held.update(tree=live, pids=[runner.pid], pidsAt=M2._utc_stamp())
         with open(state_file, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(state, fh)
         _code, alive_said = _signal_next(M2, root, mpath)

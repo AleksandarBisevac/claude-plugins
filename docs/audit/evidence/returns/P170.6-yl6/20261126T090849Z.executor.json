@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "python3 tests/test_drive_phase.py --selftest --stage bt-block": "pass",
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass",
+    "python3 tools/sweep-selftests.py (full)": "pass",
+    "ruff check tests/test_drive_phase.py": "pass",
+    "vermin -t=3.8- --no-tips --violations tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with expectRedFirst false, no tests.add and no test command given to submit. The reds were watched by hand in scratch copies outside the tree, never by undoing the fix in it. (a) scratchpad copies of the ORIGINAL and the FIXED test file, each with time.sleep(2.5) inserted before the runner's Popen, run with PYTHONPATH=tests: original gave FAIL bt4 (3/4 passed), fixed gave PASS bt4 (4/4). (b) a scratchpad copy of plugins/audit, tests and tools with base_liveness mutated (present = [] after the pid scan, asserted to have applied once): FAIL bt4 (3/4); with the product file restored (cmp identical to the tree) the same copy gave ALL PASS 4/4.",
+    "at": "2026-11-26 (scratch runs, after the fix)"
+  },
+  "outcome": {
+    "technical": "tests/test_drive_phase.py, base-bound block (stage bt-block), case bt4: the held mark update now sets pidsAt=M2._utc_stamp() together with the pids, as the product does (drive-phase.py line 4411), stamped after the runner's Popen; before, it kept the earlier start's pidsAt, so a runner that began more than START_SLACK_SECONDS later read as not the run's. Comment added saying why. Class check in this file: grep of pids/pidsAt/\"pids\" over test_drive_phase.py gave bt4 as the only site writing a LIVE pid onto a mark without pidsAt. Other hits are reads (22956, 22969, 24529, 24575, 24799-24803 already folds pidsAt), pids=[] (24651, 25465, 25660, 25669, 25729, 25736, 26008), the current process's own pid (23951, which base_liveness excludes), dead pids (_dead_pid() at 25499/25520/25554 and the lc7 case 26188, whose proc was communicate()d to exit in _bk_dead_claim), and literal [101] (25581). Left as they are because none can be read as a stranger. Runs: bt-block 4/4 exit 0; sweep-selftests tests/test_drive_phase.py 1/1 files ok, 1098 cases; full sweep-selftests.py exit 0, 196/196 files ok, 19999 cases, run after the last edit; ruff All checks passed; vermin run (no violation printed, minimum 3.8). Nothing committed; only tests/test_drive_phase.py changed. Dependants (tests/test_drive_without_model.py, tests/test__evidence_io.py, tests/test__runner_output.py, tests/test_run_test_gate.py, tests/test_stamp_verification.py, drive-phase.py, ci.yml, sweep-costs.json): still correct, because the edit is one line inside one function body, with no defined name, signature, case id or case title changed. _Env, _actions, _base_mark and _base_measure_repo are untouched. The case count in the block is unchanged, so the sweep-costs.json entry stays valid.\nclaims:\n1 tests/test_drive_phase.py (bt4, held.update(... pidsAt=M2._utc_stamp())) sets what the comment above it says; the product line it mirrors is drive-phase.py:4411\n2 slow-start mutation: original red (3/4), fixed green (4/4); liveness-always-dead mutation in a scratch copy: bt4 red (3/4), restored and cmp identical: 4/4; no product or test file mutated in the shared tree\n3 grep for pids/pidsAt in test_drive_phase.py: bt4 is the only live-pid site without pidsAt; every other hit is accounted for above, left because dead, own pid, empty, or read-only\n4 n/a - no rule to an agent\n5 slow-start red/green watched once each; measured once, deterministic given the 2.5 s sleep against a 1 s slack\n6 n/a - no guard\n7 n/a - no number written into prose or comments",
+    "descriptive": "bt4 no longer fails when the runner starts more than a second after the stale pidsAt, which turned CI red twice, and it still goes red when the liveness check is broken."
+  },
+  "testsAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:964f98e5253014da2935a93148b8fb001f362458eb3c13fd17a8fef552c5deca\",\"dirtyDigest\":\"sha256:1808bb0f638266519c691f870c399c131e8dd8e29a20c542c81367291ea15994\",\"dirtyPaths\":{\"tests/test_drive_phase.py\":\"b133acbd91384dd3\"},\"head\":\"feed9498\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:d5110ead89c37e4725b5d7d023d66d3f0b40054e9090dc88ebec70066456ee3d\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
