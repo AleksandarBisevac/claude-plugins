@@ -2784,6 +2784,271 @@ def _relearn_command_cases(check, _run, _rows):
         shutil.rmtree(fixture, ignore_errors=True)
 
 
+# --- the trail after rows stop being written -------------------------------------
+# A run's record is the plan's own and its verdict is in its commit's trailers;
+# the evidence directory is a frozen ledger of an earlier release or nothing at
+# all. Each case builds a REAL repository and asks the real checks (and, for the
+# last group, the real doctor), so a reworded row goes red here rather than on a
+# machine that happens to hold a ledger.
+_TRAIL_IDS = {"taskId": "P1.1", "phaseId": "P1"}
+
+
+def _trail_row(run_id, ts, status="passed"):
+    """A run as the writer shapes one - the fields a record and a ledger row
+    both read."""
+    return {"v": 1, "runId": run_id, "ts": ts, "scope": "task",
+            "taskId": "P1.1", "phaseId": "P1", "status": status,
+            "durationMs": 8125, "startedAt": "2026-11-18T04:04:10Z",
+            "gateSource": "task",
+            "testedState": {"head": "abc123", "dirtyDigest": "sha256:d",
+                            "tree": "sha256:t", "scopeDigest": "sha256:s"},
+            "banners": [], "steps": [
+                {"name": "sweep", "exit": 0, "ran": 3, "measured": "measured",
+                 "durationMs": 8000, "outcome": "passed"}]}
+
+
+def _trail_project(tmp, name, record=False, ledger_rows=0, git=True):
+    """A sharded plan with one phase and one task, under git unless `git` is
+    False; `record` writes the task's run record into the shard,
+    `ledger_rows` appends that many rows to the evidence directory the way an
+    earlier release did. Returns `(root, manifest_path)`."""
+    root = os.path.join(tmp, name)
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    os.makedirs(os.path.join(root, ".claude"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump({"meta": {"version": 3}, "phases": [
+            {"id": "P1", "title": "one", "shard": "phases/P1.json"}]}, fh)
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                   "testGate": [], "tasks": [
+                       {"id": "P1.1", "title": "t", "status": "in_progress"}]},
+                  fh)
+    if git:
+        _harness.git(None, "init", "-q", root, prefix=("git",))
+        for k, v in (("user.email", "p@example.com"), ("user.name", "P")):
+            _harness.git(None, "-C", root, "config", k, v, prefix=("git",))
+    if record:
+        got = _evidence_io.write_record(
+            root, mpath, "task", _TRAIL_IDS,
+            _evidence_io.run_record(_trail_row("REC1", "2026-11-18T04:04:19Z")))
+        if not got.get("written"):
+            raise RuntimeError("fixture record not written: %r" % (got,))
+    for i in range(ledger_rows):
+        _evidence_io.append_row(root, _trail_row(
+            "OLD%d" % (i,), "2026-10-0%dT04:04:19Z" % (i + 1)))
+    return root, mpath
+
+
+def _trail_commit(root, message):
+    _harness.git(None, "-C", root, "add", "-A", prefix=("git",))
+    _harness.git(None, "-C", root, "-c", "commit.gpgsign=false", "commit",
+                 "-q", "-m", message, prefix=("git",))
+
+
+def _frozen(root, rep_name="frozen ledger"):
+    rep = base.Report()
+    fn = getattr(M, "check_frozen_ledger", None)
+    if fn is not None:
+        fn(rep, root, "docs/audit/audit-plan.json")
+    return rep
+
+
+def _run_trail(root):
+    rep = base.Report()
+    fn = getattr(M, "check_run_trail", None)
+    if fn is not None:
+        fn(rep, root, "docs/audit/audit-plan.json")
+    return rep
+
+
+def _frozen_trail_cases(check):
+    tmp = _harness.fixture_root("doctor-trail-frozen-")
+    try:
+        FL, RT = "frozen ledger", "run trail"
+
+        # RECORDS AND NO LEDGER: what a project that only ever ran this release
+        # looks like. The absent ledger is said as absent and is never a defect.
+        root, _m = _trail_project(tmp, "records-only", record=True)
+        rep = _frozen(root)
+        check("dfl1 RED-FIRST: a plan holding run records and NO evidence "
+              "directory reads `no frozen ledger` at OK, naming the directory "
+              "that was looked in and where the runs are instead - an absent "
+              "ledger is never a failure: %r %r"
+              % (_levels(rep, FL), _detail(rep, FL)),
+              _levels(rep, FL) == ["OK"]
+              and "no frozen ledger" in _detail(rep, FL)
+              and "docs/audit/evidence" in _detail(rep, FL)
+              and "record" in _detail(rep, FL)
+              and not re.search(r"fail|finding|broken", _detail(rep, FL),
+                                re.I))
+        rep = _run_trail(root)
+        check("dfl2 RED-FIRST: the trail row counts the run record the plan "
+              "holds and names where it was read from, with no ledger row "
+              "claimed: %r %r" % (_levels(rep, RT), _detail(rep, RT)),
+              _levels(rep, RT) == ["OK"]
+              and "1 run record(s) in the plan" in _detail(rep, RT)
+              and "frozen ledger row" not in _detail(rep, RT))
+
+        # NEITHER: a fresh plan. Nothing recorded is said as nothing recorded -
+        # a WARNING here would fail a fresh install for having no history.
+        root, _m = _trail_project(tmp, "neither")
+        rep = _frozen(root)
+        check("dfl3 RED-FIRST: no record, no ledger and no commit reads OK on "
+              "both rows - `no frozen ledger` and `no run recorded yet`, each "
+              "carrying what was looked at: %r %r / %r %r"
+              % (_levels(rep, FL), _detail(rep, FL),
+                 _levels(_run_trail(root), RT), _detail(_run_trail(root), RT)),
+              _levels(rep, FL) == ["OK"]
+              and "no frozen ledger" in _detail(rep, FL)
+              and _levels(_run_trail(root), RT) == ["OK"]
+              and "no run recorded yet" in _detail(_run_trail(root), RT)
+              and "docs/audit/audit-plan.json" in _detail(_run_trail(root), RT))
+
+        # A PRESENT FROZEN LEDGER THAT HOLDS: verified, with its basis.
+        root, _m = _trail_project(tmp, "frozen-ok", record=True, ledger_rows=2)
+        rep = _frozen(root)
+        check("dfl4 RED-FIRST: a frozen ledger that is present and chains is "
+              "VERIFIED, not merely listed - OK naming its rows, its file, "
+              "`chain intact`, and that an earlier release wrote it: %r %r"
+              % (_levels(rep, FL), _detail(rep, FL)),
+              _levels(rep, FL) == ["OK"]
+              and "2 row(s) in 1 file(s)" in _detail(rep, FL)
+              and "chain intact" in _detail(rep, FL)
+              and "earlier release" in _detail(rep, FL))
+        rep = _run_trail(root)
+        check("dfl5 RED-FIRST: with a frozen ledger beside the record the "
+              "trail row counts BOTH and says which is which: %r"
+              % (_detail(rep, RT),),
+              "1 run record(s) in the plan" in _detail(rep, RT)
+              and "2 frozen ledger row(s)" in _detail(rep, RT))
+
+        # A TAMPERED FROZEN LEDGER: a row edited after it was written is a
+        # FINDING that names the file. The other direction of dfl4: a check
+        # that is always OK would pass dfl1-dfl4 and fail only here.
+        ledger = _evidence_io.ledger_files(root)[0]
+        with open(ledger, encoding="utf-8") as fh:
+            text = fh.read()
+        edited = text.replace('"status":"passed"', '"status":"failed"', 1)
+        edited_ok = edited != text
+        with open(ledger, "w", encoding="utf-8") as fh:
+            fh.write(edited)
+        rep = _frozen(root)
+        check("dfl6 RED-FIRST: a frozen ledger edited after it was written is "
+              "a FINDING naming the file and pointing at `audit-journal.py "
+              "verify` - the fixture edit landed (%r): %r %r / fix %r"
+              % (edited_ok, _levels(rep, FL), _detail(rep, FL), _fix(rep, FL)),
+              edited_ok and _levels(rep, FL) == ["FINDING"]
+              and os.path.basename(ledger) in _detail(rep, FL)
+              and "audit-journal.py verify" in _fix(rep, FL))
+
+        # A LEDGER GIT STILL TRACKS BUT THE DIRECTORY IS GONE is a removal, not
+        # an absence: the one place an absent directory is not clean.
+        root, _m = _trail_project(tmp, "frozen-gone", record=True,
+                                  ledger_rows=2)
+        _trail_commit(root, "frozen ledger")
+        _harness.remove_tree(os.path.join(root, "docs", "audit", "evidence"))
+        rep = _frozen(root)
+        check("dfl7 RED-FIRST: a ledger committed and then removed is a "
+              "FINDING saying git still tracks it - the absent-directory OK of "
+              "dfl1 must not swallow a deletion: %r %r"
+              % (_levels(rep, FL), _detail(rep, FL)),
+              _levels(rep, FL) == ["FINDING"]
+              and "git still tracks" in _detail(rep, FL))
+
+        # THE COMMITS' TRAILERS: the verdict of a task is read from its commit.
+        root, _m = _trail_project(tmp, "trailers", record=True)
+        _trail_commit(root, "feat: a task\n\nAudit-Task: P1.1\n"
+                            "Audit-Gate: passed sha256:abc\nAudit-Run: REC1")
+        rep = _run_trail(root)
+        check("dfl8 RED-FIRST: a commit carrying Audit-Task and Audit-Gate "
+              "is counted from git's own trailer reading, beside the plan's "
+              "record: %r %r" % (_levels(rep, RT), _detail(rep, RT)),
+              _levels(rep, RT) == ["OK"]
+              and "1 task(s) carry a verdict in their commit's Audit-* "
+                  "trailers" in _detail(rep, RT)
+              and "1 run record(s) in the plan" in _detail(rep, RT))
+
+        root, _m = _trail_project(tmp, "no-trailers", record=True)
+        _trail_commit(root, "feat: a task with no trailer block")
+        rep = _run_trail(root)
+        check("dfl9 ALLOW: commits with no trailer block are said to carry "
+              "none, at OK - an earlier release wrote none and that is not a "
+              "defect: %r %r" % (_levels(rep, RT), _detail(rep, RT)),
+              _levels(rep, RT) == ["OK"]
+              and "no commit carries an Audit-Task trailer" in _detail(rep, RT))
+
+        # GIT CANNOT BE ASKED: an unasked question is a WARNING that says so
+        # and still reports the record - never a clean trail.
+        root, _m = _trail_project(tmp, "no-git", record=True, git=False)
+        rep = _run_trail(root)
+        check("dfl10 RED-FIRST: a project git will not read keeps the record "
+              "count and warns that the trailers could not be read: %r %r"
+              % (_levels(rep, RT), _detail(rep, RT)),
+              _levels(rep, RT) == ["WARNING"]
+              and "1 run record(s) in the plan" in _detail(rep, RT)
+              and "could not be read" in _detail(rep, RT))
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _doctor_trail_cases(check):
+    """The REAL doctor over four fixture repositories: records and no ledger, a
+    present frozen ledger, a tampered one, and neither."""
+    doctor = _loader.load_script("audit-doctor.py", modname="audit_doctor_dtf")
+    tmp = _harness.fixture_root("doctor-trail-doctor-")
+    real_which = shutil.which
+
+    def without_az(name, *args, **kwargs):
+        # No case here may reach the real Azure CLI: `diagnose` probes it
+        # whenever one is on PATH, and it writes into the operator's home.
+        return None if name == "az" else real_which(name, *args, **kwargs)
+    shutil.which = without_az
+    try:
+        FL, RT = "frozen ledger", "run trail"
+        rec, _m = _trail_project(tmp, "d-records", record=True)
+        ok, _m = _trail_project(tmp, "d-frozen", record=True, ledger_rows=2)
+        bad, _m = _trail_project(tmp, "d-tampered", record=True, ledger_rows=2)
+        none, _m = _trail_project(tmp, "d-neither")
+        ledger = _evidence_io.ledger_files(bad)[0]
+        with open(ledger, encoding="utf-8") as fh:
+            text = fh.read()
+        with open(ledger, "w", encoding="utf-8") as fh:
+            fh.write(text.replace('"status":"passed"', '"status":"failed"', 1))
+        reps = dict((name, doctor.diagnose(path)) for name, path in (
+            ("records", rec), ("frozen", ok), ("tampered", bad),
+            ("neither", none)))
+        check("dfd1 RED-FIRST: the doctor prints both trail rows on every "
+              "fixture, so a missing ledger is a row and never a missing "
+              "row: %r" % (dict((k, (_levels(r, FL), _levels(r, RT)))
+                                for k, r in reps.items()),),
+              all(len(_levels(r, FL)) == 1 and len(_levels(r, RT)) == 1
+                  for r in reps.values()))
+        check("dfd2 RED-FIRST: no ledger never reads as failed - the records-"
+              "only and the neither repositories each print `no frozen ledger` "
+              "at OK and no FINDING on either trail row: %r"
+              % ({k: (_levels(reps[k], FL), _levels(reps[k], RT))
+                  for k in ("records", "neither")},),
+              all(_levels(reps[k], FL) == ["OK"]
+                  and "no frozen ledger" in _detail(reps[k], FL)
+                  and "FINDING" not in _levels(reps[k], RT)
+                  for k in ("records", "neither")))
+        check("dfd3 RED-FIRST: the intact frozen ledger verifies at OK and "
+              "the tampered one is the only FINDING on its row: %r"
+              % ({k: _levels(reps[k], FL) for k in reps},),
+              _levels(reps["frozen"], FL) == ["OK"]
+              and _levels(reps["tampered"], FL) == ["FINDING"]
+              and "chain intact" in _detail(reps["frozen"], FL)
+              and os.path.basename(ledger) in _detail(reps["tampered"], FL))
+    finally:
+        shutil.which = real_which
+        _harness.remove_tree(tmp)
+
+
 def _selftest():
     def body(check):
         _cases(check)
@@ -2791,6 +3056,8 @@ def _selftest():
         _ttl_trade_cases(check)
         _dispatch_cache_cases(check)
         _coupling_cases(check)
+        _frozen_trail_cases(check)
+        _doctor_trail_cases(check)
     return _harness.run(body)
 
 

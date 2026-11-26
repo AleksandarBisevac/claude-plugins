@@ -400,7 +400,7 @@ L6:
   _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _manifest_vocab, _output
   _doctor_policy -> _branch, _claude_home, _doctor_report, _manifest_io, _output, _skill_places, _worktrees
   _doctor_setup -> _claude_home, _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
-  _doctor_trail -> _doctor_report, _evidence_io, _fmt, _journal_io, _manifest_io, _manifest_vocab, _output, _worktrees
+  _doctor_trail -> _commit_trail, _doctor_report, _evidence_io, _fmt, _journal_io, _manifest_io, _manifest_vocab, _output, _worktrees
   _invariants -> _branch, _commit_trail, _evidence_io, _filed_returns, _journal_io, _loader, _locks, _manifest_crossrefs, _manifest_io, _manifest_rules, _manifest_vocab, _output, _task_outputs, usage_ledger
   _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _manifest_vocab, _output, _panel_paths, _priority, _status_facts, _worktrees
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
@@ -3484,6 +3484,23 @@ present and none about a class that is not (an earlier unconditional sentence ab
 drift sent an operator hunting a git checkout that was never there, and an operator who finds
 nothing learns to read the row as noise), and a warning it does not recognise gets a pointer
 instead of a guessed cause.
+
+**What the trail is made of now that no row is appended.** `check_run_trail` reports the
+plan's run records (`_evidence_io.read_rows`, the one reader every surface asks), the rows of
+a frozen ledger beside them when one is there, and the verdicts the task commits carry in
+their `Audit-Task`, `Audit-Gate` and `Audit-Run` trailers (`_commit_trail.task_verdicts`,
+git's own trailer reading), each count named for the store it came from because the three are
+different places to look. Nothing recorded is an OK row that says where it looked, a git that
+cannot be asked is a WARNING that still prints what the plan holds, and a commit with no
+trailer block is not a defect — an earlier release wrote none. `check_frozen_ledger` is the
+other half: a ledger an earlier release wrote is VERIFIED through `_evidence_io.verify`, the
+chain check `audit-journal.py verify` runs, so the two cannot disagree; a break is a FINDING
+naming the file, a torn tail or an unchained row a WARNING, and **an evidence directory that is
+not there is OK and reads `no frozen ledger`, never a failure** — unless git still tracks
+files under it, which is a deletion and the one absence that is a FINDING. Both rows are
+printed from the seam `check_run_records` already sits at, the top of `check_gate_patterns`,
+so `audit-doctor.py` wires nothing of its own for them; the verification does not cover a
+ledger file rewritten whole with every hash recomputed, which is the anchor's and git's.
 
 `_journal_never_committed` rides `audit-journal`'s porcelain seam for the 7-day
 uncommitted-file warning, keyed by journal-relative path so a live and an archived month

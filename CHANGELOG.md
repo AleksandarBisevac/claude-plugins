@@ -33,6 +33,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   no longer imports `tempfile`, so with calls not recorded the journal hook imports nothing
   beyond what loading it already imported.
 
+### Changed — `/audit:doctor` reports the trail without a ledger
+- **Two rows, `run trail` and `frozen ledger`, report what the trail is made of now that no run
+  appends a row.** `run trail` counts the run records the plan holds, the rows of a frozen
+  ledger beside them when there is one, and the tasks whose commits carry an `Audit-Task`
+  verdict in their trailers, each count naming the store it was read from. `frozen ledger`
+  verifies the evidence directory of an earlier release when it is present - a row edited,
+  deleted or reordered is a finding naming the file - and says `no frozen ledger` at OK when
+  there is none, which is the normal state of a plan that only ever ran this release. An absent
+  ledger is never reported as failed; only a ledger git still tracks whose directory has been
+  removed is a finding. A git that cannot be asked for the trailers is a warning.
+
 ### Breaking — a recorded task or phase run writes no evidence row
 - **`run-test-gate.py --record` keeps a task, phase or base run only as its record in the
   plan.** It appends no row to the evidence directory, writes no `test.evidence.recorded` row

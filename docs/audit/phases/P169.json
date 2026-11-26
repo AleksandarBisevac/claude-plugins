@@ -11373,12 +11373,13 @@
     {
       "id": "P169.39-6l3",
       "title": "The doctor reports the trail from the plan and git, verifies a frozen ledger that is present and says so when none is",
-      "status": "pending",
+      "status": "in_progress",
       "description": "This is a cut of P169.8 (cancelled before any work; read its description, ACCEPTANCE and DEPENDANTS in docs/audit/phases/P169.json - the umbrella text stays the authority for the whole property, this task owns only the slice below). Slice: the doctor's trail rows (umbrella ACCEPTANCE 5) after rows stop being written: report the trail from the plan's records and the commits' trailers, verify a frozen ledger when one is present, say so plainly when none is (never 'failed' for an absent ledger). Include the pinned-tier rows that do not mention an unreadable plan (register F926) only if the same row is touched.",
       "files": [
         "plugins/audit/scripts/status/_doctor_trail.py",
         "tests/test__doctor_trail.py",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -11399,21 +11400,156 @@
         "P169.38-6l3",
         "P169.40-6l3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-26T03:23:28Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-26T03:23:25Z",
+          "text": "it reads the [Unreleased] heading of CHANGELOG.md; this task adds entries under that heading and never renames it",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-26T03:23:25Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/scripts/status/_doctor_trail.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/status/_doctor_trail.py - a section headed by its path"
+        }
+      ],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-26T03:39:56Z",
+            "ms": 22016,
+            "basis": "selectionMs in run 2026-11-26T03:44:42Z.251a6b's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-26T03:44:42Z.251a6b"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-26T03:40:19Z",
+            "ms": 262215,
+            "basis": "durationMs in run 2026-11-26T03:44:42Z.251a6b's record (run-test-gate --record)",
+            "runId": "2026-11-26T03:44:42Z.251a6b"
+          }
+        ],
+        "firstStartedAt": "2026-11-26T03:23:28Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-26T03:44:58Z.1edebb",
+        "status": "passed",
+        "durationMs": 186,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:0baef56c9e7197f20b3c0205c6e6b26ad8f237987453a41a75bed8fd7263c35f",
+        "reuseKey": "1:sha256:62f612443972f1fa91648e5838b73be09f12a7f05cac0aef95bf18a0f66bc628",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-26T03:44:42Z.251a6b",
+          "ts": "2026-11-26T03:44:42Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+        "selectionMs": 14827,
+        "at": "2026-11-26T03:44:58Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "runId": "2026-11-26T03:44:42Z.251a6b",
+          "startedAt": "2026-11-26T03:40:19Z",
+          "durationMs": 262215,
+          "selectionMs": 22016,
+          "status": "passed",
+          "failed": [],
+          "reuseKey": "1:sha256:62f612443972f1fa91648e5838b73be09f12a7f05cac0aef95bf18a0f66bc628",
+          "gateDigest": "sha256:0baef56c9e7197f20b3c0205c6e6b26ad8f237987453a41a75bed8fd7263c35f",
+          "gateSource": "task",
+          "banners": [],
+          "machine": "this run had the machine to itself",
+          "launch": "2026-11-26T03:39:57Z-ad0e1433",
+          "gateReach": {
+            "gaps": []
+          },
+          "observations": {
+            "ranTotal": null,
+            "countsBasis": "no step printed a summary this reader can count (python3 tools/sweep-selftests.py tests/test__doctor_trail.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, tests/test... (1152 more characters)), so the size of this gate is not knowable from its output",
+            "treeMutated": [],
+            "treeBasis": "git described the tree before and after",
+            "coverage": [
+              "tests/test__doctor_trail.py"
+            ],
+            "coverageBasis": "the runner named 59 path(s); the work under test declares 4 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 45/45 and 54 more; declared but not named by the run: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/scripts/status/_doctor_trail.py; breadth: the run named 44 suite path(s) and this task declares 4 file(s), and 43 of them are suites the task neither declares nor is named after (test__deps.py, test__evidence_io.py, test__output.py, test_audit_task.py, test_commit_task_work.py, test_drive_phase.py, test_stamp_verification.py and 36 more) - this gate asks more than the task changed; that is reported, not refused"
+          },
+          "via": "cli",
+          "attempt": 1,
+          "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+          "at": "2026-11-26T03:44:42Z",
+          "testedState": {
+            "head": "c20b1e20",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeDigest": "sha256:49089b6b3e5b8ba8b12bd8f5a911c07264bee7627af617f170154cf04a3cbd32",
+            "scopeBasis": "4 declared file(s); 4 read, 0 missing",
+            "scopeListDigest": "sha256:f03aa22c07b22cd27b9a3bcfb4ada7f228a7da15d003ff7ddda1487d56042086",
+            "dirtyDigest": "sha256:dba1ae329a9ccae90e1882073a2e3c43f20a2e68626d07fef709e4b6ab029165",
+            "dirtyBasis": "git described the tree before the run; 8 dirty path(s)"
+          },
+          "steps": [
+            {
+              "name": "python3 tools/sweep-selftests.py tests/test__doctor_trail.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, tests/test__affected_tests.py, tests/test__config.py, tests/test__deps.py, tests/test__doctor_completions.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__evidence_io.py, tests/test__gate_derive.py, tests/test__help.py, tests/test__help_lints.py, tests/test__impact.py, tests/test__journal_io.py, tests/test__loader.py, tests/test__manifest_io.py, tests/test__manifest_phases.py, tests/test__manifest_vocab.py, tests/test__output_lints.py, tests/test__refs.py, tests/test__report_usage.py, tests/test_audit_doctor.py, tests/test_audit_task.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_panel_server.py, tests/test_render_report.py, tests/test_run_test_gate.py, tests/test_stamp_verification.py, tools/affected.py, tools/check-committed-pii.py, tools/gate-parity.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/release.py + affected/walk: tests/test__output.py, tests/test__panel_settings.py, tools/_suite.py, tools/count-ui-pins.py, tools/sweep-selftests.py",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 262167,
+              "suiteReader": "none",
+              "commandBytes": 1233,
+              "commandSha256": "8fc7215918090d60d837db43f3988e21d0715c7d10439f786b3994db71d89f73",
+              "program": "python3"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-26T03:44:42Z.251a6b",
+            "launch": "2026-11-26T03:39:57Z-ad0e1433",
+            "status": "passed",
+            "at": "2026-11-26T03:44:42Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-26T03:44:58Z.1edebb",
+        "status": "passed",
+        "at": "2026-11-26T03:44:58Z"
+      }
     },
     {
       "id": "P169.40-6l3",
       "title": "The demo generator, the example ledgers check and the committed examples agree with what the release writes",
-      "status": "in_progress",
+      "status": "done",
       "description": "This is a cut of P169.8 (cancelled before any work; read its description, ACCEPTANCE and DEPENDANTS in docs/audit/phases/P169.json - the umbrella text stays the authority for the whole property, this task owns only the slice below). Slice: umbrella ACCEPTANCE 6. Decide whether the examples keep a frozen ledger as history or carry records, state it in CHANGELOG, make tools/demo/gen-demo-manifest.py and tools/check-example-ledgers.py consistent with it, and keep python3 tools/check-rendered-artifacts.py green (the committed example files it regenerates: name them to me, I widen; the orchestrator runs browser gates). tools/check-committed-pii.py and tools/check-git-pipeline.py name the evidence directory: answer for each by name.",
       "files": [
         "tools/demo/gen-demo-manifest.py",
@@ -11444,14 +11580,21 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c20b1e20831d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Decision: the examples keep their frozen ledger as history (examples/acme-store/evidence is untouched, never rewritten); the demo generator now writes what the release writes - records, no ledger. gen-demo-manifest.py: write_evidence removed and write_manifest writes no evidence directory (single-file too); new published_rows (newest run per subject plus the full run) dates meta.evidenceSince; new _stamp_full_run stamps meta.lastFullRun (run_record) and meta.lastMeasuredFullRun (measured_full_summary), the recorder's own pair; the SCHEMA_EXEMPTIONS rows for meta.lastFullRun, meta.lastMeasuredFullRun and fullGateRun.* went stale and are deleted; phase.fullGateRuns stays exempt with a corrected reason; unused EVIDENCE_WRITER and _journal_io import removed. tests/test_gen_demo_manifest.py: ledger-expecting cases rewritten (no .jsonl written, no evidence dir, ledger files == 0, no Earlier-runs history, single-file has no ledger, gnl1 now LF-checks the plan and config) and new ro1-ro5, fr3 (146/146). ro5 runs tools/check-example-ledgers.py findings() over the written demo and requires every pointer resolved against records with zero ledgers. tools/check-example-ledgers.py needed no change (P169.38 already resolves records) and tests/test_check_example_ledgers.py was not created: tools/check-example-ledgers.py is not a module the coverage classifier asks for (selftest_coverage covers scripts/hooks/lints/tools-demo plus two named tools) and its cases live in the file (python3 tools/check-example-ledgers.py --selftest). CHANGELOG.md Unreleased gets a Breaking entry stating the decision; PLUGIN-BUILD-GUIDE.md gen-demo-manifest section rewritten. Full sweep: 195/196 files ok, 19910 cases; the one failure is tools/check-rendered-artifacts.py (ra5/ra5b): docs/demo-large.html is STALE (1079332 committed bytes vs 1077200 rendered), because the report of the generated demo no longer has the Earlier runs disclosure for the stuck task and its boundary sentence says no run is readable in the ledger. docs/demo-large.html is outside this task's files; the owed recipe is the one check-rendered-artifacts prints (gen-demo-manifest 40x5, gen-demo-usage, render-report, cp to docs/demo-large.html); screenshots derived from the demo are the orchestrator's browser gate. check-committed-pii.py still holds (exit 0, 51/51 selftest; its evidence arm reads the frozen ledgers still tracked; its comment that _evidence_io.append_row names the writer id is now only historically true, comment owed to a task declaring that file). check-git-pipeline.py still holds (exit 0, deterministic half works) but its _ledger_append docstring says _evidence_io.record writes the pair for a full run now, which is false since that function was deleted: correction owed to a task declaring tools/check-git-pipeline.py.",
+        "descriptive": "The demo generator writes records and no ledger like the release, the committed example keeps its frozen ledger as history, and docs/demo-large.html now needs a re-render the orchestrator must widen."
       },
       "startedAt": "2026-11-26T02:56:19Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-26T03:23:05Z",
+      "verifiedBy": [
+        "ro1 no evidence directory beside a generated demo",
+        "ro2 meta.lastFullRun is run_record of the demo's full run",
+        "ro3 meta.lastMeasuredFullRun names that run",
+        "ro4 read_rows over the written demo reads only records, ledger absent, one full run",
+        "ro5 check-example-ledgers.findings over the generated demo resolves every pointer against records with zero ledgers",
+        "fr3 the full-run record's commands equal the declared gate's"
+      ],
       "notes": [
         {
           "at": "2026-11-26T00:43:57Z",
@@ -11484,6 +11627,30 @@
             "ms": 379071,
             "basis": "durationMs in run 2026-11-26T03:21:20Z.e8d44b's record (run-test-gate --record)",
             "runId": "2026-11-26T03:21:20Z.e8d44b"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-26T03:08:46Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 746000,
+            "startedAt": "2026-11-26T02:56:20Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-26T03:21:20Z.e8d44b",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-26T03:14:38Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-26T03:22:52Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 62000,
+            "startedAt": "2026-11-26T03:21:50Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit c20b1e20831d",
+            "kind": "commit",
+            "ms": 1825,
+            "startedAt": "2026-11-26T03:23:02Z"
           }
         ],
         "firstStartedAt": "2026-11-26T02:56:19Z"
@@ -11591,6 +11758,18 @@
         "runId": "2026-11-26T03:21:37Z.77ca31",
         "status": "passed",
         "at": "2026-11-26T03:21:37Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c20b1e20831d",
+        "at": "2026-11-26T03:23:05Z",
+        "return": "docs/audit/evidence/returns/P169.40-6l3/20261126T025619Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-26T03:08:45Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_gen_demo_manifest.py` in a throwaway tree at HEAD exited 1 with 4 of 105 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ro1 (house FAIL): SELFTEST FAILED: 100/105 cases passed; --case ro2, ro3, ro4, ro5 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {

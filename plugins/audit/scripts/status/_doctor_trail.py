@@ -87,6 +87,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _commit_trail  # noqa: E402  (the verdict a task commit's trailers carry)
 import _doctor_report as _base  # noqa: E402  (Report, the loader, the constants)
 import _journal_io  # noqa: E402  (read/verify the audit trail)
 import _evidence_io  # noqa: E402  (the ledger tally)
@@ -1390,26 +1391,18 @@ def check_task_restarts(rep, project, config=None):
              "show` reads them back, or open the task and read `attempts`")
 
 
-def _read_gate_rows(project, manifest_rel):
-    """`(eproject, econfig, rows, failure, unreadable)` off the evidence ledger
-    the manifest at `manifest_rel` points to - the ONE read
-    `check_gate_patterns`, `check_gate_economy` and `check_shadow_recall`
-    all open with, so none of the three can resolve the ledger a different
-    way the day `project_config_for` learns a new rule.
+def _read_gate_read(project, manifest_rel):
+    """`(eproject, econfig, read, failure)` - `_evidence_io.read_rows`'s whole
+    answer over the plan at `manifest_rel`, and the ONE place the location
+    step and the read step are worded apart. `failure` is the sentence to warn
+    with, or `None` when the read succeeded; `eproject`/`econfig`/`read` are
+    `None` exactly when it is not.
 
-    `failure` is the sentence to warn with, or `None` when the read
-    succeeded - `eproject`/`econfig`/`rows` are `None` exactly when it is not.
     TWO STEPS, TWO SENTENCES: failing to find where the ledger lives is
     `_manifest_vocab.LEDGER_LOCATION_FAILED`, failing to read it once found is
     `LEDGER_READ_FAILED`. Every surface fills those same templates, and one
     `try` around both steps would word a location failure as a read nobody
-    made. `unreadable` is `_evidence_io.read_rows`'s own count of rows or
-    files it could not parse, always `0` when `failure` is set (nothing was
-    read at all)
-    and NEVER folded into an empty `rows`: a caller that only checked
-    `rows` for zero would read a torn ledger as a clean one that simply has
-    no history yet, which is the exact silence `check_shadow_recall` is
-    written to refuse."""
+    made."""
     manifest_path = os.path.join(project, manifest_rel or
                                  "docs/audit/audit-plan.json")
     try:
@@ -1417,12 +1410,32 @@ def _read_gate_rows(project, manifest_rel):
             manifest_path, project_dir=project)
     except Exception as exc:
         return (None, None, None,
-                _manifest_vocab.LEDGER_LOCATION_FAILED % (exc,), 0)
+                _manifest_vocab.LEDGER_LOCATION_FAILED % (exc,))
     try:
         read = _evidence_io.read_rows(eproject, econfig,
                                       manifest_path=manifest_path)
     except Exception as exc:
-        return None, None, None, _manifest_vocab.LEDGER_READ_FAILED % (exc,), 0
+        return None, None, None, _manifest_vocab.LEDGER_READ_FAILED % (exc,)
+    return eproject, econfig, read, None
+
+
+def _read_gate_rows(project, manifest_rel):
+    """`(eproject, econfig, rows, failure, unreadable)` off the runs the plan
+    at `manifest_rel` holds - its records and any frozen ledger beside them -
+    the ONE read `check_gate_patterns`, `check_gate_economy` and
+    `check_shadow_recall` all open with, so none of the three can resolve the
+    ledger a different way the day `project_config_for` learns a new rule.
+
+    `failure` is `_read_gate_read`'s sentence, `None` when the read succeeded.
+    `unreadable` is `_evidence_io.read_rows`'s own count of rows or files it
+    could not parse, always `0` when `failure` is set (nothing was read at
+    all) and NEVER folded into an empty `rows`: a caller that only checked
+    `rows` for zero would read a torn ledger as a clean one that simply has
+    no history yet, which is the exact silence `check_shadow_recall` is
+    written to refuse."""
+    eproject, econfig, read, failure = _read_gate_read(project, manifest_rel)
+    if failure is not None:
+        return None, None, None, failure, 0
     return (eproject, econfig, read.get("rows") or [], None,
             read.get("unreadable") or 0)
 
@@ -1470,6 +1483,8 @@ def check_gate_patterns(rep, project, manifest_rel, config=None):
     # first of the checks that read runs: a record no reader can read is a run
     # missing from each tally below and from every other surface.
     check_run_records(rep, project, manifest_rel)
+    check_run_trail(rep, project, manifest_rel)
+    check_frozen_ledger(rep, project, manifest_rel)
     eproject, econfig, rows, failure, _unreadable = _read_gate_rows(
         project, manifest_rel)
     if failure is not None:
@@ -1774,6 +1789,192 @@ def check_shadow_recall(rep, project, manifest_rel, manifest, config=None):
                 _pct(hits, n_runs) if n_runs else "n/a", hits, n_runs),
              "set meta.phaseGate.mode to \"enforce\" when this recall is "
              "enough - nothing switches it for you")
+
+
+# --- checks: where the runs are read from ---------------------------------------
+FROZEN_LEDGER_CHECK = "frozen ledger"
+RUN_TRAIL_CHECK = "run trail"
+
+_RUN_SOURCES = ("a run's record is the plan's own, and a task's verdict is "
+                "in its commit's Audit-Task, Audit-Gate and Audit-Run trailers")
+
+
+def check_frozen_ledger(rep, project, manifest_rel):
+    """Does the ledger an EARLIER release wrote still hold - or is there none?
+
+    NO RELEASE APPENDS A ROW ANY MORE, so a plan that only ever ran this
+    release has no evidence directory, and that is the ordinary state and never
+    a defect: `OK`, naming the directory that was looked in and where the runs
+    are instead. Reading "no ledger" as a failure would fail every fresh
+    install for having done nothing wrong, and the row it replaced could only
+    be worded for a ledger that existed.
+
+    A LEDGER THAT IS PRESENT IS VERIFIED, not listed: `_evidence_io.verify`
+    is the chain check `audit-journal.py verify` runs for the same file, so
+    the two cannot disagree about whether a row was edited, deleted or
+    reordered. A break is a FINDING naming the file; a torn tail or rows that
+    predate the chain are a WARNING, graded as `check_journal` grades the same
+    classes.
+
+    A DIRECTORY GIT STILL TRACKS FILES IN, BUT THAT IS NOT THERE, IS NOT AN
+    ABSENT LEDGER. `verify` asks git that one question before it gives up on
+    the walk, and the answer is the difference between `no frozen ledger` and
+    a deletion of history - so the not-there branch reads the findings first.
+
+    WHAT THE VERDICT DOES NOT COVER: a file rewritten whole with every hash
+    recomputed forward is the anchor's and git's to catch
+    (`_evidence_io.verify` says how far each reaches), and this row asks
+    neither."""
+    eproject, econfig = None, None
+    manifest_path = os.path.join(project, manifest_rel or
+                                 "docs/audit/audit-plan.json")
+    try:
+        eproject, econfig = _evidence_io.project_config_for(
+            manifest_path, project_dir=project)
+    except Exception as exc:                       # noqa: BLE001
+        rep.warn(FROZEN_LEDGER_CHECK,
+                 _manifest_vocab.LEDGER_LOCATION_FAILED % (exc,))
+        return
+    try:
+        res = _evidence_io.verify(eproject, econfig)
+    except Exception as exc:                       # noqa: BLE001
+        rep.warn(FROZEN_LEDGER_CHECK,
+                 "the frozen ledger could not be verified (%s: %s), so whether "
+                 "an earlier release's rows still hold is not established"
+                 % (type(exc).__name__, exc),
+                 "run `audit-journal.py verify` by hand to see why")
+        return
+    where = _output.posix_rel(res.get("dir") or eproject, eproject)
+    findings = res.get("findings") or []
+    fix = ("run `audit-journal.py verify` for the full list; a frozen ledger "
+           "is append-only history and nothing writes to it any more, so a "
+           "break means a row was edited, deleted or reordered")
+    if not res.get("exists"):
+        if findings:
+            rep.finding(FROZEN_LEDGER_CHECK,
+                        "%s is not there and git still tracks what was in it: "
+                        "%s" % (where, _output.some_of(findings, sep="; ")),
+                        "the ledger is committed history - restore it with "
+                        "`git checkout -- %s` and run `audit-journal.py "
+                        "verify`, or read `git log --diff-filter=D -- %s` for "
+                        "what removed it" % (where, where))
+            return
+        rep.ok(FROZEN_LEDGER_CHECK,
+               "no frozen ledger: %s does not exist, so no row from an earlier "
+               "release is expected here - %s" % (where, _RUN_SOURCES))
+        return
+    if findings:
+        rep.finding(FROZEN_LEDGER_CHECK,
+                    "the frozen ledger under %s does not hold: %s"
+                    % (where, _output.some_of(findings, sep="; ")), fix)
+        return
+    files = res.get("files") or []
+    if not files:
+        rep.ok(FROZEN_LEDGER_CHECK,
+               "no frozen ledger: %s exists but holds no ledger file, so no "
+               "row from an earlier release is expected here - %s"
+               % (where, _RUN_SOURCES))
+        return
+    warnings = res.get("warnings") or []
+    if warnings:
+        rep.warn(FROZEN_LEDGER_CHECK,
+                 "%d row(s) in %d file(s) under %s chain cleanly, with %d "
+                 "warning(s): %s"
+                 % (res.get("rows", 0), len(files), where, len(warnings),
+                    _output.some_of(warnings, sep="; ")),
+                 "`audit-journal.py verify` prints each warning in full; a "
+                 "frozen ledger is history an earlier release wrote and "
+                 "nothing appends to it any more")
+        return
+    rep.ok(FROZEN_LEDGER_CHECK,
+           "%d row(s) in %d file(s) under %s, chain intact - written by an "
+           "earlier release; no row is appended any more"
+           % (res.get("rows", 0), len(files), where))
+
+
+def _verdict_trail(eproject):
+    """`(found, why)` - `{task id: verdict}` over the history HEAD reaches, or
+    None and the sentence saying why git could not be asked. A repository
+    with no commit yet answers an empty map: it has no trailer to read, which
+    is not the same as git refusing to be asked."""
+    tree = _worktrees.tree_root(eproject)
+    root = tree.get("root")
+    if not root:
+        return None, tree.get("basis") or "git did not name a working tree"
+    code, _out, _err = _worktrees._git(root, ["rev-parse", "--verify", "-q",
+                                              "HEAD"])
+    if code is None:
+        return None, "git could not be run in %s" % (root,)
+    if code != 0:
+        return {}, ""
+    return _commit_trail.task_verdicts(root)
+
+
+def check_run_trail(rep, project, manifest_rel):
+    """What the trail holds now that no row is appended: the plan's run
+    records, the rows of a frozen ledger if there is one, and the verdicts the
+    task commits carry in their trailers.
+
+    EVERY COUNT NAMES WHAT IT WAS READ FROM, because the three are different
+    stores and a total over them would say how much exists and nothing about
+    where to look. The records and the frozen rows come from the one reader
+    every other surface asks (`_evidence_io.read_rows`, through
+    `_read_gate_read`); the verdicts from git's own trailer reading
+    (`_commit_trail.task_verdicts`), never a second parse of a commit message.
+
+    NOTHING RECORDED IS SAID AS NOTHING RECORDED, at OK, with where it was
+    looked - a fresh plan has asked for nothing, and a WARNING here would fail
+    a fresh install for having no history, the rule this module's second half
+    holds to. A git that cannot be asked IS a WARNING, and the row still
+    prints what the plan holds: an unasked question is not a clean trail, and
+    the half that was read is not lost by it. A commit whose trailer block
+    names a task but does not read as a verdict is named, never counted as one.
+
+    A COMMIT WITH NO TRAILER IS NOT A DEFECT: an earlier release wrote none,
+    and a task closed by hand never had one. Only the commits that carry an
+    Audit-Task trailer are counted, and the row says so."""
+    eproject, _econfig, read, failure = _read_gate_read(project, manifest_rel)
+    if failure is not None:
+        rep.warn(RUN_TRAIL_CHECK, failure)
+        return
+    sources = read.get("rowSources") or []
+    records = read.get("records") or 0
+    frozen = sum(1 for s in sources if s == _evidence_io.ROW_FROM_LEDGER)
+    plan_where = manifest_rel or "docs/audit/audit-plan.json"
+    held = "%d run record(s) in the plan" % (records,)
+    if frozen:
+        held += " and %d frozen ledger row(s) from an earlier release" % (frozen,)
+    found, why = _verdict_trail(eproject)
+    if found is None:
+        rep.warn(RUN_TRAIL_CHECK,
+                 "%s; the verdicts in the commits' trailers could not be read: "
+                 "%s" % (held, why),
+                 "the records above were read from the plan alone; this is an "
+                 "unasked question about git, not a clean trail")
+        return
+    carrying = [t for t, v in sorted(found.items()) if v.get("recorded")]
+    unreadable = [t for t, v in sorted(found.items()) if not v.get("recorded")]
+    if unreadable:
+        rep.warn(RUN_TRAIL_CHECK,
+                 "%s; %d task(s) carry a verdict in their commit's Audit-* "
+                 "trailers, and the trailer block of %s names the task but "
+                 "does not read as a verdict"
+                 % (held, len(carrying), _output.some_of(unreadable)),
+                 "`git log --grep=Audit-Task` shows the block; the commit verb "
+                 "writes Audit-Task and Audit-Gate together")
+        return
+    if not records and not frozen and not carrying:
+        rep.ok(RUN_TRAIL_CHECK,
+               "no run recorded yet: the plan at %s holds no run record, no "
+               "frozen ledger row exists and no commit carries an Audit-Task "
+               "trailer" % (plan_where,))
+        return
+    if carrying:
+        trailers = ("%d task(s) carry a verdict in their commit's Audit-* "
+                    "trailers" % (len(carrying),))
+    else:
+        trailers = "no commit carries an Audit-Task trailer"
+    rep.ok(RUN_TRAIL_CHECK, "%s; %s" % (held, trailers))
 
 
 # --- checks: the third place -----------------------------------------------------
