@@ -1133,7 +1133,7 @@
     {
       "id": "P170.4-yl6",
       "title": "The module map is printed by the import-graph lint, not committed in the build guide, so an import change obliges no guide edit",
-      "status": "in_progress",
+      "status": "done",
       "description": "Follow-up of P170.3 (measured over P169/P170: 12 of the 33 landed commits that changed PLUGIN-BUILD-GUIDE.md were mechanical --write-map regenerations of the section 1a module-map fence; a committed generated block goes stale on every import change and makes the guide a file every such task must edit, capping the drive's waves at one). Remove the committed fence from section 1a and leave a pointer to the printing command (tools/lints/_deps.py --render), as P170.3 did for the module index; remove what only exists to keep the committed copy current (map_drift, map_follower, follower_for, write_map, --write-map, --follower-for) and repoint or delete what depends on them: test__deps g1-g11, tools/prove-gates.py rows for map_drift, and the follower machinery in drive-phase.py, integrate-task.py and run-test-gate.py (find every caller first; if a caller is outside this task's files, STOP and name it so the scope is widened). Keep a case that --render is deterministic and complete (every LAYERS module appears). The underived remainder P170.3 named (public names, entry usage line, the section 1 tree's file list) is listed in the return with a recommendation, not built here.",
       "files": [
         "PLUGIN-BUILD-GUIDE.md",
@@ -1162,14 +1162,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3f9c2fd5b0ad",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Removed from tools/lints/_deps.py: _GUIDE_HEADING, MAP_RECIPE, _MAP_STALE, map_drift, map_follower, follower_for, write_map, the --write-map and --follower-for CLI branches, and the OTHER_WRITERS row for write_map (it would have been reported stale); usage line is now `--render | --render-index | --contracts`. Kept _GUIDE_REL_PATH, _guide_path, _fenced_block_after (the section-1 tree lint uses them). Guide: section 1a is now '1a. Module map (printed, not committed)' - a pointer to `python3 tools/lints/_deps.py --render`, no fence (12 insertions, 182 deletions); 1b prose and the _deps.py section no longer name map_drift. tests/test__deps.py: g1 repointed to 'section 1a names the command and holds no fenced block'; g2-g11 (map_drift/map_follower/write_map/follower_for cases) deleted; added d4 (--render names every module LAYERS places exactly once, counted as member lines) and d5 (`--render` as a command exits 0 and prints render()); d1 (deterministic) and d2/d3 kept; unused _evidence_io import dropped; subprocess import hoisted. tools/prove-gates.py: the map_drift g1 row deleted; the map_drift r3 row (a phantom LAYERS name) relabelled to layer_violations, which is what r3 guards (proven RED r3,gi3 by `prove-gates.py --only layer_violations`: 2 of 2 red, 1 of 1 allow). Follower-protocol tests that used _deps's map owner as their real owner now use a fixture owner at the first tools/*.py owner path claiming a generated file with a fixture recipe script: tests/test_integrate_task.py (_follower_cases, i9b, closure probe i9p and its helpers removed), tests/test_drive_phase.py (_drive_follower_map: fm and fi blocks), tests/test_run_test_gate.py (_follower_cases first case: a printed follower line becomes followersOwed). The protocol and its other owners (check-rendered-artifacts.py, capture-screenshots.mjs, _evidence_io.FOLLOWER_OWNERS/claimed_followers/run_recipe, integrate-task.py, drive-phase.py, run-test-gate.py) are untouched - none of those product files needed an edit, and no file outside the task's list was edited. Changelog fragment changelog.d/P170.4-yl6.changed.md (changelog-check: none refused); changelog.d/P170.4.changed.md, also declared, was not created. Files (numstat, added/deleted): PLUGIN-BUILD-GUIDE.md 12/182; tests/test__deps.py 41/104; tests/test_drive_phase.py 41/40; tests/test_integrate_task.py 39/119; tests/test_run_test_gate.py 10/22; tools/lints/_deps.py 19/118; tools/prove-gates.py 2/7; changelog.d/P170.4-yl6.changed.md new. Tallies: full sweep `python3 tools/sweep-selftests.py` exit 0, 196/196 files ok, 19999 cases, run after the last edit; the four-suite gate 4/4 files ok, 2181 cases; test__deps alone 306/306, test_integrate_task 36/36. ruff: all checks passed; vermin: minimum 3.8, no violations; gate-parity: exit 0; prove-gates --list derives with no orphan row (exit 0). CONTRIBUTING.md and CLAUDE.md do not mention --write-map, map_drift or the _deps follower (grep), so no widening was needed there. ONE FILE OUTSIDE THE LIST THAT SHOULD BE TIDIED, NOT REQUIRED: plugins/audit/scripts/governance/_evidence_io.py FOLLOWER_OWNERS still lists tools/lints/_deps.py; claimed_followers asks it by command, _deps.py now prints its usage line to stderr and exits 2, so it claims nothing (verified: claimed_followers over PLUGIN-BUILD-GUIDE.md returns []). The entry is dead weight and one wasted subprocess per ask; removing it is a one-line edit there plus the guide's one sentence about owners, and my tests pick the owner path generically (first tools/*.py owner), so they pass either way. Dependants: PLUGIN-BUILD-GUIDE.md - still correct, its other sections untouched and 1a/1b/_deps.py prose updated; _deps.py importers (tests/test__deps.py, test__manifest_io etc.) - still correct, the removed names were used only by tests I repointed; tests/test_commit_task_work.py imports test_integrate_task helpers (_index_cases, _write) - kept; test_drive_phase names used by test_drive_without_model/test_stamp_verification (_Env, _actions, _base_mark, ...) - unchanged; _follower_cases in test_run_test_gate/test_integrate_task - names kept, bodies repointed; .github/sweep-costs.json block names (itf, fm-block, fi-block, fo-block) unchanged. RECOMMENDATION for the underived remainder (not built here): (1) public names: not derivable as one line per module, so print them on demand as a second command, `_deps.py --render-public` (ast: top-level def/class names not starting with an underscore, per module, one line each), and keep hand prose only for why; (2) entry usage line: do not derive from the guide - each entry's module docstring already carries `Usage:`; add `_deps.py --render-usage` printing the first docstring block that starts with `Usage:` and the guide stops naming usage strings; (3) section 1 tree's file list: the tree is the enumeration lint's input, so derive it - print it from the directory listing (`_deps.py --render-tree`), and let the existing guide_enumeration lint take the tree from that instead of from a committed block; until then, only a task that adds or removes a file must declare the guide.",
+        "descriptive": "The module map is now printed by `_deps.py --render` instead of committed in the build guide, so an import change obliges no guide edit and the 12-in-33 regeneration commits go away; the map drift lint, --write-map and _deps's follower answer are removed with it."
       },
       "startedAt": "2026-11-26T07:36:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-26T08:09:32Z",
+      "verifiedBy": [
+        "d4: --render names every module LAYERS places exactly once (counted member lines, missing/repeated/unplaced reported)",
+        "d5: `_deps.py --render` as a command exits 0 and prints exactly render()",
+        "g1 repointed: guide section 1a names the printing command and holds no fenced block"
+      ],
       "notes": [
         {
           "at": "2026-11-26T07:35:53Z",
@@ -1208,6 +1212,30 @@
             "ms": 532713,
             "basis": "durationMs in run 2026-11-26T08:07:05Z.99e3fd's record (run-test-gate --record)",
             "runId": "2026-11-26T08:07:05Z.99e3fd"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-26T07:57:21Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1266000,
+            "startedAt": "2026-11-26T07:36:15Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-26T08:07:05Z.99e3fd",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-26T07:57:48Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-26T08:09:13Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 104000,
+            "startedAt": "2026-11-26T08:07:29Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 3f9c2fd5b0ad",
+            "kind": "commit",
+            "ms": 2574,
+            "startedAt": "2026-11-26T08:09:28Z"
           }
         ],
         "firstStartedAt": "2026-11-26T07:36:13Z"
@@ -1318,6 +1346,172 @@
         "runId": "2026-11-26T08:07:26Z.2cb27b",
         "status": "passed",
         "at": "2026-11-26T08:07:26Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "3f9c2fd5b0ad",
+        "at": "2026-11-26T08:09:32Z",
+        "return": "docs/audit/evidence/returns/P170.4-yl6/20261126T073613Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with tests.expectRedFirst false and no tests.add; the replacement cases were proven red by mutation in a scratch copy of the tree (render member dropped -> d4 red 305/306; render made non-deterministic -> d1,d5 red 304/306; a fence committed back into section 1a -> g1 red 305/306; all restored, cmp equal, 306/306), not by the helper",
+        "at": "2026-11-26 scratch-tree mutation runs, same session"
+      }
+    },
+    {
+      "id": "P170.5-yl6",
+      "title": "The follower-map wave cases read a note's text, so a Windows interpreter path in the recipe matches",
+      "status": "in_progress",
+      "description": "CI release run 45780845992 on 3f9c2fd5 (P170.4) is red on four Windows cells, all in tests/test_drive_phase.py: 'a wave member that regenerated a generated file itself ... is integrated with the file widened on the owner's basis' (and its sharded twin). Cause: the case (~8042) builds notes as ' '.join(str(n) for n in task notes); a note is a dict, so str() is its repr and doubles every backslash, and _GEN_RECIPE (~8057, sys.executable, C:\\hostedtoolcache\\...\\python3.exe on the runner) never occurs in it. P170.4 repointed this case from _deps's real owner to a fixture owner whose recipe names sys.executable, which first exposed it. Fix: read each note's text field (or the plain string) and compare against that; keep every other conjunct. Prove it can still fail (drop the widening and see red) on posix; Windows is proven by the probe CI the orchestrator runs.",
+      "files": [
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "files"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-26T08:31:34Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-26T08:43:50Z",
+            "ms": 15550,
+            "basis": "selectionMs in run 2026-11-26T08:47:16Z.7694ec's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-26T08:47:16Z.7694ec"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-26T08:44:06Z",
+            "ms": 190165,
+            "basis": "durationMs in run 2026-11-26T08:47:16Z.7694ec's record (run-test-gate --record)",
+            "runId": "2026-11-26T08:47:16Z.7694ec"
+          }
+        ],
+        "firstStartedAt": "2026-11-26T08:31:34Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-26T08:47:33Z.bf5473",
+        "status": "passed",
+        "durationMs": 196,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:540201968a8778097427844b2ff7845bf6aa4fb7457eb6529fb7229219c3bd35",
+        "reuseKey": "1:sha256:c470d313894a81e71ed117e01dbcc349520dfa92c982a557ccef9a172d72dcc0",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-26T08:47:16Z.7694ec",
+          "ts": "2026-11-26T08:47:16Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+        "selectionMs": 14976,
+        "at": "2026-11-26T08:47:33Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "runId": "2026-11-26T08:47:16Z.7694ec",
+          "startedAt": "2026-11-26T08:44:06Z",
+          "durationMs": 190165,
+          "selectionMs": 15550,
+          "status": "passed",
+          "failed": [],
+          "reuseKey": "1:sha256:c470d313894a81e71ed117e01dbcc349520dfa92c982a557ccef9a172d72dcc0",
+          "gateDigest": "sha256:540201968a8778097427844b2ff7845bf6aa4fb7457eb6529fb7229219c3bd35",
+          "gateSource": "task",
+          "banners": [],
+          "machine": "this run had the machine to itself",
+          "launch": "2026-11-26T08:43:50Z-a796265f",
+          "gateReach": {
+            "gaps": []
+          },
+          "observations": {
+            "ranTotal": null,
+            "countsBasis": "no step printed a summary this reader can count (python3 tools/sweep-selftests.py tests/test_drive_phase.py + affected/related: tests/test__refs.py, tests/test_drive_without_model.py + affected/walk: tests/tes... (306 more characters)), so the size of this gate is not knowable from its output",
+            "treeMutated": [],
+            "treeBasis": "git described the tree before and after",
+            "coverage": [
+              "tests/test_drive_phase.py"
+            ],
+            "coverageBasis": "the runner named 25 path(s); the work under test declares 1 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 15/15 and 20 more; every declared file was named by the run; breadth: the run named 16 suite path(s) and this task declares 1 file(s), and 14 of them are suites the task neither declares nor is named after (test__deps.py, test__output.py, test_stamp_verification.py, tests/_harness.py, tests/test__affected_tests.py, tests/test__deps.py, tests/test__output.py and 7 more) - this gate asks more than the task changed; that is reported, not refused"
+          },
+          "via": "cli",
+          "attempt": 1,
+          "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+          "at": "2026-11-26T08:47:16Z",
+          "testedState": {
+            "head": "3f9c2fd5",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeDigest": "sha256:ebe1c8328f3a5691699e0b9a7f4949a2fc2f8e7a2371e329e5c05f8a09d80927",
+            "scopeBasis": "1 declared file(s); 1 read, 0 missing",
+            "scopeListDigest": "sha256:88c417416a30968eebb727c3aa592c5f7bdab0c54b3e11c8635508492091f3ca",
+            "dirtyDigest": "sha256:5b3ec081337759bfde90bfb74fff9b4f9d977eaa924444271784d6dd0753bf9d",
+            "dirtyBasis": "git described the tree before the run; 5 dirty path(s)"
+          },
+          "steps": [
+            {
+              "name": "python3 tools/sweep-selftests.py tests/test_drive_phase.py + affected/related: tests/test__refs.py, tests/test_drive_without_model.py + affected/walk: tests/test__affected_tests.py, tests/test__deps.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_settings.py, tests/test_derive_phase_gate.py, tests/test_run_test_gate.py, tests/test_stamp_verification.py, tools/_suite.py, tools/affected.py, tools/count-ui-pins.py, tools/sweep-selftests.py",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 190118,
+              "suiteReader": "none",
+              "commandBytes": 417,
+              "commandSha256": "a6b2ff054cad19867a983658e8615ac4578bc3d812a4ae64038e905009691602",
+              "program": "python3"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-26T08:47:16Z.7694ec",
+            "launch": "2026-11-26T08:43:50Z-a796265f",
+            "status": "passed",
+            "at": "2026-11-26T08:47:16Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-26T08:47:33Z.bf5473",
+        "status": "passed",
+        "at": "2026-11-26T08:47:33Z"
       }
     }
   ],

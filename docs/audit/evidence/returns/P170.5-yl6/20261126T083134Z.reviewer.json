@@ -1,0 +1,17 @@
+{
+ "findings": [],
+ "preExisting": [
+  {"id": 1, "severity": "low", "file": "tests/test_drive_phase.py:1068-1070,21950-21953", "issue": "Two near-identical note-text readers (_notes and _notes_of) exist in one suite; the class this task fixed (a note dict compared through its repr) is only avoided by choosing the right one.", "resolution": "Fold _notes_of into _notes in a later low batch."}
+ ],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause 'read each note's text field (or the plain string) and compare against that; keep every other conjunct': the diff replaces ' '.join(str(n) for n in task.get('notes') or []) with ' '.join(_notes(mpath, 'P1.2')) at three sites (~8019 hand-edited follower, ~8039 follower-map case that failed on Windows, ~8259 fm2 shot case); _notes (line 1068) returns str(n.get('text')) per note, and no conjunct was altered. The executor's outcome describes exactly this three-line diff, and its dependants answer (no defined name or fixture shape changed) holds against it. 'Prove it can still fail on posix' is claimed via a throwaway-copy mutation (recipe dropped from the widening basis -> fm-block FAIL 0/1); I did not re-run it, it is the executor's report.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Task owes none (regression fix, expectRedFirst false, no tests.add); the executor's filed redFirst is not-attempted and holds. Its mutation probe in a scratch copy is reported, not a red-first of a new test.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Read tests.gate: `python3 tools/sweep-selftests.py tests/test_drive_phase.py`, selecting the one suite the diff edits. The three edited cases keep their other conjuncts (status done, files widened, 'undeclared-change' not in said, file bytes read from disk); the notes conjuncts (_GEN_OWNER/_GEN_RECIPE at ~8048, 'owed by check_notes on run' ~8021, 'on the drive's follow' ~8263) still reach the behaviour and are not swallowed. Whole suite not read."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

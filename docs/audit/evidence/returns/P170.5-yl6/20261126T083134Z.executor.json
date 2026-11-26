@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass",
+    "python3 tools/sweep-selftests.py (full)": "pass",
+    "ruff check plugins/audit tools tests .claude/hooks": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with expectRedFirst false and no tests.add; no new case. The existing case's sensitivity was shown instead in a throwaway copy of the tree (rsync to the scratchpad, .git excluded), not the shared tree: drive-phase.py's follower-widening basis was changed to omit the recipe, and `python3 tests/test_drive_phase.py --selftest --stage fm-block` printed 'FAIL a wave member that regenerated a generated file itself ... SELFTEST FAILED: 0/1 cases passed'; the same stage on the real tree printed 'ALL PASS: 1/1 cases passed'.",
+    "at": "2026-11-26 (this session)"
+  },
+  "outcome": {
+    "technical": "tests/test_drive_phase.py: three sites built `notes` as ' '.join(str(n) for n in task.get('notes')), which is the repr of each note dict (backslashes doubled), at the follower-map case (_GEN_RECIPE conjunct, the failing one), the hand-edited-follower case ('owed by check_notes on run') and the fm2 shot case. All three now use the file's existing `_notes(mpath, 'P1.2')` reader, which takes each note's text field; every other conjunct is unchanged. Class sweep: grep for 'str(n) for n in', 'in str(', '\" \".join(str(' over the file shows no other note-repr join; the remaining str(...) uses are dict keys (_answer_json, _rw_answer), basis/id strings or exceptions, left because none holds a path matched against a note. Windows shape simulated in-process: recipe r'C:\\hostedtoolcache\\windows\\Python\\3.12\\x64\\python3.exe tools/regen.py' in a note text -> old join matches: False, text reader matches: True. Commands: sweep tests/test_drive_phase.py -> 1/1 files ok, 1098 cases; full sweep exit 0 -> 196/196 files ok, 19999 cases; ruff exit 0; vermin exit 0. Dependants (test_drive_without_model, sweep-costs, ci.yml, drive-phase.py, test__evidence_io, test__runner_output, test_run_test_gate, test_stamp_verification and the rest): none changed - only three assignments inside this suite's own cases changed, no defined name or fixture shape, so every dependant is still correct.",
+    "descriptive": "The follower-map wave cases now read a note's text, so a Windows interpreter path in the recipe matches instead of being compared against a backslash-doubled repr."
+  },
+  "testsAdded": [],
+  "claims": "claims:\n1 n/a - no behaviour claimed in prose\n2 widening basis mutated (recipe dropped) in a throwaway copy -> fm-block FAIL 0/1 -> real tree 1/1 PASS; Windows shape: old join False, text reader True\n3 grep 'str(n) for n in' / 'in str(' / '\" \".join(str(': 3 note-repr hits (8019, 8039, 8259) all fixed; other str() hits are dict keys/ids/exceptions, left because no path is matched against a note repr\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:b348ffc1cac3be98d2b65ec7f4fade2b1bb0195be9152af8aadb1b59178f62e9\",\"dirtyDigest\":\"sha256:1808bb0f638266519c691f870c399c131e8dd8e29a20c542c81367291ea15994\",\"dirtyPaths\":{\"tests/test_drive_phase.py\":\"bf4b8ec27e189cfc\"},\"head\":\"3f9c2fd5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:ebe1c8328f3a5691699e0b9a7f4949a2fc2f8e7a2371e329e5c05f8a09d80927\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
