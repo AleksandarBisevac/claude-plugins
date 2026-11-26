@@ -78,6 +78,10 @@ two copies of a procedure is one copy and one lie.
   full list with the measurement behind each refusal, and `pn31` is the case that goes red if
   somebody widens one. So a green build is not evidence that a number you wrote is safe; it is
   evidence that none of the shapes the lint knows matched.
+- **A comment, a docstring or a document never cites a register id** - the fault, phase or bug
+  numbers of the private register - but states the constraint itself. The scan that refuses one is
+  `python3 tools/lints/_deps.py --register-citations [PATH ...]`, and it is this plan's pre-gate
+  (`meta.buildCommands.preGate`), so a writer hears of one before the full sweep does.
 - Every command that mutates the manifest revalidates via `scripts/manifest/validate-manifest.py`.
 - **`COMPATIBILITY.md` is a contract, not a description.** It promises that a `meta.version`
   the plugin accepts keeps being accepted and that a config key it reads keeps being read. So

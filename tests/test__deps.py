@@ -2568,6 +2568,72 @@ def _citation_cases(check):
                   "tests/test__output.py", _cs_rows) is None
           and _output_lints.prose_scan_exemption("CHANGELOG.md", _cs_rows) is not None)
     _ix_citation_cases(check)
+    _citation_cli_cases(check)
+
+
+def _citation_cli_cases(check):
+    """`_deps.py --register-citations`: the register-citation scan as a command,
+    so a plan's pre-gate can name it and a writer learns of a citation in
+    seconds. Every case runs the entry as a PROCESS, because the exit code is
+    the contract a gate reads and a function returning it would not prove the
+    entry hands it on."""
+    script = os.path.join(_output.LINTS_DIR, "_deps.py")
+    tmp = tempfile.mkdtemp(prefix="audit-deps-rccli-")
+    try:
+        with open(os.path.join(tmp, ".gitignore"), "w", encoding="utf-8") as fh:
+            fh.write("__pycache__/\n")
+        with open(os.path.join(tmp, "dirty.py"), "w", encoding="utf-8") as fh:
+            fh.write("# F909 a register id where a constraint belongs\nX = 1\n")
+        with open(os.path.join(tmp, "clean.py"), "w", encoding="utf-8") as fh:
+            fh.write("# states its own constraint and cites nothing\nX = 1\n")
+
+        def run(*args, **kw):
+            return subprocess.run(
+                [sys.executable, script, "--register-citations", "--root", tmp]
+                + list(args), capture_output=True, text=True, timeout=120,
+                cwd=kw.get("cwd"))
+
+        dirty = run(os.path.join(tmp, "dirty.py"))
+        check("rc19 the command over a file carrying a citation exits 1 and names "
+              "the file, the line and the token: exit %r, stdout %r"
+              % (dirty.returncode, dirty.stdout),
+              dirty.returncode == 1 and "dirty.py:1: F909" in dirty.stdout)
+        clean = run(os.path.join(tmp, "clean.py"))
+        check("rc20 NEGATIVE CONTROL: the same command over a clean file exits 0 "
+              "and names nothing - the case that goes red when the command is "
+              "made to fail unconditionally: exit %r, stdout %r"
+              % (clean.returncode, clean.stdout),
+              clean.returncode == 0 and "F909" not in clean.stdout
+              and "dirty.py" not in clean.stdout)
+        both = run(os.path.join(tmp, "clean.py"), os.path.join(tmp, "dirty.py"))
+        check("rc21 given two paths it reports the one with the citation and "
+              "not the other, once: exit %r, stdout %r"
+              % (both.returncode, both.stdout),
+              both.returncode == 1 and both.stdout.count("F909") == 1
+              and "clean.py:" not in both.stdout)
+        whole = run()
+        check("rc22 with no path it reads the whole tree, so the file given in "
+              "no argument is found: exit %r, stdout %r"
+              % (whole.returncode, whole.stdout),
+              whole.returncode == 1 and "dirty.py:1: F909" in whole.stdout)
+        rel = run("clean.py", cwd=tmp)
+        check("rc23 a relative path is read against the working directory: "
+              "exit %r, stderr %r" % (rel.returncode, rel.stderr),
+              rel.returncode == 0)
+        stray = run(os.path.join(tmp, "nowhere.py"))
+        check("rc24 a path nothing scans exits 2 and says nothing was read - a "
+              "filter that narrowed to empty must not read as a clean pass: "
+              "exit %r, stdout %r" % (stray.returncode, stray.stdout),
+              stray.returncode == 2 and "not scanned" in stray.stdout
+              and "nowhere.py" in stray.stdout)
+        mixed = run(os.path.join(tmp, "clean.py"), os.path.join(tmp, "nowhere.py"))
+        check("rc25 one scanned path beside one that is not exits 0 but still "
+              "names the one it did not read: exit %r, stdout %r"
+              % (mixed.returncode, mixed.stdout),
+              mixed.returncode == 0 and "nowhere.py" in mixed.stdout
+              and "not scanned" in mixed.stdout)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _scan_memo_cases(check):

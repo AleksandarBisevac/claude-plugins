@@ -5354,6 +5354,17 @@ CITATION_SCAN_EXEMPT = (
 )
 
 
+def _citation_scans(root, rows):
+    """`(py, src, md)` - the three file sets `register_citation_violations`
+    reads, each a `prose_scan_set` answer under this scan's own `rows`. One
+    home for the three extension groups, so the command naming a path asks the
+    very sets the scan reads rather than a second spelling of them."""
+    return (_output_lints.prose_scan_set((".py",), root, rows),
+            _output_lints.prose_scan_set(tuple(sorted(COMMENT_SYNTAXES)), root,
+                                         rows),
+            _output_lints.prose_scan_set((".md",), root, rows))
+
+
 def register_citation_violations(repo_root=None, table=None):
     """[(rel, lineno, token)] -- a comment, docstring or document citing a
     fault/phase id from the private register instead of stating its own
@@ -5390,11 +5401,28 @@ def register_citation_violations(repo_root=None, table=None):
     """
     root = repo_root if repo_root is not None else _output.REPO_ROOT
     rows = CITATION_SCAN_EXEMPT if table is None else table
+    return _register_citations(root, rows, None)
+
+
+def _register_citations(root, rows, only):
+    """`register_citation_violations`'s read, over `root` under `rows`.
+
+    `only` narrows the read to the named repo-relative paths (a set or list of
+    `/`-separated names) among the files the scan would read anyway: a path the
+    scan does not read - exempt, untracked, a kind it does not know - is not
+    read because it was named, so a caller that needs to know a name was
+    skipped asks `_citation_scans` itself.
+    """
     out = []
-    py_scan = _output_lints.prose_scan_set((".py",), root, rows)
+    py_scan, src_scan, md_scan = _citation_scans(root, rows)
     if py_scan["problem"] is not None:
         return [(".gitignore", 0, py_scan["problem"])]
-    for rel in py_scan["paths"]:
+    wanted = None if only is None else set(only)
+
+    def _named(paths):
+        return [rel for rel in paths if wanted is None or rel in wanted]
+
+    for rel in _named(py_scan["paths"]):
         path = os.path.join(root, rel.replace("/", os.sep))
         try:
             with io.open(path, "r", encoding="utf-8") as fh:
@@ -5414,12 +5442,10 @@ def register_citation_violations(repo_root=None, table=None):
         for reader in (_py_docstring_citations, _check_label_citations,
                        _py_other_literal_citations):
             out.extend((rel, ln, tok) for ln, tok in reader(text, index))
-    src_scan = _output_lints.prose_scan_set(tuple(sorted(COMMENT_SYNTAXES)), root,
-                                      rows)
     if src_scan["problem"] is not None:
         out.append((".gitignore", 0, src_scan["problem"]))
     else:
-        for rel in src_scan["paths"]:
+        for rel in _named(src_scan["paths"]):
             path = os.path.join(root, rel.replace("/", os.sep))
             try:
                 with io.open(path, "r", encoding="utf-8") as fh:
@@ -5430,11 +5456,10 @@ def register_citation_violations(repo_root=None, table=None):
             ext = os.path.splitext(rel)[1]
             out.extend((rel, ln, tok)
                        for ln, tok in _source_comment_citations(text, ext))
-    md_scan = _output_lints.prose_scan_set((".md",), root, rows)
     if md_scan["problem"] is not None:
         out.append((".gitignore", 0, md_scan["problem"]))
     else:
-        for rel in md_scan["paths"]:
+        for rel in _named(md_scan["paths"]):
             path = os.path.join(root, rel.replace("/", os.sep))
             try:
                 with io.open(path, "r", encoding="utf-8") as fh:
@@ -5446,6 +5471,51 @@ def register_citation_violations(repo_root=None, table=None):
                 for _off, tok in _fault_hits(line):
                     out.append((rel, lineno, tok))
     return out
+
+
+def register_citation_command(args, repo_root=None):
+    """`(exit_code, lines)` - `--register-citations [--root DIR] [PATH ...]`,
+    the scan above as a command a plan's pre-gate can name.
+
+    Exit 1 when anything is found, 0 when the files read are clean, 2 when the
+    arguments are unusable or when paths were named and the scan read none of
+    them: a name the scan does not read (exempt, untracked, outside the root)
+    is said aloud, and a command asked about files and reading none must not
+    answer the way a clean read answers. With no path the whole tree is read."""
+    args = list(args)
+    root = repo_root if repo_root is not None else _output.REPO_ROOT
+    if "--root" in args:
+        at = args.index("--root")
+        if at + 1 >= len(args):
+            return 2, ["usage: _deps.py --register-citations [--root DIR] [PATH ...]"]
+        root = args[at + 1]
+        del args[at:at + 2]
+    if any(a.startswith("-") for a in args):
+        return 2, ["usage: _deps.py --register-citations [--root DIR] [PATH ...]"]
+    if not args:
+        hits = register_citation_violations(root)
+        return (1 if hits else 0), _citation_lines(hits)
+    named = [_output.posix_rel(os.path.realpath(a), os.path.realpath(root))
+             for a in args]
+    scans = _citation_scans(root, CITATION_SCAN_EXEMPT)
+    problems = [scan["problem"] for scan in scans if scan["problem"] is not None]
+    if problems:
+        return 2, ["not scanned: %s" % (p,) for p in problems]
+    read = set(rel for scan in scans for rel in scan["paths"])
+    unread = [rel for rel in named if rel not in read]
+    lines = ["not scanned (exempt, untracked, outside the root or not a kind "
+             "this scan reads): %s" % (rel,) for rel in unread]
+    if len(unread) == len(named):
+        return 2, lines + ["nothing was read, so nothing is cleared"]
+    hits = _register_citations(root, CITATION_SCAN_EXEMPT, named)
+    return (1 if hits else 0), lines + _citation_lines(hits)
+
+
+def _citation_lines(hits):
+    """The report lines for `hits`, one per finding, closing on a tally line
+    that is the command's own count of what it printed."""
+    rows = ["%s:%d: %s" % (rel, lineno, token) for rel, lineno, token in hits]
+    return rows + ["%d register citation(s) found" % (len(hits),)]
 
 
 # --- step pointers: a numbered step a pointer names is one its document holds ---
@@ -7526,5 +7596,11 @@ if __name__ == "__main__":
             _lines.append("")
         _output.write_lf_lines(_lines)
         raise SystemExit(0)
-    sys.stderr.write("usage: _deps.py --render | --render-index | --contracts\n")
+    if "--register-citations" in sys.argv[1:]:
+        _code, _lines = register_citation_command(
+            [a for a in sys.argv[1:] if a != "--register-citations"])
+        _output.write_lf_lines(_lines)
+        raise SystemExit(_code)
+    sys.stderr.write("usage: _deps.py --render | --render-index | --contracts | "
+                     "--register-citations [--root DIR] [PATH ...]\n")
     raise SystemExit(2)
