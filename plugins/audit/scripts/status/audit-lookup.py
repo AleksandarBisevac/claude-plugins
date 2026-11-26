@@ -1203,14 +1203,29 @@ def _suite_runner(words):
     return runner, at, paths
 
 
+# The slot a recorded runner spelling (`meta.phaseGate.derived.spelling`) is
+# filled at, and the kind a runner spelled with it is read as taking: the
+# derivation hands that slot every suite whatever its extension, so the
+# spelling names no kind of its own.
+_PATHS_SLOT = "{paths}"
+_ANY_KIND = "*"
+
+
 def _plan_commands(manifest):
     """Every command the plan spells, in document order: each
-    `meta.buildCommands` value, then each literal entry of `meta.fullGate`, of
-    a phase's `testGate` and of a task's `tests.gate` - an entry naming a
+    `meta.buildCommands` value, the recorded runner spelling when it carries
+    its `{paths}` slot (the only spelling the derivation uses,
+    `_gate_derive.resolve_shape`), then each literal entry of `meta.fullGate`,
+    of a phase's `testGate` and of a task's `tests.gate` - an entry naming a
     `buildCommands` key is already its value."""
     meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
     build = meta.get("buildCommands") if isinstance(meta.get("buildCommands"), dict) else {}
     spelled = [v for v in build.values() if isinstance(v, str)]
+    gate = meta.get("phaseGate") if isinstance(meta.get("phaseGate"), dict) else {}
+    derived = gate.get("derived") if isinstance(gate.get("derived"), dict) else {}
+    spelling = derived.get("spelling")
+    if isinstance(spelling, str) and spelling.strip() and _PATHS_SLOT in spelling:
+        spelled.append(spelling.strip())
     lists = [meta.get("fullGate")]
     lists += [p.get("testGate") for p in manifest.get("phases") or []
               if isinstance(p, dict)]
@@ -1232,7 +1247,9 @@ def _suite_kind(path):
 def suite_taking_runners(manifest):
     """`{runner: kinds}`: each runner (`_suite_runner`'s first answer) the plan
     spells handed at least one suite path, in any simple command of any command
-    it spells, with the `_suite_kind`s of the suites it is handed there.
+    it spells, with the `_suite_kind`s of the suites it is handed there - or
+    `_ANY_KIND` where a command hands it the recorded spelling's `{paths}`
+    slot, which takes a suite of any kind.
 
     A runner is known to take suite paths only from that: a script run with no
     path (`python3 tools/measure-context.py --gate`) has the same shape as a
@@ -1244,9 +1261,19 @@ def suite_taking_runners(manifest):
     for command in _plan_commands(manifest):
         for words in _phases.gate_entry_commands(command):
             read = _suite_runner(words)
-            for path in (read[2] if read is not None else []):
+            if read is None:
+                continue
+            if any(_PATHS_SLOT in word for word in words):
+                known.setdefault(read[0], set()).add(_ANY_KIND)
+            for path in read[2]:
                 known.setdefault(read[0], set()).add(_suite_kind(path))
     return known
+
+
+def _takes_kind(kinds, suite):
+    """Whether a runner spelled with `kinds` (`suite_taking_runners`) takes
+    `suite`: its kind is among them, or the spelling takes any."""
+    return _ANY_KIND in kinds or _suite_kind(suite) in kinds
 
 
 # The options that change only what a run prints. Any other word after the
@@ -1272,7 +1299,7 @@ def _runs_whole_tree(command, known, suite):
     words = _phases.gate_entry_commands(command)
     read = _suite_runner(words[0]) if len(words) == 1 else None
     return (read is not None and not read[2]
-            and _suite_kind(suite) in known.get(read[0], ())
+            and _takes_kind(known.get(read[0], ()), suite)
             and not _selects_cases(words[0], read[1]))
 
 
@@ -1357,7 +1384,7 @@ def suite_coverage(manifest, steps, listed, suites):
         if simple is None:
             continue
         words, values, runner, at = simple
-        mine = [f for f in unrun if f not in given and _suite_kind(f) in known[runner]]
+        mine = [f for f in unrun if f not in given and _takes_kind(known[runner], f)]
         if mine:
             command = _rewritten(raw, words, _slots(values, at),
                                  [shlex.quote(f) for f in mine])

@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py (full, own tree, after last edit)": "pass",
+    "python3 tests/test_audit_lookup.py --selftest": "pass",
+    "ruff check plugins/audit tools tests .claude/hooks": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-26T18:51:54Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_lookup.py` in a throwaway tree at HEAD exited 1 with 3 of 208 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ws28 (house FAIL): SELFTEST FAILED: 205/208 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-lookup._plan_commands now appends meta.phaseGate.derived.spelling (stripped, only when it carries the {paths} slot, the same reading _gate_derive.resolve_shape uses). suite_taking_runners marks a runner handed that slot as taking any suite kind (_ANY_KIND sentinel, since the derivation hands the slot every suite), and the new _takes_kind replaces the two kind-membership tests in _runs_whole_tree and suite_coverage. Result: a plan with spelling 'python3 tools/x.py {paths}' and a bare 'python3 tools/x.py' gate hands the task's tests/test_a.py to that runner as 'python3 tools/x.py tests/test_a.py' instead of the not-known sentence. A first sweep went red on tests/test__deps.py ck2/ck16 (config-key divergence: spelling read 'as typed' here, through strip elsewhere); fixed by reading it through strip, then the full sweep was re-run green. Numstat: plugins/audit/scripts/status/audit-lookup.py 33/6, tests/test_audit_lookup.py 69/0. Dependants: drive-phase (calls brief), audit-task, _panel_settings (describes the same sentence) - still correct: only the brief's derived-command set changes for plans recording a spelling, no signature or output shape changed. NOT DONE: changelog.d/P172.1.fixed.md is not in the task's files, so per the order it was not written; the orchestrator owes it (proposed text: the writer brief reads the plan's recorded runner spelling - a runner the plan spells with a {paths} slot is handed the task's own suites, instead of the brief saying no runner takes suite paths).",
+    "descriptive": "The writer brief now hands a task's own suites to the runner the plan's recorded spelling names, instead of saying no runner takes suite paths."
+  },
+  "testsAdded": [
+    "ws28 red-first: a recorded spelling with {paths} plus a bare slow gate runner yields 'python3 tools/x.py tests/test_a.py' and no not-known sentence",
+    "ws29 a fast bare runner of a spelled runner is a whole run: one line",
+    "ws30 over-fire twin: no spelling recorded -> suite named with the not-known reason",
+    "ws31 a spelling of one runner does not hand a suite to another script",
+    "ws32 the spelling's slot takes a suite of any kind (.py and .js)",
+    "ws33 a spelling without {paths} is no basis"
+  ],
+  "casesAdded": [
+    "ws28",
+    "ws29",
+    "ws30",
+    "ws31",
+    "ws32",
+    "ws33"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:9bd18bde60059c54bb292be853497c168408f9336256cb25f33fed243b016d77\",\"dirtyDigest\":\"sha256:4d3d90cc96611db2324bc0ab7e9ac12355359e18c119f4f38e44de17754f5bfb\",\"dirtyPaths\":{\"plugins/audit/scripts/status/audit-lookup.py\":\"74de1a0a40eb83e4\",\"tests/test_audit_lookup.py\":\"8612488973fe035e\"},\"head\":\"d7a2d840\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test_audit_lookup.py\"],\"scopeDigest\":\"sha256:d249a05453ab61a924276178098e5374a8a631323b660410d78ca5ddba73617d\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

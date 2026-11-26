@@ -2935,6 +2935,75 @@ def _writer_suite_reading_cases(check):
                         if i.startswith("- python3") and fixture in i]
           and not [i for i in items27 if rates in i]
           and [i for i in items27 if i.startswith("- %s %s" % (sweep, refund))])
+    _writer_spelling_cases(check)
+
+
+def _writer_spelling_cases(check):
+    """(ws) The runner spelling the plan records (`meta.phaseGate.derived.
+    spelling`) is the plan saying how its runner takes suite paths, so the
+    writer's brief reads it the way the gate's selector does."""
+    runner, spelled = "python3 tools/x.py", "python3 tools/x.py {paths}"
+    one, ui = "tests/test_a.py", "tests/ui.test.js"
+
+    def plan(gate, suites, spelling):
+        man = _ws_suites_manifest(("bare",) if gate else (), suites)
+        man["meta"]["buildCommands"] = {"bare": runner}
+        if spelling is not None:
+            man["meta"]["phaseGate"] = {"mode": "shadow",
+                                        "derived": {"spelling": spelling}}
+        return man
+
+    # RED FIRST: the spelling is the only place the plan says the runner takes
+    # a suite, and the gate step is the runner with no path.
+    slow, fast = (("bare", 400000, 3),), (("bare", 2000, 3),)
+    items28, ok28 = _ws_run(plan(True, (one,), spelled), slow)
+    named28 = _ws_naming(items28, one)
+    check("ws28 a recorded runner spelling taking {paths} makes the bare gate "
+          "runner one that takes suite paths: the task's suite is handed to it "
+          "as a command of its own, never the not-known sentence: %r"
+          % (items28,),
+          ok28 and len(named28) == 1
+          and named28[0].startswith("- %s %s (" % (runner, one))
+          and "known to take" not in "\n".join(items28))
+    # A fast bare runner is a whole run of that runner, so it is the one line
+    # and no command is added beside it.
+    items29, ok29 = _ws_run(plan(True, (one,), spelled), fast)
+    check("ws29 a fast bare gate step of a runner the spelling takes suites is "
+          "a whole run: the one line, no second one: %r" % (items29,),
+          ok29 and items29 == ["- %s" % (runner,)])
+    # THE OVER-FIRE TWIN of ws28: with no spelling recorded nothing says the
+    # bare runner takes a suite, so the suite is named with the reason.
+    items30, ok30 = _ws_run(plan(True, (one,), None), slow)
+    named30 = _ws_naming(items30, one)
+    check("ws30 with no spelling recorded the bare runner is not handed the "
+          "suite: it is named with the reason no command is known: %r"
+          % (items30,),
+          ok30 and len(named30) == 1 and "suite path" in named30[0]
+          and not [i for i in items30 if i.startswith("- %s %s" % (runner, one))])
+    # A spelling is a template for ANOTHER runner too: it says nothing about
+    # a script it does not name.
+    other = "python3 tools/y.py --gate"
+    man31 = plan(True, (one,), spelled)
+    man31["meta"]["buildCommands"]["bare"] = other
+    items31, ok31 = _ws_run(man31, slow)
+    check("ws31 a spelling of one runner does not hand a suite to another "
+          "script: %r" % (items31,),
+          ok31 and not [i for i in items31 if i.startswith("- %s" % (other,))
+                        and one in i])
+    # The spelling carries no kind, and the derivation hands a slot every suite.
+    items32, ok32 = _ws_run(plan(True, (one, ui), spelled), slow)
+    check("ws32 the spelling's slot takes a suite of any kind: both suites are "
+          "handed to the runner, each on one line: %r" % (items32,),
+          ok32 and len(_ws_naming(items32, one)) == 1
+          and len(_ws_naming(items32, ui)) == 1
+          and all(i.startswith("- %s " % (runner,))
+                  for i in _ws_naming(items32, ui)))
+    # A spelling with no {paths} slot is the derivation's own refusal: it is
+    # no basis here either.
+    items33, ok33 = _ws_run(plan(True, (one,), runner), slow)
+    check("ws33 a spelling carrying no {paths} slot is no basis: the suite is "
+          "named with the reason, as when none is recorded: %r" % (items33,),
+          ok33 and items33 == items30)
 
 
 def _writer_suite_invariant_cases(check):
