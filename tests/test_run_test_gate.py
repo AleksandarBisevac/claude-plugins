@@ -12092,6 +12092,416 @@ def _kept_base_gate_cases(check):
           and dict((k, two.get(k)) for k in same) == same)
 
 
+# The fake sweep a per-suite base is measured with: it runs the suites it is
+# handed, or every `tests/test_*.py` when handed none, prints each failing
+# suite's output under the selftest sweep's `--- <path>: exited 1 ---` header
+# and its own `FAIL` line, then its summary - and appends the paths it was
+# handed to a log OUTSIDE the tree, one line per call, so what RAN is read off
+# the runner itself. A suite prints `gate-out/<stem>.<side>.txt`, the side
+# `base` while `pkg/core.py` holds the committed text, and fails on a FAIL
+# line; `gate-out/die.<side>` makes the runner die before it names a suite.
+_PER_SUITE_SWEEP = r'''
+import glob, os, subprocess, sys
+with open("pkg/core.py", encoding="utf-8") as fh:
+    side = "base" if fh.read() == "X = 1\n" else "task"
+with open(@LOG@, "a", encoding="utf-8") as fh:
+    fh.write(" ".join(sys.argv[1:]) + "\n")
+if os.path.exists("gate-out/die.%s" % (side,)):
+    sys.stdout.write("the runner died before it named a suite\n")
+    raise SystemExit(1)
+paths = sys.argv[1:] or sorted(glob.glob("tests/test_*.py"))
+blocks, tail, cases = [], [], 0
+for path in paths:
+    out = subprocess.run([sys.executable, path], stdout=subprocess.PIPE,
+                         universal_newlines=True).stdout
+    cases += out.count("PASS ") + out.count("FAIL ")
+    if "FAIL " in out:
+        blocks.append("--- %s: exited 1 ---\n%s" % (path, out))
+        tail.append("FAIL  %s: exited 1\n" % (path,))
+sys.stdout.write("".join(blocks) + "\n" + "".join(tail)
+                 + "%d/%d files ok, 0 migrated to tests/, %d cases\n"
+                 % (len(paths) - len(tail), len(paths), cases))
+raise SystemExit(1 if tail else 0)
+'''
+
+# A suite of the per-suite fixture: it prints its side's output file.
+_PER_SUITE_SUITE = r'''
+import sys
+with open("pkg/core.py", encoding="utf-8") as fh:
+    side = "base" if fh.read() == "X = 1\n" else "task"
+with open("gate-out/@STEM@.%s.txt" % (side,), encoding="utf-8") as fh:
+    text = fh.read()
+sys.stdout.write(text)
+raise SystemExit(1 if "FAIL " in text else 0)
+'''
+
+_PS_SUITES = ("tests/test_t.py", "tests/test_u.py", "tests/test_v.py")
+
+
+def _ps_output(fails):
+    """A suite's output failing each case of `fails`, or passing one."""
+    lines = ["PASS ok1 a case that passes"] + [
+        "FAIL %s a case that fails" % (case,) for case in fails]
+    return "%s\n%s\n" % ("\n".join(lines), (
+        "SELFTEST FAILED: 1/%d cases passed" % (len(lines),)) if fails
+        else "1/1 cases passed")
+
+
+def _ps_repo(prefix, base_fails=None, die_at_task=False):
+    """`(root, mpath, log)` - a committed one-task plan whose task gate is the
+    build key `selftests`, the bare form of the plan's recorded spelling
+    `python3 tools/sweep.py {paths}`, over three suites. `base_fails` maps a
+    suite to the cases it fails at the committed base; every suite passes in
+    the task's tree until `_ps_task_red` says otherwise. `log` is the sweep's
+    call log, outside the tree. `die_at_task` makes the runner name no suite
+    in the task's tree."""
+    log = os.path.join(_harness.fixture_root("rtg-per-suite-log-"),
+                       "calls.log")
+    root = _harness.fixture_root(prefix)
+    for sub in (("docs", "audit", "phases"), (".claude",), ("tools",),
+                ("tests",), ("pkg",), ("gate-out",)):
+        os.makedirs(os.path.join(root, *sub))
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    sweep = "python3 tools/sweep.py"
+    files = [
+        (".claude/audit.config.json",
+         json.dumps({"manifestPath": "docs/audit/audit-plan.json"})),
+        ("docs/audit/audit-plan.json", json.dumps(
+            {"meta": {"version": 3, "buildCommands": {"selftests": sweep},
+                      "phaseGate": {"derived": {
+                          "spelling": sweep + " {paths}",
+                          "verifiedOn": {"command": "echo v1",
+                                         "answer": "v1"}}}},
+             "phases": [{"id": "P1", "title": "one",
+                         "shard": "phases/P1.json"}]})),
+        ("docs/audit/phases/P1.json", json.dumps(
+            {"id": "P1", "title": "one", "status": "in_progress",
+             "testGate": ["selftests"], "tasks": [
+                 {"id": "P1.1", "title": "the work", "status": "in_progress",
+                  "files": ["pkg/core.py"],
+                  "tests": {"mode": "regression", "gate": ["selftests"]}}]})),
+        ("tools/sweep.py", _PER_SUITE_SWEEP.replace("@LOG@", repr(log))),
+        ("pkg/__init__.py", ""), ("pkg/core.py", "X = 1\n"),
+        (".gitignore", "__pycache__/\n")]
+    for suite in _PS_SUITES:
+        stem = suite.split("/")[-1][:-3]
+        files.append((suite, _PER_SUITE_SUITE.replace("@STEM@", stem)))
+        files.append(("gate-out/%s.base.txt" % (stem,),
+                      _ps_output((base_fails or {}).get(suite, ()))))
+        files.append(("gate-out/%s.task.txt" % (stem,), _ps_output(())))
+    if die_at_task:
+        files.append(("gate-out/die.task", ""))
+    for rel, body in files:
+        with open(os.path.join(root, *rel.split("/")), "w",
+                  newline="\n") as fh:
+            fh.write(body)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", "."],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    with open(os.path.join(root, "pkg", "core.py"), "w", newline="\n") as fh:
+        fh.write("X = 2\n")
+    return root, mpath, log
+
+
+def _ps_task_red(root, mpath, task_fails):
+    """Record P1.1's gate, run afresh, with each suite of `task_fails` failing
+    its cases in the task's tree (every other suite passing): the newest task
+    row."""
+    for suite in _PS_SUITES:
+        stem = suite.split("/")[-1][:-3]
+        with open(os.path.join(root, "gate-out", "%s.task.txt" % (stem,)),
+                  "w", newline="\n") as fh:
+            fh.write(_ps_output(task_fails.get(suite, ())))
+    # A red of the same tree as an earlier one would repeat its verdict with
+    # nothing run, and a repeat is no red a base is asked of.
+    M.main([mpath, "P1", "--task", "P1.1", "--project-dir", root, "--record",
+            "--no-reuse"], out=lambda _line: None)
+    rows = [r for r in _ev_io.read_rows(root, manifest_path=mpath)["rows"]
+            if r.get("taskId") == "P1.1"
+            and r.get("scope") != _ev_io.BASE_SCOPE]
+    return _ev_io.newest_row(rows) or {}
+
+
+def _ps_calls(log):
+    """The sweep's calls so far, one string of handed paths each."""
+    if not os.path.exists(log):
+        return []
+    with open(log, encoding="utf-8") as fh:
+        return [ln.rstrip("\n") for ln in fh]
+
+
+def _ps_answered(root, mpath, log, row):
+    """`(calls, exit, answer)` of `--base-of` the run `row`: the calls the
+    sweep took during it alone."""
+    before = len(_ps_calls(log))
+    code, answer, _lines = _base_of_answer(root, mpath, row.get("runId"))
+    return _ps_calls(log)[before:], code, answer
+
+
+def _ps_said(answered):
+    """`(calls, exit, kept, verdict, atBase)` of one `_ps_answered`."""
+    calls, code, answer = answered
+    reading = answer.get(_ev_io.BASE_RED_KEY) or {}
+    return (calls, code, answer.get("kept"), reading.get("verdict"),
+            reading.get("atBase"))
+
+
+def _ps_remove(root, log):
+    """Remove a per-suite fixture and the directory of its call log."""
+    _harness.remove_tree(root)
+    _harness.remove_tree(os.path.dirname(log))
+
+
+def _base_per_suite_cases(check):
+    """`--base-of` a red DECLARED step in the bare form of the plan's
+    recorded spelling measures only the suites the red named: the spelling
+    over those suites, recorded under the per-suite base step's name, read
+    against the red case by case, and kept on the plan so a later red at the
+    same commit naming one of them runs nothing - while a suite no kept base
+    ran is measured on its own. A red naming no suite runs the whole step."""
+    step = "selftests"
+    t_only = _ev_io.base_suites_step_name(step, ["tests/test_t.py"])
+    sweep = "python3 tools/sweep.py"
+
+    # One suite red in the task's tree, green at base: introduced, and only
+    # that suite run.
+    root, mpath, log = _ps_repo("rtg-ps-one-")
+    try:
+        red = _ps_task_red(root, mpath, {"tests/test_t.py": ("c1",)})
+        red_step = ([s for s in red.get("steps") or []
+                     if s.get("name") == step] or [{}])[0]
+        calls, code, answer = _ps_answered(root, mpath, log, red)
+        commands, _pub, left = M.base_commands(red, _mio_load(mpath), "P1",
+                                               root)
+    finally:
+        _ps_remove(root, log)
+    reading = answer.get(_ev_io.BASE_RED_KEY) or {}
+    check("bps1 RED-FIRST: A RED DECLARED STEP NAMING ONE SUITE IS MEASURED AT "
+          "ITS BASE OVER THAT SUITE ALONE: `--base-of` hands the runner "
+          "tests/test_t.py and nothing else, the step it records is the "
+          "per-suite base step running the spelling over that suite, and the "
+          "suite green at base is read introduced: red step %r / calls %r / "
+          "exit %r / answer %r / commands %r / left %r"
+          % (red_step.get("failingSuites"), calls, code,
+             (answer.get("steps"), answer.get("notRun"), reading),
+             commands, left),
+          red_step.get("failingSuites") == ["tests/test_t.py"]
+          and calls == ["tests/test_t.py"] and code == M.E_OK
+          and [s.get("name") for s in answer.get("steps") or []] == [t_only]
+          and commands == [(t_only, sweep + " tests/test_t.py")]
+          and left == [] and answer.get("notRun") == []
+          and reading.get("verdict") == "introduced"
+          and reading.get("introduced") == ["tests/test_t.py"]
+          and reading.get("atBase") == [] and reading.get("unknown") == [])
+
+    # Two suites red; at base one fails the SAME case, the other a DIFFERENT
+    # one: read case by case, one at base and one introduced.
+    root, mpath, log = _ps_repo("rtg-ps-cases-", base_fails={
+        "tests/test_t.py": ("c1",), "tests/test_u.py": ("c9",)})
+    try:
+        red = _ps_task_red(root, mpath, {"tests/test_t.py": ("c1",),
+                                         "tests/test_u.py": ("c1",)})
+        calls, code, answer = _ps_answered(root, mpath, log, red)
+    finally:
+        _ps_remove(root, log)
+    reading = answer.get(_ev_io.BASE_RED_KEY) or {}
+    both = _ev_io.base_suites_step_name(step, ["tests/test_t.py",
+                                               "tests/test_u.py"])
+    check("bps2 READ CASE BY CASE: a red naming two suites runs those two at "
+          "its base in one call, and the suite failing the same case there is "
+          "at base while the one failing only another case is introduced: "
+          "calls %r / exit %r / steps %r / reading %r"
+          % (calls, code, [s.get("name") for s in answer.get("steps") or []],
+             reading),
+          calls == ["tests/test_t.py tests/test_u.py"] and code == M.E_OK
+          and [s.get("name") for s in answer.get("steps") or []] == [both]
+          and reading.get("verdict") == "introduced"
+          and reading.get("atBase") == ["tests/test_t.py"]
+          and reading.get("introduced") == ["tests/test_u.py"])
+
+    # The runner named no suite: the whole step runs at base.
+    root, mpath, log = _ps_repo("rtg-ps-unnamed-", die_at_task=True)
+    try:
+        red = _ps_task_red(root, mpath, {})
+        calls, code, answer = _ps_answered(root, mpath, log, red)
+    finally:
+        _ps_remove(root, log)
+    check("bps3 THE FALLBACK: a red declared step whose runner named no "
+          "failing suite is measured whole at its base - the runner handed no "
+          "path, the step recorded under its own name: red %r / calls %r / "
+          "exit %r / steps %r"
+          % ((red.get("status"), [s.get("failingSuites")
+                                  for s in red.get("steps") or []]),
+             calls, code, [s.get("name") for s in answer.get("steps") or []]),
+          red.get("status") == "failed" and calls == [""]
+          and [s.get("name") for s in answer.get("steps") or []] == [step])
+
+    # Kept on the plan: the same red answered from the kept base with the
+    # ledger gone; a red naming another suite measures that suite alone; a
+    # third suite's base evicts the oldest, which a later red measures again.
+    # Every red is red at base too: a base measured for another red charges
+    # nothing to the task when the red's tree held the recorder's writes
+    # (`uncarried`), so only a red at base is answered from a kept base.
+    root, mpath, log = _ps_repo("rtg-ps-kept-", base_fails=dict(
+        (suite, ("c1",)) for suite in _PS_SUITES))
+    evidence = os.path.join(root, "docs", "audit", "evidence")
+    seen = {}
+    try:
+        for key, suite, gone in (("t", "tests/test_t.py", True),
+                                 ("t2", "tests/test_t.py", False),
+                                 ("u", "tests/test_u.py", False),
+                                 ("v", "tests/test_v.py", True),
+                                 ("u2", "tests/test_u.py", False),
+                                 ("t3", "tests/test_t.py", False)):
+            red = _ps_task_red(root, mpath, {suite: ("c1",)})
+            seen[key] = _ps_answered(root, mpath, log, red)
+            if gone:
+                _harness.remove_tree(evidence)
+    finally:
+        _ps_remove(root, log)
+    said = dict((k, _ps_said(v)) for k, v in seen.items())
+    first_run = seen["t"][2].get("runId")
+    check("bps4 A KEPT PER-SUITE BASE ANSWERS THE SAME RED, AND ONLY ITS OWN "
+          "SUITES: the same red at the same commit, the ledger gone, runs "
+          "nothing and is answered from the base kept for the first, with the "
+          "first's verdict; a red naming another suite runs that suite alone: "
+          "t %r / again %r / u %r" % (said["t"], said["t2"], said["u"]),
+          said["t"][:2] == (["tests/test_t.py"], M.E_OK)
+          and said["t"][3:] == ("base-only", ["tests/test_t.py"])
+          and said["t2"] == ([], M.E_OK, first_run, "base-only",
+                             ["tests/test_t.py"]) and first_run is not None
+          and said["u"][:3] == (["tests/test_u.py"], M.E_OK, None)
+          and said["u"][3:] == ("base-only", ["tests/test_u.py"]))
+    check("bps5 EVICTION KEEPS THE NEWEST RUNS, AND AN EVICTED SUITE COSTS ONE "
+          "SUITE: with a third suite's base kept, the oldest per-suite base is "
+          "gone from the plan, so a red naming its suite is measured again - "
+          "that suite alone - while the suite a kept base still ran is "
+          "answered with nothing run: v %r / u again %r / t again %r"
+          % (said["v"], said["u2"], said["t3"]),
+          said["v"][:3] == (["tests/test_v.py"], M.E_OK, None)
+          and said["u2"][0] == []
+          and said["u2"][2] == seen["u"][2].get("runId") is not None
+          and said["u2"][3:] == ("base-only", ["tests/test_u.py"])
+          and said["t3"][:3] == (["tests/test_t.py"], M.E_OK, None)
+          and said["t3"][3:] == ("base-only", ["tests/test_t.py"]))
+
+    # Unit readings of the fallbacks, over a red row nothing runs: a cut
+    # suite list, and a suite naming no file of the base tree.
+    root, mpath, log = _ps_repo("rtg-ps-fallback-")
+    try:
+        plan = _mio_load(mpath)
+        named_basis = "the runner %s these suites" % (_ev_io.NAMED_FAILING,)
+        red_step = {"name": step, "exit": 1, "command": sweep,
+                    "failingSuites": ["tests/test_t.py"],
+                    "failingSuitesBasis": named_basis}
+
+        def spelled(**changes):
+            red = {"steps": [dict(red_step, **changes)]}
+            return M.base_commands(red, plan, "P1", root)[0]
+        cut = spelled(failingSuitesBasis="%s; %s" % (named_basis,
+                                                     _ev_io.LIST_CUT))
+        relative = spelled(failingSuites=["test_t.py"])
+        missing = spelled(failingSuites=["tests/test_gone.py"])
+        named = spelled()
+        other = spelled(name="lint", command=sweep + " -x")
+    finally:
+        _ps_remove(root, log)
+    whole = [(step, sweep)]
+    check("bps6 THE FALLBACKS ARE THE WHOLE STEP: a red whose suite list was "
+          "cut, or naming a suite that is no file of the base tree, is spelled "
+          "as the step itself; the allow twin, a named suite that is one, is "
+          "spelled over it; and a declared step not in the bare form of the "
+          "recorded spelling runs as recorded: cut %r / relative %r / "
+          "missing %r / named %r / other %r"
+          % (cut, relative, missing, named, other),
+          cut == whole and relative == whole and missing == whole
+          and named == [(t_only, sweep + " tests/test_t.py")]
+          and other == [("lint", sweep + " -x")])
+
+
+def _per_suite_reading_cases(check):
+    """The reading half, over rows built in memory: a red declared step is read
+    suite by suite against the per-suite base steps of its commit - each suite
+    by the base step that ran it, two runs together answering a red naming the
+    suites of both - and a suite no per-suite base step ran is compared with
+    nothing. A reading that took several runs names them all, and a suite is
+    charged to the task only when every one of them carried the recorder's
+    writes the red's tree held."""
+    repo = _mini_repo("rtg-ps-reading-")
+    head, sweep = "c0ffee12", "python3 tools/sweep.py"
+    clean_digest, clean_basis = _tree_stamp.dirty_digest([])
+    s_t, s_u, s_v = _PS_SUITES
+    fail = ("FAIL c1 a case that fails",)
+    runs_key = getattr(M, "BASE_RUNS_READ_KEY", "runs")
+
+    def _res(name, command, fails):
+        return M.run_gate(repo, [(name, command)], runner=lambda _p, _c, _t=None: (
+            1 if fails else 0, sweep_red(fails), {}))
+
+    def _base(run_id, ts, suites, fails, base_of):
+        name = _ev_io.base_suites_step_name("selftests", suites)
+        command = "%s %s" % (sweep, " ".join(suites))
+        row = _ev_io.row_for(repo, _res(name, command, fails), _ev_io.BASE_SCOPE,
+                             {}, {"runId": run_id, "ts": ts},
+                             published=[command])
+        row["testedState"] = dict(row.get("testedState") or {}, head=head,
+                                  dirtyDigest=clean_digest,
+                                  dirtyBasis=clean_basis)
+        row[_ev_io.BASE_OF_KEY] = base_of
+        return row
+
+    def _reading(suites, bases, held=True):
+        red = dict(_res("selftests", sweep, dict((s, fail) for s in suites)),
+                   testedState={"head": head}, runId="r-red")
+        red[M.RECORDER_HELD_KEY] = held
+        return M.base_reading(red, "P1.1", lambda: list(bases)) or {}
+
+    try:
+        at_t = _base("r-a", "2026-11-26T10:00:00Z", [s_t], {s_t: fail}, "r-red")
+        green_u = _base("r-b", "2026-11-26T11:00:00Z", [s_u], {}, "r-red")
+        both = _reading([s_t, s_u], [at_t, green_u])
+        lone = _reading([s_t, s_v], [at_t])
+        # The run measured for another red is the OLDER one, so a reading
+        # that asked only the run it names - the newest - would charge it.
+        other_u = _base("r-c", "2026-11-26T09:00:00Z", [s_u], {}, "r-other")
+        moved = _reading([s_t, s_u], [at_t, other_u])
+        bare = _reading([s_t, s_u], [at_t, other_u], held=False)
+    finally:
+        _harness.remove_tree(repo)
+    check("bps7 RED-FIRST: TWO PER-SUITE BASES AT ONE COMMIT ANSWER A RED NAMING "
+          "THE SUITES OF BOTH, EACH SUITE BY THE STEP THAT RAN IT, AND NEVER "
+          "ONE IT DID NOT RUN: the suite red at base in the one run is at base, "
+          "the suite green in the other is introduced, the reading names both "
+          "runs, the newest as its run; a suite no per-suite step ran is "
+          "compared with nothing: %r / %r" % (both, lone),
+          both.get("atBase") == [s_t] and both.get("introduced") == [s_u]
+          and both.get("unknown") == [] and both.get("verdict") == "introduced"
+          and both.get(runs_key) == ["r-a", "r-b"]
+          and both.get("run") == "r-b"
+          and lone.get("atBase") == [s_t] and lone.get("introduced") == []
+          and len(lone.get("unknown") or []) == 1
+          and s_v in lone["unknown"][0]
+          and lone.get("verdict") == "not-knowable")
+    check("bps8 EVERY RUN A READING TOOK IS ASKED WHETHER IT CARRIED THE "
+          "RECORDER'S WRITES: the older of two per-suite bases, measured for "
+          "another red, charges nothing to a red whose tree held them, naming "
+          "that run, while the reading still names the newest as its run; the "
+          "twin, a red whose tree held none, is charged as before: %r / %r"
+          % (moved, bare),
+          moved.get("run") == "r-a"
+          and moved.get(runs_key) == ["r-c", "r-a"]
+          and moved.get("introduced") == [] and moved.get("atBase") == [s_t]
+          and moved.get("verdict") == "not-knowable"
+          and moved.get(M.UNCARRIED_KEY) == [s_u]
+          and any("r-c" in u and "r-other" in u
+                  for u in moved.get("unknown") or [])
+          and bare.get("introduced") == [s_u]
+          and bare.get("verdict") == "introduced")
+
+
 def _base_of_derived_cases(check):
     """`--base-of` measures a red DERIVED step at its base: the step's row
     keeps only a digest of its command, so the command is spelled again for
@@ -15880,6 +16290,8 @@ def _selftest():
         _harness.stage(check, "as-block", _affected_scope_cases)
         _harness.stage(check, "bod-block", _base_of_derived_cases)
         _harness.stage(check, "kbg-block", _kept_base_gate_cases)
+        _harness.stage(check, "bps-block", _base_per_suite_cases)
+        _harness.stage(check, "bpr-block", _per_suite_reading_cases)
         _harness.stage(check, "jn-block", _joined_run_cases)
         _joined_repeat_cases(check)
         _harness.stage(check, "jnb-block", _joined_base_cases)

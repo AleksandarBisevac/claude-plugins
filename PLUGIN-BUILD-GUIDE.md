@@ -5268,6 +5268,26 @@ the answer's `keptOn`), and a red whose every red step a recorded or kept run of
 measured (`_evidence_io.base_unmeasured`) is answered from that run with nothing run or recorded,
 the run named under `kept` (`kept_base_answer`); **`--kept-only`** asks for that answer alone and
 needs no `--tree`, refusing where nothing is kept. `kbg1` drives it.
+A RED DECLARED STEP IS MEASURED OVER THE SUITES IT NAMED when that is the same check over fewer
+suites: a step in the bare form of the plan's recorded spelling (`_affected_tests.is_bare_entry`,
+asked of its name and of its kept command) whose runner named its failing suites runs at the base
+as that spelling over them (`_affected_tests.spelled_entry`), recorded under
+`_evidence_io.base_suites_step_name` with the command kept verbatim
+(`_declared_suites_at_base`). It runs whole, as before, when the runner named no suite, named more
+than the row carries, or named one that is not a file of the base tree by its own
+repository-relative path (`_tree_suite`) - a suite printed from another directory, or one the task
+created. The reading answers such a step suite by suite whenever `_evidence_io.base_unmeasured`
+does (`_per_suite_base`, the one precondition both keep): each suite by the per-suite base step
+that ran it (`_evidence_io.suite_base_run` / `suite_base_step`, through `_charge_step`'s
+`per_suite`), one none ran not comparable, so a base never answers for a suite it did not run. A
+reading that took several runs names them under `BASE_RUNS_READ_KEY`, newest last and `run` the
+newest, and `uncarried` asks every one of them, moving every suite charged to the task when any
+was measured for another red. Kept bases stay keyed by commit and evicted by run
+(`_evidence_io.MAX_KEPT_BASE_RUNS`, newest kept): a base never answers a suite it did not run
+whichever runs are kept, so eviction costs only a re-measurement, and that one now runs the
+suites the red names rather than the whole step. A red some of whose suites a kept base answers
+is measured over every suite it names, not only the unanswered ones, so one run measured for it
+answers the whole red and carries the recorder's writes its tree held. `bps1`-`bps8` drive it.
 THE RECORDER'S OWN WRITES are inside the tree a task gate reads - the plan, its shards, the
 journal and the filed returns (`_evidence_io.recorded_paths`), uncommitted while the task runs -
 so a project check that reads the plan can go red on them alone. A base run therefore lays them

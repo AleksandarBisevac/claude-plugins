@@ -716,7 +716,7 @@ def _suite_at_base(suite, step, answering):
     return "introduced"
 
 
-def _charge_step(step, base_steps):
+def _charge_step(step, base_steps, per_suite=None):
     """`(at_base, introduced, unknown)` for one red step against the base run's
     steps.
 
@@ -734,13 +734,18 @@ def _charge_step(step, base_steps):
     A JOINED step (`_evidence_io.step_parts`) is read part by part: a suite one
     of its affected steps' names lists is answered as a derived step's, and
     any other is its declared entry's, answered by the base step of that
-    entry's name."""
+    entry's name.
+
+    A DECLARED STEP MEASURED SUITE BY SUITE is read through `per_suite`, the
+    base step answering each suite it named (`_per_suite_base`): a suite is
+    answered by its own base step alone, and one no base step ran is not
+    comparable - a base never answers for a suite it did not run."""
     named = _ev.named_failing_suites([step])
-    same = _base_step(base_steps, step)
+    same = None if per_suite is not None else _base_step(base_steps, step)
     declared, derived = _ev.step_parts(step.get("name"))
     joined = declared is not None and bool(derived)
-    if same is None and not ((_ev.is_derived_step(step.get("name")) or joined)
-                             and named):
+    if same is None and per_suite is None and not (
+            (_ev.is_derived_step(step.get("name")) or joined) and named):
         silent = any(isinstance(st, dict) and st.get("name") == step.get("name")
                      for st in base_steps or [])
         return [], [], ["%s (%s)" % (step["name"], "the base run's step of that "
@@ -758,7 +763,9 @@ def _charge_step(step, base_steps):
                        "nothing)" % (step["name"],))
     listed = _ev.derived_step_suites(step.get("name"))
     for suite in named:
-        if same is not None:
+        if per_suite is not None:
+            answering = [per_suite[suite]] if suite in per_suite else []
+        elif same is not None:
             answering = [same]
         elif joined and _ev.resolve_named(suite, listed)[0] is None:
             entry = _base_step(base_steps, {"name": declared})
@@ -784,7 +791,10 @@ def base_red(steps, head, task_id, rows):
     its base commit `head` (`_evidence_io.base_run`: a run on a clean tree at
     that commit, never one of `task_id`'s own), BY THE FAILING CASE: a suite
     is red at base too only when the base names every case this run names in
-    it (`_charge_step`).
+    it (`_charge_step`). A declared step measured suite by suite there is
+    read against the per-suite base runs instead (`_per_suite_base`), and a
+    reading that took more than one run names them under
+    `BASE_RUNS_READ_KEY`.
 
     `verdict` is `base-only` when every red suite is red at base too,
     `introduced` when any red is the task's own, `not-knowable` when some red
@@ -804,15 +814,30 @@ def base_red(steps, head, task_id, rows):
     # A joined step's affected suites find a base the way a derived step's do,
     # and its declared entry is asked for by the entry's own name.
     base = _ev.base_row_for(red, head, task_id, rows)
-    if base is None:
+    base_steps = [st for st in (base or {}).get("steps") or []
+                  if isinstance(st, dict)]
+    per_suite = [_per_suite_base(step, head, task_id, rows, base_steps)
+                 for step in red]
+    used = [r for answers in per_suite if answers
+            for r, _st in answers.values()]
+    if base is None and not used:
         out["basis"] = ("no run of this gate is recorded at base %s on a clean "
                         "tree, so whether the base is red too is not known"
                         % (head,))
         return out
-    out["run"], out["task"] = base.get("runId"), base.get("taskId")
-    base_steps = [st for st in base.get("steps") or [] if isinstance(st, dict)]
-    for step in red:
-        at, mine, unknown = _charge_step(step, base_steps)
+    runs = _base_runs_read(base, used)
+    out["run"], out["task"] = runs[-1].get("runId"), runs[-1].get("taskId")
+    if len(runs) > 1:
+        out[BASE_RUNS_READ_KEY] = [r.get("runId") for r in runs]
+    for step, answers in zip(red, per_suite):
+        if base is None and answers is None:
+            unknown = ["%s (no run at base %s on a clean tree holds it)"
+                       % (step.get("name"), head)]
+            at, mine = [], []
+        else:
+            at, mine, unknown = _charge_step(
+                step, base_steps, None if answers is None else dict(
+                    (suite, st) for suite, (_r, st) in answers.items()))
         out["atBase"] += [s for s in at if s not in out["atBase"]]
         out["introduced"] += [s for s in mine if s not in out["introduced"]]
         out["unknown"] += unknown
@@ -822,12 +847,51 @@ def base_red(steps, head, task_id, rows):
         out["verdict"] = "not-knowable"
     else:
         out["verdict"] = "base-only"
-    out["basis"] = ("read against run %s%s at base %s, recorded %s"
-                    % (base.get("runId"),
-                       " (task %s)" % (base["taskId"],) if base.get("taskId")
-                       else " (scope %s)" % (base.get("scope"),),
-                       head, base.get("ts")))
+    out["basis"] = "; ".join(
+        "read against run %s%s at base %s, recorded %s"
+        % (r.get("runId"), " (task %s)" % (r["taskId"],) if r.get("taskId")
+           else " (scope %s)" % (r.get("scope"),), head, r.get("ts"))
+        for r in runs)
     return out
+
+
+# A DECLARED STEP MEASURED SUITE BY SUITE. A base run may run a red declared
+# step's spelling over the suites that red named (`base_commands`), recorded
+# under `_evidence_io.base_suites_step_name`; such a step answers only the
+# suites it ran, and two of them at one commit answer a red naming the suites
+# of both. A reading that took more than one run names them all under
+# `BASE_RUNS_READ_KEY`, newest last - `run` is the newest - so `uncarried`
+# asks every one whether it carried the recorder's writes.
+BASE_RUNS_READ_KEY = "runs"
+
+
+def _per_suite_base(step, head, task_id, rows, base_steps):
+    """`{suite: (run, base step)}` for each suite the red DECLARED `step` named
+    that a per-suite base step answers (`_evidence_io.suite_base_run`), or
+    None when `step` is answered whole: a step of the base run `base_steps`
+    answers it by name, or `_evidence_io.base_unmeasured`'s per-suite reading
+    does not apply (`_suites_unmeasured`: derived or joined, no suite named,
+    the list cut, or no per-suite base of its name at `head`) - the one rule
+    both readers keep, so a measured red is never read unmeasured."""
+    if _base_step(base_steps, step) is not None or \
+            _ev._suites_unmeasured(step, head, task_id, rows) is None:
+        return None
+    out = {}
+    for suite in _ev.named_failing_suites([step]):
+        run = _ev.suite_base_run(rows, head, task_id, step, suite)
+        if run is not None:
+            out[suite] = (run, _ev.suite_base_step(run.get("steps"), step,
+                                                   suite))
+    return out
+
+
+def _base_runs_read(base, used):
+    """The runs a reading took - the whole-step base `base` and the per-suite
+    runs `used` - once each, newest last (`_evidence_io.oldest_first`)."""
+    by_id = {}
+    for run in ([base] if base is not None else []) + list(used):
+        by_id[str(run.get("runId"))] = run
+    return _ev.oldest_first(list(by_id.values()))
 
 
 def base_reading(res, task_id, read_rows):
@@ -956,25 +1020,32 @@ def _red_run_ids(red, rows):
 def uncarried(found, red, rows):
     """`found` - `base_red`'s reading of the red `red` against `rows` - as a
     NEW dict with every suite it charges to the task moved to `unknown`, and
-    named under `UNCARRIED_KEY`, when the base run it names did not carry the
-    recorder's writes `red`'s tree held; `found` itself when it charges
-    nothing to the task, names no base run, or that base carried them: it was
-    measured for `red`, or `red`'s tree held no recorder write."""
+    named under `UNCARRIED_KEY`, when a base run it was read against - the one
+    it names, or each of `BASE_RUNS_READ_KEY` when it took several - did not
+    carry the recorder's writes `red`'s tree held; `found` itself when it
+    charges nothing to the task, names no base run, or every such base carried
+    them: it was measured for `red`, or `red`'s tree held no recorder write.
+    Several runs are asked together, not suite by suite: a suite one carried
+    run charges is moved beside one an uncarried run charges, and the base
+    measured for this red then answers both."""
     if not isinstance(found, dict) or not found.get("introduced") \
             or not found.get("run"):
         return found
     held = (red or {}).get(RECORDER_HELD_KEY)
     if held is False:
         return found
-    base = _ev.row_by_run(rows, found["run"]) or {}
-    measured_for = base.get(_ev.BASE_OF_KEY)
-    if measured_for and str(measured_for) in _red_run_ids(red, rows):
+    mine = _red_run_ids(red, rows)
+    others = [(run, (_ev.row_by_run(rows, run) or {}).get(_ev.BASE_OF_KEY))
+              for run in found.get(BASE_RUNS_READ_KEY) or [found["run"]]]
+    others = [(run, of) for run, of in others if not (of and str(of) in mine)]
+    if not others:
         return found
+    run, measured_for = others[0]
     why = ("the base run %s was measured for %s, not for this run, so it did "
            "not carry the recorder's writes this run's tree %s - a red those "
            "writes alone cause is not told from one the task introduced until "
            "a base is measured for this run"
-           % (found["run"], ("run %s" % (measured_for,)) if measured_for
+           % (run, ("run %s" % (measured_for,)) if measured_for
               else "no run it names",
               "held" if held else "may have held (nothing recorded what it held)"))
     moved = list(found["introduced"])
@@ -6053,9 +6124,11 @@ def _write_own_log(manifest_path, project_dir, step_text):
 # gate is never one: it runs on HEAD plus the work, so its row is dirty, and a
 # ledger holding only task runs answers `no-base` for every task. `--base-of
 # <runId>` takes the measurement that question lacks: the red steps of that
-# recorded run - their names and commands as its row keeps them, and a derived
-# step's command spelled again for the failing suites it names, since its row
-# keeps a digest (`base_commands`) - run again in `--tree`, a checkout of the
+# recorded run - their names and commands as its row keeps them, a declared
+# step in the bare form of the plan's recorded spelling run over the failing
+# suites it names alone (`_declared_suites_at_base`), and a derived step's
+# command spelled again for the failing suites it names, since its row keeps a
+# digest (`base_commands`) - run again in `--tree`, a checkout of the
 # base commit, with no task id, and recorded under `_evidence_io.BASE_SCOPE`,
 # which no pointer is written for and no subject's evidence is read from. What it
 # answers is the run read against its base again (`base_reading`), which a later
@@ -6145,16 +6218,24 @@ def base_commands(row, manifest, phase_id, tree):
     the recorded `row` that can run again in `tree`, the ones among them the
     row keeps verbatim, and `{name, reason}` for every red step that cannot.
 
-    A step whose command the row keeps verbatim runs as recorded. A derived
-    step's command is spelled again for its failing suites
-    (`_derived_at_base`) and stays unpublished, as it was on the task's run.
-    Any other red step keeps only a digest, which nothing can run again."""
+    A step whose command the row keeps verbatim runs as recorded - unless it
+    is a declared step in the bare form of the plan's recorded spelling whose
+    runner named its failing suites, which runs over those suites alone
+    (`_declared_suites_at_base`). A derived step's command is spelled again
+    for its failing suites (`_derived_at_base`) and stays unpublished, as it
+    was on the task's run. Any other red step keeps only a digest, which
+    nothing can run again."""
     commands, published, left = [], [], []
     for step in row.get("steps") or []:
         if not _ev._counts_as_failed(step):
             continue
         name = str(step.get("name"))
         if isinstance(step.get("command"), str) and step["command"].strip():
+            narrowed = _declared_suites_at_base(step, manifest, phase_id, tree)
+            if narrowed is not None:
+                commands.append(narrowed)
+                published.append(narrowed[1])
+                continue
             commands.append((name, step["command"]))
             published.append(step["command"])
             continue
@@ -6170,6 +6251,49 @@ def base_commands(row, manifest, phase_id, tree):
         left.append({"name": name, "reason": "its row keeps a digest of the "
                                              "command, which cannot be run again"})
     return commands, published, left
+
+
+# A RED DECLARED STEP IS MEASURED AT ITS BASE OVER THE SUITES IT NAMED, not
+# whole, when the measurement is the same check over fewer suites: the step is
+# the bare form of the plan's RECORDED spelling (`_affected_tests.
+# is_bare_entry`) - the runner with no path, which runs every suite it would
+# run over any list - so that spelling over the named suites
+# (`spelled_entry`) runs them as the step did. It is recorded under the
+# per-suite base step's name (`_evidence_io.base_suites_step_name`), which
+# answers those suites and no other. The whole step runs instead when the
+# runner named no failing suite, named more than the row carries
+# (`suites_cut`), or named one that is not a file of the base tree by its own
+# repository-relative path - a suite printed from another directory, a suite
+# the task created - since a spelling over it would run another file or none.
+def _declared_suites_at_base(step, manifest, phase_id, tree):
+    """`(name, command)` running the red declared `step` over the suites its
+    runner named, in `tree`, or None when it runs whole."""
+    name = str(step.get("name"))
+    named = _ev.named_failing_suites([step])
+    if _ev.step_parts(name) != (name, []) or not named or _suites_cut(step) \
+            or not all(_tree_suite(tree, suite) for suite in named):
+        return None
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    phase = _phase_by_id(manifest, phase_id) or {}
+    if not (_affected.is_bare_entry(name, phase, meta)
+            and _affected.is_bare_entry(step["command"], phase, meta)):
+        return None
+    spelled = _affected.spelled_entry(named, phase, meta)
+    narrowed = _ev.base_suites_step_name(name, named)
+    if spelled is None or _ev.base_suites_of(narrowed) != (name, named):
+        return None
+    return narrowed, spelled
+
+
+def _tree_suite(tree, suite):
+    """Whether `suite` is a file of `tree` by its own repository-relative,
+    normalized path."""
+    rel = str(suite)
+    if not rel or os.path.isabs(rel) or "\\" in rel \
+            or os.path.normpath(rel).replace(os.sep, "/") != rel \
+            or rel.split("/")[0] == "..":
+        return False
+    return os.path.isfile(os.path.join(tree, *rel.split("/")))
 
 
 def _joined_at_base(step, manifest, phase_id, tree):
