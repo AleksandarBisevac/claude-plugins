@@ -3605,17 +3605,30 @@ def _utc_of(moment):
         moment, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def base_measure_due(state, task, row, runs):
+def base_measure_due(state, task, row, runs, elsewhere=None):
     """Whether the red run `row` - standing for the red runs `runs`
     (`red_runs`) - is to have its base measured: its reading has no comparable
     base run, names the head it ran at, and the start holds no base mark that
-    could decide it (`unmeasurable_elsewhere`)."""
+    could decide it (`unmeasurable_elsewhere`) - or holds a finished one taken
+    for another red while `elsewhere` (`base_need`) says the base recorded for
+    this red's commit and step set was measured for another red too
+    (`decided_elsewhere`)."""
     reading = (row or {}).get(_evio.BASE_RED_KEY)
     held = _marked(state, BASE_MEASURED, task)
     return (isinstance(reading, dict) and bool((row or {}).get("runId"))
             and reading.get("verdict") in BASE_MEASURE_VERDICTS
             and bool(reading.get("head"))
-            and (held is None or unmeasurable_elsewhere(held, runs)))
+            and (held is None or unmeasurable_elsewhere(held, runs)
+                 or decided_elsewhere(held, runs, elsewhere)))
+
+
+def decided_elsewhere(held, runs, elsewhere):
+    """Whether the start's base mark `held` is a finished measurement taken for
+    a red other than `runs` while `elsewhere` names the base recorded for them
+    as measured for another red: that base carried the recorder's writes of
+    its own red, so a base is owed for this one."""
+    return (elsewhere is not None and isinstance(held, dict)
+            and bool(held.get("done")) and not (mark_reds(held) & set(runs)))
 
 
 # --- when a base run is needed at all ------------------------------------------
@@ -4020,30 +4033,59 @@ def created_in(fields, path, key, spell):
 
 
 def base_need(ctx, task, row, tree=None):
-    """`(why_not, stale)` - why no base run is owed for the red run `row`, or
-    None when one is; and `stale`, True when the reason is a measurement
-    recorded after the row's own reading was taken, so the reading is to be
-    taken again over it (`kept_reading`). The table above is the rule; `tree`
-    is the member tree the gate ran in, None for the project."""
+    """`(why_not, stale, elsewhere)` - why no base run is owed for the red run
+    `row`, or None when one is; `stale`, True when the reason is a
+    measurement recorded after the row's own reading was taken, so the
+    reading is to be taken again over it (`kept_reading`); and `elsewhere`,
+    the sentence saying a base run is owed because the one recorded for the
+    red's commit and step set was measured for another red (`measured_for`),
+    else None. The table above is the rule; `tree` is the member tree the
+    gate ran in, None for the project."""
     reading = (row or {}).get(_evio.BASE_RED_KEY)
     own = own_red(ctx, task, row, tree)
     if own is not None:
-        return own, False
+        return own, False, None
     head = ((row or {}).get("testedState") or {}).get("head")
     try:
         rows = recorded_runs(ctx)["rows"]
     except Exception:                                          # noqa: BLE001
-        return None, False
+        return None, False, None
     missing = _evio.base_unmeasured((row or {}).get("steps"), head,
                                     (row or {}).get("taskId"), rows)
     if missing is None or missing:
-        return None, False
+        return None, False, None
     base = _evio.base_row_for(
         [st for st in row.get("steps") or [] if _evio._counts_as_failed(st)],
         head, row.get("taskId"), rows) or {}
+    if (reading or {}).get("verdict") == "not-knowable" \
+            and not measured_for(base, row, rows):
+        return None, False, ELSEWHERE_BASE_WHY % (
+            row.get("taskId"), base.get("runId"),
+            base.get(_evio.BASE_OF_KEY) or "no run it names")
     stale = not (base_behind(reading)
                  and str(reading.get("run")) == str(base.get("runId")))
-    return KEPT_BASE_WHY % (str(head)[:12], base.get("runId")), stale
+    return KEPT_BASE_WHY % (str(head)[:12], base.get("runId")), stale, None
+
+
+# A base run recorded for the red's commit and step set that was measured for
+# another red carried the recorder's writes as they stood for that red, not the
+# ones this red's tree held, so it charges this red nothing
+# (`run-test-gate.uncarried`) and a base is measured for this red.
+ELSEWHERE_BASE_WHY = ("%s's red read not-knowable against base run %s, "
+                      "measured for run %s, which did not carry the recorder's "
+                      "writes this red's tree held; its base is measured for it")
+
+
+def measured_for(base, row, rows):
+    """Whether the base run `base` was measured for the red run `row`: its
+    `baseOf` names `row`'s run or the run `row` repeats
+    (`_evidence_io.measured_row`)."""
+    measured = str((base or {}).get(_evio.BASE_OF_KEY) or "")
+    if not measured:
+        return False
+    source = _evio.measured_row(rows, row) or {}
+    return measured in (str((row or {}).get("runId") or ""),
+                        str(source.get("runId") or ""))
 
 
 def kept_reading(ctx, phase, row):
@@ -4196,7 +4238,8 @@ def measure_base(ctx, phase, row, tree=None, placed=None, started=None,
         # HEAD without moving the code, and the red's head is the commit its
         # run sat on - the base `--base-of` measures.
         reading, said, cut, measurable = _base_in(ctx, phase, row, want,
-                                                  holder, started, bound)
+                                                  holder, started, bound,
+                                                  red_tree=tree)
     finally:
         kept, left = remove_base_tree(ctx, holder)
     if kept is not None:
@@ -4271,11 +4314,13 @@ def remove_base_tree(ctx, holder):
 
 
 def _base_in(ctx, phase, row, head, holder, started=None,
-             bound=BASE_MEASURE_SECONDS):
+             bound=BASE_MEASURE_SECONDS, red_tree=None):
     """`measure_base`'s run itself, in the tree it builds under `holder`:
     `(reading, said, cut, measurable)` - `measurable` False only when the run
     answered that no red step of `row` can be run again at the base
-    (`base_unrunnable`)."""
+    (`base_unrunnable`). `red_tree` is the member tree the red ran in, None
+    for the project: the base carries the recorder's writes of the tree the
+    red read (`--recorder-from`)."""
     path = os.path.join(holder, "tree")
     if _worktrees.within_tree(ctx["gitRoot"], holder):
         return None, ("%s's base not measured: the temp directory %s is inside "
@@ -4288,6 +4333,7 @@ def _base_in(ctx, phase, row, head, holder, started=None,
     code, out, err, cut = run_verb_bounded(ctx, "run-test-gate.py", [
         ctx["manifest"], phase["id"], "--base-of", row["runId"], "--record",
         "--json", "--project-dir", ctx["project"],
+        "--recorder-from", member_project(ctx, red_tree) or ctx["project"],
         "--tree", member_project(ctx, path)], bound, started)
     if cut is not None:
         return None, ("%s's base not measured inside next: run-test-gate.py "
@@ -4745,10 +4791,12 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
     # Folded first: a background run that finished unmeasurable says so only
     # in its own record, and the due question reads the mark in `state`.
     base_mark(ctx, state, task)
-    unread = None
+    unread, elsewhere = None, None
     if row is not None and (reading or {}).get("verdict") \
             in BASE_MEASURE_VERDICTS:
-        why_not, stale = base_need(ctx, task, row, tree)
+        why_not, stale, elsewhere = base_need(ctx, task, row, tree)
+        if elsewhere is not None:
+            ctx["did"].append(elsewhere)
         again, said = (kept_reading(ctx, phase, row) if why_not and stale
                        else (reading, None))
         if said is not None:
@@ -4763,19 +4811,21 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
             settle_mark(ctx, state, task)
             return None, dict(again, **{NOT_MEASURED_KEY: why_not}), None
     step, use, unknown = measured_reading(ctx, state, phase, task, row, reading,
-                                          runs, tree)
+                                          runs, tree, elsewhere)
     if unread is not None and step is None and unknown is None \
             and not base_behind(use):
         return None, use, unread
     return step, use, unknown
 
 
-def measured_reading(ctx, state, phase, task, row, reading, runs, tree=None):
+def measured_reading(ctx, state, phase, task, row, reading, runs, tree=None,
+                     elsewhere=None):
     """`base_reading_for`'s answer once no measurement already recorded for
     the red's commit has decided it: the base measured for this start - due,
     running, joined or ended - or the row's own `reading`. `runs` are the red
-    runs the gate's output stands for (`red_runs`)."""
-    if base_measure_due(state, task, row, runs):
+    runs the gate's output stands for (`red_runs`); `elsewhere` is
+    `base_need`'s sentence for a base recorded for another red."""
+    if base_measure_due(state, task, row, runs, elsewhere):
         before = _marked(state, BASE_MEASURED, task)
         if unmeasurable_bound(before):
             # Past the bound nothing is measured again; a red whose own

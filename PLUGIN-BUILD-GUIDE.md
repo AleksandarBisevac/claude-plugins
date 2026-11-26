@@ -5219,6 +5219,20 @@ the answer's `keptOn`), and a red whose every red step a recorded or kept run of
 measured (`_evidence_io.base_unmeasured`) is answered from that run with nothing run or recorded,
 the run named under `kept` (`kept_base_answer`); **`--kept-only`** asks for that answer alone and
 needs no `--tree`, refusing where nothing is kept. `kbg1` drives it.
+THE RECORDER'S OWN WRITES are inside the tree a task gate reads - the plan, its shards, the
+journal and the filed returns (`_evidence_io.recorded_paths`), uncommitted while the task runs -
+so a project check that reads the plan can go red on them alone. A base run therefore lays them
+over its tree first, from `--recorder-from` (the tree the red ran in; the project when not given),
+and leaves them out of its dirty digest as well as its scope one, so it still reads as its commit's
+clean tree and its `dirtyBasis` counts them (`lay_recorder_writes`, `run_gate`'s `dirty_excluded`).
+A base charges a suite to the task only when it carried the writes the red's tree held: it was
+measured for that red (`_evidence_io.BASE_OF_KEY`), or the red's tree held no recorder write
+(`RECORDER_HELD_KEY`, read off the snapshot `run_gate` takes before its first command). Any
+other base keeps what it reads red at base, and what it would charge to the task becomes not
+comparable (`uncarried`), so the verdict is `not-knowable`, a kept base answers no such red, and
+the drive measures the base for it. Measuring the task gate in a tree whose recorder paths hold
+their committed content was weighed and not taken: it changes what every step reads, and a copy
+of the project has none of its ignored dependencies. `rcw1`-`rcw5` drive it.
 `bc1`-`bc4` and `be1`-`be5` drive the comparison; the `bod` cases the derived step's base; the
 drive's `bm`, `bdr` and `bt` cases drive `--base-of`.
 
@@ -5548,7 +5562,15 @@ moved or copied from a base file (`own_red`, `absent_at`, `created_since`), no s
 nor for one whose every red step a recorded or kept run of that
 commit measured (`_evidence_io.base_unmeasured`) - a reading taken before that run is read again
 through `run-test-gate.py --base-of --kept-only` (`kept_reading`) - and the decision names which
-(`NOT_MEASURED_KEY`). `bn1`-`bn3` and `bo1`-`bo7` drive it. A red task gate
+(`NOT_MEASURED_KEY`). `bn1`-`bn3` and `bo1`-`bo7` drive it. A base recorded for the red's
+commit and step set that was measured for ANOTHER red (`measured_for`) does not decide a red it
+reads `not-knowable`: it carried the recorder's writes as they stood for that red, not the ones
+this red's tree held (`run-test-gate.uncarried`), so `base_need` says so (`ELSEWHERE_BASE_WHY`)
+and a base is measured for this red even though the start's mark holds a finished one
+(`decided_elsewhere`); the measurement carries the writes of the tree the red ran in
+(`--recorder-from`). `rcd1` is the shape that found it - a project check red on the base run the
+drive kept in the plan, stopped as `gate-red-base` rather than charged to the task - and `rcd2`
+its twin. A red task gate
 whose reading has no comparable base run (`no-base`, `not-knowable`) otherwise has its base measured once
 per start (`base_reading_for`, `measure_base`): `run-test-gate.py --base-of` over the red run, in a
 detached tree at the red run's own recorded head - never at the current HEAD - built outside the

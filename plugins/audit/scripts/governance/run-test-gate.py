@@ -102,10 +102,12 @@ Exit codes:
 """
 import argparse
 import ast
+import filecmp
 import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -844,7 +846,8 @@ def base_reading(res, task_id, read_rows):
     except Exception as exc:                                   # noqa: BLE001
         rows, why = [], "%s: %s" % (type(exc).__name__, exc)
     try:
-        found = base_red(res.get("steps"), head, task_id, rows)
+        found = uncarried(base_red(res.get("steps"), head, task_id, rows),
+                          res, rows)
     except Exception as exc:                                   # noqa: BLE001
         return {"run": None, "head": head, "task": None, "atBase": [],
                 "introduced": [], "unknown": [], "verdict": "unreadable",
@@ -878,6 +881,157 @@ def base_red_lines(found):
                      "commits over it with a reason" % (BASE_RED_ONLY,))
     lines.append("  basis: %s" % (found.get("basis"),))
     return lines
+
+
+# --- a base that did not carry the recorder's own writes ----------------------
+# THE RECORDER WRITES INSIDE THE TREE A TASK GATE MEASURES. The plan, its shards,
+# the journal and the filed returns (`_evidence_io.recorded_paths`) hold the
+# drive's own records - the start, the time record, a base run kept for a red -
+# uncommitted while the task runs, so a project check that reads the plan reads
+# them as well, and can go red on them alone. The reading above compares the
+# red's tree with the base's, so the two must differ by the task's work alone:
+# a base that lacks the recorder's writes the red's tree held reads a red those
+# writes cause as one the task introduced.
+#
+# SO A BASE RUN CARRIES THEM, AND ONLY ONE THAT DID MAY CHARGE THE TASK. A base
+# run lays the recorder's writes over its tree as they stand when it starts
+# (`lay_recorder_writes`) - after the red it is measured for, so every write
+# that red's tree held is in it - and leaves them out of its dirty digest, so
+# the base still reads as its commit's clean tree. A base charges a suite to
+# the task only when it carried them: it was measured for that red
+# (`_evidence_io.BASE_OF_KEY`), or the red's tree held no recorder write at all
+# (`RECORDER_HELD_KEY` False), when the base commit is the red's tree less the
+# work. Any other base keeps what it says is red at base - that red stood with
+# no more of the recorder's writes and without the work - and what it would
+# charge to the task is not comparable (`uncarried`): the verdict is
+# `not-knowable`, a kept base answers no such red (`kept_base_answer`), and the
+# drive measures the base for it. The cost is that measurement, once per red
+# the kept base would have charged to the task.
+#
+# THE OTHER SIDE WAS WEIGHED AND NOT TAKEN: measuring the task gate in a tree
+# whose recorder paths hold their committed content. That changes what every
+# gate step reads - a step validating the live plan would validate the last
+# commit's - and a gate runs in the project's own tree, with its ignored
+# dependencies, which no copy of it has.
+RECORDER_HELD_KEY = "recorderHeld"
+# The suites `uncarried` moved, on the reading in memory: `kept_base_answer`
+# reads it, and a row keeps no such key (`_evidence_io._base_red`).
+UNCARRIED_KEY = "uncarried"
+
+
+def recorder_held(before, recorded):
+    """Whether the porcelain lines `before` hold a write of the recorder's own:
+    a line every path of which is under `recorded` - None when either is None.
+    Asked of the dirty digest's own exclusion (`_tree_stamp.dirty_digest`), so
+    the two never disagree about which line is a recorder write: the digest
+    moves exactly when a line is left out."""
+    if before is None or recorded is None:
+        return None
+    return (_tree_stamp.dirty_digest(before, excluded=recorded)[0]
+            != _tree_stamp.dirty_digest(before)[0])
+
+
+def _red_run_ids(red, rows):
+    """The runs the red `red` is: its own id and, for a repeated verdict, the
+    run it repeats (`_evidence_io.measured_row`) - empty for a gate result not
+    yet recorded, which no base can have been measured for."""
+    ids = set()
+    if isinstance(red, dict) and red.get("runId"):
+        ids.add(str(red["runId"]))
+        source = _ev.measured_row(rows, red)
+        if isinstance(source, dict) and source.get("runId"):
+            ids.add(str(source["runId"]))
+    return ids
+
+
+def uncarried(found, red, rows):
+    """`found` - `base_red`'s reading of the red `red` against `rows` - as a
+    NEW dict with every suite it charges to the task moved to `unknown`, and
+    named under `UNCARRIED_KEY`, when the base run it names did not carry the
+    recorder's writes `red`'s tree held; `found` itself when it charges
+    nothing to the task, names no base run, or that base carried them: it was
+    measured for `red`, or `red`'s tree held no recorder write."""
+    if not isinstance(found, dict) or not found.get("introduced") \
+            or not found.get("run"):
+        return found
+    held = (red or {}).get(RECORDER_HELD_KEY)
+    if held is False:
+        return found
+    base = _ev.row_by_run(rows, found["run"]) or {}
+    measured_for = base.get(_ev.BASE_OF_KEY)
+    if measured_for and str(measured_for) in _red_run_ids(red, rows):
+        return found
+    why = ("the base run %s was measured for %s, not for this run, so it did "
+           "not carry the recorder's writes this run's tree %s - a red those "
+           "writes alone cause is not told from one the task introduced until "
+           "a base is measured for this run"
+           % (found["run"], ("run %s" % (measured_for,)) if measured_for
+              else "no run it names",
+              "held" if held else "may have held (nothing recorded what it held)"))
+    moved = list(found["introduced"])
+    out = dict(found, introduced=[], verdict="not-knowable",
+               unknown=list(found.get("unknown") or [])
+               + ["%s (%s)" % (suite, why) for suite in moved])
+    out[UNCARRIED_KEY] = moved
+    return out
+
+
+def lay_recorder_writes(source, tree, rels):
+    """Make every recorder path `rels` (project-relative, `recorded_paths`) in
+    `tree` what it is in `source`: a file copied over when its bytes differ, a
+    directory mirrored file by file, a path `source` lacks removed. `(laid,
+    problem)` - how many files were written or removed, and why the paths
+    could not be laid (None when they were), the first error stopping it: a
+    base half-laid is no base the red can be read against."""
+    laid = 0
+    try:
+        for rel in rels:
+            src = os.path.join(source, *rel.split("/"))
+            dst = os.path.join(tree, *rel.split("/"))
+            if os.path.isdir(src):
+                laid += _mirror_dir(src, dst)
+            elif os.path.isfile(src):
+                laid += _lay_file(src, dst)
+            elif os.path.isdir(dst):
+                laid += sum(len(names) for _d, _s, names in os.walk(dst))
+                shutil.rmtree(dst)
+            elif os.path.lexists(dst):
+                os.remove(dst)
+                laid += 1
+    except OSError as exc:
+        return laid, "%s: %s" % (type(exc).__name__, exc)
+    return laid, None
+
+
+def _lay_file(src, dst):
+    """Copy `src` over `dst` when their bytes differ: 1 when it wrote, else 0."""
+    if os.path.isfile(dst) and filecmp.cmp(src, dst, shallow=False):
+        return 0
+    parent = os.path.dirname(dst)
+    if not os.path.isdir(parent):
+        os.makedirs(parent)
+    if os.path.isdir(dst):
+        shutil.rmtree(dst)
+    shutil.copyfile(src, dst)
+    return 1
+
+
+def _mirror_dir(src, dst):
+    """`dst` made a copy of the directory `src`, file by file: how many files
+    were written or removed."""
+    laid = 0
+    for here, _dirs, names in os.walk(src):
+        rel = os.path.relpath(here, src)
+        for name in names:
+            laid += _lay_file(os.path.join(here, name),
+                              os.path.normpath(os.path.join(dst, rel, name)))
+    for here, _dirs, names in os.walk(dst, topdown=False):
+        rel = os.path.relpath(here, dst)
+        for name in names:
+            if not os.path.isfile(os.path.join(src, rel, name)):
+                os.remove(os.path.join(here, name))
+                laid += 1
+    return laid
 
 
 # --- what state was actually tested -------------------------------------------
@@ -4713,7 +4867,8 @@ def observed_step(name, command, code, text, facts, duration_ms):
 def run_gate(project, commands, runner=None, owns=None, timeout=None,
              recorded=None, task_scope=False, keep_text=False,
              derived_check=None, muted=None, today=None, preamble=None,
-             withheld=None, task=None, say=print, selection_started=None):
+             withheld=None, task=None, say=print, selection_started=None,
+             dirty_excluded=None):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -4766,6 +4921,13 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     reading `durationMs` starts from - taken after this function's own reading
     of the tree before the first command, so that reading is in the selection -
     and None when no caller timed a selection.
+
+    `res[RECORDER_HELD_KEY]` is whether the tree held a write of the recorder's
+    own (`recorded`) before the first command - read off the same snapshot -
+    and None when no `recorded` was given or git could not describe the tree.
+    `dirty_excluded` leaves those paths out of the dirty digest too: a base run
+    alone passes it (`_run_base_of`), whose tree carries the recorder's writes
+    on purpose and is the base commit apart from them.
     """
     runner = runner or _shell
     today = _vocab.mute_today() if today is None else today
@@ -4777,7 +4939,9 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     # `recorded` is the paths the recorder writes (`_evidence_io.recorded_paths`),
     # left out of the scope digest because the pointer lands in one of them after
     # this is taken; `commit-task-work` grades the row with the same set.
-    state = _tree_stamp.tested_state(project, owns, before, excluded=recorded)
+    state = _tree_stamp.tested_state(project, owns, before, excluded=recorded,
+                                     dirty_excluded=dirty_excluded)
+    held = recorder_held(before, recorded)
     started = time.monotonic()
     # One clock, read at the one origin both figures share: the selection ends
     # exactly where `durationMs` begins, so neither holds any of the other.
@@ -5044,6 +5208,9 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             "muted": _distinct_records(m for st in steps
                                        for m in (st.get("muted") or ())),
             "followersOwed": followers, "followersUnread": followers_unread,
+            # `RECORDER_HELD_KEY`, spelled out: this literal is what the
+            # producer scan reads to know the key exists.
+            "recorderHeld": held,
             "failed": failed}
 
 
@@ -5871,7 +6038,10 @@ def _write_own_log(manifest_path, project_dir, step_text):
 # is also kept on the red task's record in the plan (`_evidence_io.keep_base`),
 # and a red whose every red step a kept or recorded run of its commit already
 # measured is answered from that run with nothing run (`kept_base_answer`) -
-# `--kept-only` asks for that answer alone, and needs no tree.
+# `--kept-only` asks for that answer alone, and needs no tree. A run lays the
+# recorder's writes of `--recorder-from` - the tree the red ran in, the project
+# when it is not given - over `--tree` first, and a kept run measured for
+# another red answers no red it would charge to the task (`uncarried`).
 def base_of_refusal(args, tree):
     """Why `--base-of` refuses these arguments, or None."""
     if args.task is not None:
@@ -5882,6 +6052,9 @@ def base_of_refusal(args, tree):
                         ("--also", args.also), ("--reconcile", args.reconcile)):
         if given:
             return "--base-of is refused with %s" % (flag,)
+    from_dir = getattr(args, "recorder_from", None)
+    if from_dir is not None and not os.path.isdir(from_dir):
+        return "--recorder-from %s is not a directory" % (from_dir,)
     if tree is None and not getattr(args, "kept_only", False):
         return ("--base-of needs --tree, a checkout of the base commit: the "
                 "project's own tree holds the task's work, so a run there is "
@@ -6091,10 +6264,10 @@ def _run_base_of(project, args, manifest, tree, out=print):
         return _say_base_answer(kept, args, [], "read from the base run kept "
                                 "for this commit and step set", out)
     if args.kept_only:
-        out("[run-test-gate] --base-of %s --kept-only: no base run is kept for "
-            "its commit and step set (%s), so nothing is answered and nothing "
-            "is run" % (args.base_of, "; ".join(unmeasured or [])
-                        or "nothing in it is red"))
+        out("[run-test-gate] --base-of %s --kept-only: no base run kept for "
+            "its commit and step set answers it (%s), so nothing is answered "
+            "and nothing is run" % (args.base_of, "; ".join(unmeasured or [])
+                                    or "nothing in it is red"))
         return E_ASK
     commands, published, left = base_commands(
         row, manifest, row.get("phaseId") or args.phase, tree)
@@ -6114,10 +6287,24 @@ def _run_base_of(project, args, manifest, tree, out=print):
                 "; %s: %s" % (n["name"], n["reason"]) for n in left)))
         return E_ASK
     say = _say_on_stderr if args.as_json else out
+    # THE BASE CARRIES THE RECORDER'S WRITES (`uncarried`): the red's tree held
+    # them, so a base without them would differ from it by more than the
+    # task's work. Left out of the dirty digest as they are of the scope one,
+    # so the base still reads as its commit's clean tree, its basis counting
+    # them.
+    recorded = _ev.recorded_paths(project, args.manifest)[0]
+    source = args.recorder_from or project
+    laid, problem = lay_recorder_writes(source, tree, recorded)
+    if problem is not None:
+        out("[run-test-gate] --base-of: the recorder's writes in %s could not "
+            "be laid over %s (%s, after %d file(s)), so the base would not be "
+            "the red's tree less the task's work; nothing ran"
+            % (source, tree, problem, laid))
+        return E_ASK
     previous = _arm_interrupt()
     try:
         res = run_gate(tree, commands, timeout=args.timeout,
-                       recorded=_ev.recorded_paths(project, args.manifest)[0],
+                       recorded=recorded, dirty_excluded=recorded,
                        muted=declared_mutes(manifest),
                        preamble=declared_preamble(manifest), say=say)
     finally:
@@ -6175,13 +6362,20 @@ def kept_base_answer(run_id, row, rows):
     ONE MEASUREMENT PER COMMIT AND STEP SET: the base of a red is the same
     clean tree whichever red of that commit asks, so a run of the same steps
     there measures nothing new. A red step set the kept runs do not cover is
-    measured, all of it, as a first red is."""
+    measured, all of it, as a first red is - and so is a red a kept run would
+    charge to the task without having carried the recorder's writes its tree
+    held (`uncarried`), the moved suites then standing in `unmeasured`."""
     head = (row.get("testedState") or {}).get("head")
     missing = _ev.base_unmeasured(row.get("steps"), head, row.get("taskId"),
                                   rows)
     if missing is None or missing:
         return None, missing
     reading = base_reading(row, row.get("taskId"), lambda: rows)
+    moved = (reading or {}).get(UNCARRIED_KEY)
+    if moved:
+        return None, ["%s (the kept base %s did not carry the recorder's writes "
+                      "this red's tree held)" % (suite, reading.get("run"))
+                      for suite in moved]
     base = (reading or {}).get("run")
     return {"baseOf": run_id, "recorded": False, "runId": base, "kept": base,
             "head": head, "status": (_ev.row_by_run(rows, base) or {}).get(
@@ -6740,6 +6934,11 @@ def main(argv, out=print):
     p.add_argument("--tree", dest="tree", default=None, metavar="DIR")
     # THE BASE OF A RECORDED TASK RUN, measured in `--tree` (`_run_base_of`).
     p.add_argument("--base-of", dest="base_of", default=None, metavar="RUN_ID")
+    p.add_argument("--recorder-from", dest="recorder_from", default=None,
+                   metavar="DIR",
+                   help="with --base-of: the tree the red ran in, whose "
+                        "recorder writes the base carries (default: the "
+                        "project)")
     p.add_argument("--kept-only", dest="kept_only", action="store_true",
                    help="with --base-of: answer only from a base run already "
                         "kept for that commit and step set, and run nothing "
@@ -6809,6 +7008,11 @@ def main(argv, out=print):
     if args.kept_only and args.base_of is None:
         out("[run-test-gate] --kept-only answers a --base-of question and "
             "is refused without one")
+        return E_ASK
+    if args.recorder_from is not None and args.base_of is None:
+        out("[run-test-gate] --recorder-from names the tree a red ran in, "
+            "for a --base-of run to carry its recorder writes, and is refused "
+            "without one")
         return E_ASK
     if args.base_of is not None:
         return _run_base_of(project, args, manifest, tree, out=out)

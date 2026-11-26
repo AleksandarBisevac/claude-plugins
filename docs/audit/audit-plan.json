@@ -1090,6 +1090,12 @@
       "title": "Waves run wider than one: no file every task must edit",
       "status": "done",
       "shard": "phases/P170.json"
+    },
+    {
+      "id": "P171",
+      "title": "A task gate judges the task, not the recorder's own writes",
+      "status": "in_progress",
+      "shard": "phases/P171.json"
     }
   ],
   "fileIndex": {
@@ -2202,7 +2208,8 @@
       "P169.44-6l3",
       "P170.1",
       "P170.3-yl6",
-      "P170.4-yl6"
+      "P170.4-yl6",
+      "P171.1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -5208,7 +5215,8 @@
       "P169.28-6l3",
       "P169.37-6l3",
       "P169.41-6l3",
-      "P169.38-6l3"
+      "P169.38-6l3",
+      "P171.1"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -11716,7 +11724,8 @@
       "P169.26-6l3",
       "P169.28-6l3",
       "P169.37-6l3",
-      "P169.38-6l3"
+      "P169.38-6l3",
+      "P171.1"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -12758,7 +12767,8 @@
       "P169.37-6l3",
       "P169.41-6l3",
       "P170.3-yl6",
-      "P170.4-yl6"
+      "P170.4-yl6",
+      "P171.1"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -14097,7 +14107,8 @@
       "P169.38-6l3",
       "P170.4-yl6",
       "P170.5-yl6",
-      "P170.6-yl6"
+      "P170.6-yl6",
+      "P171.1"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -14367,7 +14378,8 @@
       "P169.37-6l3",
       "P169.38-6l3",
       "P169.41-6l3",
-      "P170.4-yl6"
+      "P170.4-yl6",
+      "P171.1"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -14865,6 +14877,9 @@
     ],
     "changelog.d/P170.4-yl6.changed.md": [
       "P170.4-yl6"
+    ],
+    "changelog.d/P171.1.fixed.md": [
+      "P171.1"
     ]
   },
   "bugs": [
@@ -15596,6 +15611,25 @@
         "tools/ui-tests/confirm-write.test.mjs"
       ],
       "taskId": null,
+      "fixedIn": null,
+      "notes": null
+    },
+    {
+      "id": "BUG-36",
+      "title": "The drive blocks a task for a red gate its own record writes caused",
+      "status": "in_progress",
+      "severity": "med",
+      "reportedAt": "2026-11-26T12:44:13Z",
+      "reportedBy": null,
+      "description": "Since records live in the plan shard (P169), the drive's own base-run and timing records are uncommitted writes inside the tree the task gate judges. A project check that reads the plan (here this repo's old check-example-ledgers) can go red on those writes alone, and the drive charges the red to the task.",
+      "repro": "Paid probe session k15p (plugin f119de55 over this repo at base 82f1b3b393, task P128.38; raw logs in the measurement root raw/k15p): the drive measured the base (green), wrote a base-run pointer and timing record into the uncommitted plan shard, then ran the task gate; the subject's own check-example-ledgers el2 went red on exactly that pointer (642 of 643 resolved; the unresolved one the drive's base run), and the drive read the red as introduced by the task and blocked it for a human.",
+      "expected": "A red the recorder's own writes cause is not charged to the task: either the task gate judges the tree without the recorder's uncommitted writes (as the stamp already excludes recorded_paths), or a red reproduced at base plus the recorder's writes is classified as base and says so.",
+      "actual": "The task is blocked with 'needs you', asking a human to fix the drive's base-run pointer or accept el2 red.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/run-test-gate.py"
+      ],
+      "taskId": "P171.1",
       "fixedIn": null,
       "notes": null
     }

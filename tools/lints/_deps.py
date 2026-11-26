@@ -2914,6 +2914,12 @@ PLAN_WRITERS = (
 # tree's own move - and the reason is where a reader checks that claim. The
 # callee is held to the code as a plan row's is, so a write the function gains
 # through any other callee is red by name rather than covered by the reason.
+_PW_RECORDER_OVERLAY = (
+    "a recorder path in the `--tree` checkout of the base commit that "
+    "`--base-of` measures in (the drive builds it outside the repository and "
+    "removes it after the run), made what it is in the tree the red ran in so "
+    "the base differs from that tree by the task's work alone; no plan reader "
+    "opens that checkout")
 _PW_LOCK_FILE = (
     "a lock's own claim, breaker or mutex file under the lock directory, which "
     "no plan reader opens and no plan path names")
@@ -3077,6 +3083,10 @@ OTHER_WRITERS = (
     ("scripts/governance/run-test-gate.py", "_write_own_log",
      "<write>",
      "the raw log an `--own` run writes, which no plan reader opens"),
+    ("scripts/governance/run-test-gate.py", "lay_recorder_writes",
+     "run-test-gate._lay_file", _PW_RECORDER_OVERLAY),
+    ("scripts/governance/run-test-gate.py", "_mirror_dir",
+     "run-test-gate._lay_file", _PW_RECORDER_OVERLAY),
     ("scripts/governance/stamp-verification.py", "_isolated_run",
      ("<write>", "<write>"), _PW_SCRATCH),
     ("scripts/governance/stamp-verification.py", "_lay_over",

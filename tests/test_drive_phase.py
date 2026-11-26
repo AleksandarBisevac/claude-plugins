@@ -21255,6 +21255,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("bb-block", "_base_red_drive_cases"),
           ("bm-block", "_base_measure_cases"),
           ("bn-block", "_base_need_cases"),
+          ("rcd-block", "_recorder_red_cases"),
           ("wb-block", "_base_wait_cases"),
           ("bh-block", "_base_held_cases"),
           ("bo-block", "_own_red_path_cases"),
@@ -22939,6 +22940,76 @@ def _base_need_cases(check):
           and len(_stub_runs(k_log)) == 1)
 
 
+def _recorder_red_play(M, prefix, second):
+    """The k15p shape played through the drive: P1.1's gate is the plan check
+    of `test_run_test_gate.RECORDER_GATE_SCRIPT` beside the task's own red, so
+    the first red is the task's and its base is measured green and kept on
+    the plan; the writer's next round leaves `second` as the rest of the gate's
+    verdict, and the gate is run again. `(first line, last line, block, mark,
+    base rows, session runs)`."""
+    import test_run_test_gate as _rtg_cases
+    root, mpath, log, line, _block = _base_measure_repo(
+        M, prefix, "", "",
+        extra=(("gate_k02.py", _rtg_cases.RECORDER_GATE_SCRIPT),
+               ("gate-out/base.json", "{}"),
+               ("gate-out/task.json", json.dumps(_rtg_cases.RECORDER_OWN_RED))))
+    _write_lf(os.path.join(root, "gate-out", "task.json"), json.dumps(second))
+    _c, again = _signal_next(M, root, mpath, "--answer", "rerun")
+    _c, again = _bn_settle(M, root, mpath, again)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _t, bases = _ledger_of(root)
+    return line, again, block, _base_mark(root), bases, len(_stub_runs(log))
+
+
+def _recorder_red_cases(check):
+    """THE DRIVE NEVER CHARGES A TASK WITH A RED ITS OWN RECORD WRITES CAUSED.
+    The base run and the time record the drive writes into the plan are
+    uncommitted, inside the tree the task gate reads; a project check that
+    reads the plan can go red on them alone. The base the red is read against
+    carries those writes, measured for that red, so the red reads as the
+    base's - and a red the task's work causes beside it is still the task's."""
+    M, why = _load("drive_phase_recorder_red")
+    if M is None:
+        check("rcd1 the driver loads", False, why)
+        return
+    import test_run_test_gate as _rtg_cases
+    check_suite = _rtg_cases.RECORDER_GATE_SUITE
+    own_suite = _rtg_cases.RECORDER_OWN_SUITE
+    first, last, block, mark, bases, sessions = _recorder_red_play(
+        M, "recorder-red-fixed", {})
+    check("rcd1 THE k15p SHAPE: the first red is the task's own and its base is "
+          "measured green; the writer's fix leaves only the project's plan "
+          "check red, on the base run the drive kept in the plan - the drive "
+          "measures that red's base again, carrying its own writes, reads the "
+          "check red at base too and stops on gate-red-base, never sending it "
+          "back to the writer as the task's: %r"
+          % ((first, last, block, mark, [b.get(_BASE_OF_KEY) for b in bases],
+              sessions),),
+          "gate-red-writer" in (first or "")
+          and "gate-red-base" in (last or "")
+          and "gate-red-base-unknown" not in (last or "")
+          and "gate-red-writer" not in (last or "")
+          and "red at base too: %s" % (check_suite,) in (block or "")
+          and "red the task introduced" not in (block or "")
+          and mark.get("verdict") == "base-only"
+          and mark.get("atBase") == [check_suite]
+          and len(bases) == 2 and sessions == 1)
+    t_first, t_last, t_block, t_mark, t_bases, _ts = _recorder_red_play(
+        M, "recorder-red-still", _rtg_cases.RECORDER_OWN_AGAIN)
+    check("rcd2 THE TWIN: the same plan check red beside a red of the task's "
+          "own the writer left - the base measured again charges the check to "
+          "the base and the task's own suite to the task, so the red goes back "
+          "to the writer; the decision's clause is clipped, so the suites are "
+          "read off the start's mark: %r" % ((t_first, t_last, t_block, t_mark,
+                                              len(t_bases)),),
+          "gate-red-writer" in (t_first or "")
+          and "gate-red-writer" in (t_last or "")
+          and "gate-red-base" not in (t_last or "")
+          and "red at base too: %s" % (check_suite,) in (t_block or "")
+          and t_mark.get("introduced") == [own_suite]
+          and t_mark.get("atBase") == [check_suite] and len(t_bases) == 2)
+
+
 def _base_claims(M, root):
     """The base-run claims `_locks` holds in the fixture `root`, by name."""
     return [r["name"] for r in M._locks.collect(root)
@@ -23263,7 +23334,7 @@ def _base_held_cases(check):
     real = dict((n, getattr(M, n)) for n in names)
     said = "its kept base was not read again: the ask was refused"
     M.gate_row = lambda ctx, text: row
-    M.base_need = lambda ctx, task, r, tree=None: ("kept at base", True)
+    M.base_need = lambda ctx, task, r, tree=None: ("kept at base", True, None)
     M.kept_reading = lambda ctx, phase, r: (None, said)
     M.measured_reading = lambda *a, **k: (None, row[_evio.BASE_RED_KEY], None)
     M.base_mark = lambda ctx, state, task: None

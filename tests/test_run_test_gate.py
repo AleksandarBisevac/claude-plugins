@@ -13947,6 +13947,235 @@ def _base_red_cases(check):
           and "TypeError" in (odd_rows.get("basis") or ""))
 
 
+# --- a red the recorder's own writes cause -----------------------------------
+# A project gate that reads the plan and fails on a base run the plan names but
+# no ledger of its own holds - the shape of a project's ledger check meeting the
+# drive's records. `gate-out/<base|task>.json` is the rest of the gate's verdict,
+# `{suite: [FAIL lines]}`, chosen by whether the task's work is in the tree; the
+# check over the plan adds its own suite whenever any plan file names a kept
+# base run. The output is the sweep's, as `sweep_red` prints it.
+RECORDER_GATE_SUITE = "tools/check_ledgers.py"
+RECORDER_GATE_SCRIPT = r'''
+import glob
+import json
+import sys
+with open("src/f1.txt", encoding="utf-8") as fh:
+    which = "base" if fh.read() == "v0\n" else "task"
+with open("gate-out/%s.json" % (which,), encoding="utf-8") as fh:
+    fails = json.load(fh)
+for path in sorted(glob.glob("docs/audit/**/*.json", recursive=True)):
+    with open(path, encoding="utf-8") as fh:
+        if '"baseRuns"' in fh.read():
+            fails.setdefault("tools/check_ledgers.py", []).append(
+                "FAIL el2 every run the plan names resolves in a ledger "
+                "(a base run named in %s does not)" % (path,))
+blocks, tail = [], []
+for path in sorted(fails):
+    blocks.append("--- %s: exited 1 ---\nPASS ok1 a case that passes\n%s\n"
+                  "SELFTEST FAILED: 1/%d cases passed\n"
+                  % (path, "\n".join(fails[path]), 1 + len(fails[path])))
+    tail.append("FAIL  %s: exited 1\n" % (path,))
+files = len(fails) + 3
+sys.stdout.write("%s%s%d/%d files ok, 0 migrated to tests/, %d cases\n" % (
+    "\n".join(blocks) + ("\n" if blocks else ""), "".join(tail), 3, files,
+    7 * files))
+raise SystemExit(1 if fails else 0)
+'''
+RECORDER_OWN_SUITE = "tests/test_own.py"
+RECORDER_OWN_RED = {RECORDER_OWN_SUITE: ["FAIL ow1 the task's own case"]}
+# The writer's second round leaving a red of its own: another case of the same
+# suite, so the tree the gate reads differs from the first round's and the run
+# is measured rather than repeated.
+RECORDER_OWN_AGAIN = {RECORDER_OWN_SUITE: ["FAIL ow2 the task's other case"]}
+
+
+def _recorder_repo(prefix):
+    """A one-task plan, sharded, whose gate is `RECORDER_GATE_SCRIPT`, with the
+    task's work in the tree: `(root, mpath)`. Nothing recorded yet."""
+    root = _harness.fixture_root(prefix)
+    for sub in (("docs", "audit", "phases"), (".claude",), ("src",),
+                ("gate-out",)):
+        os.makedirs(os.path.join(root, *sub))
+    gate = '"%s" gate.py' % (sys.executable.replace("\\", "/"),)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    files = (
+        (".claude/audit.config.json",
+         json.dumps({"manifestPath": "docs/audit/audit-plan.json"})),
+        ("docs/audit/audit-plan.json", json.dumps(
+            {"meta": {"version": 3},
+             "phases": [{"id": "P1", "title": "one",
+                         "shard": "phases/P1.json"}]})),
+        ("docs/audit/phases/P1.json", json.dumps(
+            {"id": "P1", "title": "one", "status": "in_progress",
+             "testGate": [gate], "tasks": [
+                 {"id": "P1.1", "title": "the work", "status": "in_progress",
+                  "files": ["src/f1.txt"],
+                  "tests": {"mode": "regression", "gate": [gate]}}]})),
+        ("gate.py", RECORDER_GATE_SCRIPT), ("src/f1.txt", "v0\n"),
+        ("gate-out/base.json", "{}"), ("gate-out/task.json", "{}"))
+    for rel, body in files:
+        with open(os.path.join(root, *rel.split("/")), "w",
+                  newline="\n") as fh:
+            fh.write(body)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", "."],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    with open(os.path.join(root, "src", "f1.txt"), "w", newline="\n") as fh:
+        fh.write("changed by the task\n")
+    return root, mpath
+
+
+def _recorder_task_run(root, mpath, task_fails):
+    """Record a task gate of P1.1 printing `task_fails` beside whatever the
+    plan check adds: the recorded row, newest of the task's."""
+    with open(os.path.join(root, "gate-out", "task.json"), "w",
+              newline="\n") as fh:
+        fh.write(json.dumps(task_fails))
+    M.main([mpath, "P1", "--task", "P1.1", "--project-dir", root, "--record"],
+           out=lambda _line: None)
+    rows = [r for r in _ev_io.read_rows(root, manifest_path=mpath)["rows"]
+            if r.get("taskId") == "P1.1"
+            and r.get("scope") != _ev_io.BASE_SCOPE]
+    return _ev_io.newest_row(rows) or {}
+
+
+def _recorder_writes_cases(check):
+    """A red that the recorder's own uncommitted writes cause is not charged to
+    the task: a base run lays the recorder's writes over its tree, so the base
+    and the red differ by the task's work alone, and a base measured for
+    another red - which carried the writes as they stood then - charges no
+    suite to a red whose tree held writes it did not carry. A suite red at
+    base stays at base either way, and a red the task's work alone causes is
+    still the task's."""
+    held_key = getattr(M, "RECORDER_HELD_KEY", "recorderHeld")
+    repo = _mini_repo("rtg-recorder-reading-")
+    head, gate = "b6252aae", [("unit", "pytest -q")]
+    clean_digest, clean_basis = _tree_stamp.dirty_digest([])
+    suite_s, suite_t = "tests/test_s.py", "tests/test_t.py"
+
+    def _res(text):
+        return M.run_gate(repo, gate,
+                          runner=lambda _p, _c, _t=None: (1, text, {}))
+
+    def _base(base_of):
+        row = _ev_io.row_for(repo, _res(_pytest_red(suite_s)), _ev_io.BASE_SCOPE,
+                             {}, {"runId": "r-base", "ts": "2026-11-26T10:00:00Z"})
+        row["testedState"] = dict(row.get("testedState") or {}, head=head,
+                                  dirtyDigest=clean_digest,
+                                  dirtyBasis=clean_basis)
+        row[_ev_io.BASE_OF_KEY] = base_of
+        return row
+
+    def _reading(held, run_id, base_of):
+        red = dict(_res(_pytest_red(suite_s, suite_t)),
+                   testedState={"head": head})
+        red[held_key] = held
+        if run_id is not None:
+            red["runId"] = run_id
+        return M.base_reading(red, "P1.1", lambda: [_base(base_of)]) or {}
+
+    try:
+        other = _reading(True, None, "r-earlier")
+        lines = M.base_red_lines(other)
+        bare = _reading(False, None, "r-earlier")
+        mine = _reading(True, "r-red", "r-red")
+    finally:
+        _harness.remove_tree(repo)
+    uncarried = [u for u in other.get("unknown") or [] if suite_t in u]
+    check("rcw1 A BASE THAT DID NOT CARRY THE RECORDER'S WRITES CHARGES NOTHING "
+          "TO THE TASK: a red whose tree held the recorder's writes, read "
+          "against a base measured for another red, keeps the suite red there "
+          "at base and leaves the suite red only here not comparable - naming "
+          "the run the base was measured for and the recorder's writes - so "
+          "the verdict is not-knowable, never introduced: %r / %r"
+          % (other, lines),
+          other.get("verdict") == "not-knowable"
+          and other.get("atBase") == [suite_s]
+          and other.get("introduced") == [] and len(uncarried) == 1
+          and "r-earlier" in uncarried[0] and "recorder" in uncarried[0]
+          and not any(M.BASE_RED_INTRODUCED in ln for ln in lines))
+    check("rcw2 THE TWIN, both ways the base does carry what the red's tree "
+          "held: a red whose tree held no recorder write, and a red read "
+          "against the base measured for it, still charge the suite red only "
+          "here to the task: %r / %r" % (bare, mine),
+          bare.get("verdict") == "introduced"
+          and bare.get("introduced") == [suite_t]
+          and bare.get("atBase") == [suite_s] and bare.get("unknown") == []
+          and mine.get("verdict") == "introduced"
+          and mine.get("introduced") == [suite_t]
+          and mine.get("unknown") == [])
+
+    # THE k15p SHAPE, through the CLI: the task's own red is measured at its
+    # base and the base kept on the plan; the writer's fix leaves the plan's
+    # own check red on that kept base alone.
+    seen = {}
+    for name, second in (("fixed", {}), ("still", RECORDER_OWN_AGAIN)):
+        root, mpath = _recorder_repo("rtg-recorder-%s-" % (name,))
+        try:
+            first = _recorder_task_run(root, mpath, RECORDER_OWN_RED)
+            code1, answer1, _l1 = _base_of_answer(root, mpath,
+                                                  first.get("runId"))
+            red = _recorder_task_run(root, mpath, second)
+            code2, answer2, lines2 = _base_of_answer(root, mpath,
+                                                     red.get("runId"))
+            bases = [r for r in _ev_io.read_rows(root, manifest_path=mpath)[
+                "rows"] if r.get("scope") == _ev_io.BASE_SCOPE]
+            seen[name] = (first, code1, answer1, red, code2, answer2, lines2,
+                          bases)
+        finally:
+            _harness.remove_tree(root)
+    first, code1, answer1, red, code2, answer2, lines2, bases = seen["fixed"]
+    at_gate = red.get(_ev_io.BASE_RED_KEY) or {}
+    again = answer2.get(_ev_io.BASE_RED_KEY) or {}
+    measured = [b for b in bases if b.get(_ev_io.BASE_OF_KEY) == red.get("runId")]
+    check("rcw3 THE RED THE RECORDER'S WRITES ALONE CAUSE IS NEVER THE TASK'S AT "
+          "THE GATE: the first red's base is measured and kept on the plan, and "
+          "the next gate, red only on the plan check over that kept base, reads "
+          "it not-knowable against the base measured for the first red rather "
+          "than introduced: first %r / base %r / red %r"
+          % ((first.get("status"), (first.get(_ev_io.BASE_RED_KEY) or {})
+              .get("introduced")), (code1, (answer1.get(_ev_io.BASE_RED_KEY)
+                                            or {}).get("verdict")),
+             (red.get("status"), at_gate)),
+          code1 == M.E_OK
+          and (answer1.get(_ev_io.BASE_RED_KEY) or {}).get("introduced")
+          == [RECORDER_OWN_SUITE]
+          and red.get("status") == "failed"
+          and at_gate.get("verdict") == "not-knowable"
+          and at_gate.get("introduced") == []
+          and any(RECORDER_GATE_SUITE in u for u in at_gate.get("unknown") or []))
+    check("rcw4 ...AND ITS BASE IS MEASURED AGAIN FOR IT, carrying the recorder's "
+          "writes: `--base-of` that red runs the step rather than answering from "
+          "the base kept for the first red, the run it records was measured for "
+          "this red on a tree that reads clean once the recorder's writes are "
+          "left out - its basis says how many - and the plan check is red at "
+          "base too: base-only: %r / %r / %r"
+          % ((code2, answer2.get("kept"), answer2.get("steps"), again),
+             [(b.get(_ev_io.BASE_OF_KEY), (b.get("testedState") or {})
+               .get("dirtyBasis")) for b in bases], lines2[-3:]),
+          code2 == M.E_OK and answer2.get("kept") is None
+          and len(answer2.get("steps") or []) == 1
+          and again.get("verdict") == "base-only"
+          and again.get("atBase") == [RECORDER_GATE_SUITE]
+          and again.get("introduced") == []
+          and len(measured) == 1
+          and _ev_io.tested_tree_clean(measured[0].get("testedState"))
+          and "recorder writes were left out" in str(
+              (measured[0].get("testedState") or {}).get("dirtyBasis")))
+    _f, _c1, _a1, s_red, s_code, s_answer, _sl, _sb = seen["still"]
+    s_again = s_answer.get(_ev_io.BASE_RED_KEY) or {}
+    check("rcw5 THE TWIN: the same plan check red beside the task's own red "
+          "that the writer did not fix - measured again, the plan check is red "
+          "at base and the task's own suite is still charged to the task: %r"
+          % ((s_red.get(_ev_io.BASE_RED_KEY), s_code, s_again),),
+          s_code == M.E_OK and s_again.get("verdict") == "introduced"
+          and s_again.get("introduced") == [RECORDER_OWN_SUITE]
+          and s_again.get("atBase") == [RECORDER_GATE_SUITE])
+
+
 def _write(path, text):
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
@@ -15487,6 +15716,7 @@ def _selftest():
         _harness.stage(check, "br-block", _base_red_cases)
         _harness.stage(check, "brc-block", _base_red_case_cases)
         _harness.stage(check, "bre-block", _base_red_evidence_cases)
+        _harness.stage(check, "rcw-block", _recorder_writes_cases)
         _cases(check)
         _harness.stage(check, "tr-block", _tree_cases)
         _harness.stage(check, "wt-block", _wave_tree_cases)
