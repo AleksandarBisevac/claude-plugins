@@ -372,6 +372,20 @@ def _cases(check):
           "regression runsGate's KNOWN_EXECUTOR entry already guards: %r"
           % (w,),
           not w)
+    # --- the pre-gate is a PLAN key, not a config key ----------------------------
+    # The project's fast must-pass check is `meta.buildCommands.preGate`; the
+    # config's `executor` block has no such key, so the spelling a user most
+    # likely guesses is still reported as unknown rather than accepted and
+    # ignored - the silent no-op this validator exists to refuse. The twin
+    # is a key the block does hold, which stays quiet.
+    f, w = M.validate_config({"executor": {"preGate": "true"}})
+    check("pgc1 `executor.preGate` is not a config key: it draws exactly one "
+          "warning naming it as unknown, and no finding: f=%r w=%r" % (f, w),
+          not f and len(w) == 1 and "preGate" in w[0] and "unknown" in w[0])
+    f, w = M.validate_config({"executor": {"phaseGateOnly": ["x"]}})
+    check("pgc2 THE ALLOW TWIN of pgc1: a key the executor block does hold "
+          "draws neither warning nor finding: f=%r w=%r" % (f, w),
+          not f and not w)
     # --- executor.waveWidth, worktreeSetup, worktreeRoot ------------------------
     # How many ready disjoint tasks the driver runs at once, and where their trees
     # live and how they are set up. An absent width is 1, today's drive; a width

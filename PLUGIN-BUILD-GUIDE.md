@@ -2319,6 +2319,21 @@ nothing), a `KNOWN_*` set nothing anchors, and a stale or reasonless exemption. 
 express "equal to" but not "wider" — see the `SCHEMA_ANCHORS` comment for that argument and for
 why the comparison had to live with the walk, a layer up.
 
+It also holds the readings of the `buildCommands` names a plan chooses that the gate treats
+specially: the review-only entries, the sign-off-only key, and the **pre-gate**.
+`pre_gate_command(build)` reads `meta.buildCommands.preGate` — the project's fast must-pass
+check — and answers `(command, problem)`: `(None, None)` for a plan that declares none (the
+key matched by its exact name, so `pregate` is an ordinary entry and not a typo of it),
+`(command, None)` for a runnable one, and `(None, problem)` for a value that cannot be run
+(blank, not a string, a `review-only:` read), so a consumer says it is unusable instead of
+answering as if none were declared. The pre-gate is an entry of the map a plan already
+spells its commands in rather than a new `meta` key, because that map's values are held to
+strings by the schema, `/audit:task build-command` already sets it, and `nodePreamble` already
+goes in front of it; a second home would be a second spelling of one command. It is one command
+(several joined with `&&`), and being an ordinary key it still joins a new phase's default gate
+like any other entry. `audit-lookup.py` is the reader that tells the writer; nothing else in the
+tree reads it yet.
+
 ### `plugins/audit/scripts/manifest/_json_schema.py`
 The published `schema/audit-plan.schema.json`, **applied** by something a verb runs.
 Before it, the schema was applied by CI's `ajv` step over the committed plans and by nothing
@@ -3612,6 +3627,17 @@ a miss, 2 a usage error, 3 a config `brief` refuses to read, 4 a brief whose inp
 the record yet. An entry point (reaching `_manifest_io`/`_journal_io`/`_loader`/`_areas`
 and `_evidence_io`, for the project/config resolution `boundary_for` already
 shares). `--selftest`.
+
+A plan that declares `meta.buildCommands.preGate` (`_manifest_vocab.pre_gate_command`, spelled
+through `nodePreamble` by `pre_gate_reading` as a gate entry is) has it told to both writing roles
+as a check that must pass before the writer returns: the writer's prompt lists it in a block of
+its own ahead of the gate's list, and the executor's brief carries a `Pre-gate` section before
+`What you run` — except under `executor.runsGate: never`, where the section names the command
+and says the executor runs no gate, the pre-gate included. A declared value that cannot be run
+is said in one sentence naming the key, never listed and never read as none declared; a plan
+declaring none gets both texts unchanged, byte for byte (the writer's baseline literal is the
+pin). The brief claims only that the check must pass before returning; that a gate runs it
+first is not stated, because nothing here makes it so.
 
 The executor's brief, the writer's prompt and the reviewer's brief each carry a
 `Who depends on this` section (`dependant_lines`): `_impact.section` over the declared files,

@@ -3441,6 +3441,7 @@ def _selftest():
         _harness.stage(check, "rk-block", _review_skill_brief_cases)
         _harness.stage(check, "gb-block", _cut_banner_cases)
         _harness.stage(check, "lu-block", _unreadable_latest_cases)
+        _harness.stage(check, "pg-block", _pre_gate_cases)
     return _harness.run(body)
 
 
@@ -3848,6 +3849,122 @@ def _owed_red_first_brief_cases(check):
           code_t == M.E_OK and len(submit_t) == 1
           and "-- <the command that runs your new test>" in submit_t[0]
           and "owes a test command" in owed)
+
+
+_PG_COMMAND = "python3 -m pytest -x tests/fast"
+
+
+def _pg_heads(text):
+    """The `## Pre-gate` headings of a brief, and the lines under the first
+    one up to the next heading - `(count, body)`."""
+    lines = text.split("\n")
+    heads = [i for i, ln in enumerate(lines) if ln.strip() == "## Pre-gate"]
+    body = []
+    for ln in lines[heads[0] + 1:] if heads else []:
+        if ln.startswith("## "):
+            break
+        if ln.strip():
+            body.append(ln)
+    return len(heads), body
+
+
+def _pre_gate_cases(check):
+    """A plan's `meta.buildCommands.preGate` is listed, by the writer's prompt
+    and the executor's brief, as a check that must pass before the writer
+    returns; a plan without it - or with a near-miss spelling - gets neither a
+    section nor a changed byte."""
+    base = _wp_manifest()
+    withpg = _wp_manifest()
+    withpg["meta"]["buildCommands"]["preGate"] = _PG_COMMAND
+    base_text = _wp_text(base)
+    pg_text = _wp_text(withpg)
+    lines = pg_text.split("\n")
+    heads = [i for i, ln in enumerate(lines) if "pre-gate" in ln.lower()]
+    gate_at = lines.index("Before you finish, check that everything passes:")
+    listed = [i for i, ln in enumerate(lines) if ln == "- " + _PG_COMMAND]
+    check("pg1 the writer prompt of a plan declaring `preGate` names the pre-gate "
+          "ONCE in a heading line and lists its command ONCE, both before the "
+          "gate's own 'Before you finish' list: heads=%r listed=%r gate_at=%d"
+          % (heads, listed, gate_at),
+          len(heads) == 1 and len(listed) == 1
+          and heads[0] < listed[0] < gate_at
+          and "must pass" in lines[heads[0]])
+    # THE ALLOW TWIN of pg1 (over-fire mutation: a section written whatever the
+    # plan declares). A plan with no key, and a plan with only near-miss
+    # spellings of it, is the baseline byte for byte.
+    near = _wp_manifest()
+    near["meta"]["buildCommands"].update(
+        {"pregate": _PG_COMMAND, "pre-gate": _PG_COMMAND, "PreGate": _PG_COMMAND})
+    check("pg2 a plan declaring no `preGate` - or only near-miss spellings of "
+          "it - gets the writer prompt it got before the key existed, byte for "
+          "byte, with no mention of a pre-gate",
+          _wp_text(near) == base_text and "pre-gate" not in base_text.lower())
+    # The command is spelled as the gate spells it: through `nodePreamble`.
+    pre = _wp_manifest()
+    pre["meta"]["buildCommands"]["preGate"] = _PG_COMMAND
+    pre["meta"]["nodePreamble"] = "source ~/.nvm/nvm.sh"
+    pre_lines = _wp_text(pre).split("\n")
+    spelled = _evio.resolved_commands(pre, ["preGate"])[0][1]
+    check("pg3 the listed command is the one the gate would run - through "
+          "`meta.nodePreamble`, as `resolved_commands` spells it: %r" % (spelled,),
+          spelled != _PG_COMMAND and ("- " + spelled) in pre_lines
+          and ("- " + _PG_COMMAND) not in pre_lines)
+    bad = _wp_manifest()
+    bad["meta"]["buildCommands"]["preGate"] = "   "
+    bad_lines = _wp_text(bad).split("\n")
+    bad_said = [ln for ln in bad_lines if "preGate" in ln]
+    check("pg4 a blank `preGate` is said to be unusable in one line naming the "
+          "key and listing nothing as a must-pass check - a declared pre-gate "
+          "the writer is never told about would read as none declared: %r"
+          % (bad_said,),
+          len(bad_said) == 1 and "cannot be run" in bad_said[0]
+          and not [ln for ln in bad_lines if ln.strip() in ("-", "- ")]
+          and "must pass" not in " ".join(bad_said))
+
+    root = _harness.fixture_root("audit-lookup-pg-")
+    files = {"src/refund.py": "X = 1\n", "tests/test_refund.py": "Y = 2\n"}
+    plan = _bf_manifest()
+    plan["meta"]["buildCommands"]["preGate"] = _PG_COMMAND
+    proj, mpath = _di_project(root, "pg", plan, files)
+    code, text = _di_brief(proj, mpath, "executor")
+    count, body = _pg_heads(text)
+    runs_at = text.split("\n").index("## What you run")
+    head_at = text.split("\n").index("## Pre-gate") if count else -1
+    check("pg5 the executor's brief carries ONE `Pre-gate` section, before "
+          "`What you run`, listing the command as must-pass before returning: "
+          "code=%r count=%d body=%r" % (code, count, body),
+          code == M.E_OK and count == 1 and 0 < head_at < runs_at
+          and ("- " + _PG_COMMAND) in body
+          and any("must pass before you return" in ln for ln in body))
+    wcode, wtext = _di_brief(proj, mpath, "writer")
+    check("pg6 `brief --role writer` through the command carries the same "
+          "command once in the prompt: code=%r" % (wcode,),
+          wcode == M.E_OK and wtext.split("\n").count("- " + _PG_COMMAND) == 1)
+    # executor.runsGate never: the executor runs no gate, and a brief that
+    # listed the pre-gate as its own must-pass would contradict it.
+    never_proj, never_path = _di_project(root, "pg-never", plan, files)
+    with open(os.path.join(never_proj, ".claude", "audit.config.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json",
+                   "executor": {"runsGate": "never"}}, fh)
+    ncode, ntext = _di_brief(never_proj, never_path, "executor")
+    ncount, nbody = _pg_heads(ntext)
+    check("pg7 under `executor.runsGate: never` the section names the pre-gate "
+          "and says the executor does not run it, and lists no command as its "
+          "must-pass: code=%r body=%r" % (ncode, nbody),
+          ncode == M.E_OK and ncount == 1
+          and ("- " + _PG_COMMAND) not in nbody
+          and any("never" in ln and _PG_COMMAND in ln for ln in nbody))
+    # THE ALLOW TWIN of pg5 and pg7.
+    plain = _bf_manifest()
+    proj_n, mpath_n = _di_project(root, "pg-none", plain, files)
+    xcode, xtext = _di_brief(proj_n, mpath_n, "executor")
+    xwcode, xwtext = _di_brief(proj_n, mpath_n, "writer")
+    check("pg8 a plan declaring no `preGate` gets an executor brief and a "
+          "writer prompt with no pre-gate section and no mention of one: "
+          "codes=%r" % ((xcode, xwcode),),
+          xcode == M.E_OK and xwcode == M.E_OK and _pg_heads(xtext)[0] == 0
+          and "pre-gate" not in xtext.lower() and "pre-gate" not in xwtext.lower())
 
 
 if __name__ == "__main__":

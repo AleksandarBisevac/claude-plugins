@@ -371,6 +371,47 @@ def signoff_only_keys(build):
     return [k for k in build if signoff_only_entry(k)]
 
 
+# --- the pre-gate: the project's fast must-pass check -----------------------------
+# One name a plan chooses under `buildCommands`, beside the two categories above:
+# the command that tells a writer in seconds whether its change is broken at all.
+# A `buildCommands` entry rather than a new `meta` key because that map is the
+# one place a plan already spells commands - the schema holds its values to
+# strings, `/audit:task build-command` already sets and drops a key in it, and
+# `nodePreamble` already goes in front of it - so a second home would be a second
+# spelling of the same command. One command, because the map's values are
+# strings: a project with several joins them with `&&`, which is how its other
+# entries already do it. Not `*_KEYS`, for the reason `REVIEW_ONLY_GATES` is not.
+PRE_GATE_KEY = "preGate"
+_PRE_GATE_UNUSABLE = ("meta.buildCommands.%s is %s - it must be one non-blank "
+                      "command to run")
+
+
+def pre_gate_command(build):
+    """`(command, problem)` - the plan's declared pre-gate, read off its
+    `buildCommands`, in exactly one of three shapes.
+
+    `(None, None)`: none is declared. The key is matched by its exact name, so a
+    near-miss spelling (`pregate`, `pre-gate`) is an ordinary entry and not a
+    pre-gate under a typo, and a `buildCommands` that is not an object declares
+    nothing. `(command, None)`: the raw value, which the caller puts through
+    `nodePreamble` the way every gate entry is. `(None, problem)`: the key is
+    there and its value cannot be run - blank, not a string, or a `review-only:`
+    read, which is never a command - and the sentence names which, so a caller
+    says the pre-gate is unusable instead of answering as if none were declared."""
+    if not isinstance(build, dict) or PRE_GATE_KEY not in build:
+        return None, None
+    value = build[PRE_GATE_KEY]
+    if not isinstance(value, str):
+        return None, _PRE_GATE_UNUSABLE % (PRE_GATE_KEY,
+                                           "not a string (%s)" % (type(value).__name__,))
+    if not value.strip():
+        return None, _PRE_GATE_UNUSABLE % (PRE_GATE_KEY, "blank")
+    if is_review_only(value):
+        return None, _PRE_GATE_UNUSABLE % (PRE_GATE_KEY,
+                                           "a `review-only:` read, not a command")
+    return value, None
+
+
 # --- a mute's expiry: one reading of `meta.muted[].until` -------------------------
 # The validator warns on an expired mute and the test-gate runner refuses to honour
 # one; if the two parsed the date or read the clock differently, a mute could read

@@ -1139,6 +1139,56 @@ def _cases(check):
           and any("phase P1" in x for x in _lr_typo)
           and any("task P1.1" in x for x in _lr_typo))
 
+    # --- the pre-gate key: a name a plan chooses under buildCommands ---
+    # `meta.buildCommands.preGate` is the project's fast must-pass check. It
+    # lives in the one free-form map a plan already has, so the plan schema
+    # (strings only) and `/audit:task build-command` already carry it; what
+    # this module adds is the one reader every later consumer asks.
+    pg_cmd = getattr(M, "pre_gate_command", lambda b: ("missing", "missing"))
+    check("mv69 the pre-gate key is spelled `preGate`, and a buildCommands "
+          "holding a command under it answers that command with no problem: %r"
+          % (pg_cmd({"preGate": "python3 -m pytest -x tests/fast"}),),
+          getattr(M, "PRE_GATE_KEY", None) == "preGate"
+          and pg_cmd({"preGate": "python3 -m pytest -x tests/fast"})
+          == ("python3 -m pytest -x tests/fast", None))
+    # THE ALLOW TWIN of mv71: every shape that declares no pre-gate answers
+    # `(None, None)` - an absent key is not a malformed one, and a near-miss
+    # spelling is an ordinary key, not the pre-gate under a typo. Over-fire
+    # mutation: matching the key case-insensitively, or on any `pre*` name,
+    # reads `pregate` below as the project's must-pass check.
+    pg_none = [pg_cmd(b) for b in (
+        {}, {"test": "true"}, {"pregate": "true"}, {"pre-gate": "true"},
+        {"PreGate": "true"}, {"preGateLater": "true"}, None, "preGate", ["preGate"])]
+    check("mv70 a plan declaring no `preGate` - absent, a near-miss spelling, "
+          "or a buildCommands that is not an object - answers (None, None), "
+          "never a command and never a problem: %r" % (pg_none,),
+          pg_none == [(None, None)] * 9)
+    pg_bad = [pg_cmd({"preGate": v}) for v in (
+        "", "   ", 5, None, ["a"], {"a": "b"}, "review-only: read the diff",
+        "  Review-Only: x")]
+    check("mv71 a `preGate` that is not a command to run - blank, not a string, "
+          "or a `review-only:` read - answers no command and a problem naming "
+          "the key, so the brief says it is unusable instead of listing "
+          "nothing as if none were declared: %r" % (pg_bad,),
+          all(c is None and isinstance(p, str) and "preGate" in p
+              for c, p in pg_bad) and len(pg_bad) == 8
+          and len(set(p for _c, p in pg_bad)) >= 3)
+    pg_plan = {"meta": {"version": 2, "buildCommands": {"test": "true",
+                                                         "preGate": "true"}},
+               "phases": [], "fileIndex": {}, "bugs": []}
+    pg_plan_bad = {"meta": {"version": 2, "buildCommands": {"test": "true",
+                                                             "preGate": 5}},
+                   "phases": [], "fileIndex": {}, "bugs": []}
+    _pf, _pw = _rules.validate(pg_plan)
+    _bf, _bw = _rules.validate(pg_plan_bad)
+    check("mv72 through the real validator: a plan with a string `preGate` "
+          "draws no finding and no warning naming it, and the same plan with a "
+          "number there is refused with a finding naming the key - the schema's "
+          "string rule is what keeps the reader's value a string: "
+          "ok=%r bad=%r" % ((_pf, _pw), (_bf, _bw)),
+          not [x for x in _pf + _pw if "preGate" in x]
+          and [x for x in _bf + _bw if "preGate" in x])
+
 
 def _selftest():
     return _harness.run(_cases)

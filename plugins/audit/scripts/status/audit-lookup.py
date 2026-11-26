@@ -734,6 +734,17 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
         + ["gate, %s:" % (whose,)] + gate_lines(manifest, entries)
         + ([WIDEN_RULE] if tests.get("add") else []))
     reading = gate["reading"]
+    pre_command, pre_problem = pre_gate_reading(manifest)
+    if pre_command is not None and reading == "never":
+        lines += _section(PRE_GATE_TITLE, [
+            "The plan declares `%s` as its pre-gate. executor.runsGate is "
+            "never, so you run no gate - the pre-gate included - and it is "
+            "not a check for you to report." % (pre_command,)])
+    elif pre_command is not None:
+        lines += _section(PRE_GATE_TITLE, [PRE_GATE_EXECUTOR_ASK,
+                                           "- %s" % (pre_command,)])
+    elif pre_problem:
+        lines += _section(PRE_GATE_TITLE, [pre_gate_unusable_line(pre_problem)])
     run_gate = "%s %s %s --task %s" % (
         _script(ctx, "governance/run-test-gate.py"), ctx["manifest"], pid, tid)
     runs = {"full": "Run the whole gate: %s" % (run_gate,),
@@ -1068,6 +1079,35 @@ def gate_step_readings(rows, entries):
 OWN_SUITES_NOTE = "the tests this task adds, cut from a command left to the phase gate"
 NOTHING_IN_FOREGROUND = ("no command to run here: every declared one is left to "
                          "the phase gate, below")
+
+
+# The pre-gate (`meta.buildCommands.preGate`): the project's fast must-pass
+# check, told to the writer ahead of the gate's own list. The two writing roles
+# print the same facts with their own opening line, so the command and the
+# unusable-value sentence are one reading here.
+PRE_GATE_TITLE = "Pre-gate"
+PRE_GATE_WRITER_HEAD = ("Fast checks that must pass before you return (the "
+                        "project's pre-gate):")
+PRE_GATE_EXECUTOR_ASK = "The project's fast check must pass before you return:"
+
+
+def pre_gate_reading(manifest):
+    """`(command, problem)` for a plan's declared pre-gate - `(None, None)` when
+    it declares none - with the command spelled as a gate entry is, through
+    `meta.nodePreamble` (`_evio.resolved_commands`), so the writer is told the
+    command the gate would run and not a second spelling of it."""
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    raw, problem = _vocab.pre_gate_command(meta.get("buildCommands"))
+    if raw is None:
+        return None, problem
+    return _evio.resolved_commands(manifest, [_vocab.PRE_GATE_KEY])[0][1], None
+
+
+def pre_gate_unusable_line(problem):
+    """The one sentence a declared-but-unusable pre-gate gets: said, so a plan
+    that declared one is never read as declaring none, and never listed as a
+    command to run."""
+    return "The plan's %s cannot be run: not listed as a check." % (problem,)
 
 
 def _runner_at(values):
@@ -1484,6 +1524,11 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
         lines += ["", "%s:" % (DEPENDANTS_TITLE,)] + list(dependants)
     lines += ["", "Tests to add:"]
     lines += ["- %s" % (a,) for a in added] or ["- none"]
+    pre_command, pre_problem = pre_gate_reading(manifest)
+    if pre_command is not None:
+        lines += ["", PRE_GATE_WRITER_HEAD, "- %s" % (pre_command,)]
+    elif pre_problem:
+        lines += ["", pre_gate_unusable_line(pre_problem)]
     lines += ["", "Before you finish, check that everything passes:"]
     derived, unrun = suite_coverage(manifest, steps, listed + own, own_files)
     run = ["- %s" % (c,) for c in plain] + [
