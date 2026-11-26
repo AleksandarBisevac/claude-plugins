@@ -224,6 +224,10 @@
         {
           "at": "2026-11-25T19:30:59Z",
           "text": "48. SG2 sign-off left four meds open for this batch (owner's 2026-11-25 rule; each is recorded on SG2's review.findings with its full text): SG2-R3 test_build_shop esc47 waives the other-repository unchanged check when its own check refuses (macOS); SG2-R5 timing_faults' 'grew > bound' fault wiring is held by no case that can go red without it; SG2-R10 sweep-costs.json carries macOS seconds under platform windows-2025 for the guard_edits and journal_writes blocks - re-record from a windows log (with 47a); SG2-R11 ge-generated and jw-generated are each heavier than their suite's other blocks together - split at the seam rather than rely on the timeout."
+        },
+        {
+          "at": "2026-11-26T07:18:28Z",
+          "text": "49. SG2-R3 (note 48) needs no change: the waiver it names (kept_gitdir_faults) is gone since SG2.10-xk1 (57b95e80) - esc47 now asserts the other repository unchanged on every host through unwritten_faults. Proved red-first on 234d2d48: with the builder's early refusal turned into a no-op (the fail call in plugins/audit/evals/build-shop.sh replaced by the shell no-op), esc47 goes red naming the other repository's written .git files, and the file is restored byte for byte. co2 and cw8 (note 46) moved to SG4.1, before main."
         }
       ],
       "movedFrom": {
