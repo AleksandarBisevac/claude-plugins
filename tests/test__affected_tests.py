@@ -1111,10 +1111,81 @@ def _join_cases(check):
           alone == [(own, own), ("lint", "true")] and said == [])
 
 
+def _bare_cases(check):
+    """(bfs) The BARE FORM of the plan's recorded spelling - its `{paths}` word
+    taken out and nothing else - is the runner called with no path, which runs
+    every suite the spelling would run over any list. A base measured for one
+    red suite of such an entry may run the spelling over that suite alone, so
+    the predicate is exact: a path, an option, another runner, a placeholder
+    that is not a word of its own or a tail left off is not the bare form."""
+    bare = getattr(M, "is_bare_spelling", None)
+    entry = getattr(M, "is_bare_entry", None)
+    sweep = "python3 tools/sweep.py"
+    spelling = sweep + " {paths}"
+    tailed = "pytest {paths} -q"
+
+    def ask(shape, command):
+        return bare(shape, command) if bare else "no is_bare_spelling"
+
+    got = [ask(spelling, sweep), ask(tailed, "pytest -q"),
+           ask(spelling, "  python3   tools/sweep.py ")]
+    check("bfs1 the recorded spelling with its placeholder word taken out is "
+          "its bare form, a tail after the placeholder kept in place, and the "
+          "command is read as shell words, not as text: %r" % (got,),
+          got == [True, True, True])
+
+    twins = [("a path", spelling, sweep + " tests/test_a.py"),
+             ("an option", spelling, sweep + " --fast"),
+             ("another runner", spelling, "python3 tools/other.py"),
+             ("the tail left off", tailed, "pytest"),
+             ("a spelling with no placeholder", sweep, sweep),
+             ("a placeholder inside a word", "pytest --paths={paths}", "pytest"),
+             ("two placeholders", spelling + " {paths}", sweep),
+             ("a command that does not split", spelling, sweep + " '"),
+             ("no command", spelling, None), ("no spelling", None, sweep)]
+    said = [(label, ask(shape, command)) for label, shape, command in twins]
+    check("bfs2 the twins: none of these is the bare form, so none is measured "
+          "suite by suite: %r" % (said,),
+          all(answer is False for _label, answer in said))
+
+    meta = {"buildCommands": {"selftests": sweep, "lint": "true"},
+            "phaseGate": {"derived": {"spelling": spelling}}}
+    phase = {"id": "P1", "tasks": []}
+
+    def ask_entry(name, on_meta=meta):
+        return entry(name, phase, on_meta) if entry else "no is_bare_entry"
+
+    got = [ask_entry(sweep), ask_entry("selftests")]
+    refused = [ask_entry("lint"), ask_entry(sweep + " tests/test_a.py"),
+               ask_entry(sweep, {"buildCommands": {}}),
+               ask_entry(sweep, {"buildCommands": {"selftests": sweep},
+                                 "phaseGate": {"derived": {"spelling": sweep}}})]
+    sibling = {"id": "P1", "tasks": [
+        {"id": "P1.9", "tests": {"gate": [sweep + " tests/test_sib.py"]}}]}
+    borrowed = entry(sweep, sibling, {"buildCommands": {}}) if entry \
+        else "no is_bare_entry"
+    check("bfs3 a gate entry is the bare form when its command - a build key's "
+          "or its own words - is the plan's RECORDED spelling with no path; an "
+          "entry of another command, the spelling over a path, a plan that "
+          "records no spelling with a placeholder, and a spelling borrowed "
+          "from a sibling's path-scoped entry all answer no: %r / %r / %r"
+          % (got, refused, borrowed),
+          got == [True, True] and refused == [False, False, False, False]
+          and borrowed is False)
+
+    import _evidence_io
+    arm = getattr(_evidence_io, "DERIVED_BASE_ARM", None)
+    check("bfs4 no arm a task run's affected steps are named under is the arm a "
+          "per-suite base step is named under, so no task run's step reads as "
+          "a base measured suite by suite: %r / %r" % (arm, M.ARMS),
+          isinstance(arm, str) and arm and arm not in M.ARMS)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _join_cases(check)
+        _bare_cases(check)
         _gather_cases(check)
         _interrupt_cases(check)
     return _harness.run(body)

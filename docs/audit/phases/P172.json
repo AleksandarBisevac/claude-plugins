@@ -501,7 +501,7 @@
     {
       "id": "P172.6",
       "title": "The drive settles a gate the plan already calls stale before it starts the task",
-      "status": "in_progress",
+      "status": "done",
       "description": "Before start, a task stale_spelled_gates names is settled by the same derivation /audit:phase settle writes (through audit-task.py, revalidated), with a did-line. Red-first: a pending task with phase-no-spelling under a plan with a spelling -> after next its tests.gate is narrow; a task with an attempt is untouched (allow). Dependants: audit-task (derivation), _manifest_phases.stale_spelled_gates, validate-manifest, the measurement harness (a task's gate changes; record it as a measurement deviation).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -523,14 +523,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7f749bac9ee0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: new settle_stale_gate(ctx, task), called first in start_task. It reads the plan through load_phase, asks _phases.stale_spelled_gates whether it names THIS task (finding text starts 'task <id>: '), and if so runs `audit-task.py settle <manifest> --project-dir` (cmd_settle: the one writer of derived values, under the lock, revalidated, journal row), then appends a did-line '<id>'s stale wide gate settled before its start: <old> -> <new>'. A task with an attempt, or not named, takes no settle call. A settle the verb refuses is a warning (warn(): did-line plus warnings) carrying the verb's words and the start goes on with the held wide gate, which measures more and never less. tests/test_drive_phase.py: new block ssg-block (_settle_stale_gate_cases) with ssg1 precondition (control derivation via real `settle` on a copy narrows to ['runner tests/test_a0.py'], basis tests.add; stale task holds ['true']/phase-no-spelling), ssg2 stale task settled before start (gate/basis equal the control's, verb order settle then start, did-line), ssg3 allow twin (attempt>0: only start runs, gate unchanged, no settled clause), ssg4 refused settle -> warning and start proceeds. Mutations (cmp-restored, __pycache__ purged each cycle): no stale check -> ssg3 red; settle after start -> ssg2 and ssg4 red; refusal stops the drive -> ssg4 red; restored 4/4. First sweep run had 12 reds from my first draft reading the manifest with _mio.load_manifest (unit rigs with a stub ctx whose manifest is not on disk); switched to load_phase, which those rigs stub; final full sweep green. Dependants: drive-without-model hook, _worktrees, and the tests importing drive-phase use no start_task signature that changed (signature unchanged, start_task still returns None or the stop) - still correct; the full sweep covers them. tests/test_drive_phase.py dependants (test_drive_without_model etc.) import helpers only; unchanged. CAVEATS: (1) `settle` is plan-wide, so the first start of a stale task also settles any other derived value the plan carries stale (it is the verb's whole job, same as /audit:phase settle); the did-line names only this task's gate. (2) The measurement harness's task gate changes for such a task: record as a measurement deviation. (3) OWED, NOT DONE: changelog fragment changelog.d/P172.6.changed.md - not in this task's files, so I stopped and name it. (4) PLUGIN-BUILD-GUIDE.md section for drive-phase.py (line ~5356) is not in files and now lacks the settle-before-start step; scope would need widening if it should mention it.",
+        "descriptive": "The drive now narrows a stale wide gate to the derived one (via audit-task settle) before starting a task the plan calls stale, so its gate no longer runs the whole phase."
       },
       "startedAt": "2026-11-26T18:25:19Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-26T19:34:11Z",
+      "verifiedBy": [
+        "ssg-block: control derivation via real settle, stale task settled before start with did-line and verb order, allow twin for a task with an attempt, refused settle warns and still starts"
+      ],
       "notes": [
         {
           "at": "2026-11-26T18:25:13Z",
@@ -567,6 +569,24 @@
             "ms": 271870,
             "basis": "durationMs in run 2026-11-26T19:34:06Z.b98faa's record (run-test-gate --record)",
             "runId": "2026-11-26T19:34:06Z.b98faa"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-26T18:53:24Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1681000,
+            "startedAt": "2026-11-26T18:25:23Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-26T19:19:56Z.e133b6",
+            "kind": "wait",
+            "ms": 16000,
+            "startedAt": "2026-11-26T19:07:14Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 7f749bac9ee0",
+            "kind": "commit",
+            "ms": 1636,
+            "startedAt": "2026-11-26T19:34:08Z"
           }
         ],
         "firstStartedAt": "2026-11-26T18:25:19Z"
@@ -638,6 +658,18 @@
         "runId": "2026-11-26T19:34:06Z.b98faa",
         "status": "passed",
         "at": "2026-11-26T19:34:06Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "7f749bac9ee0",
+        "at": "2026-11-26T19:34:11Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-26T18:53:21Z",
+        "basis": "`python3 tests/test_drive_phase.py --selftest --stage ssg-block` in a throwaway tree at HEAD exited 1 with 2 of 4 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests on HEAD's code failing only the unknown-stage check for `ssg-block`, which the task's test files add - the stage is new at HEAD: its cases did not exist at HEAD, which is red for them), each passing with the working tree's implementation - ssg2 (house FAIL): SELFTEST FAILED: 2/4 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {

@@ -1135,6 +1135,39 @@ def spelled_entry(paths, phase, meta):
     return _spell(spelling, paths, None)[0]
 
 
+# THE BARE FORM OF THE RECORDED SPELLING is that spelling with its `{paths}`
+# word taken out and every other word kept in place: the runner called with no
+# path, which runs every suite it would run over any list, so the spelling over
+# one red suite (`spelled_entry`) measures that suite as the entry would. The
+# same runner with an option, a path or a tail left off is another check. The
+# premise is the one `left_to_run` states for an unscoped call, and the evidence
+# side reads the same relation back: `_evidence_io.suite_base_step` lets a base
+# step recorded under `base_suites_step_name` answer a red step only when its
+# command with its listed suites taken out is the red step's own.
+def is_bare_spelling(spelling, command):
+    """Whether `command`, read as shell words, is `spelling` with its one
+    `{paths}` word taken out and nothing else changed. False for a spelling
+    with no placeholder word, or more than one, and for a command that does
+    not split."""
+    shape, words = _words(spelling), _words(command)
+    if not shape or words is None or shape.count("{paths}") != 1:
+        return False
+    return words == [w for w in shape if w != "{paths}"]
+
+
+def is_bare_entry(entry, phase, meta):
+    """Whether the gate entry `entry` - a build key's command, or the entry's
+    own words - is the bare form of the plan's RECORDED spelling
+    (`is_bare_spelling`). False when the plan records no spelling of its own:
+    a spelling borrowed from a sibling's entry says nothing about where the
+    paths go."""
+    spelling = _recorded_spelling(phase, meta)
+    if spelling is None or not isinstance(entry, str):
+        return False
+    build = spelling[2] if isinstance(spelling[2], dict) else {}
+    return is_bare_spelling(spelling[0][0], build.get(entry, entry))
+
+
 def _joinable(name, command, recorded):
     """The paths of an affected step that may join a declared entry: one of a
     suite arm, spelled in the recorded spelling - or None."""

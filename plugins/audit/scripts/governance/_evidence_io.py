@@ -51,6 +51,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -649,6 +650,38 @@ def derived_step_suites(name):
     return out
 
 
+# A DECLARED STEP MEASURED AT ITS BASE OVER SOME OF ITS SUITES. A base run that
+# runs a red declared entry's spelling over the suites the red named, rather
+# than the whole entry, records that call under the entry's name joined to one
+# part of this arm listing the suites (`base_suites_step_name`). The joined
+# grammar is read on purpose: every reader of a step's suites
+# (`derived_step_suites`, `step_runs_suite`) then knows which suites it ran and
+# no other, while its name is never the entry's own, so the whole-step reader
+# (`base_step`) never takes it for the entry - a step that ran one suite cannot
+# answer for a suite it never ran. No arm of `_affected_tests.ARMS` is spelled
+# `base`, so the affected steps a task run adds never carry this part.
+DERIVED_BASE_ARM = "base"
+
+
+def base_suites_step_name(declared, suites):
+    """The name of a base step that ran the declared entry `declared` over
+    `suites` alone - what `base_suites_of` reads back."""
+    return joined_step_name(declared, ["%s%s: %s" % (
+        DERIVED_STEP_PREFIX, DERIVED_BASE_ARM, ", ".join(suites))])
+
+
+def base_suites_of(name):
+    """`(declared, suites)` when `name` is a per-suite base step's
+    (`base_suites_step_name`), else None: a declared or derived name, a part of
+    another arm, or more than one part is none."""
+    declared, derived = step_parts(name)
+    arm = "%s%s: " % (DERIVED_STEP_PREFIX, DERIVED_BASE_ARM)
+    if declared is None or len(derived) != 1 or not derived[0].startswith(arm):
+        return None
+    suites = derived_step_suites(name)
+    return (declared, suites) if suites else None
+
+
 def declared_steps(names, dropped=0):
     """`(declared, dropped)` - the step names in `names` that are the declared
     gate, and how many of the steps a row dropped for length were declared.
@@ -1207,8 +1240,9 @@ def base_row_for(red, head, task_id, rows):
     """The run `base_run` reads the red steps `red` against at commit `head`:
     asked for by every red step's name and, for a joined step, by its declared
     entry's name and the suites its affected parts named failing, as a derived
-    step's suites find a base. The one selection the base reading
-    (`run-test-gate.base_red`) and `base_unmeasured` both make."""
+    step's suites find a base. The selection the base reading
+    (`run-test-gate.base_red`) makes, and `base_unmeasured` makes for every
+    red step but a declared one it answers suite by suite (`suite_base_run`)."""
     suites = [suite for st in red if step_parts(st.get("name"))[1]
               for suite in named_failing_suites([st])]
     names = [st.get("name") for st in red]
@@ -1216,6 +1250,71 @@ def base_row_for(red, head, task_id, rows):
               (step_parts(st.get("name")) for st in red)
               if head_of is not None and parts and head_of not in names]
     return base_run(rows, head, [task_id], names, suites=suites)
+
+
+def _same_call_over(command, bare, suites):
+    """Whether `command`, read as shell words, is `bare` with the words of
+    `suites` added and nothing else - and carries every one of them. A command
+    that does not split is no such call."""
+    try:
+        words, own = shlex.split(str(command)), shlex.split(str(bare))
+    except ValueError:
+        return False
+    listed = set(suites)
+    return (all(s in words for s in listed)
+            and [w for w in words if w not in listed] == own)
+
+
+def suite_base_step(base_steps, step, suite):
+    """The base step of `base_steps` answering `suite` for the red DECLARED
+    step `step`, or None: a per-suite base step of `step`'s name
+    (`base_suites_of`) listing `suite`, that answered (`step_answered`), and -
+    where both carry the command - whose command with its listed suites taken
+    out is `step`'s word for word (`_same_call_over`): another runner, or the
+    same one with an option, is another check. A whole-step base step is
+    `base_step`'s to answer, never this one's."""
+    name = (step or {}).get("name") if isinstance(step, dict) else None
+    for st in base_steps or []:
+        parts = base_suites_of(st.get("name")) if isinstance(st, dict) else None
+        if parts is None or parts[0] != name or suite not in parts[1] \
+                or not step_answered(st):
+            continue
+        if st.get("command") and step.get("command") and not _same_call_over(
+                st["command"], step["command"], parts[1]):
+            continue
+        return st
+    return None
+
+
+def suite_base_run(rows, head, task_id, step, suite):
+    """The newest clean-tree run at commit `head`, never one of `task_id`'s
+    own (`base_run`), holding a step that answers `suite` for the red declared
+    step `step` (`suite_base_step`) - or None. Keyed by commit and suite: two
+    base runs at one commit, each over its own suites, answer a red naming
+    both."""
+    return base_run([row for row in rows or [] if isinstance(row, dict)
+                     and suite_base_step(row.get("steps"), step, suite)
+                     is not None], head, [task_id])
+
+
+def _suites_unmeasured(step, head, task_id, rows):
+    """`["<name>: <suite>"]` for each suite the red declared `step` named
+    failing that no run answers (`suite_base_run`) - or None when `step` is
+    not answered suite by suite: it is derived or joined, its runner named no
+    failing suite or more than the row carries (`suites_cut`), or no
+    clean-tree run at `head` other than `task_id`'s holds a per-suite base
+    step of its name at all. None leaves the step to be answered whole."""
+    name = step.get("name")
+    named = named_failing_suites([step])
+    if step_parts(name) != (str(name), []) or not named or suites_cut(step):
+        return None
+    if base_run([row for row in rows or [] if isinstance(row, dict) and any(
+            (base_suites_of((st or {}).get("name") if isinstance(st, dict)
+                            else None) or (None,))[0] == name
+            for st in row.get("steps") or [])], head, [task_id]) is None:
+        return None
+    return ["%s: %s" % (name, suite) for suite in named
+            if suite_base_run(rows, head, task_id, step, suite) is None]
 
 
 def base_unmeasured(steps, head, task_id, rows):
@@ -1229,6 +1328,14 @@ def base_unmeasured(steps, head, task_id, rows):
     (`step_answered`). Every red step when no such run is recorded, `[]`
     when every one is measured, None when nothing in `steps` is red.
 
+    A DECLARED STEP MEASURED SUITE BY SUITE is answered per suite once any
+    clean-tree run at `head` holds a per-suite base step of its name
+    (`_suites_unmeasured`): each suite it named failing is measured where some
+    such run ran it (`suite_base_run`), and `<name>: <suite>` names one none
+    ran - a base never answers for a suite it did not run. A whole-step base
+    of the same name still answers every suite, and with no per-suite base,
+    or a red naming no suite, the step is answered whole as before.
+
     THE QUESTION A BASE RUN ANSWERS, asked before one is started: a commit
     and step set measured once is not measured again, since a second run of
     the same steps on the same commit's clean tree measures the same thing."""
@@ -1237,12 +1344,19 @@ def base_unmeasured(steps, head, task_id, rows):
     if not red:
         return None
     base = base_row_for(red, head, task_id, rows) if head else None
-    if base is None:
-        return [str(st.get("name")) for st in red]
-    base_steps = [st for st in base.get("steps") or [] if step_answered(st)]
+    base_steps = [st for st in (base or {}).get("steps") or []
+                  if step_answered(st)]
     out = []
     for step in red:
         if base_step(base_steps, step) is not None:
+            continue
+        per_suite = _suites_unmeasured(step, head, task_id, rows) \
+            if head else None
+        if per_suite is not None:
+            out.extend(per_suite)
+            continue
+        if base is None:
+            out.append(str(step.get("name")))
             continue
         declared, derived = step_parts(step.get("name"))
         named = named_failing_suites([step])

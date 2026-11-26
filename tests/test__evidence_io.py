@@ -4783,6 +4783,185 @@ def _kept_base_cases(check):
         _harness.remove_tree(tmp)
 
 
+# A declared step whose base is measured suite by suite: the runner called bare,
+# red naming the suites it failed, and the clean-tree runs at `_KB_HEAD` that
+# ran that step's spelling over a suite list - each recorded under the base step
+# name that carries the declared step and the list (`base_suites_step_name`).
+_PS_SWEEP = "python3 tools/sweep.py"
+_PS_A, _PS_B, _PS_C = "tests/test_a.py", "tests/test_b.py", "tests/test_c.py"
+
+
+def _ps_red(suites, basis=None):
+    return {"name": _PS_SWEEP, "command": _PS_SWEEP, "exit": 1,
+            "failingSuites": list(suites),
+            "failingSuitesBasis": basis if basis is not None else
+            "the suite files the sweep %s" % (M.NAMED_FAILING,)}
+
+
+def _ps_base(run_id, suites, ts="2026-11-18T05:00:00Z", head=_KB_HEAD,
+             command=None, **step):
+    name = (M.base_suites_step_name(_PS_SWEEP, suites)
+            if hasattr(M, "base_suites_step_name")
+            else "%s + %sbase: %s" % (_PS_SWEEP, M.DERIVED_STEP_PREFIX,
+                                      ", ".join(suites)))
+    ran = dict({"name": name, "exit": 0, "failingSuites": [],
+                "failingSuitesBasis": "the suite files the sweep %s"
+                                      % (M.NAMED_FAILING,),
+                "command": command if command is not None
+                else "%s %s" % (_PS_SWEEP, " ".join(suites))}, **step)
+    return {"v": 1, "runId": run_id, "ts": ts, "scope": M.BASE_SCOPE,
+            "status": "passed", "durationMs": 900, M.BASE_OF_KEY: "R1",
+            "testedState": {"head": head, "dirtyDigest": M.CLEAN_DIRTY_DIGEST},
+            "steps": [ran]}
+
+
+def _per_suite_base_cases(check):
+    """(bsu) A declared step measured at its base suite by suite is recorded
+    under a base step name carrying the step and the suites it ran, and a
+    later red of that step at the same commit is answered suite by suite -
+    keyed by commit and suite - by the clean-tree runs that ran each suite. A
+    base never answers for a suite it did not run: a suite it left out is
+    named unmeasured, so it is measured rather than read as green there. With
+    no per-suite base at the commit, or a red naming no suite, the step is
+    answered whole, as it always was."""
+    try:
+        _per_suite_base_body(check)
+    except Exception as exc:                                   # noqa: BLE001
+        check("bsu0 the per-suite base block ran to its end (%s: %s)"
+              % (type(exc).__name__, exc), False)
+
+
+def _per_suite_base_body(check):
+    name_of = getattr(M, "base_suites_step_name", None)
+    parts_of = getattr(M, "base_suites_of", None)
+    step_of = getattr(M, "suite_base_step", None)
+    run_of = getattr(M, "suite_base_run", None)
+    head = _KB_HEAD
+
+    name = name_of(_PS_SWEEP, [_PS_A, _PS_B]) if name_of else None
+    parts = parts_of(name) if parts_of and name else None
+    twins = ([parts_of(n) for n in (
+        _PS_SWEEP, "%spython: %s" % (M.DERIVED_STEP_PREFIX, _PS_A),
+        "%s + %spython: %s" % (_PS_SWEEP, M.DERIVED_STEP_PREFIX, _PS_A),
+        "%s + %sbase: " % (_PS_SWEEP, M.DERIVED_STEP_PREFIX))]
+        if parts_of else None)
+    check("bsu1 THE PER-SUITE BASE STEP'S NAME is the declared step, then the "
+          "base arm over its suite list, as a row on disk holds it; it reads "
+          "back as (step, suites), lists those suites as a derived step's do, "
+          "and is known to have run them and no other; a declared name, "
+          "another arm, or an empty list reads as none: %r / %r / %r"
+          % (name, parts, twins),
+          name == "%s + %sbase: %s, %s" % (_PS_SWEEP, M.DERIVED_STEP_PREFIX,
+                                           _PS_A, _PS_B)
+          and parts == (_PS_SWEEP, [_PS_A, _PS_B])
+          and M.derived_step_suites(name) == [_PS_A, _PS_B]
+          and M.step_runs_suite({"name": name}, _PS_A)
+          and not M.step_runs_suite({"name": name}, _PS_C)
+          and twins == [None, None, None, None])
+
+    kept_a = _ps_base("RA", [_PS_A])
+    only_b = M.base_unmeasured([_ps_red([_PS_B])], head, "P1.1", [kept_a])
+    found_b = run_of([kept_a], head, "P1.1", _ps_red([_PS_B]), _PS_B) \
+        if run_of else "no suite_base_run"
+    check("bsu2 RED-FIRST: A KEPT BASE THAT RAN ONLY ONE SUITE DOES NOT ANSWER "
+          "ANOTHER: a later red of the same step at the same commit naming a "
+          "suite that base never ran has that suite named unmeasured, and no "
+          "run is found for it - judged by the step's name, it would read as "
+          "measured and the suite as green at base: %r / %r"
+          % (only_b, found_b),
+          only_b == ["%s: %s" % (_PS_SWEEP, _PS_B)] and found_b is None)
+
+    in_a = M.base_unmeasured([_ps_red([_PS_A])], head, "P1.1", [kept_a])
+    found_a = run_of([kept_a], head, "P1.1", _ps_red([_PS_A]), _PS_A) \
+        if run_of else "no suite_base_run"
+    check("bsu3 THE ALLOW TWIN: a kept base that ran a suite answers a later red "
+          "in that suite with nothing measured again, and the run found for it "
+          "is that base: %r / %r" % (in_a, (found_a or {}).get("runId")
+                                     if isinstance(found_a, dict) else found_a),
+          in_a == [] and isinstance(found_a, dict)
+          and found_a.get("runId") == "RA")
+
+    steps = kept_a["steps"]
+    whole = M.base_step(steps, _ps_red([_PS_A]))
+    by_suite = [step_of(steps, _ps_red([_PS_A]), s) for s in (_PS_A, _PS_B)] \
+        if step_of else None
+    check("bsu4 A PER-SUITE BASE STEP NEVER ANSWERS FOR THE WHOLE STEP: the "
+          "whole-step reader (`base_step`) finds nothing in it, so a reader "
+          "comparing every red suite with one base step cannot charge a suite "
+          "that step never ran; read suite by suite it answers the suite it "
+          "listed and not the other: %r / %r"
+          % (whole, [(s or {}).get("name") for s in by_suite or []]),
+          whole is None and isinstance(by_suite, list)
+          and by_suite[0] is steps[0] and by_suite[1] is None)
+
+    kept_b = _ps_base("RB", [_PS_B], ts="2026-11-18T06:00:00Z")
+    rows = [kept_a, kept_b]
+    both = M.base_unmeasured([_ps_red([_PS_A, _PS_B])], head, "P1.1", rows)
+    three = M.base_unmeasured([_ps_red([_PS_A, _PS_B, _PS_C])], head, "P1.1",
+                              rows)
+    elsewhere = M.base_unmeasured([_ps_red([_PS_A])], head, "P1.1",
+                                  [_ps_base("RX", [_PS_A], head="feedface0000")])
+    own = M.base_unmeasured([_ps_red([_PS_A])], head, "P1.1",
+                            [dict(kept_a, taskId="P1.1")])
+    dirty = M.base_unmeasured([_ps_red([_PS_A])], head, "P1.1", [dict(
+        kept_a, testedState={"head": head, "dirtyDigest": "sha256:other"})])
+    # Beside a per-suite base at the commit, the other suite's only run is of
+    # another commit, the task's own, or a dirty tree: that suite stays named.
+    beside = [M.base_unmeasured([_ps_red([_PS_A, _PS_B])], head, "P1.1",
+                                [kept_a, other]) for other in (
+        _ps_base("RX", [_PS_B], head="feedface0000"),
+        dict(kept_b, taskId="P1.1"),
+        dict(kept_b, testedState={"head": head, "dirtyDigest": "sha256:x"}))]
+    check("bsu5 KEYED BY COMMIT AND SUITE: two kept bases at one commit, each "
+          "over one suite, together answer a red naming both, and a third "
+          "suite neither ran is the one named; a base of another commit, the "
+          "task's own run, or a dirty tree answers no suite - asked for whole "
+          "when it is the only per-suite base, and leaving its suite named "
+          "beside one that answers the other: %r"
+          % ((both, three, elsewhere, own, dirty, beside),),
+          both == [] and three == ["%s: %s" % (_PS_SWEEP, _PS_C)]
+          and elsewhere == [_PS_SWEEP] and own == [_PS_SWEEP]
+          and dirty == [_PS_SWEEP]
+          and beside == [["%s: %s" % (_PS_SWEEP, _PS_B)]] * 3)
+
+    unnamed = M.base_unmeasured([_ps_red([_PS_A], basis="the tail of output")],
+                                head, "P1.1", [kept_a])
+    cut = M.base_unmeasured([_ps_red([_PS_A], basis="the suite files the sweep "
+                                      "%s; %s" % (M.NAMED_FAILING, M.LIST_CUT))],
+                            head, "P1.1", [kept_a])
+    full = dict(kept_a, runId="RW", ts="2026-11-18T07:00:00Z", steps=[
+        {"name": _PS_SWEEP, "command": _PS_SWEEP, "exit": 0}])
+    whole_answers = M.base_unmeasured([_ps_red([_PS_B])], head, "P1.1",
+                                      [kept_a, full])
+    check("bsu6 THE FALLBACK IS THE WHOLE STEP: a red whose runner named no "
+          "suite, or whose suites were cut at their bound, is asked for whole "
+          "even beside a per-suite base; and a whole-step base answers every "
+          "suite of the red, as it always did: %r"
+          % ((unnamed, cut, whole_answers),),
+          unnamed == [_PS_SWEEP] and cut == [_PS_SWEEP] and whole_answers == [])
+
+    other_runner = M.base_unmeasured([_ps_red([_PS_A])], head, "P1.1", [
+        _ps_base("RO", [_PS_A], command="python3 tools/other.py " + _PS_A)])
+    with_option = M.base_unmeasured([_ps_red([_PS_A])], head, "P1.1", [
+        _ps_base("RO", [_PS_A], command="%s --fast %s" % (_PS_SWEEP, _PS_A))])
+    silent = [M.base_unmeasured([_ps_red([_PS_A])], head, "P1.1", [
+        _ps_base("RS", [_PS_A], **change)]) for change in (
+            {"exit": None, "outcome": "timeout"}, {"exit": -9}, {"exit": None})]
+    no_command = M.base_unmeasured([_ps_red([_PS_A])], head, "P1.1", [
+        _ps_base("RN", [_PS_A], command="")])
+    check("bsu7 A PER-SUITE BASE STEP ANSWERS ONLY AS THE SAME CALL, AND ONLY "
+          "WHEN IT ANSWERED: its command with its listed suites taken out must "
+          "be the red step's own command, word for word - another runner or "
+          "the same one with an option is another check - and one that timed "
+          "out, was killed or left no exit measured nothing; a base step "
+          "carrying no command is read by its name, as `base_step` reads one: "
+          "%r" % ((other_runner, with_option, silent, no_command),),
+          other_runner == ["%s: %s" % (_PS_SWEEP, _PS_A)]
+          and with_option == ["%s: %s" % (_PS_SWEEP, _PS_A)]
+          and silent == [["%s: %s" % (_PS_SWEEP, _PS_A)]] * 3
+          and no_command == [])
+
+
 def _foreground_bound_cases(check):
     """(fb, gm) the Bash tool's foreground bound is one constant, here, and
     every reader of it reads this one; and a gate's recorded mean - what the
@@ -12634,7 +12813,8 @@ STAGES = (("wh-block", "_withheld_cases"), ("rf-block", "_read_field_cases"),
           ("pd-block", "_plan_door_cases"),
           ("bu-block", "_boundary_upgrade_cases"),
           ("pk-block", "_plan_readers_cases"),
-          ("rh-block", "_recorder_held_cases"))
+          ("rh-block", "_recorder_held_cases"),
+          ("bsu-block", "_per_suite_base_cases"))
 # The prefix of the directory a full run's blocks report into.
 _STAGE_PREFIX = "evidence-io-stages-"
 

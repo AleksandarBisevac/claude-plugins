@@ -4411,6 +4411,22 @@ was, so the one reader finds it with no ledger. It is last in `RECORD_CUT_ORDER`
 bound loses it before anything a reader decides on, and a lost one is a base measured again. The
 `kb` cases drive it.
 
+**A base measured suite by suite.** A base run that runs a red declared entry's spelling over the
+suites the red named, rather than the whole entry, records that call under
+`base_suites_step_name()`: the entry's name joined to one part of the `DERIVED_BASE_ARM` arm
+listing the suites, so `derived_step_suites()` and `step_runs_suite()` know which suites it ran,
+`base_suites_of()` reads the pair back, and `base_step()` never takes it for the whole entry - a
+step that ran one suite cannot answer for one it never ran. `suite_base_step()` is the base step
+answering one suite of a red declared step (the same name, the suite listed, answered, and -
+where both carry a command - the red step's command once the listed suites are taken out,
+`_same_call_over()`), and `suite_base_run()` the newest clean-tree run at a commit holding one:
+the reuse is keyed by commit and suite, so two base runs over different suites together answer a
+red naming both. `base_unmeasured()` answers a red declared step this way once any such run at
+its commit holds a per-suite base step of its name, naming `<name>: <suite>` for a suite none
+ran; a whole-step base of the same name still answers every suite, and with no per-suite base,
+or a red naming no suite or more than its row carries, the step is answered whole as before. The
+`bsu` cases drive it.
+
 **A joined step.** A task's declared entry and the affected steps run as one call are recorded as
 one step named `joined_step_name()` of the entry and each affected step's name, separated by
 `JOINED_STEP_SEPARATOR`. The name carries both lists, rather than a key on the step, because
@@ -4623,7 +4639,14 @@ spelling is read, because its `{paths}` word says where the paths go and a sibli
 not. A build key, another runner, the same runner with an option, the phase-gate arm, or no
 affected step leaves the commands as they were, with no line (`af44`-`af52`).
 `entry_paths()` and `spelled_entry()` are the same reading for `run-test-gate.py`'s base
-measurement of a joined step's declared suites.
+measurement of a joined step's declared suites. `is_bare_spelling()` asks whether a command is
+the recorded spelling with its `{paths}` word taken out and every other word in place - the
+runner called with no path - and `is_bare_entry()` asks it of a gate entry (a build key's command
+or the entry's own words) against the plan's recorded spelling only; a path, an option, another
+runner, a placeholder inside a word or a tail left off is not the bare form (`bfs1`-`bfs3`). It is
+the same word-for-word relation the evidence side checks when it reads a per-suite base step back:
+`_evidence_io.suite_base_step()` lets one answer a red step only when its command, with its
+listed suites taken out, is the red step's own.
 
 `reach_answers()` is the gate-reach reading's half of this module: each path asked of `select()`
 ALONE (`path_reach()`), its listings run side by side first (`prefetch_listings()`), because a
