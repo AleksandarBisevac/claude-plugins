@@ -1100,7 +1100,7 @@
     {
       "id": "SG4",
       "title": "Weakened tests restored before main",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/SG4.json"
     }
   ],

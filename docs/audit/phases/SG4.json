@@ -1,7 +1,7 @@
 {
   "id": "SG4",
   "title": "Weakened tests restored before main",
-  "status": "in_progress",
+  "status": "done",
   "description": "The owner's Weakened-tests list before main: co2 and cw8 restored; esc47 recorded as already restored by SG2.10-xk1 with a red-first run.",
   "desiredOutcome": "The cases SG2 narrowed (co2, cw8) are as strict as before they were narrowed, so integration/skill-gates reaches main without a lowered bar.",
   "testGate": [
@@ -20,7 +20,7 @@
   ],
   "baseRef": "234d2d48f8a38572cdb9c843848bd8ff17014569",
   "branch": "audit/sg4-weakened-tests-restored-before",
-  "mergedAt": null,
+  "mergedAt": "2026-11-26T08:21:19Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -275,5 +275,6 @@
     "runId": "2026-11-26T08:20:31Z.2e6348",
     "status": "passed",
     "at": "2026-11-26T08:20:31Z"
-  }
+  },
+  "mergedHead": "4b38f35e8c7769a1a120c4f1136fd22bdc987bb8"
 }
