@@ -593,6 +593,10 @@ slice_lint() {
     plugins/audit/scripts plugins/audit/hooks tests tools/lints
   # Reads what git tracks and never prints what it matched: a public CI log echoing a
   # leak would be the same bug one layer out.
+  # A task's changelog entry is a fragment under changelog.d/, and the release assembles
+  # CHANGELOG.md from them: a fragment naming no kind or an unknown one would be
+  # refused at release time, so it is refused here, on the commit that adds it.
+  run "changelog fragments are ones the release can place" python3 tools/release.py changelog-check
   run "committed artifacts carry no machine identity" python3 tools/check-committed-pii.py
   # Every committed evidence row against the schema's vocabulary and against itself,
   # and every commit a committed manifest names resolves - refusing on a clone too
@@ -1072,6 +1076,10 @@ slice_release() {
     python3 tools/check-rendered-artifacts.py --against-commit
   run_noted "the plan carries no open bug or held phase" no_open_bugs
   run "CHANGELOG has a [$version] section" changelog_has_section
+  # The release commit deletes the fragments it assembled and the section must end with
+  # what they assemble to; a fragment left over would be written a second time next release.
+  run "CHANGELOG's [$version] section matches its fragments, none left" \
+    python3 tools/release.py changelog-check --version "$version"
   run "tag v$version does not exist yet" tag_is_free
   # THE ONLY GATE IN THIS FILE THAT ASKS A REMOTE, which is why it is in the release
   # slice and nowhere CI runs on every push: what it reads changes once per release.

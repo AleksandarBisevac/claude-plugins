@@ -377,6 +377,14 @@ One release is **one commit** that bumps `plugin.json`, finalizes the `CHANGELOG
 carries the annotated `v<version>` tag. Push only after CI is green **on that commit**. A pushed
 tag is never moved or deleted — fix forward.
 
+**A task writes a changelog fragment, never `CHANGELOG.md`.** The entry goes in
+`changelog.d/<task-id>.<kind>.md`, and the release appends the fragments under the existing
+`## [Unreleased]` text when it finalizes the section; a task declaring `CHANGELOG.md` to describe
+itself makes every pair of tasks in a phase share a file. The rules - kinds, order, what is
+refused - are in `CONTRIBUTING.md`'s *Release rule*, and `python3 tools/release.py
+changelog-check` is the lint that refuses a bad fragment. Nothing in the plugin's product tells a
+task this yet, so the brief you are handed may still say otherwise: this repository's own rule wins.
+
 **A release does not go out over an open bug, and that is enforced rather than remembered.**
 `.claude/hooks/guard-release.py` refuses the publishing commands — creating a tag, pushing one,
 `gh release create` — while the plan carries an open bug, and `verify.sh --release` asks the same

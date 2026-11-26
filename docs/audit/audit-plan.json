@@ -1084,6 +1084,12 @@
       "title": "A run's record lives in the plan and in git",
       "status": "done",
       "shard": "phases/P169.json"
+    },
+    {
+      "id": "P170",
+      "title": "Waves run wider than one: no file every task must edit",
+      "status": "in_progress",
+      "shard": "phases/P170.json"
     }
   ],
   "fileIndex": {
@@ -1508,7 +1514,8 @@
       "P148.5",
       "P151.2",
       "P155.17-gfj",
-      "P157.7-mwz"
+      "P157.7-mwz",
+      "P170.1"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -1689,7 +1696,8 @@
       "P169.18-6l3",
       "P169.25-6l3",
       "P169.26-6l3",
-      "P169.29-6l3"
+      "P169.29-6l3",
+      "P170.1"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -2191,7 +2199,8 @@
       "P169.40-6l3",
       "P169.39-6l3",
       "P169.43-6l3",
-      "P169.44-6l3"
+      "P169.44-6l3",
+      "P170.1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -9332,7 +9341,8 @@
       "P169.25-6l3",
       "P169.18-6l3",
       "P169.26-6l3",
-      "P169.29-6l3"
+      "P169.29-6l3",
+      "P170.1"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -9640,7 +9650,8 @@
       "P155.39-gfj",
       "P169.14-6l3",
       "P169.17-6l3",
-      "P169.25-6l3"
+      "P169.25-6l3",
+      "P170.1"
     ],
     "plugins/audit/scripts/governance/_gate_derive.py": [
       "P79.2",
@@ -12478,7 +12489,8 @@
       "P156.18-3st",
       "P156.20-3st",
       "P156.21-3st",
-      "P156.22-3st"
+      "P156.22-3st",
+      "P170.1"
     ],
     "plugins/audit/hooks/hold-handback.py": [
       "P128.6-0h5"
@@ -14825,6 +14837,9 @@
     ],
     "tests/test_check_example_ledgers.py": [
       "P169.40-6l3"
+    ],
+    "changelog.d/P170.1.changed.md": [
+      "P170.1"
     ]
   },
   "bugs": [

@@ -19,12 +19,16 @@ reads "done":
                         plus the tag being free, BEFORE any file is touched
   bump-version          plugins/audit/.claude-plugin/plugin.json
   finalize-changelog    CHANGELOG.md's `## [Unreleased]` becomes the version
+                        and the fragments under changelog.d/ are appended
+                        to it, after the text that stood there (a fragment
+                        the release cannot place refuses the step)
   followers             `tools/verify.sh --release`'s `#R` list, in its order:
                         README pins, the pinned examples under docs/examples/
                         (the set `tools/check-example-pins.py` reads), the
                         rendered example (+ docs/index.html), the scale demo,
                         the screenshots
-  commit                the release commit
+  commit                the release commit, which also deletes the fragments
+                        the changelog step assembled
   verify-release        `sh tools/verify.sh --release`, AFTER the commit:
                         its last arm asks whether HEAD carries the pages
                         the followers re-rendered, which is red for as long
@@ -88,6 +92,11 @@ run the same way this release's `wait-ci` step runs it does not need a
 version or a release in flight to ask for it. It dispatches with no input,
 so the workflow's default - the per-run tier - is what runs.
 
+`release.py changelog-check [--repo DIR] [--version X.Y.Z]` prints the
+fragments the release would refuse and, with a version, whether its section
+still ends with what they assemble to; `tools/verify.sh` runs it in its lint
+slice and, with the version, in its release slice.
+
 Exit codes: 0 the whole pipeline (or the lone `ci` step) went green -
 1 a step failed, named, with the resume command printed - 2 usage error.
 """
@@ -107,6 +116,7 @@ REPO = os.path.dirname(_HERE)
 PLUGIN_JSON_REL = os.path.join("plugins", "audit", ".claude-plugin",
                                 "plugin.json")
 CHANGELOG_REL = "CHANGELOG.md"
+FRAGMENTS_REL = "changelog.d"
 README_REL = os.path.join("plugins", "audit", "README.md")
 DEFAULT_STATE_REL = os.path.join(".claude", "state", "release-run.json")
 
@@ -121,6 +131,7 @@ REMOTE_STEPS = ("push-ci-branch", "wait-ci", "push-main-tag", "gh-release",
 USAGE = ("usage: release.py run --version X.Y.Z [--push] [--state PATH]\n"
          "       release.py ci <ref>\n"
          "       release.py permitted [--repo DIR]\n"
+         "       release.py changelog-check [--repo DIR] [--version X.Y.Z]\n"
          "       release.py --selftest\n")
 
 DEFAULT_CI_TIMEOUT = 60 * 60
@@ -398,20 +409,158 @@ def changelog_section(repo, version):
     return section.strip() + "\n"
 
 
+# --- changelog fragments ----------------------------------------------------------
+# The section words a fragment may name, in the order the assembled text lists
+# them. Each is a heading word CHANGELOG.md already opens sections with (a case
+# reads the file to prove it), and a fragment's file name carries it lowercase.
+KINDS = ("breaking", "added", "changed", "deprecated", "removed", "fixed",
+         "security", "documentation", "compatibility")
+# `<task-id>.<kind>.md`: a task id holds dots (`P170.1`), so the kind is the
+# LAST dotted word before `.md` and `P170.1.md` names none.
+_FRAGMENT_NAME = re.compile(r"^(?P<task>[A-Za-z0-9][A-Za-z0-9._-]*)"
+                            r"\.(?P<kind>[a-z]+)\.md$")
+_OWN_HEADING = re.compile(r"^#{2,3} ", re.M)
+
+
+def _natural(text):
+    """A sort key reading digit runs as numbers, so P170.2 precedes P170.10."""
+    return [(0, int(w), "") if w.isdigit() else (1, 0, w)
+            for w in re.split(r"(\d+)", text) if w]
+
+
+def read_fragments(repo):
+    """`(fragments, findings)` for `changelog.d/`: the well-formed fragments in
+    the order the release writes them (kind order, then task id as numbers),
+    each `{"name", "task", "kind", "text"}`, and one sentence per file the
+    release could not place. A refused file is reported, never skipped: a
+    fragment dropped quietly is a changelog entry that vanishes. Dotfiles are
+    not fragments. A folder that does not exist holds none."""
+    folder = os.path.join(repo, FRAGMENTS_REL)
+    if not os.path.isdir(folder):
+        return [], []
+    fragments, findings = [], []
+    for name in sorted(os.listdir(folder)):
+        if name.startswith("."):
+            continue
+        rel = "%s/%s" % (FRAGMENTS_REL, name)
+        match = _FRAGMENT_NAME.match(name)
+        if match is None:
+            findings.append("%s names no kind: a fragment is <task-id>.<kind>."
+                            "md with kind one of %s" % (rel, ", ".join(KINDS)))
+            continue
+        if match.group("kind") not in KINDS:
+            findings.append("%s has unknown kind %r: the kinds are %s"
+                            % (rel, match.group("kind"), ", ".join(KINDS)))
+            continue
+        with io.open(os.path.join(folder, name), encoding="utf-8") as fh:
+            text = fh.read().strip()
+        if not text:
+            findings.append("%s is empty" % (rel,))
+        elif _OWN_HEADING.search(text):
+            findings.append("%s writes a heading of its own: the release "
+                            "writes the kind's heading, a fragment is the "
+                            "entry under it" % (rel,))
+        else:
+            fragments.append({"name": name, "task": match.group("task"),
+                              "kind": match.group("kind"), "text": text})
+    fragments.sort(key=lambda f: (KINDS.index(f["kind"]), _natural(f["task"]),
+                                  f["name"]))
+    return fragments, findings
+
+
+def fragment_findings(repo):
+    """Every fragment the release would refuse, as sentences."""
+    return read_fragments(repo)[1]
+
+
+def assemble_fragments(repo):
+    """The text the release appends under the Unreleased text: for each kind
+    that has a fragment, `### <Kind>` and the fragments' entries one after the
+    other, a blank line between kinds. Empty when there is no fragment."""
+    groups = []
+    for kind in KINDS:
+        texts = [f["text"] for f in read_fragments(repo)[0]
+                 if f["kind"] == kind]
+        if texts:
+            groups.append("### %s\n%s\n" % (kind.capitalize(),
+                                              "\n".join(texts)))
+    return "\n".join(groups)
+
+
+def release_text(text, version, assembled):
+    """CHANGELOG.md's text with `## [Unreleased]` renamed to `## [version]` and
+    `assembled` appended to that section, after the text that stood there. The
+    text that stood there is not edited, moved or reflowed: with nothing to
+    append, nothing but the heading changes."""
+    marker = "## [Unreleased]"
+    text = text.replace(marker, "## [%s]" % (version,), 1)
+    if not assembled:
+        return text
+    start = text.index("## [%s]" % (version,))
+    stop = text.find("\n## [", start + 1)
+    head, tail = (text, "") if stop < 0 else (text[:stop], text[stop:])
+    return head.rstrip("\n") + "\n\n" + assembled + tail
+
+
+def assembled_findings(repo, version):
+    """What is wrong with `## [version]` against the fragments that made it:
+    the section must END with what the release assembles from `changelog.d/`.
+    Empty when there is no such section, or no fragment beside it. A section
+    that does not end so was edited after finalize - or has fragments beside
+    it that it never held, which the release would write a second time. The
+    text before the assembled part is the Unreleased text as it stood and is
+    the owner's, so it is not compared."""
+    fragments = read_fragments(repo)[0]
+    section = changelog_section(repo, version)
+    if not fragments or section is None:
+        return []
+    if section.endswith(assemble_fragments(repo)):
+        return []
+    return ["CHANGELOG.md's ## [%s] section does not end with the text the "
+            "release assembles from %s: it was edited after finalize, or "
+            "those fragments were never part of it"
+            % (version, ", ".join("%s/%s" % (FRAGMENTS_REL, f["name"])
+                                  for f in fragments))]
+
+
+def unconsumed_findings(repo, version):
+    """Fragments still in `changelog.d/` once `## [version]` exists: the
+    release commit deletes the ones it assembled, so any left would be written
+    into the next release as well."""
+    fragments = read_fragments(repo)[0]
+    if not fragments or changelog_section(repo, version) is None:
+        return []
+    return ["%s/%s is still here beside CHANGELOG.md's ## [%s]: the release "
+            "commit deletes what it assembled"
+            % (FRAGMENTS_REL, f["name"], version) for f in fragments]
+
+
 def step_finalize_changelog(ctx):
+    """`## [Unreleased]` becomes `## [version]`, with the fragments under
+    `changelog.d/` appended to it (`release_text`). The fragments are deleted
+    by the commit step and not here, so a run resumed between the two checks
+    the assembled section against them rather than trusting it."""
+    findings = fragment_findings(ctx.repo)
+    if findings:
+        return False, "; ".join(findings)
     if changelog_section(ctx.repo, ctx.version) is not None:
+        findings = assembled_findings(ctx.repo, ctx.version)
+        if findings:
+            return False, "; ".join(findings)
         return True, "CHANGELOG.md already carries ## [%s]" % (ctx.version,)
     path = os.path.join(ctx.repo, CHANGELOG_REL)
     with io.open(path, encoding="utf-8") as fh:
         text = fh.read()
-    marker = "## [Unreleased]"
-    if marker not in text:
+    if "## [Unreleased]" not in text:
         return False, ("CHANGELOG.md has neither a ## [%s] section nor a "
                        "## [Unreleased] one to finalize" % (ctx.version,))
-    text = text.replace(marker, "## [%s]" % (ctx.version,), 1)
+    assembled = assemble_fragments(ctx.repo)
     with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(text)
-    return True, "## [Unreleased] renamed to ## [%s]" % (ctx.version,)
+        fh.write(release_text(text, ctx.version, assembled))
+    count = len(read_fragments(ctx.repo)[0])
+    return True, ("## [Unreleased] renamed to ## [%s]%s"
+                  % (ctx.version, ", %d fragment(s) from %s/ appended"
+                     % (count, FRAGMENTS_REL) if count else ""))
 
 
 def _rewrite_readme_pins(ctx):
@@ -494,6 +643,22 @@ def step_verify_release(ctx):
 
 
 def step_commit(ctx):
+    """The release commit. The changelog fragments it assembled are deleted
+    in it, after one last check that the section still ends with them."""
+    findings = fragment_findings(ctx.repo) + assembled_findings(ctx.repo,
+                                                                ctx.version)
+    if findings:
+        return False, "; ".join(findings)
+    consumed = ["%s/%s" % (FRAGMENTS_REL, f["name"])
+                for f in read_fragments(ctx.repo)[0]]
+    if consumed:
+        for rel in consumed:
+            os.remove(os.path.join(ctx.repo, rel))
+        rc, out = ctx.run(["git", "rm", "-q", "--ignore-unmatch", "--"]
+                          + consumed)
+        if rc != 0:
+            return False, "git rm of the assembled fragments failed: %s" % (
+                excerpt(out),)
     paths = [PLUGIN_JSON_REL, CHANGELOG_REL, README_REL,
              "examples/acme-store/acme-store-audit.html",
              "examples/acme-store/acme-store-audit.md",
@@ -830,12 +995,45 @@ def cmd_permitted(argv, out=None):
     return 0 if allowed else 1
 
 
+def cmd_changelog_check(argv, repo=None, out=None):
+    """Print one line per problem with `changelog.d/` and exit 1, or exit 0
+    printing nothing wrong: a fragment the release would refuse (no kind, an
+    unknown kind, empty, a heading of its own). With `--version X.Y.Z`, also
+    the release's own question - that `## [X.Y.Z]` ends with what the
+    fragments assemble to, and that none is left beside it once it exists.
+    What `tools/verify.sh` runs, in its lint slice without a version and in
+    its release slice with one."""
+    out = out if out is not None else sys.stdout
+    repo = repo or REPO
+    version = None
+    rest = list(argv)
+    while rest:
+        if len(rest) >= 2 and rest[0] == "--repo":
+            repo = rest[1]
+        elif len(rest) >= 2 and rest[0] == "--version":
+            version = rest[1]
+        else:
+            sys.stderr.write(USAGE)
+            return 2
+        rest = rest[2:]
+    findings = fragment_findings(repo)
+    if version:
+        findings += (assembled_findings(repo, version)
+                     or unconsumed_findings(repo, version))
+    for line in findings:
+        out.write(line + "\n")
+    if not findings:
+        out.write("changelog.d: %d fragment(s), none the release would "
+                  "refuse\n" % (len(read_fragments(repo)[0]),))
+    return 1 if findings else 0
+
+
 def route_subcommand(argv):
     """`(subcommand, rest)` - `run` is implicit, so `release.py --push` reads
     exactly as `release.py run --push` does. Both forms run the same `cmd_run`,
     which asks `release_permitted` the same question regardless of which
     spelling a reader typed."""
-    if argv and argv[0] in ("run", "ci", "permitted"):
+    if argv and argv[0] in ("run", "ci", "permitted", "changelog-check"):
         return argv[0], argv[1:]
     return "run", argv
 
@@ -849,6 +1047,8 @@ def main(argv=None):
         return cmd_ci(rest)
     if sub == "permitted":
         return cmd_permitted(rest)
+    if sub == "changelog-check":
+        return cmd_changelog_check(rest)
     return cmd_run(rest)
 
 
@@ -2021,9 +2221,225 @@ def _cases(check):
           and route_subcommand(["ci", "audit/x"]) == ("ci", ["audit/x"]))
 
 
+def _fragment_fixture(files, changelog=None):
+    """A `_fixture_repo` whose `changelog.d/` holds `files` ({name: text}) and
+    whose CHANGELOG.md is `changelog` when given."""
+    root = _fixture_repo()
+    if changelog is not None:
+        _write_text(os.path.join(root, CHANGELOG_REL), changelog)
+    if files:
+        os.makedirs(os.path.join(root, FRAGMENTS_REL))
+    for name, text in files.items():
+        _write_text(os.path.join(root, FRAGMENTS_REL, name), text)
+    return root
+
+
+_FRAGMENT_OLD = ("# Changelog\n\n## [Unreleased]\n\n### Changed - old\n"
+                 "- kept as written\n\n## [1.0.0]\n\n- an old release\n")
+# Names chosen so the order is only right if kind order and a NUMERIC task
+# order both hold: a plain sort puts P9.10 before P9.2 and `added` before
+# `breaking`.
+_FRAGMENT_SET = {"P9.10.added.md": "- ten\n", "P9.2.added.md": "- two\n",
+                 "P9.3.fixed.md": "- three, fixed\n",
+                 "P9.1.breaking.md": "- one, breaking\n"}
+_FRAGMENT_NEW = ("# Changelog\n\n## [9.9.9]\n\n### Changed - old\n"
+                 "- kept as written\n\n### Breaking\n- one, breaking\n\n"
+                 "### Added\n- two\n- ten\n\n### Fixed\n- three, fixed\n"
+                 "\n## [1.0.0]\n\n- an old release\n")
+
+
+def _fragment_ctx(root, runner=None):
+    return Context(root, "9.9.9", push=False, runner=runner or FakeRunner(),
+                   state={"steps": {}, "version": "9.9.9"},
+                   state_path=os.path.join(root, "state.json"))
+
+
+def _fragment_cases(check):
+    from _suite import remove_tree          # tools/_suite.py says why here
+
+    # --- the assembled section is the Unreleased text plus the fragments -------
+    tmp = _fragment_fixture(_FRAGMENT_SET, _FRAGMENT_OLD)
+    try:
+        ok, detail = step_finalize_changelog(_fragment_ctx(tmp))
+        got = _read_text(os.path.join(tmp, CHANGELOG_REL))
+        check("rl27 finalize writes the Unreleased text exactly as it stood, "
+              "then the fragments grouped by kind in the stated kind order "
+              "and, inside a kind, by task id read as numbers (P9.2 before "
+              "P9.10): %r / %r" % (detail, got), ok and got == _FRAGMENT_NEW)
+        ok2, _detail2 = step_finalize_changelog(_fragment_ctx(tmp))
+        check("rl27b a resumed finalize over an already assembled, untouched "
+              "section writes nothing more: the text is the same bytes",
+              ok2 and _read_text(os.path.join(tmp, CHANGELOG_REL))
+              == _FRAGMENT_NEW)
+    finally:
+        remove_tree(tmp)
+
+    tmp = _fragment_fixture({}, _FRAGMENT_OLD)
+    try:
+        ok, _detail = step_finalize_changelog(_fragment_ctx(tmp))
+        check("rl27c with no fragment the release is what it was before "
+              "fragments existed: the heading is renamed and no other byte "
+              "moves", ok and _read_text(os.path.join(tmp, CHANGELOG_REL))
+              == _FRAGMENT_OLD.replace("[Unreleased]", "[9.9.9]"))
+    finally:
+        remove_tree(tmp)
+
+    # --- a fragment the release cannot place is refused, not skipped ----------
+    for case_id, name, words in (
+            ("rl28", "P9.1.wat.md", ("unknown kind", "wat", "added")),
+            ("rl28b", "P9.1.md", ("names no kind", "P9.1.md")),
+            ("rl28c", "notes.md", ("names no kind", "notes.md"))):
+        tmp = _fragment_fixture({name: "- a line\n"}, _FRAGMENT_OLD)
+        try:
+            findings = fragment_findings(tmp)
+            ok, detail = step_finalize_changelog(_fragment_ctx(tmp))
+            check("%s %s is a finding that names the file and why, the lint "
+                  "reports it and finalize refuses without touching "
+                  "CHANGELOG.md: %r / %r" % (case_id, name, findings, detail),
+                  len(findings) == 1 and name in findings[0]
+                  and all(w in findings[0] for w in words)
+                  and not ok and name in detail
+                  and _read_text(os.path.join(tmp, CHANGELOG_REL))
+                  == _FRAGMENT_OLD)
+        finally:
+            remove_tree(tmp)
+
+    tmp = _fragment_fixture({"P9.1.added.md": "\n  \n",
+                             "P9.2.added.md": "### Added\n- own heading\n"},
+                            _FRAGMENT_OLD)
+    try:
+        findings = fragment_findings(tmp)
+        check("rl28d an empty fragment and one that writes a heading of its "
+              "own are findings: %r" % (findings,),
+              len(findings) == 2 and "empty" in findings[0]
+              and "heading" in findings[1])
+    finally:
+        remove_tree(tmp)
+
+    # The other direction: a lint that always reports passes the cases above.
+    tmp = _fragment_fixture(_FRAGMENT_SET, _FRAGMENT_OLD)
+    try:
+        check("rl28e every well-formed fragment, and a changelog.d that does "
+              "not exist, are clean: %r" % (fragment_findings(tmp),),
+              fragment_findings(tmp) == []
+              and fragment_findings(tmp + "-absent") == [])
+    finally:
+        remove_tree(tmp)
+
+    # --- a hand-edited assembled section is refused ----------------------------
+    tmp = _fragment_fixture(_FRAGMENT_SET, _FRAGMENT_OLD)
+    try:
+        runner = FakeRunner()
+        ctx = _fragment_ctx(tmp, runner)
+        step_finalize_changelog(ctx)
+        path = os.path.join(tmp, CHANGELOG_REL)
+        clean = assembled_findings(tmp, "9.9.9")
+        _write_text(path, _read_text(path).replace("- two\n", "- 2\n"))
+        edited = assembled_findings(tmp, "9.9.9")
+        ok_f, detail_f = step_finalize_changelog(_fragment_ctx(tmp))
+        ok_c, detail_c = step_commit(ctx)
+        adds = [c for c in runner.calls if c.startswith("git add")]
+        check("rl29 an assembled section edited after finalize differs from "
+              "what the release would write: the check names it, a resumed "
+              "finalize and the commit step refuse, and nothing is staged: "
+              "%r / %r / %r" % (edited, detail_f, detail_c),
+              clean == [] and len(edited) == 1 and "9.9.9" in edited[0]
+              and not ok_f and not ok_c and adds == []
+              and os.path.isfile(os.path.join(tmp, FRAGMENTS_REL,
+                                              "P9.2.added.md")))
+    finally:
+        remove_tree(tmp)
+
+    # --- the commit consumes the fragments it assembled ------------------------
+    tmp = _fragment_fixture(_FRAGMENT_SET, _FRAGMENT_OLD)
+    try:
+        runner = FakeRunner()
+        ctx = _fragment_ctx(tmp, runner)
+        step_finalize_changelog(ctx)
+        ok, detail = step_commit(ctx)
+        removed = [c for c in runner.calls if c.startswith("git rm")]
+        left = os.listdir(os.path.join(tmp, FRAGMENTS_REL)) \
+            if os.path.isdir(os.path.join(tmp, FRAGMENTS_REL)) else []
+        check("rl30 the commit step deletes every fragment it assembled and "
+              "stages the deletions, so the next release does not write them "
+              "again: %r / %r / %r" % (detail, removed, left),
+              ok and left == [] and len(removed) == 1
+              and all(n in removed[0] for n in _FRAGMENT_SET)
+              and any(c.startswith("git add") for c in runner.calls))
+        leftover = _fragment_fixture({"P9.1.added.md": "- x\n"},
+                                     _FRAGMENT_NEW)
+        try:
+            findings = assembled_findings(leftover, "9.9.9")
+            check("rl30b a release section that still has fragments beside "
+                  "it is a finding: they would be written a second time: %r"
+                  % (findings,), len(findings) == 1
+                  and "P9.1.added.md" in findings[0])
+        finally:
+            remove_tree(leftover)
+    finally:
+        remove_tree(tmp)
+
+    # --- the kinds are the words the changelog already uses --------------------
+    heads = set(re.findall(r"^### ([A-Za-z]+)", _read_text(
+        os.path.join(REPO, CHANGELOG_REL)), re.M))
+    check("rl31 every kind a fragment may name is a section word this "
+          "repository's CHANGELOG.md already opens a section with, so a kind "
+          "is never invented here: missing %r"
+          % (sorted(k for k in KINDS if k.capitalize() not in heads),),
+          all(k.capitalize() in heads for k in KINDS))
+
+    # --- the command the lint slice runs ---------------------------------------
+    for case_id, files, version, want in (
+            ("rl32", {"P9.1.wat.md": "- x\n"}, None, 1),
+            ("rl32b", _FRAGMENT_SET, None, 0),
+            ("rl32c", _FRAGMENT_SET, "9.9.9", 1)):
+        tmp = _fragment_fixture(files, _FRAGMENT_NEW if version
+                                else _FRAGMENT_OLD)
+        try:
+            out = io.StringIO()
+            argv = ["--repo", tmp] + (["--version", version] if version else [])
+            code = cmd_changelog_check(argv, out=out)
+            check("%s `release.py changelog-check %s` exits %d: %r"
+                  % (case_id, " ".join(argv[2:]), want, out.getvalue()),
+                  code == want and (want == 0 or out.getvalue().strip()))
+        finally:
+            remove_tree(tmp)
+    check("rl32d an argument the command does not know is a usage error, "
+          "never ignored", cmd_changelog_check(["--wat"], out=io.StringIO())
+          == 2)
+    out = io.StringIO()
+    check("rl32e this repository's own changelog.d passes the lint: %r"
+          % (out.getvalue(),), cmd_changelog_check([], out=out) == 0)
+
+    # --- what the fragments buy: the wave builder, on plan-shaped tasks --------
+    import _wave
+    one = {"id": "P1.1", "files": ["plugins/audit/scripts/governance/_wave.py",
+                                   "changelog.d/P1.1.added.md"]}
+    two = {"id": "P1.2", "files": ["plugins/audit/scripts/governance/_locks.py",
+                                   "changelog.d/P1.2.fixed.md"]}
+    old_one = {"id": "P1.1", "files": ["plugins/audit/scripts/governance/_wave.py",
+                                       "CHANGELOG.md"]}
+    old_two = {"id": "P1.2", "files": ["plugins/audit/scripts/governance/_locks.py",
+                                       "CHANGELOG.md"]}
+    fragmented = _wave.select([one, two], 4)
+    shared = _wave.select([old_one, old_two], 4)
+    check("rl33 two tasks on different modules that each write a fragment of "
+          "their own are one wave, and the same two declaring CHANGELOG.md "
+          "are two - the second deferred on the first: %r / %r"
+          % (fragmented, shared),
+          fragmented == {"wave": ["P1.1", "P1.2"], "deferred": []}
+          and shared == {"wave": ["P1.1"], "deferred": [
+              {"id": "P1.2", "reason": "overlap", "with": "P1.1"}]})
+
+
+def _cases_all(check):
+    _cases(check)
+    _fragment_cases(check)
+
+
 def _selftest():
     from _suite import run           # the house runner; tools/_suite.py says why here
-    return run(_cases)
+    return run(_cases_all)
 
 
 if __name__ == "__main__":

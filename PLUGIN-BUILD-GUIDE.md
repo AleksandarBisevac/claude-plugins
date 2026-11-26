@@ -8308,8 +8308,8 @@ filled, `marketplace.json` owner + description filled (marketplace **name is
 `quality-gates`** — the GitHub repo is named `claude-plugins`, the two intentionally
 differ; see §2), starter `$schema` URL points at this repo, MIT `LICENSE` + `.gitignore`
 added. Published at `https://github.com/AleksandarBisevac/claude-plugins`.
-Releases follow `CONTRIBUTING.md`: one commit = version bump + CHANGELOG entry +
-annotated `v<version>` tag; push `--follow-tags` only after CI is green.
+Releases follow `CONTRIBUTING.md`: one commit = version bump + the CHANGELOG section
+(the `changelog.d/` fragments assembled by `tools/release.py`) + annotated `v<version>` tag; push `--follow-tags` only after CI is green.
 
 The surface has grown since — all covered above and in `CHANGELOG.md`: the report renderer +
 Azure DevOps `/audit:sync` (v0.5.0), pinned-tool agents + the PostToolUse shell-write guard

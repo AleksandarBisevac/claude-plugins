@@ -1,0 +1,474 @@
+{
+  "id": "P170",
+  "title": "Waves run wider than one: no file every task must edit",
+  "status": "in_progress",
+  "description": "Owner 2026-11-25, answering how to speed development up: today almost every task declares CHANGELOG.md and PLUGIN-BUILD-GUIDE.md, so the drive's wave builder sees a shared file between any two tasks and runs waves of width one (register F915). Make those two files stop being a per-task collision, then measure the wave width it buys. FIRST TASK (materialize with /audit:task add on this phase; key changelog-fragments, risk med, tdd): A task writes its changelog entry as a fragment of its own, and the release assembles CHANGELOG.md from the fragments. Every task appends to CHANGELOG.md's [Unreleased] section, so every pair of tasks shares that file and the wave builder runs them one at a time (F915). Replace the shared append with one fragment file per task (the towncrier pattern: changelog.d/<task-id>.<kind>.md, kind one of the section words the changelog already uses), assembled into CHANGELOG.md by the release step (tools/release.py) and checked by a lint that the assembled text equals what the release would write. Decide and state: where the fragments live, what a fragment that names no kind does, how the existing [Unreleased] text is carried (move it into fragments once, so nothing is lost), what tools/release.py, verify.sh --release and CONTRIBUTING.md's release step now do, and how `/audit:task add` and the executor brief tell a task to write a fragment instead of editing CHANGELOG.md. The same question for PLUGIN-BUILD-GUIDE.md: list which of its per-module sections can be generated from the code the way the module map already is (tools/lints/_deps.py --render), and either generate them in this task or file a follow-up with the list; a hand-written section a task must still edit stays a declared file. Acceptance: two tasks that touch different modules and each write a fragment are planned as one wave by the drive (show it with the wave builder on a fixture plan); release output on this repository is byte for byte the current CHANGELOG.md plus the assembled fragments; the doc lints stay green; measure the wave width the next phase actually gets and record it. Files: tools/release.py, CHANGELOG.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md, tools/verify.sh, tests/test_release.py. tests.add: tests/test_release.py: the release assembles CHANGELOG.md from the per-task fragments and an assembled text that differs from what the release would write is refused",
+  "desiredOutcome": "Two ready tasks of one phase that touch different code run as one wave: no task declares CHANGELOG.md or a hand-written section of PLUGIN-BUILD-GUIDE.md only to describe itself, and the release still produces the same CHANGELOG.md.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "2193fc4adf4e76c6f073f334a4216a5234fab80a",
+  "branch": "audit/p170-waves-run-wider-than-one-no-fi",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": [
+      {
+        "id": "P170-R1",
+        "severity": "med",
+        "file": "tools/release.py:649-660",
+        "issue": "step_commit deletes the fragments from disk (os.remove) BEFORE `git rm`. If `git rm` fails (reproduced on a real scratch git repo with a held .git/index.lock) the step returns False, but the files are already gone from disk while still tracked in HEAD. A resumed step_commit then sees no fragments (read_fragments reads disk), so fragment_findings/assembled_findings return [] and consumed is empty: it commits successfully, and the release commit still carries changelog.d/P9.1.added.md in HEAD (git ls-files changelog.d lists it). The next release assembles that already-released fragment a second time. unconsumed_findings also reads disk only, so verify --release cannot see it.",
+        "resolution": "Make the deletion one git operation that leaves state intact on failure: run `git rm -q -f --ignore-unmatch -- <fragments>` first (it removes the working file too) and only then os.remove any untracked leftover; or on resume derive `consumed` from `git ls-files changelog.d` as well as the directory. Add a case with a runner whose git rm returns non-zero asserting the files are still on disk and a second step_commit still removes them."
+      }
+    ],
+    "outcome": "[findings: 1 - 0 high, 1 med, 0 low; 0 with a recorded fix commit]"
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P170.1",
+      "title": "A task writes its changelog entry as a fragment of its own, and the release assembles CHANGELOG.md from the fragments",
+      "status": "in_progress",
+      "description": "First task of P170 (read the phase description in docs/audit/phases/P170.json; it is the authority). Every task appends to CHANGELOG.md's Unreleased section, so every pair of tasks shares that file and the wave builder runs waves of width one (register F915). Replace the shared append with one fragment file per task (towncrier pattern: changelog.d/<task-id>.<kind>.md, kind one of the section words the changelog already uses), assembled into CHANGELOG.md by the release step (tools/release.py finalize-changelog) and checked by a lint that refuses a fragment with an unknown kind and an assembled text differing from what the release would write. Decide and state in CONTRIBUTING.md: where fragments live, what a fragment naming no kind does, that the existing Unreleased text stays as written and the fragments are appended under it at release (nothing moved, nothing lost), what tools/release.py and verify.sh --release now do. This repository's own instruction to tasks (CLAUDE.md, CONTRIBUTING.md) says write a fragment, not CHANGELOG.md. The plugin's product (executor brief, /audit:task add) is NOT changed here: name what it would take as a follow-up. Acceptance: release finalize on a fixture yields byte for byte the Unreleased text plus the assembled fragments in a stated order; an unknown kind and a hand-edited assembled section are refused, each red-first; doc lints green; show with the drive's wave builder on a fixture plan that two tasks touching different modules and each writing a fragment are one wave, where the same two declaring CHANGELOG.md are two.",
+      "files": [
+        "tools/release.py",
+        "CONTRIBUTING.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/verify.sh",
+        "CLAUDE.md",
+        "tools/gate-parity.py",
+        "changelog.d/P170.1.changed.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-26T06:09:42Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-26T06:09:40Z",
+          "text": "it quotes a fixed sentence of a document this task only adds a new paragraph or section to; the quoted text is not edited",
+          "waives": "docs/research/pipeline-cost-levers.md"
+        },
+        {
+          "at": "2026-11-26T06:09:40Z",
+          "text": "it quotes a fixed sentence of a document this task only adds a new paragraph or section to; the quoted text is not edited",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-26T06:09:40Z",
+          "text": "it quotes a fixed sentence of a document this task only adds a new paragraph or section to; the quoted text is not edited",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-26T06:09:40Z",
+          "text": "it quotes a fixed sentence of a document this task only adds a new paragraph or section to; the quoted text is not edited",
+          "waives": "tests/test__output_lints.py"
+        },
+        {
+          "at": "2026-11-26T06:09:40Z",
+          "text": "it quotes a fixed sentence of a document this task only adds a new paragraph or section to; the quoted text is not edited",
+          "waives": "tests/test_drive_phase.py"
+        },
+        {
+          "at": "2026-11-26T06:09:40Z",
+          "text": "it quotes a fixed sentence of a document this task only adds a new paragraph or section to; the quoted text is not edited",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-26T06:09:40Z",
+          "text": "it quotes a fixed sentence of a document this task only adds a new paragraph or section to; the quoted text is not edited",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-26T06:09:40Z",
+          "text": "it quotes a fixed sentence of a document this task only adds a new paragraph or section to; the quoted text is not edited",
+          "waives": "tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-11-26T06:09:40Z",
+          "reader": "tools/gate-parity.py",
+          "reads": "tools/verify.sh",
+          "text": "declared to answer a reading: tools/gate-parity.py reads tools/verify.sh - quotes its text beside its path: 'npx vitest run'"
+        },
+        {
+          "at": "2026-11-26T06:32:32Z",
+          "text": "changelog.d/P170.1.changed.md widened after the submit refused it: the task's own changelog entry is, by this task's design, its first fragment, and the orchestrator asked for it."
+        }
+      ],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-26T06:32:54Z",
+            "ms": 17921,
+            "basis": "selectionMs in run 2026-11-26T06:39:41Z.5ddddf's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-26T06:39:41Z.5ddddf"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-26T06:33:12Z",
+            "ms": 388331,
+            "basis": "durationMs in run 2026-11-26T06:39:41Z.5ddddf's record (run-test-gate --record)",
+            "runId": "2026-11-26T06:39:41Z.5ddddf"
+          },
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-26T06:39:42Z",
+            "ms": 17639,
+            "basis": "selectionMs in run 2026-11-26T06:40:04Z.5743e8's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-26T06:40:04Z.5743e8"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-26T06:40:00Z",
+            "ms": 4229,
+            "basis": "durationMs in run 2026-11-26T06:40:04Z.5743e8's record (run-test-gate --record)",
+            "runId": "2026-11-26T06:40:04Z.5743e8"
+          }
+        ],
+        "firstStartedAt": "2026-11-26T06:09:42Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-26T06:40:04Z.5743e8",
+        "status": "passed",
+        "durationMs": 4229,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no step printed a summary this reader can count (validate, gate, report), so the size of this gate is not knowable from its output; counted over the step(s) measured here only - the repeated step(s) selftests, plugin-validate, lint, vitest ran no check in this run",
+          "treeMutated": [],
+          "treeBasis": "git described the tree before and after",
+          "coverageBasis": "the runner named 3 path(s); the work under test declares 7 file(s); among them: <outside-repo>, <outside-repo>, docs/audit/audit-plan.json; declared but not named by the run: CLAUDE.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md, changelog.d/P170.1.changed.md, tools/gate-parity.py, tools/release.py, tools/verify.sh; joined with the paths run 2026-11-26T06:39:41Z.5ddddf's repeated step(s) selftests, plugin-validate, lint, vitest named"
+        },
+        "banners": [],
+        "gateSource": "task",
+        "gateDigest": "sha256:e8312fb8f9c94dbe9df9bce082512eec91a04ad94b9a2938a23f7d6bd7005252",
+        "reuseKey": "1:sha256:1715816e9e7bcdbb901ed9d90be1f5f35a2274cfa549f530ccd4ba6c51424d5d",
+        "verdictSource": "part-reused",
+        "reusedFrom": {
+          "runId": "2026-11-26T06:39:41Z.5ddddf",
+          "ts": "2026-11-26T06:39:41Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+        "startedAt": "2026-11-26T06:40:00Z",
+        "selectionMs": 17639,
+        "at": "2026-11-26T06:40:04Z",
+        "steps": [
+          {
+            "name": "selftests",
+            "exit": 0,
+            "ran": null,
+            "measured": "not-knowable",
+            "suiteReader": "none",
+            "reusedFrom": {
+              "runId": "2026-11-26T06:39:41Z.5ddddf",
+              "ts": "2026-11-26T06:39:41Z"
+            },
+            "command": "python3 tools/sweep-selftests.py"
+          },
+          {
+            "name": "validate",
+            "exit": 0,
+            "ran": null,
+            "measured": "not-knowable",
+            "durationMs": 737,
+            "suiteReader": "none",
+            "command": "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json"
+          },
+          {
+            "name": "plugin-validate",
+            "exit": 0,
+            "ran": null,
+            "measured": "not-knowable",
+            "suiteReader": "none",
+            "reusedFrom": {
+              "runId": "2026-11-26T06:39:41Z.5ddddf",
+              "ts": "2026-11-26T06:39:41Z"
+            },
+            "command": "claude plugin validate . && claude plugin validate plugins/audit"
+          },
+          {
+            "name": "gate",
+            "exit": 0,
+            "ran": null,
+            "measured": "not-knowable",
+            "durationMs": 1343,
+            "suiteReader": "none",
+            "command": "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate"
+          },
+          {
+            "name": "report",
+            "exit": 0,
+            "ran": null,
+            "measured": "not-knowable",
+            "durationMs": 2106,
+            "suiteReader": "none",
+            "command": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report"
+          },
+          {
+            "name": "lint",
+            "exit": 0,
+            "ran": null,
+            "measured": "not-knowable",
+            "suiteReader": "none",
+            "reusedFrom": {
+              "runId": "2026-11-26T06:39:41Z.5ddddf",
+              "ts": "2026-11-26T06:39:41Z"
+            },
+            "command": "ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints"
+          },
+          {
+            "name": "vitest",
+            "exit": 0,
+            "ran": 870,
+            "measured": "checks",
+            "suiteReader": "vitest",
+            "reusedFrom": {
+              "runId": "2026-11-26T06:39:41Z.5ddddf",
+              "ts": "2026-11-26T06:39:41Z"
+            },
+            "command": "npx vitest run"
+          }
+        ],
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "runId": "2026-11-26T06:39:41Z.5ddddf",
+          "startedAt": "2026-11-26T06:33:12Z",
+          "durationMs": 388331,
+          "selectionMs": 17921,
+          "status": "passed",
+          "failed": [],
+          "reuseKey": "1:sha256:1715816e9e7bcdbb901ed9d90be1f5f35a2274cfa549f530ccd4ba6c51424d5d",
+          "gateDigest": "sha256:e8312fb8f9c94dbe9df9bce082512eec91a04ad94b9a2938a23f7d6bd7005252",
+          "gateSource": "task",
+          "leftToPhaseGate": [
+            {
+              "name": "shots",
+              "arm": "declared",
+              "basis": "executor.phaseGateOnly",
+              "matched": "capture-screenshots.mjs"
+            },
+            {
+              "name": "interactive",
+              "arm": "declared",
+              "basis": "executor.phaseGateOnly",
+              "matched": "check-report-interactive.mjs"
+            }
+          ],
+          "banners": [],
+          "machine": "this run had the machine to itself",
+          "launch": "2026-11-26T06:32:54Z-addfe6e1",
+          "gateReach": {
+            "gaps": [
+              {
+                "path": "changelog.d/P170.1.changed.md",
+                "why": "the affected-test derivation selects suites for it, and the gate runs none of them",
+                "suites": [
+                  ".claude/hooks/arm-release-bypass.py",
+                  ".claude/hooks/guard-release.py",
+                  ".claude/hooks/guard-uncommitted.py",
+                  ".claude/hooks/require-claim-block.py",
+                  "tests/test__ado_connect.py",
+                  "tests/test__ado_conventions.py",
+                  "tests/test__ado_drift.py",
+                  "tests/test__ado_fetch.py",
+                  "tests/test__ado_fields.py",
+                  "tests/test__ado_parent.py",
+                  "tests/test__ado_tracked.py",
+                  "tests/test__affected_tests.py",
+                  "tests/test__areas.py",
+                  "tests/test__branch.py",
+                  "tests/test__claude_home.py",
+                  "tests/test__clause_coverage.py",
+                  "tests/test__cli_fmt.py",
+                  "tests/test__commit_trail.py",
+                  "tests/test__config.py",
+                  "tests/test__config_rules.py",
+                  "tests/test__config_rules_lints.py",
+                  "tests/test__demo_cast.py",
+                  "tests/test__deps.py",
+                  "tests/test__doctor_ado.py",
+                  "tests/test__doctor_completions.py",
+                  "tests/test__doctor_hygiene.py",
+                  "tests/test__doctor_policy.py",
+                  "tests/test__doctor_report.py",
+                  "tests/test__doctor_setup.py",
+                  "tests/test__doctor_trail.py",
+                  "tests/test__evidence_io.py",
+                  "tests/test__evidence_view.py",
+                  "tests/test__excerpt.py",
+                  "tests/test__filed_returns.py",
+                  "tests/test__fmt.py",
+                  "tests/test__gate_derive.py",
+                  "tests/test__gate_feed.py",
+                  "tests/test__help.py",
+                  "tests/test__help_lints.py",
+                  "tests/test__id_refs.py"
+                ],
+                "suitesDropped": 155
+              }
+            ]
+          },
+          "observations": {
+            "ranTotal": 870,
+            "countsBasis": "1 of 7 step(s) printed a summary this reader counted; selftests, validate, plugin-validate, gate, report, lint did not, so this total is a floor and not a size",
+            "treeMutated": [],
+            "treeBasis": "git described the tree before and after",
+            "coverage": [
+              "tools/gate-parity.py",
+              "tools/release.py"
+            ],
+            "coverageBasis": "the runner named 292 path(s); the work under test declares 7 file(s); 58 of them are test paths, matched to the files they are named after; among them: .claude-plugin/icon.png, .claude-plugin/plugin.json, .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py and 287 more; declared but not named by the run: CLAUDE.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md, changelog.d/P170.1.changed.md, tools/verify.sh; breadth: the run named 232 suite path(s) and this task declares 7 file(s), and 232 of them are suites the task neither declares nor is named after (test__deps.py, test__evidence_io.py, test__output.py, test_audit_task.py, test_close_phase.py, test_commit_task_work.py, test_drive_phase.py and 225 more) - this gate asks more than the task changed; that is reported, not refused"
+          },
+          "via": "cli",
+          "attempt": 1,
+          "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+          "at": "2026-11-26T06:39:41Z",
+          "testedState": {
+            "head": "2193fc4a",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeDigest": "sha256:8445d7d712183d20e7de65b26e87a26b876200f3a6956634a2abb59e5cdd20eb",
+            "scopeBasis": "7 declared file(s); 7 read, 0 missing",
+            "scopeListDigest": "sha256:599c434545cdd4e83041d53cffe6e21712f4920567c591d52be3ac07950f3376",
+            "dirtyDigest": "sha256:0abc369abddc354df0a1d0248d0d992aba8965aa284c7db73599e5e15a74d973",
+            "dirtyBasis": "git described the tree before the run; 11 dirty path(s)"
+          },
+          "steps": [
+            {
+              "name": "selftests",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 375878,
+              "suiteReader": "none",
+              "command": "python3 tools/sweep-selftests.py"
+            },
+            {
+              "name": "validate",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 735,
+              "suiteReader": "none",
+              "command": "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json"
+            },
+            {
+              "name": "plugin-validate",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 1107,
+              "suiteReader": "none",
+              "command": "claude plugin validate . && claude plugin validate plugins/audit"
+            },
+            {
+              "name": "gate",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 1371,
+              "suiteReader": "none",
+              "command": "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate"
+            },
+            {
+              "name": "report",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 2126,
+              "suiteReader": "none",
+              "command": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report"
+            },
+            {
+              "name": "lint",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 3321,
+              "suiteReader": "none",
+              "command": "ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints"
+            },
+            {
+              "name": "vitest",
+              "exit": 0,
+              "ran": 870,
+              "measured": "checks",
+              "durationMs": 3737,
+              "suiteReader": "vitest",
+              "command": "npx vitest run"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "gateReach",
+          "leftToPhaseGate",
+          "observations.coverage",
+          "testedState"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-26T06:39:41Z.5ddddf",
+            "launch": "2026-11-26T06:32:54Z-addfe6e1",
+            "status": "passed",
+            "at": "2026-11-26T06:39:41Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-26T06:40:04Z.5743e8",
+        "status": "passed",
+        "at": "2026-11-26T06:40:04Z"
+      }
+    }
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+    "branch": "audit/p170-waves-run-wider-than-one-no-fi",
+    "at": "2026-11-26T06:09:42Z"
+  },
+  "startedAt": "2026-11-26T06:09:42Z"
+}

@@ -869,11 +869,56 @@ is the step list.
 
 One release = **one commit** that:
 1. bumps `plugins/audit/.claude-plugin/plugin.json` `version`,
-2. finalizes the `CHANGELOG.md` section for that version,
+2. finalizes the `CHANGELOG.md` section for that version (the fragments below),
 3. carries the annotated tag `v<version>` on that same commit.
 
 Spell the tag's own message with `-F <path>` — see *Spelling a multi-line
 commit or tag message* above before reaching for a heredoc here.
+
+**A change's changelog entry is a fragment, not an edit to `CHANGELOG.md`.**
+Every task used to append to `CHANGELOG.md`'s `## [Unreleased]`, so any two tasks
+of a phase shared that file and the drive's wave builder ran them one at a time.
+A task now writes one file per kind of entry:
+
+- **Where:** `changelog.d/<task-id>.<kind>.md`, at the repository root
+  (`changelog.d/P170.1.changed.md`). The file holds the entry's bullets and nothing
+  else - no heading, because the release writes the kind's heading itself. A task
+  that has a `Fixed` entry and an `Added` one writes two files.
+- **Kind:** the last dotted word before `.md`, one of `breaking`, `added`,
+  `changed`, `deprecated`, `removed`, `fixed`, `security`, `documentation`,
+  `compatibility` - each a word this changelog already opens sections with
+  (`tools/release.py`'s `KINDS`, which a case checks against `CHANGELOG.md`).
+- **A name that carries no kind** (`P170.1.md`, `notes.md`), **an unknown kind**,
+  an empty file, and a body that writes a `##` or `###` heading of its own are all
+  **refused**, never skipped: a fragment dropped quietly is an entry that vanishes.
+  Dotfiles in the folder are not fragments.
+- **What the release does with them:** `release.py run`'s `finalize-changelog`
+  step renames `## [Unreleased]` to the version as before and appends the
+  fragments to that section **after the text that stood there, which stays exactly
+  as written** - nothing is moved into a fragment, reflowed or lost. The
+  appended part is a `### <Kind>` heading per kind that has a fragment, kinds in
+  the order listed above, and inside a kind the fragments in task-id order with
+  the digits read as numbers (`P170.2` before `P170.10`), their bullets one
+  after the other. The `commit` step deletes the fragments it assembled and
+  stages the deletions, in the one release commit, after checking once more that
+  the section still ends with what they assemble to.
+- **What is checked, and where:** `python3 tools/release.py changelog-check` -
+  refuses any fragment the release would refuse - is a row of `tools/verify.sh`'s
+  `lint` slice, so a malformed fragment fails on the commit that adds it. With
+  `--version X.Y.Z` it also refuses a `## [X.Y.Z]` section that does not end with
+  the text the fragments assemble to (edited by hand after finalize), and
+  fragments left beside the section once it exists; that form is a row of
+  `verify.sh --release`, and `finalize-changelog` and `commit` ask the same
+  question themselves, so a hand edit between the two is refused before anything
+  is staged. The text above the assembled part is the owner's and is not compared.
+
+A task's `files` therefore lists its own fragment, never `CHANGELOG.md`; two
+tasks that touch different code and each declare their own fragment are
+disjoint to the wave builder. **Nothing in the plugin's product tells a task
+this yet**: the executor brief and `/audit:task add` still read as if the task
+edits `CHANGELOG.md`, and what the follow-up takes is those two texts naming the
+fragment and its path. Until then this paragraph and `CLAUDE.md` are where a
+contributor to this repository learns it.
 
 **The bump has followers, and they have an order.** The version is not only a
 number in one file. The README's `curl` pins name the tag a reader fetches from;
