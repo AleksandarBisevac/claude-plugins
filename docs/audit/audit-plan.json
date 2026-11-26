@@ -2895,7 +2895,8 @@
       "P118.14-v7t",
       "P125.4",
       "P125.12",
-      "P169.15-6l3"
+      "P169.15-6l3",
+      "P169.41-6l3"
     ],
     "plugins/audit/commands/init.md": [
       "P1.6",
@@ -4072,7 +4073,8 @@
       "P169.21-6l3",
       "P169.22-6l3",
       "P169.23-6l3",
-      "P169.27-6l3"
+      "P169.27-6l3",
+      "P169.41-6l3"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -5429,7 +5431,8 @@
     "plugins/audit/scripts/manifest/_manifest_merge.py": [
       "P60.1",
       "P169.30-6l3",
-      "P169.33-6l3"
+      "P169.33-6l3",
+      "P169.41-6l3"
     ],
     "plugins/audit/scripts/manifest/_manifest_phases.py": [
       "P22.4",
@@ -5570,7 +5573,8 @@
       "P167.2",
       "P169.3",
       "P169.6",
-      "P169.7"
+      "P169.7",
+      "P169.41-6l3"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -5848,7 +5852,8 @@
       "P169.6",
       "P169.16-6l3",
       "P169.15-6l3",
-      "P169.26-6l3"
+      "P169.26-6l3",
+      "P169.41-6l3"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -5997,7 +6002,8 @@
       "P131.2",
       "P169.16-6l3",
       "P169.19-6l3",
-      "P169.34-6l3"
+      "P169.34-6l3",
+      "P169.41-6l3"
     ],
     "plugins/audit/scripts/panel/_panel_discovery.py": [
       "P12.2",
@@ -12376,7 +12382,8 @@
       "P152.13-6jb",
       "P155.5",
       "P169.33-6l3",
-      "P169.37-6l3"
+      "P169.37-6l3",
+      "P169.41-6l3"
     ],
     "docs/audit/phases/P127.json": [
       "P127.8-bgr"
@@ -13187,7 +13194,8 @@
       "P169.33-6l3",
       "P169.34-6l3",
       "P169.37-6l3",
-      "P169.38-6l3"
+      "P169.38-6l3",
+      "P169.41-6l3"
     ],
     "tests/test__evidence_view.py": [
       "P131.1",
@@ -13223,7 +13231,8 @@
     "tests/test__help.py": [
       "P131.1",
       "P131.2",
-      "P169.9"
+      "P169.9",
+      "P169.41-6l3"
     ],
     "tests/test__id_refs.py": [
       "P131.1"
@@ -13252,7 +13261,8 @@
     ],
     "tests/test__json_schema.py": [
       "P131.1",
-      "P169.21-6l3"
+      "P169.21-6l3",
+      "P169.41-6l3"
     ],
     "tests/test__live_copy.py": [
       "P131.1",
@@ -13295,7 +13305,8 @@
     "tests/test__manifest_merge.py": [
       "P131.1",
       "P169.30-6l3",
-      "P169.33-6l3"
+      "P169.33-6l3",
+      "P169.41-6l3"
     ],
     "tests/test__manifest_phases.py": [
       "P131.1",
@@ -13801,7 +13812,8 @@
       "P169.9",
       "P169.15-6l3",
       "P169.19-6l3",
-      "P169.26-6l3"
+      "P169.26-6l3",
+      "P169.41-6l3"
     ],
     "tests/test_audit_usage.py": [
       "P131.1",
@@ -14026,7 +14038,8 @@
       "P169.24-6l3",
       "P169.26-6l3",
       "P169.28-6l3",
-      "P169.37-6l3"
+      "P169.37-6l3",
+      "P169.41-6l3"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -14148,7 +14161,8 @@
       "P169.30-6l3",
       "P169.32-6l3",
       "P169.33-6l3",
-      "P169.37-6l3"
+      "P169.37-6l3",
+      "P169.41-6l3"
     ],
     "tests/test_meter_usage.py": [
       "P131.1",
@@ -14408,7 +14422,8 @@
       "P169.15-6l3",
       "P169.6",
       "P169.7",
-      "P169.40-6l3"
+      "P169.40-6l3",
+      "P169.41-6l3"
     ],
     "tools/demo/gen-demo-usage.py": [
       "P131.2"

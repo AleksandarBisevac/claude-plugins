@@ -986,7 +986,7 @@ def _cases(check):
               % ((os.path.basename(path), os.path.basename(p2)),),
               p2 != path and os.path.dirname(p2) == edir)
 
-        # --- RED-FIRST: a CI writer names its own ledger file -------------------
+        # --- RED-FIRST: a named writer names its own ledger file -------------
         # A SEPARATE PROJECT, not `plain` - every case below this point counts
         # evidence FILES and ROWS in `plain`, and a write here would shift
         # both counts out from under them.
@@ -995,21 +995,12 @@ def _cases(check):
         with_session["runId"] = "R-writer-session"
         p_named = M.append_row(writer_proj, with_session, session_id="sess-9",
                                writer="ci-42")
-        check("ev18b RED-FIRST: `--writer` reaches `append_row` and WINS over a "
-              "session id - a build's own name should not be split across files "
-              "by which session happened to invoke the shard: %r"
+        check("ev18b RED-FIRST: a writer handed to `append_row` WINS over a "
+              "session id - one writer's rows should not be split across "
+              "files by which session happened to append them: %r"
               % (os.path.basename(p_named),),
               "ci-42" in os.path.basename(p_named)
               and "sess-9" not in os.path.basename(p_named))
-
-        rec_result = {"status": "passed", "steps": [], "testedState": {}}
-        recorded = M.record(writer_proj, rec_result, "full", {},
-                            {"runId": "R-writer-record", "sessionId": "sess-10"},
-                            writer="ci-99")
-        check("ev18c ...and the SAME name reaches a ledger file through "
-              "`record()`, not only through `append_row` called by hand: %r"
-              % (os.path.basename(recorded["path"]),),
-              "ci-99" in os.path.basename(recorded["path"]))
 
         back = M.read_rows(plain, manifest_path=M.plan_file_of(plain))
         check("ev19 both rows read back, and the reader says how many files it "
@@ -1103,9 +1094,9 @@ def _cases(check):
             bad_offset = fh.read().index(b"\xff")
         bad_said = " ".join(bad_files[0]["findings"]) if bad_files else ""
         check("ev21e ...and its finding names the byte and its offset in the "
-              "FILE's bytes - the remedy import-evidence prints sends the "
-              "reader to that position, so it must be the file's own, not a "
-              "line's: %r (byte at %d)" % (bad_said, bad_offset),
+              "FILE's bytes - a reader repairing the file goes to that "
+              "position, so it must be the file's own, not a line's: %r "
+              "(byte at %d)" % (bad_said, bad_offset),
               "0xff" in bad_said
               and ("in position %d:" % bad_offset) in bad_said)
         uni_proj = _project(os.path.join(tmp, "utf8-non-ascii"), {})
@@ -1128,8 +1119,7 @@ def _cases(check):
 
         # An append onto a file no reader can decode would store a run every
         # reader then loses with the file - so the write is REFUSED, the file
-        # left byte-for-byte as it was, and `record()` raises the refusal a
-        # recorder prints as "evidence: NOT recorded - <reason>".
+        # left byte-for-byte as it was, and `append_row` raises the refusal.
         ap_proj = _project(os.path.join(tmp, "append-undecodable"), {})
         ap_path = M.append_row(ap_proj, {"runId": "AP-1",
                                          "ts": "2026-01-05T00:00:00Z"},
@@ -1142,12 +1132,7 @@ def _cases(check):
         for ap_call in (
                 lambda: M.append_row(ap_proj, {"runId": "AP-2",
                                                "ts": "2026-01-06T00:00:00Z"},
-                                     writer="w-ap"),
-                lambda: M.record(ap_proj, {"status": "passed", "steps": [],
-                                           "testedState": {}}, "full", {},
-                                 {"runId": "AP-3",
-                                  "ts": "2026-01-07T00:00:00Z"},
-                                 writer="w-ap")):
+                                     writer="w-ap"),):
             try:
                 ap_call()
                 ap_errors.append(None)
@@ -1156,9 +1141,9 @@ def _cases(check):
         with open(ap_path, "rb") as fh:
             ap_after = fh.read()
         check("ap1 RED-FIRST: appending onto a ledger file that is not UTF-8 "
-              "is REFUSED - `append_row` and `record()` both raise, naming the "
-              "file, and not one byte is written: %r" % (ap_errors,),
-              len(ap_errors) == 2 and all(ap_errors)
+              "is REFUSED - `append_row` raises, naming the file, and not one "
+              "byte is written: %r" % (ap_errors,),
+              len(ap_errors) == 1 and all(ap_errors)
               and all(os.path.basename(ap_path) in e for e in ap_errors if e)
               and all("not UTF-8" in e for e in ap_errors if e)
               and ap_after == ap_before)
@@ -1501,59 +1486,22 @@ def _cases(check):
               locked is True
               and len(_lines(kp)) == 1)
 
-        # --- the anchor ---------------------------------------------------
-        recorded = M.record(plain, RESULT, "task",
-                            {"taskId": "P1.2", "phaseId": "P1"}, IDENT,
-                            published=["pytest -q"])
-        jrows = _journal_io.read_all(plain)
-        anchors = [r for r in jrows if r.get("action") == M.ACTION_RECORDED]
-        check("ev22 recording anchors the run in the EXISTING hash chain with "
-              "one row - the claim is inside a chain that cannot be edited "
-              "without breaking it, and no second chain had to be built to get "
-              "that: %r" % (len(anchors),),
-              recorded["appended"] is not False and len(anchors) == 1
-              and anchors[0]["details"].get("runId") == "R1")
-
-        check("ev23 ...and `runId` SURVIVES `normalise_details`. It has to be "
-              "on the allow-list or it is dropped in silence - the failure that "
+        # --- a run id in the trail -----------------------------------------
+        # No run is anchored in the trail any more, but a pointer moved and a
+        # boundary stamped each name their run there.
+        kept_details = _journal_io.normalise_details({"runId": "R1"})
+        check("ev23 `runId` SURVIVES `normalise_details`. It has to be on the "
+              "allow-list or it is dropped in silence - the failure that "
               "already bit `reason`, where the field was written, discarded, "
               "and believed by everything reading the document instead of the "
-              "row: %r" % (sorted(anchors[0]["details"]),),
+              "row: %r" % (kept_details,),
               "runId" in _journal_io.DETAILS_KEYS
-              and anchors[0]["details"]["runId"] == "R1")
-        # THE ORDER, pinned by its consequence. Writing the anchor first would
-        # put a claim into a hash chain about a row that does not exist - and the
-        # only way to observe the order from outside is to make the ledger write
-        # FAIL and check that nothing was claimed. `record` deliberately does not
-        # swallow that: a run whose evidence could not be stored must not be
-        # reported as recorded.
-        before_anchor = len([r for r in _journal_io.read_all(plain)
-                             if r.get("action") == M.ACTION_RECORDED])
-        real_append = M.append_row
-
-        def _refuse(*_a, **_k):
-            raise IOError("the evidence file could not be written")
-
-        raised = False
-        try:
-            M.append_row = _refuse
-            M.record(plain, RESULT, "task", {"taskId": "P1.3"},
-                     {"runId": "R9", "via": "cli"}, published=["pytest -q"])
-        except IOError:
-            raised = True
-        finally:
-            M.append_row = real_append
-        after_anchor = [r for r in _journal_io.read_all(plain)
-                        if r.get("action") == M.ACTION_RECORDED]
-        check("ev28 when the ledger row cannot be written, NO anchor is left "
-              "behind and the failure is loud. The reverse order would leave "
-              "the chain asserting a run nothing can produce - and a fail-soft "
-              "here would report a run as recorded when its evidence is gone: "
-              "raised=%r anchors %r -> %r"
-              % (raised, before_anchor, len(after_anchor)),
-              raised is True and len(after_anchor) == before_anchor
-              and not any(r["details"].get("runId") == "R9"
-                          for r in after_anchor))
+              and (kept_details or {}).get("runId") == "R1")
+        check("ev22 NOTHING RECORDS A RUN THROUGH A LEDGER ROW ANY MORE: the "
+              "module offers no `record` - the full run's record is in the "
+              "plan (`write_full_record`), like every other run's: %r"
+              % ((hasattr(M, "record"), hasattr(M, "write_full_record")),),
+              not hasattr(M, "record") and hasattr(M, "write_full_record"))
 
         # --- the pointer: a cache, and one that may be refused -------------
         # The ledger is the source of truth and this block is a CACHE, so the
@@ -6519,6 +6467,23 @@ def _plan_file_caller_cases(check, tmp):
           % ((wrote, kept, since),),
           wrote and kept and bool(since), got)
 
+    root, mpath, spath = _pa_project(tmp, "pc-full-record")
+    full_row = M.row_for(root, {"status": "failed", "steps": [],
+                                "testedState": {}}, M.FULL_SCOPE, {},
+                         {"runId": "PF8", "ts": stamp})
+    got, wrote, kept = _pa_run(root, mpath, spath, "index", lambda: (
+        M.write_full_record(root, mpath, M.run_record(full_row))))
+    meta = _lr_shard(mpath).get("meta") or {}
+    check("pf8 `write_full_record` (run-test-gate's `_record_full_run` records "
+          "a full run through it): a build command landed in the index as it "
+          "asks for the lock is kept, the run is the plan's full-run record, "
+          "and the boundary is dated by it: %r"
+          % ((wrote, kept, (meta.get(M.FULL_RECORD_KEY) or {}).get("runId"),
+              (meta.get(M.SINCE_KEY) or {}).get("runId")),),
+          wrote and kept and got.get("written") is True
+          and (meta.get(M.FULL_RECORD_KEY) or {}).get("runId") == "PF8"
+          and (meta.get(M.SINCE_KEY) or {}).get("runId") == "PF8", got)
+
 
 def _verb_mechanism_cases(check, tmp, at):
     """(pm) Each write mechanism the verbs' rows share beyond the ones pa1,
@@ -7144,7 +7109,11 @@ def _rs_full_result():
         "shadow": {"listed": 2, "full": 9, "missed": ["tests/test_z.py"]},
         M.LEFT_TO_PHASE_GATE_KEY: [{"name": "e2e", "arm": "declared",
                                     "basis": "phaseGateOnly", "matched": "e2e"}],
-        "groupWith": ["P2"]})
+        "groupWith": ["P2"],
+        # A full run's own: the plan's full-run record carries them.
+        "selectionMiss": [{"test": "e2e/cart.spec.ts", "phases": ["P1"],
+                           "sources": ["src/cart.ts"]}],
+        "dirtyOutside": []})
     return out
 
 
@@ -7173,7 +7142,15 @@ def _record_sufficiency_cases(check):
         many = dict(_rs_full_result(),
                     treeMutated=[" M src/m%d.py" % i
                                  for i in range(M.MAX_PATHS + 2)],
-                    overlap=["src/o%d.py" % i for i in range(M.MAX_PATHS + 3)])
+                    overlap=["src/o%d.py" % i for i in range(M.MAX_PATHS + 3)],
+                    dirtyOutside=["?? d%d.txt" % i
+                                  for i in range(M.MAX_PATHS + 1)],
+                    selectionMiss=[{"test": "e2e/t%d.spec.ts" % i,
+                                    "phases": ["P%d" % p
+                                               for p in range(M.MAX_PATHS + 1)],
+                                    "sources": ["src/s%d.ts" % s for s in
+                                                range(M.MAX_PATHS + 2)]}
+                                   for i in range(M.MAX_PATHS + 1)])
         many["steps"] = [_ri_step("s%d" % i) for i in range(M.MAX_STEPS + 1)]
         cut_row = M.row_for(root, many, "task",
                             {"taskId": "P1.1", "phaseId": "P1"},
@@ -9973,9 +9950,12 @@ def _read_field_cases(check):
           outside == [] and unused == [] and files > 50
           and ("_evidence_io", "_plan_records") in set(
               (m, n) for m, n, _l in reads))
+    # A selection miss names its suite, so a field planted beside it is the
+    # one found broken rather than the suite it lacks.
     base = {"runId": "RF", "status": "failed", "at": "2026-11-18T12:00:00Z",
             "gateSource": "task", "steps": [{"name": "sweep", "exit": 1}],
-            "testedState": {"head": "abc", "scopeDigest": None}}
+            "testedState": {"head": "abc", "scopeDigest": None},
+            "selectionMiss": [{"test": "e2e/cart.spec.ts"}]}
     leaves = _rf_leaves(M.RECORD_GRAMMAR)
     unheld, said = [], []
     for path, grammar in leaves:
@@ -10853,9 +10833,6 @@ _BB_ENTRIES = {
         "commits a task's work over `task_binding`, the question "
         "`audit-task.py done` asks of the same fixture here; a commit needs "
         "a task worktree this fixture does not build"),
-    "plugins/audit/scripts/governance/import-evidence.py": (
-        "copies ledger rows from another tree; it names no subject's "
-        "newest run, verdict or repeat"),
     "plugins/audit/scripts/manifest/migrate-json-encoding.py": (
         "listed through an import whose readers it never calls: it rewrites "
         "the plan's encoding"),

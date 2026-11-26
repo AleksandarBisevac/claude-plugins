@@ -14306,8 +14306,7 @@ def _locked_couple(args, project, config, mpath, out):
         return E_USAGE
     row, refusal = _ledger_run(
         project, mpath, "--basis-run", run_id,
-        "a coupling says what taught it, and this run taught nothing "
-        "recorded")
+        "a coupling names the recorded full run that taught it")
     if refusal:
         out(refusal)
         return E_USAGE

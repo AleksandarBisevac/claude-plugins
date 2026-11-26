@@ -38,9 +38,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   plan.** It appends no row to the evidence directory, writes no `test.evidence.recorded` row
   into the journal and chains nothing; `evidence: recorded <runId>` is printed once the record
   is in the shard. Exit 3 now means that record was not written, and the line beside it says
-  no file holds the run. A `--full` run still appends its row and its journal anchor, so a red
-  full run is still there for `full-gate.py --learn-from` and a selection miss's remedy.
-  Rows an earlier release wrote are never rewritten or deleted, are still read beside the
+  no file holds the run. A `--full` run appends no row either (below). Rows an earlier release wrote are never rewritten or deleted, are still read beside the
   records and keep verifying. `testEvidence` is the pointer to the subject's record (or, for a
   done task, the run its commit names) rather than a cache of the evidence file; deleting the
   block is still safe. A count over recorded runs sees one run per task and per phase from this
@@ -67,6 +65,39 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   replaced, whether the task runs its own gate or its phase's, and a base measured for a red
   the newest record repeats is kept on that record. `--base-of` a launched run a later run
   replaced says so and names the red the subject holds now, or says no red of it stands.
+
+### Breaking — a full run is the plan's full-run record, and `--writer` is gone
+- **`run-test-gate.py --full --record` keeps the newest full run of any verdict as the plan's
+  full-run record, `meta.lastFullRun` in the index, and appends no row.** Red, dirty and
+  uncounted runs are kept as well as the ones a phase can hold, in a run record's shape and
+  byte bound, with the steps, observations and selection miss that `full-gate.py
+  --learn-from` and the SELECTION MISS remedy's `couple --basis-run` read. The newest measured
+  full run is kept beside it as `meta.lastMeasuredFullRun`, in the shape a phase holds a run,
+  so a red run replacing a green one still has its selection miss bounded by that green run.
+  Both are written in one save of the index, which also stamps `meta.evidenceSince` when the
+  plan states none; a record that could not be written is exit 3 on either verdict.
+  `phases[].fullGateRuns` is unchanged and still certifies. `--learn-from` and `--basis-run`
+  resolve the full-run record or an older full run's frozen evidence row; a full run a newer
+  one replaced is no longer resolvable by its id, and the refusal says so. The schema adds
+  `meta.lastFullRun`, `meta.lastMeasuredFullRun` and the record's `selectionMiss`,
+  `selectionMissDropped` and `dirtyOutsideDropped`; `validate-manifest` checks both keys and
+  says a full-run record its reader would refuse as it says a subject's record.
+- **`--writer` is removed from `run-test-gate.py` and `full-gate.py`, and
+  `import-evidence.py` is removed.** Both existed for a CI build's own ledger file, and no run
+  writes one any more: `--writer` is an unknown flag (exit 2), and the example pipeline
+  records with `--full --record` alone. A red full run is learned from in a checkout that
+  keeps its plan. **A full run recorded in CI no longer reaches the plan:** the build still
+  fails on a red run and its own status gate reads the run, but the record stays in the
+  build's throwaway checkout, so the release guard and a sign-off depend on a full run
+  recorded into the plan and committed (`full-gate.py <manifest>`, the pre-push hook, or
+  `/audit:review <phase> --full`).
+- **Two branches that each record a full run merge without a conflict on it.** The plan's
+  merge driver keeps, for `meta.lastFullRun` and for `meta.lastMeasuredFullRun` each, the
+  side whose run is the later by its `at`, whole; two different runs of the same moment, or a
+  run with no readable moment, are still one conflict. `phases[].fullGateRuns` merges as before.
+  The refusal for a run id nothing holds - from `--learn-from`, `--basis-run`, `--caught`,
+  `--failing-from` and `--base-of` alike - now ends saying a run a newer one replaced is no
+  longer held, since the plan keeps only the newest run of each subject.
 
 ### Breaking — a plan file that writes a key twice is refused
 - **Every plan file is now parsed through one door, which refuses a key written twice

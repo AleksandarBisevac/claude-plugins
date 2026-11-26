@@ -28,8 +28,11 @@ there pairs that side's run id with the other side's status - a red read back as
 passed. So `MERGE_UNITS` says, for every object value the schema declares on a kind
 the merge walks into, whether it is one account (`whole`: changed on both sides is
 ONE conflict on the whole value, sibling keys grouped where they are one account
-together) or a `container`/`map` merged by field or by key as before. Changed on one
-side only is that side's value whole either way. `tests/test__manifest_merge.py`
+together) or a `container`/`map` merged by field or by key as before. A value that
+means "the newest one" - the plan's newest full run - is `newest`: whole, and changed
+on both sides it is the side with the later moment rather than a conflict, since
+both branches recording a full run is ordinary work. Changed on one side only is
+that side's value whole either way. `tests/test__manifest_merge.py`
 walks the schema and fails on an object value no row names, so a value added later
 is asked the question by name. A group of SIBLING keys is no object, so the schema
 cannot ask about it; the suite asks the plan's writers instead - a set of one
@@ -110,9 +113,13 @@ _END = object()
 # for every entry of a map. `whole`: one account of one event; both sides changed
 # it is one conflict on the whole value, and several keys in one row are one value
 # together. `container`: merged key by key. `map`: a container whose keys are names
-# a writer chooses, its entries of the kind `<kind>.*`. A key no row names merges
-# as a container, which is what the merge did for every value before this table -
-# and what the schema case refuses for any object value the schema declares.
+# a writer chooses, its entries of the kind `<kind>.*`. `newest`: a whole value
+# whose meaning is "the newest one of the plan", so changed on both sides it is the
+# side whose `NEWEST_MOMENT` is later, whole - never a blend - and a conflict only
+# when the two moments do not order them (equal, or one unreadable). A key no row
+# names merges as a container, which is what the merge did for every value before
+# this table - and what the schema case refuses for any object value the schema
+# declares.
 MERGE_UNITS = (
     ("plan", ("meta",), "container",
      "the plan's settings, each key set by its own verb or by hand"),
@@ -156,6 +163,11 @@ MERGE_UNITS = (
      "one reading of the connection, with when and on what basis"),
     ("plan.meta", ("evidenceSince",), "whole",
      "one moment the ledger is read from, with the run and the basis that set it"),
+    ("plan.meta", ("lastFullRun",), "newest",
+     "the plan's newest full run of any verdict: the later of two branches' runs"),
+    ("plan.meta", ("lastMeasuredFullRun",), "newest",
+     "the plan's newest measured full run: the later of two branches' measured runs, "
+     "whichever branch's newest full run is the later one"),
     ("plan.meta", ("usage",), "container", "usage settings, set apart"),
     ("phase", ("claim",), "whole", "one session's claim: its session, branch and moment"),
     ("phase", ("lastRun", "testEvidence"), "whole",
@@ -224,10 +236,19 @@ ELEMENT_KINDS = {"plan.phases": "phase", "phase.tasks": "task", "plan.bugs": "bu
                  "phase.review.preExistingNotCharged": "finding"}
 
 # {kind: [keys of each whole value]} and the kinds that are maps, read off the table.
+# A `newest` value is whole too - one unit, held whole by a hand resolution - and
+# `_NEWEST` names the ones whose two changed sides are ordered by their moment.
+_UNIT_VERDICTS = ("whole", "newest")
 _WHOLE = dict((kind, tuple(row[1] for row in MERGE_UNITS
-                           if row[0] == kind and row[2] == "whole"))
-              for kind in set(row[0] for row in MERGE_UNITS if row[2] == "whole"))
+                           if row[0] == kind and row[2] in _UNIT_VERDICTS))
+              for kind in set(row[0] for row in MERGE_UNITS if row[2] in _UNIT_VERDICTS))
+_NEWEST = frozenset((row[0], row[1]) for row in MERGE_UNITS if row[2] == "newest")
 _MAPS = frozenset("%s.%s" % (row[0], row[1][0]) for row in MERGE_UNITS if row[2] == "map")
+
+# The field a `newest` value's moment is read from: the run's own stamp, which a
+# full run's record and a held run both carry, in the one form the recorder writes.
+NEWEST_MOMENT = "at"
+_MOMENT_FORM = re.compile(r"\A\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\Z")
 
 
 # A value inside a container that IS a record of a kind the table already names - a
@@ -428,9 +449,34 @@ def _merge(path, b, o, t, state, kind):
     return _conflict(state, path, o, t, "changed on both sides")
 
 
-def _merge_whole(path, keys, b, o, t, state):
+def _moment(value):
+    """A `newest` value's moment (`NEWEST_MOMENT`), or None when it carries none in
+    the recorder's form - which orders nothing, so it is never guessed at."""
+    at = value.get(NEWEST_MOMENT) if isinstance(value, dict) else None
+    return at if isinstance(at, str) and _MOMENT_FORM.match(at) else None
+
+
+def _newer(keys, o, t):
+    """`(side, reason)` for a `newest` value both sides changed: the side - `o` or
+    `t`, whole - whose moment is later, or None with the reason they are not
+    ordered. One key per `newest` row, so a side is one value."""
+    mo, mt = _moment(o[keys[0]]), _moment(t[keys[0]])
+    if mo is None or mt is None:
+        return None, ("changed on both sides, and %s no moment (`%s`) to say "
+                      "which is newer"
+                      % ("both sides' runs carry" if mo is None and mt is None else
+                         "ours' run carries" if mo is None else "theirs' run carries",
+                         NEWEST_MOMENT))
+    if mo == mt:
+        return None, ("changed on both sides to two different runs of the same "
+                      "moment (%s), so neither is the newer" % (mo,))
+    return (o if mo > mt else t), None
+
+
+def _merge_whole(path, keys, b, o, t, state, newest=False):
     """{key: merged value or `_ABSENT`} of one whole value - `b`, `o`, `t` each its
-    `_group` - taken from one side, or one conflict over all of `keys`."""
+    `_group` - taken from one side, or one conflict over all of `keys`. A `newest`
+    value both sides changed is the side `_newer` names, when it names one."""
     if o == t or t == b:
         return o
     if o == b:
@@ -439,6 +485,11 @@ def _merge_whole(path, keys, b, o, t, state):
     reason = ("added on both sides with different values" if absent[0] else
               "deleted on one side and changed on the other" if absent[1] or absent[2]
               else "changed on both sides")
+    if newest and not (absent[1] or absent[2]):
+        side, reason_newest = _newer(keys, o, t)
+        if side is not None:
+            return side
+        reason = reason_newest
     label = _unit_label(path, keys)
     if len(keys) == 1:
         return {keys[0]: _conflict(state, path + (keys[0],), o[keys[0]], t[keys[0]],
@@ -517,7 +568,8 @@ def _merge_dict(path, b, o, t, state, kind):
     for present in _units(kind, b, o, t):
         grouped.update(present)
         merged = _merge_whole(path, present, _group(b, present), _group(o, present),
-                              _group(t, present), state)
+                              _group(t, present), state,
+                              newest=(kind, present) in _NEWEST)
         values.update((k, v) for k, v in merged.items() if v is not _ABSENT)
     for k in (set(b) | set(o) | set(t)) - grouped:
         v = _merge(path + (k,), b.get(k, _ABSENT), o.get(k, _ABSENT),

@@ -942,6 +942,14 @@
             }
           }
         },
+        "lastFullRun": {
+          "$ref": "#/$defs/lastRun",
+          "description": "The newest full run of any verdict, written by `run-test-gate.py --full --record` in a task record's shape; its only copy, replaced by the next full run. Its miss is never cut, so at every cap it can pass `RECORD_MAX_BYTES`. Read by `full-gate.py --learn-from` and `couple --basis-run`."
+        },
+        "lastMeasuredFullRun": {
+          "$ref": "#/$defs/fullGateRun",
+          "description": "The newest measured full run, in a phase's `fullGateRun` shape; written with `lastFullRun` only when that run is measured, so the next selection miss keeps its basis."
+        },
         "evidenceSince": {
           "type": "object",
           "description": "WHEN THIS PLAN COULD FIRST HAVE RECORDED A TEST RUN AT ALL, so that work finished before it is read as impossible to evidence rather than as unevidenced. A plan adopted mid-flight carries tasks that were done before the recorder existed; without this the `no-test-evidence` gate condition fails every one of them and no setting helps. THE BOUNDARY IS NOT THIS BLOCK ALONE. It is the EARLIER of `at` and the earliest timestamp in the evidence ledger beside the manifest, because excused work is BEFORE the boundary and the earlier value is therefore the safer one: delete this block and the ledger still answers, archive the ledger and this block still answers, and only destroying both widens the excuse. ABSENT MEANS 'NOTHING HERE SAYS WHEN RECORDING BEGAN', never 'recording began at the epoch' and never 'nothing was recorded' - the ledger is asked separately and a reader must compare explicitly rather than testing this block for truthiness. WRITTEN ONCE, BY THE RECORDER, on the first `--record` that finds it missing, and never re-derived afterwards: a boundary that moved would move LATER, which widens an excuse in silence. additionalProperties stays permissive, which is this document's policy at every object level: the schema ships with the plugin, so an older copy of it must keep accepting a manifest a newer one wrote.",
@@ -2414,6 +2422,52 @@
         },
         "sessionId": {
           "description": "The session the run was recorded from, as its ledger row's."
+        },
+        "selectionMiss": {
+          "type": "array",
+          "description": "Full run only: each failing suite no sign-off gate listed, with the phases that missed it and their sources.",
+          "items": {
+            "type": "object",
+            "required": [
+              "test"
+            ],
+            "properties": {
+              "test": {
+                "type": "string",
+                "minLength": 1
+              },
+              "phases": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "phasesDropped": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sourcesDropped": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "selectionMissDropped": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Selection misses cut past `MAX_PATHS`."
+        },
+        "dirtyOutsideDropped": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Dirty paths cut past `MAX_PATHS`."
         }
       }
     },

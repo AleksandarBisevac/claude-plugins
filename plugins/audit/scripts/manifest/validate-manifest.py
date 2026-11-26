@@ -143,15 +143,19 @@ def record_rule_warnings(manifest_path, project=None):
     as that reader says it, naming its file and field, in the channel and
     the sentence a record the schema refuses is said in. Read off the plan's
     files as written (`_evidence_io.plan_bodies`), since a key written twice
-    is gone from the assembled manifest."""
+    is gone from the assembled manifest. The plan's full-run record
+    (`meta.lastFullRun`, in the index) is asked the same rules
+    (`_evidence_io.full_record_rule_problems`)."""
     bodies, _lost = _ev.plan_bodies(manifest_path, project)
+    entries = (list(_ev.reader_rule_problems(bodies))
+               + list(_ev.full_record_rule_problems(manifest_path, project)))
     return [_output.finding(
         _manifest_rules.SCHEMA_CODE_PREFIX + entry["rule"],
         "%s: %s %s's %s - the plugin's reader refuses this record; "
         "validate-manifest will refuse it from %s (a warning in 3.x)"
         % (entry["file"], entry["scope"], entry["subject"], entry["why"],
            _manifest_rules.BUG_VALUE_REFUSAL_RELEASE))
-        for entry in _ev.reader_rule_problems(bodies)]
+        for entry in entries]
 
 
 def main(argv):
