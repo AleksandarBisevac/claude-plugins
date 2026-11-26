@@ -1,0 +1,42 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_gen_demo_manifest.py": "pass",
+    "python3 tools/sweep-selftests.py (full)": "fail",
+    "python3 tools/check-rendered-artifacts.py": "fail",
+    "python3 tools/check-committed-pii.py": "pass",
+    "python3 tools/check-git-pipeline.py": "pass",
+    "python3 tools/check-example-ledgers.py": "pass",
+    "ruff check plugins/audit tools tests .claude/hooks": "pass",
+    "vermin -t=3.8- (scripts hooks tests lints)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-26T03:08:45Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_gen_demo_manifest.py` in a throwaway tree at HEAD exited 1 with 4 of 105 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ro1 (house FAIL): SELFTEST FAILED: 100/105 cases passed; --case ro2, ro3, ro4, ro5 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Decision: the examples keep their frozen ledger as history (examples/acme-store/evidence is untouched, never rewritten); the demo generator now writes what the release writes - records, no ledger. gen-demo-manifest.py: write_evidence removed and write_manifest writes no evidence directory (single-file too); new published_rows (newest run per subject plus the full run) dates meta.evidenceSince; new _stamp_full_run stamps meta.lastFullRun (run_record) and meta.lastMeasuredFullRun (measured_full_summary), the recorder's own pair; the SCHEMA_EXEMPTIONS rows for meta.lastFullRun, meta.lastMeasuredFullRun and fullGateRun.* went stale and are deleted; phase.fullGateRuns stays exempt with a corrected reason; unused EVIDENCE_WRITER and _journal_io import removed. tests/test_gen_demo_manifest.py: ledger-expecting cases rewritten (no .jsonl written, no evidence dir, ledger files == 0, no Earlier-runs history, single-file has no ledger, gnl1 now LF-checks the plan and config) and new ro1-ro5, fr3 (146/146). ro5 runs tools/check-example-ledgers.py findings() over the written demo and requires every pointer resolved against records with zero ledgers. tools/check-example-ledgers.py needed no change (P169.38 already resolves records) and tests/test_check_example_ledgers.py was not created: tools/check-example-ledgers.py is not a module the coverage classifier asks for (selftest_coverage covers scripts/hooks/lints/tools-demo plus two named tools) and its cases live in the file (python3 tools/check-example-ledgers.py --selftest). CHANGELOG.md Unreleased gets a Breaking entry stating the decision; PLUGIN-BUILD-GUIDE.md gen-demo-manifest section rewritten. Full sweep: 195/196 files ok, 19910 cases; the one failure is tools/check-rendered-artifacts.py (ra5/ra5b): docs/demo-large.html is STALE (1079332 committed bytes vs 1077200 rendered), because the report of the generated demo no longer has the Earlier runs disclosure for the stuck task and its boundary sentence says no run is readable in the ledger. docs/demo-large.html is outside this task's files; the owed recipe is the one check-rendered-artifacts prints (gen-demo-manifest 40x5, gen-demo-usage, render-report, cp to docs/demo-large.html); screenshots derived from the demo are the orchestrator's browser gate. check-committed-pii.py still holds (exit 0, 51/51 selftest; its evidence arm reads the frozen ledgers still tracked; its comment that _evidence_io.append_row names the writer id is now only historically true, comment owed to a task declaring that file). check-git-pipeline.py still holds (exit 0, deterministic half works) but its _ledger_append docstring says _evidence_io.record writes the pair for a full run now, which is false since that function was deleted: correction owed to a task declaring tools/check-git-pipeline.py.",
+    "descriptive": "The demo generator writes records and no ledger like the release, the committed example keeps its frozen ledger as history, and docs/demo-large.html now needs a re-render the orchestrator must widen."
+  },
+  "testsAdded": [
+    "ro1 no evidence directory beside a generated demo",
+    "ro2 meta.lastFullRun is run_record of the demo's full run",
+    "ro3 meta.lastMeasuredFullRun names that run",
+    "ro4 read_rows over the written demo reads only records, ledger absent, one full run",
+    "ro5 check-example-ledgers.findings over the generated demo resolves every pointer against records with zero ledgers",
+    "fr3 the full-run record's commands equal the declared gate's"
+  ],
+  "casesAdded": [
+    [
+      "ro1",
+      "ro2",
+      "ro3",
+      "ro4",
+      "ro5"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:1a4f6b91c6de02a7644e882c4ed8a3be18b9e4aeb541c32632a8558a5de0be89\",\"dirtyDigest\":\"sha256:6abec59d02c7a61cc8a3ee4d9f162cd8d5cc1f161f2a1e33649b2ec4b6f5a96d\",\"dirtyPaths\":{\"CHANGELOG.md\":\"3fec09aa0916e659\",\"PLUGIN-BUILD-GUIDE.md\":\"8572e5191efa69f5\",\"tests/test_gen_demo_manifest.py\":\"d81e5969fca4e164\",\"tools/demo/gen-demo-manifest.py\":\"7c58c32dff951472\"},\"head\":\"da29563e\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"tests/test_check_example_ledgers.py\",\"tests/test_gen_demo_manifest.py\",\"tools/check-example-ledgers.py\",\"tools/demo/gen-demo-manifest.py\"],\"scopeDigest\":\"sha256:1d9a7224d4c24d7c88c71622ff681c414da7bc95c253cdaf747d105b1ab59230\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

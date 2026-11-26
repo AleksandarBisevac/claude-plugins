@@ -84,8 +84,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
-import _evidence_io  # noqa: E402  (the recorder's own row writer and pointer shape)
-import _journal_io  # noqa: E402  (the canonical line spelling, and which month a row lands in)
+import _evidence_io  # noqa: E402  (the recorder's own row builder, record shape and pointer shape)
 import _manifest_io as _mio  # noqa: E402  (recorded_attempt: one reading of `attempts`, shared with the recorder)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _demo_cast  # noqa: E402  (the demo's author identities, shared with gen-demo-usage)
@@ -889,19 +888,23 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
         },
         "proposals": _proposals(n_phases),
     }
-    # The pointer each subject keeps at its newest recorded run. LAST, and outside
-    # the loop for `_stamp_claims`'s reason: it draws nothing from `rng`, so no
-    # byte generated above can move because this exists. It writes nothing either -
-    # the rows are a VALUE here, and `write_evidence()` is the only thing that
-    # meets a disk, which is what keeps this function as pure as its docstring says.
+    # The record and pointer each subject keeps at its newest recorded run. LAST,
+    # and outside the loop for `_stamp_claims`'s reason: it draws nothing from
+    # `rng`, so no byte generated above can move because this exists. It writes
+    # nothing either - the rows are a VALUE here, the record a run leaves is the
+    # only copy of it, and this fixture writes no ledger row for any run, which
+    # is what keeps this function as pure as its docstring says.
     pointer_rows = evidence_rows(manifest, EVIDENCE_POINTER_ROOT)
     _stamp_pointers(manifest, pointer_rows)
-    # ...and WHEN this plan could first have recorded a run at all, off the same
-    # rows. Second, because it is derived from them exactly as the recorder
-    # derives it on the first `--record`: the fixture must be a plan the plugin
-    # could have produced, and a boundary typed here would be a second answer to
-    # what `meta.evidenceSince` is.
-    _stamp_since(manifest, pointer_rows)
+    # ...and the plan's one full run, its record and the newest measured run
+    # beside it, as `run-test-gate.py --full --record` writes them.
+    _stamp_full_run(manifest, pointer_rows)
+    # ...and WHEN this plan could first have recorded a run at all, off the runs
+    # the plan holds. Derived from them exactly as the recorder derives it on the
+    # first `--record`: the fixture must be a plan the plugin could have
+    # produced, and a boundary typed here would be a second answer to what
+    # `meta.evidenceSince` is.
+    _stamp_since(manifest, published_rows(manifest, EVIDENCE_POINTER_ROOT))
     # ...and where each finished task's wall time went, off the same rows: a gate
     # stage is the length of the run the task's pointer names, never a figure
     # typed here. Last, for the same reason as the two above: nothing in it draws
@@ -958,8 +961,8 @@ SCHEMA_EXEMPTIONS = {
     # pointer would have named an id that resolved to nothing. Each row named its
     # own revisit trigger - "the day the test gate records" - and the recorder
     # exists now, so the rows are gone and the fixture carries the block for real.
-    # See the `recorded runs` section: the pointers and the ledger beside the
-    # manifest are generated together, from the plan's own statuses.
+    # See the `recorded runs` section: the pointers and the records they name
+    # are generated together, from the plan's own statuses.
     #
     # `meta.evidenceSince` was the seventh, and its trigger has fired the same
     # way. It read "REVISIT with the surface that tells `Before recording` apart
@@ -1068,26 +1071,11 @@ SCHEMA_EXEMPTIONS = {
     "ci.supersedes": "a field of phase.ci, exempt for its reason.",
     "phase.fullGateRuns":
         "the full runs a phase holds, written when a full run is recorded "
-        "through `run-test-gate.py`; the demo's one full run is a generated "
-        "ledger row (`_full_run_result`) that every surface reads through "
-        "`read_rows` beside what the plan holds, so the phases already read "
-        "from it and a held copy would be the same run twice.",
-    "meta.lastFullRun":
-        "the full-run record `run-test-gate.py --full --record` writes; the "
-        "demo's one full run is a generated ledger row, the older frozen form "
-        "`read_rows` still reads (as every demo run is also a ledger row), so "
-        "a record of it would be the same run twice, phase.fullGateRuns's "
-        "reason.",
-    "meta.lastMeasuredFullRun":
-        "the newest measured full run, written with meta.lastFullRun; exempt "
-        "for that row's reason.",
-    "fullGateRun.runId": "a field of phase.fullGateRuns, exempt for its reason.",
-    "fullGateRun.at": "a field of phase.fullGateRuns, exempt for its reason.",
-    "fullGateRun.head": "a field of phase.fullGateRuns, exempt for its reason.",
-    "fullGateRun.status": "a field of phase.fullGateRuns, exempt for its reason.",
-    "fullGateRun.entries":
-        "a field of phase.fullGateRuns, exempt for its reason.",
-    "fullGateRun.digest": "a field of phase.fullGateRuns, exempt for its reason.",
+        "through `run-test-gate.py` and offered to every phase it can certify; "
+        "the demo's one full run is the plan's own record (`meta.lastFullRun`), "
+        "which every surface reads through `read_rows` beside what the plan "
+        "holds, so the phases already read from it and a held copy would be the "
+        "same run twice.",
     # `meta.fullGate` and `phase.mergedHead` WERE EXEMPT HERE, both on the same
     # reason: no rendered surface read either field yet. The report now does
     # (`_report_html._verified_line`), so both rows are gone and `generate()`
@@ -1366,7 +1354,7 @@ SCHEMA_EXEMPTIONS = {
         "property, which no rendered surface shows.",
     "review.noEvidenceReason":
         "written only for a `passed` sign-off that no gate run backs, and the demo's "
-        "phases are signed off on runs its ledger carries - a reason beside a run "
+        "phases are signed off on runs the plan records - a reason beside a run "
         "would claim the run did not exist.",
     "review.readReturns":
         "the content signatures of the phase returns a sign-off read; the demo "
@@ -1979,7 +1967,7 @@ def history_refusal(manifest, out_dir):
 
     ASKED BEFORE ANYTHING IS WRITTEN, by `write_manifest`, so a refusal leaves
     the directory exactly as it was found - a refusal that arrived after the
-    manifest and the ledger had landed would leave a half-built fixture behind.
+    manifest and the config had landed would leave a half-built fixture behind.
 
     TWO REFUSALS:
       * a `mergedHead` naming anything but the commit `demo_history` builds -
@@ -2048,10 +2036,13 @@ def write_history(manifest, out_dir):
 
 
 # --- recorded runs ------------------------------------------------------------
-# THE LEDGER IS THE SOURCE OF TRUTH AND `testEvidence` IS A CACHE, and this fixture
-# has to publish both or it publishes a lie: a pointer whose `runId` no row answers
-# to renders as `Pointer without evidence`, and a demo is the one place that state
-# must never appear by accident.
+# THE RECORD IS THE SOURCE OF TRUTH AND `testEvidence` IS A CACHE, and this fixture
+# has to publish both or it publishes a lie: a pointer whose `runId` no record
+# answers to renders as `Pointer without evidence`, and a demo is the one place
+# that state must never appear by accident. A run is recorded in the plan and no
+# release appends a row for it, so there is NO LEDGER in this fixture: a frozen
+# ledger an earlier release wrote is history, which a committed example keeps
+# and a generator that writes what the release writes has nothing to add to.
 #
 # `SCHEMA_EXEMPTIONS` used to hold this whole region back, and the reason it gave
 # was that nothing wrote a run: a hand-stamped block would have named an id that
@@ -2066,10 +2057,6 @@ def write_history(manifest, out_dir):
 # a second answer to what a row IS, and the first thing it would get wrong is the
 # difference between an empty list and a null.
 EVIDENCE_VIA = "cli"
-# A minted writer token's shape (`_journal_io._TOKEN_RE`). The real one is random
-# per checkout - which is what keeps a machine name out of a committed file name -
-# and a generated fixture needs one that does not move, so it is fixed here.
-EVIDENCE_WRITER = "d41f8a6c92b70e35"
 # The root the POINTER pass measures a path against. Nothing a pointer caches is a
 # path -- it is an id, a word and a stamp -- so any root answers identically; a
 # constant is what makes that a property of the code rather than of whichever
@@ -2246,7 +2233,7 @@ def _pre_recorder_phase(manifest):
     plan adopted mid-flight has its earliest work behind the boundary, so the
     first phase is the honest one to hold back - and it is held back only when a
     LATER phase still records, because a fixture with no runs at all would name
-    no boundary, stamp no key, and take the ledger, the pointers and every state
+    no boundary, stamp no key, and take the records, the pointers and every state
     that depends on them down with it at the small sizes the shape cases use.
     """
     phases = [p for p in (manifest.get("phases") or []) if isinstance(p, dict)]
@@ -2258,14 +2245,14 @@ def _pre_recorder_phase(manifest):
 
 
 def _evidence_specs(manifest):
-    """`[(scope, ids, identity, result)]` -- every run this fixture publishes.
+    """`[(scope, ids, identity, result)]` -- every run this fixture tells, the earlier attempts included.
 
-    PURE, AND IT READS NO `testEvidence`. Two callers derive from it: `generate()`,
-    which stamps the pointer each run earns, and `write_evidence()`, which writes
-    the rows. `generate()` calls it before any pointer exists and the writer calls
-    it after every pointer does, so a rule that consulted the pointers would hand
-    the two callers different answers and put the plan and the ledger out of step -
-    which is the one failure a fixture publishing both must not have.
+    PURE, AND IT READS NO `testEvidence`. `generate()` derives from it the record
+    and pointer each run earns, and the cases call it again on the stamped plan,
+    where every pointer exists. A rule that consulted the pointers would hand the
+    two callers different answers and put the records out of step with the plan
+    they were stamped into - which is the one failure a fixture publishing both
+    must not have.
 
     THE SHAPE OF THE STORY, and it is A's: work that finished passed, the phase
     that finished signs itself off, the task still running shows a gate that
@@ -2324,9 +2311,10 @@ def _evidence_specs(manifest):
                                         "%s-live" % ids["taskId"],
                                         zero=True, overlap=None, **gate)))
             else:
-                # One row per attempt, because the task records three of them and
-                # a ledger that showed the last would make `Earlier runs` a
-                # disclosure with nothing behind it.
+                # One row per attempt, because the task records three of them.
+                # The plan keeps the newest of a subject's runs and nothing
+                # older (`published_rows`), so the pointer names the last
+                # attempt - a red one, the stuck task's state.
                 for attempt in range(1, (recorded or 0) + 1):
                     out.append(("task", ids, _at(task.get("startedAt"),
                                                  8 * (attempt - 1)), attempt,
@@ -2435,6 +2423,47 @@ def evidence_rows(manifest, project):
     return rows
 
 
+def published_rows(manifest, project):
+    """The runs this fixture's plan HOLDS, as rows: the newest of each subject
+    and the full run - which is every run the plan carries a record of.
+
+    `evidence_rows` is every run the story tells, an earlier attempt of the
+    stuck task included; a plan keeps the newest run of a subject and nothing
+    older, so a boundary dated from an attempt no record holds would name a run
+    the plan cannot resolve, and the recorder's own derivation over what the
+    plan holds is the one the fixture must agree with.
+    """
+    rows = evidence_rows(manifest, project)
+    best = _evidence_io.latest_by_subject(rows)
+    keep = set(r["runId"] for r in best.values())
+    return [r for r in rows
+            if r.get("runId") in keep or r.get("scope") == _evidence_io.FULL_SCOPE]
+
+
+def _stamp_full_run(manifest, rows):
+    """Carry the full run as `meta.lastFullRun`, and as `meta.lastMeasuredFullRun`
+    when it measured the declared gate; returns the run id, or None for none.
+
+    THE RECORDER'S OWN PAIR: `run_record` over the row, and
+    `measured_full_summary` over the same row and the commands it published, as
+    `run-test-gate._record_full_run` hands `write_full_record`. A phase holds the
+    run too (`phase.fullGateRuns`) where the recorder offers it to every phase it
+    can certify; this fixture's one run answers every phase from the record,
+    which `read_rows` reads beside the subjects', so a held copy would be the
+    same run twice.
+    """
+    full = [r for r in rows if r.get("scope") == _evidence_io.FULL_SCOPE]
+    if not full:
+        return None
+    row = full[-1]
+    published = [st["command"] for st in row["steps"]]
+    manifest["meta"][_evidence_io.FULL_RECORD_KEY] = _evidence_io.run_record(row)
+    measured = _evidence_io.measured_full_summary(row, published)
+    if measured is not None:
+        manifest["meta"][_evidence_io.FULL_MEASURED_KEY] = measured
+    return row.get("runId")
+
+
 def _stamp_pointers(manifest, rows):
     """Point every subject at its newest recorded run; returns the ids stamped.
 
@@ -2537,43 +2566,6 @@ def _stamp_timing(manifest, rows):
     return stamped
 
 
-def write_evidence(manifest, out_dir):
-    """Write the ledger beside the manifest, and return the file it landed in.
-
-    OUTSIDE `generate()`, which is documented pure and stays that way: the rows are
-    a value that function returns nothing of, and the only thing that touches a
-    disk is this. The directory is asked of `_evidence_io` rather than joined here,
-    so the fixture lands wherever a real project's record would.
-
-    AND CHAINED, THROUGH `_evidence_io.chain_file`. A fixture whose rows carry no
-    `prev` and no `hash` is a fixture of a ledger the recorder cannot produce any
-    more -- every surface photographed from it would show a record with none of
-    the protection a reader is being sold. The links are computed by the module
-    that writes the real ones, seeded from the same basename, so a demo cannot
-    drift into a second opinion about what a chained row looks like.
-    """
-    config = {"manifestPath": "audit-plan.json"}
-    directory = _evidence_io.evidence_dir(out_dir, config)
-    os.makedirs(directory, exist_ok=True)
-    rows = evidence_rows(manifest, out_dir)
-    # One file per writer per MONTH, which is the ledger's own layout and not a
-    # simplification worth making here: a fixture in one file would render a
-    # directory shape no real project ever has, and `read_rows` is what the report
-    # uses to walk it.
-    months = {}
-    for row in rows:
-        months.setdefault(_journal_io.month_of(row.get("ts")), []).append(row)
-    written = []
-    for month in sorted(months):
-        name = "%s.%s.jsonl" % (month, EVIDENCE_WRITER)
-        path = os.path.join(directory, name)
-        with open(path, "w", encoding="utf-8", newline="\n") as fh:
-            for row in _evidence_io.chain_file(months[month], name):
-                fh.write(_journal_io.canonical(row) + "\n")
-        written.append(path)
-    return written
-
-
 def write_config(out_dir, manifest):
     """Write `.claude/audit.config.json` pointing at the manifest we just wrote.
 
@@ -2618,7 +2610,7 @@ def write_config(out_dir, manifest):
 
 
 def write_manifest(manifest, out_dir, single_file=False):
-    """Write the plan, its config, its ledger and its git history into `out_dir`.
+    """Write the plan, its config and its git history into `out_dir`.
 
     Raises ValueError, having written NOTHING, when `history_refusal` refuses the
     directory - asked first, because every write below is one a refusal must not
@@ -2639,11 +2631,12 @@ def write_manifest(manifest, out_dir, single_file=False):
     else:
         written = mio.save_sharded(index_path, manifest)
     written.append(write_config(out_dir, manifest))
-    # ...AND THE LEDGER THE POINTERS NAME. A fixture that wrote the plan and not
-    # the record would publish a `testEvidence` block resolving to nothing, which
-    # every surface renders as `Pointer without evidence` - the one state a demo
-    # must never show by accident.
-    written.extend(write_evidence(manifest, out_dir))
+    # NO LEDGER BESIDE THEM. The records the pointers name are in the plan files
+    # just written, and the release appends no evidence row, so a directory of
+    # rows here would be a fixture of a ledger the recorder can no longer produce.
+    # A pointer resolving to nothing renders as `Pointer without evidence`, the
+    # one state a demo must never show by accident; `generate()` stamps the record
+    # beside every pointer, and the cases pin that no pointer dangles.
     # ...AND THE HISTORY THE HEADS NAME, beside them in the same directory,
     # because `meta.gitRoot` is ".". Not listed in `written`: it is a directory
     # of objects, and `main()` names it on a line of its own.
@@ -2681,14 +2674,10 @@ def main(argv):
     n_tasks = sum(len(p["tasks"]) for p in manifest["phases"])
     print("wrote %d phase(s), %d task(s), %d bug(s) to %s"
           % (len(manifest["phases"]), n_tasks, len(manifest["bugs"]), args.out_dir))
-    # NAMED RATHER THAN COUNTED OFF THE END OF THE LIST. `written` grew a tail the
-    # day the evidence ledger joined it, and an index counted back from the end is
-    # how a line saying "config" starts printing a ledger path instead. The shard
-    # count comes off the manifest, which is what it is a count OF.
-    ledger = [w for w in written if w.endswith(".jsonl")]
-    print("  %s" % (written[len(written) - len(ledger) - 1],))
-    for path in ledger:
-        print("  %s" % (path,))
+    # NAMED RATHER THAN COUNTED OFF THE END OF THE LIST: the config is the one
+    # file the plan's own writer does not return, and `write_manifest` appends it
+    # last. The shard count comes off the manifest, which is what it is a count OF.
+    print("  %s" % (written[-1],))
     if not args.single_file:
         print("  + %d shard(s)" % (len(manifest["phases"]),))
     print("  %s (git history, %s at %s)"

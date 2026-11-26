@@ -23,6 +23,7 @@ import ast
 import datetime
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -905,17 +906,17 @@ def _cases(check):
     try:
         written = M.write_manifest(m, tmp)
         _ledger = [w for w in written if w.endswith(".jsonl")]
-        # COMPOSED RATHER THAN COUNTED TO ONE NUMBER. The ledger is one file per
-        # writer per MONTH, so how many of them a fixture produces moves with
-        # `--phases` (the plan's own calendar widens with it) - a single total
-        # would pin the plan size and the calendar together and go red for the
-        # wrong reason the first time either moved.
-        check("wrote an index + one shard per phase + the config + the evidence "
-              "ledger the pointers name",
-              len(written) == len(m["phases"]) + 2 + len(_ledger)
-              and len(_ledger) >= 1
+        check("wrote an index + one shard per phase + the config, and NO "
+              "evidence ledger: a run is recorded in the plan and the release "
+              "appends no row, so a fixture carrying one would be a ledger the "
+              "recorder can no longer produce",
+              len(written) == len(m["phases"]) + 2 and _ledger == []
               and written[len(m["phases"]) + 1].endswith("audit.config.json"),
               repr([os.path.basename(w) for w in written[-3:]]))
+        check("ro1 ...and no evidence directory is left beside the plan, even "
+              "an empty one: %r" % (sorted(os.listdir(tmp)),),
+              not os.path.exists(M._evidence_io.evidence_dir(
+                  tmp, {"manifestPath": "audit-plan.json"})))
         cfg_path = os.path.join(tmp, ".claude", "audit.config.json")
         check("a .claude/audit.config.json is written beside the manifest",
               os.path.exists(cfg_path))
@@ -960,13 +961,13 @@ def _cases(check):
               and not mio.index_only_in_bodies(os.path.join(tmp, "audit-plan.json")),
               repr([p.get("priority") for p in _idx["phases"]]))
 
-        # --- the evidence ledger, end to end (the five retired exemptions) ---
+        # --- the recorded runs, end to end (the five retired exemptions) ---
         # THE FAILURE THOSE EXEMPTIONS WERE HOLDING SHUT was a pointer naming a
-        # run no ledger answers to, and it can only be checked against what was
-        # WRITTEN: the pointers land in the phase shards and the rows land in a
-        # directory beside them, so nothing `generate()` returns on its own can
-        # say whether the two agree on disk. This is the report's OWN reader,
-        # pointed at the fixture the generator just wrote.
+        # run nothing answers to, and it can only be checked against what was
+        # WRITTEN: the pointers and the records they name both land in the plan's
+        # own files, and a run is recorded nowhere else - the release appends no
+        # row, and this generator writes no ledger. This is the report's OWN
+        # reader, pointed at the fixture the generator just wrote.
         # THROUGH THE BOUNDARY, the way `render-report.py` reads it. Without it
         # every gap classifies as `sinceBoundary` and the fixture's pre-recorder
         # phase renders `No evidence` - which is exactly the state this fixture
@@ -976,10 +977,11 @@ def _cases(check):
         _ev = _evidence_view.load_evidence(back, os.path.join(tmp,
                                                               "audit-plan.json"),
                                            project_dir=tmp, boundary=_ev_bd)
-        check("the written fixture carries a ledger the report can read at all - "
-              "`load_evidence` returns None when nothing points at a run, and "
-              "every case below would then be judging an empty dict",
-              _ev is not None and _ev["rows"] > 0 and _ev["files"] >= 1
+        check("the written fixture carries recorded runs the report can read at "
+              "all, from the plan alone - `load_evidence` returns None when "
+              "nothing points at a run, and every case below would then be "
+              "judging an empty dict",
+              _ev is not None and _ev["rows"] > 0 and _ev["files"] == 0
               and _ev["unreadable"] == 0,
               repr(None if _ev is None else
                    (_ev["rows"], _ev["files"], _ev["unreadable"])))
@@ -1019,7 +1021,7 @@ def _cases(check):
               "of it - %d excused, %d not" % (len(_excused), len(_after)),
               _since.get("at") == _ev_bd["at"]
               and _since.get("at") == M._evidence_io.earliest_recorded(
-                  M.evidence_rows(back, tmp))
+                  M.published_rows(back, tmp))
               and str(_since.get("basis") or "").strip() != ""
               and bool(_excused) and bool(_after),
               repr((_since.get("at"), _excused[:3], _after[:3])))
@@ -1039,9 +1041,59 @@ def _cases(check):
               "no-overlap" in _flags and "checks-unknown" in _flags
               and "coverage-unknown" in _flags and "tree-mutated" in _flags)
         _histories = sorted(t for t, v in _ev["tasks"].items() if v["history"])
-        check("...and one subject carries EARLIER runs, so the disclosure that "
-              "shows them is a control with something behind it rather than an "
-              "empty frame: %r" % (_histories,), len(_histories) >= 1)
+        check("...and NO subject carries an earlier run: the plan holds the "
+              "newest run of each subject and nothing older, so a fixture that "
+              "showed an `Earlier runs` disclosure would show a history only a "
+              "ledger an earlier release wrote could hold: %r" % (_histories,),
+              _histories == [])
+        _full = (back.get("meta") or {}).get(M._evidence_io.FULL_RECORD_KEY)
+        check("ro2 the plan carries the demo's one full run as its full-run "
+              "record, in the recorder's own shape, and nothing else holds it: "
+              "%r" % (_full and _full.get("runId"),),
+              isinstance(_full, dict) and "taskId" not in _full
+              and _full == M._evidence_io.run_record(
+                  [r for r in M.evidence_rows(back, tmp)
+                   if r.get("scope") == "full"][0]))
+        _measured = (back.get("meta") or {}).get(
+            M._evidence_io.FULL_MEASURED_KEY)
+        check("ro3 ...and the newest MEASURED full run beside it, which the "
+              "selection miss of the next red run is bounded by: %r"
+              % (_measured and _measured.get("runId"),),
+              isinstance(_measured, dict)
+              and _measured.get("runId") == _full["runId"])
+        _read = M._evidence_io.read_rows(
+            tmp, config={"manifestPath": "audit-plan.json"},
+            manifest_path=os.path.join(tmp, "audit-plan.json"))
+        check("ro4 read back through the one reader, every run is a RECORD and "
+              "the ledger is reported absent: %r"
+              % (sorted(set(_read["rowSources"])), ),
+              _read["files"] == 0 and _read["ledgerAbsent"]
+              and _read["rows"] and _read["records"] == len(_read["rows"])
+              and _read["unreadablePlanFiles"] == []
+              and sum(1 for r in _read["rows"] if r.get("scope") == "full") == 1)
+        # THE EXAMPLE-LEDGERS CHECK AGREES, which is the other reader of a
+        # pointer: it resolves a `runId` against the records a plan holds as well
+        # as against the frozen rows, so a generated plan with no ledger is a
+        # tree it answers for. A commit a plan names is the one finding left out:
+        # the history here is the generator's own, which no clone of this
+        # repository holds.
+        _cel = _loader.load_script("check-example-ledgers.py",
+                                   root=_harness.TOOLS_DIR,
+                                   modname="check_example_ledgers_demo")
+        _schema = os.path.join(tmp, _cel.SCHEMA_REL.replace("/", os.sep))
+        os.makedirs(os.path.dirname(_schema), exist_ok=True)
+        shutil.copy(os.path.join(_cel.REPO, _cel.SCHEMA_REL.replace("/", os.sep)),
+                    _schema)
+        _frows, _fcounts, _fproblem = _cel.findings(tmp)
+        _pointerish = [f for f in _frows if "cannot resolve" not in f[2]]
+        check("ro5 check-example-ledgers resolves every cached pointer of the "
+              "generated plan against its records with no ledger at all: %r"
+              % (_fcounts,),
+              _fproblem is None and _pointerish == []
+              and _fcounts.get("ledgers") == 0
+              and _fcounts.get("pointers", 0) > 0
+              and _fcounts.get("resolved") == _fcounts.get("pointers"),
+              repr((_fproblem, _pointerish[:2])))
 
         # The two passes that must not disagree. `generate()` derives the
         # pointers from rows built against a placeholder root and the writer
@@ -1224,11 +1276,13 @@ def _cases(check):
         single = M.write_manifest(M.generate(n_phases=4, n_tasks=2, seed=11),
                                   os.path.join(tmp, "flat"), single_file=True)
         _single_ledger = [w for w in single if w.endswith(".jsonl")]
-        check("--single-file writes one manifest plus the config plus the ledger "
-              "- the record does not become optional because the plan collapsed "
-              "into one file",
-              len(single) == 2 + len(_single_ledger)
-              and len(_single_ledger) >= 1,
+        check("--single-file writes one manifest plus the config and no ledger - "
+              "the runs are records in the one file, so collapsing the plan "
+              "neither needs a ledger nor leaves a pointer without its record",
+              len(single) == 2 and _single_ledger == []
+              and all(t.get(M._evidence_io.RECORD_KEY) for p in json.load(
+                  open(single[0], encoding="utf-8"))["phases"]
+                  for t in p["tasks"] if t.get("testEvidence")),
               repr([os.path.basename(w) for w in single]))
         flat = json.load(open(single[0], encoding="utf-8"))
         check("--single-file is meta.version 2", flat["meta"]["version"] == 2)
@@ -1496,8 +1550,9 @@ def _history_cases(check):
 
 
 def _newline_cases(check):
-    """The example evidence ledger is committed and diffed against a fresh run,
-    so its bytes may not depend on the platform that wrote them."""
+    """The demo's plan is committed (`docs/demo-large.html` is rendered from it)
+    and diffed against a fresh run, so its bytes may not depend on the platform
+    that wrote them."""
     import test__journal_io as J
     tmp = tempfile.mkdtemp(prefix="gdm-nl-")
     try:
@@ -1512,9 +1567,9 @@ def _newline_cases(check):
               % (J._bytes_of(probe),),
               J._bytes_of(probe) == b"a\r\nb\r\n")
         m = M.generate(n_phases=4, n_tasks=3, seed=11)
-        written = J._under_crlf_default(lambda: M.write_evidence(m, tmp))
+        written = J._under_crlf_default(lambda: M.write_manifest(m, tmp))
         raw = b"".join(J._bytes_of(p) for p in written)
-        check("gnl1 the demo evidence ledger is written with LF under a CRLF "
+        check("gnl1 the demo plan and config are written with LF under a CRLF "
               "default: %d files, %d bytes, %d carriage returns"
               % (len(written), len(raw), raw.count(b"\r")),
               bool(written) and raw.count(b"\n") > 0 and b"\r" not in raw)
@@ -1541,6 +1596,10 @@ def _full_row_cases(check):
     withread["meta"]["fullGate"] = (list(withread["meta"]["fullGate"])
                                     + ["claimsMatchCode"])
     with_steps = full_steps(withread)
+    _rec = m["meta"].get(ev.FULL_RECORD_KEY) or {}
+    check("fr3 the full-run record the plan carries holds the same commands, in "
+          "the same order, as the full-run row built from the declared gate",
+          [s["command"] for s in (_rec.get("steps") or [])] == plain)
     check("fr2 a review-only entry in the demo's fullGate is left out of the "
           "row, as the runner leaves it out",
           ev.full_gate(withread)["reviewOnly"] == ["claimsMatchCode"]

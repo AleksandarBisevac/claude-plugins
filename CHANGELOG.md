@@ -121,6 +121,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `--failing-from` and `--base-of` alike - now ends saying a run a newer one replaced is no
   longer held, since the plan keeps only the newest run of each subject.
 
+### Breaking — the examples keep their frozen ledger as history, and the demo generator writes none
+- **A committed example keeps the evidence ledger an earlier release wrote, and it is never
+  rewritten, migrated or extended by this plugin.** `examples/acme-store/evidence/` stays as it
+  is: those rows are history, `tools/check-example-ledgers.py` still holds every one of them
+  to the schema's vocabulary and to its own observations, and it now resolves a plan's cached
+  `testEvidence` pointer against the records the plan holds - a task's or phase's `lastRun`
+  and the full-run record - as well as against those rows, so a plan with records and no
+  ledger at all is a tree it answers for, and a pointer naming a run neither holds is still
+  not a finding.
+- **`tools/demo/gen-demo-manifest.py` carries records, as the release writes them, and writes
+  no ledger.** The demo plan holds the newest run of each subject as its `lastRun` record, and
+  its one full run as `meta.lastFullRun` with `meta.lastMeasuredFullRun` beside it, each built
+  through the recorder's own `run_record`; no `evidence/` directory is written, with
+  `--single-file` too. A plan keeps the newest run of a subject and nothing older, so the demo
+  report no longer shows an `Earlier runs` disclosure for the stuck task, and `meta.evidenceSince`
+  is dated from the earliest run the plan holds. **`docs/demo-large.html` is rendered from this
+  generator, so it is re-rendered with the command `tools/check-rendered-artifacts.py` prints
+  for it.**
+
 ### Breaking — a plan file that writes a key twice is refused
 - **Every plan file is now parsed through one door, which refuses a key written twice
   anywhere in it; no verb keeps one copy silently any more.** A merge resolved by keeping

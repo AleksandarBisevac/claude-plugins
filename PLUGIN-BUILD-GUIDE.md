@@ -2338,22 +2338,30 @@ and a `priority` pin on the running phase so the report draws its Sort select wi
 reordering any ready work), deterministically (fixed seed, no wall-clock) and validator-legal by construction (a `done`
 phase never contains an unfinished task). `--selftest`.
 
-It also writes the **evidence ledger** beside the manifest and points the plan at it:
-`generate()` stamps a `testEvidence` block on every subject that has a recorded run, and
-`write_manifest()` writes the rows those pointers name — through `_evidence_io.row_for`, so a
-demo row is spelled by the recorder rather than by a second opinion about what a row is. The
-plan and the record are written together for one reason: a pointer whose `runId` no row
-answers to renders as `Pointer without evidence`, and the demo is the one page that state must
-never reach by accident. `generate()` itself still writes nothing — the rows are a value it
-returns none of, and `write_evidence()` is the only part that meets a disk.
+It also records the runs, **in the plan and nowhere else**, which is what the release writes:
+`generate()` stamps a `testEvidence` pointer and its `lastRun` record on every subject that has
+a recorded run, and the plan's one full run as `meta.lastFullRun` with the newest measured run
+beside it (`meta.lastMeasuredFullRun`) — each through `_evidence_io.run_record` and
+`measured_full_summary` over a row `_evidence_io.row_for` spelled, so a demo record is the
+recorder's and not a second opinion about what a record is. **No ledger is written**: the
+release appends no evidence row, so a directory of rows beside the demo would be a fixture of a
+ledger the recorder can no longer produce. A frozen ledger an earlier release wrote is history,
+and what keeps one is the committed example (`examples/acme-store/evidence/`), which
+`tools/check-example-ledgers.py` reads beside the records its plan holds. A plan keeps the
+newest run of a subject and nothing older, so the stuck task's earlier attempts are not
+published (`published_rows`), and the report shows no `Earlier runs` disclosure for the demo.
+A pointer whose `runId` no record answers to renders as `Pointer without evidence`, and the
+demo is the one page that state must never reach by accident; the round-trip cases read the
+written fixture through `read_rows` and `check-example-ledgers.py` and pin that none dangles.
+`generate()` itself writes nothing.
 
 **The fixture is a mid-flight adopter**, which is what makes the evidence boundary visible in
 what ships. `_pre_recorder_phase()` holds the first finished phase back from the run plan, so
 nothing in it carries a pointer; `_stamp_since()` then derives `meta.evidenceSince` off the
-remaining rows through the recorder's own `_evidence_io.since_from_rows`, and the subjects behind
+runs the plan holds (`published_rows()`) through the recorder's own `_evidence_io.since_from_rows`, and the subjects behind
 that moment render `Before recording` rather than `No evidence`. It is held back only when a
 later phase still records — a fixture with no runs at all would name no boundary and take the
-ledger, the pointers and every state that depends on them down with it at the smallest sizes.
+records, the pointers and every state that depends on them down with it at the smallest sizes.
 `SCHEMA_EXEMPTIONS` used to hold the key back on exactly this argument, and that row is gone.
 
 **The fixture is a real git repository**, because `full_status` answers whole only when git says
@@ -2368,7 +2376,7 @@ done phase, which records no `mergedHead`, unknown. Every task's `commit` and ev
 `baseRef` stays a stable fake no object backs, so a reader asking git about those — the
 doctor's commit trail, for one — calls them dangling here, which is a property of the fixture
 and not a finding. **It never writes into a repository it did not make:** `history_refusal()` is
-asked before the manifest, the ledger or a single object is written, and accepts an existing
+asked before the manifest, the config or a single object is written, and accepts an existing
 `.git` only when it is a directory whose `HEAD`, `config` and branch ref are byte for byte what
 this history would write. Anything else — a linked worktree's `.git` file, a link, somebody's
 repository — and `gen-demo-manifest.py` exits 2 with the reason, having written nothing.
