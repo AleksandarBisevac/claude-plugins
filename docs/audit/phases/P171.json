@@ -22,10 +22,11 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [],
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "BUG-36 fixed: the drive's own record writes no longer get a red charged to the task. P171.1 measures the base with the recorder's writes laid over it and makes a kept base not-knowable for a recorder-held red; P171.2 (one delta round from the independent opus review: med regression) keeps paths the task declares out of the overlay and stores recorderHeld/uncarried on the row so only a recorder-caused not-knowable owes a base. Independent review: no high; its med and lows fixed in P171.2. CI release tier green on 9a50413d (45830261501).",
   "tasks": [
     {
       "id": "P171.1",
@@ -244,7 +245,7 @@
     {
       "id": "P171.2-71o",
       "title": "The recorder overlay never lays a path the task itself declares, and only a recorder-caused not-knowable owes a base",
-      "status": "in_progress",
+      "status": "done",
       "description": "Review of 9a50413d. (1, med regression) lay_recorder_writes copies every recorded path from the red's tree, including paths the task declares in its own files (real tasks do: plan shards, returns), so a red the task's own plan edit causes is laid into the base and read base-only - the drive then tells the owner the base fails the same cases. Lay only recorder paths outside the task's declared files; an overlapping path keeps the base commit's content. (6, low but false claim + extra cost) recorderHeld is never stored on the run row, so the kept-answer 'held no recorder write' branch cannot fire; and base_need's elsewhere branch fires on any not-knowable, not only one the uncarried rule produced, re-appending a false ELSEWHERE_BASE_WHY each pass. Persist recorderHeld (and the uncarried marker) on the row and key base_need on it. Fix the changelog/guide sentence that a same-case task red stays the task's (true only for a different case).",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -272,14 +273,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0f1af970072e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) run-test-gate.py: lay_recorder_writes(source, tree, rels, declared=()) skips every recorder path an entry of the red work's files covers (_task_outputs.covers, via _declared_rel), at the top level and file by file inside a mirrored directory (_mirror_dir gained rel/declared; a directory absent in source is mirrored as empty, so declared files inside it are kept rather than rmtree'd); _run_base_of reads the files with owned_files(manifest, row phaseId, row taskId) and refuses (E_ASK, nothing ran) when they cannot be read. (6) _evidence_io.py: RECORDER_HELD_KEY and BASE_UNCARRIED_KEY constants; row_for keeps recorderHeld when it is a bool (False kept); _base_red keeps uncarried suites (repo-relative, bounded); RECORD_GRAMMAR gains recorderHeld (_BOOL leaf), _BASE_READING gains uncarried. run-test-gate.py aliases both keys to _evidence_io's. drive-phase.py base_need's elsewhere branch now keys on reading[BASE_UNCARRIED_KEY] instead of verdict == not-knowable. (2) changelog.d/P171.1.fixed.md and PLUGIN-BUILD-GUIDE.md (run-test-gate and drive-phase sections): declared-path rule, recorderHeld/uncarried persisted, and the same-case limit (a task red stays the task's only in a case the recorder's writes leave passing; the reading compares failing cases). Tests: test_run_test_gate rcw6-rcw10 (gate script gains a second plan trigger el3; _recorder_repo takes declared/plan_edit), test__evidence_io rh1-rh2 (new rh-block stage) plus recorderHeld False in _rs_full_result (rs1 demanded it), test_drive_phase rcd3-rcd4. Red-first on the pre-fix code: rcw6 FAIL (verdict base-only, atBase check_ledgers), rcw8 TypeError (no declared kwarg), rcw9/rcw10 FAIL (row drops recorderHeld), rh1/rh2 FAIL, rcd3 FAIL (elsewhere sentence on an unrelated not-knowable). Mutations (each applied once by anchor, restored by copy, cmp identical, __pycache__ purged): M1 top-level declared skip removed -> rcw6,rcw8 red; M2 mirror ignores declared -> rcw8; M3 over-fire any declared skips all -> rcw7,rcw8; M4 row drops recorderHeld -> rh1,rcw9,rcw10; M5 truthy-only keep -> rh1,rcw9; M6 grammar lacks recorderHeld -> rh1; M7 _base_red drops uncarried -> rh2,rcd1,rcd2; M8 base_need keyed on verdict -> rcd3; M9 never elsewhere -> rcd1,rcd2,rcd4. Gates after the last edit: task gate exit 0 (3/3 files ok, 2455 cases); full sweep exit 0 (196/196 files ok, 20015 cases); ruff exit 0; vermin exit 0; release.py changelog-check exit 0. Untested branch: owned_files refusal in _run_base_of (a red whose task the plan no longer holds). Dependants: drive-phase.py, full-gate.py and the importing suites still correct - lay_recorder_writes only gained a defaulted argument, RECORDER_HELD_KEY/UNCARRIED_KEY keep their strings, base_need keeps its signature and return shape; _evidence_io readers (guard-release, close-phase, integrate-task, _invariants, ...) only see two more optional keys, and the published lastRun accepts them (additionalProperties true; rk1/pj1 green); PLUGIN-BUILD-GUIDE.md and changelog.d changed only in the sentences above.",
+        "descriptive": "A base no longer carries a task's own plan edit, and a recorder-caused not-knowable is told apart on the record, so only it costs a base measurement."
       },
       "startedAt": "2026-11-26T13:38:32Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-26T14:11:32Z",
+      "verifiedBy": [
+        "rcw6 a task's own plan edit in a declared shard is charged to the task, not read as red at base",
+        "rcw7 twin: k15p shape with the index declared still reads base-only",
+        "rcw8 lay_recorder_writes keeps declared files and directories at base content and lays the rest",
+        "rcw9 a row keeps recorderHeld False and a kept base answers that red",
+        "rcw10 twin: recorderHeld True is not answered by a base measured elsewhere",
+        "rh1 row and record keep recorderHeld (False kept, None absent)",
+        "rh2 the reading keeps the uncarried suites on row and record",
+        "rcd3 an unrelated not-knowable owes no base measurement",
+        "rcd4 twin: an uncarried reading owes one"
+      ],
       "notes": [
         {
           "at": "2026-11-26T13:38:29Z",
@@ -308,6 +319,24 @@
             "ms": 380736,
             "basis": "durationMs in run 2026-11-26T14:11:00Z.49c0e4's record (run-test-gate --record)",
             "runId": "2026-11-26T14:11:00Z.49c0e4"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-26T14:03:41Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1506000,
+            "startedAt": "2026-11-26T13:38:35Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-26T14:11:00Z.49c0e4",
+            "kind": "wait",
+            "ms": 1000,
+            "startedAt": "2026-11-26T14:04:15Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 0f1af970072e",
+            "kind": "commit",
+            "ms": 1872,
+            "startedAt": "2026-11-26T14:11:29Z"
           }
         ],
         "firstStartedAt": "2026-11-26T13:38:32Z"
@@ -416,14 +445,291 @@
         "runId": "2026-11-26T14:11:16Z.18b999",
         "status": "passed",
         "at": "2026-11-26T14:11:16Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "0f1af970072e",
+        "at": "2026-11-26T14:11:32Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-26T14:03:39Z",
+        "basis": "`python3 tests/test__evidence_io.py --selftest` in a throwaway tree at HEAD exited 1 with 5 of 576 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rh1 (house FAIL): SELFTEST FAILED: 570/576 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
+  "startedAt": "2026-11-26T12:44:57Z",
+  "lastRun": {
+    "runId": "2026-11-26T14:26:22Z.5fa4dd",
+    "status": "passed",
+    "durationMs": 4381,
+    "failed": [],
+    "observations": {
+      "ranTotal": null,
+      "countsBasis": "no step printed a summary this reader can count (validate, gate, report), so the size of this gate is not knowable from its output; counted over the step(s) measured here only - the repeated step(s) selftests, plugin-validate, lint, shots, interactive, vitest ran no check in this run",
+      "treeMutated": [],
+      "treeBasis": "git described the tree before and after",
+      "coverageBasis": "the runner named 3 path(s); the work under test declares 9 file(s); among them: <outside-repo>, <outside-repo>, docs/audit/audit-plan.json; declared but not named by the run: PLUGIN-BUILD-GUIDE.md, changelog.d/P171.1.fixed.md, plugins/audit/scripts/governance/_evidence_io.py, plugins/audit/scripts/governance/drive-phase.py and 5 more; joined with the paths run 2026-11-26T14:26:16Z.676705's repeated step(s) selftests, plugin-validate, lint, shots, interactive, vitest named"
+    },
+    "banners": [],
+    "recorderHeld": true,
+    "gateSource": "phase",
+    "gateDigest": "sha256:e8312fb8f9c94dbe9df9bce082512eec91a04ad94b9a2938a23f7d6bd7005252",
+    "reuseKey": "1:sha256:bbd5c6c6f3b808ce8204f08e93e8e080cf747bdfdd7d388833b3105d1cd10312",
+    "verdictSource": "part-reused",
+    "reusedFrom": {
+      "runId": "2026-11-26T14:26:16Z.676705",
+      "ts": "2026-11-26T14:26:16Z",
+      "status": "passed"
+    },
+    "via": "cli",
     "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
-    "branch": "audit/p171-a-task-gate-judges-the-task-no",
-    "at": "2026-11-26T12:44:57Z"
+    "startedAt": "2026-11-26T14:26:18Z",
+    "selectionMs": 254,
+    "at": "2026-11-26T14:26:22Z",
+    "steps": [
+      {
+        "name": "selftests",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-26T14:26:16Z.676705",
+          "ts": "2026-11-26T14:26:16Z"
+        },
+        "command": "python3 tools/sweep-selftests.py"
+      },
+      {
+        "name": "validate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 749,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json"
+      },
+      {
+        "name": "plugin-validate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-26T14:26:16Z.676705",
+          "ts": "2026-11-26T14:26:16Z"
+        },
+        "command": "claude plugin validate . && claude plugin validate plugins/audit"
+      },
+      {
+        "name": "gate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 1408,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate"
+      },
+      {
+        "name": "report",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 2184,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report"
+      },
+      {
+        "name": "lint",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-26T14:26:16Z.676705",
+          "ts": "2026-11-26T14:26:16Z"
+        },
+        "command": "ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints"
+      },
+      {
+        "name": "shots",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-26T14:26:16Z.676705",
+          "ts": "2026-11-26T14:26:16Z"
+        },
+        "command": "node tools/capture-screenshots.mjs --check"
+      },
+      {
+        "name": "interactive",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-26T14:26:16Z.676705",
+          "ts": "2026-11-26T14:26:16Z"
+        },
+        "command": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
+      },
+      {
+        "name": "vitest",
+        "exit": 0,
+        "ran": 870,
+        "measured": "checks",
+        "suiteReader": "vitest",
+        "reusedFrom": {
+          "runId": "2026-11-26T14:26:16Z.676705",
+          "ts": "2026-11-26T14:26:16Z"
+        },
+        "command": "npx vitest run"
+      }
+    ],
+    "machine": "this run had the machine to itself",
+    "repeatedRun": {
+      "runId": "2026-11-26T14:26:16Z.676705",
+      "startedAt": "2026-11-26T14:11:51Z",
+      "durationMs": 864992,
+      "selectionMs": 268,
+      "status": "passed",
+      "failed": [],
+      "reuseKey": "1:sha256:bbd5c6c6f3b808ce8204f08e93e8e080cf747bdfdd7d388833b3105d1cd10312",
+      "gateDigest": "sha256:e8312fb8f9c94dbe9df9bce082512eec91a04ad94b9a2938a23f7d6bd7005252",
+      "gateSource": "phase",
+      "banners": [],
+      "machine": "this run had the machine to itself",
+      "launch": "2026-11-26T14:11:42Z-2cc0747b",
+      "observations": {
+        "ranTotal": 870,
+        "countsBasis": "1 of 9 step(s) printed a summary this reader counted; selftests, validate, plugin-validate, gate, report, lint, shots, interactive did not, so this total is a floor and not a size",
+        "treeMutated": [],
+        "treeBasis": "git described the tree before and after",
+        "coverage": [
+          "tests/test__evidence_io.py",
+          "tests/test_drive_phase.py",
+          "tests/test_run_test_gate.py"
+        ],
+        "coverageBasis": "the runner named 342 path(s); the work under test declares 9 file(s); 58 of them are test paths, matched to the files they are named after; among them: .claude-plugin/icon.png, .claude-plugin/plugin.json, .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py and 337 more; declared but not named by the run: PLUGIN-BUILD-GUIDE.md, changelog.d/P171.1.fixed.md, plugins/audit/scripts/governance/_evidence_io.py, plugins/audit/scripts/governance/drive-phase.py and 2 more"
+      },
+      "recorderHeld": true,
+      "via": "cli",
+      "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+      "at": "2026-11-26T14:26:16Z",
+      "testedState": {
+        "head": "0f1af970",
+        "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+        "scopeDigest": "sha256:69f2f1670f3465efbab858293d764ea78c84aa1f565a9e00ee47e44a4c70f3dd",
+        "scopeBasis": "9 declared file(s); 9 read, 0 missing",
+        "scopeListDigest": "sha256:647f0d9c471fafd82a93aea55aa7043b62aa958240de24be6e8e3480f13b579c",
+        "dirtyDigest": "sha256:8075a3893698b75e375812bbc188048abd8210429ababb68b213d7aeb26fd2a8",
+        "dirtyBasis": "git described the tree before the run; 2 dirty path(s)"
+      },
+      "steps": [
+        {
+          "name": "selftests",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 384901,
+          "suiteReader": "none",
+          "command": "python3 tools/sweep-selftests.py"
+        },
+        {
+          "name": "validate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 748,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json"
+        },
+        {
+          "name": "plugin-validate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 1277,
+          "suiteReader": "none",
+          "command": "claude plugin validate . && claude plugin validate plugins/audit"
+        },
+        {
+          "name": "gate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 1395,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate"
+        },
+        {
+          "name": "report",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 2240,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report"
+        },
+        {
+          "name": "lint",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 3395,
+          "suiteReader": "none",
+          "command": "ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints"
+        },
+        {
+          "name": "shots",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 294752,
+          "suiteReader": "none",
+          "command": "node tools/capture-screenshots.mjs --check"
+        },
+        {
+          "name": "interactive",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 172455,
+          "suiteReader": "none",
+          "command": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
+        },
+        {
+          "name": "vitest",
+          "exit": 0,
+          "ran": 870,
+          "measured": "checks",
+          "durationMs": 3739,
+          "suiteReader": "vitest",
+          "command": "npx vitest run"
+        }
+      ]
+    },
+    "sharedWithRepeated": [
+      "observations.coverage",
+      "testedState"
+    ],
+    "replacedLaunches": [
+      {
+        "runId": "2026-11-26T14:26:16Z.676705",
+        "launch": "2026-11-26T14:11:42Z-2cc0747b",
+        "status": "passed",
+        "at": "2026-11-26T14:26:16Z"
+      }
+    ]
   },
-  "startedAt": "2026-11-26T12:44:57Z"
+  "testEvidence": {
+    "runId": "2026-11-26T14:26:22Z.5fa4dd",
+    "status": "passed",
+    "at": "2026-11-26T14:26:22Z"
+  }
 }
