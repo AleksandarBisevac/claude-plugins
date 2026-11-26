@@ -2941,10 +2941,6 @@ OTHER_WRITERS = (
     ("hooks/require-plan.py", "_owner_note", "<write>", _PW_HOOK_FILE),
     ("hooks/require-plan.py", "_record_observed", "<write>", _PW_HOOK_FILE),
     ("hooks/require-plan.py", "_record_warned", "<write>", _PW_HOOK_FILE),
-    ("lints/_deps.py", "write_map",
-     "<write>",
-     "the import map document this module renders, at the path `--write-map` "
-     "names - a document about the code, not a plan file"),
     ("scripts/git/_worktrees.py", "_advance",
      ("_worktrees._undo (path not located: starred)",) * 3,
      "a task tree's files put back by the undo of a move step that failed - "
@@ -4044,20 +4040,18 @@ def plan_writer_violations(script_dir=None, hooks_dir=None, plan_table=None,
 # --- rendering ----------------------------------------------------------------
 def render(script_dir=None, layers=None):
     """A deterministic module map: every layer, its members, each member's STATIC
-    out-edges.
+    out-edges. Printed by `_deps.py --render` and committed nowhere - the guide
+    points at the command, so an import change obliges no edit to it.
 
-    The format is committed to from this task on - a later phase generates the guide's
-    module map from this exact text, under a drift lint, so two calls on an unchanged tree
-    must be byte-identical. Stable inputs only: `LAYERS`' own tuple order for layers, a
-    sorted() member list within a layer, sorted() edges per member.
+    Two calls on an unchanged tree must be byte-identical: `LAYERS`' own tuple
+    order for layers, a sorted() member list within a layer, sorted() edges per
+    member.
 
     STATIC ONLY, AND THAT IS A KNOWN GAP, NOT A JUDGEMENT. `layer_violations()` reads
-    the whole graph (see `import_graph`); this map still draws only the `import` edges,
-    because its text is byte-pinned to a fence in PLUGIN-BUILD-GUIDE.md that
-    `map_drift()` compares against and that a change here cannot update. Adding the
-    runtime edges to the picture is a one-line change plus a regenerated fence, and it
-    belongs in the session that owns the guide - not in one that would leave the two
-    disagreeing.
+    the whole graph (see `import_graph`); this map still draws only the `import`
+    edges. Adding the runtime edges is a change to this function alone now that no
+    committed copy has to agree with it; `render_index()` already names a
+    runtime-loaded module's importers.
     """
     layers = layers if layers is not None else LAYERS
     static, _runtime, broken = _scan_edges(script_dir)
@@ -4084,7 +4078,6 @@ def render(script_dir=None, layers=None):
 
 
 # --- guide drift --------------------------------------------------------------
-_GUIDE_HEADING = "## 1a. Module map (generated)"
 # The guide lives at the repo root. Counted off `_output.REPO_ROOT` rather than by
 # three `..` segments from this file's own directory: the count WAS this module's
 # depth written down, and it was wrong the moment the file moved.
@@ -4101,9 +4094,9 @@ def _fenced_block_after(text, heading):
     """The content of the first fenced code block after `heading`, or None.
 
     `None` distinguishes "no such heading" from "heading present, no fence" -
-    `map_drift` needs to tell those two apart and name each one differently.
-    Returns `(block_text, "missing fence")` is NOT the shape; callers get either
-    a string (the block content, without the fence lines) or `None`.
+    a caller names each one differently. Callers get either a string (the
+    block content, without the fence lines) or `None`; `(block_text, "missing
+    fence")` is NOT the shape.
     """
     idx = text.find(heading)
     if idx == -1:
@@ -4123,91 +4116,14 @@ def _fenced_block_after(text, heading):
     return after_open[:fence_end]
 
 
-# The command that rewrites the guide's fence from `render()`, run from the repo
-# root - the recipe `map_follower` names, so the drive can regenerate the map.
-MAP_RECIPE = "python3 tools/lints/_deps.py --write-map"
-_MAP_STALE = ("the guide's module map fence does not match `_deps.py --render` "
-              "output byte-for-byte (stale - regenerate with `%s`)" % (MAP_RECIPE,))
-
-
-def map_drift(guide_path=None, script_dir=None, layers=None):
-    """[(guide-relative-path, problem), ...] - the guide's module map against
-    the REAL `render()` output - a doc block that must match the code's own
-    statement.
-
-    Three named ways this drifts: the heading itself has gone missing (the
-    section was renamed or deleted), the heading survives but nothing under it
-    is a fenced block any more, or a fence is there but its content is stale -
-    one byte different from what `render()` says right now is still drift.
-    `script_dir` and `layers` are `render()`'s, for a fixture tree.
-    """
-    path = _guide_path(guide_path)
-    rel = _GUIDE_REL_PATH if guide_path is None else path
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            text = fh.read()
-    except (OSError, UnicodeDecodeError) as exc:
-        return [(rel, "unreadable: %s" % exc)]
-
-    if _GUIDE_HEADING not in text:
-        return [(rel, "heading %r not found in the guide" % _GUIDE_HEADING)]
-
-    block = _fenced_block_after(text, _GUIDE_HEADING)
-    if block is None:
-        return [(rel, "heading %r found but no fenced code block follows it"
-                  % _GUIDE_HEADING)]
-
-    expected = render(script_dir, layers)
-    if block != expected:
-        return [(rel, _MAP_STALE)]
-    return []
-
-
-def map_follower(guide_path=None, script_dir=None, layers=None):
-    """The follower record a stale module map owes - `{path, recipe, owner}`
-    for `_evidence_io.follower_line` - or None. None too for a missing heading,
-    a missing fence or an unreadable guide: `MAP_RECIPE` repairs none of
-    those, and `map_drift` names each."""
-    drift = map_drift(guide_path, script_dir, layers)
-    if [problem for _rel, problem in drift] != [_MAP_STALE]:
-        return None
-    return dict(follower_for(_GUIDE_REL_PATH), path=drift[0][0])
-
-
-def follower_for(path):
-    """The follower record when `path` is the guide `MAP_RECIPE` writes, else
-    None - asked of a path a task changed undeclared, stale map or not: the
-    recipe, run where the change was, is what settles the bytes."""
-    if path != _GUIDE_REL_PATH:
-        return None
-    return {"path": path, "recipe": MAP_RECIPE, "owner": "_deps.map_drift"}
-
-
-def write_map(guide_path=None):
-    """Rewrite the fence under the guide's module-map heading with `render()`.
-    True when the guide holds the fresh map afterwards; False when there is no
-    fence to rewrite, which `map_drift` names."""
-    path = _guide_path(guide_path)
-    with open(path, "r", encoding="utf-8") as fh:
-        text = fh.read()
-    block = _fenced_block_after(text, _GUIDE_HEADING)
-    if block is None:
-        return False
-    fence = text.index("```", text.find(_GUIDE_HEADING) + len(_GUIDE_HEADING))
-    start = text.index("\n", fence) + 1
-    with open(path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(text[:start] + render() + text[start + len(block):])
-    return True
-
-
 # --- the module index: printed, never committed ----------------------------------
 # WHY THIS IS A COMMAND AND NOT A SECOND FENCE IN THE GUIDE. The facts about a module
 # that its source states by itself - its layer, whether it is an entry point, whether
 # its suite exists, who imports it - change whenever ANY module's imports change. A
 # committed block holding them is stale after every such task, so each of those tasks
-# must edit, and declare, the guide: the module map's fence already does that, and a
-# second one would double the churn. Printed on demand it cannot drift, and so needs
-# no drift lint, follower or rewrite. NOT DERIVED HERE, AND WHY: public names (one
+# must edit, and declare, the guide - which is what the module map's committed fence
+# did until it became a command too (`render()`). Printed on demand it cannot drift,
+# and so needs no drift lint, follower or rewrite. NOT DERIVED HERE, AND WHY: public names (one
 # line per module cannot hold them) and an entry's usage line (a string the script
 # builds at run time rather than a fact of the source).
 def _suite_name(module):
@@ -4267,9 +4183,9 @@ def hooks_rule_drift(guide_path=None):
     """[(guide-relative-path, problem), ...] - the guide against the rule this
     module actually enforces for hooks/.
 
-    The same "a doc must match the code's own statement" pattern as `map_drift`,
-    aimed at the one claim it does not cover: there is no allow-list here any
-    more, so no document may describe one."""
+    The "a doc must match the code's own statement" pattern, aimed at a claim
+    that stays hand-written: there is no allow-list here any more, so no
+    document may describe one."""
     path = _guide_path(guide_path)
     rel = "PLUGIN-BUILD-GUIDE.md" if guide_path is None else path
     try:
@@ -7576,22 +7492,8 @@ if __name__ == "__main__":
     if "--render" in sys.argv[1:]:
         sys.stdout.write(render())
         raise SystemExit(0)
-    if "--follower-for" in sys.argv[1:]:
-        # The owner's answer an integration asks for by command. The line is
-        # `_evidence_io.follower_line`'s, spelled here because that layer sits
-        # above this one; test__deps holds its reader to this spelling.
-        for _path in sys.argv[sys.argv.index("--follower-for") + 1:]:
-            if follower_for(_path):
-                print("FOLLOWER-OWED %s" % (json.dumps(follower_for(_path),
-                                                       sort_keys=True),))
-        raise SystemExit(0)
     if "--render-index" in sys.argv[1:]:
         sys.stdout.write(render_index())
-        raise SystemExit(0)
-    if "--write-map" in sys.argv[1:]:
-        if not write_map():
-            sys.stderr.write("_deps.py: %s\n" % (map_drift()[0][1],))
-            raise SystemExit(1)
         raise SystemExit(0)
     if "--contracts" in sys.argv[1:]:
         # THE EDGE OF THE DICT-KEY RULE, PRINTED. `dict_key_violations()` is the
@@ -7614,6 +7516,5 @@ if __name__ == "__main__":
             _lines.append("")
         _output.write_lf_lines(_lines)
         raise SystemExit(0)
-    sys.stderr.write("usage: _deps.py --selftest | --render | --render-index | --write-map | --contracts"
-                     " | --follower-for <path>...\n")
+    sys.stderr.write("usage: _deps.py --render | --render-index | --contracts\n")
     raise SystemExit(2)

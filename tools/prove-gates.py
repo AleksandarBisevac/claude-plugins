@@ -737,7 +737,7 @@ TABLE = (
   _doc_claim_payload(12), DEP, "dpn0"),
  ("doc_prose_numbers", "CLAUDE.md", "after", "\n## Tests\n",
   _doc_claim_payload("thirteen"), DEP, "dpn0"),
- ("map_drift", L + "_deps.py", "replace", '    ("_output",),\n',
+ ("layer_violations", L + "_deps.py", "replace", '    ("_output",),\n',
   '    ("_output", "_probe_layer_name"),\n', DEP, "r3"),
  ("hooks_rule_drift", "PLUGIN-BUILD-GUIDE.md", "replace", None, None, DEP, "g0"),
  ("tool_basename_drift", "tools/where.py", "after", "\nSOURCE_EXT = ",
@@ -1595,11 +1595,6 @@ ALLOW = (
  ("step_pointer_violations", L + "_deps.py", "replace",
   "    rows = STEP_POINTER_SCAN_EXEMPT if table is None else table",
   "    rows = ()", DEP, "sp4"),
- # A byte-for-byte comparison that stops honouring the fence's trailing newline
- # reports drift on a guide that is exactly right, which is the direction a
- # regenerate-and-commit instruction cannot fix.
- ("map_drift", L + "_deps.py", "replace",
-  "    if block != expected:", "    if block != expected.rstrip():", DEP, "g1"),
  # The excuse pattern, widened to the word it is about. The guide has to STATE the
  # hooks rule to satisfy the other half of this lint, so a pattern that matches the
  # subject convicts the document for complying.
@@ -3607,7 +3602,7 @@ def _cases(check):
     # `mutation()` would then hand back a reason instead of a text.
     #
     # A TRAILING NEWLINE IS NOT A BLOCK, and the first draft of this counted one:
-    # `map_drift` and `config_vocab_drift` anchor on a single line WITH its newline
+    # `layer_violations` and `config_vocab_drift` anchor on a single line WITH its newline
     # so the swap keeps it, and a test for a newline anywhere reported both of them
     # as multi-line - which would have left this case green with the only real
     # block row deleted. The line count after the trailing newlines are stripped is

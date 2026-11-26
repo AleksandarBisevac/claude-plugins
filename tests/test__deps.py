@@ -48,6 +48,7 @@ import ast
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -56,7 +57,6 @@ from _output import safe_stdio                     # noqa: E402
 import _output                                     # noqa: E402  (as _deps imports it)
 import _output_lints  # noqa: E402  (the lint half, development code)
 import _deps as M                                  # noqa: E402
-import _evidence_io as _ev                         # noqa: E402  (follower_line)
 
 
 # --- cases --------------------------------------------------------------------
@@ -156,6 +156,27 @@ def _layer_graph_cases(check):
           all(("L%d:" % i) in render_a for i in range(len(M.LAYERS))))
     check("d3 the rendered map ends with a trailing newline (clean CLI output)",
           render_a.endswith("\n") and not render_a.endswith("\n\n"))
+    # COMPLETENESS, counted. The guide holds no copy of this text any more, so the
+    # printed map is the only statement of the graph: a module `LAYERS` places that
+    # the render left out would be missing from the one place that shows it. Each
+    # module is looked for as a whole member line (name, then end of line or the
+    # edge arrow) so a name that is a prefix of another cannot pass for it.
+    _rendered_members = [ln.strip().split(" ")[0] for ln in render_a.splitlines()
+                         if ln.startswith("  ")]
+    _placed = [name for layer in M.LAYERS for name in layer]
+    check("d4 --render names every module LAYERS places exactly once, in no more "
+          "and no fewer lines: missing %r, repeated %r, unplaced %r"
+          % (sorted(set(_placed) - set(_rendered_members)),
+             sorted(n for n in set(_rendered_members) if _rendered_members.count(n) > 1),
+             sorted(set(_rendered_members) - set(_placed))),
+          sorted(_rendered_members) == sorted(_placed))
+    _printed_map = subprocess.run(
+        [sys.executable, os.path.join(_output.LINTS_DIR, "_deps.py"), "--render"],
+        capture_output=True, text=True, timeout=120)
+    check("d5 `_deps.py --render` as a command exits 0 and prints exactly what "
+          "`render()` returns, so the guide's pointer names something that answers: "
+          "exit %r" % (_printed_map.returncode,),
+          _printed_map.returncode == 0 and _printed_map.stdout == render_a)
 
     # ----------------------------------------------------- fixtures: each violation named
     tmp = tempfile.mkdtemp(prefix="audit-deps-")
@@ -486,20 +507,28 @@ def _layer_graph_cases(check):
           "resolved to, and it is really there: %r" % (M._guide_path(),),
           M._guide_path() == os.path.normpath(_old_guide)
           and os.path.isfile(M._guide_path()))
-    check("gp2 ...and an explicit argument still wins, so every map_drift case "
+    check("gp2 ...and an explicit argument still wins, so every guide-reading case "
           "below can point the lint at a fixture",
           M._guide_path("/nowhere/x.md") == "/nowhere/x.md")
 
-    # --------------------------------------------------- map_drift: guide vs --render output
-    _map = M.map_drift()
-    _owed = M.map_follower()
-    if _owed:
-        # The line the gate runner records as the follower this step owes.
-        print(_ev.follower_line(_owed["path"], _owed["recipe"], _owed["owner"]))
-    check("g1 the shipped guide's module map fence matches `_deps.py --render` "
-          "byte-for-byte right now - the house 'a doc block must match the code's own "
-          "statement' pattern, applied to this generated block: %r" % (_map,),
-          not _map)
+    # ------------------------------ the module map is printed, and the guide holds none
+    # The guide used to carry the `--render` text in a fence of its own, which went
+    # stale on every import change and so made the guide a file every such task had
+    # to edit. Section 1a is a pointer now. This case fails if a generated map is
+    # committed back into it (a fenced block under the heading), or if the pointer
+    # stops naming the command that prints it.
+    _guide_text = open(M._guide_path(), encoding="utf-8").read()
+    _head = "## 1a. Module map (printed, not committed)"
+    _after = _guide_text.split(_head, 1)[1] if _head in _guide_text else ""
+    _section = _after.split("\n## ", 1)[0]
+    check("g1 the shipped guide's section 1a names `_deps.py --render` and holds no "
+          "fenced block of its own - a map committed there would be stale after "
+          "the next import change and oblige every such task to edit the guide: "
+          "heading present %r, command named %r, fences %d"
+          % (_head in _guide_text, "tools/lints/_deps.py --render" in _section,
+             _section.count("```")),
+          _head in _guide_text and "tools/lints/_deps.py --render" in _section
+          and "```" not in _section)
 
     # ---------------------------------------------- hooks_rule_drift: guide vs the rule
     # The generated map has a byte lint; the SENTENCE beside it had nothing, and that is
@@ -986,98 +1015,6 @@ def _layer_graph_cases(check):
 
     guide_tmp = tempfile.mkdtemp(prefix="audit-deps-guide-")
     try:
-        real_render = M.render()
-
-        stale_path = os.path.join(guide_tmp, "stale.md")
-        with open(stale_path, "w", encoding="utf-8") as fh:
-            fh.write("intro\n\n" + M._GUIDE_HEADING + "\n\nsome text\n\n```\n"
-                     + real_render[:-2] + "X\n```\n\nmore text\n")  # one byte changed
-        stale_hits = M.map_drift(stale_path)
-        check("g2 a fenced block one byte off from the real `render()` output is named "
-              "as stale, not silently accepted: %r" % (stale_hits,),
-              len(stale_hits) == 1 and stale_hits[0][0] == stale_path
-              and "does not match" in stale_hits[0][1])
-
-        no_heading_path = os.path.join(guide_tmp, "no_heading.md")
-        with open(no_heading_path, "w", encoding="utf-8") as fh:
-            fh.write("intro\n\n## something else entirely\n\n```\n" + real_render + "```\n")
-        no_heading_hits = M.map_drift(no_heading_path)
-        check("g3 a guide missing the module-map heading entirely is named, not "
-              "mistaken for a match: %r" % (no_heading_hits,),
-              len(no_heading_hits) == 1
-              and "heading" in no_heading_hits[0][1]
-              and "not found" in no_heading_hits[0][1])
-
-        no_fence_path = os.path.join(guide_tmp, "no_fence.md")
-        with open(no_fence_path, "w", encoding="utf-8") as fh:
-            fh.write("intro\n\n" + M._GUIDE_HEADING + "\n\nno fence follows this heading "
-                     "at all, just prose.\n")
-        no_fence_hits = M.map_drift(no_fence_path)
-        check("g4 a guide with the heading but no fenced block after it is named as "
-              "missing the fence, distinctly from a stale-content mismatch: %r"
-              % (no_fence_hits,),
-              len(no_fence_hits) == 1
-              and "no fenced code block" in no_fence_hits[0][1])
-
-        missing_path = os.path.join(guide_tmp, "does_not_exist.md")
-        missing_hits = M.map_drift(missing_path)
-        check("g5 an unreadable guide path is named as unreadable, not crashed on: %r"
-              % (missing_hits,),
-              len(missing_hits) == 1 and "unreadable" in missing_hits[0][1])
-
-        # ---- mutation proof: a weakened comparison must MISS the g2 stale fixture ----
-        # Same idea as m1/m2 below: a version of the comparison that only checks the
-        # block is non-empty (instead of comparing it to `render()`) would let g2's
-        # one-byte-off fixture through clean - proving g2 is testing something real.
-        def _weakened_map_drift(guide_path):
-            path = M._guide_path(guide_path)
-            with open(path, "r", encoding="utf-8") as fh:
-                text = fh.read()
-            if M._GUIDE_HEADING not in text:
-                return [(path, "heading not found")]
-            block = M._fenced_block_after(text, M._GUIDE_HEADING)
-            if block is None:
-                return [(path, "no fenced code block")]
-            return [] if block else [(path, "empty block")]  # never compares to render()
-
-        weak_stale_hits = _weakened_map_drift(stale_path)
-        check("g6 mutation proof: with the byte-for-byte comparison to `render()` "
-              "removed, the SAME one-byte-stale fixture g2 catches is missed entirely "
-              "(red proves g2 is testing something real): %r" % (weak_stale_hits,),
-              not weak_stale_hits)
-        real_stale_hits = M.map_drift(stale_path)
-        check("g7 mutation proof: the real, unweakened map_drift() still catches it - "
-              "nothing was left mutated behind",
-              real_stale_hits and "does not match" in real_stale_hits[0][1])
-        _followers = [M.map_follower(p) for p in (stale_path, no_heading_path,
-                                                  no_fence_path, missing_path)]
-        check("g8 a stale fence owes the guide as a follower with the recipe that "
-              "rewrites it; a missing heading, fence or file owes none, since the "
-              "recipe repairs none of them: %r" % (_followers,),
-              _followers == [{"path": stale_path, "recipe": M.MAP_RECIPE,
-                              "owner": "_deps.map_drift"}, None, None, None])
-        _wrote = (M.write_map(stale_path), M.write_map(no_fence_path))
-        with open(stale_path, "r", encoding="utf-8") as fh:
-            _rewritten = fh.read()
-        check("g9 write_map rewrites the stale fence in place - the guide then "
-              "matches `render()` and the prose around the fence is kept - and "
-              "refuses a guide with no fence: %r" % ((_wrote, M.map_drift(stale_path)),),
-              _wrote == (True, False) and M.map_drift(stale_path) == []
-              and _rewritten.startswith("intro\n\n" + M._GUIDE_HEADING + "\n\nsome text")
-              and _rewritten.endswith("```\n\nmore text\n"))
-        _claims = [M.follower_for(p) for p in (M._GUIDE_REL_PATH, "README.md",
-                                               "docs/" + M._GUIDE_REL_PATH)]
-        check("g10 asked by path, the map's owner claims the guide alone, with the "
-              "recipe and owner a stale fence owes: %r" % (_claims,),
-              _claims == [dict(_followers[0], path=M._GUIDE_REL_PATH), None, None])
-        import subprocess
-        _said = subprocess.run(
-            [sys.executable, os.path.join(_output.LINTS_DIR, "_deps.py"),
-             "--follower-for", "README.md", M._GUIDE_REL_PATH],
-            capture_output=True, text=True, timeout=120).stdout
-        check("g11 ...and as a command, the way an integration asks it, in the line "
-              "the follower reader parses, nothing unread: %r" % (_said,),
-              _ev.followers_in(_said) == ([_claims[0]], 0))
         # ---- the module index: printed on demand, nothing committed to drift ----
         # A fixture whose every fact differs, so each column is told apart from its
         # neighbours: `low` is imported by two modules (the list has more than one

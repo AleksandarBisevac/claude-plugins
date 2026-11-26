@@ -40,9 +40,23 @@
         "file": "docs/audit/phases/P170.json (P170.3-yl6 description)",
         "issue": "The task says 'If deriving every section is too large for one small task, derive the mechanism and one representative section, and file the rest as a follow-up task in P170 with the list.' The diff derives layer, kind, suite and importers, and names the undone parts only in PLUGIN-BUILD-GUIDE.md section 1b ('Not derived: a module's public names ... and an entry's usage line'). P170 holds three tasks (P170.1, P170.2-yl6, P170.3-yl6) and none is a follow-up for public names, the entry usage line, or the tree section's file list. The remainder is therefore not tracked anywhere a gate or the ready list reads.",
         "resolution": "File the follow-up in P170 (/audit:task add) listing what the filed return measured: public names (needs a per-module block, one line cannot hold them), entry usage line (needs a USAGE constant per entry), and the tree section's file list."
+      },
+      {
+        "id": "P170-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py:1026-1027",
+        "issue": "The comment above the follower protocol still gives 'the module map a new import moves' as its example of a follower. This diff removed the only owner that claimed it, so the sentence now describes something that no longer exists. Same file as the known F929 entry (FOLLOWER_OWNERS still lists tools/lints/_deps.py, which now answers --follower-for with a usage line on stderr and exit 2, so claimed_followers gets no stdout and returns nothing, at the cost of one wasted subprocess per ask; I ran it by hand: exit 2, empty stdout).",
+        "resolution": "Fold into the F929 tidy: drop tools/lints/_deps.py from FOLLOWER_OWNERS and replace the module-map example in the comment with a live one (a committed page that a fresh render no longer matches). The repointed tests pick the first tools/*.py owner generically, so they pass either way."
+      },
+      {
+        "id": "P170-R4",
+        "severity": "low",
+        "file": "tools/lints/_refs.py:16",
+        "issue": "The docstring says 'Same shape as `_deps.map_drift()`', naming a function this diff deleted. The executor saw it and left it as outside the task's files.",
+        "resolution": "Reword to name a function that still exists (hooks_rule_drift is the same guide-against-code shape), in the same batch as F929."
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 1 med, 1 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 4 - 0 high, 1 med, 3 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -892,7 +906,7 @@
     {
       "id": "P170.3-yl6",
       "title": "The build guide's per-module sections a task need not edit are named, and the ones that can be derived from code are derived",
-      "status": "in_progress",
+      "status": "done",
       "description": "Second half of P170's description: PLUGIN-BUILD-GUIDE.md is the other file nearly every task declares (a section headed by a module's path is a reader of that module, so the start refusal asks for it), which also caps the drive's waves at one. Measure first: over the last two landed phases (P169, P170) count how many tasks declared PLUGIN-BUILD-GUIDE.md and which part of each guide section they edited. Then list the guide's per-module sections and, for each, which part is derivable from code the way the module map fence already is (tools/lints/_deps.py --write-map / render): layer, imports, importers, public names, the entry's usage line. Derive the parts that can be derived in a fenced, generated block per section (or one generated index) checked by test__deps the way g1 checks the module map, so a code change no longer obliges a hand edit of the guide; the hand-written rationale stays and stays declared when a task changes what it says. If deriving every section is too large for one small task, derive the mechanism and one representative section, and file the rest as a follow-up task in P170 with the list. Record the measured counts in the return. Changelog line: changelog.d/P170.3.changed.md (the fragment convention P170.1 introduced; CONTRIBUTING.md).",
       "files": [
         "PLUGIN-BUILD-GUIDE.md",
@@ -917,14 +931,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ce411f6e36ee",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "MEASURED (git show per commit on feat(P169.*/P170.*) commits, hunk -> nearest preceding heading in the old guide): P169 declares PLUGIN-BUILD-GUIDE.md on 35 of 44 tasks, P170 on 2 of 3 (P170.1, P170.3); 33 of the 43 landed feat commits of the two phases changed the guide. Sections edited (commits): _evidence_io.py 21, module map fence 12 (mechanical write-map regeneration), drive-phase.py 9, _manifest_merge/merge-manifest/_merge_install 5, run-test-gate.py 4, _deps.py 3, import-evidence.py 3, rest 1-2 each; only 10 of the 33 touched exactly one section. The guide holds 165 ### sections under section 2, 133 of them headed by a scripts/ path; 139 modules under scripts/ (LAYERS places all 139); 2664 public top-level names across them; 769 static + 19 runtime-load edges. SECTION LIST / DERIVABILITY: layer (derivable from LAYERS - DONE as the index column), entry-vs-helper (name - DONE), suite exists (tests/test_<name>.py - DONE), importers (reverse of import_graph static+runtime - DONE), imports (already the map fence, section 1a), public names (derivable by ast but 2664 names do not fit one line per module: needs a per-module block inside each section or a separate per-module generated section - NOT DONE, follow-up), entry usage line (not derivable: argparse/usage text is built at run time, not a source constant; a derived form would need each entry to expose a USAGE constant - NOT DONE, follow-up), tree section 1 (per-file lines with hand comments; file LIST derivable, the comments are not - NOT DONE, follow-up). BUILT: mechanism + one generated index. tools/lints/_deps.py: _fence_drift/_rewrite_fence/_write_fence helpers (map_drift and write_map now go through them, behaviour unchanged, g1-g11 untouched and green), render_index(), index_drift(), index_follower(), write_index(), _INDEX_HEADING, `--render-index`, `--write-map` now rewrites both fences and reports each fence's problem separately; the OTHER_WRITERS row for the writer renamed write_map -> _write_fence (pw1/pw2 went red on it). PLUGIN-BUILD-GUIDE.md: new section '1b. Module index (generated)' (prose + generated fence, 139 lines); nothing hand-written elsewhere touched. tests/test__deps.py: g1i (shipped guide index current, prints the follower line when stale) and gi1-gi5 (exact render of a fixture with every column different incl. an unplaced module; stale/missing-heading/no-fence/unreadable named; follower; independence of the two fences + write_index keeps every other byte and refuses a fence-less guide). changelog.d/P170.3-yl6.changed.md written; changelog.d/P170.3.changed.md (also in the declared files) NOT created, the caller named the -yl6 path. MUTATIONS (shared tree, restored in the same script, cmp equal afterwards, __pycache__ purged between): entry-kind forced to 'module' -> g1i and gi1 red (315/317); importers dropped -> g1i, gi1, gi2, gi4 red (313/317); index comparison disabled -> block aborted (305/309), so that one only shows the suite goes red, not which index case. TALLIES: tests/test__deps.py 317/317 cases passed; full sweep 195/196 files ok, 19945 cases, exit 1. THE ONE RED IS OUTSIDE MY FILES: tools/prove-gates.py case c1 fails with ['index_drift'] - every derived *_drift lint must have a row in prove-gates' TABLE and this one has none. Per the rules I did not edit tools/prove-gates.py. The row that closes it (anchor occurs exactly once in tools/lints/_deps.py; I watched this mutation turn g1i and gi1 red): (\"index_drift\", L + \"_deps.py\", \"replace\", '\"entry\" if \"-\" in name else \"module\"', '\"module\"', DEP, \"g1i\") beside the existing map_drift rows near tools/prove-gates.py:740 and :1601. I also kept the literal line `    if block != expected:` in _fence_drift because the existing prove-gates map_drift row anchors on exactly that text. DEPENDANTS: PLUGIN-BUILD-GUIDE.md readers (tests/test__deps.py, test__doctor_trail, etc.) - still correct, only an added section 1b, no existing text changed; the guide's _deps.py section (:1822 area) still true (it names map_drift/--render, both unchanged) but does not yet mention index_drift/--render-index - the new 1b prose carries it, I did not rewrite hand text; tools/lints/_deps.py importers (_manifest_rules, _manifest_vocab, _doctor_policy, test__manifest_io, etc.) - still correct, no name removed or signature changed (write_map keeps its contract, g8-g11 green), only additions plus the private _write_fence; tests/test__deps.py dependants - changed, +83 lines of cases; tools/prove-gates.py (named-by-path dependant of test__deps) - CHANGED: needs the index_drift row above, else sweep stays red; CHANGELOG.md/gate-parity/sweep-costs referencing test__deps - unaffected (new cases join the same suite; .github/sweep-costs.json not re-recorded).",
+        "descriptive": "The build guide gains a generated per-module index (layer, kind, suite, importers) under the same drift lint and rewrite command as the module map, so those facts stop needing hand edits; one prove-gates row is owed by the caller to close the sweep."
       },
       "startedAt": "2026-11-26T06:59:16Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-26T07:35:14Z",
+      "verifiedBy": [
+        "g1i: the shipped guide's module index fence is byte-identical to render_index()",
+        "gi1: render_index on a fixture tree states layer/kind/suite/importers per module, sorted, with an unplaced module and a module nothing imports",
+        "gi2: an index fence missing one importer is named stale",
+        "gi3: missing heading, heading without fence and unreadable guide are each named",
+        "gi4: a stale index owes the guide as a follower with the map's recipe, others owe none",
+        "gi5: map fence clean + index fence stale are told apart; write_index rewrites only the index and refuses a fence-less guide"
+      ],
       "notes": [
         {
           "at": "2026-11-26T06:59:14Z",
@@ -966,6 +987,30 @@
             "ms": 521537,
             "basis": "durationMs in run 2026-11-26T07:33:14Z.791829's record (run-test-gate --record)",
             "runId": "2026-11-26T07:33:14Z.791829"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-26T07:14:18Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 900000,
+            "startedAt": "2026-11-26T06:59:18Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-26T07:33:14Z.791829; under a second: the start fell in the hand-out's own second",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-26T07:24:08Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-26T07:34:56Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 82000,
+            "startedAt": "2026-11-26T07:33:34Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit ce411f6e36ee",
+            "kind": "commit",
+            "ms": 1990,
+            "startedAt": "2026-11-26T07:35:10Z"
           }
         ],
         "firstStartedAt": "2026-11-26T06:59:16Z"
@@ -1072,6 +1117,207 @@
         "runId": "2026-11-26T07:33:32Z.fd80e1",
         "status": "passed",
         "at": "2026-11-26T07:33:32Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "ce411f6e36ee",
+        "at": "2026-11-26T07:35:14Z",
+        "return": "docs/audit/evidence/returns/P170.3-yl6/20261126T065916Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with tests.expectRedFirst false and tests.add empty; mutations were run instead and watched go red (see outcome), restored byte-identical (cmp)",
+        "at": "n/a"
+      }
+    },
+    {
+      "id": "P170.4-yl6",
+      "title": "The module map is printed by the import-graph lint, not committed in the build guide, so an import change obliges no guide edit",
+      "status": "in_progress",
+      "description": "Follow-up of P170.3 (measured over P169/P170: 12 of the 33 landed commits that changed PLUGIN-BUILD-GUIDE.md were mechanical --write-map regenerations of the section 1a module-map fence; a committed generated block goes stale on every import change and makes the guide a file every such task must edit, capping the drive's waves at one). Remove the committed fence from section 1a and leave a pointer to the printing command (tools/lints/_deps.py --render), as P170.3 did for the module index; remove what only exists to keep the committed copy current (map_drift, map_follower, follower_for, write_map, --write-map, --follower-for) and repoint or delete what depends on them: test__deps g1-g11, tools/prove-gates.py rows for map_drift, and the follower machinery in drive-phase.py, integrate-task.py and run-test-gate.py (find every caller first; if a caller is outside this task's files, STOP and name it so the scope is widened). Keep a case that --render is deterministic and complete (every LAYERS module appears). The underived remainder P170.3 named (public names, entry usage line, the section 1 tree's file list) is listed in the return with a recommendation, not built here.",
+      "files": [
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/lints/_deps.py",
+        "tests/test__deps.py",
+        "tools/prove-gates.py",
+        "changelog.d/P170.4.changed.md",
+        "changelog.d/P170.4-yl6.changed.md",
+        "tests/test_integrate_task.py",
+        "tests/test_drive_phase.py",
+        "tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__deps.py tests/test_integrate_task.py tests/test_drive_phase.py tests/test_run_test_gate.py"
+        ],
+        "gateBasis": "files"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-26T07:36:13Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-26T07:35:53Z",
+          "reader": "tests/test_drive_phase.py",
+          "reads": "PLUGIN-BUILD-GUIDE.md",
+          "text": "declared to answer a reading: tests/test_drive_phase.py reads PLUGIN-BUILD-GUIDE.md - quotes its text beside its path: '# --- deciding a step on facts'"
+        },
+        {
+          "at": "2026-11-26T07:36:10Z",
+          "text": "it quotes a fixed hand-written sentence; this task removes only the generated module-map fence and its keeper, and the full sweep runs this reader",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-26T07:36:10Z",
+          "text": "it quotes a fixed hand-written sentence; this task removes only the generated module-map fence and its keeper, and the full sweep runs this reader",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-26T07:36:10Z",
+          "text": "it names tools/prove-gates.py as a path; this task edits rows of its table and never renames or deletes the file",
+          "waives": "tests/_harness.py"
+        }
+      ],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-26T07:57:48Z",
+            "ms": 23498,
+            "basis": "selectionMs in run 2026-11-26T08:07:05Z.99e3fd's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-26T08:07:05Z.99e3fd"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-26T07:58:12Z",
+            "ms": 532713,
+            "basis": "durationMs in run 2026-11-26T08:07:05Z.99e3fd's record (run-test-gate --record)",
+            "runId": "2026-11-26T08:07:05Z.99e3fd"
+          }
+        ],
+        "firstStartedAt": "2026-11-26T07:36:13Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-26T08:07:26Z.2cb27b",
+        "status": "passed",
+        "durationMs": 284,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:d6e6071d48df85e6c2c0239dcc4c1fd8d488627f2aeff02ef17f74e215f4f7f9",
+        "reuseKey": "1:sha256:f89bb2a560f86cd82e45f13b6d43716d7f6ca79dfc51a6611dad9c55e6007b0d",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-26T08:07:05Z.99e3fd",
+          "ts": "2026-11-26T08:07:05Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+        "selectionMs": 18463,
+        "at": "2026-11-26T08:07:26Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "runId": "2026-11-26T08:07:05Z.99e3fd",
+          "startedAt": "2026-11-26T07:58:12Z",
+          "durationMs": 532713,
+          "selectionMs": 23498,
+          "status": "passed",
+          "failed": [],
+          "reuseKey": "1:sha256:f89bb2a560f86cd82e45f13b6d43716d7f6ca79dfc51a6611dad9c55e6007b0d",
+          "gateDigest": "sha256:d6e6071d48df85e6c2c0239dcc4c1fd8d488627f2aeff02ef17f74e215f4f7f9",
+          "gateSource": "task",
+          "banners": [],
+          "machine": "this run had the machine to itself",
+          "launch": "2026-11-26T07:57:48Z-28ebd444",
+          "gateReach": {
+            "gaps": []
+          },
+          "observations": {
+            "ranTotal": null,
+            "countsBasis": "no step printed a summary this reader can count (python3 tools/sweep-selftests.py tests/test__deps.py tests/test_integrate_task.py tests/test_drive_phase.py tests/test_run_test_gate.py + affected/related: .cla... (5450 more characters)), so the size of this gate is not knowable from its output",
+            "treeMutated": [],
+            "treeBasis": "git described the tree before and after",
+            "coverage": [
+              "tests/test__deps.py",
+              "tests/test_drive_phase.py",
+              "tests/test_integrate_task.py",
+              "tests/test_run_test_gate.py",
+              "tools/prove-gates.py"
+            ],
+            "coverageBasis": "the runner named 206 path(s); the work under test declares 9 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 195/195 and 201 more; declared but not named by the run: PLUGIN-BUILD-GUIDE.md, changelog.d/P170.4-yl6.changed.md, changelog.d/P170.4.changed.md, tools/lints/_deps.py; breadth: the run named 174 suite path(s) and this task declares 9 file(s), and 168 of them are suites the task neither declares nor is named after (test__evidence_io.py, test__output.py, test_audit_task.py, test_close_phase.py, test_commit_task_work.py, test_stamp_verification.py, tests/_harness.py and 161 more) - this gate asks more than the task changed; that is reported, not refused"
+          },
+          "via": "cli",
+          "attempt": 1,
+          "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+          "at": "2026-11-26T08:07:05Z",
+          "testedState": {
+            "head": "ce411f6e",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeDigest": "sha256:930afe9a571d538155270be75673620d633931e74fa69c13b6aa091cdbe80fc0",
+            "scopeBasis": "9 declared file(s); 8 read, 1 missing",
+            "scopeListDigest": "sha256:056a4230228da0aa331c929b42c5f7a502451dafe97891b4defea913771c3c47",
+            "dirtyDigest": "sha256:cda2b5e56d03f392bfee20a075b3fbe189c375184bdd27bdaeb9f0989965c6a2",
+            "dirtyBasis": "git described the tree before the run; 12 dirty path(s)"
+          },
+          "steps": [
+            {
+              "name": "python3 tools/sweep-selftests.py tests/test__deps.py tests/test_integrate_task.py tests/test_drive_phase.py tests/test_run_test_gate.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_io.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 532517,
+              "suiteReader": "none",
+              "commandBytes": 5400,
+              "commandSha256": "28fd825bec7025b780d0d4fbcf862d607e52646a58ca14ee1d31a8860af954a1",
+              "program": "python3"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-26T08:07:05Z.99e3fd",
+            "launch": "2026-11-26T07:57:48Z-28ebd444",
+            "status": "passed",
+            "at": "2026-11-26T08:07:05Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-26T08:07:26Z.2cb27b",
+        "status": "passed",
+        "at": "2026-11-26T08:07:26Z"
       }
     }
   ],

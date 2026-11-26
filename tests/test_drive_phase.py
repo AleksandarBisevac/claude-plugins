@@ -8028,69 +8028,70 @@ def _follower_wave_cases(check):
 
 
 def _follower_map_cases(check):
-    """A green gate owes nothing, so the module map a member regenerated itself
+    """A green gate owes nothing, so a generated file a member regenerated itself
     reaches integration undeclared: its owner's recipe is what decides it."""
     M, why = _load("drive_phase_follower_map")
     if M is None:
         check("fm0 the driver loads", False, why)
         return
-    import _deps
-    root, mpath, guide, fresh, prints = _drive_follower_map(M, "followmap")
+    root, mpath, gen, fresh, prints = _drive_follower_map(M, "followmap")
     task = tasks_of(mpath)["P1.2"]
     notes = " ".join(str(n) for n in task.get("notes") or [])
     said = "\n".join(prints)
-    held = _git_out(root, "show", "%s:%s" % (task.get("commit") or "HEAD", guide))
-    check("a wave member that regenerated the module map itself, with its gate "
-          "green, is integrated with the map widened on the owner's basis and no "
+    held = _git_out(root, "show", "%s:%s" % (task.get("commit") or "HEAD", gen))
+    check("a wave member that regenerated a generated file itself, with its gate "
+          "green, is integrated with the file widened on the owner's basis and no "
           "undeclared-change decision printed (%r)"
           % ((task.get("status"), task.get("files"), notes, prints),),
-          task.get("status") == "done" and guide in (task.get("files") or [])
-          and "_deps.map_drift" in notes and _deps.MAP_RECIPE in notes
+          task.get("status") == "done" and gen in (task.get("files") or [])
+          and _GEN_OWNER in notes and _GEN_RECIPE in notes
           and "undeclared-change" not in said
-          and fresh is not None and "a map from before" not in fresh
+          and fresh is not None and "from before" not in fresh
           and held == fresh)
 
 
+_GEN_PATH = "docs/gen.txt"
+_GEN_OWNER = "gen"
+# The recipe is a script of the fixture's own, so it runs the same in the task's
+# scratch copy as in the member's tree, with nothing of the plugin around it.
+_GEN_RECIPE = "%s tools/regen.py" % (
+    '"%s"' % sys.executable if " " in sys.executable else sys.executable)
+
+
 def _drive_follower_map(M, prefix, sharded=False):
-    """The two-member wave whose second member regenerated the module map in
-    its own tree, the map undeclared; in the sharded layout when `sharded`, so
-    the task commit is held to the index HEAD carries. Up to six `next`s, until
-    every task is done. `(root, mpath, guide, fresh, prints)`, `fresh` the map
-    the member wrote, None when the wave made no tree."""
-    import _deps
+    """The two-member wave whose second member regenerated a generated file in
+    its own tree, the file undeclared and claimed by a follower owner of the
+    fixture's own; in the sharded layout when `sharded`, so the task commit is
+    held to the index HEAD carries. Up to six `next`s, until every task is done.
+    `(root, mpath, path, fresh, prints)`, `fresh` the file the member wrote,
+    None when the wave made no tree."""
     root, mpath = _wave_repo(prefix, 2)
     if sharded:
         plan = _mio.load_manifest(mpath)
         os.remove(mpath)
         _mio.save_sharded(mpath, plan)
-    # THE ANCHOR ALONE, NOT THE PLUGIN'S SCRIPTS: the map's owner here is the
-    # fixture's own `_deps.py`, which needs `_output` to start and maps the
-    # modules it finds beside it. Over a copy of every script it read the whole
-    # plugin on each of its runs - the member's and the recipe's - and the copy
-    # was committed, then checked out into every task tree; over the anchor it
-    # reads one module, and the recipe still writes the map the same way.
-    os.makedirs(os.path.join(root, "plugins", "audit", "scripts"))
-    shutil.copy(os.path.join(_output.SCRIPTS_DIR, "_output.py"),
-                os.path.join(root, "plugins", "audit", "scripts", "_output.py"))
-    shutil.copytree(_output.LINTS_DIR, os.path.join(root, "tools", "lints"),
-                    ignore=shutil.ignore_patterns("__pycache__"))
-    guide = "PLUGIN-BUILD-GUIDE.md"
-    with open(os.path.join(_output.REPO_ROOT, guide), encoding="utf-8") as fh:
-        text = fh.read()
-    block = _deps._fenced_block_after(text, _deps._GUIDE_HEADING)
-    _write_lf(os.path.join(root, guide),
-              text.replace(block, "a map from before this change\n", 1))
-    with open(os.path.join(root, ".gitignore"), "a", encoding="utf-8") as fh:
-        fh.write("__pycache__/\n")
-    for argv in (["add", "-A"], ["commit", "-qm", "the module map's owner"]):
+    owner = [o for o in _evio.FOLLOWER_OWNERS if o.startswith("tools/")
+             and o.endswith(".py")][0]
+    os.makedirs(os.path.join(root, *owner.split("/")[:-1]), exist_ok=True)
+    _write_lf(os.path.join(root, *owner.split("/")), (
+        "import json, sys\n"
+        "for rel in sys.argv[2:]:\n"
+        "    if rel == %r:\n"
+        "        print('FOLLOWER-OWED ' + json.dumps({'path': rel, 'recipe': %r,\n"
+        "              'owner': %r}))\n" % (_GEN_PATH, _GEN_RECIPE, _GEN_OWNER)))
+    _write_lf(os.path.join(root, "tools", "regen.py"), (
+        "with open(%r, 'w', encoding='utf-8', newline='\\n') as fh:\n"
+        "    fh.write('regenerated\\n')\n" % (_GEN_PATH,)))
+    os.makedirs(os.path.join(root, "docs"), exist_ok=True)
+    _write_lf(os.path.join(root, _GEN_PATH), "a generated file from before\n")
+    for argv in (["add", "-A"], ["commit", "-qm", "the generated file's owner"]):
         _harness.git(root, *argv)
     _code, first = _next_wave(M, root, mpath)
     tree, fresh = _tree_of(root, "P1.2"), None
     if tree:
-        subprocess.run([sys.executable, os.path.join(
-            tree, "tools", "lints", "_deps.py"), "--write-map"],
-            cwd=tree, check=True, capture_output=True, timeout=120)
-        fresh = _read(os.path.join(tree, guide)).decode("utf-8")
+        subprocess.run([sys.executable, os.path.join(tree, "tools", "regen.py")],
+                       cwd=tree, check=True, capture_output=True, timeout=120)
+        fresh = _read(os.path.join(tree, _GEN_PATH)).decode("utf-8")
     for t in _dispatched(first):
         _file_wave_executor(root, mpath, t)
     prints = []
@@ -8101,7 +8102,7 @@ def _drive_follower_map(M, prefix, sharded=False):
         prints.append("\n".join(said))
         if all(t.get("status") == "done" for t in tasks_of(mpath).values()):
             break
-    return root, mpath, guide, fresh, prints
+    return root, mpath, _GEN_PATH, fresh, prints
 
 
 # The case's title is the task's tests.add clause, verbatim.

@@ -13393,10 +13393,7 @@ def _gate_reach_cases(check):
 def _follower_cases(check):
     """A step that owes a follower prints one line; the run records it on the row
     as `followersOwed`, the record the drive regenerates or widens from."""
-    import _deps
     repo = _mini_repo("rtg-follow-")
-    scripts = os.path.join(repo, "scripts")
-    guide = os.path.join(repo, "PLUGIN-BUILD-GUIDE.md")
     ids, identity = {"taskId": "P1.1", "phaseId": "P1"}, {"runId": "r-follow"}
 
     def _row(text, code=1):
@@ -13405,26 +13402,17 @@ def _follower_cases(check):
         return _ev_io.row_for(repo, res, "task", ids, identity)
 
     try:
-        os.makedirs(scripts)
-        _write(os.path.join(scripts, "_a.py"), '"""a module."""\n')
-        _write(guide, "# guide\n\n%s\n\n```\n%s```\n\nprose after the map\n"
-               % (_deps._GUIDE_HEADING, _deps.render(scripts, (("_a",),))))
-        current = _deps.map_follower(guide, scripts, (("_a",),))
-        # The task's change: a new module under scripts/ importing the old one.
-        _write(os.path.join(scripts, "_b.py"), '"""b module."""\nimport _a  # noqa\n')
-        layers = (("_a",), ("_b",))
-        owed = _deps.map_follower(guide, scripts, layers)
-        row = _row("FAIL g1 the guide's module map is stale\n"
+        # A generated file some step owns: the step prints the record, the row
+        # keeps it. No module owns it here - the record is what the line carries.
+        owed = {"path": "docs/generated.txt", "recipe": "make generated",
+                "owner": "generator"}
+        row = _row("FAIL g1 the generated file is stale\n"
                    + _ev_io.follower_line(owed["path"], owed["recipe"], owed["owner"])
-                   + "\n") if owed else {}
-        check("a fixture task adding a .py under scripts/ gets an evidence row whose "
-              "followersOwed names the module map with its recipe: %r"
-              % ((current, row.get("followersOwed")),),
-              current is None
-              and row.get("followersOwed") == [
-                  {"path": "PLUGIN-BUILD-GUIDE.md", "recipe": _deps.MAP_RECIPE,
-                   "owner": "_deps.map_drift"}]
-              and "followersUnread" not in row)
+                   + "\n")
+        check("a step that prints a follower line gets an evidence row whose "
+              "followersOwed names that path with its recipe and owner: %r"
+              % (row.get("followersOwed"),),
+              row.get("followersOwed") == [owed] and "followersUnread" not in row)
 
         cra = _loader.load(os.path.join(_output.REPO_ROOT, "tools",
                                         "check-rendered-artifacts.py"), "cra_follow")

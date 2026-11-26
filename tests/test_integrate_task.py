@@ -27,13 +27,10 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import hashlib
 import json
 import os
-import shutil
-import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
-import _deps                                       # noqa: E402  (the module map's owner)
 import _loader                                     # noqa: E402
 
 M = _loader.load_script("integrate-task.py")
@@ -389,144 +386,67 @@ def _wave_output_cases(check):
                                               "r.txt")))
 
 
-GUIDE = "PLUGIN-BUILD-GUIDE.md"
+# A generated file and the owner that claims it. The owner is a script of the
+# fixture's own at the first `tools/*.py` path the integration asks, and its recipe
+# a second script of the fixture's, so the recipe runs in the scratch copy with
+# nothing of the plugin around it.
+GEN = "gen.txt"
+_GEN_REGEN = ("with open('gen.txt', 'w', encoding='utf-8', newline='\\n') as fh:\n"
+              "    fh.write('regenerated\\n')\n")
 
 
-# Run in a fresh interpreter, because this one has loaded far more than the
-# recipe does: `_deps` imported the way `_deps.py --write-map` starts, with its
-# own directory first on the path, and every module file that import loaded.
-_CLOSURE_PROBE = ("import json, sys\n"
-                  "sys.path.insert(0, sys.argv[1])\n"
-                  "import _deps\n"
-                  "print(json.dumps(sorted(set(getattr(m, '__file__', None) or ''\n"
-                  "                            for m in list(sys.modules.values())))))\n")
+def _gen_recipe():
+    return "%s regen.py" % ('"%s"' % sys.executable if " " in sys.executable
+                            else sys.executable)
 
 
-def _child(what, argv, **kwargs):
-    """`argv`'s completed process; a RuntimeError carrying its exit code and its
-    stderr when it exits non-zero or outruns `timeout`.
-
-    Not `check=True`: with the output captured, the error that raises names the
-    exit status and drops stderr, which is the one thing that says why - and
-    these children fail for real only on a remote runner, where that line is
-    all there is to read."""
-    try:
-        done = subprocess.run(argv, capture_output=True, **kwargs)
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("%s outran its %ss timeout; stderr so far: %s"
-                           % (what, exc.timeout, (exc.stderr or b"").decode(
-                               "utf-8", "replace").strip() or "(none)"))
-    if done.returncode != 0:
-        raise RuntimeError("%s exited %d; stderr: %s"
-                           % (what, done.returncode, done.stderr.decode(
-                               "utf-8", "replace").strip() or "(none)"))
-    return done
+def _gen_owner():
+    return ("import json, sys\n"
+            "for rel in sys.argv[2:]:\n"
+            "    if rel == %r:\n"
+            "        print('FOLLOWER-OWED ' + json.dumps({'path': rel, 'recipe': %r, "
+            "'owner': 'gen'}))\n" % (GEN, _gen_recipe()))
 
 
-def _recipe_closure(probe=None):
-    """The repository files the module-map recipe loads, relative to the repo
-    root - read off the recipe's own import rather than listed here, so a
-    module it starts to import is copied without anyone editing this.
-
-    WHY NOT THE WHOLE PLUGIN. The fixture's base commit is one `git add -A`
-    under the harness's hang bound, and on a loaded windows runner an add of
-    every script and asset outran it. The recipe's render maps the `.py`
-    files it finds under `scripts/`, so over this closure it still really
-    runs and really writes a map - what the cases judge is whether the task's
-    bytes are the bytes the recipe writes, not what the map lists. A module
-    the render loads lazily is not in the closure, and the recipe then fails
-    loudly in `_write_map` rather than passing over a partial copy.
-
-    `probe` replaces the probe's source, for the case that makes it fail."""
-    done = _child("the recipe's closure probe",
-                  [sys.executable, "-c", probe or _CLOSURE_PROBE,
-                   M._output.LINTS_DIR], timeout=60)
-    repo = os.path.realpath(M._output.REPO_ROOT)
-    roots = [os.path.normcase(os.path.realpath(d)) + os.sep
-             for d in (M._output.SCRIPTS_DIR, M._output.LINTS_DIR)]
-    picked = sorted(os.path.relpath(os.path.realpath(path), repo)
-                    for path in json.loads(done.stdout.decode("ascii"))
-                    if path and any(os.path.normcase(os.path.realpath(path))
-                                    .startswith(r) for r in roots))
-    wanted = [os.path.join("tools", "lints", "_deps.py"),
-              os.path.join("plugins", "audit", "scripts", "_output.py")]
-    if [w for w in wanted if w not in picked]:
-        raise RuntimeError("the recipe's import closure %r lacks %r: the probe "
-                           "did not load the recipe" % (picked, wanted))
-    return picked
-
-
-def _seed_map_owner(proj, closure):
-    """The files the map owner's recipe loads and the guide with a map from
-    before the change, so the owner's recipe really runs and really renders."""
-    for rel in closure:
-        os.makedirs(os.path.dirname(os.path.join(proj, rel)), exist_ok=True)
-        shutil.copyfile(os.path.join(M._output.REPO_ROOT, rel),
-                        os.path.join(proj, rel))
-    with open(os.path.join(M._output.REPO_ROOT, GUIDE), encoding="utf-8") as fh:
-        text = fh.read()
-    block = _deps._fenced_block_after(text, _deps._GUIDE_HEADING)
-    _write(proj, GUIDE, text.replace(block, "a map from before this change\n", 1))
-    _write(proj, ".gitignore", "__pycache__/\n")
-
-
-def _write_map(tree):
-    _child("the module-map recipe",
-           [sys.executable, os.path.join(tree, "tools", "lints", "_deps.py"),
-            "--write-map"], cwd=tree, timeout=120)
+def _gen_world(prefix):
+    owner = [o for o in M._evidence_io.FOLLOWER_OWNERS
+             if o.startswith("tools/") and o.endswith(".py")][0]
+    return _world(prefix, {"P1.1": ["a.txt"]},
+                  {"a.txt": "a\n", GEN: "from before\n", "regen.py": _GEN_REGEN,
+                   owner: _gen_owner()})
 
 
 def _follower_cases(check):
-    # The probe failing is the one diagnosis this block can owe a remote
-    # runner, so its failure is driven first: a probe that writes a line to
-    # stderr and exits non-zero must raise with that line and that exit code.
-    try:
-        _recipe_closure("import sys\n"
-                        "sys.stderr.write('closure-probe-said-why\\n')\n"
-                        "sys.exit(7)\n")
-        failed = "returned"
-    except RuntimeError as exc:
-        failed = str(exc)
-    except Exception as exc:
-        failed = "%s: %s" % (type(exc).__name__, exc)
-    check("i9p a closure probe that fails raises with its exit code and its "
-          "stderr, not only its status: %r" % (failed,),
-          "closure-probe-said-why" in failed and "exited 7" in failed)
-    closure = _recipe_closure()
-    world = _world("itf", {"P1.1": ["a.txt"]}, {"a.txt": "a\n"},
-                   seed=lambda proj: _seed_map_owner(proj, closure))
+    world = _gen_world("itf")
     tree = world["trees"]["P1.1"]
     _write(tree, "a.txt", "a1\n")
-    _write_map(tree)
-    _write(tree, GUIDE, _read(tree, GUIDE).replace(
-        "module map (", "module map, edited by hand (", 1))
+    _write(tree, GEN, "edited by hand\n")
     code, ans = _integrate(world, "P1.1")
     decision = ans.get("decision") or {}
-    check("an undeclared module-map edit whose bytes the recipe does not reproduce "
-          "stays an undeclared-change decision, naming the path (%r %r)"
+    check("an undeclared generated file whose bytes the owner's recipe does not "
+          "reproduce stays an undeclared-change decision, naming the path (%r %r)"
           % (code, decision),
-          code == 3 and "edited by hand" in _read(tree, GUIDE)
-          and decision.get("paths") == [GUIDE]
-          and sorted(decision.get("unreproduced") or {}) == [GUIDE]
-          and _deps.MAP_RECIPE in decision["unreproduced"][GUIDE]
-          and GUIDE in ans.get("sentence", "")
-          and "a map from before" in _read(world["proj"], GUIDE))
+          code == 3 and "edited by hand" in _read(tree, GEN)
+          and decision.get("paths") == [GEN]
+          and sorted(decision.get("unreproduced") or {}) == [GEN]
+          and _gen_recipe() in decision["unreproduced"][GEN]
+          and GEN in ans.get("sentence", "")
+          and "from before" in _read(world["proj"], GEN))
 
     # The over-fire direction: a guard that kept every claimed path a decision
     # passes the case above and fails this one.
-    world = _world("itg", {"P1.1": ["a.txt"]}, {"a.txt": "a\n"},
-                   seed=lambda proj: _seed_map_owner(proj, closure))
+    world = _gen_world("itg")
     tree = world["trees"]["P1.1"]
     _write(tree, "a.txt", "a1\n")
-    _write_map(tree)
+    _write(tree, GEN, "regenerated\n")
     code, ans = _integrate(world, "P1.1")
-    check("i9b a module map the owner's recipe reproduces byte for byte is "
+    check("i9b a generated file the owner's recipe reproduces byte for byte is "
           "integrated with no decision, as that owner's follower: %r %r"
           % (code, ans.get("followers")),
           code == 0 and not ans.get("decision")
-          and ans.get("followers") == [{"path": GUIDE, "recipe": _deps.MAP_RECIPE,
-                                        "owner": "_deps.map_drift"}]
-          and _read(world["proj"], GUIDE) == _read(tree, GUIDE))
+          and ans.get("followers") == [{"path": GEN, "recipe": _gen_recipe(),
+                                        "owner": "gen"}]
+          and _read(world["proj"], GEN) == _read(tree, GEN))
 
 
 def _noop_owner_cases(check):
