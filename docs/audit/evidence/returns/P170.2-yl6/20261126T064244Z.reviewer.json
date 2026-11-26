@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause 'run `git rm -q -f --ignore-unmatch -- <fragments>` first ... and only then os.remove any untracked leftover' -> diff at tools/release.py:652-663 runs git rm -f first, returns False on rc != 0 before touching disk, then removes only isfile leftovers. Clause 'Add a case ... asserting the files are still on disk and a second step_commit still removes them' -> rl30c uses a real scratch repo with a held .git/index.lock (stronger than the asked-for non-zero runner): asserts held state is (all tracked, all on disk), then after releasing the lock a resumed step_commit succeeds with ls-files and disk both empty. The executor's outcome describes the diff accurately; step_commit signature and return shape are unchanged, so the listed dependants (guard-release.py release_verdict, check-example-pins.py _read_text, save_state, CONTRIBUTING.md finalize-changelog) are unaffected. I ran python3 tools/release.py --selftest once: rl30, rl30b, rl30c PASS, 93/93.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "The executor filed not-attempted, basis 'tests.expectRedFirst is false on this tdd task'; the task owes none. Its claims line adds that rl30c failed on old code (92/93, on_disk [] with 4 tracked); that is an unverified claim and is not the filed status.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate's `selftests` entry is `python3 tools/sweep-selftests.py`, which runs the whole project, so the question is not asked of it. The other gate commands (validate, plugin-validate, gate, report, lint, shots, interactive, vitest) select no test touched by this diff."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

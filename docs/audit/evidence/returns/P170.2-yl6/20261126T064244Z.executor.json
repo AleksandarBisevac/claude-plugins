@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "selftests": "pass",
+    "lint": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+    "at": "2026-11-26T06:50:10Z"
+  },
+  "outcome": {
+    "technical": "tools/release.py step_commit: removed the os.remove-before-git-rm; it now runs `git rm -q -f --ignore-unmatch -- <fragments>` first (git removes the working file with the index entry, and a refusal removes neither), returns False on failure leaving files on disk and tracked, and only after success os.removes any fragment git did not track (isfile-guarded). New case rl30c in _fragment_cases on a real scratch git repo (tempfile.mkdtemp via _fragment_fixture, remove_tree in finally, held .git/index.lock): the first step_commit fails and fragments remain on disk and in git ls-files; after releasing the lock a resumed step_commit succeeds and both disk and ls-files are empty (add/commit are stubbed, git rm is real). Red on old code, green on new. Commands: python3 tools/release.py --selftest -> 93/93 passed; python3 tools/sweep-selftests.py -> 196/196 files ok, 20005 cases; ruff check tools/release.py clean; vermin -t=3.8- tools/release.py min 3.5. Existing rl30 (FakeRunner, untracked-leftover path) stays green, covering the isfile os.remove branch. Dependants: tests/test_audit_task.py, guard-release.py, check-example-pins.py, ci.yml, sweep-costs.json etc. use release.py via import/path of other functions (release_verdict, _read_text, save_state); step_commit's signature and return shape are unchanged, so still correct. CONTRIBUTING.md names `finalize-changelog`, untouched. No file outside tools/release.py edited; no fragment owed by the brief.",
+    "descriptive": "A failed git rm in the release commit step no longer deletes the changelog fragments from disk, so a resumed release cannot commit them still tracked and assemble them twice."
+  },
+  "testsAdded": [
+    "rl30c: real scratch git repo with a held index.lock; failed step_commit keeps fragments on disk and tracked; resumed step_commit removes them from disk and git ls-files"
+  ],
+  "claims": "claims:\n1 tools/release.py step_commit (git rm -f first, then isfile-guarded os.remove) does what the new comment says; rl30c shows disk and ls-files state after the failed and the resumed call\n2 rl30c FAIL on old code (92/93, on_disk [] with 4 tracked) -> fix -> 93/93; rl30 (untracked leftover removal via FakeRunner) still passes; mutation of the lock-free direction not separately run\n3 grep os.remove in tools/release.py: 4 hits (step_commit fragment removal, notes_path at ~822, selftest at ~1886, rl30c lock removal) - only step_commit deleted before staging; others unrelated, left\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:9ab743dba05a008cc1971dbb058dc61d716484e1758a776dfd0b6fd993d9953b\",\"dirtyDigest\":\"sha256:c39b27ad8fdc1369274244736dd6fff6f5efc6e955ec7e98a1a5942bc4fc9e22\",\"dirtyPaths\":{\"tools/release.py\":\"b98e12bbd5a3c94e\"},\"head\":\"ae6fc12f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tools/release.py\"],\"scopeDigest\":\"sha256:e6dbad353ff3c41bd767baa9b9874e8c9353d176c79b1ae292851892d9e1c455\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

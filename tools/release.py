@@ -652,13 +652,18 @@ def step_commit(ctx):
     consumed = ["%s/%s" % (FRAGMENTS_REL, f["name"])
                 for f in read_fragments(ctx.repo)[0]]
     if consumed:
-        for rel in consumed:
-            os.remove(os.path.join(ctx.repo, rel))
-        rc, out = ctx.run(["git", "rm", "-q", "--ignore-unmatch", "--"]
+        # git removes the working file along with the index entry, and a
+        # refusal (a held index lock) removes neither. Deleting from disk
+        # first would leave the files tracked in HEAD and invisible to the
+        # resumed step, which reads the directory: it would commit them again.
+        rc, out = ctx.run(["git", "rm", "-q", "-f", "--ignore-unmatch", "--"]
                           + consumed)
         if rc != 0:
             return False, "git rm of the assembled fragments failed: %s" % (
                 excerpt(out),)
+        for rel in consumed:        # a fragment git did not track
+            if os.path.isfile(os.path.join(ctx.repo, rel)):
+                os.remove(os.path.join(ctx.repo, rel))
     paths = [PLUGIN_JSON_REL, CHANGELOG_REL, README_REL,
              "examples/acme-store/acme-store-audit.html",
              "examples/acme-store/acme-store-audit.md",
@@ -2376,6 +2381,54 @@ def _fragment_cases(check):
                   and "P9.1.added.md" in findings[0])
         finally:
             remove_tree(leftover)
+    finally:
+        remove_tree(tmp)
+
+    # --- a `git rm` that fails leaves the fragments for the resumed step -------
+    # A REAL scratch repository: the held index lock is what makes git refuse,
+    # and a scripted runner would only assert what the scripter assumed.
+    tmp = _fragment_fixture(_FRAGMENT_SET, _FRAGMENT_OLD)
+    try:
+        ctx = _fragment_ctx(tmp)
+        step_finalize_changelog(ctx)
+        ident = ["git", "-c", "user.name=fixture", "-c", "user.email=f@x.invalid"]
+        setup = [["git", "init", "-q"], ["git", "add", "-A"],
+                 ident + ["commit", "-q", "-m", "fixture"]]
+        failed = [argv for argv in setup if default_runner(argv, cwd=tmp)[0]]
+
+        def tracked():
+            return sorted(default_runner(
+                ["git", "ls-files", FRAGMENTS_REL], cwd=tmp)[1].split())
+
+        def on_disk():
+            folder = os.path.join(tmp, FRAGMENTS_REL)
+            return sorted(os.listdir(folder)) if os.path.isdir(folder) else []
+
+        def only_rm_is_real(argv, cwd=None):
+            # `add` and `commit` would need the example artifacts a real
+            # release has; the step under test is the deletion.
+            if argv[:2] in (["git", "add"], ["git", "commit"]):
+                return 0, ""
+            return default_runner(argv, cwd=cwd)
+
+        lock = os.path.join(tmp, ".git", "index.lock")
+        _write_text(lock, "")
+        ctx = _fragment_ctx(tmp, only_rm_is_real)
+        ok_held, detail_held = step_commit(ctx)
+        held = (tracked(), on_disk())
+        os.remove(lock)
+        ok_again, detail_again = step_commit(ctx)
+        check("rl30c a `git rm` that fails (a held index lock, in a real "
+              "repository) fails the step and leaves every fragment on disk "
+              "and tracked, so the resumed step still sees them and removes "
+              "them from both: %r / %r / %r / %r / %r"
+              % (failed, detail_held, held, detail_again,
+                 (tracked(), on_disk())),
+              failed == [] and not ok_held and "git rm" in detail_held
+              and held == (sorted("%s/%s" % (FRAGMENTS_REL, n)
+                                  for n in _FRAGMENT_SET),
+                           sorted(_FRAGMENT_SET))
+              and ok_again and tracked() == [] and on_disk() == [])
     finally:
         remove_tree(tmp)
 
