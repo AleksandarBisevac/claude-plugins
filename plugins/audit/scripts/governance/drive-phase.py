@@ -2457,8 +2457,42 @@ def _scope_companions_configs(runner):
             "pytest": _runner_collects.PYTEST_CONFIG_FILES}.get(runner, ())
 
 
+def settle_stale_gate(ctx, task):
+    """Settle `task`'s gate when the plan itself calls it stale, before the
+    task starts: `audit-task.py settle`, the one writer of a derived value,
+    rewrites the phase's wide gate a task stored before the project recorded
+    how to run a subset (`_phases.stale_spelled_gates` names which tasks), under
+    the verb's own lock and revalidation. Asked of the task about to start,
+    because a started task keeps the gate its attempt is graded against - a
+    settle after the start is a settle of nothing - and so a task with an
+    attempt is never named.
+
+    A SETTLE THE VERB REFUSES IS SAID, NOT HIDDEN, AND NEVER STOPS THE START:
+    the task then starts with the wide gate it holds, which measures more than
+    it needs and never less, and the start verb judges the plan as it always
+    did. The words the verb gave go in the warning whole."""
+    manifest, _phase = load_phase(ctx)
+    lead = "task %s: " % (task["id"],)
+    if not any(str(f).startswith(lead)
+               for f in _phases.stale_spelled_gates(manifest)):
+        return
+    before = _mio.tasks_by_id(manifest).get(task["id"], {}).get("tests") or {}
+    code, out, err = run_verb(ctx, "audit-task.py", [
+        "settle", ctx["manifest"], "--project-dir", ctx["project"]])
+    if code != 0:
+        warn(ctx, "%s's gate was not settled to the narrow one before its "
+                  "start: audit-task.py settle refused (exit %d): %s" % (
+                      task["id"], code, _clip(" ".join((out + err).split()), 160)))
+        return
+    after = _mio.tasks_by_id(load_phase(ctx)[0]).get(task["id"], {}).get(
+        "tests") or {}
+    ctx["did"].append("%s's stale wide gate settled before its start: %s -> %s"
+                      % (task["id"], before.get("gate"), after.get("gate")))
+
+
 def start_task(ctx, task):
     """Start (or re-start) `task` through the verb; None, or the stop."""
+    settle_stale_gate(ctx, task)
     _out, stop = _verb_or_stop(ctx, "audit-task.py", _task_args(ctx, "start", task["id"]))
     if stop is None:
         ctx["did"].append("%s %s" % (STARTED, task["id"]))

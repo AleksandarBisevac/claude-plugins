@@ -21284,7 +21284,8 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("sd-block", "_scope_declared_cases"),
           ("sb-block", "_stage_cases"),
           ("tm-block", "_timing_cases"),
-          ("tm10-block", "_timing_close_cases"))
+          ("tm10-block", "_timing_close_cases"),
+          ("ssg-block", "_settle_stale_gate_cases"))
 
 
 CI_CADENCE_CLAUSE = ("tests/test_drive_phase.py: with ci.cadence "
@@ -27112,6 +27113,132 @@ def _git_head_cases(check):
           % ((before, after, fresh, len(asks)),),
           before == [before[0]] * 3 and before[0] and after == fresh
           and after != before[0] and len(asks) == 2)
+
+def _stale_spelling_plan(mpath, attempted=None):
+    """The fixture's first task as a plan written before the project recorded
+    how to run a subset: it adds a suite, and stores the phase's wide gate with
+    the derivation's own `phase-no-spelling` word. `attempted` gives the SECOND
+    task the same shape with a recorded attempt, the allow twin."""
+    with open(mpath, "r", encoding="utf-8") as fh:
+        plan = json.load(fh)
+    for n, task in enumerate(plan["phases"][0]["tasks"][:2]):
+        task["tests"] = {"mode": "tdd", "expectRedFirst": True,
+                         "add": ["tests/test_a%d.py: asserts the change" % (n,)],
+                         "gate": ["true"], "gateBasis": "phase-no-spelling"}
+        task["files"] = task["files"] + ["tests/test_a%d.py" % (n,)]
+        plan["fileIndex"]["tests/test_a%d.py" % (n,)] = [task["id"]]
+        if n == 1 and attempted:
+            task["attempts"] = 1
+    with open(mpath, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(plan, fh, indent=2)
+
+
+def _record_spelling(root, mpath):
+    """Record how the project runs a subset, as `/audit:task record-listing`
+    does - the input that makes a stored wide gate stale."""
+    with _Env(root):
+        return _verb(root, "audit-task.py", [
+            "record-listing", "--listing-all", "lister --all",
+            "--listing-related", "lister --related {paths}",
+            "--spelling", "runner {paths}", "--verified-on", "echo v",
+            mpath, "--project-dir", root])
+
+
+def _gate_of(mpath, task_id):
+    return dict(_mio.tasks_by_id(_mio.load_manifest(mpath)).get(task_id)
+                .get("tests") or {})
+
+
+def _settle_stale_gate_cases(check):
+    """Before the drive starts a task the plan already calls stale
+    (`stale_spelled_gates`), the task's gate is the one `audit-task.py settle`
+    writes - the same derivation, revalidated, said in the did-line - and a task
+    the plan does not call stale is started with the gate it holds."""
+    M, why = _load("drive_phase_settle_stale")
+    if M is None:
+        check("ssg1 the driver loads", False, why)
+        return
+    ids = TASKS[:2]
+    # What the derivation answers, asked of the verb itself on a copy of the
+    # same plan: the drive's start is compared with it, never with a literal.
+    root_c, mpath_c = _repo("ssg-control", task_ids=ids)
+    _stale_spelling_plan(mpath_c)
+    recorded = _record_spelling(root_c, mpath_c)
+    with _Env(root_c):
+        _verb(root_c, "audit-task.py", ["settle", mpath_c, "--project-dir",
+                                        root_c])
+    want = _gate_of(mpath_c, ids[0])
+
+    root, mpath = _repo("ssg-stale", task_ids=ids)
+    _stale_spelling_plan(mpath, attempted=True)
+    _record_spelling(root, mpath)
+    held = (_gate_of(mpath, ids[0]), _gate_of(mpath, ids[1]))
+    ctx = _drive_ctx(root, mpath)
+    tasks = _mio.tasks_by_id(_mio.load_manifest(mpath))
+    with _Env(root):
+        stop = M.start_task(ctx, tasks[ids[0]])
+    got = _gate_of(mpath, ids[0])
+    verbs = [(s, a[0]) for s, a, _c, _o in ctx["log"] if s == "audit-task.py"]
+    check("ssg1 PRECONDITION: the control's derivation narrows the gate once "
+          "the spelling is recorded, and the stale task holds the wide one "
+          "under the fallback's word: %r" % ((recorded[0], want, held[0]),),
+          recorded[0] == 0 and want.get("gate") and want["gate"] != ["true"]
+          and want.get("gateBasis") != "phase-no-spelling"
+          and held[0].get("gate") == ["true"]
+          and held[0].get("gateBasis") == "phase-no-spelling")
+    check("ssg2 a task the plan calls stale is settled before it starts: its "
+          "gate and basis are the ones `settle` derived, settle ran before "
+          "start, and the did-line says the gate moved: %r"
+          % ((stop, got, verbs, ctx["did"]),),
+          stop is None and got.get("gate") == want.get("gate")
+          and got.get("gateBasis") == want.get("gateBasis")
+          and verbs == [("audit-task.py", "settle"), ("audit-task.py", "start")]
+          and any(ids[0] in d and "gate" in d and "settled" in d
+                  for d in ctx["did"])
+          and ("%s %s" % (M.STARTED, ids[0])) in ctx["did"])
+
+    # THE ALLOW TWIN, the one a settle that fires for every start fails: the
+    # same stale shape with a recorded attempt is the gate its attempt is graded
+    # against, so the start takes no settle and the gate stays wide.
+    ctx = _drive_ctx(root, mpath)
+    tasks = _mio.tasks_by_id(_mio.load_manifest(mpath))
+    with _Env(root):
+        stop = M.start_task(ctx, tasks[ids[1]])
+    twin = _gate_of(mpath, ids[1])
+    verbs = [a[0] for s, a, _c, _o in ctx["log"] if s == "audit-task.py"]
+    check("ssg3 a task with a recorded attempt is untouched: no settle runs, "
+          "its gate stays the wide one it was graded against, and no settled "
+          "clause is said: %r" % ((stop, twin, verbs, ctx["did"]),),
+          stop is None and twin == held[1] and verbs == ["start"]
+          and not any("settled" in d for d in ctx["did"]))
+
+    # A settle the verb refuses does not hide behind a start: the drive says so
+    # and starts the task with the gate it holds, which the start verb then
+    # judges as it always did.
+    root_r, mpath_r = _repo("ssg-refused", task_ids=ids)
+    _stale_spelling_plan(mpath_r)
+    _record_spelling(root_r, mpath_r)
+    N, _why = _load("drive_phase_settle_refused")
+    real = N.run_verb
+
+    def refuse_settle(ctx, script, args, stdin=None, record=False):
+        if script == "audit-task.py" and args[0] == "settle":
+            ctx["log"].append((script, list(args), 3, "refused"))
+            return 3, "", "[audit-task] REFUSED: index lock held"
+        return real(ctx, script, args, stdin=stdin, record=record)
+    N.run_verb = refuse_settle
+    ctx = _drive_ctx(root_r, mpath_r)
+    tasks = _mio.tasks_by_id(_mio.load_manifest(mpath_r))
+    with _Env(root_r):
+        stop = N.start_task(ctx, tasks[ids[0]])
+    kept = _gate_of(mpath_r, ids[0])
+    check("ssg4 a settle the verb refuses is a warning naming the refusal, and "
+          "the task starts with the gate it held: %r"
+          % ((stop, kept, ctx["did"], ctx.get("warnings")),),
+          stop is None and kept.get("gate") == ["true"]
+          and any("REFUSED" in w and ids[0] in w
+                  for w in ctx.get("warnings") or [])
+          and ("%s %s" % (N.STARTED, ids[0])) in ctx["did"])
 
 
 if __name__ == "__main__":
