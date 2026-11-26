@@ -5117,6 +5117,101 @@ def _verdict_trailer_cases(check, repos):
           and _keys(st, "Audit-Gate") == [])
 
 
+# --- the record places: one function, every reader follows it -------------------
+EXTRA_PLACE = "docs/audit/extra"
+
+
+def _following(fx, fn):
+    """`fn()` with `_evidence_io.record_places` answering one record place more
+    than the plugin has: a folder the fixture holds a file in, which no reader
+    spells out. A reader that follows the one function names that folder; one
+    that lists the journal and the returns' folder by hand does not."""
+    extra = os.path.join(fx["root"], *EXTRA_PLACE.split("/"))
+    real = _evidence_io.record_places
+
+    def more(project, config=None):
+        return list(real(project, config)) + [("extra", extra)]
+    _evidence_io.record_places = more
+    try:
+        return fn()
+    finally:
+        _evidence_io.record_places = real
+
+
+@_own_repos
+def _record_place_cases(check, repos):
+    """Every reader of the record places goes through `record_places`. Each case
+    is paired with the same reader asked with nothing patched, which must not
+    name the extra folder: a reader that always named it would pass the
+    patched half alone."""
+    cp = _loader.load_script("close-phase.py", "cp_for_ctw_places")
+    fx = repos.make()
+    extra_dir = os.path.join(fx["root"], *EXTRA_PLACE.split("/"))
+    os.makedirs(extra_dir)
+    with open(os.path.join(extra_dir, "x.txt"), "w", encoding="utf-8") as fh:
+        fh.write("not a journal row\n")
+    root, manifest_path = fx["root"], fx["manifest"]
+    manifest, phase, task = _phase_and_task(fx)
+
+    def has(found):
+        return any(EXTRA_PLACE in str(item) for item in found)
+
+    def paths_of(fn):
+        return [fn()["paths"], _following(fx, fn)["paths"]]
+
+    rec = lambda: _evidence_io.recorded_paths(root, manifest_path)[0]
+    plain, followed = rec(), _following(fx, rec)
+    check("rp1 recorded_paths (the reuse key, the stamp, the scope digest) "
+          "follows `record_places`: a place added there is in its answer and "
+          "unpatched it is not: %r / %r" % (plain, followed),
+          not has(plain) and has(followed))
+    plain = _invariants.record_rels(manifest_path, phase, root, root)
+    followed = _following(fx, lambda: _invariants.record_rels(
+        manifest_path, phase, root, root))
+    check("rp2 record_rels (the commit scope's and integrate-task's set) "
+          "follows it too: %r / %r" % (plain, followed),
+          not has(plain) and has(followed))
+    stage = lambda: M.stage_targets(manifest, phase, task, manifest_path,
+                                    root, root)
+    plain, followed = paths_of(stage)
+    check("rp3 the task commit's staging (stage_targets) follows it: %r / %r"
+          % (plain, followed), not has(plain) and has(followed))
+    state = lambda: M.state_targets(phase, manifest_path, root, root)
+    plain, followed = paths_of(state)
+    check("rp4 the state commit's allow-list (state_targets) follows it: "
+          "%r / %r" % (plain, followed), not has(plain) and has(followed))
+    pending = lambda: cp.pending_beyond_stamp(manifest_path, PHASE, root, root)
+    plain, followed = pending(), _following(fx, pending)
+    check("rp5 the landing's pending check (pending_beyond_stamp) follows it: "
+          "%r / %r" % (plain, followed), not has(plain) and has(followed))
+    with open(os.path.join(root, ".gitignore"), "a", encoding="utf-8") as fh:
+        fh.write(EXTRA_PLACE + "/\n")
+    refusal = lambda: cp.ignored_stamp_refusal(manifest_path, root, root)
+    plain, followed = refusal(), _following(fx, refusal)
+    check("rp6 the landing's ignored-record refusal (ignored_stamp_refusal) "
+          "follows it: %r / %r" % (plain, followed),
+          not has([plain]) and has([followed]))
+
+    evidence = "docs/audit/evidence"
+    real_in = _evidence_io.returns_in
+    moved = lambda ev, join=os.path.join: join(ev, "moved-returns")
+
+    def graded(path):
+        return _invariants._record_or_frozen(
+            path, "docs/audit/journal", evidence, root, None, None)
+    plain = [graded(evidence + "/returns/a.json"),
+             graded(evidence + "/moved-returns/a.json")]
+    _evidence_io.returns_in = moved
+    try:
+        followed = [graded(evidence + "/returns/a.json"),
+                    graded(evidence + "/moved-returns/a.json")]
+    finally:
+        _evidence_io.returns_in = real_in
+    check("rp7 the grader's returns folder (_record_or_frozen) is the one "
+          "function's, not a join of its own: %r / %r" % (plain, followed),
+          plain == [True, False] and followed == [False, True])
+
+
 STAGES = (("nm-block", "_no_maintenance_cases"),
           ("fg-block", "_fixture_git_cases"),("or-block", "_ordinary_cases"),("dc-block", "_declared_cases"),
           ("rc-block", "_records_cases"), ("ix-block", "_index_cases"),
@@ -5147,7 +5242,8 @@ STAGES = (("nm-block", "_no_maintenance_cases"),
           ("lk-block", "_index_lock_cases"),
           ("lj-block", "_lock_json_cases"),
           ("co-block", "_coauthor_cases"),
-          ("vt-block", "_verdict_trailer_cases"))
+          ("vt-block", "_verdict_trailer_cases"),
+          ("rp-block", "_record_place_cases"))
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ import hashlib
 import io
 import json
 import os
+import posixpath
 import re
 import subprocess
 import shutil
@@ -117,6 +118,19 @@ def _cases(check):
               == os.path.dirname(_journal_io.journal_dir(moved, cfg))
               and M.evidence_dir(moved, cfg)
               != _journal_io.journal_dir(moved, cfg))
+
+        places = M.record_places(moved, cfg)
+        check("ev3p `record_places` is the journal directory and the returns' "
+              "folder, each asked of the resolver that owns it rather than "
+              "joined here, and `returns_in` is the one definition of the "
+              "folder's name under an evidence directory - in either spelling: "
+              "%r" % (places,),
+              places == [(M.JOURNAL_PLACE, _journal_io.journal_dir(moved, cfg)),
+                         (M.RETURNS_PLACE, M.returns_dir(moved, cfg))]
+              and M.returns_dir(moved, cfg)
+              == M.returns_in(M.evidence_dir(moved, cfg))
+              and M.returns_in("a/b", posixpath.join) == "a/b/" + os.path.basename(
+                  M.returns_in("x")))
 
         pinned = _project(os.path.join(tmp, "pinned"),
                           {"evidence": {"dir": "var/evidence"}})

@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_commit_task_work.py tests/test_close_phase.py tests/test__invariants.py tests/test__evidence_io.py": "pass",
+    "python3 tools/sweep-selftests.py (full)": "pass",
+    "ruff check plugins/audit tools tests .claude/hooks": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-26T04:02:40Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_commit_task_work.py tests/test_close_phase.py tests/test__invariants.py tests/test__evidence_io.py` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_evidence_io' has no attribute 'record_places'. Did you mean: 'record_stages'?\" (read as python), and the task introduces 'record_places': absent from HEAD's module-level bindings of plugins/audit/scripts/governance/_evidence_io.py and bound in the working tree's; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added _evidence_io.record_places(project, config) -> [(place, abs)] (journal, returns; keys JOURNAL_PLACE/RETURNS_PLACE) and _evidence_io.returns_in(evidence, join) (the one definition of the returns folder under an evidence dir; returns_dir now calls it). Routed through them: recorded_paths and _invariants.record_rels (record_places); commit-task-work stage_targets and state_targets (via a small _record_places mapping places to JOURNAL_LABEL/RETURNS_LABEL, PLACE_LABELS; unknown place reported under its key); close-phase pending_beyond_stamp and ignored_stamp_refusal (record_places, label compare against RETURNS_PLACE); _invariants._record_or_frozen (returns_in with posixpath.join, so no hand join of RETURNS_DIRNAME; unused _filed_returns import removed). Behaviour unchanged: same directories, same labels, same message text. Tests: tests/test_commit_task_work.py new rp-block (rp1-rp7) monkeypatches record_places to add a seventh folder holding a file and asserts each reader follows, each paired with the unpatched reader which must not name it; rp7 patches returns_in. tests/test__evidence_io.py ev3p pins record_places/returns_in against the owning resolvers. PLUGIN-BUILD-GUIDE.md: added the record_places paragraph in the _evidence_io section and regenerated the module-map fence (python3 tools/lints/_deps.py --write-map) because _invariants lost its _filed_returns import edge (the only red of the first full sweep, test__deps g1). Final: gate command 4/4 files ok 1294 cases; full sweep 195/196 files ok 19663 cases before the map regeneration, the one red being test__deps g1, which then passed on re-run (1/1 files ok, 311 cases); ruff and vermin clean. Dependants: commit-task-work, close-phase, _invariants, _evidence_io importers (guard-release, integrate-task, _gate_derive, _verdict_binding, audit-journal, run-test-gate, stamp-verification and the suites) still correct: no signature or answer of an existing function changed, only record_places and returns_in added; test__invariants/test_close_phase/test_commit_task_work/test__evidence_io all green. commit-task-work line ~1653 (the audit-state row's target) still calls returns_dir, the single path the row names, not a list of places, and returns_dir is itself defined through returns_in. Nothing outside the declared files was edited.",
+    "descriptive": "The five hand-listed record-folder readers now ask one function, and a case goes red when any of them drifts from it."
+  },
+  "testsAdded": [
+    "rp-block in tests/test_commit_task_work.py: seven cases adding a place to record_places and asserting recorded_paths, record_rels, stage_targets, state_targets, pending_beyond_stamp, ignored_stamp_refusal and _record_or_frozen (via returns_in) each follow it, with the unpatched twin of each",
+    "ev3p in tests/test__evidence_io.py: record_places and returns_in agree with the resolvers that own them"
+  ],
+  "casesAdded": [
+    [
+      "rp1",
+      "rp2",
+      "rp3",
+      "rp4",
+      "rp5",
+      "rp6",
+      "rp7"
+    ]
+  ],
+  "claims": "claims:\n1 _evidence_io.py record_places/returns_in docstrings describe the code; readers at commit-task-work.py _record_places, close-phase.py pending_beyond_stamp/ignored_stamp_refusal, _invariants.py record_rels/_record_or_frozen\n2 each of the seven readers reverted to its hand list in a scratch copy -> exactly its own rp case red (rp1..rp7), restored; unpatched twin of each asserts the extra place is absent\n3 grep for returns_dir/RETURNS_DIRNAME in the four modules: remaining hits are returns_dir's own definition, commit-task-work row target (single path, not a list), close-phase.py line ~2679 folder under a phase id (a path inside the returns folder, not the set of places) - left because none is a list of record places\n4 the invariant lives in a mechanism: rp1-rp7 in tests/test_commit_task_work.py go red when a reader drifts; PLUGIN-BUILD-GUIDE.md names them in its own sentence\n5 n/a - no property measured\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:69e96ca5c92ad69902c1a831da7c80061ef4b4d4030d837f8f1741d84f0b9811\",\"dirtyDigest\":\"sha256:4cdfd47ca1d2e4750a0fb3fcecffd7b365994a54e0bf5bd24ab9371806a49d92\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"7660e116ba7153c5\",\"plugins/audit/scripts/git/close-phase.py\":\"6e37d40e50b7dbef\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"437e68f405c24ed5\",\"plugins/audit/scripts/governance/_invariants.py\":\"fd5b3be0907772e0\",\"plugins/audit/scripts/governance/commit-task-work.py\":\"16f9f5b3ed023c60\",\"tests/test__evidence_io.py\":\"90f102aa177ea259\",\"tests/test_commit_task_work.py\":\"726be5f7b3501e8c\"},\"head\":\"dfdc91a9\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/git/close-phase.py\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/_invariants.py\",\"plugins/audit/scripts/governance/commit-task-work.py\",\"tests/test__evidence_io.py\",\"tests/test__invariants.py\",\"tests/test_close_phase.py\",\"tests/test_commit_task_work.py\"],\"scopeDigest\":\"sha256:2e27fb344f04a0feada4852c63e1f689af1f8f79a8ae6886221552869b36d146\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

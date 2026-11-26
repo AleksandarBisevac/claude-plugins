@@ -401,7 +401,7 @@ L6:
   _doctor_policy -> _branch, _claude_home, _doctor_report, _manifest_io, _output, _skill_places, _worktrees
   _doctor_setup -> _claude_home, _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
   _doctor_trail -> _commit_trail, _doctor_report, _evidence_io, _fmt, _journal_io, _manifest_io, _manifest_vocab, _output, _worktrees
-  _invariants -> _branch, _commit_trail, _evidence_io, _filed_returns, _journal_io, _loader, _locks, _manifest_crossrefs, _manifest_io, _manifest_rules, _manifest_vocab, _output, _task_outputs, usage_ledger
+  _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _loader, _locks, _manifest_crossrefs, _manifest_io, _manifest_rules, _manifest_vocab, _output, _task_outputs, usage_ledger
   _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _manifest_vocab, _output, _panel_paths, _priority, _status_facts, _worktrees
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _config_rules, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
@@ -4073,7 +4073,16 @@ leaving the recorder's own output out of a tree follows through it: the gate's r
 and the steps it grades as naming a left-out path, the stamp's `content` field
 (`stamp-verification.py`), the drive's code-moved check, and through `_invariants.record_rels`
 the scoped commits and the paths a task may not declare. `rcp1` measures the set against what a
-task, a phase and a full run really modify, by git status. The `meta` keys a recorded run writes
+task, a phase and a full run really modify, by git status.
+**The record directories themselves are one function, `record_places()`**: the journal directory
+and the filed returns' folder, each as `(place, absolute path)`. `recorded_paths`, `record_rels`,
+the task commit's staging (`stage_targets`), the state commit's allow-list (`state_targets`) and
+the landing's pending and ignored-record checks (`close-phase.py`'s `pending_beyond_stamp` and
+`ignored_stamp_refusal`) each read it rather than list the folders, and `returns_in()` is the
+one definition of the returns' folder under an evidence directory, which the grader
+(`_invariants._record_or_frozen`) asks for git's relative spelling. `rp1`-`rp7` in
+`tests/test_commit_task_work.py` add a place to `record_places` and assert each reader names
+it. The `meta` keys a recorded run writes
 itself are `RECORDER_META_KEYS` - the boundary stamp and the full run's record and measured run -
 which the gate's reuse key leaves out of the plan's meta (`rcp2`).
 `in_evidence()` is the membership question that pairs with it — is this path inside the record —

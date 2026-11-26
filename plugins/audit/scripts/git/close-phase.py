@@ -1728,9 +1728,7 @@ def pending_beyond_stamp(target, phase_id, project, tree):
         if was is None or is_now is None or was != is_now:
             found.append("%s differs from HEAD beyond phase %s's stamp"
                          % (rel, phase_id))
-    for label, directory in (("journal", _journal_io.journal_dir(project, config)),
-                             ("returns",
-                              _evidence_io.returns_dir(project, config))):
+    for label, directory in _evidence_io.record_places(project, config):
         rel = _tree_rel(tree, directory) if directory else None
         if rel is None or not os.path.isdir(directory):
             continue
@@ -1741,7 +1739,7 @@ def pending_beyond_stamp(target, phase_id, project, tree):
             continue
         for entry in [e for e in listing.split("\0") if len(e) > 3]:
             changed = entry[3:]
-            if label == "returns":
+            if label == _evidence_io.RETURNS_PLACE:
                 found.append("%s is a filed return's change" % (changed,))
                 continue
             hcode, head = _git_text(tree, ["show", "HEAD:%s" % (changed,)])
@@ -1773,8 +1771,7 @@ def ignored_stamp_refusal(manifest_path, project, git_root):
     config = _journal_io.load_config(project)
     plan_rel = _invariants._rel(os.path.abspath(manifest_path), git_root)
     paths = []
-    for absolute in (_journal_io.journal_dir(project, config),
-                     _evidence_io.returns_dir(project, config)):
+    for _place, absolute in _evidence_io.record_places(project, config):
         rel = _invariants._rel(absolute, git_root)
         if rel is not None and os.path.exists(absolute) and rel not in paths:
             paths.append(rel)

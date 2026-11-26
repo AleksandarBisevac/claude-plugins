@@ -314,8 +314,38 @@ def returns_dir(project, config=None):
     there by `audit-task.py file-return` and the drive's `submit`
     (`_filed_returns.return_path`). The rest of the directory holds only the
     rows earlier releases wrote, which nothing writes any more."""
-    return os.path.join(evidence_dir(project, config),
-                        _filed_returns.RETURNS_DIRNAME)
+    return returns_in(evidence_dir(project, config))
+
+
+def returns_in(evidence, join=os.path.join):
+    """The filed returns' folder inside the evidence directory `evidence`: the
+    one place that says the folder is a child of it named
+    `_filed_returns.RETURNS_DIRNAME`. `join` is `os.path.join` for the absolute
+    directory (`returns_dir`) and `posixpath.join` for a git-root-relative one,
+    so the grader that reads git's own spelling asks here rather than joining
+    the name itself."""
+    return join(evidence, _filed_returns.RETURNS_DIRNAME)
+
+
+JOURNAL_PLACE = "journal"
+RETURNS_PLACE = "returns"
+
+
+def record_places(project, config=None):
+    """`[(place, absolute path)]` - the directories this plugin's recorders
+    write: the journal and the filed returns' folder, in that order.
+
+    THE ONE LIST OF RECORD DIRECTORIES. The reuse key, the stamp and the scope
+    digest (`recorded_paths`), the set a commit may carry (`record_rels`), the
+    task commit's staging, the state commit's allow-list and the landing's
+    pending and ignored-record checks each used to spell it out, and a place
+    added to one list reached none of the others. A reader that needs these
+    directories asks here; `place` is the key (`JOURNAL_PLACE`,
+    `RETURNS_PLACE`) that a caller words its own report under, and a place it
+    does not know is reported under the key itself rather than dropped."""
+    config = _journal_io.load_config(project) if config is None else config
+    return [(JOURNAL_PLACE, _journal_io.journal_dir(project, config)),
+            (RETURNS_PLACE, returns_dir(project, config))]
 
 
 def recorded_paths(project, manifest_path, config=None):
@@ -377,7 +407,7 @@ def recorded_paths(project, manifest_path, config=None):
     basis line nobody was watching.
     """
     config = _journal_io.load_config(project) if config is None else config
-    writes = [returns_dir(project, config), _journal_io.journal_dir(project, config)]
+    writes = [path for _place, path in record_places(project, config)]
     if manifest_path:
         base = os.path.dirname(os.path.abspath(manifest_path))
         writes.append(os.path.abspath(manifest_path))

@@ -264,6 +264,18 @@ RETURNS_LABEL = "the filed returns' folder"
 DECLARED_LABEL = "the task's declared file"
 
 
+PLACE_LABELS = {_evidence_io.JOURNAL_PLACE: JOURNAL_LABEL,
+                _evidence_io.RETURNS_PLACE: RETURNS_LABEL}
+
+
+def _record_places(project, config):
+    """`[(label, absolute path)]` for each record directory
+    `_evidence_io.record_places` names, worded as this command reports them. A
+    place this command has no wording for is reported under its own key."""
+    return [(PLACE_LABELS.get(place, place), absolute)
+            for place, absolute in _evidence_io.record_places(project, config)]
+
+
 def absent_is_normal(label, config):
     """True when the record directory `label` names being absent is no skip
     worth a line. A journal that is on is created by the row the commit
@@ -388,9 +400,8 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
                   if head_rel is not None else None)
     records = _invariants.record_rels(manifest_path, phase, project, git_root,
                                       head_index=head_index, config=config)
-    record_abs = ((MANIFEST_LABEL, phase_file_abs),
-                  (JOURNAL_LABEL, _journal_io.journal_dir(project, config)),
-                  (RETURNS_LABEL, _evidence_io.returns_dir(project, config)))
+    record_abs = [(MANIFEST_LABEL, phase_file_abs)] + _record_places(project,
+                                                                      config)
     record_rels = []
     for label, absolute in record_abs:
         rel = _invariants._rel(absolute, git_root)
@@ -1445,9 +1456,8 @@ def state_targets(phase, manifest_path, project, git_root, config=None):
     """
     config = _journal_io.load_config(project) if config is None else config
     _index_abs, phase_file_abs = _invariants.manifest_files(manifest_path, phase)
-    wanted = [(MANIFEST_LABEL, phase_file_abs),
-              (JOURNAL_LABEL, _journal_io.journal_dir(project, config)),
-              (RETURNS_LABEL, _evidence_io.returns_dir(project, config))]
+    wanted = [(MANIFEST_LABEL, phase_file_abs)] + _record_places(project,
+                                                                 config)
     paths, skipped = [], []
     for label, absolute in wanted:
         rel = _invariants._rel(absolute, git_root)

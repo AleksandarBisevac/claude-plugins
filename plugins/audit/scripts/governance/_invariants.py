@@ -94,7 +94,6 @@ _output.install_path()
 import _branch  # noqa: E402  (which branch a phase forks from, and the basis for it)
 import _commit_trail  # noqa: E402  (is a recorded SHA still reachable, and the git runner)
 import _evidence_io  # noqa: E402  (the test-evidence record: where it lives)
-import _filed_returns  # noqa: E402  (RETURNS_DIRNAME: the filed returns' folder)
 import _journal_io  # noqa: E402  (the trail: where it lives, its rows, their stateHash)
 import _locks  # noqa: E402  (the index lock the baseline write is taken under)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
@@ -345,8 +344,8 @@ def record_rels(manifest_path, phase, project, git_root, head_index=None,
     found = []
     for absolute in ([index_abs, phase_abs] + _shard_files(raw, index_abs)
                      + _shard_files(head_index, index_abs)
-                     + [_journal_io.journal_dir(project, config),
-                        _evidence_io.returns_dir(project, config)]):
+                     + [path for _place, path in
+                        _evidence_io.record_places(project, config)]):
         rel = _rel(absolute, git_root)
         if rel is not None and rel not in found:
             found.append(rel)
@@ -445,8 +444,7 @@ def _record_or_frozen(path, journal_rel, evidence_rel, git_root, sha, parent):
         return True
     if not evidence_rel or not _under(path, evidence_rel):
         return False
-    return (_under(path, posixpath.join(evidence_rel,
-                                        _filed_returns.RETURNS_DIRNAME))
+    return (_under(path, _evidence_io.returns_in(evidence_rel, posixpath.join))
             or (_is_ledger_file(path, evidence_rel)
                 and frozen_rows_appended(git_root, sha, parent, path)))
 
