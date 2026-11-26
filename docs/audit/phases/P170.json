@@ -22,7 +22,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P170-R1",
@@ -39,26 +39,33 @@
         "severity": "low",
         "file": "docs/audit/phases/P170.json (P170.3-yl6 description)",
         "issue": "The task says 'If deriving every section is too large for one small task, derive the mechanism and one representative section, and file the rest as a follow-up task in P170 with the list.' The diff derives layer, kind, suite and importers, and names the undone parts only in PLUGIN-BUILD-GUIDE.md section 1b ('Not derived: a module's public names ... and an entry's usage line'). P170 holds three tasks (P170.1, P170.2-yl6, P170.3-yl6) and none is a follow-up for public names, the entry usage line, or the tree section's file list. The remainder is therefore not tracked anywhere a gate or the ready list reads.",
-        "resolution": "File the follow-up in P170 (/audit:task add) listing what the filed return measured: public names (needs a per-module block, one line cannot hold them), entry usage line (needs a USAGE constant per entry), and the tree section's file list."
+        "resolution": "File the follow-up in P170 (/audit:task add) listing what the filed return measured: public names (needs a per-module block, one line cannot hold them), entry usage line (needs a USAGE constant per entry), and the tree section's file list.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P170-R3",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_evidence_io.py:1026-1027",
         "issue": "The comment above the follower protocol still gives 'the module map a new import moves' as its example of a follower. This diff removed the only owner that claimed it, so the sentence now describes something that no longer exists. Same file as the known F929 entry (FOLLOWER_OWNERS still lists tools/lints/_deps.py, which now answers --follower-for with a usage line on stderr and exit 2, so claimed_followers gets no stdout and returns nothing, at the cost of one wasted subprocess per ask; I ran it by hand: exit 2, empty stdout).",
-        "resolution": "Fold into the F929 tidy: drop tools/lints/_deps.py from FOLLOWER_OWNERS and replace the module-map example in the comment with a live one (a committed page that a fresh render no longer matches). The repointed tests pick the first tools/*.py owner generically, so they pass either way."
+        "resolution": "Fold into the F929 tidy: drop tools/lints/_deps.py from FOLLOWER_OWNERS and replace the module-map example in the comment with a live one (a committed page that a fresh render no longer matches). The repointed tests pick the first tools/*.py owner generically, so they pass either way.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P170-R4",
         "severity": "low",
         "file": "tools/lints/_refs.py:16",
         "issue": "The docstring says 'Same shape as `_deps.map_drift()`', naming a function this diff deleted. The executor saw it and left it as outside the task's files.",
-        "resolution": "Reword to name a function that still exists (hooks_rule_drift is the same guide-against-code shape), in the same batch as F929."
+        "resolution": "Reword to name a function that still exists (hooks_rule_drift is the same guide-against-code shape), in the same batch as F929.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       }
     ],
-    "outcome": "[findings: 4 - 0 high, 1 med, 3 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 4 - 0 high, 1 med, 3 low; 1 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P170: a task writes its changelog entry as a fragment (changelog.d/<task-id>.<kind>.md) and the release assembles CHANGELOG.md from them, refusing an unknown kind, a hand-edited assembled section and a fragment added after finalize; the release removes fragments through git first; the module index and the module map are printed by tools/lints/_deps.py (--render-index, --render), not committed in PLUGIN-BUILD-GUIDE.md, so an import change obliges no guide edit; a Windows-only test fixture and the bt4 timing flake are fixed. Measured over P169/P170: the guide was declared by 35 of 44 P169 tasks and changed by 33 of 43 commits, 12 of them mechanical map regenerations. Phase review (opus, real git repo scenarios A-E) found no high and no regression; lows carried to BUG-35-icj, register F928-F930. CI release tier green on 55cd5dfd (run 45792116051). Per-task reviewer answers continued over: P170.3-yl6 intent diverges: Divergence is the orchestrator's redesign recorded in note 5: the index is printed, not committed, because a committed fence obliges a guide edit on every import change; the goal is met.",
   "tasks": [
     {
       "id": "P170.1",
@@ -1552,7 +1559,7 @@
     {
       "id": "P170.6-yl6",
       "title": "The live-base-tree twin case records when its runner started, so a slow runner does not read as a stranger",
-      "status": "in_progress",
+      "status": "done",
       "description": "tests/test_drive_phase.py bt4 ('THE TWIN: a base tree whose mark names a run still alive is left in place') is timing-fragile: it writes new pids on a mark but keeps the old pidsAt, and base_liveness's START_SLACK_SECONDS then reads the runner as not the run's when the runner starts more than the slack after pidsAt. Red on CI twice: probe run 45694047602 (linux stress) and run 45786296493 on feed9498 (linux plain 1); reproduced on HEAD with a 2.5 s sleep before Popen. Fix in the test: set pidsAt when the case names runner.pid, as the product does. Prove the case still goes red when the product's liveness check is broken (a mutation), and that the slow-start shape (sleep before Popen) now passes.",
       "files": [
         "tests/test_drive_phase.py"
@@ -1573,13 +1580,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "55cd5dfd37db",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_drive_phase.py, base-bound block (stage bt-block), case bt4: the held mark update now sets pidsAt=M2._utc_stamp() together with the pids, as the product does (drive-phase.py line 4411), stamped after the runner's Popen; before, it kept the earlier start's pidsAt, so a runner that began more than START_SLACK_SECONDS later read as not the run's. Comment added saying why. Class check in this file: grep of pids/pidsAt/\"pids\" over test_drive_phase.py gave bt4 as the only site writing a LIVE pid onto a mark without pidsAt. Other hits are reads (22956, 22969, 24529, 24575, 24799-24803 already folds pidsAt), pids=[] (24651, 25465, 25660, 25669, 25729, 25736, 26008), the current process's own pid (23951, which base_liveness excludes), dead pids (_dead_pid() at 25499/25520/25554 and the lc7 case 26188, whose proc was communicate()d to exit in _bk_dead_claim), and literal [101] (25581). Left as they are because none can be read as a stranger. Runs: bt-block 4/4 exit 0; sweep-selftests tests/test_drive_phase.py 1/1 files ok, 1098 cases; full sweep-selftests.py exit 0, 196/196 files ok, 19999 cases, run after the last edit; ruff All checks passed; vermin run (no violation printed, minimum 3.8). Nothing committed; only tests/test_drive_phase.py changed. Dependants (tests/test_drive_without_model.py, tests/test__evidence_io.py, tests/test__runner_output.py, tests/test_run_test_gate.py, tests/test_stamp_verification.py, drive-phase.py, ci.yml, sweep-costs.json): still correct, because the edit is one line inside one function body, with no defined name, signature, case id or case title changed. _Env, _actions, _base_mark and _base_measure_repo are untouched. The case count in the block is unchanged, so the sweep-costs.json entry stays valid.\nclaims:\n1 tests/test_drive_phase.py (bt4, held.update(... pidsAt=M2._utc_stamp())) sets what the comment above it says; the product line it mirrors is drive-phase.py:4411\n2 slow-start mutation: original red (3/4), fixed green (4/4); liveness-always-dead mutation in a scratch copy: bt4 red (3/4), restored and cmp identical: 4/4; no product or test file mutated in the shared tree\n3 grep for pids/pidsAt in test_drive_phase.py: bt4 is the only live-pid site without pidsAt; every other hit is accounted for above, left because dead, own pid, empty, or read-only\n4 n/a - no rule to an agent\n5 slow-start red/green watched once each; measured once, deterministic given the 2.5 s sleep against a 1 s slack\n6 n/a - no guard\n7 n/a - no number written into prose or comments",
+        "descriptive": "bt4 no longer fails when the runner starts more than a second after the stale pidsAt, which turned CI red twice, and it still goes red when the liveness check is broken."
       },
       "startedAt": "2026-11-26T09:08:49Z",
-      "completedAt": null,
+      "completedAt": "2026-11-26T09:27:02Z",
       "verifiedBy": [],
       "timing": {
         "stages": [
@@ -1596,6 +1603,30 @@
             "ms": 190607,
             "basis": "durationMs in run 2026-11-26T09:26:01Z.5449d4's record (run-test-gate --record)",
             "runId": "2026-11-26T09:26:01Z.5449d4"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-26T09:22:09Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 799000,
+            "startedAt": "2026-11-26T09:08:50Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-26T09:26:01Z.5449d4",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-26T09:22:35Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-26T09:26:49Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 29000,
+            "startedAt": "2026-11-26T09:26:20Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 55cd5dfd37db",
+            "kind": "commit",
+            "ms": 1743,
+            "startedAt": "2026-11-26T09:26:59Z"
           }
         ],
         "firstStartedAt": "2026-11-26T09:08:49Z"
@@ -1702,14 +1733,292 @@
         "runId": "2026-11-26T09:26:18Z.08bbe3",
         "status": "passed",
         "at": "2026-11-26T09:26:18Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "55cd5dfd37db",
+        "at": "2026-11-26T09:27:02Z",
+        "return": "docs/audit/evidence/returns/P170.6-yl6/20261126T090849Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with expectRedFirst false, no tests.add and no test command given to submit. The reds were watched by hand in scratch copies outside the tree, never by undoing the fix in it. (a) scratchpad copies of the ORIGINAL and the FIXED test file, each with time.sleep(2.5) inserted before the runner's Popen, run with PYTHONPATH=tests: original gave FAIL bt4 (3/4 passed), fixed gave PASS bt4 (4/4). (b) a scratchpad copy of plugins/audit, tests and tools with base_liveness mutated (present = [] after the pid scan, asserted to have applied once): FAIL bt4 (3/4); with the product file restored (cmp identical to the tree) the same copy gave ALL PASS 4/4.",
+        "at": "2026-11-26 (scratch runs, after the fix)"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
+  "startedAt": "2026-11-26T06:09:42Z",
+  "lastRun": {
+    "runId": "2026-11-26T10:02:30Z.c18262",
+    "status": "passed",
+    "durationMs": 4258,
+    "failed": [],
+    "observations": {
+      "ranTotal": null,
+      "countsBasis": "no step printed a summary this reader can count (validate, gate, report), so the size of this gate is not knowable from its output; counted over the step(s) measured here only - the repeated step(s) selftests, plugin-validate, lint, shots, interactive, vitest ran no check in this run",
+      "treeMutated": [],
+      "treeBasis": "git described the tree before and after",
+      "coverageBasis": "the runner named 3 path(s); the work under test declares 17 file(s); among them: <outside-repo>, <outside-repo>, docs/audit/audit-plan.json; declared but not named by the run: CLAUDE.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md, changelog.d/P170.1.changed.md, changelog.d/P170.3-yl6.changed.md, changelog.d/P170.3.changed.md and 11 more; joined with the paths run 2026-11-26T10:02:24Z.0f9c54's repeated step(s) selftests, plugin-validate, lint, shots, interactive, vitest named"
+    },
+    "banners": [],
+    "gateSource": "phase",
+    "gateDigest": "sha256:e8312fb8f9c94dbe9df9bce082512eec91a04ad94b9a2938a23f7d6bd7005252",
+    "reuseKey": "1:sha256:3adc90bb435c770fcb1804b64dd2a761ef0a0f6467ab4fac29fca756d91191b2",
+    "verdictSource": "part-reused",
+    "reusedFrom": {
+      "runId": "2026-11-26T10:02:24Z.0f9c54",
+      "ts": "2026-11-26T10:02:24Z",
+      "status": "passed"
+    },
+    "via": "cli",
     "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
-    "branch": "audit/p170-waves-run-wider-than-one-no-fi",
-    "at": "2026-11-26T06:09:42Z"
+    "startedAt": "2026-11-26T10:02:25Z",
+    "selectionMs": 257,
+    "at": "2026-11-26T10:02:30Z",
+    "steps": [
+      {
+        "name": "selftests",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-26T10:02:24Z.0f9c54",
+          "ts": "2026-11-26T10:02:24Z"
+        },
+        "command": "python3 tools/sweep-selftests.py"
+      },
+      {
+        "name": "validate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 738,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json"
+      },
+      {
+        "name": "plugin-validate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-26T10:02:24Z.0f9c54",
+          "ts": "2026-11-26T10:02:24Z"
+        },
+        "command": "claude plugin validate . && claude plugin validate plugins/audit"
+      },
+      {
+        "name": "gate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 1353,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate"
+      },
+      {
+        "name": "report",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 2131,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report"
+      },
+      {
+        "name": "lint",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-26T10:02:24Z.0f9c54",
+          "ts": "2026-11-26T10:02:24Z"
+        },
+        "command": "ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints"
+      },
+      {
+        "name": "shots",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-26T10:02:24Z.0f9c54",
+          "ts": "2026-11-26T10:02:24Z"
+        },
+        "command": "node tools/capture-screenshots.mjs --check"
+      },
+      {
+        "name": "interactive",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-26T10:02:24Z.0f9c54",
+          "ts": "2026-11-26T10:02:24Z"
+        },
+        "command": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
+      },
+      {
+        "name": "vitest",
+        "exit": 0,
+        "ran": 870,
+        "measured": "checks",
+        "suiteReader": "vitest",
+        "reusedFrom": {
+          "runId": "2026-11-26T10:02:24Z.0f9c54",
+          "ts": "2026-11-26T10:02:24Z"
+        },
+        "command": "npx vitest run"
+      }
+    ],
+    "machine": "this run had the machine to itself",
+    "repeatedRun": {
+      "runId": "2026-11-26T10:02:24Z.0f9c54",
+      "startedAt": "2026-11-26T09:48:04Z",
+      "durationMs": 859491,
+      "selectionMs": 258,
+      "status": "passed",
+      "failed": [],
+      "reuseKey": "1:sha256:3adc90bb435c770fcb1804b64dd2a761ef0a0f6467ab4fac29fca756d91191b2",
+      "gateDigest": "sha256:e8312fb8f9c94dbe9df9bce082512eec91a04ad94b9a2938a23f7d6bd7005252",
+      "gateSource": "phase",
+      "banners": [],
+      "machine": "this run had the machine to itself",
+      "launch": "2026-11-26T09:48:00Z-a96eed33",
+      "observations": {
+        "ranTotal": 870,
+        "countsBasis": "1 of 9 step(s) printed a summary this reader counted; selftests, validate, plugin-validate, gate, report, lint, shots, interactive did not, so this total is a floor and not a size",
+        "treeMutated": [],
+        "treeBasis": "git described the tree before and after",
+        "coverage": [
+          "tests/test__deps.py",
+          "tests/test_drive_phase.py",
+          "tests/test_integrate_task.py",
+          "tests/test_run_test_gate.py",
+          "tools/gate-parity.py",
+          "tools/prove-gates.py",
+          "tools/release.py"
+        ],
+        "coverageBasis": "the runner named 342 path(s); the work under test declares 17 file(s); 58 of them are test paths, matched to the files they are named after; among them: .claude-plugin/icon.png, .claude-plugin/plugin.json, .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py and 337 more; declared but not named by the run: CLAUDE.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md, changelog.d/P170.1.changed.md, changelog.d/P170.3-yl6.changed.md, changelog.d/P170.3.changed.md and 4 more"
+      },
+      "via": "cli",
+      "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+      "at": "2026-11-26T10:02:24Z",
+      "testedState": {
+        "head": "55cd5dfd",
+        "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+        "scopeDigest": "sha256:c5ddf2ac6da2e515aaa5aa8258de680af14bcedb789130849fbd646455c70fd1",
+        "scopeBasis": "17 declared file(s); 15 read, 2 missing",
+        "scopeListDigest": "sha256:224c444513f5220dceba89856005d2b8865d64ed67bf0bdf40f32cce6caaef39",
+        "dirtyDigest": "sha256:faf3e09228e68cdcba66ed6ab95b49ec8759fa35251f80152ed4eefa0a233ea6",
+        "dirtyBasis": "git described the tree before the run; 3 dirty path(s)"
+      },
+      "steps": [
+        {
+          "name": "selftests",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 379386,
+          "suiteReader": "none",
+          "command": "python3 tools/sweep-selftests.py"
+        },
+        {
+          "name": "validate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 744,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json"
+        },
+        {
+          "name": "plugin-validate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 1085,
+          "suiteReader": "none",
+          "command": "claude plugin validate . && claude plugin validate plugins/audit"
+        },
+        {
+          "name": "gate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 1403,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate"
+        },
+        {
+          "name": "report",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 2188,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report"
+        },
+        {
+          "name": "lint",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 3318,
+          "suiteReader": "none",
+          "command": "ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints"
+        },
+        {
+          "name": "shots",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 295470,
+          "suiteReader": "none",
+          "command": "node tools/capture-screenshots.mjs --check"
+        },
+        {
+          "name": "interactive",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 172185,
+          "suiteReader": "none",
+          "command": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
+        },
+        {
+          "name": "vitest",
+          "exit": 0,
+          "ran": 870,
+          "measured": "checks",
+          "durationMs": 3620,
+          "suiteReader": "vitest",
+          "command": "npx vitest run"
+        }
+      ]
+    },
+    "sharedWithRepeated": [
+      "observations.coverage",
+      "testedState"
+    ],
+    "replacedLaunches": [
+      {
+        "runId": "2026-11-26T10:02:24Z.0f9c54",
+        "launch": "2026-11-26T09:48:00Z-a96eed33",
+        "status": "passed",
+        "at": "2026-11-26T10:02:24Z"
+      }
+    ]
   },
-  "startedAt": "2026-11-26T06:09:42Z"
+  "testEvidence": {
+    "runId": "2026-11-26T10:02:30Z.c18262",
+    "status": "passed",
+    "at": "2026-11-26T10:02:30Z"
+  }
 }
