@@ -1,0 +1,59 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__clause_coverage.py --jobs 4": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with expectRedFirst false, and the change is the test file alone: a throwaway tree at HEAD carrying the declared test file holds the fix too, so the helper cannot show a red. The red was shown by mutating the child inside the test file in a scratch copy of the tree (mutations.py rows, each anchor matched once, restored byte for byte): closure use deleted, closure body emptied, again field dropped, job step ignored, second measurement over one length, again carrying a fault - each turns cw24 red and, for those, leaves cw8 green; the unmutated tree and a no-op edit and a 0.02 asked step stay green.",
+    "at": "2026-11-26"
+  },
+  "outcome": {
+    "technical": "tests/test__clause_coverage.py only. (1) The job the child reads now carries 'step'; last_step_again(seconds, measure, step=WIDE_STEP) takes the bound as a parameter and the child passes job['step'], so the default job keeps WIDE_STEP. (2) The launch-and-parse half of _wide_timing_cases moved into _run_timer(job) returning (runs, None) or (None, sentence), so cw8 and the new case share one child launch; the kill/no-answer sentences are unchanged. (3) New case cw24 runs the child with step WIDE_ASKED_STEP (0.01, a bound no last doubling can fall under; 0.5 as in the probe rows could be fallen under by a ratio of two sub-floor times, so a flaky red was possible) over the two shortest lengths and one round, and asserts every kind cw8 measured came back with an again entry of two positive seconds and no fault; a missing, short or faulted entry, or a child that answers nothing, is red with the kind names. Gate: python3 tools/sweep-selftests.py tests/test__clause_coverage.py --jobs 4 exit 0, 96 cases ok (95 before). ruff check clean; vermin minimum 3.5; prose_number_claims and house_style_violations report nothing for the file. Probe: sg4.2/mutations.py (python3 -B mutations.py from the worktree, exit 0) and mutations.out: 10 rows, 7 deny rows caught by cw24 (the renamed-closure row is caught by cw8 as well - the name is evaluated eagerly, so removing the closure outright was already red; it is the use, body, field, step and pair rows only cw24 sees), the old 0.5 wiring row caught by cw8, two allow twins (no-op edit; asked step 0.02) stay green. Timing of the cw-timing stage (python3 -B tests/test__clause_coverage.py --selftest --stage cw-timing, wall clock, three runs with a 3 s gap each): before 5.26 5.01 5.33 s, after 6.16 5.90 5.74 s, about 0.7 s more, measured on a loaded machine, one window per side. Dependants: .github/sweep-costs.json holds one whole-file figure for this file (23.1, line 347) and no block figure (grep for cw-timing, cw8, cw24: no hit); the sweep ran the file whole in 6.3 s and the change adds about 0.7 s, so the figure and the timeouts derived from it stay correct (re-recording is not owed); plugins/audit/scripts/governance/_clause_coverage.py is the module under test and is untouched, its reading is what the child times - still correct; CHANGELOG.md has one cw8 mention (line 562) describing what cw8 times, which cw8 still does - still correct, no entry owed for a test-only change; PLUGIN-BUILD-GUIDE.md names none of last_step_again, WIDE_STEP, cw8 - still correct. Floor guard: not run by me; the diff adds no suppression comment.",
+    "descriptive": "A child that never takes, or never reports, its second measurement now turns a permanent case red, where before only the executor probe saw it."
+  },
+  "testsAdded": [
+    "cw24: the child run with a step every kind crosses returns an again entry of two lengths and no fault for every kind cw8 measured"
+  ],
+  "casesAdded": [
+    "cw24"
+  ],
+  "skillsInvoked": [
+    "writing-python",
+    "before-you-claim",
+    "no-silent-pass"
+  ],
+  "claims": "claims:\n1 tests/test__clause_coverage.py: last_step_again's docstring now says the step is the job's and WIDE_STEP by default (the signature step=WIDE_STEP, the child passes job['step']); cw24's label says only what its assertion checks - a second measurement of two lengths and no fault for every kind cw8 measured.\n2 mutations.out: 7 deny rows red on cw24 (use deleted, body emptied, field dropped, job step ignored, one length, fault carried, closure renamed), allow twins (no-op edit, asked step 0.02) STAYED GREEN, each row restored byte for byte, __pycache__ purged between rows; sweep after the change 96/96 green.\n3 n/a - the finding is the class 'the child's wiring is unpinned' and the rows enumerate every wire in it (call, closure body, output field, job step, pair length, fault); grep -rln '_WIDE_TIMER\\|last_step_again' over tests, plugins, tools and .github lists only tests/test__clause_coverage.py.\n4 n/a - no rule addressed to an agent.\n5 stage wall time before 5.26 5.01 5.33 s and after 6.16 5.90 5.74 s, three runs each with a 3 s gap, one window per side on a loaded machine; the figure is measured once per side and written nowhere in a document.\n6 n/a - no guard.\n7 n/a - no number written into prose or a document; WIDE_ASKED_STEP is a constant with its reason beside it, and the timings above are in this report only.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:be1ee191e96f59a1b7794c27ed903f971d3de8d5242fdfcef6e65fae3c25fdfd\",\"dirtyDigest\":\"sha256:2f06849ff003d4478600dd26ea69353a8fca4881d6d7ee9853925a4eb718f7b3\",\"dirtyPaths\":{\".claude/.gitignore\":\"9e1cb3102d99784b\",\"tests/test__clause_coverage.py\":\"6d85dfd4386b02bd\"},\"head\":\"9d62c4be\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test__clause_coverage.py\"],\"scopeDigest\":\"sha256:4cb3b14504cd71b0b3e9a94a963c60e88206202267e28c5136005e22eecbf452\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 0 of the diff's 2 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 1 file(s) not read that cannot hold a move as read here: .claude/.gitignore; 1 file(s) that could hold a move not compared: tests/test__clause_coverage.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": ".claude/.gitignore",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__clause_coverage.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 1521 (`_WIDE_TIMER = r'''`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "9d62c4be4d9e69bea4dcfcf02cf4aa756c2e9b4c"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-26T07:56:31Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

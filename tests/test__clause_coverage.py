@@ -1548,7 +1548,7 @@ for label, make in KINDS:
                                       clock=time.process_time, clock_name="process_time",
                                       min_seconds=job["min_seconds"], rounds=job["rounds"],
                                       deadline=left)
-    second = (T.last_step_again(got["seconds"], again)
+    second = (T.last_step_again(got["seconds"], again, job["step"])
               if got["fault"] is None and len(got["seconds"]) == len(job["units"]) else None)
     text = make(job["units"][-1])
     tracemalloc.start()
@@ -1591,12 +1591,14 @@ def _last_step(seconds):
     return seconds[-1] / max(seconds[-2], WIDE_FLOOR)
 
 
-def last_step_again(seconds, measure):
+def last_step_again(seconds, measure, step=WIDE_STEP):
     """`measure()` - the last two lengths measured once more - when the last step of
-    `seconds` is over WIDE_STEP, and None, without calling it, when it is not. The
-    child calls this with the second measurement, so the decision to take one is the
-    one these cases pin without a clock."""
-    if len(seconds) < 2 or _last_step(seconds) <= WIDE_STEP:
+    `seconds` is over `step` (WIDE_STEP unless the job says another), and None, without
+    calling it, when it is not. The child calls this with the second measurement and
+    the job's step, so the decision to take one is the one these cases pin without a
+    clock, and the child's wiring of it is the one `cw24` runs with a step every kind
+    crosses."""
+    if len(seconds) < 2 or _last_step(seconds) <= step:
         return None
     return measure()
 
@@ -1773,11 +1775,18 @@ def _wide_series_cases(check):
           "%r / %r" % (quiet, asked))
 
 
-def _wide_timing_cases(check):
-    """The reading's time at doubling lengths, in a child killed at a deadline."""
+# A step no kind's last doubling can fall under (a reading's time at the longer of
+# two lengths is not a hundredth of the shorter's), so a child given it as the job's
+# step takes its second measurement for every kind - the one thing a healthy reading
+# never does at WIDE_STEP, and so the only way a case can see the child's wiring of it.
+WIDE_ASKED_STEP = 0.01
+
+
+def _run_timer(job):
+    """What the child `_WIDE_TIMER` made of `job`: (runs, None) - the list of its
+    per-kind runs - or (None, the sentence) for a child that was killed or answered
+    nothing."""
     import subprocess
-    job = {"units": list(WIDE_UNITS), "deadline": WIDE_SERIES_DEADLINE,
-           "min_seconds": WIDE_MIN_SECONDS, "rounds": WIDE_ROUNDS}
     argv = [sys.executable, "-c", _WIDE_TIMER, _harness.TESTS_DIR,
             os.path.dirname(M.__file__), json.dumps(job)]
     try:
@@ -1790,15 +1799,22 @@ def _wide_timing_cases(check):
         runs = json.loads(out.decode("utf-8", "replace").strip().splitlines()[-1])
     except (ValueError, IndexError):
         runs = None
-    faults = []
     if killed:
-        faults.append("killed at the %gs deadline" % (WIDE_DEADLINE,))
-    elif not isinstance(runs, list) or not runs:
-        faults.append("no answer: %s" % (" ".join(err.decode("utf-8", "replace")
-                                                    .split())[-300:],))
-    else:
-        for run in runs:
-            faults.extend(_run_faults(run))
+        return None, "killed at the %gs deadline" % (WIDE_DEADLINE,)
+    if not isinstance(runs, list) or not runs:
+        return None, "no answer: %s" % (" ".join(err.decode("utf-8", "replace")
+                                                   .split())[-300:],)
+    return runs, None
+
+
+def _wide_timing_cases(check):
+    """The reading's time at doubling lengths, in a child killed at a deadline."""
+    job = {"units": list(WIDE_UNITS), "deadline": WIDE_SERIES_DEADLINE,
+           "min_seconds": WIDE_MIN_SECONDS, "rounds": WIDE_ROUNDS, "step": WIDE_STEP}
+    runs, fault = _run_timer(job)
+    faults = [] if fault is None else [fault]
+    for run in runs or []:
+        faults.extend(_run_faults(run))
     check("cw8 the reading's processor time over list numbers, line-start numbers, mentions "
           "and markers on one line at %d doubling lengths grows as at most the "
           "WIDE_POWER of the length over the whole series (the slope of log time over "
@@ -1807,6 +1823,26 @@ def _wide_timing_cases(check):
           "per character at the longest, in a child killed at WIDE_DEADLINE"
           % (len(WIDE_UNITS),),
           not faults, "%s" % ("; ".join(faults),))
+
+    # cw8's reading never crosses WIDE_STEP, so its child never takes the second
+    # measurement and deleting that wiring leaves cw8 green. Here the job's step is one
+    # every kind crosses, over the two shortest lengths and one round to stay cheap.
+    asked_job = dict(job, units=list(WIDE_UNITS[:2]), rounds=1, step=WIDE_ASKED_STEP)
+    asked, asked_fault = _run_timer(asked_job)
+    kinds = [r["kind"] for r in runs or []]
+    answered = {r["kind"]: r.get("again") for r in asked or []}
+    unmeasured = sorted(k for k in kinds if not (
+        isinstance(answered.get(k), dict) and answered[k].get("fault") is None
+        and len(answered[k].get("seconds") or []) == 2
+        and all(s > 0 for s in answered[k]["seconds"])))
+    check("cw24 the child, given a step every kind's last doubling crosses, comes back with a "
+          "second measurement of two lengths and no fault for every kind cw8 measured (the "
+          "wiring cw8 cannot see on a healthy reading: a child that never takes the second "
+          "measurement, or leaves it out of its answer, is red here)",
+          asked_fault is None and bool(kinds) and sorted(answered) == sorted(kinds)
+          and not unmeasured,
+          "%s" % (asked_fault or "no second measurement for %r of %r; got %r"
+                  % (unmeasured, kinds, answered),))
 
 
 def _cases(check):

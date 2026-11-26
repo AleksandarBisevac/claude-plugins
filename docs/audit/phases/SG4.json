@@ -31,7 +31,8 @@
         "severity": "low",
         "file": "tests/test__clause_coverage.py:1543-1562, 1775-1808",
         "issue": "The live cw8 never exercises the child second measurement on a healthy reading: the re-measurement is only taken when a last step is over WIDE_STEP, which a linear reading does not reach. Deleting the again() closure, or dropping the again field from the child output, leaves cw8 green and every pure case (cw17, cw21-cw23) green too, because they call the pure helpers and never the child. Only the executor probe rows (WIDE_STEP lowered to 0.5) catch the wiring, and a probe is not part of the suite.",
-        "resolution": "Let the job carry the step (job step, defaulting to WIDE_STEP) and add one permanent case that runs the child with the step at 0.5 and asserts the output holds an again entry with two seconds for every kind. That puts the wiring the probe proves under a case that fails when it is deleted."
+        "resolution": "Let the job carry the step (job step, defaulting to WIDE_STEP) and add one permanent case that runs the child with the step at 0.5 and asserts the output holds an again entry with two seconds for every kind. That puts the wiring the probe proves under a case that fails when it is deleted.",
+        "fixTask": "SG4.2-3il"
       },
       {
         "id": "SG4-R2",
@@ -39,16 +40,23 @@
         "file": "tests/test__clause_coverage.py:1594-1640",
         "issue": "cw8 is not at least as strict as before SG2.23 narrowed it, and the filed outcome sentence that everything cw8 caught before still fails overclaims if before means the per-step judgement. That judgement flagged any step over 2 ** 1.5 (about 2.83x); the new one flags only the LAST step, only above 3.5x, only when a second measurement also exceeds it. A middle step of 4x with a linear tail, or a last step between 2.83x and 3.5x, was red before SG2.23 and is green now. That is what the task RULE asked for (a bound between the 3.00x CI recorded and a quadratic 4x), so it is not a defect in the diff, but the outcome should say so.",
         "resolution": "State in the outcome that cw8 is restored for the quadratic last doubling the task names and stays narrower than the pre-SG2.23 per-step bound for middle steps and for last steps in 2.83x-3.5x; no code change needed."
+      },
+      {
+        "id": "SG4-R3",
+        "severity": "low",
+        "file": "tests/test__clause_coverage.py:1836-1853",
+        "issue": "cw24 takes its kind list from the cw8 run (kinds). When the cw8 child is killed or answers nothing, kinds is empty, so cw24 goes red as well, with the text no second measurement for [] of []; got {}, which names no kind and hides that the cause is the cw8 child. A second red with a misleading text for one underlying fault.",
+        "resolution": "Fold the empty-kinds case into the message (for example: the cw8 child gave no kinds to compare), or read the kind names from asked itself and assert their set against the four expected labels. Optional, batch to the low list."
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "SG4.1",
       "title": "Two cases narrowed during SG2 are as strict again as before they were narrowed: co2 pins the whole Skills list, cw8 catches a reading that turns quadratic only at its last doubling",
-      "status": "in_progress",
+      "status": "done",
       "description": "The owner's Weakened-tests list before main named two cases whose bar SG2 lowered. Both fixes live in tests, so this is a regression task: the proof is a mutation probe, not red at base.\n\n(1) tests/test_audit_lookup.py co2. SG2.24-xk1 narrowed the last clause from listed[1:] == ['- from-plan'] to listed[1:2] == ['- from-plan'], because skills_lines (plugins/audit/scripts/status/audit-lookup.py) now appends two ask lines after the names (skillsInvoked, then skillUnavailable). Since then a stray extra skill line after '- from-plan' passes co2. RULE: co2 again holds the whole list: the lines that name skills are exactly ['- from-plan'], the lead line is first, and the two ask lines follow the names and are the last two lines - so an extra name line, a missing ask line or a reordering is red. Do not copy the ask sentences into the test as a second copy of the prose if a stable part of them (the field names `skillsInvoked` and `skillUnavailable`) identifies each line; choose and say which.\n\n(2) tests/test__clause_coverage.py cw8. SG2.23-xk1 replaced a per-step judgement with the least-squares slope over the whole series (_growth_exponent, WIDE_POWER 1.5) to stop false reds from a shared runner's noise (CI recorded last steps of 2.92x and 3.00x on linear readings; cw17 pins those series green). The cost: a reading linear until its last doubling and quadratic there (ratios 2, 2, 4) reads 1.3 and passes, where the old judgement flagged it. Raising or lowering a bound is not the fix - a single step cannot tell noise from growth. RULE: a last step over a per-step bound (pick it between the noise CI recorded and a quadratic step of 4, and say why) is MEASURED AGAIN in the same child, the last two lengths only, fresh rounds; the kind is red only when the re-measured step is also over the bound. A step over the bound that the re-measurement does not confirm is green. The whole-series slope stays as it is. The judgement over fixed series stays testable without a clock: give the pure judgement the re-measured step as an input, so cases can feed it.\n\nCases (pure, no clock): (2,2,4) with a re-measured last step of 4 is red with one sentence naming the last step; (2,2,4) re-measured at 2 is green (noise); cw17's series stay green; cw18's stay red; a last step under the bound is never re-measured (count the calls). Keep the child inside WIDE_DEADLINE and WIDE_SERIES_DEADLINE: the re-measurement costs the last two lengths once more; measure the block's time before and after and give both numbers. If the block's time rises enough to need a new figure in .github/sweep-costs.json, say so in your reply - do not edit that file.\n\nHOW TO PROVE. A mutation probe from the worktree root: for co2, skills_lines emitting one extra '- stray' line, and dropping either ask line - each turns co2 red, and the unmutated tree is green; for cw8, the re-measurement removed (the first reading trusted) turns the (2,2,4)-confirmed case and the noise case into the wrong verdicts, and the bound mutated to the old 2 ** WIDE_POWER per step turns a cw17 series red. Name the allow twin of every deny row.\n\nAcceptance:\n(1) co2 is red when skills_lines emits an extra skill line or drops an ask line, and green on the tree as it is.\n(2) A reading whose last doubling is quadratic, confirmed by a second measurement, fails cw8's judgement; the same step not confirmed does not, and the two CI-recorded series still pass.\n(3) The floor guard's reading of this diff is explained in the outcome: every case whose definition changed is named with why it is now at least as strict as before.",
       "files": [
         "tests/test_audit_lookup.py",
@@ -70,21 +78,58 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9d62c4be4d9e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) tests/test_audit_lookup.py co2: the last clause is the whole list again - len(listed) >= 4, listed[0] is not a '- ' line and names 'Skill tool' (the lead line), the lines starting '- ' are exactly ['- from-plan'], listed[1:-2] == ['- from-plan'], and the last two lines hold the backticked field names skillsInvoked and skillUnavailable in that order. Chosen: the ask lines are identified by those field names (what the drive reads), not by copying their sentences, so the prose stays free to change; the lead line is identified by the Skill tool phrase. (2) tests/test__clause_coverage.py: WIDE_STEP = 3.5 (the midpoint between the 3.00x CI recorded on a linear reading and a quadratic doubling's 4x). Pure helpers: _last_step, last_step_again(seconds, measure) (calls measure() only when the last step is over WIDE_STEP, else None without calling it) and _last_step_faults (one sentence naming the last doubling when the second measurement is also over the bound; empty when it is not; a distinct sentence when no second measurement was given or it was refused, never a pass). _run_faults takes the re-measured step from run['again'] and judges the last step only when the slope did not already fault, so a quadratic series still earns exactly one growth sentence. The child (_WIDE_TIMER) imports this module and calls last_step_again with a closure that calls _harness.growth_series a second time over the last two lengths (fresh rounds, deadline counted from the child's start); _harness.growth_series is untouched. The comment above WIDE_UNITS, _growth_exponent's docstring and cw8's label now say what the code does. New cases in cw-series: cw21 ((2,2,4): the slope reads 1.3 and passes; red with one sentence naming the last doubling when re-measured at 4x; green at 2x; not-re-measured and refused-re-measurement are their own red sentences), cw22 (the bound's twins: exactly at WIDE_STEP needs no second measurement; just over, confirmed exactly at WIDE_STEP, is green; confirmed just over is red), cw23 (calls counted: zero for 2.92x, 3.00x, linear, exactly-at-bound, the floor series and a one-length series; one for (2,2,4) and the 5.0x series, answer passed through). cw17 gives its only over-bound series (5.0x) a 2x second measurement; cw18 is unchanged and still red by the slope. Evidence: cw-series and cw-timing blocks 95/95 green; sweep over test_audit_lookup, test__clause_coverage and test__output_lints exit 0 (3/3 files ok, --jobs 4); run-test-gate.py SG4 --task SG4.1 without --record printed GATE GREEN (exit 0); ruff clean. Mutation probe (session scratch sg4.1/mutations.py, output mutations.out, run from the worktree root as `python3 -B mutations.py <worktree>`, exit 0): co2 deny rows - extra '- stray' line, skillsInvoked ask line dropped, skillUnavailable ask line dropped, a third line after the asks, the two fields swapped, lead line dropped - each red on co2; allow twin (both ask sentences reworded, field names kept) stays green. cw deny rows - re-measurement ignored (first reading trusted) red on cw17 and cw21; re-measurement never consulted red on cw21 and cw22; a missing second measurement passing silently red on cw21; under-bound step measured again red on cw23; over-bound step never measured red on cw23; bound back to 2 ** WIDE_POWER red on cw17; bound raised above 4 red on cw21; allow twin over-fire (the bound itself judged over) red on cw22; child wiring rows with WIDE_STEP lowered to 0.5 make live cw8 red with the 'measured again' sentence, and with the child's answer dropped from its output red with 'was not measured again'; the unmutated timing block stays green. Timing of the cw-timing block (python3 tests/test__clause_coverage.py --selftest --stage cw-timing, wall, 5 s apart): before 5.45 s, 5.40 s, 5.37 s; after 5.78 s, 5.40 s, 5.42 s - the re-measurement only runs when a last step is over the bound, which clean readings do not reach, so the figure is flat inside the spread and .github/sweep-costs.json needs no new figure (not edited). The child also stays inside WIDE_DEADLINE and WIDE_SERIES_DEADLINE: the re-measurement is handed the series deadline's remainder. Floor guard: it will report co2 and cw8 as definition-changed. co2 is at least as strict as before narrowing: the original listed[1:] == ['- from-plan'] pinned the whole list and became unsatisfiable once the two ask lines existed; the new clauses state that same whole-list equality with the asks accounted for (lead line first, name lines exactly ['- from-plan'], listed[1:-2] == ['- from-plan'], the two ask lines last and in order, each by its field name), so every list the original rejected is still rejected except the one the plan now legitimately produces, and an extra name, a missing or swapped ask line and a trailing line are each red (probe rows). cw8: the whole-series slope check is unchanged and a last-doubling check is added to it, so everything cw8 caught before still fails and the late-quadratic reading it missed since SG2.23 is caught when its second measurement confirms it; the CI-recorded 2.92x and 3.00x series stay green (pinned by cw17, under the bound so never re-measured). cw17's definition also changed (its 5.0x series now carries a second measurement) - it is stricter, since a judgement that asks for none on that series reads red there. Dependants: .github/sweep-costs.json - still correct, the suite's timing is flat (figures above) and its case count is not recorded there; plugins/audit/scripts/status/audit-lookup.py - unchanged, co2 only reads skills_lines; tools/affected.py - still correct, it names _cases/_selftest of its own and I defined neither; PLUGIN-BUILD-GUIDE.md and plugins/audit/reference/execute-task.md - still correct, they cite the test files by path and name none of the changed cases; tests/test_audit_task.py - still correct, shares _success_line_cases/_cli names by basename only and I touched neither; for test__clause_coverage.py: plugins/audit/scripts/governance/_clause_coverage.py - unchanged, the timer only calls reading_line; CHANGELOG.md - line naming cw8 is history and stays true. Where it is documented: no tracked Markdown heading names either file. Nothing in this task could be run in the browser; no page changed.",
+        "descriptive": "co2 pins the whole Skills list again and cw8 now catches a reading that turns quadratic only at its last doubling, by measuring that step a second time before calling it growth."
       },
       "startedAt": "2026-11-26T07:17:47Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-26T07:47:50Z",
+      "verifiedBy": [
+        "cw21: a (2,2,4) series is red when its last two lengths measured again also find 4x, green at 2x, and red with its own sentence when no second measurement was given or it was refused",
+        "cw22: the bound's twins - a last step exactly at WIDE_STEP needs no re-measurement; just over and confirmed exactly at the bound is green; confirmed just over is red",
+        "cw23: a last step at or under WIDE_STEP is never measured again (calls counted), one over it is measured once"
+      ],
       "movedFrom": {
         "id": "SG3.2",
         "phase": "SG3",
         "at": "2026-11-26T07:17:39Z"
       },
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-26T07:36:04Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1095000,
+            "startedAt": "2026-11-26T07:17:49Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-26T07:44:21Z.f70792, ending at its startedAt",
+            "kind": "selection",
+            "ms": 15999,
+            "runId": "2026-11-26T07:44:21Z.f70792",
+            "startedAt": "2026-11-26T07:38:55Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-26T07:44:21Z.f70792",
+            "kind": "gate",
+            "ms": 310695,
+            "runId": "2026-11-26T07:44:21Z.f70792",
+            "startedAt": "2026-11-26T07:39:11Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-26T07:47:25Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 104000,
+            "startedAt": "2026-11-26T07:45:41Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 9d62c4be4d9e",
+            "kind": "commit",
+            "ms": 1885,
+            "startedAt": "2026-11-26T07:47:46Z"
+          }
+        ],
         "firstStartedAt": "2026-11-26T07:17:47Z"
       },
       "reviewPerTask": "signals",
@@ -92,6 +137,75 @@
         "runId": "2026-11-26T07:45:39Z.a4f437",
         "status": "passed",
         "at": "2026-11-26T07:45:39Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9d62c4be4d9e",
+        "at": "2026-11-26T07:47:50Z",
+        "return": "docs/audit/evidence/returns/SG4.1/20261126T071747Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with tests.expectRedFirst false: the proof is the mutation probe (18 rows, every anchor applied once, every deny caught, every allow twin green), not a red at base",
+        "at": "n/a"
+      }
+    },
+    {
+      "id": "SG4.2-3il",
+      "title": "fix SG4-R1: The live cw8 never exercises the child second measurement on a he...",
+      "status": "in_progress",
+      "description": "The live cw8 never exercises the child second measurement on a healthy reading: the re-measurement is only taken when a last step is over WIDE_STEP, which a linear reading does not reach. Deleting the again() closure, or dropping the again field from the child output, leaves cw8 green and every pure case (cw17, cw21-cw23) green too, because they call the pure helpers and never the child. Only the executor probe rows (WIDE_STEP lowered to 0.5) catch the wiring, and a probe is not part of the suite.\n\nResolution asked: Let the job carry the step (job step, defaulting to WIDE_STEP) and add one permanent case that runs the child with the step at 0.5 and asserts the output holds an again entry with two seconds for every kind. That puts the wiring the probe proves under a case that fails when it is deleted.",
+      "files": [
+        "tests/test__clause_coverage.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test__clause_coverage.py: the case SG4-R1 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__clause_coverage.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-26T07:48:00Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-26T07:47:58Z",
+          "text": "scope: tests/test__clause_coverage.py, every path the finding(s) SG4-R1 name"
+        },
+        {
+          "at": "2026-11-26T07:47:58Z",
+          "text": "no test runner in this task's gate for the test SG4-R1 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test__clause_coverage.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "SG4-R1"
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-26T07:48:00Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-26T08:04:36Z.83c715",
+        "status": "passed",
+        "at": "2026-11-26T08:04:36Z"
       }
     }
   ],
