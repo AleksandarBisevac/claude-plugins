@@ -1,7 +1,7 @@
 {
   "id": "P170",
   "title": "Waves run wider than one: no file every task must edit",
-  "status": "in_progress",
+  "status": "done",
   "description": "Owner 2026-11-25, answering how to speed development up: today almost every task declares CHANGELOG.md and PLUGIN-BUILD-GUIDE.md, so the drive's wave builder sees a shared file between any two tasks and runs waves of width one (register F915). Make those two files stop being a per-task collision, then measure the wave width it buys. FIRST TASK (materialize with /audit:task add on this phase; key changelog-fragments, risk med, tdd): A task writes its changelog entry as a fragment of its own, and the release assembles CHANGELOG.md from the fragments. Every task appends to CHANGELOG.md's [Unreleased] section, so every pair of tasks shares that file and the wave builder runs them one at a time (F915). Replace the shared append with one fragment file per task (the towncrier pattern: changelog.d/<task-id>.<kind>.md, kind one of the section words the changelog already uses), assembled into CHANGELOG.md by the release step (tools/release.py) and checked by a lint that the assembled text equals what the release would write. Decide and state: where the fragments live, what a fragment that names no kind does, how the existing [Unreleased] text is carried (move it into fragments once, so nothing is lost), what tools/release.py, verify.sh --release and CONTRIBUTING.md's release step now do, and how `/audit:task add` and the executor brief tell a task to write a fragment instead of editing CHANGELOG.md. The same question for PLUGIN-BUILD-GUIDE.md: list which of its per-module sections can be generated from the code the way the module map already is (tools/lints/_deps.py --render), and either generate them in this task or file a follow-up with the list; a hand-written section a task must still edit stays a declared file. Acceptance: two tasks that touch different modules and each write a fragment are planned as one wave by the drive (show it with the wave builder on a fixture plan); release output on this repository is byte for byte the current CHANGELOG.md plus the assembled fragments; the doc lints stay green; measure the wave width the next phase actually gets and record it. Files: tools/release.py, CHANGELOG.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md, tools/verify.sh, tests/test_release.py. tests.add: tests/test_release.py: the release assembles CHANGELOG.md from the per-task fragments and an assembled text that differs from what the release would write is refused",
   "desiredOutcome": "Two ready tasks of one phase that touch different code run as one wave: no task declares CHANGELOG.md or a hand-written section of PLUGIN-BUILD-GUIDE.md only to describe itself, and the release still produces the same CHANGELOG.md.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "2193fc4adf4e76c6f073f334a4216a5234fab80a",
   "branch": "audit/p170-waves-run-wider-than-one-no-fi",
-  "mergedAt": null,
+  "mergedAt": "2026-11-26T10:17:16Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -2020,5 +2020,6 @@
     "runId": "2026-11-26T10:02:30Z.c18262",
     "status": "passed",
     "at": "2026-11-26T10:02:30Z"
-  }
+  },
+  "mergedHead": "75cccaefcb5eef74e590e18e78ac12f27dbcf902"
 }
