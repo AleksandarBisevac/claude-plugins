@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "docs/audit/phases/P170.json (P170.3-yl6 description)",
+   "issue": "The task says 'If deriving every section is too large for one small task, derive the mechanism and one representative section, and file the rest as a follow-up task in P170 with the list.' The diff derives layer, kind, suite and importers, and names the undone parts only in PLUGIN-BUILD-GUIDE.md section 1b ('Not derived: a module's public names ... and an entry's usage line'). P170 holds three tasks (P170.1, P170.2-yl6, P170.3-yl6) and none is a follow-up for public names, the entry usage line, or the tree section's file list. The remainder is therefore not tracked anywhere a gate or the ready list reads.",
+   "resolution": "File the follow-up in P170 (/audit:task add) listing what the filed return measured: public names (needs a per-module block, one line cannot hold them), entry usage line (needs a USAGE constant per entry), and the tree section's file list."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "diverges",
+  "note": "Clause: 'Derive the parts that can be derived in a fenced, generated block per section (or one generated index) checked by test__deps the way g1 checks the module map, so a code change no longer obliges a hand edit of the guide'. Diff: tools/lints/_deps.py render_index() plus `--render-index` print layer, entry/module, suite/no-suite and importers per module, and PLUGIN-BUILD-GUIDE.md section 1b only points at the command; there is no fenced block in the guide and no g1-style drift check. gi1-gi3 test the renderer (fixture, edge change, printed command), not a committed block. The goal of the clause (no hand edit on import changes) is met, and task note 5 (07:24:06Z) records the orchestrator's reason for dropping the committed fence, so the divergence is of mechanism, sanctioned by that note, not a code defect; the missing follow-up is finding 1. The 'measure first' clause and the counts live only in the filed return (P169 35 of 44 tasks, P170 2 of 3); the guide and changelog fragment carry no number, which is right. CLAIM MISMATCH: the filed outcome describes the first design (index_drift, index_follower, write_index, _fence_drift, g1i, gi1-gi5 as drift cases, a prove-gates row owed, `--write-map` writing both fences, a generated fence of 139 lines in 1b, testsAdded g1i/gi2-gi5 which do not exist in the diff). The diff holds one printing function, one flag, a usage-string edit, section 1b prose, and gi1-gi3 only; write_map, map_drift and the OTHER_WRITERS row are untouched. Its dependants analysis about tools/prove-gates.py needing an index_drift row no longer applies. I ran `python3 tools/lints/_deps.py --render-index`: exit 0, 139 modules, none unplaced. changelog.d/P170.3-yl6.changed.md follows CONTRIBUTING.md's `<task-id>.<kind>.md`, though the task text names changelog.d/P170.3.changed.md (declared, not created).",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "tests.mode is regression, expectRedFirst false and tests.add empty, so none is owed. The filed redFirst is 'not-attempted' with a basis about mutations of the first design (index_drift, g1i); no mutation of render_index or of gi1-gi3 in the second design was reported or handed, so gi1-gi3 were never shown red by anything I was given.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Gate `python3 tools/sweep-selftests.py tests/test__deps.py` (a literal command) selects tests/test__deps.py. I read the diff's own region (gi1-gi3, tests/test__deps.py:1081-1122), g1 near :493-500 and the real-tree line-count check in gi3; none passes with the behaviour removed (gi1 compares the exact text, gi2 changes one edge). I did not read the rest of the suite, which is thousands of lines; so none-found covers only what was read."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

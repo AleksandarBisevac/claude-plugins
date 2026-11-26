@@ -470,6 +470,21 @@ L9:
   verify-invariants -> _claude_home, _invariants, _manifest_io, _output
 ```
 
+
+---
+
+## 1b. Module index (printed, not committed)
+
+The facts about a module that its source states by itself - its layer, whether it is an entry
+point (a hyphenated name) or an importable helper, whether `tests/` holds the suite it owes, and
+every module that imports or runtime-loads it - are not kept in this guide. They change whenever
+any module's imports change, so a committed copy would oblige every such task to edit this file;
+the map above already costs that, and a second block would double it. Print them when you need
+them: `python3 tools/lints/_deps.py --render-index`. The hand-written rationale under each
+module's own heading in §2 stays, and a task that changes what it says still declares this file.
+Not derived: a module's public names (a line cannot hold them) and an entry's usage line (a
+string the script builds when it runs).
+
 ---
 
 ## 2. File-by-file logic
