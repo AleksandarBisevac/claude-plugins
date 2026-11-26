@@ -8016,7 +8016,7 @@ def _follower_wave_cases(check):
         elif all(t.get("status") == "done" for t in tasks_of(mpath).values()):
             break
     task = tasks_of(mpath)["P1.2"]
-    notes = " ".join(str(n) for n in task.get("notes") or [])
+    notes = " ".join(_notes(mpath, "P1.2"))
     said = "\n".join(prints)
     check("a hand-edited follower owed by a lint is widened with the lint's record "
           "as its basis, and no undeclared-change decision is printed: %r"
@@ -8036,7 +8036,7 @@ def _follower_map_cases(check):
         return
     root, mpath, gen, fresh, prints = _drive_follower_map(M, "followmap")
     task = tasks_of(mpath)["P1.2"]
-    notes = " ".join(str(n) for n in task.get("notes") or [])
+    notes = " ".join(_notes(mpath, "P1.2"))
     said = "\n".join(prints)
     held = _git_out(root, "show", "%s:%s" % (task.get("commit") or "HEAD", gen))
     check("a wave member that regenerated a generated file itself, with its gate "
@@ -8256,7 +8256,7 @@ def _follower_shot_cases(check):
     root, mpath, tree = _shot_owner_wave(M, "followshotwave")
     prints, _followed, ran = _drive_shot_wave(M, root, mpath, tree, True)
     task = tasks_of(mpath)["P1.2"]
-    notes = " ".join(str(n) for n in task.get("notes") or [])
+    notes = " ".join(_notes(mpath, "P1.2"))
     check("fm2 an undeclared path whose owner's recipe needs a browser is never run "
           "by the drive: it prints the orchestrator the follow, and the next drive "
           "widens what that run wrote and closes, with no undeclared-change "
