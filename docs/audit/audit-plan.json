@@ -1082,7 +1082,7 @@
     {
       "id": "P169",
       "title": "A run's record lives in the plan and in git",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P169.json"
     }
   ],

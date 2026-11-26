@@ -1,7 +1,7 @@
 {
   "id": "P169",
   "title": "A run's record lives in the plan and in git",
-  "status": "in_progress",
+  "status": "done",
   "description": "The gate runner appends every run to an evidence ledger beside the plan, and the readers that grew on it are no longer only a cache of a verdict: the time per task, the repeat of a step whose inputs did not change, the drive's reading of a run it launched in the background, the reading of a red against the base, and the binding of a commit to the run that graded it all read ledger rows. A design that only says the ledger's writes go away would take those with it. So the record moves first, the readers follow through one seam, and the writes stop last, each step with a green gate behind it. The plan and git are the two stores that remain; a row already written stays readable as frozen history and is never migrated. The properties are written before the code: after any number of recorded runs a subject holds exactly one record, the last one printed; a run that exits 0 or 1 has its record in the shard and a record that could not be written is exit 3 naming the log, never exit 0; the pointer is derivable from the record; a decision read from the record equals the run's own output for green and red with no commit made; a recorded run changes no byte inside the content identity; a plan and ledger written by the previous release answer the same after the upgrade, and with the ledger deleted the gate conditions still answer the same. Out of scope here and next in line: the drive's own state, the filed returns, the brief protocol and the subagent writer.",
   "desiredOutcome": "A task's verdict is in its commit's Audit-Task, Audit-Gate and Audit-Run trailers, the newest run of every task and phase is one record in its own shard, a phase's CI run is in its shard, every reader of recorded runs goes through one reader over those records and the frozen older rows, the base is measured only when a red could predate the task, and no evidence row, per-call journal row or preimage file is written under the default configuration.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "987174f6e7c250ad838f56187ae724785f92ec5a",
   "branch": "audit/p169-a-run-s-record-lives-in-the-pl",
-  "mergedAt": null,
+  "mergedAt": "2026-11-26T05:49:57Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -12923,5 +12923,6 @@
     "runId": "2026-11-26T05:33:37Z.35f08e",
     "status": "passed",
     "at": "2026-11-26T05:33:37Z"
-  }
+  },
+  "mergedHead": "9f606eda5b8edd5982beec87a6a615bd6df37797"
 }
