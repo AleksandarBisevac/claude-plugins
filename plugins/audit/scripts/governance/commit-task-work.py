@@ -28,8 +28,12 @@ so the two cannot disagree about what "refused" means.
 
 WHAT A TASK COMMIT STAGES. Exactly the four things step 4c allows, each named in
 the output: the task's own `files`, the phase's manifest file (the shard when
-sharded), the journal directory and the evidence directory - and, beside the
-shard, the part of the manifest INDEX the phase owns and nothing else of it.
+sharded), the journal directory and the filed returns' folder of the evidence
+directory (`_evidence_io.returns_dir`) - and, beside the shard, the part of the
+manifest INDEX the phase owns and nothing else of it. The rest of the evidence
+directory holds only the rows earlier releases wrote; no run writes there, so
+nothing of it is staged and `_invariants.commit_scope` grades a commit that
+carries it.
 
 THE INDEX RIDES WITH THE SHARD IT NAMES - ONE INVARIANT (`_invariants.owned_index`).
 The part of the index a phase owns - its tasks' fileIndex rows, the bug links its
@@ -52,7 +56,7 @@ function from git afterwards. A row the working index lacks as well is refused,
 naming `audit-task.py reindex`: the working plan itself does not validate there.
 
 WHAT A STATE COMMIT STAGES. The phase's manifest file, the journal directory, the
-evidence directory and the index - never a task's `files`, which is the whole
+filed returns' folder and the index - never a task's `files`, which is the whole
 design: a failed task's code is not committed, and a verb that could sweep it in
 on the way to preserving a record would be a commit nobody reviewed. The index
 is carried WHOLE (the working index, its owned part derived) when every
@@ -215,7 +219,7 @@ _output.install_path()
 
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 import _commit_trail  # noqa: E402  (the verdict trailers a task commit carries, written as they are read)
-import _evidence_io  # noqa: E402  (where the evidence ledger lives)
+import _evidence_io  # noqa: E402  (where the evidence directory and its returns' folder live)
 import _filed_returns  # noqa: E402  (the executor's filed return, for its `claims`)
 import _invariants  # noqa: E402  (the git root, the manifest file pair, the under-test)
 import _journal_io  # noqa: E402  (where the trail lives, and the append)
@@ -256,20 +260,19 @@ DEFAULT_SUBJECT = "the task's own files, and the record beside them"
 # being different things to know.
 MANIFEST_LABEL = "the phase's manifest file"
 JOURNAL_LABEL = "the journal directory"
-EVIDENCE_LABEL = "the evidence directory"
+RETURNS_LABEL = "the filed returns' folder"
 DECLARED_LABEL = "the task's declared file"
 
 
 def absent_is_normal(label, config):
     """True when the record directory `label` names being absent is no skip
     worth a line. A journal that is on is created by the row the commit
-    writes and carried from there. An evidence directory holds only rows an
-    earlier release wrote or a `--full` run appended - a task or phase run
-    keeps its record in the plan - so a project that never had one is the
-    ordinary state, not a degraded commit."""
+    writes and carried from there. The filed returns' folder exists once an
+    agent's return is filed, and a task run by hand files none, so a project
+    without one is the ordinary state, not a degraded commit."""
     if label == JOURNAL_LABEL:
         return _journal_io.enabled(config)
-    return label == EVIDENCE_LABEL
+    return label == RETURNS_LABEL
 
 # The action the trail records for this commit. LOCAL to this file, unlike
 # `_invariants.ACTION_STATE_COMMITTED` and `ACTION_INDEX_COMMITTED`, and the
@@ -387,7 +390,7 @@ def stage_targets(manifest, phase, task, manifest_path, project, git_root,
                                       head_index=head_index, config=config)
     record_abs = ((MANIFEST_LABEL, phase_file_abs),
                   (JOURNAL_LABEL, _journal_io.journal_dir(project, config)),
-                  (EVIDENCE_LABEL, _evidence_io.evidence_dir(project, config)))
+                  (RETURNS_LABEL, _evidence_io.returns_dir(project, config)))
     record_rels = []
     for label, absolute in record_abs:
         rel = _invariants._rel(absolute, git_root)
@@ -562,7 +565,7 @@ def foreign_refusal(foreign, targets):
                 "rest" % (index_rel,))
     return ("the git index holds paths this commit may not carry: %s. A task "
             "commit carries that task's declared `files`, its phase's manifest "
-            "file, the journal and the evidence - and refuses rather than "
+            "file, the journal and the filed returns - and refuses rather than "
             "sweeping anything else in. Unstage them, or declare them on the "
             "task with `/audit:task scope <taskId> --files ...` if they really "
             "are its work - and a widened scope is a new declared scope, so "
@@ -1060,8 +1063,8 @@ def build_parser():
                         help="the task to commit, or with --state the phase")
     parser.add_argument("--state", action="store_true",
                         help="commit the phase's record - its manifest file, "
-                             "the index, the journal and the evidence - and "
-                             "never a task's files")
+                             "the index, the journal and the filed returns - "
+                             "and never a task's files")
     parser.add_argument("--takeover", action="store_true",
                         help="with --state: take the index lock from a holder "
                              "a human has confirmed is dead")
@@ -1410,7 +1413,7 @@ STATE_SUBJECT_LEAD = "phase"
 
 # The do-nothing answer of a state commit.
 STATE_NOTHING_UNCOMMITTED = ("nothing uncommitted: the phase's manifest file, "
-                             "the index, the journal and the evidence are "
+                             "the index, the journal and the filed returns are "
                              "already in git. No commit was made, because an "
                              "empty one records nothing and buries the ones "
                              "that do.")
@@ -1429,21 +1432,22 @@ def state_header(phase_id, subject):
 def state_targets(phase, manifest_path, project, git_root, config=None):
     """`{"paths", "skipped", "kinds"}` - a state commit's allow-list for THIS
     phase, resolved, before the index: the phase's manifest file, the journal
-    directory and the evidence directory, each existing and inside the git root.
+    directory and the filed returns' folder, each existing and inside the git
+    root.
 
     THE LIST IS THE SAFETY PROPERTY. Nothing downstream widens it but the index
     (`state_index`) and the row naming the commit - so a file a task owns has no
     route into the commit even while it sits modified in the working tree.
     A skip is REPORTED and never silent. A record directory whose absence is
     ordinary is not a skip (`absent_is_normal`): a journal that is on, which
-    the row this commit writes creates, and an evidence directory, which no
-    task or phase run writes.
+    the row this commit writes creates, and a returns' folder, which only a
+    filed return creates.
     """
     config = _journal_io.load_config(project) if config is None else config
     _index_abs, phase_file_abs = _invariants.manifest_files(manifest_path, phase)
     wanted = [(MANIFEST_LABEL, phase_file_abs),
               (JOURNAL_LABEL, _journal_io.journal_dir(project, config)),
-              (EVIDENCE_LABEL, _evidence_io.evidence_dir(project, config))]
+              (RETURNS_LABEL, _evidence_io.returns_dir(project, config))]
     paths, skipped = [], []
     for label, absolute in wanted:
         rel = _invariants._rel(absolute, git_root)
@@ -1636,7 +1640,8 @@ def record_state_row(project, phase_id, nonce, config=None):
     WRITTEN BEFORE THE COMMIT AND CARRIED BY IT, keyed by `nonce`, the commit's
     `Audit-Row` trailer - the SHA does not exist yet.
 
-    THE TARGET IS THE EVIDENCE DIRECTORY AND DELIBERATELY NOT THE PHASE'S
+    THE TARGET IS THE FILED RETURNS' FOLDER, the record directory the commit
+    stages beside the plan and the journal, AND DELIBERATELY NOT THE PHASE'S
     MANIFEST FILE: `_invariants._recorded_states` reads every row naming that
     file as a WRITE to it, and this row records a commit, not an edit. Redacted
     through `repo_relative_or_token`, so an evidence directory configured
@@ -1645,7 +1650,7 @@ def record_state_row(project, phase_id, nonce, config=None):
     """
     config = _journal_io.load_config(project) if config is None else config
     target = _journal_io.repo_relative_or_token(
-        project, _evidence_io.evidence_dir(project, config))
+        project, _evidence_io.returns_dir(project, config))
     return _journal_io.append_from_cli(project, {
         "action": _invariants.ACTION_STATE_COMMITTED,
         "actor": {"sessionId": _journal_io.env_session_id(),

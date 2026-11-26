@@ -314,7 +314,7 @@ verb writes and refuses, and what the run commands leave behind, is
         paths the step's name lists. The base tree is built at the red run's own
         recorded head, and HEAD is asked only whether it still holds that code: a
         HEAD that moved only inside the paths the recorder writes (the plan, the
-        journal, the evidence - `_evidence_io.recorded_paths`), as the drive's own
+        journal, the filed returns - `_evidence_io.recorded_paths`), as the drive's own
         record commit of the red does, is measured; one that moved anything else,
         or that git cannot compare with it, is not (`code_moved`).
         A red whose base commit fails every case it fails stops as
@@ -432,8 +432,8 @@ verb writes and refuses, and what the run commands leave behind, is
      (`_tree_stamp.DIRTY_PATHS_LIMIT`), and over the bound the line says the path cannot be
      named rather than naming some. The paths this plugin's own recorder writes
      (`_evidence_io.recorded_paths`, derived again from the manifest the stamp stores) are left
-     out of `content`, so your manifest and journal writes between take and compare do not stale
-     a stamp. A version-1 stamp carries no `content` field: it is graded on the other three and
+     out of `content`, so your manifest and journal writes and a return filed between take and
+     compare do not stale a stamp; the rest of the evidence directory is in `content`. A version-1 stamp carries no `content` field: it is graded on the other three and
      the comparison says that a rewrite of an undeclared dirty file was not compared. Every field
      prints its own limit (`says:`) beside it. **A filed return carries a stamp, because
      `file-return` refuses one without it**; a return handed back without filing is checked
@@ -717,7 +717,7 @@ verb writes and refuses, and what the run commands leave behind, is
             <manifestPath> <taskId> --project <projectDir> --subject "<short subject>"
         ```
         It stages the task's own `files` and the changed paths its own honoured `outputs` patterns
-        cover, the phase's manifest file, the journal and the evidence — and, when the shard moves
+        cover, the phase's manifest file, the journal and the filed returns — and, when the shard moves
         something the phase owns of the manifest index (its tasks' `fileIndex` rows, a bug link,
         its stub), the parent's index with that part derived from the shard, printing an
         `index: carried` line saying why (*The index rides with the shard it names*, below) —
@@ -840,24 +840,28 @@ verb writes and refuses, and what the run commands leave behind, is
           python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/commit-task-work.py" \
               <manifestPath> <phaseId> --state
           ```
-          which commits the phase's manifest file, the index, the journal and the evidence under
-          the index lock, and never a task's files; it carries the whole index only when every
+          which commits the phase's manifest file, the index, the journal and the filed returns
+          under the index lock, and never a task's files; it carries the whole index only when every
           reference in it is held by a shard as the commit leaves them, and otherwise names what it
           left and which shard to commit first. A hand commit that sweeps up the index without the
           shard it names leaves the manifest invalid **at that commit**, because the index then
           names a task the checked-out shard does not carry. `/audit:task add`, `add-phase`,
           `scope`, `retarget`, `cancel`, `start` and `done` each print this same pointer
           themselves, the moment a write of theirs leaves the index dirty.
-        - **The journal and the evidence travel in this commit, and the script stages both** —
-          `journal.dir` (default `<manifest dir>/journal`) and `evidence.dir` (default
-          `<manifest dir>/evidence`), each only if it exists inside `<gitRoot>`, and each reported
-          as skipped when it does not. The reason is worth knowing even though you no longer type
-          it: the audit trail records the manifest writes this commit is carrying, and a record
-          committed a week later cannot be checked against the change it describes; the rows this
-          commit's `testEvidence` pointers name have to travel with the pointers, or a clone
-          receives a plan referring to runs it does not have. `verify-invariants.py`'s
-          `evidence-committed` is what says so afterwards. One file per writer per month, so
-          parallel phases never conflict on either — one writer on two BRANCHES still can, and
+        - **The journal and the filed returns travel in this commit, and the script stages
+          both** — `journal.dir` (default `<manifest dir>/journal`) and the `returns/` folder of
+          `evidence.dir` (default `<manifest dir>/evidence`), each only if it exists inside
+          `<gitRoot>`; a missing journal that is off is reported as skipped. The reason is worth
+          knowing even though you no longer type it: the audit trail records the manifest writes
+          this commit is carrying, and a record committed a week later cannot be checked against
+          the change it describes. **No evidence row is written or staged**: the run this
+          commit's `testEvidence` pointer names is the task's record in the shard, which this
+          commit carries. The rest of the evidence directory holds only rows an earlier release
+          wrote, and `verify-invariants.py`'s `commit-scope` reports a task commit carrying
+          anything there other than rows appended the way that release appended them;
+          `evidence-committed` still checks a pointer at such a row. The journal and those ledgers
+          are one file per writer per month, so parallel phases never conflict on either — one
+          writer on two BRANCHES still can, and
           `audit-journal.py merge --file <journal or evidence file>` is what resolves that without
           recomputing anything a row says: one implementation for both records, the same
           refusals, and a same-second tie ordered by content only when its rows touch different

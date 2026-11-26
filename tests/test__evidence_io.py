@@ -10845,6 +10845,11 @@ _BB_ENTRIES = {
     "plugins/audit/scripts/manifest/set-priority.py": (
         "listed through an import whose readers it never calls: it sets a "
         "phase's priority"),
+    "tools/check-example-ledgers.py": (
+        "holds the pointers every manifest this repository keeps caches to "
+        "the runs the plans record and the frozen ledger rows hold, over "
+        "this repository's own tree rather than a project's plan; its own "
+        "suite's el31-el33 read a fixture's record"),
     "tools/gate-parity.py": (
         "reads this repository's workflow and gate slices, not a plan's "
         "runs"),

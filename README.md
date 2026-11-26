@@ -18,9 +18,9 @@ is the thing you approve once and the model is held to afterward.
 
 - **A plan a tool refuses to let you leave.** Once a phase is running, an edit
   outside its tasks is denied before the write lands, not merely flagged after.
-- **An evidence record that survives the session.** Every gate run is written to
-  a ledger committed beside the plan, so "the tests passed" outlives the chat
-  that made the claim.
+- **An evidence record that survives the session.** Every gate run is recorded
+  in the plan, which is committed with the work, so "the tests passed" outlives
+  the chat that made the claim.
 - **Guards that see intent, not I/O.** Once a phase is running, a write no task
   covers is refused by the resolved path it writes to. A secret-file read is
   judged the way every guard here works, at every tier — by matching the tool
@@ -73,7 +73,7 @@ A live, interactive audit report (search, filter, collapsible phases, Save-as-PD
 
 | Plugin | What it does |
 |---|---|
-| [**audit**](plugins/audit/README.md) | Manifest-driven, model-aware, test-driven audit/fix pipeline: `/audit:status`, `/audit:run`, `/audit:phase` (and siblings) execute phases/tasks from a schema-validated JSON manifest (branch-per-phase, per-task model + skills, red-first TDD bug fixes, gated sign-off, every gate run written to a committed evidence ledger, each task's wall time recorded by stage and printed by `/audit:status`), `/audit:init` generates the manifest from a multi-agent codebase audit, `/audit:layout` switches the manifest between one file and one file per phase — the sharded shape gives **parallel phases across git worktrees** (fewer tokens per run, conflict-free merges) and the command goes back the other way too, a `/audit:panel` control panel manages config + composition in the browser, and guard hooks enforce plan-first development, secret safety and a TDD nudge. |
+| [**audit**](plugins/audit/README.md) | Manifest-driven, model-aware, test-driven audit/fix pipeline: `/audit:status`, `/audit:run`, `/audit:phase` (and siblings) execute phases/tasks from a schema-validated JSON manifest (branch-per-phase, per-task model + skills, red-first TDD bug fixes, gated sign-off, every gate run recorded in the committed plan, each task's wall time recorded by stage and printed by `/audit:status`), `/audit:init` generates the manifest from a multi-agent codebase audit, `/audit:layout` switches the manifest between one file and one file per phase — the sharded shape gives **parallel phases across git worktrees** (fewer tokens per run, conflict-free merges) and the command goes back the other way too, a `/audit:panel` control panel manages config + composition in the browser, and guard hooks enforce plan-first development, secret safety and a TDD nudge. |
 
 ## What is enforced and what is followed
 
@@ -113,7 +113,7 @@ checks at all is policy, and that is what the right column is.
 | Source changed with no test — nudged | Every gate run goes through the recorder, not by hand |
 | Explorer cannot write, reviewer cannot edit, executor has no web tools |  |
 | The manifest — referentially validated, by exit code |  |
-| *(after)* A task commit staged that task's files, its phase's shard, the journal and the evidence record — never the index |  |
+| *(after)* A task commit staged that task's files, its phase's shard, the journal and the filed returns — never the index |  |
 | *(after)* An audit-state commit carried the record of a run and none of the work |  |
 | *(after)* A committed `testEvidence` pointer names a run the repository actually holds |  |
 | *(after)* No `push` reached a remote from the phase branch |  |

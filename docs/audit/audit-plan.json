@@ -2186,7 +2186,8 @@
       "P169.33-6l3",
       "P169.34-6l3",
       "P169.37-6l3",
-      "P169.41-6l3"
+      "P169.41-6l3",
+      "P169.38-6l3"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2219,7 +2220,8 @@
       "P148.15-xpz",
       "P155.6",
       "P167.5",
-      "P168.4"
+      "P168.4",
+      "P169.38-6l3"
     ],
     "SECURITY.md": [
       "P2.2",
@@ -2296,7 +2298,8 @@
       "P169.9",
       "P169.27-6l3",
       "P169.28-6l3",
-      "P169.32-6l3"
+      "P169.32-6l3",
+      "P169.38-6l3"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -2744,7 +2747,8 @@
       "P169.15-6l3",
       "P169.6",
       "P169.37-6l3",
-      "P169.41-6l3"
+      "P169.41-6l3",
+      "P169.38-6l3"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -3214,7 +3218,8 @@
       "P153.10-34e",
       "P155.6",
       "P156.4",
-      "P168.5"
+      "P168.5",
+      "P169.38-6l3"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -3764,7 +3769,8 @@
       "P169.22-6l3",
       "P169.23-6l3",
       "P169.24-6l3",
-      "P169.37-6l3"
+      "P169.37-6l3",
+      "P169.38-6l3"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -3969,7 +3975,8 @@
       "P166.1",
       "P166.2",
       "P166.3-b8m",
-      "P169.37-6l3"
+      "P169.37-6l3",
+      "P169.38-6l3"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -4859,7 +4866,8 @@
       "P155.11",
       "P155.32-gfj",
       "P156.4",
-      "P169.2"
+      "P169.2",
+      "P169.38-6l3"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -4877,7 +4885,8 @@
       "P131.1",
       "P131.2",
       "P142.1",
-      "P143.10-z9j"
+      "P143.10-z9j",
+      "P169.38-6l3"
     ],
     "plugins/audit/scripts/governance/audit-journal.py": [
       "BF1.1",
@@ -5176,7 +5185,8 @@
       "P169.27-6l3",
       "P169.28-6l3",
       "P169.37-6l3",
-      "P169.41-6l3"
+      "P169.41-6l3",
+      "P169.38-6l3"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -5853,7 +5863,8 @@
       "P169.16-6l3",
       "P169.15-6l3",
       "P169.26-6l3",
-      "P169.41-6l3"
+      "P169.41-6l3",
+      "P169.38-6l3"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -9123,7 +9134,8 @@
       "P156.21-3st",
       "P156.22-3st",
       "P169.8",
-      "P169.40-6l3"
+      "P169.40-6l3",
+      "P169.38-6l3"
     ],
     "tools/check-example-ledgers.py: a committed row whose status is not a schema enum member is a finding, and so is a passed verdict carrying a mutated tree": [
       "P32.10"
@@ -11676,7 +11688,8 @@
       "P169.24-6l3",
       "P169.26-6l3",
       "P169.28-6l3",
-      "P169.37-6l3"
+      "P169.37-6l3",
+      "P169.38-6l3"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11960,7 +11973,8 @@
       "P159.1",
       "P159.3-pue",
       "P169.9",
-      "P169.15-6l3"
+      "P169.15-6l3",
+      "P169.38-6l3"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -13813,7 +13827,8 @@
       "P169.15-6l3",
       "P169.19-6l3",
       "P169.26-6l3",
-      "P169.41-6l3"
+      "P169.41-6l3",
+      "P169.38-6l3"
     ],
     "tests/test_audit_usage.py": [
       "P131.1",
@@ -14039,7 +14054,8 @@
       "P169.26-6l3",
       "P169.28-6l3",
       "P169.37-6l3",
-      "P169.41-6l3"
+      "P169.41-6l3",
+      "P169.38-6l3"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -14137,7 +14153,8 @@
       "P143.8-z9j",
       "P155.20-gfj",
       "P155.34-gfj",
-      "P169.18-6l3"
+      "P169.18-6l3",
+      "P169.38-6l3"
     ],
     "tests/test_journal_writes.py": [
       "P131.1",

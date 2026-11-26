@@ -129,7 +129,7 @@ def _write_exact(path, text):
         fh.write(text)
 
 
-# The audit-state fixtures, as one word each. A string rather than five booleans
+# The audit-state fixtures, as one word each. A string rather than a boolean apiece
 # because they are alternatives and never a combination: each names the ONE thing
 # that is different about the audit-state commit this repo carries, and a pair of
 # booleans set together would build a repository no case describes.
@@ -139,7 +139,9 @@ def _write_exact(path, text):
 #   index         ...and the manifest INDEX, which is its own separate breach
 #   unresolvable  a row naming a commit that is not in this clone (a gap)
 #   unnamed       a row claiming a commit and not saying which (a gap)
-AUDIT_STATE_KINDS = ("clean", "rogue", "index", "unresolvable", "unnamed")
+#   evidence-other ...and a file under the evidence directory that is no row
+AUDIT_STATE_KINDS = ("clean", "rogue", "index", "unresolvable", "unnamed",
+                     "evidence-other")
 
 # The manifest-index fixtures, the same way and for the same reason. Each names
 # the ONE thing that is different about the index commit this repo carries:
@@ -168,6 +170,25 @@ def _evidence_file(audit, status):
         {"v": 1, "runId": FAILED_RUN_ID, "ts": "2026-08-20T10:00:00Z",
          "scope": "task", "taskId": "P1.2", "phaseId": "P1", "status": status,
          "failed": ["test"] if status != "passed" else []}) + "\n")
+    return path
+
+
+# Where `audit-task.py file-return` lays an executor's return for P1.2's start,
+# below the git root: `<evidence dir>/returns/<taskId>/<start>.<role>.json`.
+FILED_RETURN_REL = ("docs/audit/evidence/returns/P1.2/"
+                    "20260820T100000Z.executor.json")
+
+
+def _filed_return(audit, status):
+    """The return a red attempt of P1.2 filed, saying `status`, on one line;
+    returns its path. The record a failed run leaves under the evidence
+    directory now: no run writes a ledger row, and a filed return is what the
+    task and state commits carry from there."""
+    path = os.path.join(os.path.dirname(os.path.dirname(audit)),
+                        *FILED_RETURN_REL.split("/"))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    _write(path, json.dumps({"taskId": "P1.2", "runId": FAILED_RUN_ID,
+                             "status": status}) + "\n")
     return path
 
 
@@ -220,6 +241,11 @@ def _audit_state(root, audit, index_path, kind, with_evidence=True):
         index["meta"]["title"] = "touched by the audit-state commit"
         _write_json(index_path, index)
         staged.append("docs/audit/audit-plan.json")
+    if kind == "evidence-other":
+        # Under the evidence directory and not a row: nothing any release's
+        # recorder wrote, so no state commit may carry it either.
+        _write(os.path.join(audit, "evidence", "notes.txt"), "a note\n")
+        staged.append("docs/audit/evidence/notes.txt")
     _git(root, "add", *staged)
     # The spelling `commit-task-work.py --state` really writes: the fixed literal
     # is the SCOPE, so the type is one commitlint accepts. Nothing here parses the
@@ -347,6 +373,8 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
     _write_json(shard_path, shard)
     _write_json(os.path.join(audit, "phases", "P2.json"), other)
     _write(os.path.join(root, "README.md"), "fixture\n")
+    if evidence_in_commit == "rewrite":
+        _evidence_file(audit, "failed")
 
     _git(root, "init", "-q")
     _git(root, "symbolic-ref", "HEAD", "refs/heads/" + PARENT)
@@ -391,10 +419,49 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
         os.makedirs(os.path.join(audit, "journal"), exist_ok=True)
         _write(os.path.join(audit, "journal", "2026-08-fixture.jsonl"), "{}\n")
         staged.append("docs/audit/journal/2026-08-fixture.jsonl")
-    if evidence_in_commit:
+    if evidence_in_commit in (True, "rewrite"):
+        # WHAT THE PREVIOUS RELEASE'S RECORDER LEFT: a row appended to a ledger
+        # file, staged by its task commit. "rewrite" changes the row the base
+        # commit already holds instead, which no release's writer ever did.
+        if evidence_in_commit == "rewrite":
+            # The held row's status flipped to a word of the same length, and a
+            # well-formed row appended after it, so the file's tail past the
+            # base's length IS a row: a reading that only looked at what
+            # follows the old length, without asking that the old bytes are
+            # still there, would call this commit an append.
+            path = os.path.join(audit, "evidence", EVIDENCE_NAME)
+            with open(path) as fh:
+                held = fh.read()
+            _write(path, held.replace('"status": "failed"', '"status": "passed"')
+                   + json.dumps({"v": 1, "runId": "appended-after",
+                                 "status": "passed"}) + "\n")
+        else:
+            path = _evidence_file(audit, "failed")
+        staged.append("docs/audit/evidence/" + os.path.basename(path))
+    if evidence_in_commit == "rows-not-ledger":
+        # Lines that ARE rows carrying a runId, in a file no reader of the
+        # ledger would ever read as one: a ledger file is a `.jsonl` file in
+        # the evidence directory itself (`_evidence_io.ledger_files`), and no
+        # release's recorder wrote anywhere else there.
         os.makedirs(os.path.join(audit, "evidence"), exist_ok=True)
-        _write(os.path.join(audit, "evidence", "2026-08-fixture.jsonl"), "{}\n")
-        staged.append("docs/audit/evidence/2026-08-fixture.jsonl")
+        _write(os.path.join(audit, "evidence", "notes.md"),
+               json.dumps({"v": 1, "runId": "not-a-ledger",
+                           "status": "passed"}) + "\n")
+        staged.append("docs/audit/evidence/notes.md")
+    if evidence_in_commit == "other":
+        # Under the evidence directory and not a row: no writer of any release
+        # puts this there, so no task commit may carry it.
+        os.makedirs(os.path.join(audit, "evidence"), exist_ok=True)
+        _write(os.path.join(audit, "evidence", "notes.txt"), "a note\n")
+        staged.append("docs/audit/evidence/notes.txt")
+    if evidence_in_commit == "returns":
+        # A filed return, which the commit verb carries as a record.
+        os.makedirs(os.path.join(audit, "evidence", "returns", "P1.1"))
+        _write_json(os.path.join(audit, "evidence", "returns", "P1.1",
+                                 "20260820T100000Z.executor.json"),
+                    {"gates": {}})
+        staged.append("docs/audit/evidence/returns/P1.1/"
+                      "20260820T100000Z.executor.json")
     if evidence_near_miss:
         # A SIBLING whose name merely starts the same way. The allow-list arm is a
         # prefix test, and a prefix test written without the separator swallows it.
@@ -511,11 +578,12 @@ def build(root, rogue=False, index_in_task=False, haiku=False, bad_base=False,
                              % (index_commit, INDEX_COMMIT_KINDS))
         index_sha = _index_commit(root, index_path, index_commit)
     if leave_dirty:
-        # WHAT A FAILED RUN LEAVES: a red gate's evidence and the code it went red
-        # on, both uncommitted. The command under test has to carry the first and
-        # leave the second exactly where it is, so a fixture with only one of them
-        # could not tell a correct run from one that stages everything it sees.
-        _evidence_file(audit, "failed")
+        # WHAT A FAILED RUN LEAVES: the return its attempt filed and the code it
+        # went red on, both uncommitted. The command under test has to carry the
+        # first and leave the second exactly where it is, so a fixture with only
+        # one of them could not tell a correct run from one that stages
+        # everything it sees.
+        _filed_return(audit, "failed")
         _write(os.path.join(root, "src", "a.py"), "a = 2  # the fix that failed\n")
 
     if forced:
@@ -754,11 +822,56 @@ def _cases(check):
 
         evidenced = repos.get(evidence_in_commit=True)
         scope = _check(_phase_answer(evidenced), "commit-scope")
-        check("iv40 ...and so is the EVIDENCE directory, for the same reason one "
-              "noun over: a task commit stages it so a failed run's record "
-              "reaches git at all, and an allow-list that did not know it would "
-              "report every correct run as a breach: %r" % (scope["breaches"],),
-              scope["breaches"] == [] and scope["verdict"] == M.CLEAN)
+        check("iv40 A COMMIT OF THE PREVIOUS RELEASE IS READ AS BEFORE: a task "
+              "commit that appended a run's row to a ledger file under the "
+              "evidence directory - what that release's recorder wrote and its "
+              "commit verb staged - is examined and clean: %r"
+              % ((scope["breaches"], scope["examined"]),),
+              scope["breaches"] == [] and scope["verdict"] == M.CLEAN
+              and scope["examined"] == 2)
+
+        other = repos.get(evidence_in_commit="other")
+        scope = _check(_phase_answer(other), "commit-scope")
+        check("iv40a NO TASK COMMIT MAY CARRY A PATH UNDER THE EVIDENCE "
+              "DIRECTORY beyond those rows: a file there that is no appended row "
+              "is a breach naming it, since no run writes there any more and the "
+              "commit verb no longer stages the directory: %r"
+              % (scope["breaches"],),
+              len(scope["breaches"]) == 1
+              and "docs/audit/evidence/notes.txt" in scope["breaches"][0]
+              and scope["verdict"] == M.BREACH)
+
+        not_ledger = repos.get(evidence_in_commit="rows-not-ledger")
+        scope = _check(_phase_answer(not_ledger), "commit-scope")
+        check("iv40d ...and so is a file that is NO LEDGER FILE, though every "
+              "line of it is a row carrying a runId: a ledger is a `.jsonl` "
+              "file in the evidence directory itself, so only an append to one "
+              "is what the previous release's writer did: %r"
+              % (scope["breaches"],),
+              len(scope["breaches"]) == 1
+              and "docs/audit/evidence/notes.md" in scope["breaches"][0]
+              and scope["verdict"] == M.BREACH)
+
+        rewritten = repos.get(evidence_in_commit="rewrite")
+        scope = _check(_phase_answer(rewritten), "commit-scope")
+        check("iv40b ...and a commit that REWRITES a row an earlier commit "
+              "holds is one too: rows already written are never rewritten, so "
+              "no release's writer made that change and it is not read as the "
+              "previous release's: %r" % (scope["breaches"],),
+              len(scope["breaches"]) == 1
+              and ("docs/audit/evidence/" + EVIDENCE_NAME)
+              in scope["breaches"][0]
+              and scope["verdict"] == M.BREACH)
+
+        returned = repos.get(evidence_in_commit="returns")
+        scope = _check(_phase_answer(returned), "commit-scope")
+        check("iv40c ...while a FILED RETURN in the evidence directory's "
+              "returns folder is a record a task commit carries, examined and "
+              "clean - the over-fire direction of iv40a, which a rule refusing "
+              "the whole directory would turn red: %r"
+              % ((scope["breaches"], scope["examined"]),),
+              scope["breaches"] == [] and scope["verdict"] == M.CLEAN
+              and scope["examined"] == 2)
 
         nearby = repos.get(evidence_near_miss=True)
         scope = _check(_phase_answer(nearby), "commit-scope")
@@ -831,6 +944,17 @@ def _cases(check):
               % ((state["breaches"], state["examined"]),),
               state["breaches"] == [] and state["examined"] == 1
               and state["verdict"] == M.CLEAN)
+
+        noted_state = repos.get(audit_state="evidence-other")
+        state = _check(_phase_answer(noted_state), "audit-state-scope")
+        check("iv46b ...and a file under the evidence directory that is no "
+              "appended row is a breach of an audit-state commit as it is of a "
+              "task commit (iv40a), while the row beside it, the previous "
+              "release's record of the red run (iv44), is not: %r"
+              % (state["breaches"],),
+              len(state["breaches"]) == 1
+              and "docs/audit/evidence/notes.txt" in state["breaches"][0]
+              and state["verdict"] == M.BREACH and state["examined"] == 1)
 
         gone = repos.get(audit_state="unresolvable")
         state = _check(_phase_answer(gone), "audit-state-scope")
@@ -2200,9 +2324,9 @@ def _landing_cases(check):
 
 # --- which paths are records, asked of every caller ------------------------------
 RECORD_CLAUSE = ("one record-path definition - the index, every phase file the "
-                 "index names, the journal and the evidence directories, and "
-                 "anything under them - answers audit-task, commit-task-work and "
-                 "integrate-task alike")
+                 "index names, the journal directory and the filed returns' "
+                 "folder, and anything under them - answers audit-task, "
+                 "commit-task-work and integrate-task alike")
 
 
 def _guarded(fn, *args, **kwargs):
@@ -2245,15 +2369,17 @@ def _record_rel_cases(check):
         rel = lambda p: _output.posix_rel(p, root)
         journal = rel(_journal_io.journal_dir(root, config))
         evidence = rel(_evidence_io.evidence_dir(root, config))
+        returns = rel(_evidence_io.returns_dir(root, config))
         expected = ["docs/audit/audit-plan.json", "docs/audit/phases/P1.json",
                     "docs/audit/phases/P2.json", "docs/audit/phases/P3.json",
-                    journal, evidence]
+                    journal, returns]
         got = _guarded(getattr, M, "record_rels")
         got = _guarded(got, index_path, phase, root, root, head_index=head) \
             if callable(got) else got
         check("%s (the set itself: the index, this phase's shard, the sibling "
               "the working index names, the sibling named only at HEAD, the "
-              "journal and the evidence - each once, nothing else): %r"
+              "journal and the filed returns - each once, nothing else, so no "
+              "ledger file under the evidence directory): %r"
               % (RECORD_CLAUSE, got), got == expected)
         disk_only = expected[:3] + expected[4:]
         via_it = _guarded(IT.record_paths, index, phase, index_path, root, root,
@@ -2287,12 +2413,14 @@ def _record_rel_cases(check):
 
         # The predicate, both directions. The deny twins are a path outside
         # every record, a directory sharing only a prefix with the journal, a
-        # shard no index names, and a name sharing only a prefix with the index.
+        # shard no index names, a name sharing only a prefix with the index, and
+        # a ledger file beside the returns' folder.
         records = expected
         inside = list(expected) + [journal + "/2026-10.x.jsonl",
-                                   evidence + "/2026-10.y.jsonl"]
+                                   returns + "/P1.1/1.executor.json"]
         outside = ["src/a.py", "docs/audit/journal-notes/n.md",
-                   "docs/audit/phases/P9.json", "docs/audit/audit-plan.json.bak"]
+                   "docs/audit/phases/P9.json", "docs/audit/audit-plan.json.bak",
+                   evidence + "/2026-10.y.jsonl"]
         pred = getattr(M, "is_record_path", None)
         said_in = [p for p in inside if callable(pred) and pred(p, records)]
         said_out = [p for p in outside if callable(pred) and pred(p, records)]
@@ -2300,7 +2428,8 @@ def _record_rel_cases(check):
               "directory is a record): %r" % (RECORD_CLAUSE, said_in),
               said_in == inside)
         check("%s (DENY: a non-record path under the repo is not a record, "
-              "nor one sharing only a prefix with a record): %r / %r"
+              "nor one sharing only a prefix with a record, nor a ledger file "
+              "under the evidence directory beside the returns): %r / %r"
               % (RECORD_CLAUSE, pred, said_out),
               callable(pred) and said_out == [])
         DP = _loader.load_script("drive-phase.py", "dp_for_records")

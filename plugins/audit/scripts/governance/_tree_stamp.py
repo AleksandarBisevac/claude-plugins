@@ -241,10 +241,11 @@ def scope_digest(project, owns, excluded=None):
 
     THE SCOPE IS `declared_scope(owns)`, the one normalisation, and a directory
     in it is expanded into the files git lists under it. `excluded` is the
-    paths the caller's own recorder writes - `_evidence_io.recorded_paths` - and
-    they are left out: a gate row is written AFTER this digest is taken and
-    rewrites the manifest it points from, so a task declaring that file would
-    otherwise read as changed by its own recording, for ever.
+    paths the caller's own recorder writes - `_evidence_io.recorded_paths`: the
+    plan, the journal and the filed returns - and they are left out: a gate run
+    is recorded AFTER this digest is taken and rewrites the manifest it is
+    recorded in, so a task declaring that file would otherwise read as changed
+    by its own recording, for ever.
 
     A MISSING FILE HASHES AS NULL RATHER THAN BEING DROPPED. Absent is itself
     evidence about the state under test, and skipping it would let a scope of

@@ -762,6 +762,31 @@ depending on an implementation:
   gate-pattern tally, `propose-gates.py`'s history - sees every row an earlier release wrote
   and, from this release on, one run per task, per phase and for the full gate. A rate read
   off those counts after the upgrade is over fewer runs, not fewer failures,
+- **what binds a verdict is the newest recorded run, a record or an older row — 4.0.0.**
+  `audit-task.py signoff` and `done` and `close-phase.py` bind to the subject's newest recorded
+  run: its record in the plan, or a frozen row an earlier release wrote when that row is newer
+  than any record. `run-test-gate.py --failing-from <runId>` and `audit-task.py couple
+  --basis-run <runId>` resolve a record or an older row by its id, and no superseded run: a
+  subject keeps one record, so the id of a run a newer one replaced resolves to nothing,
+- **the evidence directory is no longer left out of what a run is matched on, or of what a
+  task commit carries — 4.0.0, a major.** The set of paths this plugin's recorders write - the
+  part of a tree the gate's reuse key, a stamp's `content` field and the drive's code-moved
+  check leave out, and the record paths every scoped commit carries - is the plan, its shards,
+  the journal and the filed returns' folder (`returns/` in `evidence.dir`); the rest of the
+  evidence directory is out of it, because no run writes there. So a change to a frozen ledger
+  is a change to the tree: it measures every step of the next run and stales a stamp. A
+  task commit and `--state` stage the returns' folder and not the directory, a ledger file
+  left in the working tree stays there, and `verify-invariants.py`'s `commit-scope` and
+  `audit-state-scope` report a commit carrying a path under the evidence directory outside
+  the returns' folder as a breach - **except** a commit of an earlier release that only
+  appended rows carrying a `runId` to a ledger file, which is read as before. A commit that
+  rewrites a row a ledger file already held is a breach, whatever it appends after it: no
+  release's writer rewrote a row. So the rule is not "no task commit carries a path under
+  the evidence directory": a filed return is a recorder's output, committed with the task it
+  answers for, and the returns' folder is record beside the journal. `close-phase.py`
+  refuses a landing for an ignored returns' folder and leaves its stamp uncommitted beside a
+  pending change in it, and does neither any more for an ignored or changed file elsewhere
+  under the evidence directory,
 - **a full run is the plan's full-run record, and its row is gone — 4.0.0, a major.**
   `run-test-gate.py --full --record` appends no row to `evidence.dir` and anchors nothing in
   the journal: it writes the newest full run of any verdict - red, dirty and uncounted ones
@@ -795,7 +820,8 @@ depending on an implementation:
   name is not one moved from **exit 4 to exit 1**: git answered, and the command is what has
   to change (`--branch`),
 - **a landing whose record directory git ignores — and it changed.** `close-phase.py`
-  with the journal directory or the evidence directory excluded (a `.gitignore` rule, or
+  with the journal directory or the evidence directory (from 4.0.0, its filed returns'
+  folder - the entry above on what a task commit carries) excluded (a `.gitignore` rule, or
   `.git/info/exclude`) while the plan file itself is versioned used to merge the branch and then exit 1 because the stamp commit
   refused the ignored record. It now exits 1 **before** the merge, naming the ignored path and the
   rule to remove, with the branch not merged; the exit code is unchanged and the point it is

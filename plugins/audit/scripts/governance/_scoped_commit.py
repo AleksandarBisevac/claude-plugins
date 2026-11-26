@@ -5,7 +5,7 @@ What a commit-a-narrow-allow-list command is made of, in one place.
 WHY THIS IS A MODULE RATHER THAN A PARAGRAPH IN EACH COMMIT. `commit-task-work.py`
 makes two scoped commits - a task commit (a task's declared files and the records
 beside them) and a `--state` commit (the phase's manifest file, the journal, the
-evidence and the index, never a task's files) - and everything except the list
+filed returns and the index, never a task's files) - and everything except the list
 itself is the same in both: stage EXPLICITLY, each path by what git holds for it
 (`classify`, `stage`), never `git add -A`; read the index back; refuse when
 anything outside the allow-list is in it; commit with the list as the pathspec;

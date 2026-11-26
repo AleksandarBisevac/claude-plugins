@@ -1698,8 +1698,10 @@ def pending_beyond_stamp(target, phase_id, project, tree):
     """`[sentence, ...]` - each change pending in `tree` that the audit-state
     commit would stage and that this landing did not write: the plan file(s)
     differing from HEAD beyond this phase's stamp fields, a journal file holding
-    a row about anything else, and any evidence change. Empty is the one answer
-    that commits.
+    a row about anything else, and any change in the filed returns' folder
+    (`_evidence_io.returns_dir`). Empty is the one answer that commits. A change
+    elsewhere under the evidence directory refuses nothing: the state commit
+    does not stage it, so it cannot ride into the landing.
 
     THE COMMIT STAGES WHOLE FILES AND DIRECTORIES. In a parent checkout another
     session shares, its uncommitted plan edit or trail row would otherwise ride
@@ -1727,8 +1729,8 @@ def pending_beyond_stamp(target, phase_id, project, tree):
             found.append("%s differs from HEAD beyond phase %s's stamp"
                          % (rel, phase_id))
     for label, directory in (("journal", _journal_io.journal_dir(project, config)),
-                             ("evidence",
-                              _evidence_io.evidence_dir(project, config))):
+                             ("returns",
+                              _evidence_io.returns_dir(project, config))):
         rel = _tree_rel(tree, directory) if directory else None
         if rel is None or not os.path.isdir(directory):
             continue
@@ -1739,8 +1741,8 @@ def pending_beyond_stamp(target, phase_id, project, tree):
             continue
         for entry in [e for e in listing.split("\0") if len(e) > 3]:
             changed = entry[3:]
-            if label == "evidence":
-                found.append("%s is an evidence change" % (changed,))
+            if label == "returns":
+                found.append("%s is a filed return's change" % (changed,))
                 continue
             hcode, head = _git_text(tree, ["show", "HEAD:%s" % (changed,)])
             try:
@@ -1762,15 +1764,17 @@ def ignored_stamp_refusal(manifest_path, project, git_root):
     """The refusal the stamp commit would earn for a record directory git
     ignores, or "" - asked BEFORE the merge, so a refusal never follows it.
 
-    The journal and the evidence directory, resolved as the audit-state verb
-    resolves them, and only when on disk. NOTHING IS OWED WHEN THE PLAN FILE IS
+    The journal and the filed returns' folder, resolved as the audit-state verb
+    resolves them, and only when on disk. An evidence directory git ignores is
+    no refusal of its own: the state commit carries only its returns' folder,
+    asked here. NOTHING IS OWED WHEN THE PLAN FILE IS
     ITSELF IGNORED: a plan git never versions is a supported layout, landed with
     no stamp commit, so its ignored records refuse nothing there."""
     config = _journal_io.load_config(project)
     plan_rel = _invariants._rel(os.path.abspath(manifest_path), git_root)
     paths = []
     for absolute in (_journal_io.journal_dir(project, config),
-                     _evidence_io.evidence_dir(project, config)):
+                     _evidence_io.returns_dir(project, config)):
         rel = _invariants._rel(absolute, git_root)
         if rel is not None and os.path.exists(absolute) and rel not in paths:
             paths.append(rel)

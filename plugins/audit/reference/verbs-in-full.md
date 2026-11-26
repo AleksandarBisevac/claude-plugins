@@ -106,8 +106,8 @@ guessed**: a descendant that escaped the kill is still writing, so comparing the
 would be a race whose answer changes with timing.
 
 **A single-task run is the case where a failed gate has nothing to ride out on.** A task
-commit stages the evidence directory, so inside a phase run an attempt that failed and was
-retried is made durable by whatever commits next. This command commits only when the task
+commit stages the plan, the journal and the filed returns' folder, so inside a phase run an
+attempt that failed and was retried is made durable by whatever commits next. This command commits only when the task
 reaches `done` — so when it ends `blocked` with its attempts exhausted, and on the
 infrastructure path that stops without committing, the rows just written sit in the working
 tree with nothing coming behind them. Both are named points in the orchestrator's
@@ -130,8 +130,8 @@ the working tree that nothing is going to carry. A task commit would have carrie
 interrupted run never reached one. This is that sweep, and it is the resume entry among the
 points the orchestrator's *Keeping a failed run's record* names.
 
-**It stages the phase's manifest file, the journal and the evidence directory, and never the
-task's `files`** — which is exactly what makes it safe to run here. The interrupted task's
+**It stages the phase's manifest file, the journal and the filed returns' folder - not the
+rest of the evidence directory - and never the task's `files`** — which is exactly what makes it safe to run here. The interrupted task's
 working-tree changes are the thing the orchestrator's own resume step calls **untrusted**
 and refuses to discard without confirmation; this commit must not settle that question in
 the other direction by sweeping them into git on its way past. The
@@ -873,7 +873,8 @@ used. A change that was already there before the attempt began is not this close
 for, and is not named. The repair is to widen the scope (`/audit:task scope <id> --files
 ...`) and commit the file, or to remove it. The tree is read with `git status --porcelain -z`,
 so a path with a space or a non-ASCII byte is matched as written. The plan's own bookkeeping
-(manifest, journal, evidence) and the plugin's state directory are never counted. A successful
+(manifest, journal, filed returns) and the plugin's state directory are never counted; any
+other file under the evidence directory is. A successful
 close removes the task's start snapshot.
 
 **A green gate over an unchanged tree proves only that nothing broke, so the close also asks
@@ -1029,8 +1030,8 @@ the role and the task's current `startedAt` — `<evidence dir>/returns/<taskId>
 the text kept verbatim. The create is exclusive, so a **second filing for one task, role
 and start is refused** and the first stays byte-identical; a re-start re-stamps `startedAt`,
 so a retry files beside the earlier attempt's return rather than over it. A task with no
-start, or one already `done` or `cancelled`, is refused. The evidence directory travels in
-the close commit, so a clone receives the claim beside the gate row it can be compared with;
+start, or one already `done` or `cancelled`, is refused. The filed returns' folder travels in
+the close commit, so a clone receives the claim beside the recorded run it can be compared with;
 an executor return's optional `claims` text becomes its own paragraph of that commit's
 message. **What it cannot hold:** the task id and the role are the caller's word — a filing
 under the wrong role, or for a task nobody has filed for yet, is not refused.
@@ -1788,10 +1789,11 @@ banner means — are `reference/phase-signoff.md`'s **Phase sign-off** section.
 is recorded against that task; **Phase sign-off's own gate run is recorded against the
 phase**, kept apart from its tasks' so a reader can follow either — the phase's gate and its
 tasks' gates measure different work over different files, and merging them would claim a
-measurement nobody made. Each task commit and the sign-off commit stage the evidence
-directory alongside the journal, for the same reason the journal is staged: a `testEvidence`
-pointer that reaches a clone without the row it names points at nothing, and
-`verify-invariants.py`'s `evidence-committed` is what says so afterwards.
+measurement nobody made. Each task commit and the sign-off commit stage the plan, which
+holds each run's record, alongside the journal and the filed returns' folder, and never the
+rest of the evidence directory, which no run writes: a `testEvidence` pointer that reaches a
+clone without the run it names points at nothing, and `verify-invariants.py`'s
+`evidence-committed` is what says so afterwards.
 
 **A red sign-off gate is where a phase run stops committing.** The phase stays
 `in_progress`, nothing is committed, and the rows the gate just wrote have nothing behind

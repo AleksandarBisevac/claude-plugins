@@ -1185,22 +1185,22 @@ point:
   bytes and the warning goes — and a row written without going through the
   recorder is anchored by nothing.
 
-- **The evidence record is committed too, and carries no program output at all.**
+- **A run's record is committed too, in the plan, and carries no program output at all.**
   A test gate's stdout is the highest-risk text this plugin could ever store — stack
   traces, absolute paths, environment values, occasionally a token — so it is not
   stored. Not truncated, not redacted: **not stored.** `run-test-gate.py` holds the
   merged output in memory only long enough to count checks and scrape file paths,
-  and nothing carries it further. A row is assembled from named fields rather than
+  and nothing carries it further. A record is assembled from named fields rather than
   copied, which makes that a property of the writer instead of a habit each caller
   has to remember.
-  What a row *does* carry is bounded the same way a journal row is. A **command** is
+  What a record *does* carry is bounded the same way a journal row is. A **command** is
   stored verbatim only where the manifest already publishes it — a gate entry is
   already committed in the plan, in plain text, so storing it exposes nothing new —
   and anything else falls back to the same digest, byte length and program name the
   journal uses. **Paths go through the same `<outside-repo>` rule.** Lists are capped
   and the cut is *counted beside them*, because a truncation nobody announced reads
   as "that is all there was".
-  The consequence to be aware of: an evidence row names the gate commands your
+  The consequence to be aware of: a run's record names the gate commands your
   manifest declares. If a gate entry itself contains something you would not commit,
   that was already true of the manifest before any run recorded it.
 

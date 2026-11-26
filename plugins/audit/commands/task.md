@@ -72,7 +72,7 @@ closes its own tasks; this is for a close made by hand. A refusal names the run 
 needs - relay it, never type an `--intent` word a reviewer did not file. A `--commit` close is
 also refused, naming the paths, while the working tree still changes files that commit does
 not carry: those the task's `files` cover, or, for a task declaring none, any change no other
-`in_progress` task covers (the plan's journal, evidence and manifest files never count). Commit
+`in_progress` task covers (the plan's journal, filed returns and manifest files never count). Commit
 them or widen the task with `scope <taskId> --files a,b`.
 
 ## Subcommand: `reopen <taskId> --reason "<why>"`

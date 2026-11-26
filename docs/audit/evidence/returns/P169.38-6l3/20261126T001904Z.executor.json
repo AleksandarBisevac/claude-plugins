@@ -1,0 +1,47 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_stamp_verification.py tests/test_commit_task_work.py tests/test_close_phase.py tests/test__invariants.py tests/test_run_test_gate.py": "pass",
+    "python3 tools/sweep-selftests.py (full)": "fail",
+    "ruff check plugins/audit tools tests .claude/hooks": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints": "pass",
+    "python3 tools/gate-parity.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-26T02:12:30Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__invariants.py tests/test_run_test_gate.py` in a throwaway tree at HEAD exited 1 with 7 of 741 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - iv40a (house FAIL), iv40d (house FAIL), iv40b (house FAIL), iv46b (house FAIL), rcp1 (house FAIL), rcp2 (house FAIL), ru5 (house FAIL): SELFTEST FAILED: 738/741 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "recorded_paths (_evidence_io) holds the journal and the filed returns' folder (new returns_dir); the evidence directory is no longer in it. _invariants.record_rels follows, so these readers do too: the stamp's _checkout_records, commit-task-work stage_targets and state_targets (RETURNS_LABEL), integrate-task, the drive, and audit-task._bookkeeping_rels. _bookkeeping_rels was behaviour with its own evidence_dir list, and now returns record_rels. commit_scope and audit_state_scope accept, under the evidence directory, only two things. One is the returns' folder. The other is a ledger file (_is_ledger_file: a .jsonl file directly in the evidence directory, as ledger_files lists them) that the commit only appended runId rows to (frozen_rows_appended); this is how a previous-release commit is read as before. Breaches: a rewritten held row (iv40b), a non-row file (iv40a), and rows in a non-ledger file (iv40d). close-phase's pending_beyond_stamp and ignored_stamp_refusal ask the returns' folder. The target of the audit.state.committed row is now the returns' folder (cas26). In run-test-gate.py, RECORDER_META = _ev.RECORDER_META_KEYS, which adds the full-run keys; reuse keys no longer change after a full run. Widened files: test_drive_phase._commit_records stages only recorded paths that exist, and the tm6 pin reads 'start of run <id>'. drive-phase timing text says 'run <id>'. test_audit_task lo4 uses a filed return; new lo4b and lo4c show that another evidence file refuses the close. Prose updated to match: README.md, plugins/audit/README.md, commands/task.md (kept under the /audit:task add context ceiling, 7999/8000 by measure-context.py --gate), verbs-in-full.md, phase-signoff.md, SECURITY.md, _scoped_commit.py, _tree_stamp.py, COMPATIBILITY.md, CHANGELOG.md, PLUGIN-BUILD-GUIDE.md and execute-task.md. Mutation probe (scratchpad/p38-probe/mutations.py, 17 rows, every one killed). Full sweep: 195/196 files ok, 19914 cases, exit 1. The one red is tools/check-example-ledgers.py el2, the known red outside this task that P169.40 fixes. Task gate on its own: 6/6 files ok, 2392 cases, exit 0. ruff, vermin and gate-parity exit 0. Batched by the reviewer, not done: a torn last line in the parent, and a task that declares files under evidence/.",
+    "descriptive": "The evidence directory is part of the tree again for reuse, the stamp and the drive. Only its filed returns' folder is a record. Commit scope still reads a previous release's ledger appends as before."
+  },
+  "testsAdded": [
+    "rcp1: real recorded phase, task, task and full runs in a fixture; git status shows nothing changed outside recorded_paths. That set is the plan, the shard, the journal and evidence/returns, with nothing else under the evidence directory",
+    "rcp2: across the same runs, the plan's meta moves only in RECORDER_META keys, and the reuse identity is unchanged after every run, the full run included",
+    "iv40: a previous-release task commit that appended a ledger row reads clean",
+    "iv40a: a task commit carrying a non-row file under the evidence directory is a breach",
+    "iv40b: a commit that rewrites a held row is a breach, even with a valid row appended after it",
+    "iv40c: a filed return in the returns' folder reads clean",
+    "iv40d: a new non-ledger file under the evidence directory whose every line is a runId row is a breach",
+    "iv46b: a state commit carrying a non-row file under the evidence directory is a breach"
+  ],
+  "casesAdded": [
+    [
+      "rcp1",
+      "rcp2"
+    ],
+    [
+      "iv40",
+      "iv40a",
+      "iv40b",
+      "iv40c",
+      "iv40d",
+      "iv46b"
+    ]
+  ],
+  "claims": "claims:\n1 _evidence_io.py:380 (writes = [returns_dir, journal_dir]); _invariants.py:349 (record_rels ends with returns_dir); _invariants.py _is_ledger_file/frozen_rows_appended/_record_or_frozen; close-phase.py:1733,1777; commit-task-work.py:393,1450 and record_state_row target = returns_dir; run-test-gate.py:3076; audit-task.py _bookkeeping_rels returns record_rels\n2 probe on a working-tree copy, restored in finally, pycache purged; each row's case went red: m1 rcp1; m2 rcp2; m3 iv40a/iv40b/iv46b; m4 iv40; m5 iv40b (survived twice before the iv40b fixture was changed to a same-length rewrite plus an appended row); m6 iv40c; m7 iv46b; m8 lt9b; m9 ie1b; m10 ctw68b; m11 cas17; m12 sv19b; m13 lo4b/lo4c; m14 lo4; m15 iv40d; m16 iv40; m17 cas26\n3 grep of evidence_dir in record readers: record_rels, recorded_paths, close-phase (two), commit-task-work (two targets plus the state-row target) and audit-task _bookkeeping_rels changed. The reviewer's list of stale user-facing text was fixed site by site. Left: the torn-line parent and a task declaring evidence/ files, both batched by the reviewer\n4 n/a - no rule addressed to an agent\n5 n/a - no timing recorded; the tallies are each from one run, with the command beside them\n6 n/a - no guard; close-phase's refusal reads the resolved returns_dir, and its allow cases ie1b and lt9b were seen green and then reddened by m9 and m8\n7 the /audit:task add figure 7999/8000 is the output of measure-context.py --gate, named beside it; no number written into product prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:1ef6d34df2cb81c432030225241a64efb011587eccbc54be08aeaa5d060b6651\",\"dirtyDigest\":\"sha256:1a3ff5319690fe1740c800c0f07859f67dc7e2e1212718038a5bfd6ef9a2b770\",\"dirtyPaths\":null,\"head\":\"5abee044\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"COMPATIBILITY.md\",\"PLUGIN-BUILD-GUIDE.md\",\"README.md\",\"SECURITY.md\",\"plugins/audit/README.md\",\"plugins/audit/commands/task.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/reference/phase-signoff.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/git/close-phase.py\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/_invariants.py\",\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/_tree_stamp.py\",\"plugins/audit/scripts/governance/commit-task-work.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test__evidence_io.py\",\"tests/test__invariants.py\",\"tests/test_audit_task.py\",\"tests/test_close_phase.py\",\"tests/test_commit_task_work.py\",\"tests/test_drive_phase.py\",\"tests/test_integrate_task.py\",\"tests/test_run_test_gate.py\",\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:155a5023d151f41f89f601237daa878f4f4f454a993e5091acaa0beb419fbe66\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

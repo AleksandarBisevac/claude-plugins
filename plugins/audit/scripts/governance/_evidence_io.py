@@ -88,6 +88,7 @@ import _worktrees  # noqa: E402  (git ancestry: merged_into, the three answers)
 import _usage_core  # noqa: E402  (parse_ts: a full run's ts read as a moment)
 import _task_timing as _timing  # noqa: E402  (a recorded run's stages, appended once)
 import _json_schema  # noqa: E402  (a record read against the published `lastRun`)
+import _filed_returns  # noqa: E402  (RETURNS_DIRNAME: the filed returns' folder)
 from _journal_io import (command_facts, redacted_paths,  # noqa: E402
                          redacted_text, repo_relative_or_token)
 from _machine_paths import OUTSIDE_TOKEN  # noqa: E402
@@ -307,17 +308,35 @@ def in_evidence(project, path, config=None):
         return False
 
 
+def returns_dir(project, config=None):
+    """Absolute path of the folder the filed returns live in: the one part of
+    the evidence directory this plugin still writes, an agent's return filed
+    there by `audit-task.py file-return` and the drive's `submit`
+    (`_filed_returns.return_path`). The rest of the directory holds only the
+    rows earlier releases wrote, which nothing writes any more."""
+    return os.path.join(evidence_dir(project, config),
+                        _filed_returns.RETURNS_DIRNAME)
+
+
 def recorded_paths(project, manifest_path, config=None):
-    """`(rels, dropped)` -- every path THIS recorder writes, as project-relative
-    prefixes, sorted, and any write this function could not turn into one.
+    """`(rels, dropped)` -- every path THIS plugin's recorders write, as
+    project-relative prefixes, sorted, and any write this function could not
+    turn into one.
 
     WHO NEEDS IT. A caller asking "is this tree the one that was measured?" has to
     leave the recorder's own output out of the answer, or the first recorded run
     changes the tree and no second run can ever match it. That is a narrowing, so
-    it is DERIVED from the writers rather than listed: `evidence_dir` and
-    `journal_dir` are asked where they put their files, and the shards come off
+    it is DERIVED from the writers rather than listed: `journal_dir` and
+    `returns_dir` are asked where they put their files, and the shards come off
     the index's own `shard` stubs, so a repo that moved its plan moves this with
-    it.
+    it. A recorded run writes the index, its subject's shard and the journal; the
+    returns' folder is the filing's, which the drive's `submit` writes after the
+    executor's stamp is taken and before that stamp is compared.
+
+    THE EVIDENCE DIRECTORY IS NOT IN IT, only its returns' folder. No run writes
+    a row there any more, so leaving the directory out would hide a change no
+    recorder made - a frozen ledger edited by hand reads as the same tree - and
+    a gate step naming a file there is measured as any other step is.
 
     THE RAW INDEX AND NEVER THE ASSEMBLED MANIFEST, which is `_phase_file`'s rule
     and it is here for the same trap: assembly REPLACES each `shard` stub with
@@ -358,7 +377,7 @@ def recorded_paths(project, manifest_path, config=None):
     basis line nobody was watching.
     """
     config = _journal_io.load_config(project) if config is None else config
-    writes = [evidence_dir(project, config), _journal_io.journal_dir(project, config)]
+    writes = [returns_dir(project, config), _journal_io.journal_dir(project, config)]
     if manifest_path:
         base = os.path.dirname(os.path.abspath(manifest_path))
         writes.append(os.path.abspath(manifest_path))
@@ -7692,6 +7711,14 @@ def selection_miss(steps, phases, head, git_root, earlier_rows, full_commands,
 # one thing that could flatten them is a reader spelling `if not boundary`.
 SINCE_KEY = "evidenceSince"
 ACTION_SINCE = "meta.evidenceSince"
+# EVERY `meta` KEY A RECORDED RUN WRITES ITSELF, beside the writers: the boundary
+# above (`write_evidence_since`, and `write_record` in the same save), and the
+# full run's record and measured run (`write_full_record`). A reader that holds
+# the plan's meta as part of what a tree IS leaves these out, or the run after a
+# recorded one could never match it; a key added to a writer here is added to
+# this tuple, which `test_run_test_gate.py`'s rcp2 checks against the meta a
+# task, a phase and a full run really move.
+RECORDER_META_KEYS = (SINCE_KEY, FULL_RECORD_KEY, FULL_MEASURED_KEY)
 # The sentence the block carries about itself. It is written ONLY with an `at`
 # `derive_since` made - the earliest run the plan held at the moment of stamping
 # - so it is true of every block this module writes; a second derivation would

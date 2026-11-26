@@ -7417,17 +7417,15 @@ def _porcelain_paths(git_root, pathspec=()):
 
 
 def _bookkeeping_rels(project, config, mpath, raw_index, git_root):
-    """Git-root-relative entries a close's own bookkeeping owns: the journal and
-    evidence directories and the manifest's index and shards. A change there is
-    the plan's record, not a task's work, and `done` writes most of it itself."""
-    absolute = [_journal_io.journal_dir(project, config),
-                _evidence_io.evidence_dir(project, config), mpath]
-    base = os.path.dirname(os.path.abspath(mpath))
-    absolute += [os.path.join(base, stub["shard"])
-                 for stub in (raw_index.get("phases") or [])
-                 if isinstance(stub, dict) and isinstance(stub.get("shard"), str)]
-    rels = [_invariants._rel(path, git_root) for path in absolute]
-    return [rel for rel in rels if rel is not None]
+    """Git-root-relative entries a close's own bookkeeping owns: the plan's
+    records as `_invariants.record_rels` defines them for every reader - the
+    manifest's index and shards (those `raw_index` names as well as those on
+    disk), the journal and the filed returns' folder. A change there is the
+    plan's record, not a task's work, and `done` writes most of it itself; the
+    rest of the evidence directory is not record, since no writer puts
+    anything there any more."""
+    return _invariants.record_rels(mpath, None, project, git_root,
+                                   head_index=raw_index, config=config)
 
 
 def _declared_rels(project, git_root, task):

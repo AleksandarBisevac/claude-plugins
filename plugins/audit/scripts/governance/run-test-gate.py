@@ -3066,14 +3066,14 @@ REUSE_LIMIT = ("the tree's content, the gate the manifest declares and the "
                "variable, the clock, the network and a check that answers "
                "differently twice are all outside it, and so are this plugin's "
                "own records: the manifest's phases and tasks, its shards, the "
-               "ledger and the trail are left out because a recorded run "
-               "rewrites them")
+               "trail and the filed returns are left out because this "
+               "plugin's own writers rewrite them")
 
-# THE META KEYS A RECORDED RUN WRITES ITSELF, named by their writer's own
-# constant: the evidence boundary, stamped once by the first recorded run on a
-# plan (`_evidence_io.write_evidence_since`). No other meta key is written by
-# this runner or by the drive; every other writer is a verb an operator runs.
-RECORDER_META = (_ev.SINCE_KEY,)
+# THE META KEYS A RECORDED RUN WRITES ITSELF, held beside their writers
+# (`_evidence_io.RECORDER_META_KEYS`): the evidence boundary, stamped once by the
+# first recorded run on a plan, and a full run's record and measured run. Every
+# other meta key's writer is a verb an operator runs.
+RECORDER_META = _ev.RECORDER_META_KEYS
 
 # WHICH VERDICTS SURVIVE BEING REPEATED, and it is a short list on purpose.
 # `passed` and `failed` are statements about the work under test that the same
@@ -3630,7 +3630,7 @@ def reused_result(identity, row, elapsed_ms, newer=None):
 
 
 # --- a gate repeated in part ---------------------------------------------------
-# An entry naming a path the identity leaves out (the plan, the ledger) grades
+# An entry naming a path the identity leaves out (the plan, the trail) grades
 # bytes no repeat can vouch for, so it is measured on every run. The entries
 # beside it grade the tree, which the identity does hold, so they are repeated
 # from the newest row that measured them (`_evidence_io.reusable_run` with

@@ -16412,9 +16412,10 @@ def _leftover_cases(check):
               % ((code, text[:300]),),
               code == M.E_USAGE and "src/new/deep.ts" in text)
 
+        filed = "docs/audit/evidence/returns/P1.1/20260101T000000Z.executor.json"
         proj, mpath = project("plan-only", [task("P1.1", ["src/a.ts"])])
         write(proj, "docs/audit/journal/2026-01.jsonl", "{}\n")
-        write(proj, "docs/audit/evidence/e.json", "{}\n")
+        write(proj, filed, "{}\n")
         write(proj, "docs/audit/audit-plan.json.bak", "x")
         backdate(proj, "docs/audit/audit-plan.json.bak")
         code, text = close(proj)
@@ -16423,12 +16424,31 @@ def _leftover_cases(check):
         proj2, _m = project("plan-only-nofiles",
                             [task("P1.1", [], outputs=["docs/x.md"])])
         write(proj2, "docs/audit/journal/2026-01.jsonl", "{}\n")
-        write(proj2, "docs/audit/evidence/e.json", "{}\n")
+        write(proj2, filed, "{}\n")
         code2, text2 = close(proj2)
-        check("lo4 ALLOW: journal and evidence files alone never refuse a close, "
-              "for a task with files or without: %r"
+        check("lo4 ALLOW: journal files and filed returns alone never refuse a "
+              "close, for a task with files or without: %r"
               % ((code, text[:200], code2, text2[:200]),),
               code == 0 and code2 == 0)
+        # THE OTHER DIRECTION: the rest of the evidence directory is not the
+        # plan's bookkeeping - no writer puts anything there any more - so a
+        # file changed there during the attempt is work nobody declared. A
+        # skip widened back to the whole directory passes lo4 and fails here.
+        for cid, files, outputs in (("lo4b", ["src/a.ts"], None),
+                                    ("lo4c", [], ["docs/x.md"])):
+            proj3, mpath3 = project(
+                "evidence-other-%s" % (cid,),
+                [task("P1.1", files, **({"outputs": outputs} if outputs else {}))])
+            write(proj3, "docs/audit/evidence/e.json", "{}\n")
+            before = read(mpath3)
+            code3, text3 = close(proj3)
+            check("%s REFUSE: a file elsewhere under the evidence directory, "
+                  "changed during the attempt, refuses the close and is named, "
+                  "for a task %s files, writing nothing: %r"
+                  % (cid, "with" if files else "without",
+                     (code3, text3[:300]),),
+                  code3 == M.E_USAGE and "docs/audit/evidence/e.json" in text3
+                  and read(mpath3) == before)
 
         proj, mpath = project("nofiles", [task("P1.1", [], outputs=["x.md"])])
         write(proj, "src/a.ts", "left over\n")

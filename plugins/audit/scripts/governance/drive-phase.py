@@ -1443,7 +1443,7 @@ def _spend(state, kind, task):
 
 # --- a task's timing: each stage read back, carried by a write already made --------
 # Every stage the drive reads back - a session from its record, a gate run, its
-# selection or a base run from its evidence row, the commit it timed itself, a
+# selection or a base run from what records it, the commit it timed itself, a
 # hand-out's wait - is queued here under the record it was read from, once, and
 # rides the next write the drive makes for the task anyway: a session's note
 # (`note_sessions`) or the close (`close_task`), each through `--stage`. NO WRITE
@@ -1706,14 +1706,15 @@ def ledger_row(ctx, run_id):
 
 
 def row_stages(row, kind="gate"):
-    """`([(source, stage)], gaps)` for one evidence row: the run's own length
+    """`([(source, stage)], gaps)` for one recorded run - the plan's record of
+    it, or a frozen row an earlier release wrote: the run's own length
     under `kind`, and for a gate run the time it spent choosing what to run,
     which ends where the run's own `startedAt` begins. `gaps` says why a
     `kind` stage was not built - a row that repeated another run's verdict,
     named with that run, or a row with no start or no length; a row with no
     `selectionMs` is one from before the key existed, and is no gap."""
     if not isinstance(row, dict) or not row.get("runId"):
-        return [], ["the evidence row read names no run"]
+        return [], ["the recorded run read names no run id"]
     run_id, started = str(row["runId"]), row.get(_evio.STARTED_KEY)
     if row.get(_evio.VERDICT_SOURCE) == _evio.REUSED:
         # A repeat measured nothing and records no start: a stage needs one
@@ -1721,13 +1722,13 @@ def row_stages(row, kind="gate"):
         # missing source is named. `reusedFrom` is the key
         # `_evidence_io.measured_row` reads through to the run it repeats.
         source = (row.get("reusedFrom") or {}).get("runId")
-        return [], ["evidence row %s repeated the verdict %s rather than "
+        return [], ["run %s repeated the verdict %s rather than "
                     "measuring it, and records no start of its own"
                     % (run_id, "of run %s" % (source,) if source
                        else "of a run it does not name")]
     stages, gaps = _timing.run_stages(
         run_id, started, row.get("durationMs"), _evio.selection_ms(row),
-        "evidence row %s" % (run_id,), kind=kind)
+        "run %s" % (run_id,), kind=kind)
     return [("%s:%s" % (s["kind"], run_id), s) for s in stages], gaps
 
 
@@ -1768,7 +1769,7 @@ def queue_row(ctx, state, task, read, kind="gate", since=None):
     if since and pairs:
         pairs = [("wait:%s:%s" % (kind, row.get("runId")), wait_stage(
             since, run_start(row), "hand-out stamped by the drive -> start of "
-            "evidence row %s" % (row.get("runId"),)))] + pairs
+            "run %s" % (row.get("runId"),)))] + pairs
     said_as, built = kind, pairs
     if kind == "gate":
         # The wait is the one stage of a gate run this queues, so a gap is said
@@ -1786,7 +1787,7 @@ def queue_row(ctx, state, task, read, kind="gate", since=None):
              and any(s == own and st is not None for s, st in built)
              and timing_said(
                  ctx, state, task, "repeats", "%s: %s" % (kind, repeat.get("runId")),
-                 "timing: %s stage of %s is run %s's - evidence row %s repeated "
+                 "timing: %s stage of %s is run %s's - run %s repeated "
                  "that run's verdict rather than measuring it"
                  % (kind, task["id"], row.get("runId"), repeat.get("runId"))))
     if pairs or said or noted:
@@ -4210,8 +4211,8 @@ def measure_base(ctx, phase, row, tree=None, placed=None, started=None,
 def code_moved(ctx, since, now):
     """None when HEAD `now` holds the code `since` held: the same commit, or
     one that differs from it only inside the paths this plugin's recorder
-    writes (`_evidence_io.recorded_paths` - the plan, the journal, the
-    evidence), as a record commit does. Else the sentence saying how HEAD
+    writes (`_evidence_io.recorded_paths` - the plan, the journal, the filed
+    returns), as a record commit does. Else the sentence saying how HEAD
     moved, or why that could not be told: a head nobody names, or git unable
     to compare the two, is never read as the same code.
 
@@ -10749,10 +10750,10 @@ def triage_refusal(pending, answer):
 
 
 def keep_record(ctx, phase):
-    """Commit a failed run's record - the plan, the journal and the evidence the
-    gate wrote, never the task's files - through the commit verb's state
-    commit. A blocked task gets no task commit, so nothing else would carry the
-    rows that say why it stopped. None, or the stop."""
+    """Commit a failed run's record - the plan, the journal and the filed
+    returns, never the task's files - through the commit verb's state commit.
+    A blocked task gets no task commit, so nothing else would carry the record
+    that says why it stopped. None, or the stop."""
     out, stop = _verb_or_stop(ctx, "commit-task-work.py", [
         ctx["manifest"], phase["id"], "--state", "--project", ctx["project"],
         "--json"])

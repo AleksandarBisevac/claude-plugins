@@ -54,7 +54,10 @@ A CACHE MAY NOT DISAGREE WITH WHAT IT CACHES. The schema says `testEvidence` is 
 POINTER at the run that last exercised this task ... IT IS A CACHE AND NOT THE
 SOURCE OF TRUTH". So a cached `status` whose `runId` resolves to a ledger row with a
 different word is a finding too: the row is the truth, and a reader who trusts the
-cheap read gets the wrong verdict. A pointer whose `runId` resolves NOWHERE is not a
+cheap read gets the wrong verdict. A run is recorded in the plan now - a task's or
+phase's record, the plan's full-run record - and no ledger row is written for it,
+so a `runId` resolves against those records (`record_runs`) as well as against the
+frozen rows an earlier release wrote. A pointer whose `runId` resolves NOWHERE is not a
 finding -- the ledger may have been archived, and the schema says an absent or
 unresolvable pointer means "no evidence recorded", never "failed".
 
@@ -118,6 +121,7 @@ import _output  # noqa: E402  (the anchor: install_path, safe_stdio)
 _output.install_path()
 
 import _commit_trail  # noqa: E402  (is this clone able to answer, and does it have the object?)
+import _evidence_io  # noqa: E402  (records_of_bodies/full_run_entries: the runs a plan records)
 import _manifest_io as _mio  # noqa: E402  (load_manifest: the one assembler that
 #                                            resolves an index's shards, so a gate
 #                                            entry can be checked against
@@ -411,11 +415,38 @@ def _holders(doc):
     return [(label, block) for label, block in out if isinstance(block, dict)]
 
 
+def record_runs(doc, label, schema):
+    """`{runId: status}` - every run plan document `doc` (an index, or a shard
+    with no `phases` wrapper, held in the file `label`) records: each phase's
+    and task's record and the runs a record keeps beside it
+    (`_evidence_io.records_of_bodies`), and the plan's full-run record and its
+    newest measured full run (`_evidence_io.full_run_entries`) - the join
+    `_evidence_io.read_rows` makes, read off the document rather than off a
+    project. A record that is not its writer's shape gives no run, so a
+    pointer naming it stays unresolved rather than being read as agreeing."""
+    if not isinstance(doc, dict):
+        return {}
+    phases = doc.get("phases")
+    if isinstance(phases, list):
+        bodies = [(label, p) for p in phases if isinstance(p, dict)]
+    elif isinstance(doc.get("tasks"), list):
+        bodies = [(label, doc)]
+    else:
+        bodies = []
+    rows = [row for row, _where in
+            _evidence_io.records_of_bodies(bodies, doc=schema)]
+    rows += [row for row, _where in
+             _evidence_io.full_run_entries(doc, label, schema)[0]]
+    return dict((str(row["runId"]), str(row["status"])) for row in rows
+                if row.get("runId") and row.get("status") is not None)
+
+
 def pointer_findings(rel, doc, known, by_run):
     """[(rel, label, why), ...] -- cached verdicts that are wrong or stale.
 
     Two rules. A cached word outside the vocabulary is the same fault as in a row.
-    A cached word that DISAGREES with the ledger row its own `runId` names is worse,
+    A cached word that DISAGREES with the run its own `runId` names - a plan's
+    record of it, or a frozen ledger row (`by_run` holds both) - is worse,
     because the schema calls this block a cache and a cache that can disagree with
     its source is the thing that block was designed not to be. A `runId` resolving
     nowhere is NOT a finding: the schema says an unresolvable pointer means "no
@@ -433,8 +464,9 @@ def pointer_findings(rel, doc, known, by_run):
         truth = by_run.get(str(run_id)) if run_id is not None else None
         if truth is not None and status is not None and str(status) != truth:
             out.append((rel, label, (
-                "caches status %r while run %s in the ledger records %r - the "
-                "ledger is the source of truth and this cache disagrees with it"
+                "caches status %r while run %s, as its record or ledger row "
+                "holds it, records %r - the recorded run is the source of "
+                "truth and this cache disagrees with it"
                 % (status, run_id, truth))))
     return out
 
@@ -559,11 +591,40 @@ def findings(repo=None):
     if problem:
         return [], {}, problem
     ledgers = ledger_rels(rels + loose)
-    if not ledgers:
+    schema, problem = _evidence_io.record_schema()
+    if problem:
+        return [], {}, problem
+
+    # THE PLANS ARE READ FIRST, because a run is recorded in the plan now: a
+    # task's or phase's record, the plan's full-run record, and no ledger row
+    # for any of them. A tree holding records and no ledger is the one every
+    # project reaches after the upgrade, so only a tree holding NEITHER is a
+    # run that compared nothing.
+    manifests = manifest_rels(rels + loose)
+    docs, unread, recorded = [], [], {}
+    for rel in manifests:
+        path = os.path.join(root, rel.replace("/", os.sep))
+        try:
+            with io.open(path, encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            # NAMED, not skipped. A manifest nobody could read is not a manifest
+            # with nothing wrong in it, and this tool is the only reader of these.
+            unread.append((rel, 0, "could not be read, so its cached verdicts "
+                                   "were not checked: %s" % (exc,)))
+            continue
+        if not isinstance(doc, dict):
+            unread.append((rel, 0, "is not a JSON object, so its cached "
+                                   "verdicts were not checked"))
+            continue
+        docs.append((rel, doc))
+        recorded.update(record_runs(doc, rel, schema))
+    if not ledgers and not recorded:
         return [], {}, (
-            "no evidence ledger, tracked or not, was found under any %s/ directory, so "
-            "this run compared nothing - which is not the same answer as a tree "
-            "with nothing wrong in it" % (LEDGER_DIR,))
+            "no evidence ledger, tracked or not, was found under any %s/ "
+            "directory and no plan records a run, so this run compared nothing "
+            "- which is not the same answer as a tree with nothing wrong in it"
+            % (LEDGER_DIR,))
 
     out = []
     by_run = {}
@@ -582,10 +643,14 @@ def findings(repo=None):
         out.extend(status_findings(rel, rows, known))
         out.extend(contradiction_findings(rel, rows))
 
-    if not seen_rows and not out:
+    if ledgers and not seen_rows and not out and not recorded:
         return [], {}, (
-            "%d ledger(s) were found and every one of them is empty, so "
-            "no verdict was actually read" % (len(ledgers),))
+            "%d ledger(s) were found and every one of them is empty, and no "
+            "plan records a run, so no verdict was actually read"
+            % (len(ledgers),))
+    # A run a plan records and a frozen row both name is one run; the record
+    # is the newer copy of it, so its word is the one a cache is held to.
+    by_run.update(recorded)
 
     # THE POINTER HALF OWES THE SAME PROMISE AS THE LEDGER HALF, and it did not
     # have it: a manifest that would not parse was skipped in silence, nothing
@@ -600,26 +665,12 @@ def findings(repo=None):
     # silence as a clean set is green FOR the truncation. Asked once here, since
     # it is a property of the checkout and not of a row.
     can_ask, cannot_ask = _commit_trail.can_answer(root)
-    manifests = manifest_rels(rels + loose)
+    out.extend(unread)
     checked_manifests = 0
     pointers = 0
     resolved = 0
     commits = 0
-    for rel in manifests:
-        path = os.path.join(root, rel.replace("/", os.sep))
-        try:
-            with io.open(path, encoding="utf-8") as fh:
-                doc = json.load(fh)
-        except (OSError, UnicodeDecodeError, ValueError) as exc:
-            # NAMED, not skipped. A manifest nobody could read is not a manifest
-            # with nothing wrong in it, and this tool is the only reader of these.
-            out.append((rel, 0, "could not be read, so its cached verdicts were "
-                                "not checked: %s" % (exc,)))
-            continue
-        if not isinstance(doc, dict):
-            out.append((rel, 0, "is not a JSON object, so its cached verdicts "
-                                "were not checked"))
-            continue
+    for rel, doc in docs:
         checked_manifests += 1
         held, hit = pointer_reach(doc, by_run)
         pointers += held
@@ -647,7 +698,8 @@ def findings(repo=None):
     if pointers and not resolved:
         return [], {}, (
             "%d cached testEvidence pointer(s) were found across %d manifest(s) "
-            "and NOT ONE of them names a run any ledger in the working tree holds, so the "
+            "and NOT ONE of them names a run any plan records or any ledger in "
+            "the working tree holds, so the "
             "cache-agrees-with-the-ledger half of this run compared nothing - "
             "which is what a changed `runId` spelling looks like, and is not the "
             "same answer as a tree with nothing wrong in it"
@@ -1128,6 +1180,81 @@ def _cases(check):
     finally:
         from _suite import remove_tree
         remove_tree(_snap)
+
+    # el31-el33. A recorded run lives in the plan now: a task or phase run's
+    # record under `lastRun`, a full run's in the plan's meta, and no ledger
+    # row is written for either. A pointer resolves against those records as
+    # it does against a frozen ledger row - a tree holding records and no
+    # ledger at all is the one every project reaches after the upgrade.
+    _rec = tempfile.mkdtemp(prefix="cel-rec-")
+    try:
+        _fx = _record_fixture(_rec)
+        _rc, _rp = _fx["counts"], _fx["problem"]
+        check("el31 a pointer naming a run only the plan's own RECORD holds - no "
+              "ledger in the tree at all - resolves, and the run is compared "
+              "rather than refused as a tree with nothing in it: %r / %s / %r"
+              % (_rc, _rp, _fx["rows"]),
+              _rp is None and _fx["rows"] == [] and _rc.get("ledgers") == 0
+              and _rc.get("pointers") == 1 and _rc.get("resolved") == 1)
+        _gc, _gp = _fx["ghost_counts"], _fx["ghost_problem"]
+        check("el32 ...while a pointer beside it naming a run neither a record "
+              "nor a ledger holds is still counted unresolved, so el2's "
+              "every-pointer-resolves stays red on it: %r / %s" % (_gc, _gp),
+              _gp is None and _gc.get("pointers") == 2
+              and _gc.get("resolved") == 1)
+        _dr, _dp = _fx["disagree_rows"], _fx["disagree_problem"]
+        check("el33 ...and a cache disagreeing with the RECORD it names is a "
+              "finding, as one disagreeing with a ledger row is: %r / %s"
+              % (_dr, _dp),
+              _dp is None and len(_dr) == 1 and _dr[0][1] == "P1.1"
+              and "caches status 'failed'" in _dr[0][2]
+              and "'passed'" in _dr[0][2])
+    finally:
+        from _suite import remove_tree
+        remove_tree(_rec)
+
+
+def _record_fixture(root):
+    """Build, in the empty directory `root`, a repository whose plan holds a
+    task's run as its `lastRun` record and no evidence ledger at all, and
+    return the findings of three readings: `counts` with the task's pointer
+    naming that run; `ghost_counts` with a second task's pointer naming a run
+    nothing holds; `disagree_rows` with the first pointer caching a status
+    its record denies. The record is the recorder's own shape
+    (`_evidence_io.run_record`), so the reading is the one a real plan gets."""
+    import _evidence_io
+    out = {}
+    _git_fixture(root, "init", "-q")
+    with io.open(os.path.join(REPO, SCHEMA_REL.replace("/", os.sep)),
+                 encoding="utf-8") as fh:
+        _write_fixture(root, SCHEMA_REL, fh.read())
+    _git_fixture(root, "add", "-A")
+    _git_fixture(root, "commit", "-q", "-m", "schema")
+    base = subprocess.check_output(
+        ["git", "-C", root, "rev-parse", "HEAD"]).decode().strip()
+    record = _evidence_io.run_record({
+        "v": 1, "runId": "r-rec", "ts": "2026-01-01T00:00:00Z",
+        "scope": "task", "taskId": "P1.1", "phaseId": "P1",
+        "status": "passed", "steps": [], "durationMs": 5})
+
+    def plan(pointers):
+        tasks = []
+        for n, (run, status) in enumerate(pointers):
+            node = {"id": "P1.%d" % (n + 1), "commit": base,
+                    "testEvidence": {"runId": run, "status": status}}
+            if n == 0:
+                node[_evidence_io.RECORD_KEY] = record
+            tasks.append(node)
+        return json.dumps({"phases": [{"id": "P1", "tasks": tasks}]}, indent=1)
+
+    _write_fixture(root, "x/audit-plan.json", plan([("r-rec", "passed")]))
+    out["rows"], out["counts"], out["problem"] = findings(root)
+    _write_fixture(root, "x/audit-plan.json",
+                   plan([("r-rec", "passed"), ("r-nowhere", "passed")]))
+    _rows, out["ghost_counts"], out["ghost_problem"] = findings(root)
+    _write_fixture(root, "x/audit-plan.json", plan([("r-rec", "failed")]))
+    out["disagree_rows"], _counts, out["disagree_problem"] = findings(root)
+    return out
 
 
 def _git_fixture(root, *args):

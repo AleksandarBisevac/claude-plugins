@@ -8595,7 +8595,8 @@ def _reuse_cases(check):
           "replaces every `shard` stub with the phase it points at, so a reader "
           "of the assembled dict leaves the shard inside the identity and no "
           "second run ever matches: %r" % (excluded,),
-          "docs/audit/evidence" in excluded
+          "docs/audit/evidence/returns" in excluded
+          and "docs/audit/evidence" not in excluded
           and "docs/audit/journal" in excluded
           and "docs/audit/audit-plan.json" in excluded
           and "docs/audit/phases/P1.json" in excluded)
@@ -9065,37 +9066,65 @@ def _reuse_cases(check):
           and "GATE GREEN" not in "\n".join(unrenderable))
 
     # THE REFUSAL, END TO END. The pure cases above prove `reusable_run` sorts
-    # the words; this proves `main` hands it the set at all. The row is planted
+    # the words; this proves `main` hands it the set at all. The run is planted
     # rather than produced, because manufacturing a real infrastructure failure
-    # would test the OS rather than this decision - and a planted row is exactly
-    # what a machine that failed yesterday leaves behind.
+    # would test the OS rather than this decision - and a planted record is
+    # exactly what a machine that failed yesterday leaves behind: the phase's
+    # record, replacing the green seed, on the seed's own identity. Planted in
+    # the shard, which the identity leaves out; a row appended to a ledger
+    # would move the identity itself, since no recorder writes there.
     _plan(["ok"], {"ok": "true", "other": "true", "red": "false"})
     seed_code, _seed_text = _run("--no-reuse")
     seeded = _recorded_rows(evdir)[-1]
-    # NEWEST BY `ts`, which is what makes this a measurement: an older planted
-    # row would be passed over by the newest-wins rule whether the status filter
-    # existed or not. A session id is handed in so the writer takes the session
-    # path and mints no token file - a write into the tree here would move the
-    # very identity the run below has to match.
-    _ev_io.append_row(root, {
-        "v": _ev_io.ROW_VERSION, "runId": "planted-could-not-run",
-        "ts": "2099-01-01T00:00:00Z", "scope": "phase", "phaseId": "P1",
-        "status": M.CANNOT_RUN, "failed": [], "steps": [],
-        _ev_io.REUSE_KEY: seeded.get(_ev_io.REUSE_KEY)},
-        session_id="planted-row")
+    shard_path = os.path.join(root, "docs", "audit", "phases", "P1.json")
+    with open(shard_path, "r") as fh:
+        shard_body = json.load(fh)
+    # The seed's own run with its id, moment and status replaced, so nothing
+    # but the status separates it from a run the next one may repeat (ru24b).
+    shard_body[_ev_io.RECORD_KEY] = _ev_io.run_record(dict(
+        seeded, runId="planted-could-not-run", ts="2099-01-01T00:00:00Z",
+        status=M.CANNOT_RUN))
+    with open(shard_path, "w") as fh:
+        json.dump(shard_body, fh)
+    planted = [r for r in _recorded_rows(evdir)
+               if r.get("runId") == "planted-could-not-run"]
     after_code, after_text = _run()
-    landed = [r for r in _recorded_rows(evdir)
-              if r.get("runId") != "planted-could-not-run"][-1]
+    landed = _recorded_rows(evdir)[-1]
     check("ru24 AN INFRASTRUCTURE FAILURE IS NEVER REPEATED, through `main` and "
-          "not only through the helper. The newest row on this identity says "
-          "`could-not-run`, and the repair for that word is to fix the runner "
-          "and re-run - a repeat would cache the broken machine and hand it back "
-          "to the operator who has just fixed it: exit=%r/%r %r"
-          % (seed_code, after_code, "GATE VERDICT REUSED" in after_text),
+          "not only through the helper. The newest run on this identity - the "
+          "phase's record, read back as planted - says `could-not-run`, and the "
+          "repair for that word is to fix the runner and re-run: the next run "
+          "measures and repeats nothing, where a repeat would cache the broken "
+          "machine and hand it back to the operator who has just fixed it: "
+          "exit=%r/%r %r %r"
+          % (seed_code, after_code, "GATE VERDICT REUSED" in after_text,
+             [(p.get("status"), p.get(_ev_io.REUSE_KEY)) for p in planted]),
           seed_code == M.E_OK and after_code == M.E_OK
-          and "GATE VERDICT REUSED" in after_text
-          and (landed.get("reusedFrom") or {}).get("runId")
-          == seeded.get("runId"))
+          and [p.get("status") for p in planted] == [M.CANNOT_RUN]
+          and planted[0].get(_ev_io.REUSE_KEY) == seeded.get(_ev_io.REUSE_KEY)
+          and "GATE VERDICT REUSED" not in after_text
+          and "repeats:" not in after_text
+          and "GATE GREEN" in after_text
+          and landed.get("runId") not in ("planted-could-not-run",
+                                          seeded.get("runId")))
+    # THE ALLOW TWIN: the same planting with a `passed` status IS repeated, so
+    # ru24's measurement is the status filter at work and not an identity the
+    # planting moved.
+    with open(shard_path, "r") as fh:
+        shard_body = json.load(fh)
+    shard_body[_ev_io.RECORD_KEY] = _ev_io.run_record(dict(
+        seeded, runId="planted-passed", ts="2099-01-02T00:00:00Z",
+        status="passed"))
+    with open(shard_path, "w") as fh:
+        json.dump(shard_body, fh)
+    allow_code, allow_text = _run()
+    check("ru24b ...and the same planting saying `passed` IS repeated, so the "
+          "measurement above is the status filter and not a planting that "
+          "moved the identity: exit=%r %r"
+          % (allow_code, [ln for ln in allow_text.splitlines()
+                          if "repeats:" in ln]),
+          allow_code == M.E_OK and "GATE VERDICT REUSED" in allow_text
+          and "repeats:  run planted-passed (passed" in allow_text)
 
 
 def _symlinked_plan_cases(check):
@@ -15349,8 +15378,107 @@ def _both_places_cases(check):
         _harness.remove_tree(base_tree)
 
 
+def _rcp_repo():
+    """`_lr_repo` whose index also declares `meta.fullGate`, committed, so a
+    task, a phase and a full run can each be recorded in one project."""
+    root, mp, shard = _lr_repo()
+    with open(mp, "r") as fh:
+        index = json.load(fh)
+    index["meta"]["fullGate"] = ["ok"]
+    with open(mp, "w") as fh:
+        json.dump(index, fh)
+    _harness.git(root, "-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qam", "full gate", prefix=_PLAIN_GIT)
+    return root, mp, shard
+
+
+def _recorded_paths_cases(check):
+    """(rcp) The set of paths a recorded run writes is what `recorded_paths`
+    names - measured by git status over a task, a phase and a full run - and
+    the plan's meta moves across each run only in the keys the recorder
+    writes itself, so the reuse key a run is matched on holds still."""
+    root, mp, _shard = _rcp_repo()
+    try:
+        def meta_now():
+            with open(mp, "r") as fh:
+                return json.load(fh).get("meta") or {}
+
+        import _manifest_io
+
+        def key_now():
+            return M.reuse_identity(root, mp, _manifest_io.load_manifest(mp),
+                                    [("ok", "true")], ["src/a.py"])["key"]
+
+        runs = ([mp, "P1", "--record", "--no-reuse"],
+                [mp, "P1", "--task", "P1.1", "--record", "--no-reuse"],
+                [mp, "P1", "--task", "P1.2", "--record", "--no-reuse"],
+                [mp, "--full", "--record"])
+        codes, moved, keys = [], [], [key_now()]
+        for argv in runs:
+            before = meta_now()
+            codes.append(M.main(argv + ["--project-dir", root],
+                                out=lambda *_a: None))
+            after = meta_now()
+            moved.append(sorted(k for k in set(before) | set(after)
+                                if (k in before) != (k in after)
+                                or before.get(k) != after.get(k)))
+            keys.append(key_now())
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True)
+        changed = sorted(_ev_io.porcelain_paths(ln)[-1]
+                         for ln in status.stdout.splitlines() if ln.strip())
+        recorded, dropped = _ev_io.recorded_paths(root, mp)
+
+        def under(path, rel):
+            return path == rel or path.startswith(rel.rstrip("/") + "/")
+
+        reached = sorted(r for r in recorded
+                         if any(under(p, r) for p in changed))
+        outside = [p for p in changed
+                   if not any(under(p, r) for r in recorded)]
+        evidence = _output.posix_rel(_ev_io.evidence_dir(root), root)
+        check("rcp1 RECORDED_PATHS IS WHAT A RECORDED RUN WRITES, BY GIT STATUS: "
+              "after a phase, a green task, a red task and a full run, every "
+              "path git status lists is under an entry `recorded_paths` names, "
+              "the entries those paths reach are the index, the journal and "
+              "the shard, and the set holds beside them only the filed "
+              "returns' folder, which the return's filing writes - and NOT the "
+              "evidence directory, which no run writes: %r"
+              % ((codes, changed, recorded, reached, outside, dropped),),
+              codes == [M.E_OK, M.E_OK, M.E_FAIL, M.E_OK]
+              and outside == [] and dropped == []
+              and reached == ["docs/audit/audit-plan.json",
+                              "docs/audit/journal",
+                              "docs/audit/phases/P1.json"]
+              and recorded == ["docs/audit/audit-plan.json",
+                               "docs/audit/evidence/returns",
+                               "docs/audit/journal",
+                               "docs/audit/phases/P1.json"]
+              and evidence == "docs/audit/evidence"
+              and not any(under(r, evidence) and r != "docs/audit/evidence/returns"
+                          for r in recorded))
+        recorder = set(M.RECORDER_META)
+        check("rcp2 THE PLAN'S META MOVES ACROSS A RECORDED RUN ONLY IN THE "
+              "RECORDER'S OWN KEYS: each run's change to `meta` is within "
+              "`RECORDER_META` - the full run's record and measured run "
+              "included - and the boundary stamp and the full record did move, "
+              "so the case is not passing over runs that wrote nothing; the "
+              "reuse key of a task run therefore holds still across all of "
+              "them: %r" % ((moved, sorted(recorder), keys),),
+              all(set(m) <= recorder for m in moved)
+              and _ev_io.SINCE_KEY in moved[0]
+              and _ev_io.FULL_RECORD_KEY in moved[3]
+              and keys[0] is not None and len(set(keys)) == 1)
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "rcp-block", _recorded_paths_cases)
         _harness.stage(check, "tp-block", _plan_handed_cases)
         _harness.stage(check, "cs-block", _counts_sample_cases)
         _harness.stage(check, "bp-block", _both_places_cases)

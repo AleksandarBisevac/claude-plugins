@@ -4191,10 +4191,11 @@ def _landing_commit_cases(check):
     _foreign_pending_cases(check)
 
 
-def _ignored_evidence_repo(root, exclude):
+def _ignored_evidence_repo(root, exclude, returns=True):
     """The parent checked out nowhere and a clean tree on the phase branch, with
-    an evidence record on disk - excluded through `.git/info/exclude` when
-    `exclude` - and the git object for the parent read before the run."""
+    an evidence directory on disk holding a ledger file and, when `returns`, a
+    filed return - excluded through `.git/info/exclude` when `exclude` - and
+    the git object for the parent read before the run."""
     git = _fixture_git(root)
     _init_fixture_repo(git)
     mpath = _write_plan(root, {"developmentBranch": "main"},
@@ -4210,6 +4211,12 @@ def _ignored_evidence_repo(root, exclude):
     os.makedirs(evidence)
     with open(os.path.join(evidence, "run.jsonl"), "w") as fh:
         fh.write("{}\n")
+    if returns:
+        filed = os.path.join(evidence, "returns", "P1.1")
+        os.makedirs(filed)
+        with open(os.path.join(filed, "20260101T000000Z.executor.json"),
+                  "w") as fh:
+            fh.write("{}\n")
     if exclude:
         with open(os.path.join(root, ".git", "info", "exclude"), "a") as fh:
             fh.write("docs/audit/evidence\n")
@@ -4228,15 +4235,33 @@ def _ignored_evidence_cases(check):
         code = M.main([mpath, "P1", "--project", root], out=lines.append)
         text = "\n".join(lines)
         after = git("rev-parse", "main").stdout.decode().strip()
-        check("ie1 an evidence directory in .git/info/exclude refuses the landing "
-              "before the merge: exit 1, main unmoved, the branch still there, "
-              "nothing stamped, the remedy named: exit %r, moved %r, %s"
+        check("ie1 an evidence directory in .git/info/exclude, holding a filed "
+              "return, refuses the landing before the merge - its returns' "
+              "folder is a record the stamp commit must carry: exit 1, main "
+              "unmoved, the branch still there, nothing stamped, the remedy "
+              "named: exit %r, moved %r, %s"
               % (code, parent != after, text[-300:]),
               code == M.E_FAIL and parent == after and "REFUSED" in text
-              and "docs/audit/evidence" in text and "Nothing was merged" in text
+              and "docs/audit/evidence/returns" in text
+              and "Nothing was merged" in text
               and git("rev-parse", "--verify", "-q",
                       "audit/p1-demo").returncode == 0
               and not _merged_at(mpath))
+    finally:
+        _harness.remove_tree(root)
+    root = _harness.fixture_root("closephase-ignored-ledger")
+    try:
+        git, mpath = _ignored_evidence_repo(root, True, returns=False)
+        parent = git("rev-parse", "main").stdout.decode().strip()
+        lines = []
+        code = M.main([mpath, "P1", "--project", root], out=lines.append)
+        after = git("rev-parse", "main").stdout.decode().strip()
+        check("ie1b ...while the same excluded directory holding only a ledger "
+              "file refuses nothing and lands: no run writes there and the stamp "
+              "commit does not stage it, so a rule refusing the whole directory "
+              "would be refusing for a record nobody carries: exit %r, moved %r, "
+              "%s" % (code, parent != after, "\n".join(lines)[-200:]),
+              code == M.E_OK and parent != after and bool(_merged_at(mpath)))
     finally:
         _harness.remove_tree(root)
     root = _harness.fixture_root("closephase-notignored-evidence")
@@ -4269,7 +4294,14 @@ def _foreign_pending_cases(check):
                                 "another phase is not committed under it either"),
              ("lt8", None, "ALLOW: the same re-run with nothing else pending "
                            "commits its stamp - a skip on every re-run would "
-                           "fail here"))
+                           "fail here"),
+             ("lt9", "returns", "another session's uncommitted filed return is "
+                                "not committed under it either - the state "
+                                "commit carries the returns' folder whole"),
+             ("lt9b", "ledger", "ALLOW: an uncommitted file elsewhere under the "
+                                "evidence directory does not hold the stamp "
+                                "back - the state commit does not stage it, so "
+                                "it cannot ride into the landing"))
     for cid, foreign, label in cases:
         root = _harness.fixture_root("closephase-foreign-%s" % (cid,))
         wt = None
@@ -4297,14 +4329,25 @@ def _foreign_pending_cases(check):
                 with open(os.path.join(jdir, "2026-01.other.jsonl"), "w") as fh:
                     fh.write(json.dumps({"action": "task.note", "details": {
                         "phaseId": "P9", "taskId": "P9.1"}}) + "\n")
+            if foreign in ("returns", "ledger"):
+                evdir = os.path.join(root, "docs", "audit", "evidence")
+                where = (os.path.join(evdir, "returns", "P9.1")
+                         if foreign == "returns" else evdir)
+                if not os.path.isdir(where):
+                    os.makedirs(where)
+                name = ("20260101T000000Z.executor.json"
+                        if foreign == "returns" else "2026-01.other.jsonl")
+                with open(os.path.join(where, name), "w") as fh:
+                    fh.write("{}\n")
             lines = []
             code = M.main([mpath, "P1", "--project", root], out=lines.append)
             text = "\n".join(lines)
-            if foreign:
+            named = {"journal": "other.jsonl",
+                     "returns": "20260101T000000Z.executor.json"}
+            if foreign in ("plan", "journal", "returns"):
                 ok = (_head_merged_at(git) is None and bool(_merged_at(mpath))
                       and "not committed here" in text
-                      and ("other.jsonl" in text if foreign == "journal"
-                           else "audit-plan.json" in text))
+                      and named.get(foreign, "audit-plan.json") in text)
             else:
                 ok = (code == M.E_OK
                       and _head_merged_at(git) == _merged_at(mpath))

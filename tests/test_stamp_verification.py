@@ -565,15 +565,13 @@ def _recorder_dirty_cases(check):
         _write(os.path.join(where, "20261008T000000Z.executor.json"), "{}\n")
     code, text = _stamp_then(repo, man_path, file_return)
     check("sv18 A FILED RETURN ALONE LEAVES THE STAMP CURRENT, exit 0: the "
-          "return lands under the evidence directory, which the stamp's dirty "
-          "digest now leaves out the way its content field already did: "
+          "return lands in the evidence directory's returns' folder, which the "
+          "stamp's dirty digest leaves out the way its content field does: "
           "exit=%r %r" % (code, [ln for ln in text.splitlines()
                                  if "dirtyDigest" in ln]),
           code == 0 and _tree_stamp.CURRENT in text)
 
     def record_gate():
-        with open(os.path.join(audit, "evidence", "gates.jsonl"), "a") as fh:
-            fh.write('{"row": 2}\n')
         with open(os.path.join(audit, "journal", "2026-10.jsonl"), "a") as fh:
             fh.write('{"row": 2}\n')
         _write(os.path.join(audit, "phases", "P1.json"),
@@ -582,10 +580,21 @@ def _recorder_dirty_cases(check):
             {"id": "P1", "shard": "phases/P1.json"}]}, indent=1))
     code, text = _stamp_then(repo, man_path, record_gate)
     check("sv19 A RECORDED GATE ALONE LEAVES THE STAMP CURRENT, exit 0: a "
-          "ledger row, a journal row, and the plan index and its shard "
-          "rewritten - every path the plugin's recorders write: exit=%r %r"
+          "journal row, and the plan index and its shard rewritten - every "
+          "path a recorded run writes: exit=%r %r"
           % (code, [ln for ln in text.splitlines() if "dirtyDigest" in ln]),
           code == 0 and _tree_stamp.CURRENT in text)
+
+    def append_ledger_row():
+        with open(os.path.join(audit, "evidence", "gates.jsonl"), "a") as fh:
+            fh.write('{"row": 2}\n')
+    code, text = _stamp_then(repo, man_path, append_ledger_row)
+    check("sv19b ...BUT A ROW APPENDED TO A LEDGER FILE UNDER THE EVIDENCE "
+          "DIRECTORY READS STALE, exit 1: no recorder writes there any more, "
+          "so the stamp no longer leaves the directory out and a change to a "
+          "frozen ledger is a change to the tree: exit=%r %r"
+          % (code, [ln for ln in text.splitlines() if "moved" in ln]),
+          code == M.E_STALE and "moved" in text)
 
     code, text = _stamp_then(
         repo, man_path,

@@ -359,7 +359,7 @@ L4:
   _ado_drift -> _manifest_io, _manifest_vocab, _output, _usage_core
   _config_rules -> _loader, _output, _policy
   _doctor_report -> _loader, _output
-  _evidence_io -> _journal_io, _json_schema, _loader, _locks, _machine_paths, _manifest_io, _manifest_vocab, _output, _task_timing, _usage_core, _utc_stamp, _worktrees
+  _evidence_io -> _filed_returns, _journal_io, _json_schema, _loader, _locks, _machine_paths, _manifest_io, _manifest_vocab, _output, _task_timing, _usage_core, _utc_stamp, _worktrees
   _gate_feed -> _journal_io, _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _output, _policy, _ui_theme
   _id_shape -> _branch, _loader, _manifest_io, _manifest_vocab, _output
@@ -401,7 +401,7 @@ L6:
   _doctor_policy -> _branch, _claude_home, _doctor_report, _manifest_io, _output, _skill_places, _worktrees
   _doctor_setup -> _claude_home, _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
   _doctor_trail -> _doctor_report, _evidence_io, _fmt, _journal_io, _manifest_io, _manifest_vocab, _output, _worktrees
-  _invariants -> _branch, _commit_trail, _evidence_io, _journal_io, _loader, _locks, _manifest_crossrefs, _manifest_io, _manifest_rules, _manifest_vocab, _output, _task_outputs, usage_ledger
+  _invariants -> _branch, _commit_trail, _evidence_io, _filed_returns, _journal_io, _loader, _locks, _manifest_crossrefs, _manifest_io, _manifest_rules, _manifest_vocab, _output, _task_outputs, usage_ledger
   _panel_composition -> _ado_drift, _ado_parent, _ado_tracked, _areas, _branch, _evidence_io, _manifest_io, _manifest_vocab, _output, _panel_paths, _priority, _status_facts, _worktrees
   _panel_page -> _loader, _output, _panel_settings, _panel_ui, _ui_theme
   _panel_policy -> _areas, _config_rules, _manifest_io, _output, _panel_discovery, _panel_paths, _policy
@@ -1264,8 +1264,11 @@ the phase branch, on that branch, with the parent fast-forwarded to it once more
 ancestry read back. A stamp in a tree holding any other branch is left there and said
 (`landingCommitSkipped`, not a failure), and so is one in a tree holding other pending changes to
 the files the audit-state commit stages whole - a plan file differing from HEAD beyond this phase's
-stamp fields, a journal row about anything else, any evidence change (`pending_beyond_stamp`), so
-another session's work never rides into the landing's commit. A commit verb that refuses makes the
+stamp fields, a journal row about anything else, any change in the filed returns' folder
+(`pending_beyond_stamp`), so another session's work never rides into the landing's commit. A
+change elsewhere under the evidence directory refuses nothing, since the state commit does not
+stage it; an ignored record is asked of the journal and that folder alone
+(`ignored_stamp_refusal`). A commit verb that refuses makes the
 run exit 1. Under `review.perTask: phase` the merge is refused while a task recording a commit
 lacks its answers, asked of the handed plan, of the worktree's copy on disk (`worktree_phase`) AND
 of the branch tip's copy (`landed_answers_refusal`): from the parent's checkout the handed copy is
@@ -3941,7 +3944,12 @@ cover, the one reading `_config.declared_git_rels` gives the commit that staged 
 in `tests/test__invariants.py`) — its phase's manifest file and the two records beside it
 (`git show --name-only`), a breach naming the staged path in git's spelling and in the plan's
 through `_config.git_to_plan`, or as outside the project (`os4`, `os5`: the plan below its git
-root and the git root below the plan); an **audit-state** commit staged those records and *not* the task's
+root and the git root below the plan) - the two records being the journal and the filed returns'
+folder (`record_rels`, through `_evidence_io.returns_dir`), and anything else under the evidence
+directory a breach unless the commit only appended rows to a ledger file - a `.jsonl` file in
+the evidence directory itself (`_is_ledger_file`) - which is how a commit of the previous
+release is read as before (`frozen_rows_appended`; `iv40`-`iv40d`, `iv46b`); an
+**audit-state** commit staged those records and *not* the task's
 `files`, found through the journal's `audit.state.committed` rows because nothing in the
 manifest names such a commit; a **manifest-index** commit staged the shared index and the
 journal holding its own row and nothing else, found the same way through `audit.index.committed`
@@ -4031,6 +4039,18 @@ would conflict on every merge, the one thing the sharded layout exists to avoid.
 does not end up with the record of it somewhere else; the resolution is deliberately the same
 shape as `journal_dir()`, because two expressions of "where does this manifest keep its committed
 record" would separate the trail from the evidence the first time a repo set an unusual path.
+
+**What this plugin's recorders write is one function, `recorded_paths()`**: the index, every shard
+it names, the journal directory and the filed returns' folder (`returns_dir()`, the
+`returns/` part of the evidence directory, written by a filing after an executor's stamp is
+taken) - and not the rest of the evidence directory, which no run writes any more. Every reader
+leaving the recorder's own output out of a tree follows through it: the gate's reuse identity
+and the steps it grades as naming a left-out path, the stamp's `content` field
+(`stamp-verification.py`), the drive's code-moved check, and through `_invariants.record_rels`
+the scoped commits and the paths a task may not declare. `rcp1` measures the set against what a
+task, a phase and a full run really modify, by git status. The `meta` keys a recorded run writes
+itself are `RECORDER_META_KEYS` - the boundary stamp and the full run's record and measured run -
+which the gate's reuse key leaves out of the plan's meta (`rcp2`).
 `in_evidence()` is the membership question that pairs with it — is this path inside the record —
 and its prefix test carries the separator, a boundary its cases assert from the outside, since a
 prefix test without it admits every sibling whose name merely starts the same way.
@@ -4851,8 +4871,11 @@ anything is staged.
 the task's own `files` (a `:line-range` suffix stripped, because git has never heard of one) with
 the changed paths its own honoured `outputs` patterns cover — the gate opened those to it, so
 counting them and leaving them out would close the task over them (`ctw-fi2`) — the
-phase's manifest file, the journal directory and the evidence directory — and, beside the shard,
-the part of the manifest **index** its phase owns, and nothing else of it.
+phase's manifest file, the journal directory and the filed returns' folder of the evidence
+directory (`_evidence_io.returns_dir`, labelled `RETURNS_LABEL`) — and, beside the shard, the part
+of the manifest **index** its phase owns, and nothing else of it. The rest of the evidence
+directory holds only rows an earlier release wrote, so nothing of it is staged; the state commit
+(`state_targets`) carries the same three record places.
 
 **One invariant holds the index** (`_invariants.owned_index`): the part a phase owns — its tasks'
 fileIndex rows, the bug links its shard completes, its stub's mirrored `_STUB_KEYS` — equals what
@@ -4935,11 +4958,11 @@ built from HEAD's and its own shard.
 **The state commit (`--state`) closes the gap a red run leaves.** Evidence is meant to be
 committed, but the orchestrator commits on success and only on success: a red gate leaves
 `in_progress`, an infrastructure failure STOPs without committing, and the sign-off commit waits
-for green. A task commit stages the evidence directory, so a run that fails at attempt one and
-succeeds at attempt two is already durable; what is not is a run whose task or phase never commits
-at all. `/audit:resume` runs it first, `drive-phase.py` after a block and at sign-off, and
+for green. A task commit stages the shard holding a run's record, so a run that fails at attempt
+one and succeeds at attempt two is already durable; what is not is a run whose task or phase never
+commits at all. `/audit:resume` runs it first, `drive-phase.py` after a block and at sign-off, and
 `close-phase.py` for a landing's stamp. It stages the phase's manifest file, the journal
-directory, the evidence directory and the index — **never a task's `files`**, which is the entire
+directory, the filed returns' folder and the index — **never a task's `files`**, which is the entire
 point: a failed task's code stays out of git. The index is carried **whole** when every reference
 in it is held by the shards as this commit leaves them (this phase's own counts as committed) and
 it drops no row a committed shard still declares; otherwise only the part this phase owns is
@@ -5072,9 +5095,11 @@ other guess repeats a verdict nobody measured.
 
 **The plan's meta is in the key** (`meta_part`), because a step can read the plan without naming
 it: this repository's own sweep holds suites that read the live plan's meta. An edit to any meta
-block measures every step, whole run and per step. The one meta key a recorded run writes itself,
-the evidence boundary (`RECORDER_META`, the writer's own `SINCE_KEY`), is left out of it, or the
-ask after a plan's first recorded run could never repeat; `ru51` drives that pair. A row recorded
+block measures every step, whole run and per step. The meta keys a recorded run writes itself -
+the evidence boundary and a full run's record and measured run (`RECORDER_META`, which is
+`_evidence_io.RECORDER_META_KEYS`, held beside their writers) - are left out of it, or the ask
+after a plan's first recorded run, or after any full run, could never repeat; `ru51` drives that
+pair, and `rcp2` checks the tuple against the meta a task, a phase and a full run really move. A row recorded
 before the meta joined the key keys differently once: one measurement, never a stale repeat.
 
 **It is the entry that is measured, not the whole gate.** `repeat_plan` splits the gate: the
@@ -5638,8 +5663,9 @@ per start (`base_reading_for`, `measure_base`): `run-test-gate.py --base-of` ove
 detached tree at the red run's own recorded head - never at the current HEAD - built outside the
 repository and removed after (`remove_base_tree`, through `_worktrees.tree_unsettled`). The identity
 the measurement checks is the code the red ran on: `code_moved` compares the red's head with HEAD
-with the recorder's own paths left out (`_evidence_io.recorded_paths`, the same narrowing
-`run-test-gate.py` and `_tree_stamp` use), so a HEAD the drive's own record commit of the red moved
+with the recorder's own paths left out (`_evidence_io.recorded_paths` - the plan, its shards, the
+journal and the filed returns' folder, never the rest of the evidence directory - the same
+narrowing `run-test-gate.py` and `_tree_stamp` use), so a HEAD the drive's own record commit of the red moved
 is measured, and a HEAD that moved anything else, or that git cannot compare, is not measurable
 (`brc1`, `brc2`, `brc5`). Where it runs is `gate_in_background`'s answer over the red steps:
 past the foreground bound, unmeasured, or under `auto` it is `dispatch-base`, run in the background
@@ -6994,8 +7020,9 @@ refuses one that reads as a path, and writes the text verbatim to
 `<evidence dir>/returns/<taskId>/<start>.<role>.json`, where `<start>` is the task's current
 `startedAt`. The create is exclusive, so a second filing for one task, role and start is
 refused and the first stays byte-identical; a re-start re-stamps `startedAt`, so a retry
-files beside it. The evidence directory travels in the close commit, so a clone receives the
-claim beside the gate row it can be compared with. What it cannot hold: the task id and the
+files beside it. The returns' folder travels in the close commit (`_evidence_io.returns_dir`, a
+record path to every scoped commit), so a clone receives the claim beside the run record it can
+be compared with. What it cannot hold: the task id and the
 role are the caller's word.
 
 **`scope <taskId>` gives a task the fields creation could not know**, through the same lock,
