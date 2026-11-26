@@ -614,7 +614,7 @@ def _record_set_cases(check):
     # index names. A single-file plan names no shard, so it carries none.
     got = _record_set(proj, {"phases": [{"id": "P1"}]}, None, phase={"id": "P1"})
     check("a single-file plan's record set names no shard at all - the set is "
-          "the index, the journal and the evidence: %r" % (got,),
+          "the index, the journal and the filed returns: %r" % (got,),
           isinstance(got, list) and not [p for p in got if "/phases/" in p]
           and "docs/audit/audit-plan.json" in got)
 

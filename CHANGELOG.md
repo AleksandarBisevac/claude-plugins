@@ -66,6 +66,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   the newest record repeats is kept on that record. `--base-of` a launched run a later run
   replaced says so and names the red the subject holds now, or says no red of it stands.
 
+### Breaking — the evidence directory is part of the tree again, and a commit carries only its returns
+- **What this plugin's recorders write is the plan, its shards, the journal and the filed
+  returns' folder (`returns/` in `evidence.dir`) - not the rest of the evidence directory,
+  which no run writes any more.** Every reader that leaves the recorders' output out of a tree
+  follows: the gate's reuse key, the steps it measures for naming a left-out path, a stamp's
+  `content` field and the drive's code-moved check now read the evidence directory's frozen
+  rows as part of the tree. **In a project whose evidence directory holds rows an earlier
+  release wrote, the first run after the upgrade measures every step**, because the key no
+  longer leaves the evidence directory out and no run recorded before the upgrade matches it;
+  the runs after it repeat as before.
+- **A task commit and `commit-task-work.py --state` stage the filed returns' folder and not the
+  evidence directory**, so a ledger file changed in the working tree stays there, and
+  `verify-invariants.py`'s `commit-scope` and `audit-state-scope` report a commit carrying a
+  path under the evidence directory outside that folder as a breach. A commit that only
+  appended rows to a ledger file - what an earlier release's recorder and commit verb made -
+  is read as before. `close-phase.py` asks the returns' folder, not the whole directory,
+  whether git ignores it or holds a change another session left there.
+- **The plan's meta keys a recorded run writes itself include the full run's record.** A
+  `--full --record` run's `meta.lastFullRun` and `meta.lastMeasuredFullRun` are left out of
+  the plan's meta in the reuse key beside `meta.evidenceSince`, so a full run no longer makes
+  the next task or phase run on the same tree measure every step.
+
 ### Breaking — a full run is the plan's full-run record, and `--writer` is gone
 - **`run-test-gate.py --full --record` keeps the newest full run of any verdict as the plan's
   full-run record, `meta.lastFullRun` in the index, and appends no row.** Red, dirty and

@@ -20766,7 +20766,7 @@ def _timing_background_cases(check):
     lines.append(_signal_raw(M, root, mpath))
     rows = _tm_rows(root, mpath)
     gates, waits = _tm_stages(mpath, "gate"), _tm_stages(mpath, "wait")
-    gate_waits = [w for w in waits if gates and "evidence row %s" % (
+    gate_waits = [w for w in waits if gates and "start of run %s" % (
         gates[0].get("runId"),) in w["basis"]]
     check("tm6 a gate run in the background is one gate stage and one selection "
           "stage of the run that measured it, however many reads name it, and "
@@ -25120,10 +25120,13 @@ def _base_auto_case(check, k02):
 # --- a base measured on the code the red ran on ----------------------------
 def _commit_records(root, mpath):
     """Commit what the recorder wrote and nothing else - the plan, the
-    journal and the evidence, as `_evidence_io.recorded_paths` names them -
-    the way the drive's own record commit lands between a red and its base
-    run. The new HEAD."""
-    rels = _evio.recorded_paths(root, mpath)[0]
+    journal and the filed returns, as `_evidence_io.recorded_paths` names
+    them - the way the drive's own record commit lands between a red and its
+    base run. Only the paths that exist are staged: the returns' folder is
+    there once a return is filed, and a pathspec git cannot match is fatal
+    to `add`. The new HEAD."""
+    rels = [rel for rel in _evio.recorded_paths(root, mpath)[0]
+            if os.path.exists(os.path.join(root, *rel.split("/")))]
     _harness.git(root, "add", "-A", "--", *rels)
     _harness.git(root, "commit", "-qm", "the record of the red")
     return _git_out(root, "rev-parse", "HEAD").strip()

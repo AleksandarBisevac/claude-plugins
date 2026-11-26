@@ -678,12 +678,12 @@ def _declared_cases(check, repos):
           "REPORTED as skipped rather than silently dropped - the journal "
           "turned off, where nothing will create it - except where its "
           "absence is the ordinary state: a journal that is on, which the "
-          "row this commit writes creates, and an evidence directory, which "
-          "no task or phase run writes any more, so a project that never had "
-          "a ledger commits with no line about one: %r / %r"
+          "row this commit writes creates, and a filed returns' folder, "
+          "which only a filed return creates, so a task run by hand commits "
+          "with no line about one: %r / %r"
           % (targets["skipped"], off_targets["skipped"]),
-          not any(M.EVIDENCE_LABEL in line for line in targets["skipped"])
-          and not any(M.EVIDENCE_LABEL in line
+          not any(M.RETURNS_LABEL in line for line in targets["skipped"])
+          and not any(M.RETURNS_LABEL in line
                       for line in off_targets["skipped"])
           and not any(M.JOURNAL_LABEL in line for line in targets["skipped"])
           and any(M.JOURNAL_LABEL in line
@@ -694,13 +694,11 @@ def _declared_cases(check, repos):
     _gate(fx, set_apart=False)
     code, text = _run(fx)
     after = _head(fx)
-    check("ctw21 the evidence a failed gate wrote IS carried - the rows a "
-          "commit's pointers name have to travel with the pointers, or a "
-          "clone receives a plan referring to runs it does not have: %r"
+    check("ctw21 the return a failed attempt filed IS carried - the claim "
+          "travels with the record it can be compared with, or a clone "
+          "receives a plan whose attempts said nothing: %r"
           % (_carried(fx, after),),
-          code == 0
-          and any(p.startswith("docs/audit/evidence/")
-                  for p in _carried(fx, after)))
+          code == 0 and TI.FILED_RETURN_REL in _carried(fx, after))
     trail_dirty = [ln for ln in TI._git(fx["root"], "status",
                                         "--porcelain").splitlines()
                    if "docs/audit/journal/" in ln]
@@ -2335,24 +2333,39 @@ def _branch_cases(check, repos):
           code == 0 and "not needed" in text and rows == [])
 
     # AN IGNORED RECORD PATH: the evidence directory an earlier release left,
-    # holding a row of another task, which git is told to ignore.
-    fx = repos.make()
-    _write(os.path.join(fx["root"], ".gitignore"), "docs/audit/evidence/\n")
-    TI._git(fx["root"], "add", "--", ".gitignore")
-    TI._git(fx["root"], "commit", "-q", "-m", "fixture: ignore the evidence",
-            "--", ".gitignore")
-    _append_ledger(fx, '{"v":1,"runId":"OLD-1","scope":"task","taskId":"P9.9",'
-                       '"phaseId":"P9","status":"passed",'
-                       '"ts":"2026-01-01T00:00:00Z"}\n')
-    _dirty_work(fx)
-    _gate(fx, set_apart=False)
-    before = _head(fx)
-    code, text = _run(fx)
+    # holding a row of another task and a filed return, which git is told to
+    # ignore - the returns' folder with it.
+    def ignored_evidence(with_return):
+        fx = repos.make()
+        _write(os.path.join(fx["root"], ".gitignore"), "docs/audit/evidence/\n")
+        TI._git(fx["root"], "add", "--", ".gitignore")
+        TI._git(fx["root"], "commit", "-q", "-m",
+                "fixture: ignore the evidence", "--", ".gitignore")
+        _append_ledger(fx, '{"v":1,"runId":"OLD-1","scope":"task",'
+                           '"taskId":"P9.9","phaseId":"P9","status":"passed",'
+                           '"ts":"2026-01-01T00:00:00Z"}\n')
+        if with_return:
+            TI._filed_return(fx["audit"], "passed")
+        _dirty_work(fx)
+        _gate(fx, set_apart=False)
+        before = _head(fx)
+        code, text = _run(fx)
+        return fx, before, code, text
+
+    fx, before, code, text = ignored_evidence(True)
     check("ctw68 a RECORD path git ignores is refused in its own words - it is a "
           "record this commit must carry, so 'drop it from the task's files' "
           "would be the wrong repair: %r / %r" % (code, text),
           code == 1 and "a record this commit is required to carry" in text
+          and "docs/audit/evidence/returns" in text
           and "drop it from the task's" not in text and _head(fx) == before)
+    fx, before, code, text = ignored_evidence(False)
+    check("ctw68b ...while the same ignored directory holding only a ledger "
+          "an earlier release wrote is no record this commit carries, so the "
+          "commit goes through without it: %r / %r" % (code, text[-300:]),
+          code == 0 and _head(fx) != before
+          and not any(p.startswith("docs/audit/evidence/")
+                      for p in _carried(fx, _head(fx))))
 
     # A FILE TAKEN OUT OF THE INDEX AND THEN IGNORED.
     fx = repos.make()
@@ -3764,7 +3777,9 @@ def _owned_index_cases(check, repos):
 # `src/a.py`, the working tree still holds the failed fix, and the index is empty
 # afterwards. Any one of those alone passes for a command that committed
 # everything, or for one that committed nothing.
-EVIDENCE_REL = "docs/audit/evidence/" + TI.EVIDENCE_NAME
+# The record a failed run leaves under the evidence directory: the return its
+# attempt filed. No run appends a ledger row any more.
+EVIDENCE_REL = TI.FILED_RETURN_REL
 
 
 def _porcelain(fx):
@@ -3820,8 +3835,8 @@ def _state_cases(check, repos):
     clone = _clone_at(fx, after, repos.scratch("exhausted"))
     carried = _read(os.path.join(clone, EVIDENCE_REL))
     carried_row = json.loads(carried) if carried else {}
-    check("cas2 ...and the failure rows are IN THE COMMIT, asserted from a "
-          "fresh clone checked out at it: %r" % (carried_row,),
+    check("cas2 ...and the return the red attempt filed is IN THE COMMIT, "
+          "asserted from a fresh clone checked out at it: %r" % (carried_row,),
           carried_row.get("status") == "failed"
           and carried_row.get("runId") == TI.FAILED_RUN_ID
           and carried_row.get("taskId") == "P1.2")
@@ -3973,18 +3988,19 @@ def _state_cases(check, repos):
           _staged(blocked) == [OWNED])
 
     away = repos.make(evidence_outside=True)
-    TI._evidence_file(away["audit"], "failed")
+    TI._filed_return(away["audit"], "failed")
     code, text = _state(away)
     away_head = _head(away)
     away_clone = _clone_at(away, away_head, repos.scratch("outside"))
-    check("cas15 an evidence directory outside the git root is degraded past "
-          "and NAMED, and the commit still carries the manifest state: %r"
+    check("cas15 an evidence directory outside the git root - its returns' "
+          "folder with it - is degraded past and NAMED, and the commit still "
+          "carries the manifest state: %r"
           % (text,),
           code == 0 and "degraded" in text
-          and M.EVIDENCE_LABEL in text and "outside the git root" in text
+          and M.RETURNS_LABEL in text and "outside the git root" in text
           and _read(os.path.join(away_clone, SHARD_REL)) is not None)
-    check("cas16 ...and the directory sitting at `docs/audit/evidence` was NOT "
-          "carried instead - it is not this manifest's evidence: %r"
+    check("cas16 ...and the returns sitting at `docs/audit/evidence` were NOT "
+          "carried instead - they are not this manifest's: %r"
           % (_carried(away, away_head),),
           _read(os.path.join(away_clone, EVIDENCE_REL)) is None)
 
@@ -3994,11 +4010,13 @@ def _state_cases(check, repos):
     targets = M.state_targets(phase, listed["manifest"], listed["root"],
                               listed["root"])
     check("cas17 the allow-list is the safety property, asserted as a LIST: "
-          "the phase's shard and the evidence directory are on it, the task's "
-          "files are not, and the index is not on it before `state_index` "
-          "decides what of it rides: %r" % (targets["paths"],),
+          "the phase's shard and the filed returns' folder are on it, the "
+          "rest of the evidence directory, the task's files and the index "
+          "are not - the index not before `state_index` decides what of it "
+          "rides: %r" % (targets["paths"],),
           SHARD_REL in targets["paths"]
-          and "docs/audit/evidence" in targets["paths"]
+          and "docs/audit/evidence/returns" in targets["paths"]
+          and "docs/audit/evidence" not in targets["paths"]
           and INDEX_REL not in targets["paths"]
           and OWNED not in targets["paths"]
           and all(not _invariants._under(OWNED, rel)
@@ -4122,7 +4140,8 @@ def _state_staging_cases(check, repos):
     and a phase ending clean after a task commit and a state commit."""
     fx = repos.make(leave_dirty=True)
     _exhaust(fx)
-    TI._git(fx["root"], "mv", SIBLING, "docs/audit/evidence/moved.jsonl")
+    TI._git(fx["root"], "mv", SIBLING,
+            "docs/audit/evidence/returns/P1.2/moved.json")
     before = _head(fx)
     code, text = _state(fx)
     check("cas30 a staged rename from OUTSIDE the allow-list into it is refused "

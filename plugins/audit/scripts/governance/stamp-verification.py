@@ -301,9 +301,11 @@ WHAT THIS DESIGN ADDRESSES, from what was observed on 2026-10-06:
     helper's own throwaway, so HEAD reads red there: NOT addressed, and its
     cause is not diagnosed here; left to a later task.
   - a stamp compare going stale because the evidence ledger the first
-    `--record` creates is left out of `content` but still moves the dirty
-    digest: NOT addressed - it is a `_tree_stamp` question, not a `red` one;
-    left to a later task.
+    `--record` created then was left out of `content` but still moved the
+    dirty digest: NOT addressed - it is a `_tree_stamp` question, not a `red`
+    one; left to a later task. No recorded run creates that ledger now, and
+    the evidence directory is no longer left out of `content` at all
+    (`_evidence_io.recorded_paths`).
 """
 import argparse
 import ast
@@ -453,9 +455,11 @@ def _checkout_records(root, path):
     integrate-task, audit-task and commit-task-work already treat exactly that
     set as the records; `_evidence_io.recorded_paths` spells them relative to the
     project it is handed, and handed the checkout root of a nested project it
-    also looks for the journal and the evidence directory beside the root rather
-    than under the project, so a journal row written after the stamp was graded
-    as the task's change.
+    also looks for the journal and the filed returns' folder beside the root
+    rather than under the project, so a journal row written after the stamp was
+    graded as the task's change. A return filed after the stamp is left out the
+    same way; the rest of the evidence directory is in `content`, since no
+    recorder writes there.
 
     A write outside the checkout is not in `ls-files` at all, so there is nothing
     to leave out and `record_rels` omits it; `dropped` is therefore empty on that

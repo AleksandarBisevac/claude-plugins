@@ -62,6 +62,7 @@ This module carries no `--selftest` of its own; its cases live in
 """
 import json
 import os
+import posixpath
 import re
 import shutil
 import sys
@@ -93,6 +94,7 @@ _output.install_path()
 import _branch  # noqa: E402  (which branch a phase forks from, and the basis for it)
 import _commit_trail  # noqa: E402  (is a recorded SHA still reachable, and the git runner)
 import _evidence_io  # noqa: E402  (the test-evidence record: where it lives)
+import _filed_returns  # noqa: E402  (RETURNS_DIRNAME: the filed returns' folder)
 import _journal_io  # noqa: E402  (the trail: where it lives, its rows, their stateHash)
 import _locks  # noqa: E402  (the index lock the baseline write is taken under)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader; single-file OR shards)
@@ -315,8 +317,10 @@ def record_rels(manifest_path, phase, project, git_root, head_index=None,
                 config=None):
     """Git-root-relative paths (files or directories) that are RECORD, not work:
     the index, this phase's file, every other shard the index names, the journal
-    directory and the evidence directory - each once, in that order. A path
-    outside `git_root` is left out, since nothing there can be committed.
+    directory and the filed returns' folder (`_evidence_io.returns_dir`) - each
+    once, in that order. A path outside `git_root` is left out, since nothing
+    there can be committed. The rest of the evidence directory is not record:
+    no writer puts anything there any more, so nothing of it is carried as one.
     `head_index` is a second raw index - the one a commit holds - whose shards
     are record too.
 
@@ -342,7 +346,7 @@ def record_rels(manifest_path, phase, project, git_root, head_index=None,
     for absolute in ([index_abs, phase_abs] + _shard_files(raw, index_abs)
                      + _shard_files(head_index, index_abs)
                      + [_journal_io.journal_dir(project, config),
-                        _evidence_io.evidence_dir(project, config)]):
+                        _evidence_io.returns_dir(project, config)]):
         rel = _rel(absolute, git_root)
         if rel is not None and rel not in found:
             found.append(rel)
@@ -351,8 +355,8 @@ def record_rels(manifest_path, phase, project, git_root, head_index=None,
 
 def is_record_path(path, records):
     """Whether git-root-relative `path` is one of `records` or lives under one
-    - a record directory's own tree (the journal, the evidence) is still a
-    record, and a sibling sharing only a prefix with one is not."""
+    - a record directory's own tree (the journal, the filed returns) is still
+    a record, and a sibling sharing only a prefix with one is not."""
     return any(_under(path, rel) for rel in records or ())
 
 
@@ -390,11 +394,59 @@ COMMIT_SCOPE_BASIS = ("git show --name-only <task.commit>, against what that "
                       "task declares - its `files` and the staged paths its own "
                       "honoured `outputs` cover (`_config.declared_git_rels`) - "
                       "its phase's manifest file, the journal directory and the "
-                      "evidence directory - what execute-task.md step 4c allows "
-                      "a task commit to stage - "
+                      "filed returns' folder - what execute-task.md step 4c "
+                      "allows a task commit to stage - "
                       "plus the index when it is exactly its parent's with this "
                       "phase's owned part derived from the committed shard "
-                      "(`owned_index`)")
+                      "(`owned_index`), and, read as before, rows a previous "
+                      "release's recorder appended to a ledger file under the "
+                      "evidence directory (`frozen_rows_appended`)")
+
+
+def frozen_rows_appended(git_root, sha, parent, path):
+    """True when commit `sha` changed `path` only by appending ledger rows to
+    what `parent` held there - the one change under the evidence directory,
+    outside the filed returns' folder, that a commit was ever made with.
+
+    HOW A COMMIT OF THE PREVIOUS RELEASE IS READ AS BEFORE. That release's
+    recorder appended a row per run to a ledger file and its commit verb
+    staged the directory, so its commits carry exactly that change; no run
+    writes there now, and the commit verb no longer stages the directory.
+    Read off what the commit DID rather than off a date or a version, which
+    no commit records: a row appended is the old writer's act, while a file
+    that is no row, a rewritten or deleted row, or a line that parses as no
+    row in the middle of what was added is nobody's, and stays the breach.
+    A torn LAST line is a crash mid-append, which that writer could leave.
+    """
+    code, after = _git(git_root, ["show", "%s:%s" % (sha, path)])
+    if code is None or code != 0:
+        return False
+    before = ""
+    if parent:
+        code, held = _git(git_root, ["show", "%s:%s" % (parent, path)])
+        if code is None:
+            return False
+        before = held if code == 0 else ""
+    if not after.startswith(before) or (before and not before.endswith("\n")):
+        return False
+    rows, _torn = _journal_io.rows_from_text(after[len(before):])
+    return bool(rows) and all(
+        isinstance(row.get("runId"), str) and row.get("runId")
+        and not row.get("_unparseable") for row in rows)
+
+
+def _record_or_frozen(path, journal_rel, evidence_rel, git_root, sha, parent):
+    """True when commit `sha` (whose parent is `parent`) may carry
+    git-root-relative `path` as record: in the journal, in the filed returns'
+    folder under `evidence_rel`, or elsewhere under `evidence_rel` when the
+    commit only appended rows there (`frozen_rows_appended`)."""
+    if _under(path, journal_rel):
+        return True
+    if not evidence_rel or not _under(path, evidence_rel):
+        return False
+    return (_under(path, posixpath.join(evidence_rel,
+                                        _filed_returns.RETURNS_DIRNAME))
+            or frozen_rows_appended(git_root, sha, parent, path))
 
 
 def completed_bug_links(index_now, index_before, phase_body):
@@ -652,12 +704,14 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
     and the plan's through `_config.git_to_plan` (`_plan_spelling`), or says it
     lies outside the project, so its reader can hold it against `files`.
 
-    THE EVIDENCE DIRECTORY IS ALLOWED FOR THE JOURNAL'S REASON, one noun over. A
-    task commit stages it so that the record of what ran reaches git with the
-    change it describes rather than a week later - and a failed run's record
-    reaches git at all, since the orchestrator does not commit a red gate. It
-    defaults to None so a caller that has not resolved one is told nothing about
-    evidence rather than being told there is none.
+    THE EVIDENCE DIRECTORY IS NOT ALLOWED, ITS FILED RETURNS' FOLDER IS. A run's
+    record is in the shard, and the commit verb stages only the returns' folder
+    of the directory, so a task commit carrying anything else there is a
+    breach naming it - with one reading kept for history: a commit that only
+    appended ledger rows is the previous release's recorder and commit verb at
+    work, and is read as before (`frozen_rows_appended`). `evidence_rel`
+    defaults to None so a caller that has not resolved one is told nothing
+    about evidence rather than being told there is none.
 
     THE INDEX IS ITS OWN FINDING. "Do NOT stage the index" is a separate sentence
     in step 4c and a separate failure: a task commit that carries the index is
@@ -725,7 +779,8 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
                 continue
             if phase_file_rel and path == phase_file_rel:
                 continue
-            if _under(path, journal_rel) or _under(path, evidence_rel):
+            if _record_or_frozen(path, journal_rel, evidence_rel, git_root,
+                                 sha, parent):
                 continue
             if index_rel and path == index_rel and index_rel != phase_file_rel:
                 if _commit_carries_needs(git_root, sha, parent, index_rel,
@@ -744,8 +799,9 @@ def commit_scope(phase, git_root, git_root_rel, phase_file_rel, index_rel,
             breaches.append(found(
                 "%s: commit %s staged %s (%s), which the task declares neither "
                 "in its `files` nor through its own honoured `outputs`, is not "
-                "this phase's manifest file and is in neither the journal nor "
-                "the evidence directory"
+                "this phase's manifest file, is in neither the journal nor the "
+                "filed returns' folder, and is no ledger row an earlier release "
+                "appended"
                 % (tid, sha[:12], path, _plan_spelling(hc, path, git_root,
                                                        project)),
                 "%s %s" % (tid, path), sha))
@@ -766,7 +822,9 @@ AUDIT_STATE_SCOPE_BASIS = (
     "git show --name-only <commit> for every `%s` journal row naming this phase - "
     "the rows are how such a commit is found at all, since nothing in the "
     "manifest points at one - against the phase's manifest file, the manifest "
-    "index, the journal directory and the evidence directory. The task's `files` "
+    "index, the journal directory and the filed returns' folder, rows an "
+    "earlier release appended to a ledger file read as before "
+    "(`frozen_rows_appended`). The task's `files` "
     "are deliberately NOT on that list: this commit exists to preserve the record "
     "of a run that failed, and the implementation it failed on must stay out of "
     "git" % (ACTION_STATE_COMMITTED,))
@@ -1118,6 +1176,7 @@ def audit_state_scope(phase, git_root, project, phase_file_rel, index_rel,
                         % (sha[:12],))
             continue
         sha = parents.split()[0] if parents.split() else sha
+        parent = parents.split()[1] if len(parents.split()) > 1 else None
         if len(parents.split()) > _MERGE_PARENTS:
             gaps.append("%s is a merge commit, and `git show --name-only` prints "
                         "no files for one - an empty list here would read as a "
@@ -1134,14 +1193,16 @@ def audit_state_scope(phase, git_root, project, phase_file_rel, index_rel,
         for path in staged:
             if phase_file_rel and path == phase_file_rel:
                 continue
-            if _under(path, journal_rel) or _under(path, evidence_rel):
+            if _record_or_frozen(path, journal_rel, evidence_rel, git_root,
+                                 sha, parent):
                 continue
             if index_rel and path == index_rel:
                 continue
             breaches.append(found(
                 "audit-state commit %s staged %s, which is neither this phase's "
-                "manifest file, the manifest index nor anything in the journal "
-                "or the evidence directory. An audit-state commit carries the "
+                "manifest file, the manifest index, anything in the journal or "
+                "the filed returns' folder, nor a ledger row an earlier release "
+                "appended. An audit-state commit carries the "
                 "RECORD of a run and "
                 "never the work it ran on, so this is implementation reaching git "
                 "on a run that was never signed off" % (sha[:12], path),
