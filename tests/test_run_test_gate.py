@@ -49,6 +49,8 @@ import _manifest_vocab                             # noqa: E402  (FULL_STATUS_WH
 import _fmt as _rtg_fmt                            # noqa: E402  (where human_duration lives now)
 import _manifest_phases as _phases                 # noqa: E402  (the identity pin below: an
 #                                  alias, not a second body)
+import _verdict_binding                            # noqa: E402  (the commit binding a
+#                                  green row with a pre-gate step must still meet)
 import _runner_output as _ro                       # noqa: E402  (the runner readers the
 #                                  gate imports: the identity pin beside fl0)
 import io as _io
@@ -16258,8 +16260,222 @@ def _recorded_paths_cases(check):
         _harness.remove_tree(root)
 
 
+# --- the pre-gate: the project's fast check, run ahead of a task's gate --------
+# One script stands for every step: it appends its own name to `out/log.txt`, so
+# a case reads what actually ran and in which order, and exits with the code
+# `out/exits.json` maps its name to, printing the house tally either way. `out/`
+# is ignored, so neither file is a tree the gate could call rewritten.
+PRE_GATE_STEP_SCRIPT = r'''
+import json
+import sys
+name = sys.argv[1]
+with open("out/log.txt", "a", encoding="utf-8") as fh:
+    fh.write(name + "\n")
+with open("out/exits.json", encoding="utf-8") as fh:
+    code = json.load(fh).get(name, 0)
+if code:
+    sys.stdout.write("FAIL %s1 the %s check\nSELFTEST FAILED: 0/1 cases passed\n"
+                     % (name, name))
+else:
+    sys.stdout.write("PASS %s1 the %s check\n1/1 cases passed\n" % (name, name))
+raise SystemExit(code)
+'''
+
+
+def _pre_gate_build(pre_gate):
+    """The fixture's `meta.buildCommands`: `unit` and `lint` and, unless
+    `pre_gate` is False, a `preGate` - the value itself when `pre_gate` is a
+    string, else the step script named `pre`."""
+    run = '"%s" step.py %%s' % (sys.executable.replace("\\", "/"),)
+    build = {"unit": run % "unit", "lint": run % "lint"}
+    if pre_gate is True:
+        build["preGate"] = run % "pre"
+    elif pre_gate is not False:
+        build["preGate"] = pre_gate
+    return build
+
+
+def _pre_gate_repo(prefix, pre_gate=True, task_gate=("unit",), exits=None):
+    """`(root, mpath)` - a committed one-task plan whose `meta.buildCommands`
+    is `_pre_gate_build(pre_gate)`. P1.1 gates on `task_gate`; the phase gate
+    is `["unit"]`. `exits` maps a step name to its exit code."""
+    root = _harness.fixture_root(prefix)
+    for sub in (("docs", "audit", "phases"), (".claude",), ("src",), ("out",)):
+        os.makedirs(os.path.join(root, *sub))
+    build = _pre_gate_build(pre_gate)
+    files = (
+        (".gitignore", "out/\n"),
+        (".claude/audit.config.json",
+         json.dumps({"manifestPath": "docs/audit/audit-plan.json"})),
+        ("docs/audit/audit-plan.json", json.dumps(
+            {"meta": {"version": 3, "buildCommands": build},
+             "phases": [{"id": "P1", "title": "one",
+                         "shard": "phases/P1.json"}]})),
+        ("docs/audit/phases/P1.json", json.dumps(
+            {"id": "P1", "title": "one", "status": "in_progress",
+             "testGate": ["unit"], "tasks": [
+                 {"id": "P1.1", "title": "the work", "status": "in_progress",
+                  "files": ["src/a.py"],
+                  "tests": {"mode": "regression", "gate": list(task_gate)}}]})),
+        ("step.py", PRE_GATE_STEP_SCRIPT), ("src/a.py", "a = 1\n"),
+        ("out/log.txt", ""), ("out/exits.json", json.dumps(exits or {})))
+    for rel, body in files:
+        with open(os.path.join(root, *rel.split("/")), "w",
+                  newline="\n") as fh:
+            fh.write(body)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", "."],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    return root, os.path.join(root, "docs", "audit", "audit-plan.json")
+
+
+def _pre_gate_run(prefix, task=True, **fixture):
+    """`(exit code, printed text, recorded row, steps run in order)` for one
+    recorded gate run over a fresh `_pre_gate_repo` - P1.1's task gate, or
+    the phase's own gate when `task` is False."""
+    root, mpath = _pre_gate_repo(prefix, **fixture)
+    try:
+        said = []
+        argv = [mpath, "P1", "--project-dir", root, "--record", "--no-reuse"]
+        code = M.main(argv + (["--task", "P1.1"] if task else []),
+                      out=said.append)
+        evdir = os.path.join(os.path.dirname(mpath), "evidence")
+        row = _task_run(evdir, "P1.1") if task else _phase_run(evdir)
+        with open(os.path.join(root, "out", "log.txt"),
+                  encoding="utf-8") as fh:
+            ran = fh.read().split()
+        return code, "\n".join(str(s) for s in said), row, ran
+    finally:
+        _harness.remove_tree(root)
+
+
+def _pre_gate_cases(check):
+    """A task gate runs the plan's declared pre-gate (`meta.buildCommands.
+    preGate`) as its first step, and a red there stops the gate: the steps it
+    did not start are recorded by name as not run, and the run is red. A green
+    pre-gate never stands in for the gate - every declared step still runs and
+    decides - and a value that cannot be run is a step of its own that keeps
+    the run from reading green. Only a task-scope run has the stage; a gate
+    that already names the pre-gate's key runs it there, once."""
+    step = getattr(_ev_io, "PRE_GATE_STEP", None)
+    code, text, row, ran = _pre_gate_run("rtg-pre-red-", exits={"pre": 1})
+    steps = row.get("steps") or []
+    names = [s.get("name") for s in steps]
+    unrun = steps[1] if len(steps) > 1 else {}
+    check("pre1 A RED PRE-GATE STOPS THE GATE AND THE RUN IS RED: the pre-gate "
+          "ran first and alone, its step leads the record red, the gate's own "
+          "step was never started and is recorded by name as not run - no "
+          "exit, `could-not-run`, a basis naming the pre-gate: %r / %r / %r / %r"
+          % (code, row.get("status"), ran, steps),
+          step is not None and code == M.E_FAIL
+          and row.get("status") == "failed" and ran == ["pre"]
+          and names == [step, "unit"]
+          and steps[0].get("exit") == 1
+          and unrun.get("exit") is None
+          and unrun.get("outcome") == M.CANNOT_RUN
+          and "pre-gate" in str(unrun.get("outcomeBasis"))
+          and "not run" in str(unrun.get("outcomeBasis")))
+    check("pre2 ...AND THE RED IS THE PRE-GATE'S ALONE: the reader that names a "
+          "row's failed steps names the pre-gate and never a step it did not "
+          "start, and the row keeps the pre-gate's command verbatim, so its "
+          "base can run it again: %r / %r"
+          % ([s.get("name") for s in steps if _ev_io._counts_as_failed(s)],
+             steps[0].get("command") if steps else None),
+          [s.get("name") for s in steps if _ev_io._counts_as_failed(s)]
+          == [step] and step is not None
+          and str(steps[0].get("command")).endswith("step.py pre"))
+    banners = [ln for ln in text.splitlines() if ln.startswith("GATE ")]
+    check("pre10 ...AND IT PRINTS AS THE TASK'S RED: one `GATE RED` naming the "
+          "pre-gate, and no `GATE COULD NOT RUN` over the step it stopped - "
+          "that banner's repair is the runner's and spends no retry: %r"
+          % (banners,),
+          step is not None and len(banners) == 1
+          and banners[0].startswith("GATE RED:") and step in banners[0])
+    code, text, row, ran = _pre_gate_run("rtg-pre-green-red-",
+                                         exits={"unit": 1})
+    steps = row.get("steps") or []
+    check("pre3 A GREEN PRE-GATE NEVER STANDS IN FOR THE GATE: the pre-gate "
+          "green and the gate's own step red, both ran, in that order, and the "
+          "run is red on the step it declared: %r / %r / %r / %r"
+          % (code, row.get("status"), ran, steps),
+          step is not None and code == M.E_FAIL
+          and row.get("status") == "failed" and ran == ["pre", "unit"]
+          and [s.get("name") for s in steps] == [step, "unit"]
+          and [s.get("exit") for s in steps] == [0, 1])
+    code, text, row, ran = _pre_gate_run("rtg-pre-green-")
+    steps = row.get("steps") or []
+    check("pre4 ALL GREEN IS GREEN WITH THE PRE-GATE IN ITS STEPS, ahead of the "
+          "gate's own: %r / %r / %r / %r" % (code, row.get("status"), ran, steps),
+          step is not None and code == M.E_OK
+          and row.get("status") == "passed" and ran == ["pre", "unit"]
+          and [s.get("name") for s in steps] == [step, "unit"]
+          and [s.get("exit") for s in steps] == [0, 0])
+    bound = _verdict_binding.gate_mismatch(row, ["unit"], "task",
+                                           _pre_gate_build(True))
+    check("pre5 ...AND THAT GREEN STILL BINDS THE TASK'S DECLARED GATE: the "
+          "leading pre-gate step is not read as a gate entry, so the commit "
+          "binding compares the gate the task declares: %r" % (bound,),
+          step is not None and row.get("status") == "passed" and bound is None)
+    code, text, row, ran = _pre_gate_run("rtg-pre-blank-", pre_gate="   ")
+    steps = row.get("steps") or []
+    lead = steps[0] if steps else {}
+    check("pre6 AN UNUSABLE PRE-GATE IS SAID AND NEVER GREEN: a blank value is "
+          "a leading step that could not run, its basis the plan's own problem "
+          "sentence; the gate's step still ran, and the run is not `passed`: "
+          "%r / %r / %r / %r" % (code, row.get("status"), ran, steps),
+          step is not None and code != M.E_OK
+          and row.get("status") == M.CANNOT_RUN and ran == ["unit"]
+          and [s.get("name") for s in steps] == [step, "unit"]
+          and lead.get("outcome") == M.CANNOT_RUN
+          and "blank" in str(lead.get("outcomeBasis"))
+          and "preGate" in text)
+    code, text, row, ran = _pre_gate_run("rtg-pre-named-",
+                                         task_gate=("preGate", "unit"))
+    steps = row.get("steps") or []
+    check("pre7 NEVER TWICE: a task gate that names the pre-gate's key runs it "
+          "there, once, as its declared entry - no stage ahead of it - and the "
+          "run says so: %r / %r / %r" % (code, ran, steps),
+          code == M.E_OK and ran == ["pre", "unit"]
+          and [s.get("name") for s in steps] == ["preGate", "unit"]
+          and "preGate" in text and "once" in text)
+    code, text, row, ran = _pre_gate_run("rtg-pre-phase-", task=False)
+    steps = row.get("steps") or []
+    check("pre8 THE STAGE IS A TASK GATE'S: the phase's own gate runs what it "
+          "declares and no pre-gate ahead of it: %r / %r / %r"
+          % (code, ran, steps),
+          code == M.E_OK and ran == ["unit"]
+          and [s.get("name") for s in steps] == ["unit"])
+    measured = {"steps": [{"name": step, "exit": 0, "ran": 1},
+                          {"name": "plan", "exit": 0, "ran": 1}],
+                "failed": [], "status": "passed", "overlap": None}
+    source = {"runId": "r-src", "ts": "2026-11-26T10:00:00Z",
+              "status": "passed",
+              "steps": [{"name": "unit", "exit": 0, "ran": 1}]}
+    joined = M.part_reused_result(measured, source, ["unit"],
+                                  [("unit", "u"), ("plan", "p")])
+    order = [s.get("name") for s in joined.get("steps") or []]
+    check("pre11 A GATE REPEATED IN PART STILL LEADS WITH ITS PRE-GATE: the "
+          "steps measured here and the ones copied are joined in declared "
+          "order behind the pre-gate, so the row binds as its gate: %r / %r"
+          % (order, _ev_io.declared_steps(order)),
+          step is not None and order == [step, "unit", "plan"]
+          and _ev_io.declared_steps(order) == (["unit", "plan"], 0))
+    code, text, row, ran = _pre_gate_run("rtg-pre-none-", pre_gate=False)
+    steps = row.get("steps") or []
+    check("pre9 ALLOW: a plan declaring no pre-gate runs its task gate exactly "
+          "as before - no leading step, nothing said about one: %r / %r / %r"
+          % (code, ran, steps),
+          code == M.E_OK and ran == ["unit"]
+          and [s.get("name") for s in steps] == ["unit"]
+          and "pre-gate" not in text.lower())
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "pgt-block", _pre_gate_cases)
         _harness.stage(check, "rcp-block", _recorded_paths_cases)
         _harness.stage(check, "tp-block", _plan_handed_cases)
         _harness.stage(check, "cs-block", _counts_sample_cases)

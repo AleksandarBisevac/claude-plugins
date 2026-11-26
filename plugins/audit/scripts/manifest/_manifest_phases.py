@@ -339,8 +339,9 @@ def phase_gate_default(meta):
     and `exclude` are both empty, so `entries` is every `buildCommands` key, in
     buildCommands order, byte-identical to what `/audit:phase add` wrote before
     this field existed - EXCEPT the keys that are not gate steps at all: a
-    review-only key (`reviewOnly`) and a sign-off-only one (`signoffOnly`), each
-    returned by name, and the latter named in `basis`.
+    review-only key (`reviewOnly`), a sign-off-only one (`signoffOnly`) and the
+    pre-gate key (`preGate`), each returned by name, and the latter two named
+    in `basis`.
     """
     always, exclude, build_keys = _phase_gate_lists(meta)
     # A READ IS NOT A COMMAND, so it is skipped HERE - the one derivation every
@@ -350,7 +351,12 @@ def phase_gate_default(meta):
     build = (meta or {}).get("buildCommands")
     review_only = review_only_keys(build)
     signoff_only = signoff_only_keys(build)
-    not_gate = set(review_only) | set(signoff_only)
+    # ...AND SO IS THE PRE-GATE, whatever its value: a task's run takes it as a
+    # stage of its own ahead of the gate, so a gate holding it would run it a
+    # second time on every task that falls back to its phase's gate.
+    pre_gate = [k for k in (build if isinstance(build, dict) else {})
+                if k == _vocab.PRE_GATE_KEY and k not in review_only]
+    not_gate = set(review_only) | set(signoff_only) | set(pre_gate)
     always = [a for a in always if a not in not_gate]
     build_keys = [k for k in build_keys if k not in not_gate]
     always_set = set(always)
@@ -381,9 +387,12 @@ def phase_gate_default(meta):
         basis += ("; %s left out - the sign-off runs %s, a gate step never "
                   "does" % (_output.some_of(signoff_only, render=repr),
                             "it" if len(signoff_only) == 1 else "them"))
+    if pre_gate:
+        basis += ("; %r left out - a task's run takes the pre-gate ahead of "
+                  "its gate, never as a gate step" % (_vocab.PRE_GATE_KEY,))
     return {"entries": entries, "always": always, "rest": rest,
             "excluded": excluded, "basis": basis, "reviewOnly": review_only,
-            "signoffOnly": signoff_only}
+            "signoffOnly": signoff_only, "preGate": pre_gate}
 
 
 def phase_gate_suite_gap(manifest, suite_keys=None):

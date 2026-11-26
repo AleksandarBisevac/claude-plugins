@@ -1294,7 +1294,7 @@
     {
       "id": "P172.9",
       "title": "This repository declares its register-citation lint as its pre-gate",
-      "status": "in_progress",
+      "status": "done",
       "description": "Project side, not product. A CLI entry for register_citation_violations (optionally over paths); the plan's pre-gate entry naming it; one CLAUDE.md hard-rule line that comments never cite register ids. Red-first: the CLI over a file with a citation exits non-zero, over a clean one 0. Needs the pre-gate key task first. Dependants: prove-gates tables (new lint entry), gate-parity, the prose lint over CLAUDE.md. The changelog fragment for this task is project-side.",
       "files": [
         "tools/lints/_deps.py",
@@ -1324,14 +1324,16 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c5a090b30260",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/lints/_deps.py: new CLI `--register-citations [--root DIR] [PATH ...]` via register_citation_command(args, repo_root) -> (exit, lines); exit 1 on a citation, 0 clean, 2 when named paths were all unscanned (exempt/untracked/outside root) or usage error; unscanned names are printed. register_citation_violations keeps its exact signature (prove-gates anchor rows reference the def line) and now delegates to _register_citations(root, rows, only); _citation_scans is the single home of the three extension groups. tests/test__deps.py: _citation_cli_cases (rc19-rc25) run the CLI as a subprocess. docs/audit/audit-plan.json: meta.buildCommands.preGate = `python3 tools/lints/_deps.py --register-citations` (hand edit, validate-manifest OK). CLAUDE.md: one hard-rules bullet, no digits. Fragments: P172.9.changed, P172.1.fixed, P172.4.changed, P172.6.changed. Pre-gate wall time over the whole tree, measured twice with a 20s gap on a quiet machine: 8.04s and 7.73s (earlier pair 7.72s, 7.71s). Whole-tree only; with paths it still walks the file lists but reads only the named files. Full sweep 196/196 files, 20065 cases; test__deps 313/313. Dependants: prove-gates anchors (c2) and px2 in test__output were broken by my first draft (signature change, os.path.relpath) and fixed within _deps.py (wrapper kept, _output.posix_rel used) - prove-gates.py now 66/66, test__output 91/91, no row needed; gate-parity passes. CLAUDE.md dependants (docs naming it by path) unchanged in meaning; the new bullet passes the register-citation and prose-number scans (pre-gate over the tree: 0 findings). A stray untracked docs/audit/journal/2026-11.f852f1a5-7d16-4e4e-9093.wt-b7bec80c.jsonl appeared in my tree, written by tooling not by me; not mine to commit.",
+        "descriptive": "The repository's register-citation lint is now a command with a meaningful exit code and is the plan's pre-gate, backed by a CLAUDE.md rule and four changelog fragments."
       },
       "startedAt": "2026-11-26T20:48:16Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-26T21:31:47Z",
+      "verifiedBy": [
+        "rc19-rc25: the CLI as a process over a dirty file (exit 1, file:line:token named), a clean file (exit 0), two paths (only the dirty one reported, once), no path (whole tree), a relative path against cwd, a path nothing scans (exit 2, 'not scanned'), and one scanned beside one unscanned (exit 0, unscanned named)"
+      ],
       "notes": [
         {
           "at": "2026-11-26T18:52:22Z",
@@ -1373,6 +1375,24 @@
             "ms": 641380,
             "basis": "durationMs in run 2026-11-26T21:31:06Z.b4268f's record (run-test-gate --record)",
             "runId": "2026-11-26T21:31:06Z.b4268f"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-26T21:16:03Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1663000,
+            "startedAt": "2026-11-26T20:48:20Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-26T21:31:06Z.b4268f",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-26T21:20:00Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit c5a090b30260",
+            "kind": "commit",
+            "ms": 1769,
+            "startedAt": "2026-11-26T21:31:43Z"
           }
         ],
         "firstStartedAt": "2026-11-26T20:48:16Z"
@@ -1481,6 +1501,18 @@
         "runId": "2026-11-26T21:31:42Z.0c8706",
         "status": "passed",
         "at": "2026-11-26T21:31:42Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "c5a090b30260",
+        "at": "2026-11-26T21:31:47Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-26T21:16:02Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__deps.py` in a throwaway tree at HEAD exited 1 with 7 of 313 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rc19 (house FAIL), rc20 (house FAIL), rc21 (house FAIL), rc22 (house FAIL), rc23 (house FAIL), rc24 (house FAIL), rc25 (house FAIL): SELFTEST FAILED: 306/313 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],

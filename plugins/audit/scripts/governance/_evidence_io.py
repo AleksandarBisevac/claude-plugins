@@ -569,6 +569,14 @@ GATE_DIGEST_KEY = "gateDigest"
 # gate entry spelled with it reads as derived, and its gate never binds.
 DERIVED_STEP_PREFIX = "affected/"
 
+# THE STEP A TASK'S RUN TAKES AHEAD OF ITS GATE: the plan's declared pre-gate
+# (`_manifest_vocab.pre_gate_command`), run first and recorded first under this
+# name. It is no entry of the gate the task declares, so `declared_steps` reads
+# a row's declared gate from the step after it - at the head only, since the
+# runner writes it nowhere else. The name is reserved as the prefix above is:
+# the plan's own key spelled as a gate entry stays an entry.
+PRE_GATE_STEP = "pre-gate/%s" % (_manifest_vocab.PRE_GATE_KEY,)
+
 
 def is_derived_step(name):
     """True when a recorded step name is one the recorder added, not declared."""
@@ -701,8 +709,13 @@ def declared_steps(names, dropped=0):
     it stands at that entry's place among the declared steps, so the declared
     gate is the same list whether the affected steps ran joined to it or after
     it. A step that ran no declared entry ends the declared part.
+
+    A LEADING `PRE_GATE_STEP` is not the gate: the run took it ahead of the
+    gate, so the declared part starts after it.
     """
     names = [str(n) for n in (names or [])]
+    if names and names[0] == PRE_GATE_STEP:
+        names = names[1:]
     dropped = dropped if isinstance(dropped, int) and dropped > 0 else 0
     heads = [step_parts(name)[0] for name in names]
     cut = next((i for i, head in enumerate(heads) if head is None), len(names))

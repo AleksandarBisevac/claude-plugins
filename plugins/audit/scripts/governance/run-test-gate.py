@@ -3953,6 +3953,9 @@ def part_reused_result(measured, source, repeated, commands):
             ran_here.remove(found)
             steps.append(found)
     steps.extend(ran_here)
+    # The pre-gate ran ahead of the gate and is no entry of it, so it leads.
+    steps = ([s for s in steps if s.get("name") == _ev.PRE_GATE_STEP]
+             + [s for s in steps if s.get("name") != _ev.PRE_GATE_STEP])
     repeated_red = failed_steps(copied)
     red = set(repeated_red) | set(measured.get("failed") or [])
     res["steps"] = steps
@@ -4054,6 +4057,78 @@ def empty_gate_result(source, basis):
         "cancelledBy": None, "overlap": None,
         "coverageBasis": "%s and no runner named a path" % (nothing,),
     }
+
+
+# --- the pre-gate: the project's fast check, ahead of a task's gate -------------
+# `meta.buildCommands.preGate` (`_manifest_vocab.pre_gate_command`) is run as a
+# task-scope run's first step, recorded under `_evidence_io.PRE_GATE_STEP`, and
+# a step of it that does not come back green stops the gate: every step after
+# it is recorded under its own name as not run (`not_run_step`), so the row
+# says what the red cost rather than reading short. A green one stands in for
+# nothing - every declared step still runs and decides the verdict. A value
+# that cannot be run is a step that could not run, so the run never reads
+# green over a pre-gate the plan declared and nobody ran. The phase gate and
+# `--full` take no stage: each runs what it declares, a `preGate` entry once.
+PRE_GATE_NOT_RUN = ("not run: the pre-gate (%s) came back %s, so the gate "
+                    "stopped before this step")
+
+
+def pre_gate_stage(manifest, commands):
+    """`(stage, said)` - the pre-gate a task-scope run of `commands` takes
+    ahead of them, and the sentence to print about it, either None.
+
+    `stage` is `(name, command, problem)`: the command resolved as a gate
+    entry is (`meta.nodePreamble` in front) with no problem, or no command and
+    the plan's sentence saying why its value cannot be run. No stage when the
+    plan declares none, and none when one of `commands` already runs it - the
+    entry named by the key, or one resolving to the same command - since a
+    stage would run it a second time; `said` says so."""
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    raw, problem = _vocab.pre_gate_command(meta.get("buildCommands"))
+    if problem is not None:
+        return (_ev.PRE_GATE_STEP, None, problem), (
+            "the plan's %s; recorded as a pre-gate step that could not run, so "
+            "this run cannot read green" % (problem,))
+    if raw is None:
+        return None, None
+    command = _ev.resolved_commands(manifest, [_vocab.PRE_GATE_KEY])[0][1]
+    named = [name for name, step in commands or []
+             if name == _vocab.PRE_GATE_KEY or step == command]
+    if named:
+        return None, ("the gate already runs the pre-gate as its entry `%s`, "
+                      "so it runs there, once, and not again ahead of the gate"
+                      % (named[0],))
+    return (_ev.PRE_GATE_STEP, command, None), None
+
+
+def pre_gate_stops(step):
+    """What a pre-gate `step` came back as when it stops the gate - its
+    no-verdict outcome, or `red` with its exit - or None when it is green.
+    A mute it was excused by is a known failure, not a stop."""
+    if step.get("outcome"):
+        return step["outcome"]
+    if step.get("exit") != 0 and not step.get("muted"):
+        return "red (exit %s)" % (step.get("exit"),)
+    return None
+
+
+def not_run_step(name, command, why, stopped_by=None):
+    """The row of a step a run did not start: no exit and no count, since it
+    measured nothing, and `could-not-run` with `why` as its basis - so no
+    reader counts it a failure or a pass.
+
+    `stopped_by` names the step whose red stopped the gate before this one. It
+    rides on the step in this process alone, as `signal` does - the row keeps
+    `why` - so the verdict reads the step as the cost of that red and never
+    as a runner that could not start, whose repair is not the task's."""
+    step = {"name": name, "exit": None, "ran": None,
+            "measured": measured_state(None), "outcome": CANNOT_RUN,
+            "outcomeBasis": why}
+    if command is not None:
+        step["command"] = command
+    if stopped_by is not None:
+        step["stoppedBy"] = stopped_by
+    return step
 
 
 # --- what a task's run leaves to the phase gate ---------------------------------
@@ -4965,7 +5040,7 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
              recorded=None, task_scope=False, keep_text=False,
              derived_check=None, muted=None, today=None, preamble=None,
              withheld=None, task=None, say=print, selection_started=None,
-             dirty_excluded=None):
+             dirty_excluded=None, pre_gate=None):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -5025,6 +5100,13 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     `dirty_excluded` leaves those paths out of the dirty digest too: a base run
     alone passes it (`_run_base_of`), whose tree carries the recorder's writes
     on purpose and is the base commit apart from them.
+
+    `pre_gate` is `pre_gate_stage`'s `(name, command, problem)`, or None: its
+    command is run first, as a step like any other, and when that step does
+    not come back green (`pre_gate_stops`) every one of `commands` is recorded
+    as not run (`not_run_step`) instead of run. With no command, the step is
+    recorded as one that could not run, its basis `problem`, and `commands`
+    run as they would.
     """
     runner = runner or _shell
     today = _vocab.mute_today() if today is None else today
@@ -5068,8 +5150,26 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     step_text = [] if keep_text else None
     cancelled_by = None
     followers, followers_unread = [], 0
+    staged = list(commands)
+    if pre_gate is not None and pre_gate[1] is None:
+        steps.append(not_run_step(pre_gate[0], None, pre_gate[2]))
+        step_named.append(None)
+        if step_text is not None:
+            step_text.append((pre_gate[0], ""))
+    elif pre_gate is not None:
+        staged = [(pre_gate[0], pre_gate[1])] + staged
+    # Set once the pre-gate's own step has stopped the gate: the sentence
+    # every step after it is recorded under, never run.
+    stopped = None
     try:
-        for name, command in commands:
+        for name, command in staged:
+            if stopped is not None:
+                steps.append(not_run_step(name, command, stopped,
+                                          stopped_by=pre_gate[0]))
+                step_named.append(None)
+                if step_text is not None:
+                    step_text.append((name, ""))
+                continue
             step_started = time.monotonic()
             gated, task_note = gate_task_step(command, task, project)
             if task_note:
@@ -5181,6 +5281,10 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             owed, unread = _ev.followers_in(text)
             followers.extend(f for f in owed if f not in followers)
             followers_unread += unread
+            came_back = (pre_gate_stops(step) if name == _ev.PRE_GATE_STEP
+                         and pre_gate is not None and len(steps) == 1 else None)
+            if came_back is not None:
+                stopped = PRE_GATE_NOT_RUN % (name, came_back)
     except KeyboardInterrupt as exc:
         # THE ONE THING THE INTERRUPT PATH DOES IS LET THE ROW BE WRITTEN. The
         # child's group is already gone - `_shell`'s own `except BaseException`
@@ -5346,6 +5450,13 @@ def _render_steps(res, out, quiet):
             for line in step.get("failing") or ():
                 out("      %s" % (line,))
             continue
+        if step["exit"] is None:
+            # NOTHING RAN FOR IT AT ALL (`not_run_step`): no exit, no time and
+            # no count to print, only why.
+            out("  %-12s exit %-3s %10s  %s" % (
+                step["name"], "-", "(not run)",
+                step.get("outcomeBasis") or "no basis was recorded"))
+            continue
         ran = step["ran"]
         # WHAT THE STEP COST, ON THE STEP'S OWN LINE AND NOT AS A TOTAL (P46.5).
         # `durationMs` has been recorded per step and for the run since this
@@ -5505,8 +5616,12 @@ def _render_verdict(res, out):
     # a kill needs.
     killed = [st for st in res["steps"]
               if st.get("outcome") == CANNOT_RUN and st.get("signal")]
+    # A step a red pre-gate stopped before it started is that red's cost, said
+    # on its own line above, and never this banner's: the banner's repair is
+    # the runner's, and the red is the task's.
     unstarted = [st["name"] for st in res["steps"]
-                 if st.get("outcome") == CANNOT_RUN and not st.get("signal")]
+                 if st.get("outcome") == CANNOT_RUN and not st.get("signal")
+                 and not st.get("stoppedBy")]
     stalled = [st["name"] for st in res["steps"]
                if st.get("outcome") == TIMED_OUT]
     # THE THIRD MEMBER REACHES THE BANNER THE DOCUMENT ALREADY KEYS ON, which is
@@ -7260,6 +7375,17 @@ def main(argv, out=print):
     if terr:
         out("[run-test-gate] %s" % terr)
         return E_ASK
+    # THE PRE-GATE, A TASK-SCOPE STAGE ALONE (`pre_gate_stage`), asked of the
+    # declared gate before anything joins it. `--own` runs the task's own
+    # suites and nothing ahead of them.
+    pre_stage = None
+    if args.task is not None and not args.own:
+        pre_stage, pre_said = pre_gate_stage(manifest, commands)
+        if pre_said:
+            (_say_on_stderr if args.as_json else out)(
+                "[run-test-gate] %s" % (pre_said,))
+    pre_steps = ([pre_stage[:2]] if pre_stage is not None
+                 and pre_stage[1] is not None else [])
     # THE SELECTION'S CLOCK: on a measured run, from here to the first step -
     # gathering the affected suites, the identity and the reuse lookup, the
     # reach reading, and `run_gate`'s reading of the tree before its first step
@@ -7395,8 +7521,12 @@ def main(argv, out=print):
     else:
         # `group=also`: a group run and a solo run over the same files are two
         # claims, so the members a run owns are part of what a repeat must match.
-        identity = reuse_identity(project, args.manifest, manifest, unjoined,
-                                  owns, group=also, tree=tree)
+        # The pre-gate is in what a repeat must match, and a pre-gate grading
+        # a path the identity leaves out is measured on every run, as an entry
+        # would be.
+        identity = reuse_identity(project, args.manifest, manifest,
+                                  pre_steps + unjoined, owns, group=also,
+                                  tree=tree)
         if identity.get("unexcluded"):
             # A NARROWING THAT DID NOT APPLY, SAID RATHER THAN LEFT FOR A COUNT TO
             # IMPLY. `recorded_paths` tried to leave this plugin's own writes out of
@@ -7487,7 +7617,8 @@ def main(argv, out=print):
                            selection_started=selection_started,
                            # `--json` keeps stdout parseable, so its note goes
                            # to stderr instead of being dropped.
-                           say=(_say_on_stderr if args.as_json else out))
+                           say=(_say_on_stderr if args.as_json else out),
+                           pre_gate=pre_stage)
         finally:
             _disarm_interrupt(previous)
         if part is not None:
@@ -7597,7 +7728,8 @@ def main(argv, out=print):
     if args.record:
         res["recorded"] = _record_run(
             project, args, res, source,
-            declared_commands + [("", c) for c in published_extra],
+            declared_commands + [("", c) for c in published_extra]
+            + [("", c) for _n, c in pre_steps],
             manifest, out=out)
     if args.as_json:
         out(json.dumps(res, indent=2, sort_keys=True))

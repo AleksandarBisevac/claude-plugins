@@ -4587,6 +4587,26 @@ def _joined_step_cases(check):
           "its name lists, and says nothing of the declared entry's own "
           "suites, as of any declared step: %r" % (runs,),
           runs == [True, True, False])
+    pre = getattr(M, "PRE_GATE_STEP", None)
+    led = None if pre is None else [
+        M.declared_steps([pre, own, rel]), M.declared_steps([pre]),
+        M.declared_steps([pre, joined, "lint"])]
+    check("pgs1 declared_steps reads a LEADING pre-gate step as no gate "
+          "entry, so the declared gate after it is what a row binds: %r"
+          % (led,),
+          led == [([own], 0), ([], 0), ([own, "lint"], 0)])
+    kept = None if pre is None else [
+        M.declared_steps([own, pre]), M.declared_steps(["preGate", own]),
+        M.declared_steps([pre + " x", own])]
+    # The over-fire direction: a reader that dropped the pre-gate's name
+    # wherever it stood, or the plan's bare key, passes pgs1 alone.
+    check("pgs2 ALLOW: only the reserved name, and only at the head, is "
+          "skipped - one after a declared step, the plan's bare key as an "
+          "entry, and a name merely opening with the reserved one stay "
+          "declared: %r" % (kept,),
+          pre is not None
+          and kept == [([own, pre], 0), (["preGate", own], 0),
+                       ([pre + " x", own], 0)])
     head = "c0ffee12"
     clean = {"head": head, "dirtyDigest": M.CLEAN_DIRTY_DIGEST}
     lists = {"runId": "r-joined", "ts": "2026-11-01T00:00:00Z",

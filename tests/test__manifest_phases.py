@@ -1326,6 +1326,34 @@ def _cases(check):
           "always/exclude overlap; `exclude` naming it is the harmless "
           "spelling and draws nothing: %r" % ((_so_pg, _so_pg_ex),),
           _so_pg == ["phases.signoff_only_gate.in-gate"] and _so_pg_ex == [])
+    # --- the pre-gate is not a gate step ---------------------------------------
+    # The task gate runs it as a stage of its own ahead of the gate, so a phase
+    # gate defaulted with it would run it a second time beside that stage.
+    _pre_cmds = {"test": "x", "preGate": "make quick", "lint": "y"}
+    _pre = M.phase_gate_default({"buildCommands": _pre_cmds})
+    _pre_always = M.phase_gate_default(
+        {"buildCommands": _pre_cmds, "phaseGate": {"always": ["preGate", "lint"]}})
+    check("pg15 a plan declaring `preGate` defaults a new phase's gate WITHOUT "
+          "it, `always` naming it included, and the skip is returned by name "
+          "and named in the basis: %r" % ((_pre, _pre_always),),
+          _pre.get("entries") == ["test", "lint"]
+          and _pre.get("preGate") == ["preGate"]
+          and "preGate" in (_pre.get("basis") or "")
+          and _pre_always.get("entries") == ["lint", "test"])
+    # ALLOW, and the over-fire direction: a skip that dropped every key, or
+    # read a near-miss spelling as the pre-gate, passes pg15 alone.
+    _pre_near = M.phase_gate_default(
+        {"buildCommands": {"test": "x", "pregate": "p"}})
+    _pre_none = M.phase_gate_default({"buildCommands": {"test": "x", "lint": "y"}})
+    check("pg16 ALLOW: a near-miss spelling is an ordinary key and stays in the "
+          "default, and a plan declaring no pre-gate reports none and keeps "
+          "the basis it always had: %r" % ((_pre_near, _pre_none),),
+          _pre_near["entries"] == ["test", "pregate"]
+          and _pre_near.get("preGate") == []
+          and _pre_none["entries"] == ["test", "lint"]
+          and _pre_none.get("preGate") == []
+          and _pre_none["basis"] == "no meta.phaseGate: default is every "
+                                    "buildCommands key, in buildCommands order")
 
 
     # --- meta.coupling: shape, plus the two new coded warnings -----------------

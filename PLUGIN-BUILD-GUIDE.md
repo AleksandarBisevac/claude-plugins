@@ -5071,6 +5071,25 @@ it with the plan. A task gate of nothing but left-out steps is `_all_left`: a `n
 runs. The phase-scope run never asks. The `pgo` cases in `tests/test_run_test_gate.py` drive each
 arm through `main`.
 
+**A task's run takes the plan's pre-gate first, and its red stops the gate.** Under `--task` (not
+`--own`), `pre_gate_stage` reads `meta.buildCommands.preGate` through
+`_manifest_vocab.pre_gate_command` and `run_gate` runs it ahead of the declared steps, recorded
+first under `_evidence_io.PRE_GATE_STEP`. When that step does not come back green
+(`pre_gate_stops`), the steps after it are not started: each is recorded under its own name by
+`not_run_step` - no exit, `could-not-run`, a basis naming the pre-gate - and the run is `failed`
+on the pre-gate alone, which is what `_counts_as_failed`, `named_failing_suites` and a base
+measurement read; the not-run steps stay out of the `GATE COULD NOT RUN` banner, whose repair is
+the runner's. A green pre-gate stands in for nothing: every declared step still runs and decides
+the verdict. A value `pre_gate_command` calls unusable is a leading step that could not run,
+its basis that sentence, so the run never reads green over a pre-gate nobody ran. The pre-gate
+runs once: `declared_steps` reads a row's declared gate from the step after a leading
+`PRE_GATE_STEP`, so the commit binding is unchanged; `_manifest_phases.phase_gate_default`
+leaves the key out of a new phase's gate as it does a sign-off key; a gate that already names it
+(by key, or by the same command) runs it there and takes no stage, saying so; and the phase gate
+and `--full` take no stage at all. The pre-gate's command is kept verbatim on the row and is part
+of what a repeat must match. The `pre` cases in `tests/test_run_test_gate.py` drive each arm
+through `main`.
+
 **`observations.countsBasis` is written here for the first time.** It has been copied into every
 evidence row by `_evidence_io.row_for` and rendered by the report and the panel since the ledger
 existed, while nothing ever set it — a three-valued count shipping without the basis that
