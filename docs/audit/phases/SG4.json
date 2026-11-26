@@ -24,34 +24,41 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "SG4-R1",
         "severity": "low",
         "file": "tests/test__clause_coverage.py:1543-1562, 1775-1808",
         "issue": "The live cw8 never exercises the child second measurement on a healthy reading: the re-measurement is only taken when a last step is over WIDE_STEP, which a linear reading does not reach. Deleting the again() closure, or dropping the again field from the child output, leaves cw8 green and every pure case (cw17, cw21-cw23) green too, because they call the pure helpers and never the child. Only the executor probe rows (WIDE_STEP lowered to 0.5) catch the wiring, and a probe is not part of the suite.",
-        "resolution": "Let the job carry the step (job step, defaulting to WIDE_STEP) and add one permanent case that runs the child with the step at 0.5 and asserts the output holds an again entry with two seconds for every kind. That puts the wiring the probe proves under a case that fails when it is deleted.",
-        "fixTask": "SG4.2-3il"
+        "resolution": "fixed in SG4.2-3il (9188d670151a): Let the job carry the step (job step, defaulting to WIDE_STEP) and add one permanent case that runs the child with the step at 0.5 and asserts the output holds an again entry with two seconds for every kind. That puts the wiring the probe proves under a case that fails when it is deleted.",
+        "fixTask": "SG4.2-3il",
+        "commit": "9188d670151a",
+        "status": "fixed"
       },
       {
         "id": "SG4-R2",
         "severity": "low",
         "file": "tests/test__clause_coverage.py:1594-1640",
         "issue": "cw8 is not at least as strict as before SG2.23 narrowed it, and the filed outcome sentence that everything cw8 caught before still fails overclaims if before means the per-step judgement. That judgement flagged any step over 2 ** 1.5 (about 2.83x); the new one flags only the LAST step, only above 3.5x, only when a second measurement also exceeds it. A middle step of 4x with a linear tail, or a last step between 2.83x and 3.5x, was red before SG2.23 and is green now. That is what the task RULE asked for (a bound between the 3.00x CI recorded and a quadratic 4x), so it is not a defect in the diff, but the outcome should say so.",
-        "resolution": "State in the outcome that cw8 is restored for the quadratic last doubling the task names and stays narrower than the pre-SG2.23 per-step bound for middle steps and for last steps in 2.83x-3.5x; no code change needed."
+        "resolution": "State in the outcome that cw8 is restored for the quadratic last doubling the task names and stays narrower than the pre-SG2.23 per-step bound for middle steps and for last steps in 2.83x-3.5x; no code change needed.",
+        "status": "carried",
+        "carriedTo": "SG3.1-xk1"
       },
       {
         "id": "SG4-R3",
         "severity": "low",
         "file": "tests/test__clause_coverage.py:1836-1853",
         "issue": "cw24 takes its kind list from the cw8 run (kinds). When the cw8 child is killed or answers nothing, kinds is empty, so cw24 goes red as well, with the text no second measurement for [] of []; got {}, which names no kind and hides that the cause is the cw8 child. A second red with a misleading text for one underlying fault.",
-        "resolution": "Fold the empty-kinds case into the message (for example: the cw8 child gave no kinds to compare), or read the kind names from asked itself and assert their set against the four expected labels. Optional, batch to the low list."
+        "resolution": "Fold the empty-kinds case into the message (for example: the cw8 child gave no kinds to compare), or read the kind names from asked itself and assert their set against the four expected labels. Optional, batch to the low list.",
+        "status": "carried",
+        "carriedTo": "SG3.1-xk1"
       }
     ],
-    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 1 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "co2 and cw8 restored (SG4.1, SG4.2-3il), each proved by a mutation probe run by the orchestrator; esc47 was already restored by SG2.10-xk1, proved red-first; two lows carried to SG3.1-xk1.",
   "tasks": [
     {
       "id": "SG4.1",
@@ -153,7 +160,7 @@
     {
       "id": "SG4.2-3il",
       "title": "fix SG4-R1: The live cw8 never exercises the child second measurement on a he...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The live cw8 never exercises the child second measurement on a healthy reading: the re-measurement is only taken when a last step is over WIDE_STEP, which a linear reading does not reach. Deleting the again() closure, or dropping the again field from the child output, leaves cw8 green and every pure case (cw17, cw21-cw23) green too, because they call the pure helpers and never the child. Only the executor probe rows (WIDE_STEP lowered to 0.5) catch the wiring, and a probe is not part of the suite.\n\nResolution asked: Let the job carry the step (job step, defaulting to WIDE_STEP) and add one permanent case that runs the child with the step at 0.5 and asserts the output holds an again entry with two seconds for every kind. That puts the wiring the probe proves under a case that fails when it is deleted.",
       "files": [
         "tests/test__clause_coverage.py"
@@ -176,14 +183,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9188d670151a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test__clause_coverage.py only. (1) The job the child reads now carries 'step'; last_step_again(seconds, measure, step=WIDE_STEP) takes the bound as a parameter and the child passes job['step'], so the default job keeps WIDE_STEP. (2) The launch-and-parse half of _wide_timing_cases moved into _run_timer(job) returning (runs, None) or (None, sentence), so cw8 and the new case share one child launch; the kill/no-answer sentences are unchanged. (3) New case cw24 runs the child with step WIDE_ASKED_STEP (0.01, a bound no last doubling can fall under; 0.5 as in the probe rows could be fallen under by a ratio of two sub-floor times, so a flaky red was possible) over the two shortest lengths and one round, and asserts every kind cw8 measured came back with an again entry of two positive seconds and no fault; a missing, short or faulted entry, or a child that answers nothing, is red with the kind names. Gate: python3 tools/sweep-selftests.py tests/test__clause_coverage.py --jobs 4 exit 0, 96 cases ok (95 before). ruff check clean; vermin minimum 3.5; prose_number_claims and house_style_violations report nothing for the file. Probe: sg4.2/mutations.py (python3 -B mutations.py from the worktree, exit 0) and mutations.out: 10 rows, 7 deny rows caught by cw24 (the renamed-closure row is caught by cw8 as well - the name is evaluated eagerly, so removing the closure outright was already red; it is the use, body, field, step and pair rows only cw24 sees), the old 0.5 wiring row caught by cw8, two allow twins (no-op edit; asked step 0.02) stay green. Timing of the cw-timing stage (python3 -B tests/test__clause_coverage.py --selftest --stage cw-timing, wall clock, three runs with a 3 s gap each): before 5.26 5.01 5.33 s, after 6.16 5.90 5.74 s, about 0.7 s more, measured on a loaded machine, one window per side. Dependants: .github/sweep-costs.json holds one whole-file figure for this file (23.1, line 347) and no block figure (grep for cw-timing, cw8, cw24: no hit); the sweep ran the file whole in 6.3 s and the change adds about 0.7 s, so the figure and the timeouts derived from it stay correct (re-recording is not owed); plugins/audit/scripts/governance/_clause_coverage.py is the module under test and is untouched, its reading is what the child times - still correct; CHANGELOG.md has one cw8 mention (line 562) describing what cw8 times, which cw8 still does - still correct, no entry owed for a test-only change; PLUGIN-BUILD-GUIDE.md names none of last_step_again, WIDE_STEP, cw8 - still correct. Floor guard: not run by me; the diff adds no suppression comment.",
+        "descriptive": "A child that never takes, or never reports, its second measurement now turns a permanent case red, where before only the executor probe saw it."
       },
       "startedAt": "2026-11-26T07:48:00Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-26T08:06:15Z",
+      "verifiedBy": [
+        "cw24: the child run with a step every kind crosses returns an again entry of two lengths and no fault for every kind cw8 measured"
+      ],
       "notes": [
         {
           "at": "2026-11-26T07:47:58Z",
@@ -198,7 +207,46 @@
         "SG4-R1"
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-26T07:56:31Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 510000,
+            "startedAt": "2026-11-26T07:48:01Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-26T08:04:16Z.dd0d29",
+            "kind": "wait",
+            "ms": 5000,
+            "startedAt": "2026-11-26T07:57:53Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-26T08:04:16Z.dd0d29, ending at its startedAt",
+            "kind": "selection",
+            "ms": 16385,
+            "runId": "2026-11-26T08:04:16Z.dd0d29",
+            "startedAt": "2026-11-26T07:57:58Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-26T08:04:16Z.dd0d29",
+            "kind": "gate",
+            "ms": 360634,
+            "runId": "2026-11-26T08:04:16Z.dd0d29",
+            "startedAt": "2026-11-26T07:58:15Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-26T08:06:00Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 83000,
+            "startedAt": "2026-11-26T08:04:37Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 9188d670151a",
+            "kind": "commit",
+            "ms": 1741,
+            "startedAt": "2026-11-26T08:06:12Z"
+          }
+        ],
         "firstStartedAt": "2026-11-26T07:48:00Z"
       },
       "reviewPerTask": "signals",
@@ -206,15 +254,26 @@
         "runId": "2026-11-26T08:04:36Z.83c715",
         "status": "passed",
         "at": "2026-11-26T08:04:36Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9188d670151a",
+        "at": "2026-11-26T08:06:15Z",
+        "return": "docs/audit/evidence/returns/SG4.2-3il/20261126T074800Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with expectRedFirst false, and the change is the test file alone: a throwaway tree at HEAD carrying the declared test file holds the fix too, so the helper cannot show a red. The red was shown by mutating the child inside the test file in a scratch copy of the tree (mutations.py rows, each anchor matched once, restored byte for byte): closure use deleted, closure body emptied, again field dropped, job step ignored, second measurement over one length, again carrying a fault - each turns cw24 red and, for those, leaves cw8 green; the unmutated tree and a no-op edit and a 0.02 asked step stay green.",
+        "at": "2026-11-26"
       }
     }
   ],
   "parentBranch": "integration/skill-gates",
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "c445985d-439f-43a2-a6e0-523acc4ac52e",
-    "branch": "audit/sg4-weakened-tests-restored-before",
-    "at": "2026-11-26T07:17:47Z"
-  },
-  "startedAt": "2026-11-26T07:17:47Z"
+  "startedAt": "2026-11-26T07:17:47Z",
+  "testEvidence": {
+    "runId": "2026-11-26T08:20:31Z.2e6348",
+    "status": "passed",
+    "at": "2026-11-26T08:20:31Z"
+  }
 }
