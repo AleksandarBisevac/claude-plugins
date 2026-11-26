@@ -1096,6 +1096,12 @@
       "title": "Skill gates: the low findings SG2 carried to the next release",
       "status": "pending",
       "shard": "phases/SG3.json"
+    },
+    {
+      "id": "SG4",
+      "title": "Weakened tests restored before main",
+      "status": "in_progress",
+      "shard": "phases/SG4.json"
     }
   ],
   "fileIndex": {
@@ -13700,7 +13706,8 @@
       "SG2.3",
       "SG2.14-xk1",
       "SG2.15-xk1",
-      "SG2.24-xk1"
+      "SG2.24-xk1",
+      "SG4.1"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -14458,7 +14465,8 @@
       "SG2.5-xk1",
       "SG2.7-xk1",
       "SG2.22-xk1",
-      "SG2.23-xk1"
+      "SG2.23-xk1",
+      "SG4.1"
     ],
     "tests/test__config_rules_lints.py": [
       "P131.2"

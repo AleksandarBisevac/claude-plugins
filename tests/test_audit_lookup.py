@@ -3834,15 +3834,27 @@ def _conventions_order_cases(check):
         {"id": "P1.1", "skills": None}, nowhere))
     listed = M.skills_lines({"meta": {"defaultSkills": ["from-plan"]}},
                             {"id": "P1"}, {"id": "P1.1"}, nowhere)
+    # The whole list, not a prefix of it: the lead line (the one naming the
+    # Skill tool) first, the lines that name a skill exactly the plan default,
+    # and then the two ask lines - each found by the field it asks for, which is
+    # a name the drive reads, so the sentences around it stay free to change -
+    # as the last two lines. An extra name line, a dropped or swapped ask line
+    # and a third line after them each leave one of these clauses false.
     check("co2 the brief's Skills section with nothing resolving names the "
           "plan default, the area default and the task's skills; an opted-out "
-          "task is told it opted out; a resolving plan default is listed: %r"
+          "task is told it opted out; a resolving plan default is listed as "
+          "the lead line, exactly that one skill and the two ask lines last: %r"
           % ((none_line, opted_line, listed),),
           "meta.defaultSkills" in none_line and "area" in none_line
           and "task" in none_line
           and "skills: null" in opted_line
           and "meta.defaultSkills" not in opted_line
-          and listed[1:2] == ["- from-plan"])
+          and len(listed) >= 4
+          and not listed[0].startswith("- ") and "Skill tool" in listed[0]
+          and [l for l in listed if l.startswith("- ")] == ["- from-plan"]
+          and listed[1:-2] == ["- from-plan"]
+          and "`skillsInvoked`" in listed[-2]
+          and "`skillUnavailable`" in listed[-1])
 
 
 def _red_command_reader_cases(check):

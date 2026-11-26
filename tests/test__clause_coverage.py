@@ -1484,9 +1484,18 @@ def _conservation_check_cases(check):
 
 # The timing. A kind fails when its time grows as more than the WIDE_POWER of the
 # length over the whole series of lengths - `_growth_exponent`, a time under
-# WIDE_FLOOR read as the floor; no one step is judged, because a shared runner's
-# noise lands on one length and a reading faster than linear shows at every
-# doubling - when the longest takes more than WIDE_CEILING seconds or holds more
+# WIDE_FLOOR read as the floor; no one step is judged ALONE, because a shared
+# runner's noise lands on one length and a reading faster than linear shows at
+# every doubling - or when its last step is over WIDE_STEP and the last two
+# lengths, measured again in the same child with fresh rounds, are over it again:
+# the slope reads a reading that is linear until its last doubling and quadratic
+# there (ratios 2, 2, 4) as 1.3, and a single step cannot tell the noise a CI run
+# recorded on a linear reading (2.92x and 3.00x at the last doubling) from growth,
+# but a second measurement can - noise that landed on a length once has to land on
+# it again to confirm the step. A
+# last step the second measurement does not confirm is green, and one that was
+# over the bound with no second measurement given is a fault of its own, never a
+# pass. The kind also fails when the longest takes more than WIDE_CEILING seconds or holds more
 # than WIDE_BYTES per character of input at its peak, or when its child is still running at
 # WIDE_DEADLINE - a kill is a failure, never a skip. The time is the child's
 # processor time per reading, taken by `_harness.growth_series`: the readings of
@@ -1499,6 +1508,9 @@ def _conservation_check_cases(check):
 # that names it.
 WIDE_UNITS = tuple(1250 * 2 ** k for k in range(4))
 WIDE_POWER = 1.5
+# Between the worst last step CI recorded on a linear reading (3.00x) and a
+# quadratic doubling (4x): the middle of the two, half a step from each.
+WIDE_STEP = 3.5
 WIDE_FLOOR = 1e-3
 WIDE_CEILING = 1.0
 WIDE_BYTES = 2000
@@ -1513,6 +1525,7 @@ sys.path.insert(0, sys.argv[1])
 sys.path.insert(0, sys.argv[2])
 import _harness
 import _clause_coverage as M
+import test__clause_coverage as T
 KINDS = (
     ("list numbers on one line", lambda n: "Acceptance: (1) a" + " (1)" * n),
     ("line-start numbers after one line", lambda n: "Acceptance:\n(1) a" + " 3." * n),
@@ -1527,6 +1540,16 @@ for label, make in KINDS:
                                  clock=time.process_time, clock_name="process_time",
                                  min_seconds=job["min_seconds"], rounds=job["rounds"],
                                  deadline=left)
+
+    def again():
+        left = max(0.0, job["deadline"] - (time.perf_counter() - began))
+        return _harness.growth_series(M.reading_line,
+                                      [make(n) for n in job["units"][-2:]],
+                                      clock=time.process_time, clock_name="process_time",
+                                      min_seconds=job["min_seconds"], rounds=job["rounds"],
+                                      deadline=left)
+    second = (T.last_step_again(got["seconds"], again)
+              if got["fault"] is None and len(got["seconds"]) == len(job["units"]) else None)
     text = make(job["units"][-1])
     tracemalloc.start()
     M.reading_line(text)
@@ -1534,7 +1557,9 @@ for label, make in KINDS:
     tracemalloc.stop()
     out.append({"kind": label, "seconds": got["seconds"], "repeats": got["repeats"],
                 "floor": got["floor"], "fault": got["fault"], "peak": peak,
-                "chars": len(text)})
+                "chars": len(text),
+                "again": None if second is None else
+                {"seconds": second["seconds"], "fault": second["fault"]}})
 print(json.dumps(out))
 '''
 
@@ -1549,11 +1574,51 @@ def _growth_exponent(seconds):
     moves one step and only a share of the slope - a linear series with one length 2.5
     times too slow reads 1.4, a step read alone reads 5x. Not the last time over the
     first either, which is two lengths and so still the noise of either of them in
-    full. A time under WIDE_FLOOR reads as the floor."""
+    full. A time under WIDE_FLOOR reads as the floor.
+
+    The slope is also the reason it cannot be the only judgement: a reading linear
+    until its last doubling and quadratic there (ratios 2, 2, 4) reads 1.3 and
+    passes it, so the last step is judged beside it - `last_step_again`, and
+    `_last_step_faults` for what the second measurement makes of it."""
     logs = [math.log2(max(s, WIDE_FLOOR)) for s in seconds]
     middle = (len(logs) - 1) / 2.0
     spread = sum((i - middle) ** 2 for i in range(len(logs)))
     return sum((i - middle) * y for i, y in enumerate(logs)) / spread
+
+
+def _last_step(seconds):
+    """The last doubling's ratio, the earlier time read as the floor when it is under it."""
+    return seconds[-1] / max(seconds[-2], WIDE_FLOOR)
+
+
+def last_step_again(seconds, measure):
+    """`measure()` - the last two lengths measured once more - when the last step of
+    `seconds` is over WIDE_STEP, and None, without calling it, when it is not. The
+    child calls this with the second measurement, so the decision to take one is the
+    one these cases pin without a clock."""
+    if len(seconds) < 2 or _last_step(seconds) <= WIDE_STEP:
+        return None
+    return measure()
+
+
+def _last_step_faults(kind, secs, again):
+    """The sentence a last step over WIDE_STEP earns, given what measuring the last two
+    lengths again returned (None: it was not measured again, which is a fault and not a
+    pass). Empty when the second measurement is within the bound."""
+    first = _last_step(secs)
+    if again is None:
+        return ["%s took %.2fx for its last doubling, over %gx, and was not measured again"
+                % (kind, first, WIDE_STEP)]
+    if again["fault"] is not None or len(again["seconds"]) != 2:
+        return ["%s took %.2fx for its last doubling, over %gx, and could not be measured "
+                "again: %s" % (kind, first, WIDE_STEP, again["fault"] or "it read %d lengths"
+                               % (len(again["seconds"]),))]
+    second = _last_step(again["seconds"])
+    if second <= WIDE_STEP:
+        return []
+    return ["%s took %.2fx for its last doubling (length %d to %d) and %.2fx when that doubling "
+            "was measured again, over %gx both times"
+            % (kind, first, WIDE_UNITS[-2], WIDE_UNITS[-1], second, WIDE_STEP)]
 
 
 def _run_faults(run):
@@ -1571,6 +1636,8 @@ def _run_faults(run):
         faults.append("%s grew as length ** %.2f (%s per doubling), over %r readings a length"
                       % (kind, exponent, ", ".join("%.2fx" % g for g in steps),
                          run["repeats"]))
+    elif _last_step(secs) > WIDE_STEP:
+        faults.extend(_last_step_faults(kind, secs, run.get("again")))
     if secs[-1] > WIDE_CEILING:
         faults.append("%s took %.3fs at the longest" % (kind, secs[-1]))
     if run["peak"] > WIDE_BYTES * run["chars"]:
@@ -1588,9 +1655,13 @@ def _series_from(first, ratios):
 
 def _wide_series_cases(check):
     """The growth judged over fixed series of seconds, with no child and no clock."""
-    def run(seconds, peak=0, chars=1, fault=None, repeats=None):
+    def run(seconds, peak=0, chars=1, fault=None, repeats=None, again=None):
         return {"kind": "k", "seconds": seconds, "repeats": repeats or [1] * len(seconds),
-                "fault": fault, "peak": peak, "chars": chars}
+                "fault": fault, "peak": peak, "chars": chars, "again": again}
+
+    def pair(step):
+        """What measuring the last two lengths again returns when their step is `step`."""
+        return {"seconds": [0.0625, 0.0625 * step], "fault": None}
 
     ci_windows = _series_from(0.05, (2.04, 1.53, 2.92))
     ci_linux = _series_from(0.05, (1.17, 1.43, 3.00))
@@ -1600,7 +1671,11 @@ def _wide_series_cases(check):
                "one length 2.5 times too slow on a linear reading": noisy_end,
                "a linear reading": linear, "no time at all": [0.0] * 4,
                "no time and then a hair above the floor": [0.0, 0.0, 0.0, WIDE_FLOOR * 0.6]}
-    said = {name: _run_faults(run(s)) for name, s in allowed.items()}
+    # The one series here whose last step is over WIDE_STEP (5.0x) is given the
+    # second measurement a linear reading would give; the rest are under it and
+    # are given none, so a judgement that asked for one anyway reads red here.
+    said = {name: _run_faults(run(s, again=pair(2.0) if s is noisy_end else None))
+            for name, s in allowed.items()}
     check("cw17 the two series a release-tier CI run recorded red (windows 2.04x, 1.53x, "
           "2.92x; linux 1.17x, 1.43x, 3.00x), a linear reading with one length 2.5 times "
           "too slow, a clean linear one and two under the floor are all judged green",
@@ -1640,6 +1715,63 @@ def _wide_series_cases(check):
           "exponent of the length takes for granted",
           all(b == 2 * a for a, b in zip(WIDE_UNITS, WIDE_UNITS[1:])), repr(WIDE_UNITS))
 
+    # A reading linear until its last doubling and quadratic there: the slope
+    # passes it, so the last step is the only thing that can say.
+    late_only = _series_from(0.01, (2.0, 2.0, 4.0))
+    confirmed = _run_faults(run(late_only, again=pair(4.0)))
+    noise = _run_faults(run(late_only, again=pair(2.0)))
+    unasked = _run_faults(run(late_only))
+    refused = _run_faults(run(late_only, again={"seconds": [], "fault": "the deadline passed"}))
+    check("cw21 a series linear until its last doubling and quadratic there (ratios 2, 2, 4), "
+          "which the slope reads under WIDE_POWER, is red with one sentence naming its last "
+          "doubling when measuring the last two lengths again also finds 4x, and green when "
+          "the second measurement finds 2x (noise); with no second measurement given, or one "
+          "the helper refused, it is red with its own sentence and never a pass",
+          _growth_exponent(late_only) <= WIDE_POWER
+          and len(confirmed) == 1 and "last doubling" in confirmed[0]
+          and "4.00x" in confirmed[0] and "measured again" in confirmed[0]
+          and noise == []
+          and len(unasked) == 1 and "was not measured again" in unasked[0]
+          and len(refused) == 1 and "the deadline passed" in refused[0],
+          "%r / %r / %r / %r" % (confirmed, noise, unasked, refused))
+
+    # The bound itself, in binary-exact numbers so the ratio is exactly WIDE_STEP.
+    at_step = [0.0625, 0.0625, 0.125, 0.0625 * 2 * WIDE_STEP]
+    just_over = [0.0625, 0.0625, 0.125, 0.125 * 3.6]
+    at_bound = _run_faults(run(at_step))
+    held = _run_faults(run(just_over, again=pair(WIDE_STEP)))
+    over_twice = _run_faults(run(just_over, again=pair(3.6)))
+    check("cw22 the bound itself: a last step exactly at WIDE_STEP needs no second "
+          "measurement and is within bounds, one just over it that the second measurement "
+          "finds exactly at WIDE_STEP is within bounds, and one the second measurement "
+          "finds just over it is red (the twins of the bound)",
+          at_step[-1] / at_step[-2] == WIDE_STEP and 3.6 > WIDE_STEP
+          and at_bound == [] and held == []
+          and len(over_twice) == 1 and "last doubling" in over_twice[0],
+          "%r / %r / %r" % (at_bound, held, over_twice))
+
+    calls = []
+
+    def counting(seconds, answer):
+        """What last_step_again made of `seconds`, and how many times it measured."""
+        before = len(calls)
+        got = last_step_again(seconds, lambda: calls.append(1) or answer)
+        return got, len(calls) - before
+
+    again_sentinel = pair(4.0)
+    under = {"windows run": ci_windows, "linux run": ci_linux, "a linear reading": linear,
+             "at the bound": at_step, "no time and then a hair above the floor":
+                 allowed["no time and then a hair above the floor"], "one length": [0.5]}
+    quiet = {name: counting(s, again_sentinel) for name, s in under.items()}
+    asked = {name: counting(s, again_sentinel)
+             for name, s in {"late": late_only, "noisy end": noisy_end}.items()}
+    check("cw23 a last step at or under WIDE_STEP is never measured again (no call, nothing "
+          "returned), and a last step over it is measured once and the answer is what the "
+          "judgement is given",
+          all(v == (None, 0) for v in quiet.values())
+          and all(v == (again_sentinel, 1) for v in asked.values()),
+          "%r / %r" % (quiet, asked))
+
 
 def _wide_timing_cases(check):
     """The reading's time at doubling lengths, in a child killed at a deadline."""
@@ -1670,7 +1802,8 @@ def _wide_timing_cases(check):
     check("cw8 the reading's processor time over list numbers, line-start numbers, mentions "
           "and markers on one line at %d doubling lengths grows as at most the "
           "WIDE_POWER of the length over the whole series (the slope of log time over "
-          "log length, no single step judged), stays under WIDE_CEILING seconds and WIDE_BYTES "
+          "log length), has no last doubling over WIDE_STEP that measuring the last two "
+          "lengths again confirms, stays under WIDE_CEILING seconds and WIDE_BYTES "
           "per character at the longest, in a child killed at WIDE_DEADLINE"
           % (len(WIDE_UNITS),),
           not faults, "%s" % ("; ".join(faults),))

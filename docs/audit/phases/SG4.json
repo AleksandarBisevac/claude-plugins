@@ -1,0 +1,106 @@
+{
+  "id": "SG4",
+  "title": "Weakened tests restored before main",
+  "status": "in_progress",
+  "description": "The owner's Weakened-tests list before main: co2 and cw8 restored; esc47 recorded as already restored by SG2.10-xk1 with a red-first run.",
+  "desiredOutcome": "The cases SG2 narrowed (co2, cw8) are as strict as before they were narrowed, so integration/skill-gates reaches main without a lowered bar.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [
+    "SG2"
+  ],
+  "baseRef": "234d2d48f8a38572cdb9c843848bd8ff17014569",
+  "branch": "audit/sg4-weakened-tests-restored-before",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": [
+      {
+        "id": "SG4-R1",
+        "severity": "low",
+        "file": "tests/test__clause_coverage.py:1543-1562, 1775-1808",
+        "issue": "The live cw8 never exercises the child second measurement on a healthy reading: the re-measurement is only taken when a last step is over WIDE_STEP, which a linear reading does not reach. Deleting the again() closure, or dropping the again field from the child output, leaves cw8 green and every pure case (cw17, cw21-cw23) green too, because they call the pure helpers and never the child. Only the executor probe rows (WIDE_STEP lowered to 0.5) catch the wiring, and a probe is not part of the suite.",
+        "resolution": "Let the job carry the step (job step, defaulting to WIDE_STEP) and add one permanent case that runs the child with the step at 0.5 and asserts the output holds an again entry with two seconds for every kind. That puts the wiring the probe proves under a case that fails when it is deleted."
+      },
+      {
+        "id": "SG4-R2",
+        "severity": "low",
+        "file": "tests/test__clause_coverage.py:1594-1640",
+        "issue": "cw8 is not at least as strict as before SG2.23 narrowed it, and the filed outcome sentence that everything cw8 caught before still fails overclaims if before means the per-step judgement. That judgement flagged any step over 2 ** 1.5 (about 2.83x); the new one flags only the LAST step, only above 3.5x, only when a second measurement also exceeds it. A middle step of 4x with a linear tail, or a last step between 2.83x and 3.5x, was red before SG2.23 and is green now. That is what the task RULE asked for (a bound between the 3.00x CI recorded and a quadratic 4x), so it is not a defect in the diff, but the outcome should say so.",
+        "resolution": "State in the outcome that cw8 is restored for the quadratic last doubling the task names and stays narrower than the pre-SG2.23 per-step bound for middle steps and for last steps in 2.83x-3.5x; no code change needed."
+      }
+    ],
+    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]"
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "SG4.1",
+      "title": "Two cases narrowed during SG2 are as strict again as before they were narrowed: co2 pins the whole Skills list, cw8 catches a reading that turns quadratic only at its last doubling",
+      "status": "in_progress",
+      "description": "The owner's Weakened-tests list before main named two cases whose bar SG2 lowered. Both fixes live in tests, so this is a regression task: the proof is a mutation probe, not red at base.\n\n(1) tests/test_audit_lookup.py co2. SG2.24-xk1 narrowed the last clause from listed[1:] == ['- from-plan'] to listed[1:2] == ['- from-plan'], because skills_lines (plugins/audit/scripts/status/audit-lookup.py) now appends two ask lines after the names (skillsInvoked, then skillUnavailable). Since then a stray extra skill line after '- from-plan' passes co2. RULE: co2 again holds the whole list: the lines that name skills are exactly ['- from-plan'], the lead line is first, and the two ask lines follow the names and are the last two lines - so an extra name line, a missing ask line or a reordering is red. Do not copy the ask sentences into the test as a second copy of the prose if a stable part of them (the field names `skillsInvoked` and `skillUnavailable`) identifies each line; choose and say which.\n\n(2) tests/test__clause_coverage.py cw8. SG2.23-xk1 replaced a per-step judgement with the least-squares slope over the whole series (_growth_exponent, WIDE_POWER 1.5) to stop false reds from a shared runner's noise (CI recorded last steps of 2.92x and 3.00x on linear readings; cw17 pins those series green). The cost: a reading linear until its last doubling and quadratic there (ratios 2, 2, 4) reads 1.3 and passes, where the old judgement flagged it. Raising or lowering a bound is not the fix - a single step cannot tell noise from growth. RULE: a last step over a per-step bound (pick it between the noise CI recorded and a quadratic step of 4, and say why) is MEASURED AGAIN in the same child, the last two lengths only, fresh rounds; the kind is red only when the re-measured step is also over the bound. A step over the bound that the re-measurement does not confirm is green. The whole-series slope stays as it is. The judgement over fixed series stays testable without a clock: give the pure judgement the re-measured step as an input, so cases can feed it.\n\nCases (pure, no clock): (2,2,4) with a re-measured last step of 4 is red with one sentence naming the last step; (2,2,4) re-measured at 2 is green (noise); cw17's series stay green; cw18's stay red; a last step under the bound is never re-measured (count the calls). Keep the child inside WIDE_DEADLINE and WIDE_SERIES_DEADLINE: the re-measurement costs the last two lengths once more; measure the block's time before and after and give both numbers. If the block's time rises enough to need a new figure in .github/sweep-costs.json, say so in your reply - do not edit that file.\n\nHOW TO PROVE. A mutation probe from the worktree root: for co2, skills_lines emitting one extra '- stray' line, and dropping either ask line - each turns co2 red, and the unmutated tree is green; for cw8, the re-measurement removed (the first reading trusted) turns the (2,2,4)-confirmed case and the noise case into the wrong verdicts, and the bound mutated to the old 2 ** WIDE_POWER per step turns a cw17 series red. Name the allow twin of every deny row.\n\nAcceptance:\n(1) co2 is red when skills_lines emits an extra skill line or drops an ask line, and green on the tree as it is.\n(2) A reading whose last doubling is quadratic, confirmed by a second measurement, fails cw8's judgement; the same step not confirmed does not, and the two CI-recorded series still pass.\n(3) The floor guard's reading of this diff is explained in the outcome: every case whose definition changed is named with why it is now at least as strict as before.",
+      "files": [
+        "tests/test_audit_lookup.py",
+        "tests/test__clause_coverage.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test__clause_coverage.py"
+        ],
+        "gateBasis": "files"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-26T07:17:47Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "movedFrom": {
+        "id": "SG3.2",
+        "phase": "SG3",
+        "at": "2026-11-26T07:17:39Z"
+      },
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-26T07:17:47Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-26T07:45:39Z.a4f437",
+        "status": "passed",
+        "at": "2026-11-26T07:45:39Z"
+      }
+    }
+  ],
+  "parentBranch": "integration/skill-gates",
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "c445985d-439f-43a2-a6e0-523acc4ac52e",
+    "branch": "audit/sg4-weakened-tests-restored-before",
+    "at": "2026-11-26T07:17:47Z"
+  },
+  "startedAt": "2026-11-26T07:17:47Z"
+}
