@@ -22,35 +22,43 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P169-R1",
         "severity": "low",
         "file": ".github/workflows/ci.yml:391-461 and 478-547 (the two install blocks)",
         "issue": "The seven install steps are written out twice, and the only thing holding them together is a comment ('a change to one is owed to the other', ci.yml:~356). Nothing compares them, so a later edit to one job (a package-name tweak, a key change) leaves the other on the old shell with every gate green. The task's own dependants named gate-parity.py's matrix rules; none covers this.",
-        "resolution": "Move the steps into a composite action (.github/actions/browser-install/action.yml) that both jobs call, or add a gate-parity rule that fails when the two jobs' install step lists differ. Either replaces the prose rule with a mechanism."
+        "resolution": "Move the steps into a composite action (.github/actions/browser-install/action.yml) that both jobs call, or add a gate-parity rule that fails when the two jobs' install step lists differ. Either replaces the prose rule with a mechanism.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R2",
         "severity": "low",
         "file": ".github/workflows/ci.yml:421-460 (sysdeps steps, both jobs)",
         "issue": "The step title 'the archive is asked only for a .deb the restored set lacks' and the log line 'not in the restored set, so fetched from the archive: $fetch' say the archive is asked for the missing .deb. The code passes $MISSING, not $fetch, to apt-get install --download-only, and apt sees only the fresh $dl directory, so on a partial set the archive is asked for the whole set plus its dependency closure and cp overwrites the restored files. The result is correct (that .deb is fetched), but the claim is narrower than the behaviour and only the miss path was exercised on a real runner. Separately, the ls check names only the packages in $MISSING, so a restored set missing a dependency-only .deb (a package apt pulled in that playwright did not name) is not detected and dpkg -i fails with an unmet dependency: a red job, not a green one.",
-        "resolution": "Either reword the title and log line to say the whole set is refetched when any one is absent, or install $fetch and let the dependency closure follow. Optionally verify the restored set with `dpkg-deb --info` per file, or by `dpkg -i` failing over into one refetch."
+        "resolution": "Either reword the title and log line to say the whole set is refetched when any one is absent, or install $fetch and let the dependency closure follow. Optionally verify the restored set with `dpkg-deb --info` per file, or by `dpkg -i` failing over into one refetch.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R3",
         "severity": "low",
         "file": ".github/workflows/ci.yml:430-436 and 445-460",
         "issue": "A poisoned or truncated cache entry is permanent. Cache keys are immutable and an exact hit is never re-saved, so a bad .deb in a saved entry makes dpkg -i fail (red) on every run of that branch until the key changes or GitHub evicts it, and the step has no path that drops a restored set it cannot install. The same holds for the partial set in finding 2: the repair is not persisted, so each later run repeats the full fetch. The entry can only come to hold a bad file if the job that saved it was green, so this is unlikely, and every outcome seen in the shell is red, not a green job without the packages. The sysdeps key also omits runner.arch, which the browser key carries; a .deb for another architecture would be refused by dpkg (red).",
-        "resolution": "Add a manual version token to the sysdeps key (chromium-sysdeps-v1-...) so a poisoned entry can be bypassed without a code change, include runner.arch in it, and on a dpkg -i failure fall back once to the fetch path before failing."
+        "resolution": "Add a manual version token to the sysdeps key (chromium-sysdeps-v1-...) so a poisoned entry can be bypassed without a code change, include runner.arch in it, and on a dpkg -i failure fall back once to the fetch path before failing.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R4",
         "severity": "low",
         "file": "the filed outcome.descriptive (not the diff)",
         "issue": "The descriptive line says 'The browser jobs' install drops from 3-9 minutes to 12-26 seconds'. The before figures are slow-mirror runs; the after figures come from two fast-mirror runs, and the pre-change install on a fast mirror was 38s (run 41322244766). The change's measured saving is the 21s to 12s (panel) and 26s to 15s (report) between the miss and hit runs, and a miss on a slow mirror costs what it cost before, minus the upgrades. The ci.yml comments say exactly this; the outcome summary does not. Also, main's push runs skip the browser jobs, so main saves no entry and the first run on a new ci/ branch misses both caches, so the hit path may be the rarer one in this repo's own practice; nothing here measures the hit rate.",
-        "resolution": "State in the outcome that the measured install is 12-26s on a fast mirror on both paths and that the slow-mirror saving is a hit-only saving not measured; decide separately whether a workflow_dispatch on main should seed the caches."
+        "resolution": "State in the outcome that the measured install is 12-26s on a fast mirror on both paths and that the slow-mirror saving is a hit-only saving not measured; decide separately whether a workflow_dispatch on main should seed the caches.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R5",
@@ -97,14 +105,18 @@
         "severity": "low",
         "file": ".github/workflows/ci.yml:41-45 (concurrency) with 398-414",
         "issue": "On main a running run is never cancelled and one pending run is held; a third push replaces the pending one, which then never runs. A verified push used to finish in about half a minute; it now holds the group for the seed's duration (a hit: checkout, node, npm ci, two lookups; a miss: the full install, 2m20s on the measured fast-mirror miss and up to the install's 9m22s fetch on a slow day). A commit queued behind a seeding miss is more likely to be replaced and get no run on main.",
-        "resolution": "State it in the comment above browser-panel as a cost of seeding, or have the seed job take its own concurrency group (`concurrency: browser-seed`) so it does not hold ci-refs/heads/main."
+        "resolution": "State it in the comment above browser-panel as a cost of seeding, or have the seed job take its own concurrency group (`concurrency: browser-seed`) so it does not hold ci-refs/heads/main.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R10",
         "severity": "low",
         "file": "the filed return (outcome.descriptive, outcome.technical) and .github/workflows/ci.yml:160-171",
         "issue": "Two statements go past what the logs show. (a) outcome.descriptive says 'a hit asks the archive for nothing on any image version of the distribution'; one cross-image restore was measured (set saved on 20261111.127.1, restored on 20261111.370.1) and the action's own header (action.yml:27-44) says an image whose installed versions the set's index cannot satisfy falls back to a fresh fetch and keeps doing so on every run. (b) outcome.technical attributes the report job's 35s after the restore to 'apt Reading package lists 18s plus dpkg Reading database about 10s'. In run2-browserreport the 'Reading package lists...' line is 20:12:41.008 and the dependency listing follows at 20:12:41.34; the 18.5s gap is between 'The following NEW packages will be installed' (20:12:41.348) and '0 upgraded, 9 newly installed' (20:12:59.923), which is not apt's index read. The panel job's same stretch took 2.6s (20:12:30.0 to 20:12:32.6), so the gap is variable and unexplained, not shown to be local.",
-        "resolution": "Write (a) as 'on the image versions measured' and (b) as 'an unexplained 18s between the dependency listing and the summary line, not seen in the panel job'. The committed comments already avoid both claims; only the return's wording needs the change."
+        "resolution": "Write (a) as 'on the image versions measured' and (b) as 'an unexplained 18s between the dependency listing and the summary line, not seen in the panel job'. The committed comments already avoid both claims; only the return's wording needs the change.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R11",
@@ -221,14 +233,18 @@
         "severity": "low",
         "file": "CLAUDE.md",
         "issue": "Two sentences of the Tests section are no longer exact once the browser jobs carry an install step that a seed run may fail and a warning step: 'every CI job is setup plus one tools/verify.sh --only <slices> call' (already inexact for the verified job), and the enumeration of what gate-parity.py checks lacks the rule that a step or job running a slice is never allowed to fail. Reported by the executor of the cache task; CLAUDE.md is the project's instruction file and is not edited on an agent's report.",
-        "resolution": "The owner decides the wording; the paragraph already points at gate-parity's docstring as the current statement, so the repair may be to delete the enumeration and keep the pointer."
+        "resolution": "The owner decides the wording; the paragraph already points at gate-parity's docstring as the current statement, so the repair may be to delete the enumeration and keep the pointer.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R23",
         "severity": "low",
         "file": "tests/test_run_test_gate.py:9411-9412",
         "issue": "The new mask replaces ` *\\b<duration>` with a fixed ` <duration>`, so it swallows the whole run of spaces between the exit code and the duration as well as the digit-dependent padding. A change to the step line's column layout that only a present-but-empty executor.phaseGateOnly caused (the gap between `exit N` and the duration) is no longer visible to pgo7. Measured in a scratch copy: a runner that, only when the key is present, widens that gap (`exit 0  ` -> `exit 0     `) is FAIL under the old mask and PASS under the new one. The class pgo7 exists for (the setting changing what the runner prints) is still caught for an extra line, a reworded banner, a renamed step, a changed check-count text and a changed duration unit; only pure whitespace layout inside the swallowed gap is lost.",
-        "resolution": "Keep the layout invariant instead of dropping it: the width of (padding + duration text) is constant for one exit-code width, so substitute with a function that returns `\"<duration>\".rjust(len(match.group(0)))` (or equivalent) rather than a fixed ' <duration>'. The digit-count-dependent padding then still collapses to one spelling while a real column-width change still reddens the case."
+        "resolution": "Keep the layout invariant instead of dropping it: the width of (padding + duration text) is constant for one exit-code width, so substitute with a function that returns `\"<duration>\".rjust(len(match.group(0)))` (or equivalent) rather than a fixed ' <duration>'. The digit-count-dependent padding then still collapses to one spelling while a real column-width change still reddens the case.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R24",
@@ -675,14 +691,18 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/full-gate.py (the phase's `ci` record); plugins/audit/scripts/status/",
         "issue": "The phase's CI record has no reader outside the verb that writes it: status, the report, the panel, the doctor, the lookup and the release guard do not read it (greps after the last edit; the one hit is the config's settings group). A value written for nobody to read is a basis with no claim. And after the sign-off commit nothing reads CI again, so a run that ends red after sign-off, or whose core could not be read at the commit, stays in the plan as a record with a basis and no bug, as it was before the record existed.",
-        "resolution": "The task that makes a landing wait for CI is the record's first reader and answers the residue: a landing either reads a green run for that head or says what it landed over. The phase head line in status says the recorded conclusion or its basis."
+        "resolution": "The task that makes a landing wait for CI is the record's first reader and answers the residue: a landing either reads a green run for that head or says what it landed over. The phase head line in status says the recorded conclusion or its basis.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R69",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_evidence_io.py (the full runs a phase holds); plugins/audit/schema/audit-plan.schema.json; plugins/audit/scripts/panel/_panel_composition.py",
         "issue": "Four things the executor of the full-run task reported as not held, none of which lets a phase read whole wrongly. (1) Whether each reader hands the full-run question the whole shard phase or an index stub was not verified: with a stub, the clause naming a malformed held run is missing from the basis (the malformed run still certifies nothing). (2) Two full runs recorded at once are serialised by the plan lock and decided again under it, with no case that exercises it. (3) The schema cannot bound the list of held runs, because the schema reader implements no item-count keyword; only the writer holds the bound. (4) A docstring in the panel's composition quotes, as the wrong claim it avoids, a sentence the task removed, so it now quotes text that exists nowhere.",
-        "resolution": "Each reader is shown to pass the phase the malformation clause needs, by a case through the reader; a case with two recorders on one plan; the bound held where a hand-edited longer list is read (read as not held past the bound, with the basis naming it) or the keyword added to the schema reader; the docstring says what the file avoids in its own words."
+        "resolution": "Each reader is shown to pass the phase the malformation clause needs, by a case through the reader; a case with two recorders on one plan; the bound held where a hand-edited longer list is read (read as not held past the bound, with the basis naming it) or the keyword added to the schema reader; the docstring says what the file avoids in its own words.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R70",
@@ -879,7 +899,9 @@
         "severity": "low",
         "file": "plugins/audit/scripts/report/ (page renderers); plugins/audit/scripts/ui/ (panel)",
         "issue": "The sentence about an unreadable run record is on the report command's stderr and in the evidence view's data, and in the panel's state payload; neither the rendered report page nor the panel displays it.",
-        "resolution": "Shown on both pages by a task that owns the page sources and their browser gates, after the owner has seen it locally."
+        "resolution": "Shown on both pages by a task that owns the page sources and their browser gates, after the owner has seen it locally.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R90",
@@ -896,7 +918,9 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_gate_derive.py (newest_red_phase_row docstring)",
         "issue": "The docstring says a phase whose newest run went green owes a derivation nothing further; the code returns the newest failed row even when a newer green exists. The effect is a wider gate, so nothing is missed, but the sentence is untrue.",
-        "resolution": "The sentence says what the function returns, or the function does what the sentence says, with a case telling the two apart."
+        "resolution": "The sentence says what the function returns, or the function does what the sentence says, with a case telling the two apart.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R92",
@@ -973,7 +997,9 @@
         "severity": "low",
         "file": "plugins/audit/scripts/report/render-report.py and the report's page renderer (evidence cell)",
         "issue": "For a subject whose record is present but malformed the report's evidence cell still says pointer without evidence, the plan points at a run the ledger does not carry: the wording the doctor was changed to stop using. It does not present the older run.",
-        "resolution": "The cell says the record could not be read, with the display work for the unreadable-record sentence on the report page and the panel."
+        "resolution": "The cell says the record could not be read, with the display work for the unreadable-record sentence on the report page and the panel.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R100",
@@ -990,7 +1016,9 @@
         "severity": "low",
         "file": "tests/_harness.py (skip); tools/sweep-selftests.py",
         "issue": "A platform-shaped case that cannot stage its precondition prints `PASS <label> SKIPPED HERE - <why>` and is counted among the passes: neither a suite's own tally nor the sweep's summary separates a skip from a pass, so a run's totals cannot say how many cases did not run. The skip itself is decided on a measured probe, not on the platform's name.",
-        "resolution": "The suite's tally and the sweep's summary count skips apart from passes, and a skipped case is named in the loud form; or the decision not to is recorded with its reason."
+        "resolution": "The suite's tally and the sweep's summary count skips apart from passes, and a skipped case is named in the loud form; or the decision not to is recorded with its reason.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R102",
@@ -1117,14 +1145,18 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py (the executor brief's submit block)",
         "issue": "When the gate entry that names the task's tests.add file is a shell command joined with '&&', the brief's submit block writes it unquoted after '--'. The shell then splits it: submit's red-first helper is handed only the first command, and the rest runs as a separate command with the return's heredoc attached to it. An executor copying the block as printed files a return whose red-first proof ran the wrong command.",
-        "resolution": "The block hands the helper one argv the shell cannot split (the gate entry quoted as one 'sh -c' word, or the helper given the entry by name), and a case renders a brief for a task whose gate holds '&&' and runs the block it prints against a stub submit."
+        "resolution": "The block hands the helper one argv the shell cannot split (the gate entry quoted as one 'sh -c' word, or the helper given the entry by name), and a case renders a brief for a task whose gate holds '&&' and runs the block it prints against a stub submit.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R115",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_runner_output.py (_house_tally) and the red-first helper submit runs",
         "issue": "The red-first helper grades its command's output by one house tally, the last 'N/M cases passed' line, so a command that runs two suites is graded by the second suite's counts alone; an executor whose tests.add entries live in two suites must file with one and leave the other suite's entries 'not checked'. In the same filing six cases the suite prints on the tree (bb-table, bb-drive-sites, bb-fixture, bb-remedy, bb-panel-state, bb-cost) were reported as not printed by the submit's own run; why was not established.",
-        "resolution": "The helper reads each suite's tally and each case label in a combined output (or takes one command per tests.add file), and the bb-* gap is explained by running the submit's red command by hand at the head and in the tree and comparing what each prints."
+        "resolution": "The helper reads each suite's tally and each case label in a combined output (or takes one command per tests.add file), and the bb-* gap is explained by running the submit's red command by hand at the head and in the tree and comparing what each prints.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R116",
@@ -1151,14 +1183,18 @@
         "severity": "low",
         "file": ".github/sweep-costs.json:17-142",
         "issue": "The filed outcome says CI run 45601056962 was 'green on every cell' on 'this tree', but that run (177d9315) carried the OLD sweep-costs.json; the re-recorded figures (test__evidence_io 14.6 -> 307.0, test_merge_manifest 20.0 -> 262.2, 37 block figures) change how the sweep deals files to shards and every hang-detector timeout (the executor cites 787 s and 425 s). The tree as it will be committed, costs included, has not been run in CI; only gate-parity (exit 0) and a local gate run stand behind the new split.",
-        "resolution": "Treat the owner-dispatched CI run on the committed tree as the confirmation of the new shard deal and timeouts, and say in the outcome that 45601056962 predates the costs file."
+        "resolution": "Treat the owner-dispatched CI run on the committed tree as the confirmation of the new shard deal and timeouts, and say in the outcome that 45601056962 predates the costs file.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R119",
         "severity": "low",
         "file": "tests/test__manifest_io.py:2092-2102",
         "issue": "kt4d's 'no mixed separator' conjunct (`not mixed`, where mixed = os.sep != '/' and 'phases/' in said) is vacuously true on any posix run, so on the platforms a developer can run it only the ntpath/posixpath/join equalities and the 'shard_d in said' checks bite; the mixed-separator property itself is decided only by the Windows leg. The executor states this limit; the ntpath equality (nt == 'C:\\\\plan\\\\phases\\\\P1.json') does carry the helper's behaviour on posix, so the helper is covered, the end-to-end message property is not.",
-        "resolution": "Optional: add an end-to-end arm that forces the decision through the helper's pathmod (e.g. assert the message-building site calls shard_file) or accept the Windows leg as the check; no change needed for release."
+        "resolution": "Optional: add an end-to-end arm that forces the decision through the helper's pathmod (e.g. assert the message-building site calls shard_file) or accept the Windows leg as the check; no change needed for release.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P169-R120",
@@ -1175,12 +1211,15 @@
         "severity": "low",
         "file": "tests/test_gen_demo_manifest.py:992-1021,1102",
         "issue": "Case titles and comments the diff left in place still say the pointers are checked against \"the ledger\" (\"A block whose runId the ledger does not answer to\", \"the first run the ledger holds\", \"what keeps the plan and the ledger in step\"). The same task's ro1/ro4/ro5 pin that no ledger exists in this fixture, so these sentences now describe a thing the generator no longer writes.",
-        "resolution": "Reword to \"the records the plan holds\" the next time the file is touched (batch with the other lows); no behaviour changes."
+        "resolution": "Reword to \"the records the plan holds\" the next time the file is touched (batch with the other lows); no behaviour changes.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       }
     ],
-    "outcome": "[findings: 121 - 12 high, 44 med, 65 low; 102 with a recorded fix commit]"
+    "outcome": "[findings: 121 - 12 high, 44 med, 65 low; 102 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P169: a run's record lives in the plan whatever its scope; no run appends an evidence row; a full run's record is meta.lastFullRun/lastMeasuredFullRun; the recorded set is the journal plus filed returns, every reader through record_places; views, doctor, demo and the examples check read records. 44 tasks; phase review (two independent opus reviews of P169.32 onward) found no high and no regression; its four user-visible findings fixed in P169.44; lows carried to BUG-35-icj and register F926. CI release tier green on a21bb1d9 (run 45758233688), Linux and Windows. Per-task reviewer answers continued over: P169.3 intent diverges: Owner, 2026-11-18: 'ok, nastavi samostalno' (the mandate: no dialogs, park a stop point with a note and carry on). The divergence is the lock: the record is written under the phase lock while verbs write the shard under the index lock. It is recorded as findings P169-R11 to R15 and a fix task bound to them runs before any reader moves to the record.; P169.11-6l3 intent diverges: Owner, 2026-11-18: 'ok, nastavi samostalno'. The divergence is of form only: the task asked for a seeding job of its own and the change seeds from the two browser jobs, because a separate job broke the pinned claim that the verified job runs alone; the reviewer found no event where the effect differs. Its three medium findings are bound to fix task P169.14-6l3.; P169.25-6l3 intent diverges: Owner's mandate, renewed 2026-11-20: 'nastavi samostalno' (earlier: 'ok onda radi autonomno i samostalno, nemoj mi otvarati promptove koji ce blokirati tvoj rad dok ti se ne javim licno ponovo'). The reviewer's two med findings were reproduced on the committed check and on bash itself and are bound to the fix task P169.29-6l3, which runs before the phase's last task and before sign-off.; P169.38-6l3 intent diverges: Divergence is the deliberate narrowing recorded in the task's note 8 and COMPATIBILITY.md: filed returns stay in task commits; the code is the intended half.",
   "tasks": [
     {
       "id": "P169.1",
@@ -12373,7 +12412,7 @@
     {
       "id": "P169.44-6l3",
       "title": "A corrupt plan record is a finding, and the doctor's trail rows say only what the plan and the ledger hold",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase sign-off review findings. (1) tools/check-example-ledgers.py record_runs (~418) takes rows from records_of_bodies, which drops a record not in its writer's shape, so a pointer whose record is corrupt (status 7, failed broken) counts as merely unresolved and the check exits 0; validate-manifest only warns. A record that names the pointer's run but cannot be read is a FINDING naming the file and field, the same as an out-of-vocabulary ledger row. (2) _doctor_trail run trail row (~1941/1944) prints read[records], which counts only runs no ledger row also holds, as 'run record(s) in the plan'; on this repo it says 10 where the plan holds 37. Count the plan's records as records and the frozen rows as rows, each by its own reader. (3) _evidence_io ~2031-2034: an unchained-head warning says a full run recorded into this file closes the gap; since the full scope appends no row it never closes - say so. (4) _doctor_trail ~1510-1511 gate patterns hint names the rows in the evidence ledger at <dir> on a records-only plan where that directory does not exist; name where the tally was read (the plan's records, and the ledger only when one is present); likewise ~1490 'no evidence rows recorded yet'. Repro outputs: session scratchpad cr-work-views/s5/.",
       "files": [
         "tools/check-example-ledgers.py",
@@ -12400,14 +12439,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a21bb1d9f762",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) tools/check-example-ledgers.py: new unreadable_runs() reads the run each record the plan holds but cannot read names, through the new _evidence_io.unreadable_record_runs() (beside records_of_bodies, whose contract is unchanged; _plan_records now puts runId on the problem it finds, so the one raw load of the record stays in the door rf1 allows). pointer_findings(..., unreadable) reports a pointer naming such a run as a FINDING (manifest, task, record key, file, field, why); pointer_reach counts it as reached and the nothing-compared refusals no longer fire over a plan that recorded a corrupt run, so the finding is not masked by a REFUSED line. el34 (single corrupt pointer: exactly one finding, x/audit-plan.json, P1.1, lastRun.status) and el35 (corrupt record naming a run no pointer names, beside a pointer resolving through a readable record: no finding, 1 of 1 resolved). On this repo el1/el2 stay green (OK line 1196 of 1196 pointers); on a scratch copy of the reviewer's clone with P169.4's lastRun.status set to 7 the tool now prints the finding for docs/audit/phases/P169.json, P169.4, field lastRun.status (repro was a scratch copy, not this tree). Not covered: the plan's full-run records (meta.lastFullRun) are not a pointer target and stay full_run_entries' malformed list. (2) _doctor_trail.check_run_trail: records = len(_evidence_io.plan_run_entries(...)) (new reader, off the plan alone, dedup by runId, unreadable excluded) and frozen = ledger-sourced rows of read_rows; the row reads 'N run record(s) in the plan and M frozen ledger row(s)', no 'from an earlier release'. dtb1 uses a ledger row repeating the record's run (read_rows.records is 0, plan holds 1), dtb2 is the allow case. On this tree the row prints 72 run records and 1681 frozen rows. (3) _evidence_io.verify's unchained-head warning now says no run appends to a ledger file any more, a full run records into the plan, so the rows stay unchained (ec7b; ec8 still passes since append_row is unchanged). plugins/audit/README.md:1484 still says a full run recorded into that file links onto them: NOT edited, outside this task's files, named for the orchestrator. (4) _doctor_trail: _tally_basis() names the run records in the plan and the frozen ledger directory only when a ledger file exists; check_gate_patterns' never-failed hint now reads 'tallied from the run records in <plan>[ and the frozen ledger at <dir>]', and the empty-tally warning in check_gate_patterns and check_gate_economy reads 'no gate recorded yet in <basis>' (dge2's pin repinned in tests/test__doctor_trail.py, my file; no pin outside my files named the old wording: grep of *.py, *.md, *.json found only the plugin source and that test). dtb3/dtb4/dtb5. PLUGIN-BUILD-GUIDE.md: trail paragraph, gate-rows basis sentence, and the _evidence_io reader paragraph updated. Tallies: tests/test__doctor_trail.py 175/175, tests/test__evidence_io.py 600/600 (two staged blocks added: pk-block), tools/check-example-ledgers.py 35/35, full sweep 196/196 files ok, 19986 cases, exit 0; ruff and vermin exit 0. Numstat: PLUGIN-BUILD-GUIDE.md +15/-3, _evidence_io.py +52/-4, _doctor_trail.py +31/-8, tests/test__doctor_trail.py +96/-1, tests/test__evidence_io.py +63/-1, tools/check-example-ledgers.py +105/-23. Dependants: tools/check-example-ledgers.py importers/pins (tests/test_gen_demo_manifest.py imports _selftest, tests/test__evidence_io.py reads _holders, tools/bench-hooks.py gate_findings, tools/check-committed-pii.py ok_line) - signatures of those names unchanged, still correct; findings()/pointer_findings/pointer_reach only gained optional trailing parameters; sweep-costs.json, ci.yml, verify.sh, CHANGELOG, CLAUDE.md, CONTRIBUTING refer to the file by path and are untouched. _doctor_trail.py dependants (audit-doctor.py, test__doctor_report/_setup, test_audit_doctor, test__output path, PLUGIN-BUILD-GUIDE) - only message wording of three rows and one new private helper changed; full sweep green over all of them. _evidence_io.py dependants (guard-release, close-phase, integrate-task, _affected_tests, _gate_derive, _invariants, _verdict_binding, audit-journal and the rest) - additions only (two new functions, a runId key on _plan_records' problem dict, which every existing caller ignores or reads by key) plus one warning sentence; sweep green. tests files: dependants are path-only references (sweep-costs, affected.py, prove-gates.py), unchanged.",
+        "descriptive": "A pointer naming a corrupt plan record is now a named finding instead of a silent exit 0, and the doctor's trail and gate rows count the plan's records and the frozen rows separately and name only the places they actually read."
       },
       "startedAt": "2026-11-26T04:23:08Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-26T04:55:06Z",
+      "verifiedBy": [
+        "el34/el35 in tools/check-example-ledgers.py: a pointer naming a corrupt record is a finding naming manifest, task and field; a corrupt record no pointer names is not",
+        "pk1/pk2 in tests/test__evidence_io.py: unreadable_record_runs gives the run a corrupt record names (None when it names none), nothing for readable records",
+        "pk3/pk4: plan_run_entries counts a plan's records off the plan alone, even when a ledger row repeats the run, and not an unreadable one",
+        "ec7b: the unchained-head warning promises no repair by a full run",
+        "dtb1/dtb2: run trail row counts plan records and frozen rows each from its own reader, no 'earlier release'",
+        "dtb3/dtb4/dtb5: gate patterns hint and empty-tally wording name where the tally was read, the ledger only when present"
+      ],
       "timing": {
         "stages": [
           {
@@ -12423,6 +12469,24 @@
             "ms": 376334,
             "basis": "durationMs in run 2026-11-26T04:54:33Z.3e8eb7's record (run-test-gate --record)",
             "runId": "2026-11-26T04:54:33Z.3e8eb7"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-26T04:45:47Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1357000,
+            "startedAt": "2026-11-26T04:23:10Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-26T04:54:33Z.3e8eb7",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-26T04:47:53Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit a21bb1d9f762",
+            "kind": "commit",
+            "ms": 1806,
+            "startedAt": "2026-11-26T04:55:03Z"
           }
         ],
         "firstStartedAt": "2026-11-26T04:23:08Z"
@@ -12531,6 +12595,18 @@
         "runId": "2026-11-26T04:54:50Z.a20eef",
         "status": "passed",
         "at": "2026-11-26T04:54:50Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "a21bb1d9f762",
+        "at": "2026-11-26T04:55:06Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-26T04:45:45Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__doctor_trail.py tests/test__evidence_io.py` in a throwaway tree at HEAD exited 1 with 6 of 597 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dtb1 (house FAIL), dtb3 (house FAIL), ec7b (house FAIL): SELFTEST FAILED: 595/597 cases passed; --case pk3 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
@@ -12541,10 +12617,311 @@
     "The hash-chained journal is deleted later in this release by the owner's decision; this phase only turns the per-call rows and the preimage files off by default."
   ],
   "reviewPerTask": "signals",
-  "claim": {
+  "startedAt": "2026-11-18T17:39:54Z",
+  "lastRun": {
+    "runId": "2026-11-26T05:33:37Z.35f08e",
+    "status": "passed",
+    "durationMs": 4175,
+    "failed": [],
+    "observations": {
+      "ranTotal": null,
+      "countsBasis": "no step printed a summary this reader can count (validate, gate, report), so the size of this gate is not knowable from its output; counted over the step(s) measured here only - the repeated step(s) selftests, plugin-validate, lint, shots, interactive, vitest ran no check in this run",
+      "treeMutated": [],
+      "treeBasis": "git described the tree before and after",
+      "coverageBasis": "the runner named 3 path(s); the work under test declares 195 file(s); among them: <outside-repo>, <outside-repo>, docs/audit/audit-plan.json; declared but not named by the run: (tests/test_merge_manifest.py, .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .github/actions/browser-install/action.yml and 191 more; joined with the paths run 2026-11-26T05:33:31Z.314f7a's repeated step(s) selftests, plugin-validate, lint, shots, interactive, vitest named"
+    },
+    "banners": [],
+    "gateSource": "phase",
+    "gateDigest": "sha256:e8312fb8f9c94dbe9df9bce082512eec91a04ad94b9a2938a23f7d6bd7005252",
+    "reuseKey": "1:sha256:a28351611a7f655cbd00d80e484e0333709df63aae7a5c097f5c8e3cc8699673",
+    "verdictSource": "part-reused",
+    "reusedFrom": {
+      "runId": "2026-11-26T05:33:31Z.314f7a",
+      "ts": "2026-11-26T05:33:31Z",
+      "status": "passed"
+    },
+    "via": "cli",
     "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
-    "branch": "audit/p169-a-run-s-record-lives-in-the-pl",
-    "at": "2026-11-25T10:17:56Z"
+    "startedAt": "2026-11-26T05:33:33Z",
+    "selectionMs": 265,
+    "at": "2026-11-26T05:33:37Z",
+    "steps": [
+      {
+        "name": "selftests",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-26T05:33:31Z.314f7a",
+          "ts": "2026-11-26T05:33:31Z"
+        },
+        "command": "python3 tools/sweep-selftests.py"
+      },
+      {
+        "name": "validate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 726,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json"
+      },
+      {
+        "name": "plugin-validate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-26T05:33:31Z.314f7a",
+          "ts": "2026-11-26T05:33:31Z"
+        },
+        "command": "claude plugin validate . && claude plugin validate plugins/audit"
+      },
+      {
+        "name": "gate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 1320,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate"
+      },
+      {
+        "name": "report",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 2091,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report"
+      },
+      {
+        "name": "lint",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-26T05:33:31Z.314f7a",
+          "ts": "2026-11-26T05:33:31Z"
+        },
+        "command": "ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints"
+      },
+      {
+        "name": "shots",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-26T05:33:31Z.314f7a",
+          "ts": "2026-11-26T05:33:31Z"
+        },
+        "command": "node tools/capture-screenshots.mjs --check"
+      },
+      {
+        "name": "interactive",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-26T05:33:31Z.314f7a",
+          "ts": "2026-11-26T05:33:31Z"
+        },
+        "command": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
+      },
+      {
+        "name": "vitest",
+        "exit": 0,
+        "ran": 870,
+        "measured": "checks",
+        "suiteReader": "vitest",
+        "reusedFrom": {
+          "runId": "2026-11-26T05:33:31Z.314f7a",
+          "ts": "2026-11-26T05:33:31Z"
+        },
+        "command": "npx vitest run"
+      }
+    ],
+    "machine": "this run had the machine to itself",
+    "repeatedRun": {
+      "runId": "2026-11-26T05:33:31Z.314f7a",
+      "startedAt": "2026-11-26T05:19:16Z",
+      "durationMs": 855506,
+      "selectionMs": 269,
+      "status": "passed",
+      "failed": [],
+      "reuseKey": "1:sha256:a28351611a7f655cbd00d80e484e0333709df63aae7a5c097f5c8e3cc8699673",
+      "gateDigest": "sha256:e8312fb8f9c94dbe9df9bce082512eec91a04ad94b9a2938a23f7d6bd7005252",
+      "gateSource": "phase",
+      "banners": [],
+      "machine": "this run had the machine to itself",
+      "launch": "2026-11-26T05:19:00Z-d8992848",
+      "observations": {
+        "ranTotal": 870,
+        "countsBasis": "1 of 9 step(s) printed a summary this reader counted; selftests, validate, plugin-validate, gate, report, lint, shots, interactive did not, so this total is a floor and not a size",
+        "treeMutated": [],
+        "treeBasis": "git described the tree before and after",
+        "coverage": [
+          ".claude/hooks/arm-release-bypass.py",
+          ".claude/hooks/guard-release.py",
+          "README.md",
+          "examples/acme-store/acme-store-audit.html",
+          "examples/acme-store/acme-store-audit.md",
+          "plugins/audit/README.md",
+          "plugins/audit/hooks/detect-plan-skip.py",
+          "plugins/audit/hooks/guard-secrets-read.py",
+          "plugins/audit/hooks/journal-writes.py",
+          "plugins/audit/hooks/meter-usage.py",
+          "plugins/audit/hooks/require-plan.py",
+          "plugins/audit/schema/audit-config.schema.json",
+          "tests/test__affected_tests.py",
+          "tests/test__areas.py",
+          "tests/test__commit_trail.py",
+          "tests/test__config.py",
+          "tests/test__deps.py",
+          "tests/test__doctor_completions.py",
+          "tests/test__doctor_setup.py",
+          "tests/test__doctor_trail.py",
+          "tests/test__evidence_io.py",
+          "tests/test__evidence_view.py",
+          "tests/test__help.py",
+          "tests/test__invariants.py",
+          "tests/test__journal_io.py",
+          "tests/test__json_schema.py",
+          "tests/test__live_copy.py",
+          "tests/test__manifest_io.py",
+          "tests/test__manifest_merge.py",
+          "tests/test__manifest_vocab.py",
+          "tests/test__panel_composition.py",
+          "tests/test__panel_page.py",
+          "tests/test__panel_runstate.py",
+          "tests/test__panel_settings.py",
+          "tests/test__panel_state.py",
+          "tests/test__report_html.py",
+          "tests/test__scoped_commit.py",
+          "tests/test__status_facts.py",
+          "tests/test__task_timing.py",
+          "tests/test__ui_theme.py"
+        ],
+        "coverageBasis": "the runner named 342 path(s); the work under test declares 195 file(s); 58 of them are test paths, matched to the files they are named after; among them: .claude-plugin/icon.png, .claude-plugin/plugin.json, .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py and 337 more; declared but not named by the run: (tests/test_merge_manifest.py, .github/actions/browser-install/action.yml, .github/sweep-costs.json, .github/workflows/ci.yml, CHANGELOG.md, COMPATIBILITY.md and 111 more"
+      },
+      "coverageDropped": 38,
+      "via": "cli",
+      "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+      "at": "2026-11-26T05:33:31Z",
+      "testedState": {
+        "head": "a21bb1d9",
+        "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+        "scopeDigest": "sha256:db83bed30c849d11d9d75bb51618b7358890efcd66033e674a490857a8c14451",
+        "scopeBasis": "195 declared file(s); 189 read, 6 missing",
+        "scopeListDigest": "sha256:e2a72fd62684f594b1a1131d1128234a5785cb7168c7a69e390e1e3d8a75278a",
+        "dirtyDigest": "sha256:af05f91913896c060df35ee33ef6cbe1853fdd6a70b21ba3aa3ac3b39fed5e9c",
+        "dirtyBasis": "git described the tree before the run; 3 dirty path(s)"
+      },
+      "steps": [
+        {
+          "name": "selftests",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 376055,
+          "suiteReader": "none",
+          "command": "python3 tools/sweep-selftests.py"
+        },
+        {
+          "name": "validate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 729,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json"
+        },
+        {
+          "name": "plugin-validate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 1088,
+          "suiteReader": "none",
+          "command": "claude plugin validate . && claude plugin validate plugins/audit"
+        },
+        {
+          "name": "gate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 1338,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate"
+        },
+        {
+          "name": "report",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 2115,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report"
+        },
+        {
+          "name": "lint",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 3320,
+          "suiteReader": "none",
+          "command": "ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints"
+        },
+        {
+          "name": "shots",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 295167,
+          "suiteReader": "none",
+          "command": "node tools/capture-screenshots.mjs --check"
+        },
+        {
+          "name": "interactive",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 171866,
+          "suiteReader": "none",
+          "command": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
+        },
+        {
+          "name": "vitest",
+          "exit": 0,
+          "ran": 870,
+          "measured": "checks",
+          "durationMs": 3730,
+          "suiteReader": "vitest",
+          "command": "npx vitest run"
+        }
+      ]
+    },
+    "sharedWithRepeated": [
+      "observations.coverage",
+      "testedState"
+    ],
+    "replacedLaunches": [
+      {
+        "runId": "2026-11-26T05:33:31Z.314f7a",
+        "launch": "2026-11-26T05:19:00Z-d8992848",
+        "status": "passed",
+        "at": "2026-11-26T05:33:31Z"
+      }
+    ]
   },
-  "startedAt": "2026-11-18T17:39:54Z"
+  "testEvidence": {
+    "runId": "2026-11-26T05:33:37Z.35f08e",
+    "status": "passed",
+    "at": "2026-11-26T05:33:37Z"
+  }
 }

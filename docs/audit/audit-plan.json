@@ -2751,8 +2751,8 @@
       "P169.9",
       "P169.15-6l3",
       "P169.6",
-      "P169.37-6l3",
       "P169.41-6l3",
+      "P169.37-6l3",
       "P169.38-6l3",
       "P169.44-6l3"
     ],
@@ -3925,8 +3925,8 @@
       "P169.23-6l3",
       "P169.24-6l3",
       "P169.7",
-      "P169.37-6l3",
-      "P169.41-6l3"
+      "P169.41-6l3",
+      "P169.37-6l3"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -4082,9 +4082,9 @@
       "P169.16-6l3",
       "P169.5",
       "P169.20-6l3",
-      "P169.19-6l3",
       "P169.21-6l3",
       "P169.22-6l3",
+      "P169.19-6l3",
       "P169.23-6l3",
       "P169.27-6l3",
       "P169.41-6l3"
@@ -4720,8 +4720,8 @@
       "P155.34-gfj",
       "P156.8-3st",
       "P169.8",
-      "P169.37-6l3",
       "P169.38-6l3",
+      "P169.37-6l3",
       "P169.43-6l3"
     ],
     "plugins/audit/scripts/governance/_journal_io.py": [
@@ -5051,8 +5051,8 @@
       "P169.2",
       "P169.8",
       "P169.4",
-      "P169.37-6l3",
       "P169.38-6l3",
+      "P169.37-6l3",
       "P169.43-6l3"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
@@ -9329,8 +9329,8 @@
       "P169.14-6l3",
       "P169.17-6l3",
       "P169.16-6l3",
-      "P169.18-6l3",
       "P169.25-6l3",
+      "P169.18-6l3",
       "P169.26-6l3",
       "P169.29-6l3"
     ],
@@ -13277,8 +13277,8 @@
       "P155.34-gfj",
       "P156.8-3st",
       "P169.8",
-      "P169.37-6l3",
       "P169.38-6l3",
+      "P169.37-6l3",
       "P169.43-6l3"
     ],
     "tests/test__journal_io.py": [
@@ -13904,8 +13904,8 @@
       "P169.4",
       "P169.16-6l3",
       "P169.19-6l3",
-      "P169.37-6l3",
       "P169.38-6l3",
+      "P169.37-6l3",
       "P169.43-6l3"
     ],
     "tests/test_derive_phase_gate.py": [
@@ -16049,6 +16049,50 @@
             "lint",
             "shots",
             "interactive"
+          ],
+          "blockedBy": [],
+          "baseRef": null,
+          "branch": null,
+          "mergedAt": null,
+          "review": {
+            "tool": null,
+            "model": "sonnet",
+            "status": "pending",
+            "findings": []
+          },
+          "summary": null,
+          "tasks": []
+        }
+      }
+    },
+    {
+      "id": "PROP-12-6l3",
+      "name": "Waves run wider than one: no file every task must edit",
+      "status": "proposed",
+      "origin": "audit-task add-phase --park",
+      "createdISO": "2026-11-25T13:12:06Z",
+      "branch": "audit/p169-a-run-s-record-lives-in-the-pl",
+      "benefit": "Two ready tasks of one phase that touch different code run as one wave: no task declares CHANGELOG.md or a hand-written section of PLUGIN-BUILD-GUIDE.md only to describe itself, and the release still produces the same CHANGELOG.md.",
+      "openQuestions": [],
+      "materializedAs": null,
+      "materializedAt": null,
+      "payload": {
+        "phase": {
+          "id": "P170-6l3",
+          "title": "Waves run wider than one: no file every task must edit",
+          "status": "pending",
+          "description": "Owner 2026-11-25, answering how to speed development up: today almost every task declares CHANGELOG.md and PLUGIN-BUILD-GUIDE.md, so the drive's wave builder sees a shared file between any two tasks and runs waves of width one (register F915). Make those two files stop being a per-task collision, then measure the wave width it buys. FIRST TASK (materialize with /audit:task add on this phase; key changelog-fragments, risk med, tdd): A task writes its changelog entry as a fragment of its own, and the release assembles CHANGELOG.md from the fragments. Every task appends to CHANGELOG.md's [Unreleased] section, so every pair of tasks shares that file and the wave builder runs them one at a time (F915). Replace the shared append with one fragment file per task (the towncrier pattern: changelog.d/<task-id>.<kind>.md, kind one of the section words the changelog already uses), assembled into CHANGELOG.md by the release step (tools/release.py) and checked by a lint that the assembled text equals what the release would write. Decide and state: where the fragments live, what a fragment that names no kind does, how the existing [Unreleased] text is carried (move it into fragments once, so nothing is lost), what tools/release.py, verify.sh --release and CONTRIBUTING.md's release step now do, and how `/audit:task add` and the executor brief tell a task to write a fragment instead of editing CHANGELOG.md. The same question for PLUGIN-BUILD-GUIDE.md: list which of its per-module sections can be generated from the code the way the module map already is (tools/lints/_deps.py --render), and either generate them in this task or file a follow-up with the list; a hand-written section a task must still edit stays a declared file. Acceptance: two tasks that touch different modules and each write a fragment are planned as one wave by the drive (show it with the wave builder on a fixture plan); release output on this repository is byte for byte the current CHANGELOG.md plus the assembled fragments; the doc lints stay green; measure the wave width the next phase actually gets and record it. Files: tools/release.py, CHANGELOG.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md, tools/verify.sh, tests/test_release.py. tests.add: tests/test_release.py: the release assembles CHANGELOG.md from the per-task fragments and an assembled text that differs from what the release would write is refused",
+          "desiredOutcome": "Two ready tasks of one phase that touch different code run as one wave: no task declares CHANGELOG.md or a hand-written section of PLUGIN-BUILD-GUIDE.md only to describe itself, and the release still produces the same CHANGELOG.md.",
+          "testGate": [
+            "selftests",
+            "validate",
+            "plugin-validate",
+            "gate",
+            "report",
+            "lint",
+            "shots",
+            "interactive",
+            "vitest"
           ],
           "blockedBy": [],
           "baseRef": null,
