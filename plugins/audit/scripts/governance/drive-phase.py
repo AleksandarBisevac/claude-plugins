@@ -4038,9 +4038,12 @@ def base_need(ctx, task, row, tree=None):
     measurement recorded after the row's own reading was taken, so the
     reading is to be taken again over it (`kept_reading`); and `elsewhere`,
     the sentence saying a base run is owed because the one recorded for the
-    red's commit and step set was measured for another red (`measured_for`),
-    else None. The table above is the rule; `tree` is the member tree the
-    gate ran in, None for the project."""
+    red's commit and step set was measured for another red (`measured_for`)
+    and the row's reading names suites that base left not comparable for
+    that reason alone (`_evidence_io.BASE_UNCARRIED_KEY`), else None - a
+    `not-knowable` of any other cause a second base run of the same commit
+    and step set answers no differently. The table above is the rule; `tree`
+    is the member tree the gate ran in, None for the project."""
     reading = (row or {}).get(_evio.BASE_RED_KEY)
     own = own_red(ctx, task, row, tree)
     if own is not None:
@@ -4057,7 +4060,7 @@ def base_need(ctx, task, row, tree=None):
     base = _evio.base_row_for(
         [st for st in row.get("steps") or [] if _evio._counts_as_failed(st)],
         head, row.get("taskId"), rows) or {}
-    if (reading or {}).get("verdict") == "not-knowable" \
+    if (reading or {}).get(_evio.BASE_UNCARRIED_KEY) \
             and not measured_for(base, row, rows):
         return None, False, ELSEWHERE_BASE_WHY % (
             row.get("taskId"), base.get("runId"),

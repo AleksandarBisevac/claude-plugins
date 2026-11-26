@@ -30,7 +30,7 @@
     {
       "id": "P171.1",
       "title": "The drive never charges a task with a red its own record writes caused",
-      "status": "in_progress",
+      "status": "done",
       "description": "",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -57,14 +57,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9a50413d1e82",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Design B: a base run carries the recorder's own writes, and only a base that carried them charges the task. Measuring the task gate in a tree whose recorder paths hold committed content (A) was rejected because it changes what every step reads (a validate/gate step would judge the last commit's plan) and a copy of the project lacks its ignored dependencies. B keeps the stamp's recorder exclusion (same recorded_paths set), the clean-tree base rule (the overlay is left out of the dirty digest via run_gate's new dirty_excluded, and dirtyBasis counts it), red-first, and base_red's case-by-case comparison. run-test-gate.py: run_gate records recorderHeld (whether the pre-run porcelain held a recorder write, read through _tree_stamp.dirty_digest's own exclusion). New: lay_recorder_writes/_lay_file/_mirror_dir lay the recorder paths from --recorder-from (default: the project) over --tree before a --base-of run. uncarried(), applied inside base_reading, moves every suite a base would charge to the task into unknown, with a sentence saying why, and sets the verdict to not-knowable unless the base was measured for that red (baseOf) or the red's tree held no recorder write. kept_base_answer does not answer such a red. The --kept-only refusal is reworded. drive-phase.py: base_need returns a third value, the ELSEWHERE_BASE_WHY sentence, when the base recorded for the commit and step set was measured for another red (measured_for). base_measure_due/decided_elsewhere then make a base measurement due even though the start already has a finished mark. _base_in passes --recorder-from from the red's tree. tools/lints/_deps.py: two OTHER_WRITERS rows (lay_recorder_writes, _mirror_dir via run-test-gate._lay_file) with the _PW_RECORDER_OVERLAY reason. PLUGIN-BUILD-GUIDE.md: one paragraph in each of the run-test-gate and drive-phase sections. changelog.d/P171.1.fixed.md. Tests: rcw1-rcw5 (block rcw in test_run_test_gate.py, with the shared RECORDER_GATE_SCRIPT fixture: a plan check red on any kept base run the plan names) and rcd1-rcd2 (stage rcd-block in test_drive_phase.py); the bh5 stub was updated to base_need's three-value return. Mutations, each restored and checked with cmp, with __pycache__ purged: rule off reds rcw1/3/4/5 and rcd1/2; rule always fires reds rcw2/3/5 and rcd2 (the twins); overlay off reds rcw4/5 and rcd1/2; dirty_excluded dropped reds rcw3/4/5; kept base answers anyway reds rcw4/5; drive decided_elsewhere off reds rcd1/2; drive base_need branch off reds rcd1/2. Task gate: 2/2 files ok, 1846 cases. Full sweep after the last edit: 196/196 files ok, 20006 cases. ruff exit 0, vermin exit 0. The plan gate refused a heredoc edit to drive-phase.py, verbatim: '[plan gate] A source-file write from a heredoc fed to an interpreter's stdin (python3 - <<EOF …), which is the same capability as python -c and is graded as one bypasses the plan-first gate: tests/plugins/audit/scripts/governance/drive-phase.py (change magnitude 177 > 80) … This path is outside the running task's `files`'. The path was mis-resolved because of a trailing cd tests; the same edits were then made with the Edit tool, which the gate allowed. Dependants: the drive's importers and suites do not call the changed internal signatures (git grep finds none beyond the bh5 stub); run_gate's new parameter defaults to None and its result key is additive; README, execute-task.md and COMPATIBILITY.md names are unchanged (the new flag is not a config key); test_drive_without_model imports unchanged helpers; check-example-ledgers.py is waived and untouched. Cost: one more base measurement for each red a kept base would have charged to the task.",
+        "descriptive": "A red that the drive's own uncommitted record writes alone cause is read against a base that carries those writes and classified as red at base (gate-red-base), never charged to the task; a red the task's work causes is still the task's."
       },
       "startedAt": "2026-11-26T12:44:57Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-26T13:32:56Z",
+      "verifiedBy": [
+        "rcw1: a base measured for another red charges nothing to a red whose tree held recorder writes (verdict not-knowable; at-base suites stay)",
+        "rcw2: twin - a red whose tree held no recorder write, or read against the base measured for it, is still charged",
+        "rcw3: k15p through the CLI - the second gate's reading against the base kept for the first red is not-knowable, not introduced",
+        "rcw4: --base-of that red measures again with the recorder's writes laid over, reads clean with the left-out writes counted, and gives base-only",
+        "rcw5: twin - the plan check is at base and the task's own unfixed red is still introduced",
+        "rcd1: the k15p shape through the drive stops on gate-red-base with no writer round",
+        "rcd2: twin through the drive - the task's own red goes back to the writer and the plan check is at base"
+      ],
       "bugId": "BUG-36",
       "notes": [
         {
@@ -94,6 +102,24 @@
             "ms": 377045,
             "basis": "durationMs in run 2026-11-26T13:32:22Z.72d302's record (run-test-gate --record)",
             "runId": "2026-11-26T13:32:22Z.72d302"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-26T13:24:52Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 2392000,
+            "startedAt": "2026-11-26T12:45:00Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-26T13:32:22Z.72d302",
+            "kind": "wait",
+            "ms": 6000,
+            "startedAt": "2026-11-26T13:25:36Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 9a50413d1e82",
+            "kind": "commit",
+            "ms": 1812,
+            "startedAt": "2026-11-26T13:32:53Z"
           }
         ],
         "firstStartedAt": "2026-11-26T12:44:57Z"
@@ -201,6 +227,195 @@
         "runId": "2026-11-26T13:32:39Z.b457af",
         "status": "passed",
         "at": "2026-11-26T13:32:39Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "9a50413d1e82",
+        "at": "2026-11-26T13:32:56Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-26T13:24:50Z",
+        "basis": "`python3 tests/test_drive_phase.py --selftest --stage rcd-block` in a throwaway tree at HEAD exited 1 with 2 of 2 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `rcd-block`, which the task's test files add - the stage is new at HEAD: its cases did not exist at HEAD, which is red for them), each passing with the working tree's implementation - rcd1 (house FAIL), rcd2 (house FAIL): SELFTEST FAILED: 0/2 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P171.2-71o",
+      "title": "The recorder overlay never lays a path the task itself declares, and only a recorder-caused not-knowable owes a base",
+      "status": "in_progress",
+      "description": "Review of 9a50413d. (1, med regression) lay_recorder_writes copies every recorded path from the red's tree, including paths the task declares in its own files (real tasks do: plan shards, returns), so a red the task's own plan edit causes is laid into the base and read base-only - the drive then tells the owner the base fails the same cases. Lay only recorder paths outside the task's declared files; an overlapping path keeps the base commit's content. (6, low but false claim + extra cost) recorderHeld is never stored on the run row, so the kept-answer 'held no recorder write' branch cannot fire; and base_need's elsewhere branch fires on any not-knowable, not only one the uncarried rule produced, re-appending a false ELSEWHERE_BASE_WHY each pass. Persist recorderHeld (and the uncarried marker) on the row and key base_need on it. Fix the changelog/guide sentence that a same-case task red stays the task's (true only for a different case).",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test_run_test_gate.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "changelog.d/P171.1.fixed.md",
+        "tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py tests/test__evidence_io.py"
+        ],
+        "gateBasis": "files"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-26T13:38:32Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-26T13:38:29Z",
+          "text": "quotes run-test-gate's 'the work under test declares no files' wording, which this task does not change",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-26T13:38:29Z",
+          "reader": "tests/test__evidence_io.py",
+          "reads": "plugins/audit/scripts/governance/_evidence_io.py",
+          "text": "declared to answer a reading: tests/test__evidence_io.py reads plugins/audit/scripts/governance/_evidence_io.py - its own suite"
+        }
+      ],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-26T14:04:16Z",
+            "ms": 22759,
+            "basis": "selectionMs in run 2026-11-26T14:11:00Z.49c0e4's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-26T14:11:00Z.49c0e4"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-26T14:04:39Z",
+            "ms": 380736,
+            "basis": "durationMs in run 2026-11-26T14:11:00Z.49c0e4's record (run-test-gate --record)",
+            "runId": "2026-11-26T14:11:00Z.49c0e4"
+          }
+        ],
+        "firstStartedAt": "2026-11-26T13:38:32Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-26T14:11:16Z.18b999",
+        "status": "passed",
+        "durationMs": 207,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:186ad53e216bd88b4a9ecf7cb8291aae68f6088599c31d1506d1270e122a7376",
+        "reuseKey": "1:sha256:818a2cfc09976d13246d4a55dd61f91bcaad2098e303c206804053ee2dba2b89",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-26T14:11:00Z.49c0e4",
+          "ts": "2026-11-26T14:11:00Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+        "selectionMs": 14981,
+        "at": "2026-11-26T14:11:16Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "runId": "2026-11-26T14:11:00Z.49c0e4",
+          "startedAt": "2026-11-26T14:04:39Z",
+          "durationMs": 380736,
+          "selectionMs": 22759,
+          "status": "passed",
+          "failed": [],
+          "reuseKey": "1:sha256:818a2cfc09976d13246d4a55dd61f91bcaad2098e303c206804053ee2dba2b89",
+          "gateDigest": "sha256:186ad53e216bd88b4a9ecf7cb8291aae68f6088599c31d1506d1270e122a7376",
+          "gateSource": "task",
+          "banners": [],
+          "machine": "this run had the machine to itself",
+          "launch": "2026-11-26T14:04:15Z-0245585a",
+          "gateReach": {
+            "gaps": []
+          },
+          "observations": {
+            "ranTotal": null,
+            "countsBasis": "no step printed a summary this reader can count (python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py tests/test__evidence_io.py + affected/related: .claude/hooks/arm-release-... (5451 more characters)), so the size of this gate is not knowable from its output",
+            "treeMutated": [],
+            "treeBasis": "git described the tree before and after",
+            "coverage": [
+              "tests/test__evidence_io.py",
+              "tests/test_drive_phase.py",
+              "tests/test_run_test_gate.py"
+            ],
+            "coverageBasis": "the runner named 206 path(s); the work under test declares 8 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 195/195 and 201 more; declared but not named by the run: PLUGIN-BUILD-GUIDE.md, changelog.d/P171.1.fixed.md, plugins/audit/scripts/governance/_evidence_io.py, plugins/audit/scripts/governance/drive-phase.py and 1 more; breadth: the run named 174 suite path(s) and this task declares 8 file(s), and 169 of them are suites the task neither declares nor is named after (test__deps.py, test__output.py, test_audit_task.py, test_close_phase.py, test_commit_task_work.py, test_stamp_verification.py, tests/_harness.py and 162 more) - this gate asks more than the task changed; that is reported, not refused"
+          },
+          "via": "cli",
+          "attempt": 1,
+          "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+          "at": "2026-11-26T14:11:00Z",
+          "testedState": {
+            "head": "9a50413d",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeDigest": "sha256:8fdbe5686bbf7b22a4946185656d58bd7b7dea33df182aa222f605269bc5a36c",
+            "scopeBasis": "8 declared file(s); 8 read, 0 missing",
+            "scopeListDigest": "sha256:8a81cc5da90815f4ac96fe8f114b23fa17836c7ac0e0f79114e40ab340148215",
+            "dirtyDigest": "sha256:35fb728a0c5e9c1f836915d3f0871a9e3f73555bfb788b1424e4943def197bbd",
+            "dirtyBasis": "git described the tree before the run; 12 dirty path(s)"
+          },
+          "steps": [
+            {
+              "name": "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py tests/test__evidence_io.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 380677,
+              "suiteReader": "none",
+              "commandBytes": 5400,
+              "commandSha256": "fe3cf51a1c4f379190d47bf352ee01cc4d495c068a3c7732264554aa5762efe2",
+              "program": "python3"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-26T14:11:00Z.49c0e4",
+            "launch": "2026-11-26T14:04:15Z-0245585a",
+            "status": "passed",
+            "at": "2026-11-26T14:11:00Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-26T14:11:16Z.18b999",
+        "status": "passed",
+        "at": "2026-11-26T14:11:16Z"
       }
     }
   ],

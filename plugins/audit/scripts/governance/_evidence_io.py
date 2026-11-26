@@ -1104,6 +1104,16 @@ def gate_reach_record(project, reach):
 # that cross: the reading is the gate's, this is only what a committed row keeps.
 BASE_RED_KEY = "baseRed"
 _BASE_RED_WORDS = ("run", "head", "task", "verdict")
+# The suites a reading left not comparable because the base it read did not
+# carry the recorder's writes the red's tree held (`run-test-gate.uncarried`):
+# kept on the reading, so a reader of the record tells that `not-knowable` from
+# one of any other cause - only it is answered by measuring the base again.
+BASE_UNCARRIED_KEY = "uncarried"
+# Whether the red's tree held a write of the recorder's own before its first
+# command (`run-test-gate.recorder_held`); kept on the row only when the run
+# could say, so a kept base measured for another red still answers a red whose
+# tree held none (`run-test-gate.uncarried`).
+RECORDER_HELD_KEY = "recorderHeld"
 
 # A run of a recorded task run's red steps at that run's base commit, in a tree
 # of its own (`run-test-gate.py --base-of`): its row is filed under this scope
@@ -1274,6 +1284,10 @@ def _base_red(project, found):
                     for p in (found.get(key) or [])[:MAX_PATHS]]
     out["unknown"] = [redacted_text(project, str(t))
                       for t in (found.get("unknown") or [])[:MAX_PATHS]]
+    if found.get(BASE_UNCARRIED_KEY):
+        out[BASE_UNCARRIED_KEY] = [
+            repo_relative_or_token(project, str(p))
+            for p in found[BASE_UNCARRIED_KEY][:MAX_PATHS]]
     if found.get("basis") is not None:
         out["basis"] = redacted_text(project, str(found["basis"]))
     return out
@@ -1623,6 +1637,11 @@ def row_for(project, result, scope, ids, identity, published=None):
     # sentences as a basis is; written only when a red was read that way.
     if isinstance(result.get(BASE_RED_KEY), dict):
         row[BASE_RED_KEY] = _base_red(project, result[BASE_RED_KEY])
+    # WHETHER THE TREE HELD A RECORDER WRITE, kept for the reading taken again
+    # off the record (`run-test-gate.kept_base_answer`); False is an answer as
+    # much as True, and a run that could not say keeps no key.
+    if isinstance(result.get(RECORDER_HELD_KEY), bool):
+        row[RECORDER_HELD_KEY] = result[RECORDER_HELD_KEY]
     # WHICH DECLARED FILES NO SUITE OF THE RUN REACHED (`run-test-gate.gate_reach`),
     # or why that was not read. Written only when the run read it, so a row
     # from a run that never asked holds no key a reader could take for "every
@@ -4178,6 +4197,10 @@ def _is_number(value):
         and value >= 0
 
 
+def _is_bool(value):
+    return isinstance(value, bool)
+
+
 def _is_true(value):
     return value is True
 
@@ -4209,6 +4232,7 @@ _COUNT = ("leaf", "a count", _is_count)
 _POSITIVE = ("leaf", "a count of at least 1", _is_positive)
 _NUMBER = ("leaf", "a number of at least 0", _is_number)
 _TRUE = ("leaf", "true", _is_true)
+_BOOL = ("leaf", "true or false", _is_bool)
 _NULL = ("leaf", "null", _is_null)
 _MOMENT = ("leaf", "a moment as %s" % (_utc_stamp.STAMP_FORMAT,), _is_stamp)
 _TEXTS = ("list", _TEXT, 0)
@@ -4259,7 +4283,7 @@ _BASE_READING = _object((
     ("run", _NAMED), ("head", _NAMED), ("task", _NAMED),
     ("verdict", _words(BASE_VERDICT_WORDS)), ("atBase", _TEXTS),
     ("introduced", _TEXTS), ("unknown", _TEXTS), ("basis", _TEXT),
-    (BASE_RUNS_KEY, ("list", ("record",), 0))))
+    (BASE_UNCARRIED_KEY, _TEXTS), (BASE_RUNS_KEY, ("list", ("record",), 0))))
 _COUNTS_PAIR = (("listed", _or_null(_COUNT)), ("full", _or_null(_COUNT)))
 # One selection miss as `_miss_row` writes it - a full run's record's alone.
 _SELECTION_MISS = _object((
@@ -4301,7 +4325,7 @@ RECORD_GRAMMAR = _object((
         ("runId", _NAMED), (LAUNCH_KEY, _NAMED),
         ("status", _words(RUN_STATUS_WORDS)), ("at", _MOMENT)),
         ("runId",)), 0)),
-    (BASE_OF_KEY, _NAMED), ("cancelledBy", _TEXT),
+    (BASE_OF_KEY, _NAMED), (RECORDER_HELD_KEY, _BOOL), ("cancelledBy", _TEXT),
     ("attributionBasis", _TEXT), ("narrowed", _object(_COUNTS_PAIR)),
     ("shadow", _object(_COUNTS_PAIR + (("missed", _TEXTS),
                                        ("missedDropped", _POSITIVE)))),

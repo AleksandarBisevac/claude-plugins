@@ -7122,6 +7122,8 @@ def _rs_full_result():
                                     "files only",
         "cancelledBy": "SIGTERM",
         "attributionBasis": "the tree was dirty outside the work",
+        # False, not True: the writer keeps the answer, not only a yes.
+        M.RECORDER_HELD_KEY: False,
         M.BASE_RED_KEY: {"run": "RB", "head": RI_H0, "task": "P1.9",
                          "verdict": "introduced", "atBase": [],
                          "introduced": ["tests/test_a.py"], "unknown": [],
@@ -12539,6 +12541,66 @@ def _boundary_upgrade_cases(check):
         _harness.remove_tree(tmp)
 
 
+# --- what a red's base reading needs to be read again -------------------------
+def _recorder_held_cases(check):
+    """(rh) The two facts a red's base is judged by after its run - whether
+    the red's tree held a write of the recorder's own, and which suites its
+    reading left not comparable because the base did not carry those writes -
+    are kept on the row and the record, and come back through the one door a
+    reader reads a record by. Without them a reader of the plan cannot tell
+    a red whose tree held no recorder write from one that held some, nor a
+    `not-knowable` the recorder rule produced from one of any other cause."""
+    held_key = getattr(M, "RECORDER_HELD_KEY", "recorderHeld")
+    moved_key = getattr(M, "BASE_UNCARRIED_KEY", "uncarried")
+    root = _harness.fixture_root("audit-evidence-held-")
+    try:
+        ri_plan(root)
+        steps = [_ri_step("sweep", exit_code=1)]
+        rows, back = {}, {}
+        for held in (False, True, None):
+            result = _ri_result("failed", steps,
+                                _ri_state(RI_H1, False, "sha256:s"), "sha256:k")
+            result[held_key] = held
+            if held is True:
+                result[M.BASE_RED_KEY] = {
+                    "run": "RB", "head": RI_H0, "task": "P1.1",
+                    "verdict": "not-knowable", "atBase": [], "introduced": [],
+                    "unknown": ["tests/test_t.py (the base did not carry it)"],
+                    moved_key: ["tests/test_t.py"]}
+            row = M.row_for(root, result, "task", _RK_TASK,
+                            {"runId": "RH%s" % (held,),
+                             "ts": "2026-11-26T10:00:00Z"})
+            rows[held] = row
+            back[held] = M.project_record(M.run_record(row), "task")
+    finally:
+        _harness.remove_tree(root)
+    check("rh1 A ROW AND ITS RECORD KEEP WHETHER THE RED'S TREE HELD A RECORDER "
+          "WRITE - false kept as false, never dropped as falsy - and a run that "
+          "could not say holds no key at all: %r"
+          % ([(h, rows[h].get(held_key, "absent"),
+               (back[h][0] or {}).get(held_key, "absent"), back[h][1])
+              for h in (False, True, None)],),
+          rows[False].get(held_key) is False and rows[True].get(held_key) is True
+          and held_key not in rows[None]
+          and back[False][1] is None and back[True][1] is None
+          and (back[False][0] or {}).get(held_key) is False
+          and (back[True][0] or {}).get(held_key) is True
+          and held_key not in (back[None][0] or {}))
+    reading = (back[True][0] or {}).get(M.BASE_RED_KEY) or {}
+    check("rh2 THE SUITES A BASE THAT DID NOT CARRY THE RECORDER'S WRITES LEFT "
+          "NOT COMPARABLE are kept on the red's reading, row and record alike, "
+          "so a reader tells that not-knowable from one of any other cause; a "
+          "reading with none holds no such key: %r / %r"
+          % ((rows[True].get(M.BASE_RED_KEY) or {}).get(moved_key), reading),
+          (rows[True].get(M.BASE_RED_KEY) or {}).get(moved_key)
+          == ["tests/test_t.py"]
+          and reading.get(moved_key) == ["tests/test_t.py"]
+          and reading.get("verdict") == "not-knowable"
+          and moved_key not in M._base_red(_output.REPO_ROOT, {
+              "run": "RB", "verdict": "introduced",
+              "introduced": ["tests/test_t.py"]}))
+
+
 # A STAGED SUITE: each row is a block the sweep runs as a job of its own, on one
 # slot, and replays in this order (`_harness.staged_main`), so the case ids,
 # their order and the tally are a one-process run's. Run whole in one process,
@@ -12571,7 +12633,8 @@ STAGES = (("wh-block", "_withheld_cases"), ("rf-block", "_read_field_cases"),
           ("kc-block", "_container_twice_cases"),
           ("pd-block", "_plan_door_cases"),
           ("bu-block", "_boundary_upgrade_cases"),
-          ("pk-block", "_plan_readers_cases"))
+          ("pk-block", "_plan_readers_cases"),
+          ("rh-block", "_recorder_held_cases"))
 # The prefix of the directory a full run's blocks report into.
 _STAGE_PREFIX = "evidence-io-stages-"
 

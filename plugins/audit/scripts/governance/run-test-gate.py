@@ -908,15 +908,24 @@ def base_red_lines(found):
 # drive measures the base for it. The cost is that measurement, once per red
 # the kept base would have charged to the task.
 #
+# A RECORDER PATH THE TASK ITSELF DECLARES IS THE TASK'S WORK, NOT THE
+# RECORDER'S. A task may declare a plan shard or a filed return in its `files`,
+# and an edit it makes there is what the base is to be read without; laid over
+# the base, a red that edit causes would read as red at base too. So the
+# overlay lays only the recorder paths the red's task does not declare, and a
+# declared one keeps its base commit's content - with any recorder write in
+# it, which a red then reads as the task's.
+#
 # THE OTHER SIDE WAS WEIGHED AND NOT TAKEN: measuring the task gate in a tree
 # whose recorder paths hold their committed content. That changes what every
 # gate step reads - a step validating the live plan would validate the last
 # commit's - and a gate runs in the project's own tree, with its ignored
 # dependencies, which no copy of it has.
-RECORDER_HELD_KEY = "recorderHeld"
-# The suites `uncarried` moved, on the reading in memory: `kept_base_answer`
-# reads it, and a row keeps no such key (`_evidence_io._base_red`).
-UNCARRIED_KEY = "uncarried"
+RECORDER_HELD_KEY = _ev.RECORDER_HELD_KEY
+# The suites `uncarried` moved: `kept_base_answer` reads them on the reading in
+# memory, and the drive's `base_need` on the one the row keeps
+# (`_evidence_io._base_red`).
+UNCARRIED_KEY = _ev.BASE_UNCARRIED_KEY
 
 
 def recorder_held(before, recorded):
@@ -976,31 +985,38 @@ def uncarried(found, red, rows):
     return out
 
 
-def lay_recorder_writes(source, tree, rels):
+def lay_recorder_writes(source, tree, rels, declared=()):
     """Make every recorder path `rels` (project-relative, `recorded_paths`) in
     `tree` what it is in `source`: a file copied over when its bytes differ, a
-    directory mirrored file by file, a path `source` lacks removed. `(laid,
-    problem)` - how many files were written or removed, and why the paths
-    could not be laid (None when they were), the first error stopping it: a
-    base half-laid is no base the red can be read against."""
+    directory mirrored file by file, a path `source` lacks removed - except a
+    path an entry of `declared`, the red's own work's `files`, covers
+    (`_task_outputs.covers`): that is the work's, so it keeps what `tree`
+    holds, neither copied over nor removed. `(laid, problem)` - how many files
+    were written or removed, and why the paths could not be laid (None when
+    they were), the first error stopping it: a base half-laid is no base the
+    red can be read against."""
     laid = 0
     try:
         for rel in rels:
+            if _declared_rel(rel, declared):
+                continue
             src = os.path.join(source, *rel.split("/"))
             dst = os.path.join(tree, *rel.split("/"))
-            if os.path.isdir(src):
-                laid += _mirror_dir(src, dst)
-            elif os.path.isfile(src):
+            if os.path.isfile(src):
                 laid += _lay_file(src, dst)
-            elif os.path.isdir(dst):
-                laid += sum(len(names) for _d, _s, names in os.walk(dst))
-                shutil.rmtree(dst)
+            elif os.path.isdir(src) or os.path.isdir(dst):
+                laid += _mirror_dir(src, dst, rel, declared)
             elif os.path.lexists(dst):
                 os.remove(dst)
                 laid += 1
     except OSError as exc:
         return laid, "%s: %s" % (type(exc).__name__, exc)
     return laid, None
+
+
+def _declared_rel(rel, declared):
+    """Whether an entry of `declared` covers the project-relative `rel`."""
+    return any(_touts.covers(entry, rel) for entry in declared or ())
 
 
 def _lay_file(src, dst):
@@ -1016,22 +1032,32 @@ def _lay_file(src, dst):
     return 1
 
 
-def _mirror_dir(src, dst):
-    """`dst` made a copy of the directory `src`, file by file: how many files
-    were written or removed."""
+def _mirror_dir(src, dst, rel, declared=()):
+    """`dst` made a copy of the directory `src` - absent, an empty one - file
+    by file, but for a file `declared` covers (`rel` is the directory's
+    project-relative path): how many files were written or removed."""
     laid = 0
     for here, _dirs, names in os.walk(src):
-        rel = os.path.relpath(here, src)
+        sub = os.path.relpath(here, src)
         for name in names:
-            laid += _lay_file(os.path.join(here, name),
-                              os.path.normpath(os.path.join(dst, rel, name)))
+            if not _declared_rel(_rel_join(rel, sub, name), declared):
+                laid += _lay_file(os.path.join(here, name),
+                                  os.path.normpath(os.path.join(dst, sub, name)))
     for here, _dirs, names in os.walk(dst, topdown=False):
-        rel = os.path.relpath(here, dst)
+        sub = os.path.relpath(here, dst)
         for name in names:
-            if not os.path.isfile(os.path.join(src, rel, name)):
-                os.remove(os.path.join(here, name))
-                laid += 1
+            if _declared_rel(_rel_join(rel, sub, name), declared) \
+                    or os.path.isfile(os.path.join(src, sub, name)):
+                continue
+            os.remove(os.path.join(here, name))
+            laid += 1
     return laid
+
+
+def _rel_join(rel, sub, name):
+    """The project-relative path of `name` in `sub` of the directory `rel`."""
+    return "/".join(p for p in [rel] + sub.replace(os.sep, "/").split("/")
+                    + [name] if p and p != ".")
 
 
 # --- what state was actually tested -------------------------------------------
@@ -6294,7 +6320,17 @@ def _run_base_of(project, args, manifest, tree, out=print):
     # them.
     recorded = _ev.recorded_paths(project, args.manifest)[0]
     source = args.recorder_from or project
-    laid, problem = lay_recorder_writes(source, tree, recorded)
+    # ...BUT NONE THE RED'S OWN WORK DECLARES: an edit the task made there is
+    # what the base is read without, so that path keeps its commit's content.
+    declared, unread = owned_files(manifest, row.get("phaseId") or args.phase,
+                                   row.get("taskId"))
+    if unread is not None:
+        out("[run-test-gate] --base-of: the files run %s's work declares could "
+            "not be read (%s), so which recorder paths are its own work is not "
+            "known and none could be laid over %s; nothing ran"
+            % (args.base_of, unread, tree))
+        return E_ASK
+    laid, problem = lay_recorder_writes(source, tree, recorded, declared)
     if problem is not None:
         out("[run-test-gate] --base-of: the recorder's writes in %s could not "
             "be laid over %s (%s, after %d file(s)), so the base would not be "

@@ -1,0 +1,32 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py tests/test__evidence_io.py": "pass",
+    "python3 tools/sweep-selftests.py": "pass",
+    "ruff check plugins/audit tools tests .claude/hooks": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-26T14:03:39Z",
+    "basis": "`python3 tests/test__evidence_io.py --selftest` in a throwaway tree at HEAD exited 1 with 5 of 576 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rh1 (house FAIL): SELFTEST FAILED: 570/576 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) run-test-gate.py: lay_recorder_writes(source, tree, rels, declared=()) skips every recorder path an entry of the red work's files covers (_task_outputs.covers, via _declared_rel), at the top level and file by file inside a mirrored directory (_mirror_dir gained rel/declared; a directory absent in source is mirrored as empty, so declared files inside it are kept rather than rmtree'd); _run_base_of reads the files with owned_files(manifest, row phaseId, row taskId) and refuses (E_ASK, nothing ran) when they cannot be read. (6) _evidence_io.py: RECORDER_HELD_KEY and BASE_UNCARRIED_KEY constants; row_for keeps recorderHeld when it is a bool (False kept); _base_red keeps uncarried suites (repo-relative, bounded); RECORD_GRAMMAR gains recorderHeld (_BOOL leaf), _BASE_READING gains uncarried. run-test-gate.py aliases both keys to _evidence_io's. drive-phase.py base_need's elsewhere branch now keys on reading[BASE_UNCARRIED_KEY] instead of verdict == not-knowable. (2) changelog.d/P171.1.fixed.md and PLUGIN-BUILD-GUIDE.md (run-test-gate and drive-phase sections): declared-path rule, recorderHeld/uncarried persisted, and the same-case limit (a task red stays the task's only in a case the recorder's writes leave passing; the reading compares failing cases). Tests: test_run_test_gate rcw6-rcw10 (gate script gains a second plan trigger el3; _recorder_repo takes declared/plan_edit), test__evidence_io rh1-rh2 (new rh-block stage) plus recorderHeld False in _rs_full_result (rs1 demanded it), test_drive_phase rcd3-rcd4. Red-first on the pre-fix code: rcw6 FAIL (verdict base-only, atBase check_ledgers), rcw8 TypeError (no declared kwarg), rcw9/rcw10 FAIL (row drops recorderHeld), rh1/rh2 FAIL, rcd3 FAIL (elsewhere sentence on an unrelated not-knowable). Mutations (each applied once by anchor, restored by copy, cmp identical, __pycache__ purged): M1 top-level declared skip removed -> rcw6,rcw8 red; M2 mirror ignores declared -> rcw8; M3 over-fire any declared skips all -> rcw7,rcw8; M4 row drops recorderHeld -> rh1,rcw9,rcw10; M5 truthy-only keep -> rh1,rcw9; M6 grammar lacks recorderHeld -> rh1; M7 _base_red drops uncarried -> rh2,rcd1,rcd2; M8 base_need keyed on verdict -> rcd3; M9 never elsewhere -> rcd1,rcd2,rcd4. Gates after the last edit: task gate exit 0 (3/3 files ok, 2455 cases); full sweep exit 0 (196/196 files ok, 20015 cases); ruff exit 0; vermin exit 0; release.py changelog-check exit 0. Untested branch: owned_files refusal in _run_base_of (a red whose task the plan no longer holds). Dependants: drive-phase.py, full-gate.py and the importing suites still correct - lay_recorder_writes only gained a defaulted argument, RECORDER_HELD_KEY/UNCARRIED_KEY keep their strings, base_need keeps its signature and return shape; _evidence_io readers (guard-release, close-phase, integrate-task, _invariants, ...) only see two more optional keys, and the published lastRun accepts them (additionalProperties true; rk1/pj1 green); PLUGIN-BUILD-GUIDE.md and changelog.d changed only in the sentences above.",
+    "descriptive": "A base no longer carries a task's own plan edit, and a recorder-caused not-knowable is told apart on the record, so only it costs a base measurement."
+  },
+  "testsAdded": [
+    "rcw6 a task's own plan edit in a declared shard is charged to the task, not read as red at base",
+    "rcw7 twin: k15p shape with the index declared still reads base-only",
+    "rcw8 lay_recorder_writes keeps declared files and directories at base content and lays the rest",
+    "rcw9 a row keeps recorderHeld False and a kept base answers that red",
+    "rcw10 twin: recorderHeld True is not answered by a base measured elsewhere",
+    "rh1 row and record keep recorderHeld (False kept, None absent)",
+    "rh2 the reading keeps the uncarried suites on row and record",
+    "rcd3 an unrelated not-knowable owes no base measurement",
+    "rcd4 twin: an uncarried reading owes one"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:4724f129f2d6c08d5e9a2aa44233dde477f2f8e1c4f2f6047807a0ad19df687f\",\"dirtyDigest\":\"sha256:dc6f3e53dbcdfbd0aa274d807d52d0fdb5fdf0c14f1a50b4a50d0c6a2bbd29b9\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"69db4d44f4b2e171\",\"changelog.d/P171.1.fixed.md\":\"203ee3c391ffe368\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"e501bdc47a97c3e7\",\"plugins/audit/scripts/governance/drive-phase.py\":\"7e0f3d59423dfa29\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"3ce333011fba3540\",\"tests/test__evidence_io.py\":\"12e6844a82c9afbb\",\"tests/test_drive_phase.py\":\"a36fddd29b654ec1\",\"tests/test_run_test_gate.py\":\"a5c607b75e3bb38a\"},\"head\":\"9a50413d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"changelog.d/P171.1.fixed.md\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"tests/test__evidence_io.py\",\"tests/test_drive_phase.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:8fdbe5686bbf7b22a4946185656d58bd7b7dea33df182aa222f605269bc5a36c\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

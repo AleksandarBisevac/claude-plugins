@@ -23008,6 +23008,56 @@ def _recorder_red_cases(check):
           and "red at base too: %s" % (check_suite,) in (t_block or "")
           and t_mark.get("introduced") == [own_suite]
           and t_mark.get("atBase") == [check_suite] and len(t_bases) == 2)
+    _recorder_need_cases(check, M)
+
+
+def _recorder_need_cases(check, M):
+    """`base_need` owes a red a base of its own because the base recorded for
+    it was measured for another red ONLY when its reading says the recorder
+    rule moved a suite (`_evidence_io.BASE_UNCARRIED_KEY`) - not for every
+    `not-knowable`, whose other causes a second base run at the same commit
+    and step set answers no differently."""
+    head = "b6252aae" + "0" * 32
+    step = {"name": "unit", "exit": 1, "command": "pytest -q"}
+    base = {"runId": "r-base", "scope": _evio.BASE_SCOPE,
+            "ts": "2026-11-26T10:00:00Z", _BASE_OF_KEY: "r-earlier",
+            "testedState": {"head": head,
+                            "dirtyDigest": _evio.CLEAN_DIRTY_DIGEST},
+            "steps": [dict(step)]}
+    moved_key = getattr(_evio, "BASE_UNCARRIED_KEY", "uncarried")
+
+    def _row(**extra):
+        reading = dict({"run": "r-base", "head": head, "task": "P1.1",
+                        "verdict": "not-knowable", "atBase": [],
+                        "introduced": [],
+                        "unknown": ["tests/test_t.py (its base step named no "
+                                    "suite)"]}, **extra)
+        return {"runId": "r-red", "taskId": "P1.1", "phaseId": "P1",
+                "ts": "2026-11-26T11:00:00Z", "testedState": {"head": head},
+                "steps": [dict(step)], _evio.BASE_RED_KEY: reading}
+
+    names = ("own_red", "recorded_runs")
+    real = dict((n, getattr(M, n)) for n in names)
+    M.own_red = lambda ctx, task, row, tree=None: None
+    M.recorded_runs = lambda ctx: {"rows": [base]}
+    try:
+        other = M.base_need({}, {"id": "P1.1"}, _row())
+        moved = M.base_need({}, {"id": "P1.1"},
+                            _row(**{moved_key: ["tests/test_t.py"]}))
+    finally:
+        for n in names:
+            setattr(M, n, real[n])
+    check("rcd3 A not-knowable OF ANY OTHER CAUSE OWES NO BASE MEASUREMENT: "
+          "against a base recorded for its commit and step set but measured "
+          "for another red, a reading the recorder rule did not produce is "
+          "answered by that base, and no sentence claims its base is measured "
+          "for it: %r" % (other,),
+          other[0] is not None and other[2] is None)
+    check("rcd4 THE TWIN: the same reading naming a suite the recorder rule "
+          "moved owes a base of its own, and says which base was measured "
+          "for which run: %r" % (moved,),
+          moved[0] is None and moved[2] is not None
+          and "r-base" in moved[2] and "r-earlier" in moved[2])
 
 
 def _base_claims(M, root):

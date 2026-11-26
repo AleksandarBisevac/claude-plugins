@@ -13965,10 +13965,15 @@ with open("gate-out/%s.json" % (which,), encoding="utf-8") as fh:
     fails = json.load(fh)
 for path in sorted(glob.glob("docs/audit/**/*.json", recursive=True)):
     with open(path, encoding="utf-8") as fh:
-        if '"baseRuns"' in fh.read():
-            fails.setdefault("tools/check_ledgers.py", []).append(
-                "FAIL el2 every run the plan names resolves in a ledger "
-                "(a base run named in %s does not)" % (path,))
+        text = fh.read()
+    if '"baseRuns"' in text:
+        fails.setdefault("tools/check_ledgers.py", []).append(
+            "FAIL el2 every run the plan names resolves in a ledger "
+            "(a base run named in %s does not)" % (path,))
+    if "plan" + "Broken" in text:
+        fails.setdefault("tools/check_ledgers.py", []).append(
+            "FAIL el3 the plan holds no marker a task wrote by hand "
+            "(%s holds one)" % (path,))
 blocks, tail = [], []
 for path in sorted(fails):
     blocks.append("--- %s: exited 1 ---\nPASS ok1 a case that passes\n%s\n"
@@ -13989,9 +13994,12 @@ RECORDER_OWN_RED = {RECORDER_OWN_SUITE: ["FAIL ow1 the task's own case"]}
 RECORDER_OWN_AGAIN = {RECORDER_OWN_SUITE: ["FAIL ow2 the task's other case"]}
 
 
-def _recorder_repo(prefix):
+def _recorder_repo(prefix, declared=("src/f1.txt",), plan_edit=False):
     """A one-task plan, sharded, whose gate is `RECORDER_GATE_SCRIPT`, with the
-    task's work in the tree: `(root, mpath)`. Nothing recorded yet."""
+    task's work in the tree: `(root, mpath)`. Nothing recorded yet. P1.1
+    declares `declared`; `plan_edit` makes the task's work also write, by hand,
+    the marker the plan check fails on into its own task's title in the
+    shard - a plan edit of the task's own, uncommitted beside its source."""
     root = _harness.fixture_root(prefix)
     for sub in (("docs", "audit", "phases"), (".claude",), ("src",),
                 ("gate-out",)):
@@ -14009,7 +14017,7 @@ def _recorder_repo(prefix):
             {"id": "P1", "title": "one", "status": "in_progress",
              "testGate": [gate], "tasks": [
                  {"id": "P1.1", "title": "the work", "status": "in_progress",
-                  "files": ["src/f1.txt"],
+                  "files": list(declared),
                   "tests": {"mode": "regression", "gate": [gate]}}]})),
         ("gate.py", RECORDER_GATE_SCRIPT), ("src/f1.txt", "v0\n"),
         ("gate-out/base.json", "{}"), ("gate-out/task.json", "{}"))
@@ -14025,6 +14033,13 @@ def _recorder_repo(prefix):
         _harness.git(root, *arg, prefix=_PLAIN_GIT)
     with open(os.path.join(root, "src", "f1.txt"), "w", newline="\n") as fh:
         fh.write("changed by the task\n")
+    if plan_edit:
+        shard = os.path.join(root, "docs", "audit", "phases", "P1.json")
+        with open(shard, encoding="utf-8") as fh:
+            body = json.load(fh)
+        body["tasks"][0]["title"] = "the work, %s" % ("plan" + "Broken",)
+        with open(shard, "w", newline="\n") as fh:
+            fh.write(json.dumps(body))
     return root, mpath
 
 
@@ -14174,6 +14189,146 @@ def _recorder_writes_cases(check):
           s_code == M.E_OK and s_again.get("verdict") == "introduced"
           and s_again.get("introduced") == [RECORDER_OWN_SUITE]
           and s_again.get("atBase") == [RECORDER_GATE_SUITE])
+    _recorder_declared_cases(check)
+    _recorder_held_row_cases(check)
+
+
+def _recorder_declared_cases(check):
+    """A recorder path the red task itself declares is the task's work, not
+    the recorder's: the base keeps its commit's content there, so a red the
+    task's own plan edit causes is charged to the task - while every recorder
+    path it does not declare is still laid, so the k15p shape still reads as
+    red at base when the task declares some other recorder path."""
+    shard = "docs/audit/phases/P1.json"
+    root, mpath = _recorder_repo("rtg-recorder-own-plan-",
+                                 declared=("src/f1.txt", shard), plan_edit=True)
+    try:
+        own = _recorder_task_run(root, mpath, {})
+        code, answer, lines = _base_of_answer(root, mpath, own.get("runId"))
+    finally:
+        _harness.remove_tree(root)
+    reading = answer.get(_ev_io.BASE_RED_KEY) or {}
+    check("rcw6 A TASK'S OWN PLAN EDIT IS NEVER LAID INTO ITS BASE: the task "
+          "declares the plan shard and writes into it what the plan check "
+          "fails on; the base keeps the shard its commit holds, so the check "
+          "is green at base and the red is charged to the task - never read "
+          "as red at base too: %r / %r / %r"
+          % ((own.get("status"), own.get(_ev_io.BASE_RED_KEY)), (code, reading),
+             lines[-3:]),
+          own.get("status") == "failed" and code == M.E_OK
+          and reading.get("verdict") == "introduced"
+          and reading.get("introduced") == [RECORDER_GATE_SUITE]
+          and reading.get("atBase") == [])
+
+    root, mpath = _recorder_repo("rtg-recorder-index-declared-",
+                                 declared=("src/f1.txt",
+                                           "docs/audit/audit-plan.json"))
+    try:
+        first = _recorder_task_run(root, mpath, RECORDER_OWN_RED)
+        code1, _a1, _l1 = _base_of_answer(root, mpath, first.get("runId"))
+        red = _recorder_task_run(root, mpath, {})
+        code2, answer2, lines2 = _base_of_answer(root, mpath, red.get("runId"))
+    finally:
+        _harness.remove_tree(root)
+    again = answer2.get(_ev_io.BASE_RED_KEY) or {}
+    check("rcw7 THE TWIN: the k15p shape while the task declares a recorder "
+          "path other than the one the kept base lands in (the plan's index) - "
+          "the shard holding the kept base is still laid, so the plan check is "
+          "red at base too, base-only: %r / %r"
+          % ((code1, code2, again), lines2[-3:]),
+          code1 == M.E_OK and code2 == M.E_OK
+          and again.get("verdict") == "base-only"
+          and again.get("atBase") == [RECORDER_GATE_SUITE]
+          and again.get("introduced") == [])
+
+    src = _harness.fixture_root("rtg-lay-source-")
+    dst = _harness.fixture_root("rtg-lay-tree-")
+    try:
+        for top, body in ((src, {"plan.json": "red's plan\n",
+                                 "ret/a.json": "red's a\n",
+                                 "ret/b.json": "red's b\n",
+                                 "ret/own/x.json": "red's x\n"}),
+                          (dst, {"plan.json": "base plan\n",
+                                 "ret/a.json": "base a\n",
+                                 "ret/c.json": "base c\n",
+                                 "ret/own/y.json": "base y\n"})):
+            for rel, text in body.items():
+                path = os.path.join(top, *rel.split("/"))
+                if not os.path.isdir(os.path.dirname(path)):
+                    os.makedirs(os.path.dirname(path))
+                _write(path, text)
+        laid, problem = M.lay_recorder_writes(
+            src, dst, ["plan.json", "ret"],
+            declared=["plan.json", "ret/a.json", "ret/own/"])
+        after = {}
+        for here, _dirs, names in os.walk(dst):
+            for name in names:
+                path = os.path.join(here, name)
+                with open(path, encoding="utf-8") as fh:
+                    after[os.path.relpath(path, dst).replace("\\", "/")] = \
+                        fh.read()
+    finally:
+        _harness.remove_tree(src)
+        _harness.remove_tree(dst)
+    check("rcw8 THE OVERLAY LAYS ONLY WHAT THE TASK DOES NOT DECLARE: a "
+          "declared file keeps the base's bytes, a declared file inside a "
+          "mirrored directory is neither copied over nor removed, a declared "
+          "directory's files are left as the base has them, and every other "
+          "recorder file is made the red tree's: %r" % ((laid, problem, after),),
+          problem is None and laid == 2
+          and after == {"plan.json": "base plan\n", "ret/a.json": "base a\n",
+                        "ret/b.json": "red's b\n",
+                        "ret/own/y.json": "base y\n"})
+
+
+def _recorder_held_row_cases(check):
+    """Whether the red's tree held a recorder write is kept on the run's row,
+    so a kept base measured for another red still answers a red whose tree
+    held none - and does not answer one whose tree held some."""
+    held_key = getattr(M, "RECORDER_HELD_KEY", "recorderHeld")
+    repo = _mini_repo("rtg-recorder-held-row-")
+    head, gate = "b6252aae", [("unit", "pytest -q")]
+    clean_digest, clean_basis = _tree_stamp.dirty_digest([])
+    suite_s, suite_t = "tests/test_s.py", "tests/test_t.py"
+    answers = {}
+    try:
+        def _res(text):
+            return M.run_gate(repo, gate,
+                              runner=lambda _p, _c, _t=None: (1, text, {}))
+        base = _ev_io.row_for(repo, _res(_pytest_red(suite_s)),
+                              _ev_io.BASE_SCOPE, {},
+                              {"runId": "r-base", "ts": "2026-11-26T10:00:00Z"})
+        base["testedState"] = dict(base.get("testedState") or {}, head=head,
+                                   dirtyDigest=clean_digest,
+                                   dirtyBasis=clean_basis)
+        base[_ev_io.BASE_OF_KEY] = "r-earlier"
+        for held in (False, True):
+            result = dict(_res(_pytest_red(suite_s, suite_t)))
+            result[held_key] = held
+            red = _ev_io.row_for(repo, result, "task",
+                                 {"taskId": "P1.1", "phaseId": "P1"},
+                                 {"runId": "r-red-%s" % (held,),
+                                  "ts": "2026-11-26T11:00:00Z"})
+            red["testedState"] = dict(red.get("testedState") or {}, head=head)
+            answers[held] = (red.get(held_key), M.kept_base_answer(
+                red["runId"], red, [base, red]))
+    finally:
+        _harness.remove_tree(repo)
+    kept_on, (kept, _missing) = answers[False]
+    held_on, (none, unmeasured) = answers[True]
+    check("rcw9 A ROW KEEPS WHETHER ITS TREE HELD A RECORDER WRITE, and a red "
+          "whose tree held none is answered by the base kept for another red - "
+          "the suite red only here charged to the task: %r"
+          % ((kept_on, kept),),
+          kept_on is False and isinstance(kept, dict)
+          and kept.get("kept") == "r-base"
+          and (kept.get(_ev_io.BASE_RED_KEY) or {}).get("introduced")
+          == [suite_t])
+    check("rcw10 THE TWIN: a red whose tree held one is not answered by it - "
+          "the suite it would charge to the task stands unmeasured: %r"
+          % ((held_on, none, unmeasured),),
+          held_on is True and none is None
+          and any(suite_t in u for u in unmeasured or []))
 
 
 def _write(path, text):
