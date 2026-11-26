@@ -1094,7 +1094,7 @@
     {
       "id": "P171",
       "title": "A task gate judges the task, not the recorder's own writes",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P171.json"
     }
   ],

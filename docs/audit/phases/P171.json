@@ -1,7 +1,7 @@
 {
   "id": "P171",
   "title": "A task gate judges the task, not the recorder's own writes",
-  "status": "in_progress",
+  "status": "done",
   "description": "BUG-36: since a run's record lives in the plan shard, the drive's own uncommitted record writes sit inside the tree a task gate judges, and a project check that reads the plan can go red on them alone; the drive then blocks the task. Found by the paid probe probe-f119de55 (session k15p). Fix the class: decide where the recorder's writes stand relative to what a gate judges, and make the drive never charge a red to a task that the recorder's writes alone cause.",
   "desiredOutcome": "A red that the drive's own record writes alone cause is never charged to the task; the probe's k15p shape is a case that stays green or is classified as base, and BUG-36 closes.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "f119de55b7331d85d517b40ba4467ab36b625b5c",
   "branch": "audit/p171-a-task-gate-judges-the-task-no",
-  "mergedAt": null,
+  "mergedAt": "2026-11-26T14:39:54Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -731,5 +731,6 @@
     "runId": "2026-11-26T14:26:22Z.5fa4dd",
     "status": "passed",
     "at": "2026-11-26T14:26:22Z"
-  }
+  },
+  "mergedHead": "e779a9cb02e2346554658eae84842e2c4bd9240e"
 }
