@@ -1,0 +1,21 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py tests/test__affected_tests.py tests/test__doctor_trail.py tests/test_drive_phase.py": "pass",
+    "python3 tools/lints/_deps.py --register-citations": "pass",
+    "python3 tools/release.py changelog-check": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only documentation task, expectRedFirst false, no tests added",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "Added to plugins/audit/reference/verbs-in-full.md (Subcommand: settle) a paragraph on settle --task ID; added to PLUGIN-BUILD-GUIDE.md a paragraph after the settle [manifest] description (audit-task.py settle) and extended the settle_stale_gate paragraph (passes --task, 'did not move' did-line); wrote changelog.d/P172.13-mrj.changed.md. Existing sentences untouched except one mid-line insertion in the settle_stale_gate paragraph (wrapped). Read off audit-task.py _locked_settle/_settle_wide_gates(only_task) and drive-phase.py settle_stale_gate at HEAD; unknown task returns E_USAGE (=2, audit-task.py line 495). Gates: sweep of the 5 named suites 5/5 files ok (exit 0, 1861 cases); --register-citations 0 found, exit 0; changelog-check exit 0. Dependants: PLUGIN-BUILD-GUIDE.md and verbs-in-full.md readers (tests/test__affected_tests.py, test__doctor_trail.py, test_drive_phase.py, tools/prove-gates.py) still correct - tests pass, only additions/one insertion; verbs-in-full.md dependants (_areas.py, test_audit_task.py, CHANGELOG.md, guide.md, execute-task.md) unaffected, nothing removed.\n\nclaims:\n1 verbs-in-full.md settle paragraph / PLUGIN-BUILD-GUIDE.md: --task scoping = audit-task.py _locked_settle (only_task, rows=[] and stale_stubs=[] when scoped, E_USAGE for unknown task, 'nothing to settle -- task X's derived wide gate does not narrow'); drive-phase.py settle_stale_gate passes --task and appends '<id>'s gate did not move'\n2 n/a - no check touched\n3 grep of settle in both docs: other hits are settle/settlement in unrelated senses; the three settle-verb sites (verbs-in-full section, guide settle description, guide settle_stale_gate paragraph) all updated; guide line naming staleGates unaffected\n4 n/a - no rule to an agent\n5 n/a - no property measured\n6 n/a - no guard\n7 n/a - no number written (exit 2 is E_USAGE's code, quoted from the verb, not a count)",
+    "descriptive": "The settle verb's --task scope, its refusal and its did-not-move report are now documented where the verb and its driver caller are described."
+  },
+  "testsAdded": [],
+  "casesAdded": [],
+  "stamp": "audit-stamp: {\"content\":\"sha256:e07c288e0bd0fe054ddcf2785ef03ef11560d6154eb6eaa943a314c81442fee4\",\"dirtyDigest\":\"sha256:01a61b0ff64a5126c0300290cbe1ddf064da51b44b8476931c32918546579e8e\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"2d1e452869b38629\",\"changelog.d/P172.13-mrj.changed.md\":\"f5d822ba9847d40b\",\"plugins/audit/reference/verbs-in-full.md\":\"42b4c7f2f6c81269\"},\"head\":\"f27586a2\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"changelog.d/P172.13-mrj.changed.md\",\"plugins/audit/reference/verbs-in-full.md\"],\"scopeDigest\":\"sha256:243b512f0802a187ec53cb07b7f38e670898eff2cb24231a27907b68466a0485\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

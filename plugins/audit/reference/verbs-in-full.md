@@ -2192,6 +2192,16 @@ what the derivation already answers, so a stored `done`/`cancelled` and a person
 was examined, and nothing is written. Show the validator's warning to the human and let them
 decide when to run it; it is the plan owner's write, not a run's.
 
+**`settle --task ID` narrows the call to one task.** It settles that task's stale wide gate and
+writes only the shard of the phase the task sits in; the phase and bug values and the stale
+index stubs stay with the call over the whole plan, and another phase's stale gate is left
+alone. A task id the plan does not hold is refused with the ids it does hold, exit 2, before
+anything is written. With nothing stale to move it prints `nothing to settle` and names the
+task, and writes nothing. The drive passes `--task` before it starts a task, so driving one
+phase does not rewrite a sibling phase's shard; when the verb exits 0 and the task's gate has
+not moved, the drive reports `<id>'s gate did not move` rather than a settle from a gate to
+itself.
+
 ### Subcommand: `cancel <phaseId> --reason "<why>"`
 
 **The operator's words go in VERBATIM** — see `reference/manifest-conventions.md` → *The operator's words go in unchanged*. This value reaches the hash-chained journal, so a paraphrase makes the trail guarantee a sentence its subject never wrote.

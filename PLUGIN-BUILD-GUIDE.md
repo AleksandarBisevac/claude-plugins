@@ -5090,7 +5090,7 @@ the runner's. A green pre-gate stands in for nothing: every declared step still 
 the verdict. A value `pre_gate_command` calls unusable is a leading step that could not run,
 its basis that sentence, so the run never reads green over a pre-gate nobody ran. The pre-gate
 runs once: `declared_steps` reads a row's declared gate from the step after a leading
-`PRE_GATE_STEP`, so the commit binding is unchanged; `_manifest_phases.phase_gate_default`
+`PRE_GATE_STEP` and any leading run of steps named behind `_evidence_io.RED_FIRST_STEP_PREFIX`, so the commit binding is unchanged; `_manifest_phases.phase_gate_default`
 leaves the key out of a new phase's gate as it does a sign-off key; a gate that already names it
 (by key, or by the same command) runs it there and takes no stage, saying so; and the phase gate
 and `--full` take no stage at all. The pre-gate's command is kept verbatim on the row and is part
@@ -5106,8 +5106,9 @@ named, the way a base run does (`_declared_suites_at_base`, `_derived_at_base`,
 each named behind `RED_FIRST_PREFIX`. A stage step that does not come back green stops the gate:
 every step after it is recorded under its own name by `not_run_step`, its basis
 `RED_FIRST_NOT_RUN` and its `stoppedBy` the stage step, and the run is `failed` on the stage alone.
-A stage that ran whole and green leaves `steps` - it is carried on `res["redFirst"]` in this
-process and the `--json` answer - so the counts, the verdict and the declared gate the commit
+A stage that ran whole and green leaves `steps` - it is carried on `res["redFirstStage"]` in this
+process and the `--json` answer, and its output and followers leave the row with it, so no file
+only the stage named counts towards the run's coverage - so the counts, the verdict and the declared gate the commit
 binding reads are the gate's own; that run measures the whole gate, and a part repeat the
 identity offered is measured instead. The pre-gate is no red of the gate's and runs first
 anyway; a red-first step of the previous run runs again as it ran, under the same name; a red
@@ -5532,8 +5533,11 @@ what a verb decides.
 `settle_stale_gate` first: when `_phases.stale_spelled_gates` names the task - a phase's wide gate
 it stored before the project recorded how to run a subset - `audit-task.py settle`, the one writer
 of a derived value, rewrites it under the verb's own lock and revalidation, and the did-line names
-the gate before and after. It is asked before the start because a started task keeps the gate its
-attempt is graded against, so a task with an attempt is never named. A refused settle is the one
+the gate before and after. The call passes `--task` with the task's id, so the verb writes that
+task's phase shard alone rather than every phase's stale gate in the drive's tree, and when the verb
+exits 0 with the task's stored gate unchanged the did-line says `<id>'s gate did not move` instead
+of reporting a settle from a gate to itself. It is asked before the start because a started task
+keeps the gate its attempt is graded against, so a task with an attempt is never named. A refused settle is the one
 verb exit here that does not stop the drive: it is a warning carrying the verb's words, and the
 task starts on the wide gate it holds, which measures more than it needs and never less. The `ssg`
 cases in `tests/test_drive_phase.py` drive it.
@@ -7224,6 +7228,12 @@ derivation - `_rederive_gate`, the one a `scope --files`/`--tests-add` edit runs
 non-empty gate that is neither the phase's `testGate` nor the stored one gets that gate and its
 basis. A declared or cleared gate carries another word, and a started task, a pending one with a
 recorded attempt included, keeps the gate its attempt is graded against (`wg1`-`wg9`).
+`settle [manifest] --task ID` narrows that to one task: `_settle_wide_gates` is asked about that
+task alone (`only_task`) and only the shard of the phase holding it is written; a phase's or a
+bug's derived value and a stale index stub stay with the whole-plan call. A task the plan does not
+hold is refused with the ids it does hold before anything is written, and a task with nothing
+stale is answered as having nothing to settle (`wgt1`-`wgt7`). This is the call
+`drive-phase.settle_stale_gate` makes before it starts a task.
 
 `add-phase --park` writes the same phase `add-phase` builds as a parked proposal instead
 (`PROP-<n>[-suffix]`; on a side branch the reserved phase id is the placeholder `P<n>-<suffix>`,

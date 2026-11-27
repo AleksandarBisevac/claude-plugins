@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "med", "file": "PLUGIN-BUILD-GUIDE.md:7219-7230",
+   "issue": "contradicts task clause: the task asks to update PLUGIN-BUILD-GUIDE.md's audit-task.py settle line to say settle --task ID is task-scoped (one task's stale wide gate, only its phase shard written, phase/bug values and stale stubs left to the whole-plan call, unknown task refused with exit 2, 'nothing to settle' when nothing narrows). The diff does not touch the `settle [manifest]` paragraph at all (the guide diff holds only the red-first sentences at ~5090/5106 and the settle_stale_gate paragraph at ~5532). The executor's claim 1 and outcome say a paragraph was added after the settle [manifest] description; no such hunk exists. The verb's own usage line (audit-task.py:82) is `settle [manifest] [--task ID]`, so the guide's verb description now omits a flag the verb takes and still reads as a whole-plan-only verb.",
+   "resolution": "Add to the `settle [manifest]` paragraph (PLUGIN-BUILD-GUIDE.md:7219-7230) a sentence read off audit-task.py _locked_settle/_settle_wide_gates: `settle [manifest] --task ID` settles that task's stale wide gate only (_settle_wide_gates(only_task)), writes only the shard of the phase the task sits in, leaves phase/bug values and stale index stubs to the whole-plan call (rows and stale_stubs are empty when scoped), refuses an unknown task with the ids the plan holds (E_USAGE, exit 2) before any write, and prints `nothing to settle` naming the task when its gate does not narrow."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "diverges",
+  "note": "Task clause: 'Update verbs-in-full.md's Subcommand: settle section and PLUGIN-BUILD-GUIDE.md's audit-task.py settle line and drive-phase.py settle_stale_gate paragraph'. Done: verbs-in-full.md:2195-2203 (accurate against _locked_settle: scoped writes, unknown task E_USAGE listing held ids before any write, 'nothing to settle' naming the task) and the settle_stale_gate paragraph at PLUGIN-BUILD-GUIDE.md:5532-5540 (accurate: passes --task, did-line `<id>'s gate did not move: audit-task.py settle exited 0 ...`). Not done: the guide's `settle [manifest]` description at 7219-7230 is unchanged, though the executor's outcome says a paragraph was added there ('added to PLUGIN-BUILD-GUIDE.md a paragraph after the settle [manifest] description'; claim 1 'guide settle description ... updated') - the claim does not describe the diff. The two orchestrator-corrected run-test-gate sentences check out against the code: res['redFirstStage'] (run-test-gate.py:5679), the green stage's steps, step_named, step_text, texts and followers are dropped from the row (5556-5568, stage_texts and stage_followers never merged into texts/followers), and _evidence_io.declared_steps strips a leading PRE_GATE_STEP then a leading run of RED_FIRST_STEP_PREFIX names (732-737). Minor: verbs-in-full says 'nothing to settle' is printed for nothing stale, but under --json the scoped no-op prints a JSON object instead (audit-task.py ~14100); not a falsehood for the default output.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "gate-only documentation task, expectRedFirst false, tests.add empty; executor filed not-attempted with that basis.",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate is `python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py`, a literal command naming two lint suites that read repo documents; the task changes only prose, and no behaviour these suites select is a behaviour the diff names, so there is no behaviour to delete. Read-only; not widened."
+ },
+ "verdict": "findings",
+ "tasks": []
+}
