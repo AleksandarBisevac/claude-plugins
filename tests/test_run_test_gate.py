@@ -12103,20 +12103,51 @@ def _kept_base_gate_cases(check):
           and dict((k, two.get(k)) for k in same) == same)
 
 
+# How a fake sweep records one call: the paths it was handed, one line, in a
+# file of its own under the log directory `@LOG@`, the files numbered in the
+# order they were taken. NOT ONE FILE APPENDED BY EVERY CALL: a red-first stage
+# runs beside the gate step, so two calls record at once, and on Windows an
+# append is a seek to the end and then a write - two of them land at the same
+# offset and the shorter record overwrites the head of the longer (a run there
+# recorded `ests/test_v.py`). Taking the next free number with O_EXCL is one
+# step on every platform, so no two calls share a file.
+_CALL_RECORD = r'''
+os.makedirs(@LOG@, exist_ok=True)
+_seq = 0
+while True:
+    try:
+        _fd = os.open(os.path.join(@LOG@, "%06d" % (_seq,)),
+                      os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                      | getattr(os, "O_BINARY", 0))
+        break
+    except FileExistsError:
+        _seq += 1
+os.write(_fd, (" ".join(sys.argv[1:]) + "\n").encode("utf-8"))
+os.close(_fd)
+'''
+
+
+def _with_call_record(sweep, log):
+    """The fake `sweep` source with its `@RECORD@` line the call recorder
+    over the log directory `log`."""
+    return sweep.replace("@RECORD@", _CALL_RECORD.strip("\n")).replace(
+        "@LOG@", repr(log))
+
+
 # The fake sweep a per-suite base is measured with: it runs the suites it is
 # handed, or every `tests/test_*.py` when handed none, prints each failing
 # suite's output under the selftest sweep's `--- <path>: exited 1 ---` header
-# and its own `FAIL` line, then its summary - and appends the paths it was
-# handed to a log OUTSIDE the tree, one line per call, so what RAN is read off
-# the runner itself. A suite prints `gate-out/<stem>.<side>.txt`, the side
-# `base` while `pkg/core.py` holds the committed text, and fails on a FAIL
-# line; `gate-out/die.<side>` makes the runner die before it names a suite.
+# and its own `FAIL` line, then its summary - and records the paths it was
+# handed in a log OUTSIDE the tree (`_CALL_RECORD`), one line per call, so what
+# RAN is read off the runner itself. A suite prints
+# `gate-out/<stem>.<side>.txt`, the side `base` while `pkg/core.py` holds the
+# committed text, and fails on a FAIL line; `gate-out/die.<side>` makes the
+# runner die before it names a suite.
 _PER_SUITE_SWEEP = r'''
 import glob, os, subprocess, sys
 with open("pkg/core.py", encoding="utf-8") as fh:
     side = "base" if fh.read() == "X = 1\n" else "task"
-with open(@LOG@, "a", encoding="utf-8") as fh:
-    fh.write(" ".join(sys.argv[1:]) + "\n")
+@RECORD@
 if os.path.exists("gate-out/die.%s" % (side,)):
     sys.stdout.write("the runner died before it named a suite\n")
     raise SystemExit(1)
@@ -12172,8 +12203,7 @@ def _ps_repo(prefix, base_fails=None, die_at_task=False, plan_entry=False,
     gate the recorded spelling over `tests/test_t.py` alone, with a related
     listing naming the other two suites, so the run is one step joining the
     declared entry and the affected suites over all three paths."""
-    log = os.path.join(_harness.fixture_root("rtg-per-suite-log-"),
-                       "calls.log")
+    log = os.path.join(_harness.fixture_root("rtg-per-suite-log-"), "calls")
     root = _harness.fixture_root(prefix)
     for sub in (("docs", "audit", "phases"), (".claude",), ("tools",),
                 ("tests",), ("pkg",), ("gate-out",)):
@@ -12207,7 +12237,7 @@ def _ps_repo(prefix, base_fails=None, die_at_task=False, plan_entry=False,
                  {"id": "P1.1", "title": "the work", "status": "in_progress",
                   "files": ["pkg/core.py"],
                   "tests": {"mode": "regression", "gate": gate}}]})),
-        ("tools/sweep.py", _PER_SUITE_SWEEP.replace("@LOG@", repr(log))),
+        ("tools/sweep.py", _with_call_record(_PER_SUITE_SWEEP, log)),
         ("pkg/__init__.py", ""), ("pkg/core.py", "X = 1\n"),
         (".gitignore", "__pycache__/\n")]
     for suite in _PS_SUITES:
@@ -12252,12 +12282,22 @@ def _ps_task_red(root, mpath, task_fails):
     return _ev_io.newest_row(rows) or {}
 
 
+def _ps_lines(path):
+    """The lines of one record file, their ends stripped."""
+    with open(path, encoding="utf-8") as fh:
+        return [ln.rstrip("\r\n") for ln in fh]
+
+
+def _ps_record_files(log):
+    """The files the sweep's call log is kept in, in the order written."""
+    if os.path.isdir(log):
+        return [os.path.join(log, name) for name in sorted(os.listdir(log))]
+    return [log] if os.path.exists(log) else []
+
+
 def _ps_calls(log):
     """The sweep's calls so far, one string of handed paths each."""
-    if not os.path.exists(log):
-        return []
-    with open(log, encoding="utf-8") as fh:
-        return [ln.rstrip("\n") for ln in fh]
+    return [ln for path in _ps_record_files(log) for ln in _ps_lines(path)]
 
 
 def _ps_answered(root, mpath, log, row):
@@ -12636,15 +12676,15 @@ def _base_of_derived_cases(check):
 
 
 # The fake sweep a joined run is counted with: it runs the suites it is handed,
-# or every one when handed none, and appends the paths it was handed to a log,
-# one line per call - so what RAN is read off the runner itself, never off the
-# row the gate writes about it. The log is OUTSIDE the tree: a file the runs
-# grow inside it would change the content every identity is taken over.
+# or every one when handed none, and records the paths it was handed
+# (`_CALL_RECORD`), one line per call - so what RAN is read off the runner
+# itself, never off the row the gate writes about it. The log is OUTSIDE the
+# tree: a file the runs grow inside it would change the content every identity
+# is taken over.
 _CALL_LOG_SWEEP = (
-    "import glob, subprocess, sys\n"
+    "import glob, os, subprocess, sys\n"
     "paths = sys.argv[1:] or sorted(glob.glob('tests/test_*.py'))\n"
-    "with open(%r, 'a') as fh:\n"
-    "    fh.write(' '.join(sys.argv[1:]) + '\\n')\n"
+    "@RECORD@\n"
     "bad = [p for p in paths\n"
     "       if subprocess.call([sys.executable, p]) != 0]\n"
     "sys.exit(1 if bad else 0)\n")
@@ -12658,7 +12698,7 @@ def _joined_repo():
     `tests/test_own.py` (`own`); `P1.2`'s is another runner (`_LONE_GATE`).
     `log` is the sweep's call log, outside the tree."""
     log = os.path.join(_harness.fixture_root("run-test-gate-joined-log-"),
-                       "calls.log")
+                       "calls")
     root = _harness.fixture_root("run-test-gate-joined-")
     for sub in (("docs", "audit", "phases"), (".claude",), ("tools",),
                 ("tests",), ("pkg",)):
@@ -12692,7 +12732,7 @@ def _joined_repo():
               "w") as fh:
         json.dump(phase, fh)
     reach = "import os, sys\nsys.path.insert(0, os.getcwd())\n"
-    for rel, body in (("tools/sweep.py", _CALL_LOG_SWEEP % (log,)),
+    for rel, body in (("tools/sweep.py", _with_call_record(_CALL_LOG_SWEEP, log)),
                       ("pkg/__init__.py", ""), ("pkg/core.py", "X = 1\n"),
                       ("tests/test_core.py", reach + "import pkg.core\n"),
                       ("tests/test_other.py", "pass\n"),
@@ -13139,7 +13179,9 @@ def _red_first_beside_cases(check):
           prefix is not None and c1 == M.E_FAIL
           and k1 == ["tests/test_t.py tests/test_u.py tests/test_v.py"]
           and c2 == M.E_OK and r2.get("status") == "passed"
-          and u_runs == 1 and len(k2) == 2 and "tests/test_u.py" in k2
+          and u_runs == 1
+          and sorted(k2) == ["tests/test_t.py tests/test_v.py",
+                             "tests/test_u.py"]
           and rest == ["tests/test_t.py tests/test_v.py"]
           and names[1:] == [joined] and str(names[0]).startswith(prefix)
           and _ev_io.declared_steps(names)[0] == [sweep + " tests/test_t.py"]
@@ -13289,6 +13331,63 @@ def _red_first_beside_cases(check):
           "out and holds nothing on the row: %r" % (untouched,),
           untouched[0] == gate[3:] and untouched[1] == [])
 
+    # Windows-shaped spellings: the interpreter CI resolves, quoted, with a
+    # forward-slash and a backslash path. The narrowing reads shell words on
+    # both sides, so every remaining path comes back whole.
+    win = []
+    for interp in ('"C:/hostedtoolcache/windows/Python/3.12.10/x64/python3.exe"',
+                   '"C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\'
+                   'python3.exe"'):
+        spelling = interp + " tools/sweep.py {paths}"
+        w_plan = {"meta": {"buildCommands": {"selftests": interp
+                                             + " tools/sweep.py"},
+                           "phaseGate": {"derived": {"spelling": spelling}}},
+                  "phases": [{"id": "P1", "testGate": ["selftests"],
+                              "tasks": []}]}
+
+        def over(paths, spelling=spelling):
+            return spelling.replace("{paths}", " ".join(paths))
+        got = (None, None, None) if beside is None else beside(
+            [(prefix + "u", over(["tests/test_u.py"]))],
+            [("joined", over(list(_PS_SUITES)))], w_plan, "P1")
+        win.append((got, over(["tests/test_t.py", "tests/test_v.py"])))
+    check("rfb7 UNDER A WINDOWS-SHAPED COMMAND THE NARROWED STEP KEEPS EVERY "
+          "REMAINING PATH WHOLE: the quoted interpreter path, forward or back "
+          "slashes, comes back byte for byte and t and v follow it uncut: %r"
+          % (win,),
+          len(win) == 2
+          and all(got[0] == [("joined", want)] and got[1] == [prefix + "u"]
+                  for got, want in win))
+
+    # The rig's own record of what ran. The stage and the gate step it runs
+    # beside are two processes recording at once; on Windows an append is a
+    # seek to the end and a write, not one step, so two calls appending to one
+    # file land at the same offset and the shorter overwrites the head of the
+    # longer - the run that recorded `ests/test_v.py`. Each call is therefore
+    # recorded in a file no other call writes.
+    root, _mpath, log = _ps_repo("rtg-rfb-record-")
+    try:
+        before = len(_ps_calls(log))
+        kids = [subprocess.Popen([sys.executable, "tools/sweep.py"] + argv,
+                                 cwd=root, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+                for argv in (["tests/test_u.py"],
+                             ["tests/test_t.py", "tests/test_v.py"])]
+        for kid in kids:
+            kid.wait(60)
+        recorded = _ps_calls(log)[before:]
+        per_file = [_ps_lines(path) for path in _ps_record_files(log)]
+    finally:
+        _ps_remove(root, log)
+    check("rfb8 TWO CALLS RECORDED AT ONCE ARE EACH WHOLE, EACH IN A FILE OF "
+          "ITS OWN: the rig hands back exactly the two path lists, and no "
+          "record file holds more than one call - one file appended by two "
+          "processes is what a Windows append cuts: calls %r / per file %r"
+          % (recorded, per_file),
+          sorted(recorded) == ["tests/test_t.py tests/test_v.py",
+                               "tests/test_u.py"]
+          and len(per_file) == 2 and all(len(lines) == 1 for lines in per_file))
+
 
 def _selection_code_cases(check):
     """`scd`: the kept selection's key reads the bytes of every module the
@@ -13362,10 +13461,7 @@ def _joined_run_cases(check):
     joined = own + " + " + rel + " + " + py
 
     def calls():
-        if not os.path.exists(log):
-            return []
-        with open(log, encoding="utf-8") as fh:
-            return [ln.rstrip("\n") for ln in fh]
+        return _ps_calls(log)
 
     def run(task_id, *extra):
         before = len(calls())

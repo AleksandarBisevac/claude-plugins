@@ -17432,9 +17432,18 @@ def _proof_stages(state, task_id="P1.1"):
 
 def _slow_answer(text, code=0):
     """A `run_verb` answer that takes `_PROOF_GAP` seconds to give `text`, so a
-    stage's length can be told from the helper's own seconds."""
+    stage's length can be told from the helper's own seconds.
+
+    The wait is read off `time.monotonic`, the clock the drive times the stage
+    with, rather than slept: on Windows that clock moves in coarse ticks
+    (`time.get_clock_info('monotonic').resolution` prints the step), so a sleep
+    of the gap can read as a tick short of it.
+    The drive reads its clock before this starts and after it returns, so its
+    length is at least the gap this clock saw pass here."""
     def answer(args):
-        time.sleep(_PROOF_GAP)
+        began = time.monotonic()
+        while time.monotonic() - began < _PROOF_GAP:
+            time.sleep(_PROOF_GAP / 6)
         return code, text, ""
     return answer
 

@@ -1,0 +1,28 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py": "pass",
+    "python3 tools/lints/_deps.py --register-citations": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with tests.expectRedFirst false: the work was applied from a cancelled attempt and no red was owed; the cases lock the corrected behaviour",
+    "at": "n/a"
+  },
+  "outcome": {
+    "technical": "The cancelled attempt's work was already in the tree and was kept, not rewritten. Checked it against HEAD (git diff HEAD on both test files applies cleanly; later tasks on concurrent red-first legs and fix-by-gate binding touch other cases): tests/test_run_test_gate.py now records each fake-sweep call in its own numbered file under the log directory (_CALL_RECORD, O_CREAT|O_EXCL), read by one reader (_ps_calls/_ps_record_files/_ps_lines) used by _ps_repo, _joined_repo/_CALL_LOG_SWEEP and _joined_run_cases; rfb1 asserts the exact sorted call list; rfb7 (Windows-shaped quoted interpreter, forward and back slashes, narrowing keeps remaining paths whole) and rfb8 (two concurrent sweep processes come back as exactly their two path lists, one call per record file) added. tests/test_drive_phase.py: _slow_answer waits on time.monotonic until the gap has passed, so pq2 holds on a coarse Windows clock. Fragment changelog.d/P173.13-s6m.fixed.md read and fits. Commands: python3 tests/test_run_test_gate.py --selftest --stage rfb-block exit 0, 807/807, rfb1..rfb8 PASS; python3 tests/test_drive_phase.py --selftest --stage ux-block 158/158, pq2 PASS; python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py -> 2/2 files ok, 1953 cases; python3 tools/lints/_deps.py --register-citations -> 0 citations. Dependants: tests/test_drive_phase.py, test_commit_task_work.py, test_drive_without_model.py import test_run_test_gate helpers - only the call-record plumbing and test-private names changed, the names they use (_derived_base_repo, _follower_cases, _excluded_cases, _full_repo) are untouched and the full sweep of both suites is green, so still correct; the sweep-costs.json, run-test-gate.py, tools/affected.py, verify.sh and COMPATIBILITY.md references are by path to the suite and no product script changed, so still correct; test_drive_phase.py's dependants (test_drive_without_model.py _Env/_base_mark/_base_measure_repo, test_stamp_verification.py _actions) are unchanged by a one-helper timing edit, still correct; the changelog fragment is named by no tracked file. No redFirst proof was run, so the helper was not used. Not run: the red proof in a throwaway tree (not owed).",
+    "descriptive": "The two Windows-only test failures are fixed in the rigs: concurrent fake-sweep calls are recorded whole, one file each, and the proof-stage timing case waits on the clock the drive reads."
+  },
+  "testsAdded": [
+    "rfb8: two fake-sweep processes started at once leave exactly their two path lists, each in a record file of its own",
+    "rfb7: under a Windows-shaped quoted interpreter command the narrowed step keeps every remaining path whole",
+    "rfb1 tightened to assert the exact sorted call list; pq2's rig waits on time.monotonic"
+  ],
+  "casesAdded": [
+    [
+      "rfb8"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:5ad77216b4d6cddcbee5f672a8b4137613196b895839ae9a05e933806549baa3\",\"dirtyDigest\":\"sha256:1762f90a9f38c602064ddcb569ddbc8eaf8e040bdbaf4bee759a986cdf4495b4\",\"dirtyPaths\":{\"changelog.d/P173.13-s6m.fixed.md\":\"325c427f9e3ebc11\",\"tests/test_drive_phase.py\":\"cd38e5c1031c370b\",\"tests/test_run_test_gate.py\":\"ecc244232a17c8f4\"},\"head\":\"53210709\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"changelog.d/P173.13-s6m.fixed.md\",\"tests/test_drive_phase.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:8182258e7ea1982ab7cba399a1cf319c3179e1052907fd120fc514287193b209\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

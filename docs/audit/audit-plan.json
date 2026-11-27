@@ -15076,7 +15076,8 @@
       "P173.5"
     ],
     "changelog.d/P173.6.changed.md": [
-      "P173.6"
+      "P173.6",
+      "P173.14-s6m"
     ],
     "changelog.d/P173.7.changed.md": [
       "P173.7"
@@ -15094,7 +15095,8 @@
       "P173.11-s6m"
     ],
     "changelog.d/P173.12-s6m.fixed.md": [
-      "P173.12-s6m"
+      "P173.12-s6m",
+      "P173.14-s6m"
     ],
     "changelog.d/P173.13-s6m.fixed.md": [
       "P173.13-s6m"
