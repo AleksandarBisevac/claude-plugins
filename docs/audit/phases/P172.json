@@ -1,7 +1,7 @@
 {
   "id": "P172",
   "title": "One red costs one red, not two full sweeps",
-  "status": "in_progress",
+  "status": "done",
   "description": "Measured by the paid probe (two pairs on one task): plugin wall 10x plain. Of the 54-minute gap, task gates 38% (full ~300 s sweep, three runs), base measurement 19% (a full sweep to classify one red suite), a second writer round 31% (the first diff broke a house rule the brief never carried). Design: a declared fast pre-gate the brief lists and the gate runs first; per-suite base measurement keyed by (commit, suite); re-gate runs last reds first and stops on red; selection cache by tree identity; the drive settles a gate the product already calls stale before starting a task; the brief reads the recorded spelling. Invariant across all: a partial run may fail a change but never vouches for more than it ran.",
   "desiredOutcome": "On the measured shape (one task whose first diff turns one suite red), a red no longer costs a full base sweep and a full re-gate: the writer is told the project's fast must-pass checks and the gate runs them first; the base is measured only for the suites the red named; a re-gate runs last round's reds first; the selection is computed once per tree. Re-measured by the two-pair probe on the same task and base; W1 falls and no gate vouches for more than it ran.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "d7a2d840ea9e4dbbe47f9021b0c46d1b36b2da3e",
   "branch": "audit/p172-one-red-costs-one-red-not-two",
-  "mergedAt": null,
+  "mergedAt": "2026-11-27T11:33:47Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -3187,5 +3187,6 @@
     "runId": "2026-11-27T11:19:14Z.9783f1",
     "status": "passed",
     "at": "2026-11-27T11:19:14Z"
-  }
+  },
+  "mergedHead": "7dc40d8cdd72ff7dd8172d44c4d5bfe0f2742046"
 }

@@ -1101,7 +1101,7 @@
     {
       "id": "P172",
       "title": "One red costs one red, not two full sweeps",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P172.json"
     }
   ],
