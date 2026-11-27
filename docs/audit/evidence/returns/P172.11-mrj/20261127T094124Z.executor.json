@@ -1,0 +1,33 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_lookup.py": "pass",
+    "python3 tools/lints/_deps.py --register-citations": "pass",
+    "ruff check (two touched files)": "pass",
+    "vermin -t=3.8- (two touched files)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-27T09:46:26Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_lookup.py` in a throwaway tree at HEAD exited 1 with 4 of 219 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ws32 (house FAIL), ws34 (house FAIL), ws34 (house FAIL), ws35 (house FAIL): SELFTEST FAILED: 215/219 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-lookup.py: removed _ANY_KIND. A runner spelled with the recorded {paths} slot now takes the kinds its collection rule reads (_collected_kinds over _runner_collects.LANGUAGE_RUNNERS: sweep script and pytest -> .py, vitest/jest -> JS/TS kinds); a runner that table does not name gets an empty kind set (known to take suite paths, no kind), so _takes_kind, _runs_whole_tree and suite_coverage hand it no suite and _unrun_line says 'the kind of suite X takes is not known'. Added import _runner_collects as _collects (low layer; layer lint shows no new violation, the one it reports is panel/_panel_state.py, untouched). tests/test_audit_lookup.py: ws28-ws33 now use this repo's sweep runner instead of tools/x.py; ws32 rewritten (the .js suite is not handed to the sweep, the .py one is); new ws34 (slow and fast variants: .mjs suite under the sweep {paths} spelling gets no command and is not counted covered by the bare sweep) and ws35 (unknown-kind runner handed no suite, line says kind). changelog.d/P172.11-mrj.changed.md added. Mutations (restored byte-identical, sha unchanged 8a7e563c..., __pycache__ purged): A) _collected_kinds returns every kind -> ws32, ws34 slow, ws34 fast, ws35 red; B) returns empty set -> ws28, ws29, ws32 red. Commands: sweep tests/test_audit_lookup.py exit 0, 219/219; ruff exit 0; vermin exit 0; register-citations exit 0 (0 found); changelog-check exit 0; house_style/prose_number/preamble/navigability lints 0 violations. Dependants: audit-lookup.py's importers (test__evidence_io, test__filed_returns, test_audit_lookup, test_drive_phase) call public names whose signatures are unchanged - still correct; PLUGIN-BUILD-GUIDE.md section at :3565 and docs/research/pipeline-cost-design.md say nothing about the any-kind reading (grep for 'any kind'/'whatever its extension' found none), still correct; schema and _clause_coverage reference by basename only, unaffected; execute-task.md/README rows on own-tests/runsGate describe unchanged behaviour. test_audit_lookup.py dependants (sweep-costs.json, affected.py, test_audit_task.py) unaffected - no names renamed. Caveat: a plan whose only evidence is the recorded spelling for a runner outside the LANGUAGE_RUNNERS table (e.g. python3 tools/x.py) now gets no derived command - intended per the task ('when the kind is unknown, say so').",
+    "descriptive": "A {paths} spelling no longer makes the brief offer or credit a runner for suite kinds its collection rule does not read; unknown kinds are said, not guessed."
+  },
+  "testsAdded": [
+    "ws34: a .mjs suite under the sweep's {paths} spelling gets no sweep command and is not counted covered by the bare sweep (slow and fast gate step)",
+    "ws35: a runner of unknown collection rule spelled with {paths} is handed no suite and the line says its kind is unknown",
+    "ws32 rewritten: the spelling no longer hands a .js suite to the sweep"
+  ],
+  "casesAdded": [
+    [
+      "ws34",
+      "ws35"
+    ]
+  ],
+  "claims": "claims:\n1 audit-lookup.py _collected_kinds/_takes_kind implement the rewritten sentences (spelling names no kind; kinds come from the collection rule); the stale 'takes a suite of any kind' wording was removed (grep for 'any kind' in audit-lookup.py finds none)\n2 mutation A (widen) -> ws32/ws34x2/ws35 red; mutation B (empty set, other direction) -> ws28/ws29/ws32 red; restored sha 8a7e563c identical, pycache purged\n3 grep -rn '_ANY_KIND\\|_takes_kind' plugins tests tools: only audit-lookup.py sites, all updated; docs grep for 'any kind'/'whatever its extension' found nothing relevant\n4 n/a - no rule addressed to an agent added\n5 n/a - no property measured\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:754bfda31236a246007bd777cf8184c23f5a7c91601d5329161ba0ec859360a8\",\"dirtyDigest\":\"sha256:45be71dc4ef38f5f074774b5909c4a9e41d4324485de23529d12807941db9f03\",\"dirtyPaths\":{\"changelog.d/P172.11-mrj.changed.md\":\"e81432e2dee29d7f\",\"plugins/audit/scripts/status/audit-lookup.py\":\"c03028363f1b5a8b\",\"tests/test_audit_lookup.py\":\"5d5fde7616460d97\"},\"head\":\"e15f58d4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"changelog.d/P172.11-mrj.changed.md\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test_audit_lookup.py\"],\"scopeDigest\":\"sha256:bd424fb9de4f7cb3655da76c85ca716a3f1427a9eb44b95d9395eea94aa95e69\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

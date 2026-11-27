@@ -144,6 +144,7 @@ import _config_rules  # noqa: E402  (review_per_task_mode: the config's reading 
 import _gate_feed  # noqa: E402  (review_asks: what the plan asks a reviewer to refuse)
 import _impact  # noqa: E402  (who among the tracked files reads a task's files)
 import _scoped_commit  # noqa: E402  (head_sha: the one reader of HEAD)
+import _runner_collects as _collects  # noqa: E402  (which language a runner reads)
 
 E_OK = 0
 E_NOMATCH = 1
@@ -1244,11 +1245,10 @@ def _suite_runner(words):
 
 
 # The slot a recorded runner spelling (`meta.phaseGate.derived.spelling`) is
-# filled at, and the kind a runner spelled with it is read as taking: the
-# derivation hands that slot every suite whatever its extension, so the
-# spelling names no kind of its own.
+# filled at. The spelling names no kind of suite of its own, so the kinds a
+# runner spelled with it takes are the ones its collection rule reads
+# (`_collected_kinds`), never every kind.
 _PATHS_SLOT = "{paths}"
-_ANY_KIND = "*"
 
 
 def _plan_commands(manifest):
@@ -1284,12 +1284,29 @@ def _suite_kind(path):
     return base[base.rindex("."):] if "." in base else ""
 
 
+def _collected_kinds(runner):
+    """The `_suite_kind`s the collection rule of `runner` (`_suite_runner`'s
+    first answer) reads, from `_runner_collects.LANGUAGE_RUNNERS`: the project's
+    sweep script and `pytest` read `.py`, `vitest` and `jest` the JavaScript and
+    TypeScript extensions. A runner that table does not name has no kind, which
+    is the answer "not known" - a spelling taking `{paths}` says a runner takes
+    suite paths, and says nothing about which suites."""
+    name = runner[1].replace("\\", "/").rsplit("/", 1)[-1]
+    if runner[0] == "script":
+        name = ("sweep" if name == _collects.SWEEP_SCRIPT.rsplit("/", 1)[-1]
+                else name.rsplit(".", 1)[0])
+    return set("." + ext for exts, takers in _collects.LANGUAGE_RUNNERS
+               if name in takers for ext in exts)
+
+
 def suite_taking_runners(manifest):
     """`{runner: kinds}`: each runner (`_suite_runner`'s first answer) the plan
     spells handed at least one suite path, in any simple command of any command
-    it spells, with the `_suite_kind`s of the suites it is handed there - or
-    `_ANY_KIND` where a command hands it the recorded spelling's `{paths}`
-    slot, which takes a suite of any kind.
+    it spells, with the `_suite_kind`s of the suites it is handed there and,
+    where a command hands it the recorded spelling's `{paths}` slot, the kinds
+    its collection rule reads (`_collected_kinds`) - an empty set when that rule
+    is not known, which makes the runner known to take suites and no kind of
+    them.
 
     A runner is known to take suite paths only from that: a script run with no
     path (`python3 tools/measure-context.py --gate`) has the same shape as a
@@ -1304,7 +1321,7 @@ def suite_taking_runners(manifest):
             if read is None:
                 continue
             if any(_PATHS_SLOT in word for word in words):
-                known.setdefault(read[0], set()).add(_ANY_KIND)
+                known.setdefault(read[0], set()).update(_collected_kinds(read[0]))
             for path in read[2]:
                 known.setdefault(read[0], set()).add(_suite_kind(path))
     return known
@@ -1312,8 +1329,8 @@ def suite_taking_runners(manifest):
 
 def _takes_kind(kinds, suite):
     """Whether a runner spelled with `kinds` (`suite_taking_runners`) takes
-    `suite`: its kind is among them, or the spelling takes any."""
-    return _ANY_KIND in kinds or _suite_kind(suite) in kinds
+    `suite`: its kind is among them."""
+    return _suite_kind(suite) in kinds
 
 
 # The options that change only what a run prints. Any other word after the
@@ -1379,9 +1396,13 @@ def _unrun_line(suite, offers, known):
         return "%s: no command to run it is given - the task declares no gate command" % (suite,)
     clauses = []
     for simple, why in offers:
+        kinds = known[simple[2]] if simple is not None else ()
         clause = why if simple is None else (
             "the plan hands %s only %s suite paths"
-            % (_runner_label(simple[2]), "/".join(sorted(known[simple[2]])) or "extensionless"))
+            % (_runner_label(simple[2]), "/".join(sorted(kinds)) or "extensionless")
+            if kinds else
+            "the kind of suite %s takes is not known - the plan's spelling "
+            "takes suite paths and names no kind" % (_runner_label(simple[2]),))
         if clause not in clauses:
             clauses.append(clause)
     if [c for c in clauses if c not in (_NOT_KNOWN, _COMPOUND)]:

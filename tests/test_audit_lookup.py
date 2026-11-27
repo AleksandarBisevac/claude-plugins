@@ -2942,12 +2942,13 @@ def _writer_spelling_cases(check):
     """(ws) The runner spelling the plan records (`meta.phaseGate.derived.
     spelling`) is the plan saying how its runner takes suite paths, so the
     writer's brief reads it the way the gate's selector does."""
-    runner, spelled = "python3 tools/x.py", "python3 tools/x.py {paths}"
+    runner = "python3 tools/sweep-selftests.py"
+    spelled = "%s {paths}" % (runner,)
     one, ui = "tests/test_a.py", "tests/ui.test.js"
 
-    def plan(gate, suites, spelling):
+    def plan(gate, suites, spelling, bare=runner):
         man = _ws_suites_manifest(("bare",) if gate else (), suites)
-        man["meta"]["buildCommands"] = {"bare": runner}
+        man["meta"]["buildCommands"] = {"bare": bare}
         if spelling is not None:
             man["meta"]["phaseGate"] = {"mode": "shadow",
                                         "derived": {"spelling": spelling}}
@@ -2990,20 +2991,52 @@ def _writer_spelling_cases(check):
           "script: %r" % (items31,),
           ok31 and not [i for i in items31 if i.startswith("- %s" % (other,))
                         and one in i])
-    # The spelling carries no kind, and the derivation hands a slot every suite.
+    # The spelling carries no kind: the kinds are the ones the runner's own
+    # collection rule reads, so the .js suite is not handed to the sweep.
     items32, ok32 = _ws_run(plan(True, (one, ui), spelled), slow)
-    check("ws32 the spelling's slot takes a suite of any kind: both suites are "
-          "handed to the runner, each on one line: %r" % (items32,),
+    named32 = _ws_naming(items32, ui)
+    check("ws32 the spelling's slot does not widen the kinds the runner takes: "
+          "the .py suite is handed to it, the .js suite is named with the "
+          "reason and on no command: %r" % (items32,),
           ok32 and len(_ws_naming(items32, one)) == 1
-          and len(_ws_naming(items32, ui)) == 1
-          and all(i.startswith("- %s " % (runner,))
-                  for i in _ws_naming(items32, ui)))
+          and _ws_naming(items32, one)[0].startswith("- %s %s" % (runner, one))
+          and len(named32) == 1 and named32[0].startswith("- %s: " % (ui,))
+          and not [i for i in items32 if i.startswith("- python3") and ui in i])
     # A spelling with no {paths} slot is the derivation's own refusal: it is
     # no basis here either.
     items33, ok33 = _ws_run(plan(True, (one,), runner), slow)
     check("ws33 a spelling carrying no {paths} slot is no basis: the suite is "
           "named with the reason, as when none is recorded: %r" % (items33,),
           ok33 and items33 == items30)
+    # THIS REPOSITORY'S SPELLING, RED FIRST: a .mjs suite under a tools/ tree,
+    # the sweep spelled with {paths}. The sweep refuses a path it does not
+    # cover, so no command naming the suite may be offered, and no whole run of
+    # the sweep counts the suite covered.
+    mjs = "tools/ui-tests/calendar.test.mjs"
+    for label, steps in (("slow", slow), ("fast", fast)):
+        items34, ok34 = _ws_run(plan(True, (one, mjs), spelled), steps)
+        named34 = _ws_naming(items34, mjs)
+        check("ws34 (%s) a .mjs suite under a {paths} sweep spelling is no "
+              "command's suite and not counted covered by the bare sweep: it "
+              "is named once, with the reason, and the .py suite is not: %r"
+              % (label, items34),
+              ok34 and len(named34) == 1
+              and named34[0].startswith("- %s: no command" % (mjs,))
+              and "suite paths" in named34[0]
+              and not [i for i in items34
+                       if i.startswith("- python3") and mjs in i]
+              and len(_ws_naming(items34, one)) <= 1)
+    # THE KIND IS UNKNOWN: a runner whose collection rule this reading does not
+    # know, spelled with {paths}, is handed no suite - not even a .py one.
+    items35, ok35 = _ws_run(plan(True, (one,), "python3 tools/x.py {paths}",
+                                 bare="python3 tools/x.py"), slow)
+    named35 = _ws_naming(items35, one)
+    check("ws35 a runner whose collection rule is not known, spelled with "
+          "{paths}, is handed no suite: the suite is named with the reason, "
+          "and the line says the kind is unknown: %r" % (items35,),
+          ok35 and len(named35) == 1 and "kind" in named35[0]
+          and not [i for i in items35
+                   if i.startswith("- python3 tools/x.py %s" % (one,))])
 
 
 def _writer_suite_invariant_cases(check):
