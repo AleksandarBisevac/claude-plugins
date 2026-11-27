@@ -6897,16 +6897,28 @@ them, and `reuse_or_run` keeps a finished leg's code, text and copied files unde
 `leftover_throwaways`, which reads `git worktree list`, never sees it - newest `LEG_STORE_KEEP`
 entries, a hit refreshing its entry. A leg is kept only when it finished (a code and no problem) and
 the inputs read again after it hash to the key read before it, so a file edited while the leg ran is
-kept under neither version; an entry that is not whole for its key is a miss. A key with no helper
-digest, or a HEAD that is not a commit id, keeps and replays nothing. The throwaway is built when
+kept under neither version; an entry that is not whole for its key is a miss. The HEAD a leg is
+keyed on is the one `red` read until the leg's throwaway exists, and the throwaway's own
+`rev-parse HEAD` after (`ensure_tree` reads it), so a HEAD that moved between the two makes the
+key read after differ from the one read before and the leg is kept under neither (`lr17`, with
+`lr18` the allow case). A run `_concurrent_legs` tore down - an interrupt or error on the main
+thread while the baseline ran beside it, or one landing before its command started - is no result
+either: `started` marks the process before the teardown, and `_run_in` answers a marked run with
+no exit code and `STOPPED_RUN` as its problem, so it is never kept (`il1`, `il2`; `il3` the allow
+case, `il4` the answer itself). A key with no helper
+digest, or a HEAD that is not a commit id - `leg_inputs` answers None for one (`lr19`) - keeps and
+replays nothing. The throwaway is built when
 the first leg that is not replayed needs it (`ensure_tree` in `run_red`), so a proof every leg of
 which hits builds none. The payload's `legs` entry for a replayed leg says so: `ran: false`,
 `reused: true`, `seconds: 0.0`, `recordedSeconds`, `key`, `recordedAt` and a `why` - the drive's
 `proof_legs_said` already prints a leg that did not run with its `why`. What the key cannot see is
 the content of a linked dependency directory and a test that reads a clock or the network; a
-replay of such a leg is the cost of reusing one, and `lr8` holds that every named field is in the
-key, `lr13` and `lr14` that the legs a changed test or implementation file reaches are the ones
-that rerun.
+replay of such a leg is the cost of reusing one. The fix leg is the one that cost is not paid for:
+it is in `UNREPLAYED_LEGS`, always run and never kept, because a replayed pass of it over a
+dependency upgraded since is the one replay that would turn a red into `proved`. `lr8` holds that
+every named field is in the key, `lr10` that a second proof of one tree replays the baseline and
+task legs and makes the fix run again, `lr13` and `lr14` that the legs a changed test or
+implementation file reaches are the ones that rerun.
 
 **The task leg is keyed on the tests' code, not their bytes.** It runs HEAD's implementation under
 the task's test files, so only their code decides what it prints: for the legs in `CODE_KEYED_LEGS`

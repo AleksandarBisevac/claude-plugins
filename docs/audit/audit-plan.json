@@ -2243,7 +2243,10 @@
       "P173.6",
       "P173.7",
       "P173.12-s6m",
-      "P173.14-s6m"
+      "P173.14-s6m",
+      "P173.15-s6m",
+      "P173.16-s6m",
+      "P173.17-s6m"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3831,7 +3834,8 @@
       "P169.37-6l3",
       "P169.38-6l3",
       "P173.6",
-      "P173.14-s6m"
+      "P173.14-s6m",
+      "P173.17-s6m"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -5270,7 +5274,8 @@
       "P172.10-mrj",
       "P173.8",
       "P173.11-s6m",
-      "P173.14-s6m"
+      "P173.14-s6m",
+      "P173.16-s6m"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -5392,7 +5397,8 @@
       "P173.10-s6m",
       "P173.6",
       "P173.12-s6m",
-      "P173.14-s6m"
+      "P173.14-s6m",
+      "P173.15-s6m"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -11804,7 +11810,8 @@
       "P173.6",
       "P173.10-s6m",
       "P173.12-s6m",
-      "P173.14-s6m"
+      "P173.14-s6m",
+      "P173.17-s6m"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -14230,7 +14237,8 @@
       "P173.11-s6m",
       "P173.12-s6m",
       "P173.13-s6m",
-      "P173.14-s6m"
+      "P173.14-s6m",
+      "P173.17-s6m"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -14511,7 +14519,8 @@
       "P173.8",
       "P173.11-s6m",
       "P173.13-s6m",
-      "P173.14-s6m"
+      "P173.14-s6m",
+      "P173.16-s6m"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -14585,7 +14594,8 @@
       "P173.10-s6m",
       "P173.6",
       "P173.12-s6m",
-      "P173.14-s6m"
+      "P173.14-s6m",
+      "P173.15-s6m"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",
@@ -15107,6 +15117,15 @@
     ],
     "changelog.d/P173.14-s6m.changed.md": [
       "P173.14-s6m"
+    ],
+    "changelog.d/P173.15-s6m.fixed.md": [
+      "P173.15-s6m"
+    ],
+    "changelog.d/P173.16-s6m.fixed.md": [
+      "P173.16-s6m"
+    ],
+    "changelog.d/P173.17-s6m.fixed.md": [
+      "P173.17-s6m"
     ]
   },
   "bugs": [

@@ -40,6 +40,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import types
 
@@ -2530,6 +2531,28 @@ _CLOCK_LITERALS_JUDGED = {
     ("_scan_cases", "time.time() - 1"):
         "sd9 needs a deadline already passed, which a slower runner cannot "
         "undo",
+    ("<module>", "_BASELINE_LAG = 2.0"):
+        "how late swt5's baseline leg starts behind its task leg, so the fake "
+        "clock's jump is always made with the task leg back first: a slower "
+        "runner only makes the baseline later still, which the jump waits "
+        "for, and the jump moves the clock the same distance either way",
+    ("stopped_leg_run", "time.sleep(0.5)"):
+        "il2's pause between the main thread raising and the baseline's "
+        "command starting, so the stop is marked first: on a runner slow "
+        "enough to start the command before the mark, the main thread finds "
+        "it live and tears it down marked all the same, so il2 still holds",
+    ("stopped_leg_run", "time.time() + 120"):
+        "the deadline of the il runs: the held one is torn down by the "
+        "interrupt, the others exit at once, so none comes near it",
+    ("interrupt_once_started", "time.time() + 30"):
+        "how long il1 waits for the baseline's command to start - a process "
+        "start, which no runner stretches this far",
+    ("interrupt_once_started", "time.sleep(0.05)"):
+        "the poll interval of that wait: a slower poll only ends it later",
+    ("interrupt_once_started", "time.sleep(0.3)"):
+        "the pause before il1's interrupt, so it lands while the run is "
+        "waited for: one landing sooner finds the run live and tears it down "
+        "marked all the same, so il1 still holds",
 }
 
 
@@ -7247,6 +7270,14 @@ def _leg_inputs_cases(check):
           and "nope.py" in (M.leg_inputs(root, "a" * 40, "task", ["t"],
                                          ["nope.py"], [], [], {}, deps,
                                          env).get("laid") or {}))
+    unread = [h for h in (None, "", "HEAD", "not a commit\n")
+              if M.leg_inputs(root, h, "task", ["t"], [], [], [], {}, deps,
+                              env) is not None]
+    check("lr19 a head that is not a commit id - a throwaway whose HEAD could "
+          "not be read - gives no inputs, so its leg is run and kept under no "
+          "key; heads that gave inputs: %r" % (unread,),
+          unread == [] and M.leg_inputs(root, "a" * 64, "task", ["t"], [], [],
+                                        [], {}, deps, env) is not None)
 
     # The task leg runs HEAD's implementation under the task's tests, so only the
     # tests' CODE decides what it prints: a comment-only edit keeps its key, a
@@ -7284,10 +7315,10 @@ def _leg_inputs_cases(check):
 
 
 def _leg_reuse_cases(check):
-    """`red` end to end: the second proof of one tree replays all three legs and
-    builds no throwaway; an edit to the test reruns the task and fix legs and
-    still replays the baseline; an edit to the implementation alone reruns only
-    the fix leg."""
+    """`red` end to end: the second proof of one tree replays the baseline and
+    task legs and makes the fix run again, which is never replayed; an edit to
+    the test reruns the task and fix legs and still replays the baseline; an
+    edit to the implementation alone reruns only the fix leg."""
     py = sys.executable
     root, man = _red_repo("stamp-reuse-", _red_test("import mine", "mine.v == 2"))
     made = []
@@ -7320,37 +7351,44 @@ def _leg_reuse_cases(check):
     code2, got2, legs2, made2, built2 = proof()
     block1, block2 = got1.get("redFirst") or {}, got2.get("redFirst") or {}
     # Two throwaways on the first proof: the baseline runs in one of its own,
-    # beside the task leg (`_concurrent_legs`).
-    check("lr10 a second proof over the same tree makes NO run and builds NO "
-          "throwaway - first made %r and built %d, second made %r and built "
-          "%d - yet reaches the same verdict and the same basis: %r / %r"
+    # beside the task leg (`_concurrent_legs`). The fix leg is never replayed
+    # (`UNREPLAYED_LEGS`), so the second proof makes it again, in the one
+    # throwaway it needs.
+    check("lr10 a second proof over the same tree replays the baseline and task "
+          "legs and makes only the fix run, which is never replayed - first "
+          "made %r and built %d, second made %r and built %d - and reaches the "
+          "same verdict and the same basis: %r / %r"
           % (made1, len(built1), made2, len(built2), block1, block2),
           code1 == code2 == M.E_PROVED and made1 == ["baseline", "task", "fix"]
-          and len(built1) == 2 and made2 == [] and built2 == []
+          and len(built1) == 2 and made2 == ["fix"] and len(built2) == 1
           and block1.get("status") == block2.get("status") == "proved"
           and block1.get("basis") == block2.get("basis"))
     say = legs2.get("baseline", {})
     check("lr11 each replayed leg says so in the payload's `legs` - not run, "
           "reused, its key, when it was recorded, zero seconds and the seconds "
-          "it first cost - and the first proof's legs do not: %r %r"
-          % (legs2.get("baseline"), legs1.get("baseline")),
+          "it first cost - the fix leg is a run, and the first proof's legs "
+          "carry no reuse: %r %r %r"
+          % (legs2.get("baseline"), legs2.get("fix"), legs1.get("baseline")),
           all(legs2.get(n, {}).get("reused") is True
               and legs2[n].get("ran") is False and legs2[n].get("seconds") == 0.0
               and legs2[n].get("key") and legs2[n].get("recordedAt")
-              for n in ("baseline", "task", "fix"))
+              for n in ("baseline", "task"))
+          and "reused" not in legs2.get("fix", {"reused": True})
+          and legs2["fix"].get("ran") is True
           and "reused" in say.get("why", "") and say.get("key", "?")[:8] in say.get("why", "")
           and isinstance(say.get("recordedSeconds"), float)
           and all("reused" not in l for l in legs1.values())
           and (got2.get("run") or {}).get("seconds") == 0.0)
     store = os.path.join(root, ".git", M.LEG_STORE_DIR)
-    check("lr12 the store lives under git's common directory, holds the legs, "
-          "and is no throwaway: it is not in the working tree, `leftovers` is "
-          "empty (its name starts with the throwaways' prefix) and git lists no "
-          "worktree but the main one: %r %r"
-          % (got2.get("leftovers"), _worktrees(root)),
+    check("lr12 the store lives under git's common directory, holds the "
+          "baseline and task legs and no fix leg, and is no throwaway: it is "
+          "not in the working tree, `leftovers` is empty (its name starts with "
+          "the throwaways' prefix) and git lists no worktree but the main one: "
+          "%r %r %r"
+          % (sorted(os.listdir(store)), got2.get("leftovers"), _worktrees(root)),
           M.LEG_STORE_DIR.startswith(M.THROWAWAY_PREFIX)
           and not got2.get("leftovers")
-          and len(os.listdir(store)) >= 3
+          and len(os.listdir(store)) == 2
           and len(_wt.parse_list(_worktrees(root))) == 1
           and M.LEG_STORE_DIR not in os.listdir(root))
 
@@ -7398,6 +7436,47 @@ def _leg_reuse_cases(check):
           and legs5["task"].get("reused") is True
           and not legs5["fix"].get("reused")
           and "code without comments" in basis5 and "line numbers" in basis5)
+    _moved_head_cases(check)
+
+
+def _moved_head_cases(check):
+    """A leg is kept under the commit it ran on. HEAD moving after `red` read it
+    and before a throwaway is built leaves the throwaway on the new commit while
+    the leg was looked up under the old one, so neither key is the leg's and
+    none is kept."""
+    py = sys.executable
+    root, man = _red_repo("stamp-moved-head-",
+                          _red_test("import mine", "mine.v == 2"))
+    real_build = M._build_throwaway
+    moved = []
+
+    def build_after_a_commit(top, path, tests, timeout=120):
+        if not moved:
+            _write(os.path.join(top, "other.txt"), "a sibling's commit\n")
+            _git(top, "add", "other.txt")
+            _git(top, "commit", "-q", "-m", "moved")
+            moved.append(1)
+        return real_build(top, path, tests, timeout=timeout)
+
+    M._build_throwaway = build_after_a_commit
+    try:
+        code, got, made = _counted_red(root, man, [py, "tests/test_mine.py"])
+    finally:
+        M._build_throwaway = real_build
+    store = os.path.join(root, ".git", M.LEG_STORE_DIR)
+    kept = sorted(os.listdir(store)) if os.path.isdir(store) else []
+    check("lr17 a proof during which HEAD moved keeps no leg: the legs ran on "
+          "the throwaway's commit, not the one read before it existed - made "
+          "%r, HEAD moved %r, store %r, exit=%r"
+          % (made, bool(moved), kept, code),
+          moved and made[:2] == ["baseline", "task"] and kept == [])
+    # ALLOW: the same proof with HEAD still, so a key that never matches its
+    # own leg - nothing ever kept - fails here.
+    code_s, got_s, made_s = _counted_red(root, man, [py, "tests/test_mine.py"])
+    kept_s = sorted(os.listdir(store)) if os.path.isdir(store) else []
+    check("lr18 ALLOW: the next proof, HEAD unmoved, keeps its baseline and task "
+          "legs: made %r, store %r, exit=%r" % (made_s, kept_s, code_s),
+          made_s == ["baseline", "task", "fix"] and len(kept_s) == 2)
 
 
 def _in_leg_order(made):
@@ -7650,6 +7729,114 @@ def _concurrent_legs_cases(check):
           and len(_wt.parse_list(_worktrees(root))) == 1)
 
 
+def _stopped_aside(store, work, argv, gate=None):
+    """`(aside, seen)` - an `aside` for `_concurrent_legs` that makes one leg
+    through `reuse_or_run` into `store`, running `argv` in `work` with the
+    `started` it is handed; `seen` collects each process it started. With
+    `gate` (an event) the run waits for it before starting its command, which
+    is how a stop that lands before the command starts is staged."""
+    seen = []
+
+    def aside(started):
+        def stopped_leg_run():
+            if gate is not None:
+                gate.wait(30)
+                # The main thread marks the stop the moment its leg raises;
+                # this wait only lets that happen before the command starts.
+                time.sleep(0.5)
+
+            def spy(proc):
+                seen.append(proc)
+                return started(proc)
+            return M._timed_run(work, argv, time.time() + 120, 120,
+                                dict(os.environ), started=spy), []
+        return M.reuse_or_run(store, lambda: {"head": "a" * 40, "leg": "baseline",
+                                              "argv": list(argv)}, stopped_leg_run)
+    return aside, seen
+
+
+def _interrupted_leg_cases(check):
+    """An interrupt on the main thread while the baseline leg runs on its own
+    thread tears that run down - and a torn-down run is not a result of its
+    inputs, so the leg store keeps nothing of it. Kept, it would be replayed
+    as a finished baseline at that HEAD by every later proof."""
+    py = sys.executable
+    hold = [py, "-c", "import time; time.sleep(60)"]
+
+    def interrupt_after(seen):
+        def interrupt_once_started():
+            until = time.time() + 30
+            while not seen and time.time() < until:
+                time.sleep(0.05)
+            time.sleep(0.3)
+            raise KeyboardInterrupt("staged")
+        return interrupt_once_started
+
+    store = _harness.fixture_root("stamp-legs-stop-")
+    work = _harness.fixture_root("stamp-legs-stop-work-")
+    aside, seen = _stopped_aside(store, work, hold)
+    raised = False
+    began = time.time()
+    try:
+        M._concurrent_legs(aside, interrupt_after(seen))
+    except KeyboardInterrupt:
+        raised = True
+    check("il1 an interrupt during the concurrent legs leaves the leg store "
+          "empty: the baseline's run, torn down on its own thread, is not kept "
+          "as a finished leg - interrupt raised %r, its run started %r, store "
+          "%r, %.1fs" % (raised, len(seen), os.listdir(store), time.time() - began),
+          raised and len(seen) == 1 and os.listdir(store) == []
+          and seen[0].poll() is not None)
+
+    # The stop lands before the baseline's command starts - while its thread
+    # still builds its tree - so `started` tears the run down the moment it
+    # exists. That run is no result either.
+    store_b = _harness.fixture_root("stamp-legs-stop-early-")
+    gate = threading.Event()
+    aside_b, seen_b = _stopped_aside(store_b, work, hold, gate=gate)
+
+    def here_b():
+        gate.set()
+        raise KeyboardInterrupt("staged early")
+    raised_b = False
+    try:
+        M._concurrent_legs(aside_b, here_b)
+    except KeyboardInterrupt:
+        raised_b = True
+    check("il2 ...and so does one landing before the baseline's command "
+          "started, which `started` tears down the moment it starts: interrupt "
+          "raised %r, runs started %r, store %r"
+          % (raised_b, len(seen_b), os.listdir(store_b)),
+          raised_b and len(seen_b) == 1 and os.listdir(store_b) == [])
+
+    # ALLOW, the other direction: a pair of legs that both finish keeps the
+    # baseline, so a store that keeps nothing at all fails here.
+    store_c = _harness.fixture_root("stamp-legs-stop-allow-")
+    aside_c, seen_c = _stopped_aside(store_c, work,
+                                     [py, "-c", "raise SystemExit(1)"])
+    (record, _copied), mine = M._concurrent_legs(aside_c, lambda: "here")
+    check("il3 ALLOW: legs that both finish keep the baseline's run: exit %r, "
+          "store %r" % (record.get("code"), os.listdir(store_c)),
+          mine == "here" and record.get("code") == 1
+          and record.get("problem") is None and len(os.listdir(store_c)) == 1)
+
+    # What `_run_in` answers when `started` says the run was torn down: no exit
+    # code and the stop as its problem - and a `started` saying it was not
+    # (or answering nothing, as a caller of old does) keeps the exit code.
+    quick = [py, "-c", "print('out'); raise SystemExit(3)"]
+    stopped = M._run_in(work, quick, 60, dict(os.environ),
+                        started=lambda proc: (lambda: True))
+    kept = M._run_in(work, quick, 60, dict(os.environ),
+                     started=lambda proc: (lambda: False))
+    bare = M._run_in(work, quick, 60, dict(os.environ), started=lambda proc: None)
+    check("il4 `_run_in` answers a run `started` marks as torn down with no exit "
+          "code and the stop as its problem, its output kept; unmarked runs "
+          "keep their exit: %r %r %r" % (stopped, kept, bare),
+          stopped[0] is None and stopped[2] == M.STOPPED_RUN
+          and "out" in stopped[1]
+          and kept[0] == 3 and kept[2] is None and bare[0] == 3 and bare[2] is None)
+
+
 def _unreached_leg_cases(check):
     """A leg that never reached its command - no time left, the reset failed -
     is listed as a leg that did not run, with its problem as the reason: a leg
@@ -7711,6 +7898,7 @@ STAGES = (
     ("sr-leg-reuse", "_leg_reuse_cases"),
     ("sr-fix-by-gate", "_fix_by_gate_cases"),
     ("sr-concurrent-legs", "_concurrent_legs_cases"),
+    ("sr-interrupted-legs", "_interrupted_leg_cases"),
     ("sr-unreached-legs", "_unreached_leg_cases"),
     ("sr-introduces", "_introduces_cases"),
     ("sh-house-abort", "_house_abort_cases"),
@@ -8347,6 +8535,31 @@ def _spied_red(root, man, cmd, *extra, after=None):
     return code, got, seen
 
 
+# How late swt5 starts its baseline leg behind the task leg.
+_BASELINE_LAG = 2.0
+
+
+def _clock_jump_after_both(offset, run_wall):
+    """swt5's `after` for `_spied_red`: once the baseline and task runs have
+    both returned - from either thread, in either order - moves the fake
+    clock (`offset[0]`) once, to half of `run_wall` short of where the fix
+    run's held-back wall time begins, the end of the deadline those two ran
+    under. Never before both: the clock is the whole process's."""
+    lock = threading.Lock()
+    returned = {}
+
+    def jump(tag, deadline):
+        with lock:
+            if tag not in ("baseline", "task") or "jumped" in returned:
+                return
+            returned[tag] = deadline
+            if "baseline" in returned and "task" in returned:
+                returned["jumped"] = True
+                offset[0] += (returned["task"] + run_wall - M.time.time()) \
+                    - run_wall // 2
+    return jump
+
+
 def _wall_cases(check):
     py = sys.executable
     sweep = [py, "tools/sweep-selftests.py"]
@@ -8455,11 +8668,13 @@ def _wall_cases(check):
           and "the deadline is %ss" % (short,) in basis_g
           and "timed out" not in basis_g)
 
-    # A FAKE CLOCK, not a short deadline: once the task run returns, the
-    # helper's clock is moved to half a run's wall time before the one deadline
-    # ends, so the fix run would start with less than it needs. The baseline
-    # and task runs start together, so the run after them is the one a clock
-    # spent by an earlier run can leave short.
+    # A FAKE CLOCK, not a short deadline: once the baseline and task runs have
+    # BOTH returned, the helper's clock is moved to half a run's wall time
+    # before the one deadline ends, so the fix run would start with less than
+    # it needs. The two start together under one deadline, and the clock is
+    # the whole process's: moved when the task run alone returned, it starved
+    # a baseline still building or resetting its throwaway - on a slow git,
+    # windows - which no real clock does.
     run_wall = 40
     root, man = _sweep_repo("stamp-swt-short-", wt,
                             costs={"tests/test_mine.py": float(run_wall)})
@@ -8467,16 +8682,21 @@ def _wall_cases(check):
     M.time = types.SimpleNamespace(
         time=lambda: real_time.time() + offset[0], monotonic=real_time.monotonic,
         sleep=real_time.sleep)
+    jump = _clock_jump_after_both(offset, run_wall)
+    # The baseline made late on every platform, so the case always meets the
+    # order the windows runner met: the task run returning first.
+    real_iso = M._isolated_run
 
-    def jump(tag, deadline):
-        # The task run's deadline ends where the fix run's held-back wall time
-        # - one run's - begins.
-        if tag == "task":
-            offset[0] += (deadline + run_wall - M.time.time()) - run_wall // 2
+    def baseline_late(*args, **kwargs):
+        if args[8] == "baseline":
+            real_time.sleep(_BASELINE_LAG)
+        return real_iso(*args, **kwargs)
+    M._isolated_run = baseline_late
     try:
         code_s, got_s, seen_s = _spied_red(root, man, cmd, after=jump)
     finally:
         M.time = real_time
+        M._isolated_run = real_iso
     block_s = got_s.get("redFirst") or {}
     basis_s = block_s.get("basis") or ""
     check("swt5 a fix run left less than the wall time it needs is not started, "

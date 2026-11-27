@@ -3443,7 +3443,12 @@ def _run_in(path, cmd, timeout, env, started=None):
     `started`, when given, is handed the process as soon as it exists: a run
     made on a thread of its own cannot receive the interrupt, which Python
     raises on the main thread only, so the main thread tears its group down
-    through the process `started` handed it (`_concurrent_legs`).
+    through the process `started` handed it (`_concurrent_legs`). What
+    `started` returns, when callable, is asked once the run has ended whether
+    the run was torn down that way: such a run exits on the kill's signal
+    with no problem of its own, so it is answered here with code None and
+    the stop as its problem - an exit code from it would be kept and
+    replayed as a finished leg (`reuse_or_run` keeps no run with a problem).
 
     On a timeout this returns only after the kill AND the drain, so the
     removal that follows never races the tree it killed: on Windows
@@ -3459,8 +3464,7 @@ def _run_in(path, cmd, timeout, env, started=None):
                                 **_proc_group.group_kwargs())
     except OSError as exc:
         return None, "", "the command could not start: %s" % (exc,)
-    if started is not None:
-        started(proc)
+    torn_down = started(proc) if started is not None else None
     try:
         out, _err = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -3471,7 +3475,10 @@ def _run_in(path, cmd, timeout, env, started=None):
     except BaseException:
         _proc_group.stop_and_drain(proc)
         raise
-    return proc.returncode, (out or b"").decode("utf-8", "replace"), None
+    text = (out or b"").decode("utf-8", "replace")
+    if callable(torn_down) and torn_down():
+        return None, text, STOPPED_RUN
+    return proc.returncode, text, None
 
 
 _TALLY_KEYS = {"house": "cases ", "pytest": " in ", "unittest": "Ran ",
@@ -3863,6 +3870,11 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
 # 150 s gap between the readings (2026-11-27, a sibling session loading the
 # machine), against 2x made one after the other. The fix leg is judged against
 # both of their outputs, so it still runs after them.
+# The problem a run torn down by `_concurrent_legs` ends with (`_run_in`).
+STOPPED_RUN = ("the run was torn down: the proof was stopped on its main "
+               "thread before this run finished")
+
+
 def _concurrent_legs(aside, here):
     """`(aside(started), here())` - `aside` made on a thread of its own while
     `here` runs on this one, both finished before this returns.
@@ -3872,16 +3884,25 @@ def _concurrent_legs(aside, here):
     starts, and an interrupt or error raised on this thread tears down every
     process group `aside` started - and any it starts after that, the moment
     it starts it - waits for the thread, then raises on. An error `aside`
-    raised is raised here, never dropped."""
+    raised is raised here, never dropped.
+
+    `started(proc)` answers whether that process was torn down here, asked by
+    `_run_in` once the run ends: the mark is made before the teardown, so a
+    run the stop killed always reads as stopped and is never kept as a
+    finished leg."""
     lock = threading.Lock()
-    state = {"live": [], "stopping": False, "result": None, "error": None}
+    state = {"live": [], "stopping": False, "result": None, "error": None,
+             "torn": set()}
 
     def started(proc):
         with lock:
             state["live"].append(proc)
             stopping = state["stopping"]
+            if stopping:
+                state["torn"].add(id(proc))
         if stopping:
             _proc_group.tear_down(proc)
+        return lambda: id(proc) in state["torn"]
 
     def body():
         try:
@@ -3904,6 +3925,8 @@ def _concurrent_legs(aside, here):
             live = list(state["live"])
         for proc in live:
             if proc.poll() is None:
+                with lock:
+                    state["torn"].add(id(proc))
                 _proc_group.tear_down(proc)
         worker.join()
         raise
@@ -3929,6 +3952,11 @@ LEG_KEY_VERSION = 2
 # test replays them. Every other leg lays the working tree's implementation
 # over HEAD too and stays keyed on bytes.
 CODE_KEYED_LEGS = ("task", "task-held", "task-support")
+# The legs `red` always runs and never keeps. The fix leg runs the working tree's
+# implementation over the linked dependency directories, which a leg's key names
+# by their plan, not their contents: an upgrade under them keeps the key, and a
+# replayed pass of the fix leg is the one replay that turns a red into `proved`.
+UNREPLAYED_LEGS = ("fix",)
 # The modules whose code decides what a leg does with its inputs: the isolation,
 # the lay-over and the run live here, the process group's teardown beside it.
 HELPER_MODULES = ("stamp-verification.py", "_proc_group.py")
@@ -3964,7 +3992,11 @@ def leg_inputs(root, head, tag, cmd, rels, stubs, absent, texts, deps, env):
     when the helper's own code cannot be digested. `rels` are digested as the
     working tree under `root` holds them (None for a file it lacks): by their
     code for a leg of `CODE_KEYED_LEGS`, else by their bytes; `texts` (the
-    inline suites' overlays) by their text, `deps` and `env` whole."""
+    inline suites' overlays) by their text, `deps` and `env` whole. None too
+    when `head` is not a commit id - a throwaway whose HEAD could not be read
+    - since a key over a head nobody read would match any other."""
+    if not _HEAD_SHAPE.match(head or ""):
+        return None
     helper = helper_code_digest()
     if helper is None:
         return None
@@ -4708,9 +4740,10 @@ def run_red(args, cmd, out):
     # Every run made, by leg, for the payload's `legs`.
     made = {}
     # A throwaway is built when the first leg that is not replayed needs it.
-    tree = {"tried": False, "problem": None, "path": path, "holder": holder}
+    tree = {"tried": False, "problem": None, "path": path, "holder": holder,
+            "head": None}
     side = {"tried": False, "problem": None, "path": side_path,
-            "holder": side_holder}
+            "holder": side_holder, "head": None}
 
     # Two `git worktree add` calls at once on one repository race over its
     # administrative directory - one read the other's half-written entry and
@@ -4723,6 +4756,12 @@ def run_red(args, cmd, out):
             with build_turn:
                 _copied, where["problem"] = _build_throwaway(
                     root, where["path"], [], timeout=max(1, _left(deadline)))
+            if where["problem"] is None:
+                # The commit the throwaway checked out, which is what its legs
+                # run on: HEAD may have moved since `head` was read.
+                code, text = _git(where["path"], ["rev-parse", "HEAD"],
+                                  timeout=max(1, _left(deadline)))
+                where["head"] = text if code == 0 else None
             if where["problem"] is None and _left(deadline) < 1:
                 where["problem"] = ("the run timed out: building the throwaway "
                                     "spent the %s-second deadline" % (args.timeout,))
@@ -4742,9 +4781,18 @@ def run_red(args, cmd, out):
                                  args.timeout, env, where["holder"], tag,
                                  stubs=stubs, deps=deps, texts=texts, **extra)
 
+        # Keyed on the commit the leg runs on: `head` until the throwaway
+        # exists, its own HEAD after - so a leg made after HEAD moved reads
+        # other inputs after than before, and is not kept under either.
+        # The fix leg is never replayed: its linked dependencies are keyed by
+        # their plan, not their contents, so an upgrade under them would
+        # replay a pass the tree no longer gives - and that pass is what
+        # turns a red into `proved`.
         return reuse_or_run(
-            store, lambda: leg_inputs(root, head, tag, cmd, rels, stubs,
-                                      state["absent"], texts, deps, env), make)
+            None if tag in UNREPLAYED_LEGS else store,
+            lambda: leg_inputs(root, where["head"] if where["tried"] else head,
+                               tag, cmd, rels, stubs, state["absent"], texts,
+                               deps, env), make)
 
     def leg(tag, rels, limit, stubs=(), texts=None):
         """`made_leg` in the throwaway every leg but the baseline runs in, with
