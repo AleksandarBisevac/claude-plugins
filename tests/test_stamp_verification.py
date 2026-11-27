@@ -7482,6 +7482,14 @@ def _fix_by_gate_cases(check):
           and "task gate" in str(fix.get("why") or "")
           and "reused" not in fix
           and got.get("printed") == ["old1", "new1"])
+    owes = got.get(M.FIX_LEG_OWES)
+    check("fg9 ...and the payload states what a gate run must show to stand for "
+          "the fix leg it left: the task leg's collected count (old1 and new1, "
+          "two) and no red sweep file, under the key the drive reads: %r"
+          % (owes,),
+          M.FIX_LEG_OWES == "fixLegOwes"
+          and isinstance(owes, dict) and owes.get("collected") == 2
+          and owes.get("redFiles") == {})
     # THE OTHER DIRECTION: without the flag the same tree still owes, and makes,
     # its fix run - and the leg store held no fix leg for it to replay, since
     # none was run. A flag that leaked into every proof, or a skipped leg stored
@@ -7495,6 +7503,12 @@ def _fix_by_gate_cases(check):
           code_n == M.E_PROVED and made_n == ["fix"]
           and block_n.get("status") == "proved"
           and set(block_n) == set(("status", "basis", "at")))
+    # The other direction of fg9: a proof that made its own fix leg owes a
+    # gate nothing, so a key on every payload could not be told from one
+    # written for a fix leg left to the gate.
+    check("fg10 ...and a proof that made its own fix leg states nothing a gate "
+          "owes it: %r" % (got_n.get(M.FIX_LEG_OWES, "absent"),),
+          got_n.get(M.FIX_LEG_OWES) is None)
     root_g, man_g = _red_repo("stamp-fix-gate-green-",
                               _red_test("import mine", "mine.v >= 1"))
     code_g, got_g, made_g = _counted_red(root_g, man_g, cmd, "--fix-by-gate")

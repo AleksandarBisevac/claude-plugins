@@ -6266,15 +6266,27 @@ the writer path and `submit`.
 
 **The writer path leaves the fix leg to the task gate.** `writer_prove` asks for
 `red --fix-by-gate` (`red_args`' `fix_by_gate`, which `submit` never sets), so the held proof
-made the baseline and the task's run only. `file_writer_return` files it bound to the green run
-the return is filed over - the `gated` mark's run, read back from the ledger - and only when that
-run's recorded coverage names each test file the proof was made over (`gate_binding`), writing the
-run's id to `redFirst.fixLegRunId`. A run that was not `passed`, recorded no coverage, or named a
-source in place of the test file has the helper make the fix leg after all (`fix_leg_proof`,
-`red` without the flag), and that whole proof is held and filed. Because such a proof read no
-implementation file, `tree_since_proof` does not count one that moved as its drift
-(`by_gate_proof`). `fbg1`-`fbg9` hold the ask, the binding, each fallback and both directions of
-the drift reading.
+made the baseline and the task's run only, and keeps the helper's `fixLegOwes` - the task run's
+collected count and each file a sweep graded red - beside it. `file_writer_return` files it bound
+to the green run the return is filed over - the `gated` mark's run, read back from the ledger -
+and only when that run holds a step of the proof's own command (`writer_test_text`, matched
+verbatim or by the digest a row keeps for an unpublished command: `proof_steps`) that passed with
+a verdict, unmuted, over at least the task run's collected count, and the run's recorded coverage
+names each test file the proof was made over (`gate_binding`, `step_standing`). That is the
+helper's own fix check (`fix_problem`) asked of the gate's step, so a red case gone missing does
+not bind; a step reporting no count - the house suites and the sweep - and a sweep's red files,
+whose per-file counts no row keeps, leave it unbound. The run's id goes to
+`redFirst.fixLegRunId` and a clause saying what the run showed to the basis; the block carries no
+`implementationDigest`, since no fix run of it read the implementation (`writer_prove` puts none
+on it, and the filing drops one a held block still carries). Any other run has the helper make
+the fix leg after all (`fix_leg_proof`, `red` without the flag), and that proof is held and filed
+whatever it says, its basis naming why the gate could not stand for the leg: a fix leg that
+could not prove files as `could-not-prove`, the way a first proof that could not prove always
+did, and only a helper that gave no block or refused goes back to the writer (`red_refused`).
+Because such a proof read no implementation file, `tree_since_proof` does not count one that
+moved as its drift (`by_gate_proof`). The `fbg` cases hold the ask, the binding, each fallback
+and both directions of the drift reading; `wi7` drives the bound path end to end, over a suite
+printing what pytest prints, where `wi4`'s house suite takes the fallback.
 
 ### `plugins/audit/scripts/governance/propose-gates.py`
 A plan proposal that reads what previous runs in THIS repository actually ran and what they
@@ -6891,8 +6903,12 @@ where it would have started one) and is still `proved` - no new word - its block
 `budget_clause` says why), and the labels a case id is graded against are read off the task run.
 The deadline is sized, and its fit judged, for the two runs the flag leaves (`BY_GATE_RUNS`, passed
 to `sized_deadline` as `runs`; `fit_problem` names the runs it was sized for). The block is
-filable only with the gate run bound to it (`_filed_returns.fix_leg_problem`); `fg1`-`fg5` hold
-the flag's runs and block in both directions, and `fg6`-`fg8` the deadline sized for two runs.
+filable only with the gate run bound to it (`_filed_returns.fix_leg_problem`), and what that run
+must show is in the payload under `FIX_LEG_OWES` (`fix_leg_owes`): the task run's collected count,
+each file a sweep graded red with its own count, and the files swept - written only beside a
+block that left its fix leg to the gate. `fg1`-`fg5` hold the flag's runs and block in both
+directions, `fg6`-`fg8` the deadline sized for two runs, and `fg9`/`fg10` the owed counts in both
+directions.
 
 ### `plugins/audit/scripts/governance/run-agent-session.py`
 One role run as a headless top-level Claude Code session in a task's tree, priced by the session's

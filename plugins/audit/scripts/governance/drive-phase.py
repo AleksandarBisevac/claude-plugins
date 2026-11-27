@@ -220,8 +220,13 @@ THE INVARIANT: the held proof records what it was made over - the HEAD its
 throwaway ran at, the `testDigest` of the task's declared test files (locked) and
 the `implementationDigest` of its declared implementation files, the ones the fix
 run read - and `tree_since_proof` is the one reading of whether those three still
-match. Every settle and `file_writer_return` itself ask it: a HEAD or a declared
-file that moved is proved again before anything is filed, the changed test files
+match. A proof that left its fix leg to the task gate (`red --fix-by-gate`) made
+no fix run, so it read no implementation: a change there is not its drift, its
+block carries no implementation digest, and the filing binds it to the green
+gate run that ran the proof's own command on the implementation as it stands
+(`gate_binding`) or has the helper make the leg first (`fix_leg_proof`). Every
+settle and `file_writer_return` itself ask it: a HEAD or a declared file the
+proof read that moved is proved again before anything is filed, the changed test files
 noted on the task - those whose code digest (`testCodeDigest`, held beside the
 proof) did not move noted as changed outside their code (comments only), since
 the helper replays the task leg for them; the lock itself stays on bytes. A file
@@ -5588,13 +5593,14 @@ def head_move(ctx, manifest, task, since, now, tree=None):
     return "writer" if hit else "other"
 
 
-def writer_test_command(manifest, phase, task):
-    """`(argv, None)` - the resolved gate command naming one of the task's
-    `tests.add` files, split into words: `_filed_returns.red_command`, the one
-    reader the executor's brief prints after `--` - or `(None, basis)` saying
-    why there is none. A task that owes no red-first proof
-    (`_filed_returns.owes_red_first`: not `tdd`, or its stored `expectRedFirst`
-    false) is `(None, None)`, whatever its `tests.add` names."""
+def writer_test_text(manifest, phase, task):
+    """`(command, None)` - the resolved gate command naming one of the task's
+    `tests.add` files, as the gate spells it: `_filed_returns.red_command`, the
+    one reader the executor's brief prints after `--`, and the spelling a
+    recorded run's step keeps (`gate_binding` looks the step up by it) - or
+    `(None, basis)` saying why there is none. A task that owes no red-first
+    proof (`_filed_returns.owes_red_first`: not `tdd`, or its stored
+    `expectRedFirst` false) is `(None, None)`, whatever its `tests.add` names."""
     tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
     added = _fr.tests_add_files(task)
     if not _fr.owes_red_first(task):
@@ -5608,6 +5614,16 @@ def writer_test_command(manifest, phase, task):
         return None, ("no gate entry of %s names its tests.add file (%s) as a "
                       "path, so no test command could be derived and no red was "
                       "run" % (task["id"], ", ".join(added)))
+    return cmd, None
+
+
+def writer_test_command(manifest, phase, task):
+    """`(argv, None)` - `writer_test_text`'s command split into words - or
+    `(None, basis)` as it answers, `(None, None)` for a task owing no proof."""
+    cmd, basis = writer_test_text(manifest, phase, task)
+    if cmd is None:
+        return None, basis
+    added = _fr.tests_add_files(task)
     try:
         return shlex.split(cmd), None
     except ValueError as exc:
@@ -5820,7 +5836,12 @@ def writer_prove(ctx, manifest, phase, task, tree=None, by_gate=True):
     if isinstance(digest, dict):
         block["testDigest"] = digest
     impl = payload.get("implementationDigest") if isinstance(payload, dict) else None
-    if isinstance(impl, dict):
+    # A FIX LEG LEFT TO THE GATE READ NO IMPLEMENTATION, so its block names
+    # none: the bytes the helper hashed are the round's it was asked in, and
+    # the gate the filing binds (`gate_binding`) is the run that read the
+    # implementation the return is filed with - a digest from here would name
+    # other bytes than those once a later round moved only the implementation.
+    if isinstance(impl, dict) and not by_gate_proof(block):
         block["implementationDigest"] = impl
     return block, dict(payload or {}, implementationDigest=impl), None
 
@@ -5828,21 +5849,32 @@ def writer_prove(ctx, manifest, phase, task, tree=None, by_gate=True):
 def hold_proof(ctx, state, task, block, payload=None):
     """Hold `block` as the proof the writer's return is filed with, beside what
     it was proved over: the HEAD, the test digest (locked, bytes), the digest
-    of the implementation files the fix run read, and the test files' code
-    digest the helper keyed the task leg on (`testCodeDigest`), which only
-    words a later re-proof (`comment_only`) and moves no lock."""
+    of the implementation files the fix run read, the test files' code digest
+    the helper keyed the task leg on (`testCodeDigest`), which only words a
+    later re-proof (`comment_only`) and moves no lock, and what a gate run must
+    show to stand for a fix leg the proof left to it (`fixLegOwes`, the task
+    leg's own counts - `gate_binding` reads them)."""
     held = writer_state(state, task)
     impl = (payload or {}).get("implementationDigest")
     test_code = (payload or {}).get("testCodeDigest")
+    owes = (payload or {}).get(FIX_LEG_OWES)
     held["proof"] = {"block": block, "printed": ctx.get("printed"),
                      "head": block.get("head"),
                      "implementation": impl if isinstance(impl, dict) else None,
-                     "testCode": test_code if isinstance(test_code, dict) else None}
+                     "testCode": test_code if isinstance(test_code, dict) else None,
+                     FIX_LEG_OWES: owes if isinstance(owes, dict) else None}
     digest = block.get("testDigest")
     held["lock"] = dict(digest, at=block.get("at")) if isinstance(digest, dict) \
         else None
     _mark(state, "writer", task, held)
     write_state(ctx, state)
+
+
+# The key `stamp-verification.py red --fix-by-gate` puts its task leg's counts
+# under in the payload, and the held proof keeps them under: what a gate run
+# must show to stand for the fix leg (`step_standing`). Spelled again in the
+# helper, which this entry point cannot import; `fbg16` holds the two equal.
+FIX_LEG_OWES = "fixLegOwes"
 
 
 def by_gate_proof(block):
@@ -5861,58 +5893,138 @@ def proof_test_paths(block):
         if isinstance(f, dict) and isinstance(f.get("path"), str)))
 
 
-def gate_binding(ctx, state, task, block):
-    """`(runId, None)` - the green recorded task-gate run the writer's return is
-    filed over (the `gated` mark's), when that run named each test file the
-    fix-by-gate proof `block` was made over, whole: so the gate ran the proof's
-    tests on the implementation the return is filed with, which is the fix
-    leg's question - or `(None, why)`.
+def _is_count(value):
+    """Whether `value` is a count a row or a payload holds: an int, not a bool."""
+    return isinstance(value, int) and not isinstance(value, bool)
 
-    NAMED WHOLE: the file's own path is among the declared files the run's
-    coverage recorded (`observations.coverage`, the gate's "declared file(s)
-    named by the run" line), matched as `_evidence_io.listed_by` matches a
-    suite. A run naming only a source the test is named after did not show
-    that test passing, and a run with no coverage reading shows nothing."""
+
+def proof_steps(row, command):
+    """The steps of the recorded run `row` that ran `command`, in step order:
+    the row keeps a command the plan publishes verbatim and any other as its
+    digest (`_journal_io.command_facts`), so either spelling is matched."""
+    digest = _journal_io.command_facts(command)["commandSha256"]
+    return [s for s in (row or {}).get("steps") or [] if isinstance(s, dict)
+            and (s.get("command") == command or s.get("commandSha256") == digest)]
+
+
+def step_standing(run_id, step, command, owes):
+    """Why the recorded step `step` of run `run_id`, which ran the proof's own
+    `command`, cannot stand for the fix leg the helper's `fixLegOwes` (`owes`)
+    describes, or None. The fix leg's question - every case of the task's run
+    passing on the working tree's code, none gone missing instead - is asked of
+    the step the way the helper's own fix check asks it of a fix run
+    (`fix_problem`): exit 0 with a verdict, and at least as many checks as the
+    task's run collected. A count the step does not report, or a sweep's
+    per-file count a row does not keep, leaves the question open."""
+    said = "run %s's step `%s`" % (run_id, command)
+    if _evio.step_repeated(step):
+        return "%s repeated another run's measurement rather than ran" % (said,)
+    if step.get("outcome") or step.get("exit") != 0:
+        return "%s did not pass (exit %s%s)" % (
+            said, step.get("exit"), ", %s" % (step["outcome"],)
+            if step.get("outcome") else "")
+    if step.get("muted"):
+        return "%s passed with suites muted" % (said,)
+    collected = (owes or {}).get("collected")
+    if not _is_count(collected):
+        return ("the proof records no count of its task leg's cases, so %s "
+                "cannot be read for a failing case gone missing" % (said,))
+    if not _is_count(step.get("ran")):
+        return ("%s reported no count of the checks it ran (%s), so a failing "
+                "case may be missing rather than passing"
+                % (said, step.get("measured") or "no reading"))
+    if step["ran"] < collected:
+        return ("%s ran %d check(s) and the task leg collected %d, so a failing "
+                "case may be missing rather than passing"
+                % (said, step["ran"], collected))
+    red_files = (owes or {}).get("redFiles")
+    if isinstance(red_files, dict) and red_files and owes.get("files") != 1:
+        return ("the task leg's sweep graded %s red, and a recorded run keeps no "
+                "per-file count, so %s cannot show each of those files' cases "
+                "passing" % (", ".join(sorted(red_files)), said))
+    return None
+
+
+def gate_binding(ctx, state, manifest, phase, task, proof):
+    """`(runId, clause, None)` - the green recorded task-gate run the writer's
+    return is filed over (the `gated` mark's), when it stands for the fix leg
+    the held fix-by-gate `proof` left to it, and the basis clause saying what
+    that run showed - or `(None, None, why)`.
+
+    IT STANDS WHEN IT RAN THE PROOF'S OWN COMMAND: a step of the run whose
+    command is the one the helper proved the red with (`writer_test_text`),
+    passing as `step_standing` reads it - so a gate entry left to the phase
+    gate (`executor.phaseGateOnly`), or narrowed into another spelling, is no
+    step of the run and binds nothing - and when the run named each test file
+    the proof was made over, whole: among the declared files its coverage
+    recorded (`observations.coverage`), matched as `_evidence_io.listed_by`
+    matches a suite. A row keeps no coverage per step, so the file is read off
+    the run's whole reading; the step is the proof's own command, which is the
+    one the helper's fix leg would have run."""
+    block = proof.get("block") or {}
     paths = proof_test_paths(block)
     if not paths:
-        return None, "the proof names no test file it was made over"
+        return None, None, "the proof names no test file it was made over"
+    command, why = writer_test_text(manifest, phase, task)
+    if command is None:
+        return None, None, why or "the task owes no red-first proof"
     held = _marked(state, "gated", task)
     run_id = held.get("runId") if isinstance(held, dict) else None
     if not run_id:
-        return None, "no recorded green task-gate run is held for %s" % (task["id"],)
+        return None, None, ("no recorded green task-gate run is held for %s"
+                            % (task["id"],))
     row, why = ledger_row(ctx, run_id)
     if row is None:
-        return None, "run %s: %s" % (run_id, why)
+        return None, None, "run %s: %s" % (run_id, why)
     if row.get("status") != _evio.RUN_PASSED:
-        return None, "run %s is %s, not %s" % (
+        return None, None, "run %s is %s, not %s" % (
             run_id, row.get("status") or "of no status", _evio.RUN_PASSED)
+    steps = proof_steps(row, command)
+    if not steps:
+        return None, None, ("run %s ran no step of the proof's command `%s` (left "
+                            "to the phase gate, spelled otherwise, or not in the "
+                            "task's gate), so it did not show the proof's tests "
+                            "passing" % (run_id, command))
+    owes = proof.get(FIX_LEG_OWES)
+    for step in steps:
+        why = step_standing(run_id, step, command, owes)
+        if why is not None:
+            return None, None, why
     named = (row.get("observations") or {}).get("coverage")
     if not isinstance(named, list):
-        return None, ("run %s recorded no coverage of the declared files, so "
-                      "whether it ran %s is not known" % (run_id, ", ".join(paths)))
+        return None, None, ("run %s recorded no coverage of the declared files, "
+                            "so whether it ran %s is not known"
+                            % (run_id, ", ".join(paths)))
     missing = [p for p in paths if not _evio.listed_by(p, named)]
     if missing:
-        return None, "run %s did not name %s" % (run_id, ", ".join(missing))
-    return run_id, None
+        return None, None, "run %s did not name %s" % (run_id, ", ".join(missing))
+    ran = min(s["ran"] for s in steps)
+    return run_id, (
+        "; fix leg: the task gate's green run %s, held for this start, ran the "
+        "proof's command `%s` as a step of its own, exit 0 over %d check(s) - "
+        "no fewer than the task leg's %d collected - and named %s, on the "
+        "implementation the return is filed with" % (
+            run_id, command, ran, owes["collected"], ", ".join(paths))), None
 
 
 def fix_leg_proof(ctx, state, manifest, phase, task, why, tree=None):
     """Replace the held fix-by-gate proof with one whose fix leg the helper
     makes, as an executor's proof makes it, because the task gate cannot stand
-    for that leg (`why`, `gate_binding`'s). None once it is held, else the
-    decision a proof that did not hold asks (`red_refused`)."""
+    for that leg (`why`, `gate_binding`'s), which the block's basis then says.
+    None once it is held - a block that cannot prove included, filed as a
+    first proof that could not prove is - else the decision a helper that gave
+    no block or refused asks (`red_refused`)."""
     block, payload, refused = writer_prove(ctx, manifest, phase, task, tree,
                                            by_gate=False)
     queue_proof_stage(ctx, state, task)
     if refused is not None:
         return red_refused(ctx, state, task, refused)
-    if block.get("status") != "proved":
-        return red_refused(ctx, state, task, "the proof with its fix leg (%s) is "
-                           "%s: %s" % (why, block.get("status"), " ".join(
-                               str(block.get("basis") or "").split())))
+    block = dict(block, basis="%s; the fix leg was made here because the task "
+                 "gate could not stand for it: %s" % (
+                     str(block.get("basis") or ""), why))
     hold_proof(ctx, state, task, block, payload)
-    ctx["did"].append("%s: red-first fix leg made by the helper - %s"
-                      % (task["id"], why))
+    ctx["did"].append("%s: red-first fix leg made by the helper, %s - %s"
+                      % (task["id"], block.get("status"), why))
     return None
 
 
@@ -6174,10 +6286,16 @@ def file_writer_return(ctx, state, manifest, phase, task, tree=None):
     file-return` with the held proof, once the recorded gate is green; None
     when it is filed, else the stop."""
     # THE INVARIANT: a return is filed only with a proof made over the HEAD and
-    # the declared test and implementation files it is filed with. A HEAD or a
-    # declared file that moved since the held proof is proved again first (or
-    # goes back to the writer); an undeclared file is commit-task-work's to
-    # refuse, which the writer's close meets by setting it aside (`settle_aside`).
+    # the declared test files it is filed with, and over the declared
+    # implementation files too when the proof made its own fix leg. A HEAD or
+    # such a file that moved since the held proof is proved again first (or
+    # goes back to the writer). A proof that left its fix leg to the task gate
+    # read no implementation, so a change there is not its drift: it is filed
+    # bound to the green gate run that ran its own command on the
+    # implementation as it stands (`gate_binding`), carrying no implementation
+    # digest, or has the helper make the leg first. An undeclared file is
+    # commit-task-work's to refuse, which the writer's close meets by setting
+    # it aside (`settle_aside`).
     stop = prove_and_hold(ctx, state, manifest, phase, task, "before the filing",
                           tree)
     if stop is not None:
@@ -6192,10 +6310,11 @@ def file_writer_return(ctx, state, manifest, phase, task, tree=None):
     # its id goes on the block (`_filed_returns.fix_leg_problem` refuses the
     # block without one). A run that cannot stand for the leg has the helper
     # make it instead, so the return still files a whole proof.
-    bound = None
-    held_block = (writer_state(state, task).get("proof") or {}).get("block")
-    if by_gate_proof(held_block):
-        bound, why = gate_binding(ctx, state, task, held_block)
+    bound = said = None
+    held_proof = writer_state(state, task).get("proof") or {}
+    if by_gate_proof(held_proof.get("block")):
+        bound, said, why = gate_binding(ctx, state, manifest, phase, task,
+                                        held_proof)
         if bound is None:
             stop = fix_leg_proof(ctx, state, manifest, phase, task, why, tree)
             if stop is not None:
@@ -6204,7 +6323,14 @@ def file_writer_return(ctx, state, manifest, phase, task, tree=None):
     proof = held.get("proof") or {}
     block = proof.get("block") or {}
     if bound is not None:
-        block = dict(block, **{_fr.FIX_LEG_RUN_FIELD: bound})
+        # The bound run is what read the implementation, so a digest of it
+        # held from the round the proof was asked in - which `writer_prove`
+        # no longer puts on such a block, but a proof held before it stopped
+        # may carry - is not filed as though the proof had read those bytes.
+        block = dict([(k, v) for k, v in block.items()
+                      if k != "implementationDigest"],
+                     basis=str(block.get("basis") or "") + said,
+                     **{_fr.FIX_LEG_RUN_FIELD: bound})
         ctx["did"].append("%s: red-first fix leg bound to the task gate's run %s"
                           % (task["id"], bound))
     paths = diff_paths(ctx, phase, tree)

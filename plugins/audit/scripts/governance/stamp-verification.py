@@ -4975,6 +4975,10 @@ def run_red(args, cmd, out):
                        "seconds": (made.get("task") or {}).get("seconds"),
                        "head": _run_record(run["head"]),
                        "fix": _run_record(run["fix"])}}
+    owes = fix_leg_owes(run, cmd) if block is not None \
+        and block.get(_filed_returns.FIX_LEG_FIELD) else None
+    if owes is not None:
+        payload[FIX_LEG_OWES] = owes
     if args.as_json:
         out(json.dumps(payload, indent=2, sort_keys=True))
     else:
@@ -5007,6 +5011,32 @@ def run_red(args, cmd, out):
 # from its absence; the others appear only when the proof made them.
 LEG_ORDER = ("baseline", "task", "task-held", "task-support", "second", "fix")
 CORE_LEGS = ("baseline", "task", "fix")
+
+
+# The payload key a `--fix-by-gate` proof states its task leg's counts under:
+# what the gate run its filer binds must show, as `fix_problem` asks it of a fix
+# run - every case of the task's run passing, none gone missing instead. The
+# drive reads it under the same spelling (`drive-phase.py`'s own copy, held
+# equal to this one by a case in its suite).
+FIX_LEG_OWES = "fixLegOwes"
+
+
+def fix_leg_owes(run, cmd):
+    """`{"collected", "redFiles", "files"}` - the task leg's collected count,
+    each file a sweep graded red with its own count (`sweep_red_counts`, empty
+    for any other run) and the files the sweep swept (None for a run that is
+    not one) - for a proof whose fix leg was left to the task gate
+    (`fixByGate`) over a task run that tallied; None otherwise, so the key is
+    written only where a gate owes it."""
+    if not run.get("fixByGate") or run.get("problem") is not None \
+            or run.get("text") is None:
+        return None
+    tally = _runner_output.read_run_tally(run["text"], cmd)
+    if tally is None or tally.get("collected") is None:
+        return None
+    return {"collected": tally["collected"],
+            "redFiles": sweep_red_counts(run["text"]),
+            "files": tally.get("files")}
 
 
 def red_legs(made, problem, by_gate=False):

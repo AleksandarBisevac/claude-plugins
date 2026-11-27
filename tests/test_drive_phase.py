@@ -1351,6 +1351,42 @@ def _module_bytecode(root, name):
     return sorted(found)
 
 
+def _wf_pytest_suite(cases):
+    """`_wf_suite`'s cases as a suite that prints what pytest prints: the file's
+    path with a mark per case, a `FAILED <file>::<case>` line per failure and
+    the `N failed, M passed in Ts` summary, each case a `test_<label>` function
+    of its own. It is the shape whose run a gate counts and names the file
+    by, which a house suite's is not - so a gate run of it can stand for a
+    fix leg (`gate_binding`) where a house suite's sends the drive back to the
+    helper."""
+    body = ["import os, sys", "sys.dont_write_bytecode = True",
+            "sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath("
+            "__file__)), '..', 'src'))", "import mine"]
+    for label, cond in cases:
+        body += ["", "", "def test_%s():" % (label,), "    assert %s" % (cond,)]
+    body += ["", "", "if __name__ == '__main__':",
+             "    names = [%s]" % (", ".join(repr("test_" + l) for l, _c in cases),),
+             "    failed = []",
+             "    marks = ''",
+             "    for name in names:",
+             "        try:",
+             "            globals()[name]()",
+             "            marks += '.'",
+             "        except AssertionError:",
+             "            marks += 'F'",
+             "            failed.append(name)",
+             "    print('%s %%s' %% (marks,))" % (_WF_TEST,),
+             "    for name in failed:",
+             "        print('FAILED %s::%%s - AssertionError' %% (name,))"
+             % (_WF_TEST,),
+             "    said = (['%d failed' % len(failed)] if failed else []) + (",
+             "        ['%d passed' % (len(names) - len(failed))]",
+             "        if len(names) > len(failed) else [])",
+             "    print('=== %s in 0.01s ===' % (', '.join(said),))",
+             "    sys.exit(1 if failed else 0)"]
+    return "\n".join(body) + "\n"
+
+
 _WF_HEAD_TEST = _wf_suite([("old1", "mine.v >= 1")])
 _WF_NEW_TEST = _wf_suite([("old1", "mine.v >= 1"), ("new1", "mine.v == 2")])
 
@@ -1362,13 +1398,14 @@ def _wf_gate():
 
 
 def _tdd_writer_repo(prefix, gate, description=None, per_task="always",
-                     review=None, skills=None):
+                     review=None, skills=None, head_test=None):
     """A one-task plan whose task is tdd over `src/mine.py` and its suite,
     under a writer session: HEAD holds `v = 1` and a suite whose one case
-    passes there. `gate` is the task's and the phase's gate; `description`
-    replaces the task's, which numbers no acceptance clause of its own.
-    `per_task` is `review.perTask`, and `review` more keys of the config's
-    `review` block, committed with the fixture."""
+    passes there (`head_test`, else the house-shaped `_WF_HEAD_TEST`). `gate`
+    is the task's and the phase's gate; `description` replaces the task's,
+    which numbers no acceptance clause of its own. `per_task` is
+    `review.perTask`, and `review` more keys of the config's `review` block,
+    committed with the fixture."""
     root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=gate,
                         executor=WRITER_EXECUTOR, per_task=per_task)
     if review:
@@ -1384,7 +1421,7 @@ def _tdd_writer_repo(prefix, gate, description=None, per_task="always",
     with open(os.path.join(root, ".gitignore"), "a", encoding="utf-8") as fh:
         fh.write("__pycache__/\n")
     _write_lf(os.path.join(root, *_WF_SRC.split("/")), "v = 1\n")
-    _write_lf(os.path.join(root, *_WF_TEST.split("/")), _WF_HEAD_TEST)
+    _write_lf(os.path.join(root, *_WF_TEST.split("/")), head_test or _WF_HEAD_TEST)
     with open(mpath, encoding="utf-8") as fh:
         plan = json.load(fh)
     task = plan["phases"][0]["tasks"][0]
@@ -3930,6 +3967,40 @@ def _proved_then_red(M, root, mpath, bindir, log):
                   edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST}, result=_said("zero"))
 
 
+def _writer_bound_case(check, M, bindir, log):
+    """wi4 on the path the writer's proof takes when the gate can stand for
+    its fix leg: wi4's house suite prints no path and no count a gate reads, so
+    every one of its filings has the helper make the fix leg, and the
+    implementation digest it asserts is that leg's. Here the suite prints what
+    pytest prints, so the green gate ran the proof's own command over a count
+    and named the test file: the block is filed bound to that run, after a
+    resume round that changed only the implementation, with no re-proof."""
+    gate = (_wf_gate(), "grep -q fixed src/mine.py")
+    root, mpath = _tdd_writer_repo(
+        "wi-bound", gate, head_test=_wf_pytest_suite([("old1", "mine.v >= 1")]))
+    _signal_next(M, root, mpath)
+    _writer_round(M, root, mpath, bindir, log, "0.57",
+                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _wf_pytest_suite(
+                      [("old1", "mine.v >= 1"), ("new1", "mine.v == 2")])},
+                  result=_said("zero"))
+    _signal_next(M, root, mpath, "--answer", "resume")
+    _writer_round(M, root, mpath, bindir, log, "0.58",
+                  edit={_WF_SRC: "v = 2  # fixed\n"}, result=_said("one"))
+    red = (_filed_body(mpath, "P1.1") or {}).get("redFirst") or {}
+    basis = str(red.get("basis") or "")
+    check("wi7 a resume round that changed only the implementation, under a gate "
+          "whose run of the proof's command counts its cases and names the test "
+          "file: the filed block is bound to that green run, names no "
+          "implementation digest (no fix run of it read one), and says what the "
+          "run showed: %r" % (red,),
+          red.get("status") == "proved"
+          and red.get(_fr.FIX_LEG_FIELD) == _fr.FIX_LEG_BY_GATE
+          and bool(red.get(_fr.FIX_LEG_RUN_FIELD))
+          and "implementationDigest" not in red
+          and ("run %s" % (red.get(_fr.FIX_LEG_RUN_FIELD),)) in basis
+          and "2 check(s)" in basis and "named %s" % (_WF_TEST,) in basis)
+
+
 def _writer_invariant_cases(check):
     """THE INVARIANT: a writer's return is filed only with a proof made over the
     HEAD and the declared test and implementation files it is filed with -
@@ -4007,6 +4078,7 @@ def _writer_invariant_cases(check):
     check("wi5 a tree that moved after the round settled, before the green gate, "
           "is proved again by the filing itself before it files: %r" % (impl_f,),
           impl_f == {_WF_SRC: _sha_of(root_f, _WF_SRC)})
+    _writer_bound_case(check, M, bindir, log)
 
     root_b, mpath_b = _tdd_writer_repo("wi-noresult", gate)
     _proved_then_red(M, root_b, mpath_b, bindir, log)
@@ -17631,18 +17703,44 @@ def _fix_by_gate_units(check):
     full = json.dumps({"redFirst": {"status": "proved", "basis": "new1 red",
                                     "at": "z"},
                        "legs": _PROOF_LEGS, "printed": ["new1 mine.v == 2"]})
+    impl = {"sha256": "sha256:i", "files": [{"path": src, "sha256": "sha256:r0"}]}
+    owes = {"collected": 2, "redFiles": {}, "files": None}
     by_gate = json.dumps({"redFirst": {
         "status": "proved", "basis": "new1 red; no fix run made here",
         "at": "z", _fr.FIX_LEG_FIELD: _fr.FIX_LEG_BY_GATE},
-        "legs": _PROOF_LEGS, "printed": ["new1 mine.v == 2"]})
+        "legs": _PROOF_LEGS, "printed": ["new1 mine.v == 2"],
+        "implementationDigest": impl, M.FIX_LEG_OWES: owes})
     # The writer path's ask.
     M.run_verb, calls = _verb_rig({("stamp-verification.py", "red"): (
         0, by_gate, "")})
-    _caught(M.writer_prove, _step_ctx(), plan_u, phase, task_u)
+    proved = _caught(M.writer_prove, _step_ctx(), plan_u, phase, task_u)
     asked = _red_argv(calls)
     check("fbg1 the writer path asks the helper for `red --fix-by-gate`, once: "
           "%r" % (asked,),
           len(asked) == 1 and "--fix-by-gate" in _helper_flags(asked[0]))
+    state = {}
+    if isinstance(proved, tuple) and proved[0] is not None:
+        M.hold_proof(_step_ctx(), state, task_u, proved[0], proved[1])
+    held = M.writer_state(state, task_u).get("proof") or {}
+    M.run_verb, _calls_w = _verb_rig({("stamp-verification.py", "red"): (
+        0, json.dumps(dict(json.loads(full), implementationDigest=impl)), "")})
+    whole = _caught(M.writer_prove, _step_ctx(), plan_u, phase, task_u,
+                    by_gate=False)
+    check("fbg14 a fix-by-gate block carries no implementation digest - the "
+          "helper hashed bytes no fix run of it read - while the held proof keeps "
+          "what the gate owes it (`fixLegOwes`); a block that made its own fix "
+          "leg still carries the digest (the other direction): %r"
+          % ((proved, whole, held.get(M.FIX_LEG_OWES)),),
+          isinstance(proved, tuple) and isinstance(whole, tuple)
+          and "implementationDigest" not in (proved[0] or {})
+          and (whole[0] or {}).get("implementationDigest") == impl
+          and held.get(M.FIX_LEG_OWES) == owes)
+    helper = _loader.load_script("stamp-verification.py",
+                                 "stamp_verification_fbg", cache=False)
+    check("fbg16 the key the drive reads a fix-by-gate proof's owed counts "
+          "under is the one the helper writes them under: %r"
+          % ((M.FIX_LEG_OWES, getattr(helper, "FIX_LEG_OWES", None)),),
+          getattr(helper, "FIX_LEG_OWES", None) == M.FIX_LEG_OWES)
     # The executor path's ask: the other direction, a flag that leaked into
     # every proof the drive asks for.
     ctx, calls_s = _submit_rig(M, task_u, {("stamp-verification.py", "red"): (
@@ -17665,12 +17763,15 @@ def _fix_by_gate_units(check):
 
 
 def _fix_by_gate_filing_units(check, M, task_u, phase, plan_u, full):
-    """`file_writer_return` over a held fix-by-gate proof, under four recorded
-    runs: green naming the test file (bound), green naming only the source,
-    green with no coverage read, and red - the last three each make the fix leg
-    with the helper first."""
+    """`file_writer_return` over a held fix-by-gate proof, under recorded runs:
+    green with the proof's own step passing over at least the task leg's count
+    and naming the test file (bound), and every way short of that - each of
+    which makes the fix leg with the helper first, and files what it makes,
+    a fix leg that cannot prove included."""
     rel = "tests/test_mine.py"
-    held_block = {"status": "proved", "basis": "new1 red; no fix run made here",
+    held_block = {"status": "proved",
+                  "basis": "`true` in a throwaway tree at HEAD exited 1 with "
+                           "new1 red; no fix run made here",
                   "at": "y", "head": "abc1234", "source": _fr.HELPER_SOURCE,
                   _fr.FIX_LEG_FIELD: _fr.FIX_LEG_BY_GATE,
                   "testDigest": {"sha256": "sha256:t", "files": [
@@ -17679,21 +17780,28 @@ def _fix_by_gate_filing_units(check, M, task_u, phase, plan_u, full):
     M.diff_paths = lambda ctx, phase_, tree=None: ["src/mine.py", rel]
     M.writer_claim = lambda state, task_: ("claim", None)
     M.carried_paths = lambda ctx, phase_, task_, tree=None: ([], [], None)
+    # The proof's own command, as the gate entry naming the test file spells
+    # it: the step a bound run must hold is the one running exactly this.
+    M.writer_test_text = lambda manifest, phase_, task_: ("true", None)
     M._cc = types.SimpleNamespace(
         task_clauses=lambda task_: [],
         check=lambda *a, **k: {"covered": True, "declined": []})
+    # The proof's own step, passing over more checks than the task leg
+    # collected (`fixLegOwes` below), so only the field a case changes decides.
+    step = {"name": "true", "command": "true", "exit": 0, "ran": 3,
+            "measured": "checks"}
 
-    def filed_over(row, block):
+    def filed_over(row, block, fallback=None):
         M.recorded_runs = lambda ctx: {"rows": [row]}
         M.run_verb, calls = _verb_rig({
-            ("stamp-verification.py", "red"): (0, full, ""),
+            ("stamp-verification.py", "red"): (0, fallback or full, ""),
             ("stamp-verification.py", "take"): (0, _TAKEN, ""),
             ("audit-task.py", "file-return"): (0, "filed\n", "")})
         state = {}
         held = M.writer_state(state, task_u)
         held["proof"] = {"block": dict(block), "head": "abc1234",
                          "printed": ["new1 mine.v == 2"], "implementation": None,
-                         "testCode": None}
+                         "testCode": None, "fixLegOwes": {"collected": 2}}
         M._mark(state, "writer", task_u, held)
         M._mark(state, "gated", task_u, {"runId": row["runId"], "at": _STEP_START,
                                          "tree": None, "failing": []})
@@ -17703,31 +17811,66 @@ def _fix_by_gate_filing_units(check, M, task_u, phase, plan_u, full):
         red = (bodies[0].get("redFirst") or {}) if len(bodies) == 1 else {}
         return out, _red_argv(calls), red, list(ctx.get("did") or []), len(bodies)
 
-    named = {"runId": "R7", "status": _evio.RUN_PASSED,
+    named = {"runId": "R7", "status": _evio.RUN_PASSED, "steps": [dict(step)],
              "observations": {"coverage": ["src/mine.py", rel]}}
-    out, asked, red, did, count = filed_over(named, held_block)
+    out, asked, red, did, count = filed_over(named, dict(
+        held_block, implementationDigest={"files": [
+            {"path": "src/mine.py", "sha256": "sha256:round0"}]}))
+    basis = str(red.get("basis") or "")
     check("fbg3 a held fix-by-gate proof is filed over the green recorded run "
-          "that named its test file whole: the block keeps `fixLeg: task-gate`, "
-          "carries the run's id, and no helper run is made at the filing: %r"
+          "whose own step of the proof's command passed and that named its test "
+          "file whole: the block keeps `fixLeg: task-gate`, carries the run's "
+          "id, says in its basis what that run showed (the step, its count "
+          "against the task leg's), carries no implementation digest of a round "
+          "no fix run read, and no helper run is made at the filing: %r"
           % ((out, asked, red, count),),
           out is None and count == 1 and asked == []
           and red.get(_fr.FIX_LEG_FIELD) == _fr.FIX_LEG_BY_GATE
           and red.get(_fr.FIX_LEG_RUN_FIELD) == "R7"
-          and red.get("status") == "proved")
+          and red.get("status") == "proved"
+          and "implementationDigest" not in red
+          and basis.startswith(held_block["basis"])
+          and "run R7" in basis and "`true`" in basis
+          and "3 check(s)" in basis and "2 collected" in basis)
+    digested = dict(named, runId="R7d", steps=[dict(
+        [(k, v) for k, v in step.items() if k != "command"],
+        commandSha256=hashlib.sha256(b"true").hexdigest(), commandBytes=4,
+        program="true")])
+    out, asked, red, did, count = filed_over(digested, held_block)
+    check("fbg15 a run whose row keeps the proof's command as its digest - the "
+          "spelling a command the plan does not publish gets - binds the same: "
+          "%r" % ((out, asked, red.get(_fr.FIX_LEG_RUN_FIELD)),),
+          out is None and count == 1 and asked == []
+          and red.get(_fr.FIX_LEG_RUN_FIELD) == "R7d")
     for case, row in (
-            ("fbg4", {"runId": "R8", "status": _evio.RUN_PASSED,
-                      "observations": {"coverage": ["src/mine.py"]}}),
-            ("fbg5", {"runId": "R9", "status": _evio.RUN_PASSED,
-                      "observations": {"coverage": None}}),
-            ("fbg6", {"runId": "R10", "status": "failed",
-                      "observations": {"coverage": ["src/mine.py", rel]}})):
+            ("fbg4", dict(named, runId="R8",
+                          observations={"coverage": ["src/mine.py"]})),
+            ("fbg5", dict(named, runId="R9", observations={"coverage": None})),
+            ("fbg6", dict(named, runId="R10", status="failed")),
+            # A step of another command naming the test file is all the run
+            # holds: the proof's own step was left out (to the phase gate) or
+            # never declared, so nothing showed its tests passing.
+            ("fbg11", dict(named, runId="R11", steps=[
+                {"name": "lint", "command": "ruff check " + rel, "exit": 0,
+                 "ran": 9, "measured": "checks"}])),
+            # The proof's step ran fewer checks than the task leg collected: a
+            # failing case may have gone missing rather than passing.
+            ("fbg12", dict(named, runId="R12", steps=[dict(step, ran=1)])),
+            # ...and one that printed no count it could be read for.
+            ("fbg13", dict(named, runId="R13", steps=[dict(
+                step, ran=None, measured="not-knowable")]))):
         out, asked, red, did, count = filed_over(row, held_block)
         check("%s a recorded run that %s binds nothing: the drive asks the "
               "helper for the fix leg - one `red` without --fix-by-gate - and "
               "files that proof, no `fixLeg` and no run id on it, saying why: %r"
               % (case, {"fbg4": "named only the source, not the test file",
                         "fbg5": "read no coverage",
-                        "fbg6": "was not green"}[case],
+                        "fbg6": "was not green",
+                        "fbg11": "named the test file through another step, the "
+                                 "proof's own step absent,",
+                        "fbg12": "ran the proof's step over fewer checks than "
+                                 "the task leg collected",
+                        "fbg13": "ran the proof's step with no count"}[case],
                  (out, asked, red, did, count)),
               out is None and count == 1 and len(asked) == 1
               and "--fix-by-gate" not in _helper_flags(asked[0])
@@ -17735,6 +17878,27 @@ def _fix_by_gate_filing_units(check, M, task_u, phase, plan_u, full):
               and _fr.FIX_LEG_FIELD not in red
               and _fr.FIX_LEG_RUN_FIELD not in red
               and any(row["runId"] in d and "fix leg" in d for d in did))
+    # A fix leg the helper could not make (its run timed out) answers with a
+    # could-not-prove block: that is filed, as a first proof that could not
+    # prove always was, never sent back to the writer as a red to fix.
+    cannot = json.dumps({"redFirst": {
+        "status": "could-not-prove", "at": "z",
+        "basis": "`true` in a throwaway tree at HEAD exited 1 with failing "
+                 "cases new1, but the fix run could not be made: the run timed "
+                 "out after 143 s"}, "legs": _PROOF_LEGS,
+        "printed": ["new1 mine.v == 2"]})
+    out, asked, red, did, count = filed_over(dict(
+        named, runId="R14", observations={"coverage": None}), held_block, cannot)
+    basis = str(red.get("basis") or "")
+    check("fbg10 a writer return whose gate cannot be bound and whose fix leg "
+          "the helper cannot make is filed once as could-not-prove - not a "
+          "red-refused decision - its basis the helper's, then why the gate could "
+          "not stand for the leg: %r" % ((out, asked, red, count),),
+          out is None and count == 1 and len(asked) == 1
+          and red.get("status") == "could-not-prove"
+          and _fr.FIX_LEG_FIELD not in red
+          and basis.startswith("`true` in a throwaway tree at HEAD")
+          and "timed out" in basis and "R14" in basis)
     # THE OVER-FIRE TWIN: a proof the helper made whole (an executor-shaped
     # block, no fixLeg) is filed as it is - no run id bound to a fix leg it
     # ran itself, and no second helper run.
