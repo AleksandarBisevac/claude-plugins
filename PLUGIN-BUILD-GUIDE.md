@@ -5098,27 +5098,42 @@ and `--full` take no stage at all. The pre-gate's command is kept verbatim on th
 of what a repeat must match. The `pre` cases in `tests/test_run_test_gate.py` drive each arm
 through `main`.
 
-**A task's re-gate after a red runs that red's suites first, and their red stops the gate.**
-Under `--task` (not `--own`), a run that measures rather than repeats reads the task's newest
-recorded run (`last_task_row`: no base run, no `--full` run, a repeat read through the run it
-repeats); when that run was red, `red_first_stage` narrows each red step to the suites its runner
-named, the way a base run does (`_declared_suites_at_base`, `_derived_at_base`,
-`_joined_at_base`), and `run_gate` runs those commands after the pre-gate and before the gate,
-each named behind `RED_FIRST_PREFIX`. A stage step that does not come back green stops the gate:
-every step after it is recorded under its own name by `not_run_step`, its basis
-`RED_FIRST_NOT_RUN` and its `stoppedBy` the stage step, and the run is `failed` on the stage alone.
-A stage that ran whole and green leaves `steps` - it is carried on `res["redFirstStage"]` in this
-process and the `--json` answer, and its output and followers leave the row with it, so no file
-only the stage named counts towards the run's coverage - so the counts, the verdict and the declared gate the commit
-binding reads are the gate's own; that run measures the whole gate, and a part repeat the
+**A task's re-gate after a red runs that red's suites beside the gate, once, and their red stops
+the gate.** Under `--task` (not `--own`), a run that measures rather than repeats reads the task's
+newest recorded run (`last_task_row`: no base run, no `--full` run, a repeat read through the run
+it repeats); when that run was red, `red_first_stage` narrows each red step to the suites its
+runner named, the way a base run does (`_declared_suites_at_base`, `_derived_at_base`,
+`_joined_at_base`), and `run_gate` runs those commands after the pre-gate, in a thread beside the
+gate's steps (`_run_beside`), each named behind `RED_FIRST_PREFIX`. Run ahead of the gate, the
+stage's wall was added to the gate's and the gate ran the red suite again; beside it, and with
+those suites taken out of every gate step that is the plan's recorded spelling over a path list
+still holding another path once they are gone (`red_first_beside`), the suite runs once and a
+green re-gate costs about the longer of the two. A step whose path list is nothing but those
+suites, and the bare form of the spelling, which lists no path to take out, keep them, each said
+once; a step listing none of them is untouched. A narrowed declared command is published on the
+row as a per-suite base command is (`_narrowed_published`). A stage step that does not come back
+green stops the gate: the gate step in flight is torn down by its runner's stop event (`_shell`'s
+`stop`, polled every `STOP_POLL_SECONDS`), no later one starts, and every gate step is recorded
+under its own name by `not_run_step`, `stoppedBy` the first red stage step - its basis
+`RED_FIRST_NOT_RUN`, or `RED_FIRST_SET_ASIDE` naming the exit of a step that answered before the
+red came back, since a caller's runner has no stop to read - and the run is `failed` on the stage
+alone; a torn-down step makes the tree comparison a race, said as that. A stage that ran whole
+and green, and that no gate step was narrowed for, leaves `steps` - it is carried on
+`res["redFirstStage"]` in this process and the `--json` answer, and its output and followers
+leave the row with it, so no file only the stage named counts towards the run's coverage; one a
+step was narrowed for (`red_first_held`) stays at the head of the row, since its answer is that
+step's other half - and either way the declared gate the commit binding reads is the gate's own,
+since `declared_steps` reads past it. That run measures the whole gate, and a part repeat the
 identity offered is measured instead. The pre-gate is no red of the gate's and runs first
 anyway; a red-first step of the previous run runs again as it ran, under the same name; a red
 step whose runner named no suite, whose list was cut, whose suites are no files of the tree by
 those paths, or which only the whole step can run, runs in its place in the gate and is said as
-that, since running it first would run it twice on a green. Every stage command is kept verbatim
-on the row, so a stopped run's base and the round after it run it as it ran. A ledger that will
-not read costs the stage, never the run (`red_first_or_why`). The `rf` cases drive it through
-`main` over the per-suite fixture's call log, and the `rfu` cases over `run_gate`.
+that, since running it in the stage too would run it twice on a green. Every stage command is
+kept verbatim on the row, so a stopped run's base and the round after it run it as it ran. A
+ledger that will not read costs the stage, never the run (`red_first_or_why`). The `rf` cases
+drive it through `main` over the per-suite fixture's call log, the `rfu` cases over `run_gate`,
+and the `rfb` cases the stage beside the gate: one call per suite over a joined step, the two
+commands overlapping, a tear-down, a set-aside answer and the narrowing's keep and leave arms.
 
 **`observations.countsBasis` is written here for the first time.** It has been copied into every
 evidence row by `_evidence_io.row_for` and rendered by the report and the panel since the ledger

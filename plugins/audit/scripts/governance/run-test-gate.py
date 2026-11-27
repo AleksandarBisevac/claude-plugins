@@ -111,6 +111,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -4216,26 +4217,41 @@ def not_run_step(name, command, why, stopped_by=None):
     return step
 
 
-# --- last round's reds, ahead of a task's re-gate -------------------------------
-# A TASK'S RE-GATE AFTER A RED RUNS THAT RED'S SUITES FIRST. The previous run is
-# the task's newest recorded one (`last_task_row`); when it was red, each red
-# step whose runner named its failing suites is run again over those suites
-# alone, ahead of the gate, under its own name behind `RED_FIRST_PREFIX`
-# (`red_first_stage`). A red there stops the gate as a red pre-gate does: every
-# step after it is recorded under its own name as not run (`not_run_step`), so
-# the red row says what it did not run. Green there runs the whole gate,
-# measured - no part of it repeated from an earlier run - and the stage leaves
-# `steps`, which stay the gate's own: the verdict and the declared gate it binds
-# are the gate's alone, and the stage rides on `redFirstStage` in this process. A
-# red step that can only run whole runs in its place in the gate, said as that,
-# since running it first would run it twice on a green. The narrowing is the
-# one a base run takes (`_declared_suites_at_base`, `_derived_at_base`,
-# `_joined_at_base`), and every red-first command is kept verbatim on the row,
-# so a stopped run's base and the round after it run it as it ran.
+# --- last round's reds, beside a task's re-gate ---------------------------------
+# A TASK'S RE-GATE AFTER A RED RUNS THAT RED'S SUITES AS A STAGE OF ITS OWN. The
+# previous run is the task's newest recorded one (`last_task_row`); when it was
+# red, each red step whose runner named its failing suites is run again over
+# those suites alone, under its own name behind `RED_FIRST_PREFIX`
+# (`red_first_stage`), BESIDE the gate's steps rather than ahead of them
+# (`_run_beside`), and those suites are taken out of every gate step whose path
+# list can be spelled without them (`red_first_beside`) - so the suite runs
+# once, and a green re-gate costs about the longer of the stage and the rest of
+# the gate rather than the two added. A step that cannot be spelled without them
+# keeps them, said once. A red there stands for the whole gate as a red
+# pre-gate does: the gate's step in flight is torn down, and every gate step is
+# recorded under its own name as not run (`not_run_step`), stopped by the
+# stage, so the red row says what it did not run. Green there runs the gate
+# measured - no part of it repeated from an earlier run. A green stage the gate
+# ran again leaves `steps`, which stay the gate's own, and rides on
+# `redFirstStage` in this process; one whose suites a step was run without
+# stays a step of the row, since its answer is that step's other half - and
+# `declared_steps` reads past it, so the declared gate the row binds is the
+# plan's either way. A red step that can only run whole runs in its place in
+# the gate, said as that, since running it in the stage too would run it twice
+# on a green. The narrowing is the one a base run takes
+# (`_declared_suites_at_base`, `_derived_at_base`, `_joined_at_base`), and every
+# red-first command is kept verbatim on the row, so a stopped run's base and the
+# round after it run it as it ran.
 RED_FIRST_PREFIX = _ev.RED_FIRST_STEP_PREFIX
-RED_FIRST_NOT_RUN = ("not run: last round's red suites, run first as red-first "
-                     "(%s), did not come back green, so the gate stopped before "
-                     "this step")
+# The two sentences a gate step stopped by the stage is recorded under. Each
+# names the stage first: a row bounds a basis (`_evidence_io.redacted_text`),
+# and what stopped the step is the part that must survive the cut.
+RED_FIRST_NOT_RUN = ("not run: red-first (%s) - last round's red suites, run "
+                     "beside the gate - did not come back green, so the gate "
+                     "stopped this step before it answered")
+RED_FIRST_SET_ASIDE = ("not run: red-first (%s) came back red beside this step, "
+                       "which had answered (exit %s) - a red there stands for "
+                       "the whole gate, so that answer is set aside")
 
 
 def last_task_row(rows, phase_id, task_id):
@@ -4322,11 +4338,82 @@ def red_first_stage(rows, manifest, phase_id, task_id, tree):
                         for n, c in narrowed]
         stage += [c for c in commands if c not in stage]
     if stage:
-        lines.insert(0, "red-first: run %s was red, so its red suites run first "
-                        "(%s) - a red there stops the gate, a green runs the "
-                        "whole gate" % (last.get("runId"),
-                                        ", ".join(n for n, _c in stage)))
+        lines.insert(0, "red-first: run %s was red, so its red suites run "
+                        "beside the gate (%s) - a red there stops the gate, a "
+                        "green leaves the gate's verdict" % (
+                            last.get("runId"), ", ".join(n for n, _c in stage)))
     return stage, lines
+
+
+def _narrowed_published(commands, run_commands, declared, extra):
+    """`[("", command)]` - each command `red_first_beside` narrowed whose
+    whole spelling the row would have published (a declared command, or one
+    of `extra`): the plan's recorded spelling over fewer of the same paths is
+    the same published spelling, so the row keeps it verbatim as it keeps a
+    per-suite base command, and the round after a red there can run it again.
+    """
+    whole = set([c for _n, c in declared or []] + list(extra or []))
+    return [("", now) for (_n, was), (_m, now) in zip(commands or [],
+                                                     run_commands or [])
+            if now != was and was in whole]
+
+
+def red_first_beside(stage, commands, manifest, phase_id):
+    """`(commands, held, lines)` - the gate's `commands`, `[(name, command)]`,
+    with the suites the red-first `stage` runs taken out of every step that is
+    the plan's recorded spelling over a path list still holding another path
+    once they are gone (`_affected_tests.spelled_entry` over the rest); `held`
+    the stage steps some step now leans on, in stage order; `lines` the
+    sentences to print.
+
+    Every other step comes back as it went in. One whose path list holds
+    nothing but the stage's suites, and the bare form of the spelling, which
+    runs every suite and lists none to take out, keep them - each said once. A
+    stage step that is no spelling over a path list takes nothing out of
+    anything, said once too. A step that lists none of the suites is
+    untouched and unsaid."""
+    phase = _phase_by_id(manifest, phase_id) or {}
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    suites_of, lines = [], []
+    for name, command in stage or []:
+        paths = _affected.entry_paths(command, phase, meta)
+        if paths:
+            suites_of.append((name, paths))
+        else:
+            lines.append("red-first: %s is no spelling of the plan's over a "
+                         "path list, so no gate step is run without its suites"
+                         % (name,))
+    every = []
+    for _name, paths in suites_of:
+        every += [p for p in paths if p not in every]
+    out, held = [], []
+    for name, command in commands or []:
+        paths = _affected.entry_paths(command, phase, meta) or []
+        gone = [p for p in paths if p in every]
+        if not gone:
+            if every and _affected.is_bare_entry(command, phase, meta):
+                lines.append("red-first: %s keeps %s: it is the bare form of "
+                             "the plan's spelling, which runs every suite and "
+                             "lists no path to take one out of"
+                             % (name, ", ".join(every)))
+            out.append((name, command))
+            continue
+        left = [p for p in paths if p not in gone]
+        spelled = _affected.spelled_entry(left, phase, meta) if left else None
+        if spelled is None:
+            lines.append("red-first: %s keeps %s: its path list holds nothing "
+                         "else, so it cannot be spelled without them"
+                         % (name, ", ".join(gone)))
+            out.append((name, command))
+            continue
+        takers = [n for n, paths_of in suites_of
+                  if any(p in paths_of for p in gone)]
+        held += [n for n in takers if n not in held]
+        out.append((name, spelled))
+        lines.append("red-first: %s runs without %s - taken out of it, and run "
+                     "beside it as %s" % (name, ", ".join(gone),
+                                          ", ".join(takers)))
+    return out, held, lines
 
 
 def red_first_or_why(project, manifest_path, manifest, phase_id, task_id, tree):
@@ -4582,7 +4669,27 @@ def _say_on_stderr(line):
     sys.stderr.write(line + "\n")
 
 
-def _shell(project, command, timeout=None):
+def _communicate(proc, timeout, stop):
+    """`(out, stopped)` - `proc`'s output once it ends within `timeout`
+    seconds, raising `TimeoutExpired` past it as `communicate` does; with a
+    `stop` event, read in slices of `STOP_POLL_SECONDS` and `(None, True)` as
+    soon as it is set. A slice that times out loses no output: `communicate`
+    keeps what it read and is asked again."""
+    if stop is None:
+        return proc.communicate(timeout=timeout)[0], False
+    deadline = time.monotonic() + timeout
+    while not stop.is_set():
+        left = deadline - time.monotonic()
+        try:
+            return proc.communicate(
+                timeout=max(0.0, min(left, STOP_POLL_SECONDS)))[0], False
+        except subprocess.TimeoutExpired:
+            if left <= STOP_POLL_SECONDS:
+                raise
+    return None, True
+
+
+def _shell(project, command, timeout=None, stop=None):
     """`(exit, text, facts)` - one gate command, with its whole tree accounted for.
 
     `facts` is what the wrapper OBSERVED that the exit code cannot carry: which
@@ -4594,6 +4701,10 @@ def _shell(project, command, timeout=None):
     `_proc_group.stop_and_drain`'s answer, given this module's `_tear_down`
     and `_drain_to_eof` so a case swapping those names reaches it; one it does
     not confirm is recorded as `teardown: unconfirmed`.
+
+    `stop` is a `threading.Event` or None: once it is set the step's group is
+    torn down the same way and the facts carry `TORN_DOWN` - the red-first
+    stage came back red beside it (`_run_beside`), so it is no measurement.
     """
     timeout = DEFAULT_TIMEOUT_SECONDS if timeout is None else timeout
     argv, env, refusal = _proc_group.shell_invocation(command)
@@ -4604,8 +4715,16 @@ def _shell(project, command, timeout=None):
     except Exception as exc:
         return 127, "could not run: %s" % (exc,), {"outcome": CANNOT_RUN}
     try:
-        out, _err = proc.communicate(timeout=timeout)
-        return proc.returncode, (out or b"").decode("utf-8", "replace"), {}
+        out, stopped = _communicate(proc, timeout, stop)
+        if not stopped:
+            return proc.returncode, (out or b"").decode("utf-8", "replace"), {}
+        text, confirmed = _proc_group.stop_and_drain(proc, _tear_down,
+                                                     _drain_to_eof)
+        facts = {"outcome": CANNOT_RUN, TORN_DOWN: True}
+        if not confirmed:
+            facts["teardown"] = "unconfirmed"
+        code = proc.returncode if proc.returncode is not None else 124
+        return code, text, facts
     except subprocess.TimeoutExpired:
         text, confirmed = _proc_group.stop_and_drain(proc, _tear_down,
                                                      _drain_to_eof)
@@ -5247,11 +5366,219 @@ def observed_step(name, command, code, text, facts, duration_ms):
     return step
 
 
+def _gate_step(project, name, command, runner, timeout, reading):
+    """`(step, text, named)` - one gate command run through `runner` and read:
+    its row (`observed_step`), retried once when the OS ended it, its derived
+    gap and its mutes settled; `text` the output of the attempt the row is,
+    `named` the paths that output named (`files_named`). `reading` holds what
+    `run_gate` reads every step against - `task`, `say`, `derived_check`,
+    `muted`, `today`, `preamble` and `withheld`, as `run_gate` takes them.
+
+    A FUNCTION BECAUSE TWO THREADS RUN STEPS: the red-first stage's beside
+    the gate's (`_run_beside`), and each step is read by exactly these rules
+    whichever ran it. A step torn down by its runner's stop event carries
+    `TORN_DOWN` and is no measurement; the caller decides what it records."""
+    task, say = reading["task"], reading["say"]
+    derived_check, withheld = reading["derived_check"], reading["withheld"]
+    muted, today = reading["muted"], reading["today"]
+    preamble = reading["preamble"]
+    step_started = time.monotonic()
+    gated, task_note = gate_task_step(command, task, project)
+    if task_note:
+        say(task_note)
+    code, text, facts = runner(project, gated, timeout)
+    step = observed_step(name, command, code, text, facts,
+                         _elapsed_ms(step_started))
+    # ONE SECOND ATTEMPT, AND ONLY FOR A STEP THE OS ENDED. The key read
+    # here is `signal`, never the exit code: a non-zero exit beside an
+    # end-of-run report is a measurement, and a re-run of a measurement
+    # is a red rolled again until it comes back green. ONE report is the
+    # exception, and it is `jest_worker_signal`'s: jest's summary after
+    # workers it names as killed - EVERY failure one - is jest reporting
+    # the kill, not a measurement of the suites that died, and a worker
+    # killed for memory is exactly what a lowered bound is for (`jr1`
+    # pins the halved bound). Nor does a timeout or a runner that never started reach
+    # this - our own teardown is not the OS ending the run, and a
+    # missing interpreter answers the same way however many workers it
+    # is asked for. What a kill has that neither of those has is a cause
+    # the command declares a bound for.
+    #
+    # THE SECOND ATTEMPT REPLACES THE ROW AND CARRIES THE FIRST ON IT.
+    # Its exit, its count and its duration are the ones a reader acts
+    # on, and they are the SECOND attempt's - so the thing that cannot
+    # be recovered from any of them is that there was a first, which
+    # signal ended it, and whether the bound moved between the two.
+    if step.get("signal"):
+        retry_started = time.monotonic()
+        lowered, change = lowered_parallelism(command)
+        code, text, facts = runner(
+            project, with_gate_task(lowered or command, task, project),
+            timeout)
+        first = step
+        step = observed_step(name, command, code, text, facts,
+                             _elapsed_ms(retry_started))
+        step["retriedAfterSignal"] = first["signal"]
+        step["retryBasis"] = retry_note(first["signal"], change)
+    # NAMED ONCE, HERE, so both `step_named` below and the
+    # derived-gate check just after read the SAME reading of this
+    # step's own output - a second call could not disagree with this
+    # one, but a caller that read it twice from two different lines
+    # is exactly the kind of copy this file's own rule refuses.
+    named_now = files_named(text)
+    # THE STEP CARRIES A SORTED LIST, NEVER THE SET. `files_named`
+    # answers with a set, which JSON cannot spell, and a step is
+    # dumped whole by every `--json` path; every reader of
+    # `step["named"]` only iterates it. `step_named` below keeps
+    # the set for `shared_counts`, which never leaves this process.
+    step["named"] = None if named_now is None else sorted(named_now)
+    if derived_check and name == derived_check.get("entry"):
+        gap = derived_step_gap(step, derived_check.get("tests"))
+        if gap is not None:
+            matched, total, missing = gap
+            if matched < total:
+                # A DERIVED RUN THAT DID NOT NAME EVERY LISTED SUITE
+                # answered a narrower question than the phase
+                # recorded, so its exit code is not this run's
+                # verdict - `run_status` reads `could-not-run` off
+                # `outcome` below exactly as it does for a kill or a
+                # missing interpreter, and the repair is the same
+                # shape: re-derive and re-run, not retry the task.
+                #
+                # A MARKER, NEVER A STRING MATCH ON `outcomeBasis`.
+                # `_render_verdict` needs to know this gap fired
+                # without re-parsing the sentence below out of
+                # whatever else already sits on the step.
+                step["derivedGap"] = True
+                gap_reason = (
+                    "DERIVED RUN NAMED %d OF %d LISTED SUITES: %s"
+                    % (matched, total,
+                       _output.some_of(missing, budget=SAMPLE_BUDGET)))
+                # KEEP WHAT WAS ALREADY THERE. A signal, a no-verdict
+                # signature or `never_started` graded this same step
+                # first, and each of those is its own observation -
+                # overwriting it with the gap's reason would erase
+                # the one that actually explains why nothing ran.
+                if step.get("outcome") != CANNOT_RUN:
+                    step["outcome"] = CANNOT_RUN
+                if step.get("outcomeBasis"):
+                    step["outcomeBasis"] = (
+                        step["outcomeBasis"] + "; " + gap_reason)
+                else:
+                    step["outcomeBasis"] = gap_reason
+    # LAST, AFTER EVERY OUTCOME IS SETTLED: a mute excuses a measured
+    # failure and nothing else, so a step any arm above graded
+    # `could-not-run` is never one it may touch.
+    honoured, refused, unmatched = mute_decision(
+        step, text, muted, today, preamble, withheld=withheld)
+    if honoured:
+        step["muted"] = honoured
+    if refused:
+        step["muteRefused"] = refused
+    if unmatched:
+        step["muteUnmatched"] = unmatched
+    return step, text, named_now
+
+
+# --- the red-first stage, run beside the gate --------------------------------
+# THE STAGE RUNS IN A THREAD OF ITS OWN WHILE THE GATE'S STEPS RUN IN THIS ONE,
+# because run ahead of the gate its wall was added to the gate's: a re-gate
+# after a red cost the red suite's run and then the whole gate, the suite again
+# inside it. Beside the gate, and with its suites taken out of every step that
+# can be spelled without them (`red_first_beside`), a green re-gate costs about
+# the longer of the two. A red there still stands for the whole gate: it sets
+# the gate's stop event, so the step in flight is torn down by its own runner
+# (`_shell`'s `stop`) and no later step starts. A runner handed in by a caller
+# has no stop to read - its step runs to its end and its answer is set aside.
+STOP_POLL_SECONDS = 0.2
+# The fact a runner's step carries when its stop event tore it down: no
+# measurement, never on a row - `run_gate` records the step as not run.
+TORN_DOWN = "tornDown"
+
+
+def _stopping(runner, stop, stoppable):
+    """`runner` made to tear its step down when `stop` is set - the default
+    `_shell` handed the event - or `runner` itself when it is a caller's,
+    which takes none."""
+    if not stoppable:
+        return runner
+    return lambda project, command, timeout=None: _shell(project, command,
+                                                         timeout, stop=stop)
+
+
+def _wait_out(worker):
+    """Join `worker` in slices: a join with no bound is not interrupted by a
+    stop signal on every platform this runs on."""
+    while worker.is_alive():
+        worker.join(STOP_POLL_SECONDS)
+
+
+def _run_beside(stage, commands, one, runner, stoppable):
+    """`{"stage", "gate", "red", "cancelled"}` - the red-first `stage` run in a
+    thread beside the gate's `commands`, each step through `one(name,
+    command, runner)`. `stage` and `gate` are `[(name, command, got)]` in
+    their own order, `got` `one`'s answer or None for a gate step the stage's
+    red stopped before it started; `red` the stage steps that did not come
+    back green (`pre_gate_stops`), in order; `cancelled` the stop signal's
+    name when one arrived, else None.
+
+    Every stage step runs, red or not, so a stopped row keeps each of them;
+    the first red sets the gate's stop. An interrupt stops both: the step in
+    flight on either side gets no entry, as `run_gate`'s interrupt rule says,
+    and a stage that raised is raised here once both have stopped."""
+    halt, gate_stop = threading.Event(), threading.Event()
+    stage_ran, gate_ran, red, crashed = [], [], [], []
+
+    def run_stage():
+        run = _stopping(runner, halt, stoppable)
+        try:
+            for name, command in stage:
+                got = one(name, command, run)
+                if got[0].get(TORN_DOWN):
+                    return
+                stage_ran.append((name, command, got))
+                if pre_gate_stops(got[0]) is not None:
+                    red.append(name)
+                    gate_stop.set()
+        except BaseException as exc:                           # noqa: BLE001
+            # Re-raised in the caller's thread, where it is loud.
+            crashed.append(exc)
+            gate_stop.set()
+
+    worker = threading.Thread(target=run_stage, name="red-first-stage")
+    worker.daemon = True
+    if stage:
+        worker.start()
+    # With no stage nothing sets the gate's stop, so its runner is left as
+    # handed: a gate step pays for no polling it could never need.
+    run = _stopping(runner, gate_stop, stoppable and bool(stage))
+    cancelled = None
+    try:
+        for name, command in commands:
+            gate_ran.append((name, command, None if gate_stop.is_set()
+                             else one(name, command, run)))
+        _wait_out(worker)
+    except KeyboardInterrupt as exc:
+        cancelled = str(exc) or UNNAMED_SIGNAL
+        halt.set()
+        gate_stop.set()
+        _wait_out(worker)
+    except BaseException:
+        halt.set()
+        gate_stop.set()
+        _wait_out(worker)
+        raise
+    if crashed:
+        raise crashed[0]
+    return {"stage": stage_ran, "gate": gate_ran, "red": red,
+            "cancelled": cancelled}
+
+
 def run_gate(project, commands, runner=None, owns=None, timeout=None,
              recorded=None, task_scope=False, keep_text=False,
              derived_check=None, muted=None, today=None, preamble=None,
              withheld=None, task=None, say=print, selection_started=None,
-             dirty_excluded=None, pre_gate=None, red_first=None):
+             dirty_excluded=None, pre_gate=None, red_first=None,
+             red_first_held=None):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -5320,13 +5647,22 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     run as they would.
 
     `red_first` is `red_first_stage`'s `[(name, command)]`: run after the
-    pre-gate and before `commands`. When any of them does not come back green
-    (`pre_gate_stops`), every one of `commands` is recorded as not run; when
-    all of them do, they leave `steps` and are `res["redFirstStage"]`, so the
-    steps, their counts and the verdict are `commands`' own. `[]` when no
-    stage ran green - a red one is in `steps`, where its red is.
+    pre-gate, in a thread beside `commands` (`_run_beside`). When any of them
+    does not come back green (`pre_gate_stops`), the gate step in flight is
+    torn down and every one of `commands` is recorded as not run, stopped by
+    the first red; when all of them do, each not named in `red_first_held`
+    leaves `steps` and is `res["redFirstStage"]`, so the steps, their counts
+    and the verdict are `commands`' own. `red_first_held` names the stage
+    steps whose suites `commands` were narrowed to run without
+    (`red_first_beside`): green, they stay steps of the row, at the head where
+    a red one stands, since their answer is part of the gate's. `[]` when no
+    stage ran green or every green one is held - a red one is in `steps`,
+    where its red is.
     """
+    # Only the default runner reads a stop event (`_stopping`).
+    stoppable = runner is None
     runner = runner or _shell
+    leaned = set(red_first_held or ())
     today = _vocab.mute_today() if today is None else today
     before = _tree_stamp.porcelain(project)
     # PRE-EXECUTION, and the placement is load-bearing: a fix-in-place gate
@@ -5368,165 +5704,26 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     step_text = [] if keep_text else None
     cancelled_by = None
     followers, followers_unread = [], 0
-    # WHAT THE RED-FIRST STAGE PRINTED IS HELD APART from the gate's own, because
-    # whether it belongs to the row is known only when the stage has ended: a
-    # stage that ran whole and green is no step of the gate, so the paths its
-    # output named and the follower lines it printed are no gate step's either
-    # (merged back below when the stage turns out to be a step of the row).
-    stage_texts, stage_followers, stage_unread = [], [], 0
     stage = list(red_first or [])
-    staged = stage + list(commands)
-    if pre_gate is not None and pre_gate[1] is None:
-        steps.append(not_run_step(pre_gate[0], None, pre_gate[2]))
-        step_named.append(None)
-        if step_text is not None:
-            step_text.append((pre_gate[0], ""))
-    elif pre_gate is not None:
-        staged = [(pre_gate[0], pre_gate[1])] + staged
-    # Set once the pre-gate's own step, or the red-first stage, has stopped
-    # the gate: the sentence every step after it is recorded under, never
-    # run, and the step that stopped it.
+    reading = {"task": task, "say": say, "derived_check": derived_check,
+               "muted": muted, "today": today, "preamble": preamble,
+               "withheld": withheld}
+
+    def one(name, command, run):
+        return _gate_step(project, name, command, run, timeout, reading)
+    # Set once the pre-gate's own step has stopped the gate: the sentence
+    # every step after it is recorded under, never run, and the step that
+    # stopped it.
     stopped, stopper = None, None
-    # Where the red-first stage sits in `steps`: after the pre-gate's step.
-    stage_at = 0 if pre_gate is None else 1
-    stage_red = []
+    pre_ran, beside = [], {"stage": [], "gate": [], "red": []}
     try:
-        for name, command in staged:
-            if stopped is not None:
-                steps.append(not_run_step(name, command, stopped,
-                                          stopped_by=stopper))
-                step_named.append(None)
-                if step_text is not None:
-                    step_text.append((name, ""))
-                continue
-            step_started = time.monotonic()
-            gated, task_note = gate_task_step(command, task, project)
-            if task_note:
-                say(task_note)
-            code, text, facts = runner(project, gated, timeout)
-            step = observed_step(name, command, code, text, facts,
-                                 _elapsed_ms(step_started))
-            # ONE SECOND ATTEMPT, AND ONLY FOR A STEP THE OS ENDED. The key read
-            # here is `signal`, never the exit code: a non-zero exit beside an
-            # end-of-run report is a measurement, and a re-run of a measurement
-            # is a red rolled again until it comes back green. ONE report is the
-            # exception, and it is `jest_worker_signal`'s: jest's summary after
-            # workers it names as killed - EVERY failure one - is jest reporting
-            # the kill, not a measurement of the suites that died, and a worker
-            # killed for memory is exactly what a lowered bound is for (`jr1`
-            # pins the halved bound). Nor does a timeout or a runner that never started reach
-            # this - our own teardown is not the OS ending the run, and a
-            # missing interpreter answers the same way however many workers it
-            # is asked for. What a kill has that neither of those has is a cause
-            # the command declares a bound for.
-            #
-            # THE SECOND ATTEMPT REPLACES THE ROW AND CARRIES THE FIRST ON IT.
-            # Its exit, its count and its duration are the ones a reader acts
-            # on, and they are the SECOND attempt's - so the thing that cannot
-            # be recovered from any of them is that there was a first, which
-            # signal ended it, and whether the bound moved between the two.
-            if step.get("signal"):
-                retry_started = time.monotonic()
-                lowered, change = lowered_parallelism(command)
-                code, text, facts = runner(
-                    project, with_gate_task(lowered or command, task, project),
-                    timeout)
-                first = step
-                step = observed_step(name, command, code, text, facts,
-                                     _elapsed_ms(retry_started))
-                step["retriedAfterSignal"] = first["signal"]
-                step["retryBasis"] = retry_note(first["signal"], change)
-            # NAMED ONCE, HERE, so both `step_named` below and the
-            # derived-gate check just after read the SAME reading of this
-            # step's own output - a second call could not disagree with this
-            # one, but a caller that read it twice from two different lines
-            # is exactly the kind of copy this file's own rule refuses.
-            named_now = files_named(text)
-            # THE STEP CARRIES A SORTED LIST, NEVER THE SET. `files_named`
-            # answers with a set, which JSON cannot spell, and a step is
-            # dumped whole by every `--json` path; every reader of
-            # `step["named"]` only iterates it. `step_named` below keeps
-            # the set for `shared_counts`, which never leaves this process.
-            step["named"] = None if named_now is None else sorted(named_now)
-            if derived_check and name == derived_check.get("entry"):
-                gap = derived_step_gap(step, derived_check.get("tests"))
-                if gap is not None:
-                    matched, total, missing = gap
-                    if matched < total:
-                        # A DERIVED RUN THAT DID NOT NAME EVERY LISTED SUITE
-                        # answered a narrower question than the phase
-                        # recorded, so its exit code is not this run's
-                        # verdict - `run_status` reads `could-not-run` off
-                        # `outcome` below exactly as it does for a kill or a
-                        # missing interpreter, and the repair is the same
-                        # shape: re-derive and re-run, not retry the task.
-                        #
-                        # A MARKER, NEVER A STRING MATCH ON `outcomeBasis`.
-                        # `_render_verdict` needs to know this gap fired
-                        # without re-parsing the sentence below out of
-                        # whatever else already sits on the step.
-                        step["derivedGap"] = True
-                        gap_reason = (
-                            "DERIVED RUN NAMED %d OF %d LISTED SUITES: %s"
-                            % (matched, total,
-                               _output.some_of(missing, budget=SAMPLE_BUDGET)))
-                        # KEEP WHAT WAS ALREADY THERE. A signal, a no-verdict
-                        # signature or `never_started` graded this same step
-                        # first, and each of those is its own observation -
-                        # overwriting it with the gap's reason would erase
-                        # the one that actually explains why nothing ran.
-                        if step.get("outcome") != CANNOT_RUN:
-                            step["outcome"] = CANNOT_RUN
-                        if step.get("outcomeBasis"):
-                            step["outcomeBasis"] = (
-                                step["outcomeBasis"] + "; " + gap_reason)
-                        else:
-                            step["outcomeBasis"] = gap_reason
-            # LAST, AFTER EVERY OUTCOME IS SETTLED: a mute excuses a measured
-            # failure and nothing else, so a step any arm above graded
-            # `could-not-run` is never one it may touch.
-            honoured, refused, unmatched = mute_decision(
-                step, text, muted, today, preamble, withheld=withheld)
-            if honoured:
-                step["muted"] = honoured
-            if refused:
-                step["muteRefused"] = refused
-            if unmatched:
-                step["muteUnmatched"] = unmatched
-            # Read before the step joins `steps`, so the position is the one
-            # `stage_at` counts from.
-            held_apart = stage_at <= len(steps) < stage_at + len(stage)
-            steps.append(step)
-            # The attempt that ANSWERED, if one did: a retried step's first
-            # attempt was ended by a signal, so only the second can speak here.
-            if not step.get("outcome"):
-                (stage_texts if held_apart else texts).append(text or "")
-            if step_text is not None:
-                step_text.append((name, text or ""))
-            # APPENDED WITH THE ROW AND NEVER BEFORE IT, so the two lists cannot
-            # come apart. Scraped per step rather than sliced out of the joined
-            # text below, because which STEP printed a path is the whole
-            # question here and the join throws that away.
-            step_named.append(named_now)
-            # A follower is owed by whatever step printed its line, answered or
-            # not: the drive regenerates it from the record this run writes.
-            owed, unread = _ev.followers_in(text)
-            if held_apart:
-                stage_followers.extend(owed)
-                stage_unread += unread
-            else:
-                followers.extend(f for f in owed if f not in followers)
-                followers_unread += unread
-            came_back = (pre_gate_stops(step) if name == _ev.PRE_GATE_STEP
-                         and pre_gate is not None and len(steps) == 1 else None)
+        if pre_gate is not None and pre_gate[1] is not None:
+            got = one(pre_gate[0], pre_gate[1], runner)
+            pre_ran.append((pre_gate[0], pre_gate[1], got))
+            came_back = pre_gate_stops(got[0])
             if came_back is not None:
-                stopped, stopper = PRE_GATE_NOT_RUN % (name, came_back), name
-            in_stage = stage_at < len(steps) <= stage_at + len(stage)
-            if in_stage and pre_gate_stops(step) is not None:
-                stage_red.append(name)
-            if in_stage and stage_red and len(steps) == stage_at + len(stage):
-                stopped = RED_FIRST_NOT_RUN % (", ".join(stage_red),)
-                stopper = stage_red[0]
+                stopped = PRE_GATE_NOT_RUN % (pre_gate[0], came_back)
+                stopper = pre_gate[0]
     except KeyboardInterrupt as exc:
         # THE ONE THING THE INTERRUPT PATH DOES IS LET THE ROW BE WRITTEN. The
         # child's group is already gone - `_shell`'s own `except BaseException`
@@ -5541,7 +5738,7 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
         # THE STEP THAT WAS IN FLIGHT GETS NO ROW, and the steps after it get none
         # either. It reported nothing, so a row for it would be a fabricated entry
         # in the one record that exists to be true; `status` is what says the list
-        # is short.
+        # is short. `_run_beside` keeps the same rule for the stage and the gate.
         #
         # AND THE CATCH IS `KeyboardInterrupt`, NOT `BaseException`. `_shell` needs
         # the wide arm because its job there is teardown, which every escape owes;
@@ -5549,28 +5746,92 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
         # "cancelled" would be the silent mislabel the rest of this file exists to
         # prevent. Anything else still escapes, loudly.
         cancelled_by = str(exc) or UNNAMED_SIGNAL
-    # A STAGE THAT RAN WHOLE AND GREEN IS NO STEP OF THE GATE: it leaves the
-    # parallel lists together, so the counts, the coverage and the verdict
-    # below are the gate's steps' alone.
-    stage_ran = steps[stage_at:stage_at + len(stage)]
-    green_stage = []
-    if stage and not stage_red and len(stage_ran) == len(stage) \
-            and all(st.get("exit") is not None for st in stage_ran):
-        green_stage = stage_ran
-        del steps[stage_at:stage_at + len(stage)]
-        del step_named[stage_at:stage_at + len(stage)]
-        if step_text is not None:
-            del step_text[stage_at:stage_at + len(stage)]
+    if cancelled_by is None and stopped is None:
+        beside = _run_beside(stage, list(commands), one, runner, stoppable)
+        cancelled_by = beside["cancelled"]
+    stage_red = beside["red"]
+    if pre_gate is not None and pre_gate[1] is None:
+        laid = [(pre_gate[0], None, not_run_step(pre_gate[0], None,
+                                                 pre_gate[2]))]
     else:
-        # A stage that stopped the gate, or was cut short, stays a step of the
-        # row, so what it printed is the row's: nothing after it ran.
-        texts.extend(stage_texts)
-        followers.extend(f for f in stage_followers if f not in followers)
-        followers_unread += stage_unread
+        laid = list(pre_ran)
+    if stopped is not None:
+        laid += [(name, command, not_run_step(name, command, stopped,
+                                              stopped_by=stopper))
+                 for name, command in stage + list(commands)]
+    # A STAGE THAT RAN WHOLE AND GREEN IS NO STEP OF THE GATE - unless the gate
+    # leaned on it (`red_first_held`): a step its suites were taken out of did
+    # not run them, so the stage's answer is that step's other half and stays a
+    # step of the row. One the gate ran again leaves the parallel lists, so the
+    # counts, the coverage and the verdict below are the gate's steps' alone. A
+    # stage that stopped the gate, or was cut short, stays a step of the row,
+    # so what it printed is the row's.
+    whole_green = (stage and not stage_red
+                   and len(beside["stage"]) == len(stage)
+                   and all(got[0].get("exit") is not None
+                           for _n, _c, got in beside["stage"]))
+    green_stage = []
+    for name, command, got in beside["stage"]:
+        if whole_green and name not in leaned:
+            green_stage.append(got[0])
+            continue
+        laid.append((name, command, got))
+    # A RED STAGE STANDS FOR THE WHOLE GATE: every gate step is recorded as not
+    # run, stopped by the stage's first red - the one torn down in flight and
+    # the one never started under one sentence, the one that answered before
+    # the red came back under its own, its answer set aside.
+    torn = []
+    for name, command, got in beside["gate"]:
+        if not stage_red:
+            laid.append((name, command, got))
+            continue
+        answered = got is not None and not got[0].get(TORN_DOWN)
+        if got is not None and not answered:
+            torn.append(name)
+        why = (RED_FIRST_SET_ASIDE % (", ".join(stage_red), got[0].get("exit"))
+               if answered else RED_FIRST_NOT_RUN % (", ".join(stage_red),))
+        laid.append((name, command, not_run_step(name, command, why,
+                                                 stopped_by=stage_red[0])))
+        if answered:
+            # A follower is owed by whatever step printed its line.
+            owed, unread = _ev.followers_in(got[1])
+            followers.extend(f for f in owed if f not in followers)
+            followers_unread += unread
+    for name, _command, got in laid:
+        if isinstance(got, dict):
+            steps.append(got)
+            step_named.append(None)
+            if step_text is not None:
+                step_text.append((name, ""))
+            continue
+        step, text, named_now = got
+        steps.append(step)
+        # The attempt that ANSWERED, if one did: a retried step's first
+        # attempt was ended by a signal, so only the second can speak here.
+        if not step.get("outcome"):
+            texts.append(text or "")
+        if step_text is not None:
+            step_text.append((name, text or ""))
+        # APPENDED WITH THE ROW AND NEVER BEFORE IT, so the two lists cannot
+        # come apart. Scraped per step rather than sliced out of the joined
+        # text below, because which STEP printed a path is the whole
+        # question here and the join throws that away.
+        step_named.append(named_now)
+        # A follower is owed by whatever step printed its line, answered or
+        # not: the drive regenerates it from the record this run writes.
+        owed, unread = _ev.followers_in(text)
+        followers.extend(f for f in owed if f not in followers)
+        followers_unread += unread
     after = _tree_stamp.porcelain(project)
     interrupted = (cancelled_by is not None
                    or any(st.get("outcome") == TIMED_OUT for st in steps))
-    if interrupted:
+    if torn and not interrupted:
+        # Torn down by the red-first stage's red, as a timeout tears one down.
+        mutated = None
+        basis = ("a step was torn down when the red-first stage came back "
+                 "red (%s), so a tree comparison would be a race"
+                 % (", ".join(torn),))
+    elif interrupted:
         # A torn-down group is not a stopped one: a descendant that escaped the
         # kill keeps writing, so comparing the two snapshots would be a race whose
         # answer changes with timing. `porcelain` already refuses to call a tree
@@ -5672,7 +5933,8 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             # `RECORDER_HELD_KEY`, spelled out: this literal is what the
             # producer scan reads to know the key exists.
             "recorderHeld": held,
-            # `[]` WHEN NO RED-FIRST STAGE RAN GREEN: a red one is in `steps`.
+            # `[]` WHEN NO RED-FIRST STAGE RAN GREEN: a red one is in `steps`,
+            # and so is a green one the gate leaned on (`red_first_held`).
             # NOT `redFirst`: that is the name of the filed return's TDD block,
             # which every other reader of a task takes, and a `--json` consumer
             # reading this key must not be able to mistake one for the other.
@@ -7836,11 +8098,14 @@ def main(argv, out=print):
                                      subject_ids(args.phase, args.task, source),
                                      identity["key"], REUSABLE_STATUS)
             newer = _ev.newer_for_identity(ledger, identity["key"], prior)
-    # LAST ROUND'S REDS, FIRST (`red_first_stage`): a task-scope run that
-    # measures, when the task's previous run was red. A stage taken measures
-    # the whole gate - no part of it repeated from an earlier run - so a green
-    # stage is followed by a run whose verdict is all its own.
-    stage = []
+    # LAST ROUND'S REDS, BESIDE THE GATE (`red_first_stage`): a task-scope run
+    # that measures, when the task's previous run was red. A stage taken
+    # measures the whole gate - no part of it repeated from an earlier run - so
+    # a green stage leaves a verdict that is all this run's own. Its suites are
+    # taken out of the gate's steps that can be spelled without them
+    # (`red_first_beside`), so they run once; `commands` stays the declared
+    # gate, and `run_commands` is what runs.
+    stage, leaned_on, run_commands = [], [], commands
     if prior is None and args.task is not None and not args.own:
         stage, stage_said = red_first_or_why(project, args.manifest, manifest,
                                              args.phase, args.task,
@@ -7854,6 +8119,12 @@ def main(argv, out=print):
                 "are measured again rather than repeated from run %s, since "
                 "this run follows a red" % (part[0].get("runId"),))
             part = None
+        if stage:
+            run_commands, leaned_on, beside_said = red_first_beside(
+                stage, commands, manifest, args.phase)
+            for line in beside_said:
+                (_say_on_stderr if args.as_json else out)(
+                    "[run-test-gate] %s" % (line,))
     if prior is not None:
         # A REPEAT'S TWO FIGURES SPLIT ONE WINDOW AT `started`, read off one end
         # reading: its selection is the gathering, up to the identity, and its
@@ -7885,7 +8156,8 @@ def main(argv, out=print):
                     return stopped_before_run(
                         exc, _say_on_stderr if args.as_json else out)
             res = run_gate(tree or project,
-                           commands if part is None else part[2], owns=owns,
+                           run_commands if part is None else part[2],
+                           owns=owns,
                            timeout=args.timeout,
                            recorded=_ev.recorded_paths(project,
                                                        args.manifest)[0],
@@ -7902,7 +8174,8 @@ def main(argv, out=print):
                            # `--json` keeps stdout parseable, so its note goes
                            # to stderr instead of being dropped.
                            say=(_say_on_stderr if args.as_json else out),
-                           pre_gate=pre_stage, red_first=stage)
+                           pre_gate=pre_stage, red_first=stage,
+                           red_first_held=leaned_on)
         finally:
             _disarm_interrupt(previous)
         if part is not None:
@@ -8014,7 +8287,9 @@ def main(argv, out=print):
             project, args, res, source,
             declared_commands + [("", c) for c in published_extra]
             + [("", c) for _n, c in pre_steps]
-            + [("", c) for _n, c in stage],
+            + [("", c) for _n, c in stage]
+            + _narrowed_published(commands, run_commands, declared_commands,
+                                  published_extra),
             manifest, out=out)
     if args.as_json:
         out(json.dumps(res, indent=2, sort_keys=True))

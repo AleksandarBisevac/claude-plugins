@@ -577,13 +577,16 @@ DERIVED_STEP_PREFIX = "affected/"
 # the plan's own key spelled as a gate entry stays an entry.
 PRE_GATE_STEP = "pre-gate/%s" % (_manifest_vocab.PRE_GATE_KEY,)
 
-# THE STEPS A TASK'S RE-GATE TAKES BEFORE ITS GATE WHEN THE ROUND BEFORE IT WAS
-# RED: last round's red suites, run first (`run-test-gate.red_first_stage`),
-# each recorded under a name carrying this prefix. A green stage leaves the row,
-# a red one stays on it - and then it stands among the steps with no gate entry
-# of its own, so `declared_steps` reads past the run of them after the
-# pre-gate, as it reads past the pre-gate. The prefix is reserved as the two
-# above are; only a name that opens with it, and only at the head, is the stage's.
+# THE STEPS A TASK'S RE-GATE TAKES BESIDE ITS GATE WHEN THE ROUND BEFORE IT WAS
+# RED: last round's red suites, run as a stage of their own
+# (`run-test-gate.red_first_stage`), each recorded under a name carrying this
+# prefix. A green stage the gate ran again leaves the row; a red one stays on
+# it, and so does a green one whose suites a gate step was run without
+# (`run-test-gate.red_first_beside`), since its answer is that step's other
+# half. Either way it stands at the head of the steps with no gate entry of its
+# own, so `declared_steps` reads past the run of them after the pre-gate, as it
+# reads past the pre-gate. The prefix is reserved as the two above are; only a
+# name that opens with it, and only at the head, is the stage's.
 RED_FIRST_STEP_PREFIX = "red-first/"
 
 
@@ -722,7 +725,8 @@ def declared_steps(names, dropped=0):
     A LEADING `PRE_GATE_STEP` is not the gate: the run took it ahead of the
     gate, so the declared part starts after it. Nor is the run of
     `RED_FIRST_STEP_PREFIX` steps after it: a stopped re-gate's row keeps the
-    red-first step that stopped it, which no gate entry of the plan is.
+    red-first step that stopped it, and a green one keeps a red-first step a
+    gate step leaned on, neither of which is a gate entry of the plan.
     """
     names = [str(n) for n in (names or [])]
     if names and names[0] == PRE_GATE_STEP:

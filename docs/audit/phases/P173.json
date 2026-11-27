@@ -30,7 +30,7 @@
     {
       "id": "P173.1",
       "title": "A timing stage may be a proof",
-      "status": "in_progress",
+      "status": "done",
       "description": "Design: quality-gates-internal plans/2026-11-27-speed-red-first.md section 2, T1. Add 'proof' to KINDS (_task_timing.py) and to the timingStage.kind enum in the schema; additive under COMPATIBILITY.md (a stage kind may gain members). Acceptance: a proof stage validates; the KINDS pin in tests/test__task_timing.py updated; /audit:status per-kind totals show it (_status_facts iterates KINDS). Dependants: _manifest_phases.py (validator), _manifest_vocab.py, audit-task.py --stage, _status_facts.py, audit-status.py, _evidence_io.py.",
       "files": [
         "plugins/audit/scripts/manifest/_task_timing.py",
@@ -57,14 +57,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8f375785a6ff",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added 'proof' to KINDS (after writer, work order) in _task_timing.py and to the timingStage.kind enum (+description) in audit-plan.schema.json; PLUGIN-BUILD-GUIDE.md section for _task_timing.py gains one sentence; changelog.d/P173.1.added.md. Tests: tt10 pin updated to the new list; new tt10c (a proof stage passes stage_problems, KINDS and the schema enum each hold proof once, summarize totals it as its own kind with gate total unchanged at 150000). Red before fix: 28/30 (tt10, tt10c). After: tests/test__task_timing.py 30/30 (sweep exit 0); register-citations 0 found exit 0; release.py changelog-check exit 0. Dependant suites run green: test__status_facts 213, test__manifest_io 207, test__manifest_phases 155, test__manifest_vocab 73, test_audit_status 441, test__evidence_io all blocks ok (6/6 files ok). Dependants: _manifest_phases.py validator reads stage_problems/KINDS - still correct, proof is now accepted; _manifest_vocab.py - no kind list of its own, unchanged and green; audit-task.py --stage - validates through stage_problems against KINDS, accepts proof with no edit; _status_facts.py - iterates _task_timing.KINDS so by_kind shows proof when a stage exists, absent otherwise; audit-status.py - renders kinds in KINDS order from the aggregate, no literal list (its docstring line 1041 says so); _evidence_io.py - imports append_run_stages/_is_count only, unaffected. Out of scope, not touched: harness wall.py (outside repo).",
+        "descriptive": "A task's timing can carry a proof stage, validated by the schema and totalled as its own kind in /audit:status."
       },
       "startedAt": "2026-11-27T14:01:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-27T14:11:36Z",
+      "verifiedBy": [
+        "tt10c: a proof stage validates, KINDS and the schema enum hold proof once, summarize totals it separately from gate",
+        "tt10 pin updated to include proof"
+      ],
       "notes": [
         {
           "at": "2026-11-27T14:00:55Z",
@@ -93,6 +96,24 @@
             "ms": 408385,
             "basis": "durationMs in run 2026-11-27T14:11:24Z.27909f's record (run-test-gate --record)",
             "runId": "2026-11-27T14:11:24Z.27909f"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-27T14:03:49Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 165000,
+            "startedAt": "2026-11-27T14:01:04Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-27T14:11:24Z.27909f",
+            "kind": "wait",
+            "ms": 6000,
+            "startedAt": "2026-11-27T14:04:05Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 8f375785a6ff",
+            "kind": "commit",
+            "ms": 1849,
+            "startedAt": "2026-11-27T14:11:32Z"
           }
         ],
         "firstStartedAt": "2026-11-27T14:01:01Z"
@@ -210,6 +231,18 @@
         "runId": "2026-11-27T14:11:30Z.e29003",
         "status": "passed",
         "at": "2026-11-27T14:11:30Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "8f375785a6ff",
+        "at": "2026-11-27T14:11:36Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-27T14:03:49Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__task_timing.py` in a throwaway tree at HEAD exited 1 with 2 of 30 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tt10c (house FAIL): SELFTEST FAILED: 28/30 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -513,10 +546,139 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-27T14:36:14Z",
+            "ms": 25358,
+            "basis": "selectionMs in run 2026-11-27T14:43:24Z.bb2cae's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-27T14:43:24Z.bb2cae"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-27T14:36:40Z",
+            "ms": 403571,
+            "basis": "durationMs in run 2026-11-27T14:43:24Z.bb2cae's record (run-test-gate --record)",
+            "runId": "2026-11-27T14:43:24Z.bb2cae"
+          }
+        ],
         "firstStartedAt": "2026-11-27T14:01:13Z"
       },
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-27T14:43:30Z.9e3e1c",
+        "status": "passed",
+        "durationMs": 222,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:178d9b0f30d7364ff772db6b32fddfaf8dd77bcd7765125f523b6a049f46d4b2",
+        "reuseKey": "1:sha256:aa9a28a06b6e7ae95ac8b1bb69e09a8e4432c7376521dac5f078aeb92aeb536a",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-27T14:43:24Z.bb2cae",
+          "ts": "2026-11-27T14:43:24Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+        "selectionMs": 143,
+        "at": "2026-11-27T14:43:30Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "runId": "2026-11-27T14:43:24Z.bb2cae",
+          "startedAt": "2026-11-27T14:36:40Z",
+          "durationMs": 403571,
+          "selectionMs": 25358,
+          "status": "passed",
+          "failed": [],
+          "reuseKey": "1:sha256:aa9a28a06b6e7ae95ac8b1bb69e09a8e4432c7376521dac5f078aeb92aeb536a",
+          "gateDigest": "sha256:178d9b0f30d7364ff772db6b32fddfaf8dd77bcd7765125f523b6a049f46d4b2",
+          "gateSource": "task",
+          "banners": [],
+          "machine": "this run had the machine to itself",
+          "launch": "2026-11-27T14:36:08Z-4fba64d1",
+          "gateReach": {
+            "gaps": []
+          },
+          "observations": {
+            "ranTotal": null,
+            "countsBasis": "no step printed a summary this reader can count (pre-gate/preGate and 1 more), so the size of this gate is not knowable from its output",
+            "treeMutated": [],
+            "treeBasis": "git described the tree before and after",
+            "coverage": [
+              "tests/test__evidence_io.py",
+              "tests/test_run_test_gate.py"
+            ],
+            "coverageBasis": "the runner named 206 path(s); the work under test declares 6 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 195/195 and 201 more; declared but not named by the run: PLUGIN-BUILD-GUIDE.md, changelog.d/P173.8.changed.md, plugins/audit/scripts/governance/_evidence_io.py, plugins/audit/scripts/governance/run-test-gate.py; breadth: the run named 174 suite path(s) and this task declares 6 file(s), and 171 of them are suites the task neither declares nor is named after (test__deps.py, test__output.py, test_audit_task.py, test_close_phase.py, test_commit_task_work.py, test_drive_phase.py, test_stamp_verification.py and 164 more) - this gate asks more than the task changed; that is reported, not refused"
+          },
+          "recorderHeld": false,
+          "via": "cli",
+          "attempt": 1,
+          "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+          "at": "2026-11-27T14:43:24Z",
+          "testedState": {
+            "head": "8f375785",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeDigest": "sha256:6e58404ce4b90e14b54b077423a4fb0fd2372c0e57c184e940adcb44dd59e02d",
+            "scopeBasis": "6 declared file(s); 6 read, 0 missing",
+            "scopeListDigest": "sha256:2b208acc4a80618ffa985581a459784f4446a6fb9a36817f2925fc559d42a467",
+            "dirtyDigest": "sha256:21f21d7e2b9649765918fd742d3902f1056039452835ba8a45b3b007f8956485",
+            "dirtyBasis": "git described the tree before the run; 6 dirty path(s)",
+            "treeKey": "3f7352661198"
+          },
+          "steps": [
+            {
+              "name": "pre-gate/preGate",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 8382,
+              "suiteReader": "none",
+              "command": "python3 tools/lints/_deps.py --register-citations"
+            },
+            {
+              "name": "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 395114,
+              "suiteReader": "none",
+              "commandBytes": 5400,
+              "commandSha256": "9972c00dc91b5302a8e75e88a69a7e06882e75008a2a4862be23597fc764fdec",
+              "program": "python3"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-27T14:43:24Z.bb2cae",
+            "launch": "2026-11-27T14:36:08Z-4fba64d1",
+            "status": "passed",
+            "at": "2026-11-27T14:43:24Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-27T14:43:30Z.9e3e1c",
+        "status": "passed",
+        "at": "2026-11-27T14:43:30Z"
+      }
     },
     {
       "id": "P173.9",
@@ -527,7 +689,8 @@
         "plugins/audit/scripts/governance/_affected_tests.py",
         "tests/test__affected_tests.py",
         "changelog.d/P173.9.changed.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/lints/_deps.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -561,6 +724,10 @@
           "reader": "PLUGIN-BUILD-GUIDE.md",
           "reads": "plugins/audit/scripts/governance/_affected_tests.py",
           "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/governance/_affected_tests.py - a section headed by its path"
+        },
+        {
+          "at": "2026-11-27T14:34:42Z",
+          "text": "Orchestrator added the plan-writer row for write_facts to tools/lints/_deps.py (test__deps pw1 named it missing); the executor's plan gate refused that file before it was declared. test__deps 313/313 after."
         }
       ],
       "timing": {

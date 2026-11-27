@@ -4607,6 +4607,16 @@ def _joined_step_cases(check):
           pre is not None
           and kept == [([own, pre], 0), (["preGate", own], 0),
                        ([pre + " x", own], 0)])
+    # A GREEN re-gate whose joined step ran without the suite the red-first
+    # stage ran beside it keeps that stage step at the head of its steps.
+    stage = M.RED_FIRST_STEP_PREFIX + "affected/related: tests/test_other.py"
+    leaned = [M.declared_steps([stage, joined]),
+              M.declared_steps([pre, stage, joined, "lint"]),
+              M.declared_steps([stage, stage + "2", joined])]
+    check("pgs3 a green row that keeps the red-first step its joined step "
+          "leaned on binds the declared gate after it, with or without a "
+          "pre-gate ahead of it: %r" % (leaned,),
+          leaned == [([own], 0), ([own, "lint"], 0), ([own], 0)])
     head = "c0ffee12"
     clean = {"head": head, "dirtyDigest": M.CLEAN_DIRTY_DIGEST}
     lists = {"runId": "r-joined", "ts": "2026-11-01T00:00:00Z",
