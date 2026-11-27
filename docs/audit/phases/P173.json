@@ -1,7 +1,7 @@
 {
   "id": "P173",
   "title": "The red-first proof is timed and costs one run, not three",
-  "status": "in_progress",
+  "status": "done",
   "description": "Design: quality-gates-internal plans/2026-11-27-speed-red-first.md. Paid probe on c4ee25b8: after every writer round the red-first proof took 334-335 s of untimed wall (three sweeps of the task's test file), 40.9% of the gap to plain; a re-gate after a one-suite red ran that suite alone and again inside the full gate (+112 s).",
   "desiredOutcome": "The drive attributes the red-first proof as its own timed stage, reuses a leg whose inputs did not change, leaves the fix leg to the green task gate, and a re-gate after a one-suite red costs no more than the first gate; measured by the next probe's stage breakdown",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "c4ee25b85de9efa67e00582958d9a91b1ee07bcb",
   "branch": "audit/p173-the-red-first-proof-is-timed-a",
-  "mergedAt": null,
+  "mergedAt": "2026-11-27T23:15:00Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -5155,5 +5155,6 @@
     "runId": "2026-11-27T23:00:13Z.0e02da",
     "status": "passed",
     "at": "2026-11-27T23:00:13Z"
-  }
+  },
+  "mergedHead": "64e483960c9d1a8943a52ef54f759613c81b5051"
 }

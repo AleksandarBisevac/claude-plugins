@@ -1107,7 +1107,7 @@
     {
       "id": "P173",
       "title": "The red-first proof is timed and costs one run, not three",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P173.json"
     }
   ],
