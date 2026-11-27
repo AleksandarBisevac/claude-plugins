@@ -5097,6 +5097,27 @@ and `--full` take no stage at all. The pre-gate's command is kept verbatim on th
 of what a repeat must match. The `pre` cases in `tests/test_run_test_gate.py` drive each arm
 through `main`.
 
+**A task's re-gate after a red runs that red's suites first, and their red stops the gate.**
+Under `--task` (not `--own`), a run that measures rather than repeats reads the task's newest
+recorded run (`last_task_row`: no base run, no `--full` run, a repeat read through the run it
+repeats); when that run was red, `red_first_stage` narrows each red step to the suites its runner
+named, the way a base run does (`_declared_suites_at_base`, `_derived_at_base`,
+`_joined_at_base`), and `run_gate` runs those commands after the pre-gate and before the gate,
+each named behind `RED_FIRST_PREFIX`. A stage step that does not come back green stops the gate:
+every step after it is recorded under its own name by `not_run_step`, its basis
+`RED_FIRST_NOT_RUN` and its `stoppedBy` the stage step, and the run is `failed` on the stage alone.
+A stage that ran whole and green leaves `steps` - it is carried on `res["redFirst"]` in this
+process and the `--json` answer - so the counts, the verdict and the declared gate the commit
+binding reads are the gate's own; that run measures the whole gate, and a part repeat the
+identity offered is measured instead. The pre-gate is no red of the gate's and runs first
+anyway; a red-first step of the previous run runs again as it ran, under the same name; a red
+step whose runner named no suite, whose list was cut, whose suites are no files of the tree by
+those paths, or which only the whole step can run, runs in its place in the gate and is said as
+that, since running it first would run it twice on a green. Every stage command is kept verbatim
+on the row, so a stopped run's base and the round after it run it as it ran. A ledger that will
+not read costs the stage, never the run (`red_first_or_why`). The `rf` cases drive it through
+`main` over the per-suite fixture's call log, and the `rfu` cases over `run_gate`.
+
 **`observations.countsBasis` is written here for the first time.** It has been copied into every
 evidence row by `_evidence_io.row_for` and rendered by the report and the panel since the ledger
 existed, while nothing ever set it — a three-valued count shipping without the basis that
@@ -5507,6 +5528,16 @@ that exits non-zero stops the drive: the driver names the verb and prints its ow
 the refusal and the remedy it gives — and exits 1 (`relay_refusal`). Nothing here re-decides
 what a verb decides.
 
+**A task the plan calls stale is settled before it starts.** `start_task` calls
+`settle_stale_gate` first: when `_phases.stale_spelled_gates` names the task - a phase's wide gate
+it stored before the project recorded how to run a subset - `audit-task.py settle`, the one writer
+of a derived value, rewrites it under the verb's own lock and revalidation, and the did-line names
+the gate before and after. It is asked before the start because a started task keeps the gate its
+attempt is graded against, so a task with an attempt is never named. A refused settle is the one
+verb exit here that does not stop the drive: it is a warning carrying the verb's words, and the
+task starts on the wide gate it holds, which measures more than it needs and never less. The `ssg`
+cases in `tests/test_drive_phase.py` drive it.
+
 **The recorded gate stays before the reviewer.** The gate is recorded and the executor's stamp
 graded in the `next` that writes the reviewer's brief, so the reviewer reads the driver's run
 instead of making its own. A stale stamp prints the fields that moved (`moved_fields`, off the
@@ -5686,7 +5717,12 @@ and a base is measured for this red even though the start's mark holds a finishe
 (`--recorder-from`). `rcd1` is the shape that found it - a project check red on the base run the
 drive kept in the plan, stopped as `gate-red-base` rather than charged to the task - and `rcd2`
 its twin, a task red in another suite beside it. A `not-knowable` of any other cause is not
-measured again on that ground (`rcd3`; `rcd4` the twin). A red task gate
+measured again on that ground (`rcd3`; `rcd4` the twin). Both sentences name the runs that
+measured the red (`kept_base_runs`, `runs_named`): the whole-step run `_evidence_io.base_row_for`
+finds for a step answered by name, and the per-suite run of each suite a declared step measured
+suite by suite at its base named (`_evidence_io.suite_base_run`) - the runs `base_unmeasured`
+counted, so a red answered by per-suite bases never names a run nobody recorded (the `ksn` cases).
+A red task gate
 whose reading has no comparable base run (`no-base`, `not-knowable`) otherwise has its base measured once
 per start (`base_reading_for`, `measure_base`): `run-test-gate.py --base-of` over the red run, in a
 detached tree at the red run's own recorded head - never at the current HEAD - built outside the

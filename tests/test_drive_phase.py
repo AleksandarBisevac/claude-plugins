@@ -21256,6 +21256,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("bm-block", "_base_measure_cases"),
           ("bn-block", "_base_need_cases"),
           ("rcd-block", "_recorder_red_cases"),
+          ("ksn-block", "_kept_suite_need_cases"),
           ("wb-block", "_base_wait_cases"),
           ("bh-block", "_base_held_cases"),
           ("bo-block", "_own_red_path_cases"),
@@ -23059,6 +23060,109 @@ def _recorder_need_cases(check, M):
           "for which run: %r" % (moved,),
           moved[0] is None and moved[2] is not None
           and "r-base" in moved[2] and "r-earlier" in moved[2])
+
+
+def _kept_suite_need_cases(check):
+    """`base_need`'s kept-base sentence names the run that measured each red
+    suite: a declared step answered suite by suite at its base is answered
+    by the per-suite base runs, and those are the runs the sentence names -
+    never a run id nobody recorded."""
+    M, why = _load("drive_phase_kept_suites")
+    if M is None:
+        check("ksn1 the driver loads", False, why)
+        return
+    head = "c0ffee12" + "0" * 32
+    named = "the runner %s these suites" % (_evio.NAMED_FAILING,)
+    sweep = "python3 tools/sweep.py"
+    clean = {"head": head, "dirtyDigest": _evio.CLEAN_DIRTY_DIGEST}
+
+    def _base(run_id, ts, suites, name="unit", of=None):
+        row = {"runId": run_id, "scope": _evio.BASE_SCOPE, "ts": ts,
+               "testedState": dict(clean),
+               "steps": [{"name": _evio.base_suites_step_name(name, suites),
+                          "exit": 1,
+                          "command": "%s %s" % (sweep, " ".join(suites))}]}
+        if of is not None:
+            row[_BASE_OF_KEY] = of
+        return row
+
+    def _red(suites, **reading):
+        row = {"runId": "r-red", "taskId": "P1.1", "phaseId": "P1",
+               "ts": "2026-11-27T11:00:00Z", "testedState": {"head": head},
+               "steps": [{"name": "unit", "exit": 1, "command": sweep,
+                          "failingSuites": list(suites),
+                          "failingSuitesBasis": named}]}
+        if reading:
+            row[_evio.BASE_RED_KEY] = dict(
+                {"head": head, "task": "P1.1", "verdict": "base-only",
+                 "atBase": list(suites), "introduced": [], "unknown": []},
+                **reading)
+        return row
+
+    one = [_base("r-ps-t", "2026-11-27T10:00:00Z", ["tests/test_t.py"])]
+    two = one + [_base("r-ps-u", "2026-11-27T10:30:00Z", ["tests/test_u.py"])]
+    names = ("own_red", "recorded_runs")
+    real = dict((n, getattr(M, n)) for n in names)
+    M.own_red = lambda ctx, task, row, tree=None: None
+    got = {}
+    try:
+        for key, rows, red in (
+                ("one", one, _red(["tests/test_t.py"], run="r-ps-t")),
+                ("behind", one, _red(["tests/test_t.py"], run="r-other")),
+                ("two", two, _red(["tests/test_t.py", "tests/test_u.py"],
+                                  run="r-ps-u")),
+                ("moved", [_base("r-ps-t", "2026-11-27T10:00:00Z",
+                                 ["tests/test_t.py"], of="r-earlier")],
+                 _red(["tests/test_t.py"], run="r-ps-t",
+                      **{_evio.BASE_UNCARRIED_KEY: ["tests/test_t.py"]})),
+                ("mine", [_base("r-ps-t", "2026-11-27T10:00:00Z",
+                                ["tests/test_t.py"], of="r-earlier"),
+                          _base("r-ps-u", "2026-11-27T10:30:00Z",
+                                ["tests/test_u.py"], of="r-red")],
+                 _red(["tests/test_t.py", "tests/test_u.py"], run="r-ps-u",
+                      **{_evio.BASE_UNCARRIED_KEY: ["tests/test_t.py"]})),
+                ("whole", [{"runId": "r-whole", "scope": _evio.BASE_SCOPE,
+                            "ts": "2026-11-27T10:00:00Z",
+                            "testedState": dict(clean),
+                            "steps": [{"name": "unit", "exit": 1,
+                                       "command": sweep}]}],
+                 _red(["tests/test_t.py"], run="r-whole"))):
+            M.recorded_runs = (lambda held: lambda ctx: {"rows": held})(rows)
+            got[key] = M.base_need({}, {"id": "P1.1"}, red)
+    finally:
+        for n in names:
+            setattr(M, n, real[n])
+    check("ksn1 RED-FIRST: A RED ANSWERED BY A PER-SUITE BASE NAMES THAT RUN: "
+          "the kept-base sentence names the per-suite base run that measured "
+          "the red suite, and never a run id none recorded: %r" % (got["one"],),
+          got["one"][0] is not None and "r-ps-t" in got["one"][0]
+          and "None" not in got["one"][0] and got["one"][1] is False
+          and got["one"][2] is None)
+    check("ksn2 TWO SUITES, TWO RUNS: a red whose suites two per-suite runs "
+          "measured names both, and its reading of the newer one is current: "
+          "%r" % (got["two"],),
+          got["two"][0] is not None and "r-ps-t" in got["two"][0]
+          and "r-ps-u" in got["two"][0] and "None" not in got["two"][0]
+          and got["two"][1] is False)
+    check("ksn3 A READING BEHIND THE RUN IS STALE: the same red, its reading "
+          "naming another run than the per-suite base that answers it, is "
+          "read again: %r" % (got["behind"],),
+          got["behind"][0] is not None and got["behind"][1] is True)
+    check("ksn4 THE MEASURED-FOR-ANOTHER-RED SENTENCE NAMES THE PER-SUITE RUN "
+          "and the run it was measured for, never None: %r" % (got["moved"],),
+          got["moved"][0] is None and got["moved"][2] is not None
+          and "r-ps-t" in got["moved"][2] and "r-earlier" in got["moved"][2]
+          and "None" not in got["moved"][2])
+    check("ksn6 ALLOW: ONE OF THE RUNS MEASURED FOR THIS RED OWES IT NO OTHER "
+          "BASE: a red read against two per-suite runs, one measured for "
+          "another red and one for this one, is answered by them, never sent "
+          "to measure a base again: %r" % (got["mine"],),
+          got["mine"][0] is not None and got["mine"][2] is None
+          and "r-ps-t" in got["mine"][0] and "r-ps-u" in got["mine"][0])
+    check("ksn5 ALLOW: A WHOLE-STEP BASE STILL NAMES ITS OWN RUN: %r"
+          % (got["whole"],),
+          got["whole"][0] is not None and "r-whole" in got["whole"][0]
+          and "None" not in got["whole"][0] and got["whole"][1] is False)
 
 
 def _base_claims(M, root):

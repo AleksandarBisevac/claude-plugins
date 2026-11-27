@@ -3927,7 +3927,7 @@ OWN_RED_WHY = ("no base run is started: every failing suite (%s) is a file "
                "this task's tests.add created - absent at base %s; where its "
                "cases come from is not read")
 KEPT_BASE_WHY = ("no base run is started: every red step was measured at base "
-                 "%s already (run %s), and a second run of them there measures "
+                 "%s already (%s), and a second run of them there measures "
                  "the same")
 # The key a reading `base_reading_for` hands the decision carries the sentence
 # above under, in memory only: the row's own reading is never rewritten.
@@ -4091,24 +4091,64 @@ def base_need(ctx, task, row, tree=None):
                                     (row or {}).get("taskId"), rows)
     if missing is None or missing:
         return None, False, None
-    base = _evio.base_row_for(
+    runs = kept_base_runs(
         [st for st in row.get("steps") or [] if _evio._counts_as_failed(st)],
-        head, row.get("taskId"), rows) or {}
+        head, row.get("taskId"), rows)
+    newest = runs[-1] if runs else {}
     if (reading or {}).get(_evio.BASE_UNCARRIED_KEY) \
-            and not measured_for(base, row, rows):
+            and not any(measured_for(run, row, rows) for run in runs):
+        measured = sorted(set(str(run[_evio.BASE_OF_KEY]) for run in runs
+                              if run.get(_evio.BASE_OF_KEY)))
         return None, False, ELSEWHERE_BASE_WHY % (
-            row.get("taskId"), base.get("runId"),
-            base.get(_evio.BASE_OF_KEY) or "no run it names")
-    stale = not (base_behind(reading)
-                 and str(reading.get("run")) == str(base.get("runId")))
-    return KEPT_BASE_WHY % (str(head)[:12], base.get("runId")), stale, None
+            row.get("taskId"), runs_named(runs),
+            ", ".join(measured) or "no run it names")
+    stale = not (base_behind(reading) and newest.get("runId")
+                 and str(reading.get("run")) == str(newest.get("runId")))
+    return KEPT_BASE_WHY % (str(head)[:12], runs_named(runs)), stale, None
+
+
+def kept_base_runs(red, head, task_id, rows):
+    """The base runs that measured the red steps `red` at commit `head`, once
+    each, newest last (`_evidence_io.oldest_first`) - the runs the base
+    reading (`run-test-gate.base_red`) reads them against: the whole-step run
+    `_evidence_io.base_row_for` finds for a step it answers by name, and for a
+    declared step answered suite by suite (`_evidence_io._suites_unmeasured`)
+    the per-suite run of each suite it named (`suite_base_run`). The two
+    readers ask one rule, so this names the runs `base_unmeasured` counted."""
+    base = _evio.base_row_for(red, head, task_id, rows)
+    base_steps = [st for st in (base or {}).get("steps") or []
+                  if isinstance(st, dict)]
+    found = []
+    for step in red:
+        if _evio.base_step(base_steps, step) is not None or \
+                _evio._suites_unmeasured(step, head, task_id, rows) is None:
+            found += [base] if base is not None else []
+            continue
+        found += [run for run in (
+            _evio.suite_base_run(rows, head, task_id, step, suite)
+            for suite in _evio.named_failing_suites([step]))
+            if run is not None]
+    by_id = {}
+    for run in found:
+        by_id[str(run.get("runId"))] = run
+    return _evio.oldest_first(list(by_id.values()))
+
+
+def runs_named(runs):
+    """`run <id>` or `runs <id>, <id>` for the base runs `runs`, each run
+    whose row records no id said as that - or that no run was found."""
+    ids = [str(run["runId"]) if run.get("runId") else "a run recording no id"
+           for run in runs]
+    if not ids:
+        return "no run this ledger names"
+    return "%s %s" % ("run" if len(ids) == 1 else "runs", ", ".join(ids))
 
 
 # A base run recorded for the red's commit and step set that was measured for
 # another red carried the recorder's writes as they stood for that red, not the
 # ones this red's tree held, so it charges this red nothing
 # (`run-test-gate.uncarried`) and a base is measured for this red.
-ELSEWHERE_BASE_WHY = ("%s's red read not-knowable against base run %s, "
+ELSEWHERE_BASE_WHY = ("%s's red read not-knowable against base %s, "
                       "measured for run %s, which did not carry the recorder's "
                       "writes this red's tree held; its base is measured for it")
 

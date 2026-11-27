@@ -12158,14 +12158,16 @@ def _ps_output(fails):
         else "1/1 cases passed")
 
 
-def _ps_repo(prefix, base_fails=None, die_at_task=False):
+def _ps_repo(prefix, base_fails=None, die_at_task=False, plan_entry=False):
     """`(root, mpath, log)` - a committed one-task plan whose task gate is the
     build key `selftests`, the bare form of the plan's recorded spelling
     `python3 tools/sweep.py {paths}`, over three suites. `base_fails` maps a
     suite to the cases it fails at the committed base; every suite passes in
     the task's tree until `_ps_task_red` says otherwise. `log` is the sweep's
     call log, outside the tree. `die_at_task` makes the runner name no suite
-    in the task's tree."""
+    in the task's tree. `plan_entry` adds the build key `plan`, a check that
+    reads the plan file, to the task's gate after `selftests` - an entry
+    naming a path the reuse identity leaves out."""
     log = os.path.join(_harness.fixture_root("rtg-per-suite-log-"),
                        "calls.log")
     root = _harness.fixture_root(prefix)
@@ -12174,11 +12176,18 @@ def _ps_repo(prefix, base_fails=None, die_at_task=False):
         os.makedirs(os.path.join(root, *sub))
     mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
     sweep = "python3 tools/sweep.py"
+    build = {"selftests": sweep}
+    gate = ["selftests"]
+    if plan_entry:
+        build["plan"] = "python3 tools/plan.py docs/audit/audit-plan.json"
+        gate.append("plan")
     files = [
         (".claude/audit.config.json",
          json.dumps({"manifestPath": "docs/audit/audit-plan.json"})),
+        ("tools/plan.py", "import json, sys\nwith open(sys.argv[1]) as fh:\n"
+                          "    json.load(fh)\n"),
         ("docs/audit/audit-plan.json", json.dumps(
-            {"meta": {"version": 3, "buildCommands": {"selftests": sweep},
+            {"meta": {"version": 3, "buildCommands": build,
                       "phaseGate": {"derived": {
                           "spelling": sweep + " {paths}",
                           "verifiedOn": {"command": "echo v1",
@@ -12190,7 +12199,7 @@ def _ps_repo(prefix, base_fails=None, die_at_task=False):
              "testGate": ["selftests"], "tasks": [
                  {"id": "P1.1", "title": "the work", "status": "in_progress",
                   "files": ["pkg/core.py"],
-                  "tests": {"mode": "regression", "gate": ["selftests"]}}]})),
+                  "tests": {"mode": "regression", "gate": gate}}]})),
         ("tools/sweep.py", _PER_SUITE_SWEEP.replace("@LOG@", repr(log))),
         ("pkg/__init__.py", ""), ("pkg/core.py", "X = 1\n"),
         (".gitignore", "__pycache__/\n")]
@@ -12693,6 +12702,306 @@ def _joined_repo():
                  "commit", "-qm", "fixture"]):
         _harness.git(root, *arg, prefix=_PLAIN_GIT)
     return root, mpath, phase, build, own, log
+
+
+def _rf_round(root, mpath, log, task_fails, write=True):
+    """`(exit, printed, row, calls)` of one recorded task run of P1.1 in a
+    `_ps_repo` fixture, each suite of `task_fails` failing its cases in the
+    task's tree and every other passing - a writer round's re-gate. Asked
+    with no `--no-reuse`, the way the drive asks a re-gate: each round's
+    outputs differ from the last, so no round repeats an earlier verdict.
+    `write` False leaves the outputs as the last round left them."""
+    for suite in (_PS_SUITES if write else ()):
+        stem = suite.split("/")[-1][:-3]
+        with open(os.path.join(root, "gate-out", "%s.task.txt" % (stem,)),
+                  "w", newline="\n") as fh:
+            fh.write(_ps_output(task_fails.get(suite, ())))
+    before = len(_ps_calls(log))
+    said = []
+    code = M.main([mpath, "P1", "--task", "P1.1", "--project-dir", root,
+                   "--record"], out=said.append)
+    rows = [r for r in _ev_io.read_rows(root, manifest_path=mpath)["rows"]
+            if r.get("taskId") == "P1.1"
+            and r.get("scope") != _ev_io.BASE_SCOPE]
+    return (code, "\n".join(str(s) for s in said),
+            _ev_io.newest_row(rows) or {}, _ps_calls(log)[before:])
+
+
+def _rf_play(prefix, rounds, **fixture):
+    """The `_rf_round` of each `task_fails` in `rounds`, in order, over one
+    fresh `_ps_repo` - and the plan, read before the fixture goes."""
+    root, mpath, log = _ps_repo(prefix, **fixture)
+    try:
+        played = [_rf_round(root, mpath, log, fails) for fails in rounds]
+        return played, _mio_load(mpath), root
+    finally:
+        _ps_remove(root, log)
+
+
+def _red_first_cases(check):
+    """A re-gate after a writer round runs the previous round's red suites
+    first, in the same run: red there stops the gate - recorded red, every
+    step it did not start named as not run - and green there runs the whole
+    gate, measured, its verdict the gate's alone. A stopped run never vouches
+    for more than it ran."""
+    prefix = getattr(M, "RED_FIRST_PREFIX", None)
+    step = "selftests"
+    sweep = "python3 tools/sweep.py"
+    t_only = _ev_io.base_suites_step_name(step, ["tests/test_t.py"])
+    staged = None if prefix is None else prefix + t_only
+
+    # Round one red on t; the writer's round leaves t red (another case).
+    played, plan, _root = _rf_play("rtg-rf-stop-", (
+        {"tests/test_t.py": ("c1",)}, {"tests/test_t.py": ("c2",)}))
+    (c1, _t1, r1, k1), (c2, t2, r2, k2) = played
+    steps = r2.get("steps") or []
+    names = [s.get("name") for s in steps]
+    unrun = steps[1] if len(steps) > 1 else {}
+    check("rf1 RED-FIRST: A RE-GATE AFTER A RED RUNS LAST ROUND'S RED SUITE "
+          "FIRST, AND ITS RED STOPS THE GATE: the runner is handed "
+          "tests/test_t.py alone, never the whole step; the row is red, its "
+          "first step the red-first step over that suite, and the gate's own "
+          "step is recorded by name as not run - no exit, could-not-run, a "
+          "basis saying the red-first stage stopped it: first %r / exit %r / "
+          "status %r / calls %r / steps %r"
+          % ((c1, r1.get("status"), k1), c2, r2.get("status"), k2, steps),
+          staged is not None and c1 == M.E_FAIL and k1 == [""]
+          and c2 == M.E_FAIL and r2.get("status") == "failed"
+          and k2 == ["tests/test_t.py"]
+          and names == [staged, step]
+          and steps[0].get("exit") == 1
+          and steps[0].get("failingSuites") == ["tests/test_t.py"]
+          and unrun.get("exit") is None
+          and unrun.get("outcome") == M.CANNOT_RUN
+          and "not run" in str(unrun.get("outcomeBasis"))
+          and "red-first" in str(unrun.get("outcomeBasis")))
+    check("rf2 ...AND A STOPPED RUN VOUCHES FOR NO MORE THAN IT RAN: the only "
+          "failed step is the red-first one, the row is a measurement rather "
+          "than a repeat, the red-first command is kept verbatim so its base "
+          "runs it again as it ran, and the printed run names the step it did "
+          "not run: failed %r / source %r / command %r / base %r / printed %r"
+          % (r2.get("failed"), r2.get(_ev_io.VERDICT_SOURCE),
+             steps[0].get("command") if steps else None,
+             M.base_commands(r2, plan, "P1", _root)[0] if staged else None,
+             [ln for ln in t2.splitlines() if "not run" in ln]),
+          staged is not None and r2.get("failed") == [staged]
+          and r2.get(_ev_io.VERDICT_SOURCE) is None
+          and (steps[0].get("command") if steps else None)
+          == sweep + " tests/test_t.py"
+          and M.base_commands(r2, plan, "P1", _root)[0]
+          == [(staged, sweep + " tests/test_t.py")]
+          and any("not run" in ln and step in ln for ln in t2.splitlines()))
+
+    # Round one red on t; the writer's round turns it green.
+    played, _plan, _root = _rf_play("rtg-rf-green-", (
+        {"tests/test_t.py": ("c1",)}, {}))
+    (_c1, _t1, _r1, _k1), (c2, t2, r2, k2) = played
+    steps = r2.get("steps") or []
+    names = [s.get("name") for s in steps]
+    check("rf3 GREEN RED-FIRST RUNS THE WHOLE GATE, MEASURED: last round's red "
+          "suite runs first and alone, then the whole step; the row is green, "
+          "its steps the declared gate's and nothing else - so the declared "
+          "gate it binds is the plan's - and it is no repeat: exit %r / "
+          "status %r / calls %r / steps %r / source %r / declared %r"
+          % (c2, r2.get("status"), k2, names, r2.get(_ev_io.VERDICT_SOURCE),
+             _ev_io.declared_steps(names)[0]),
+          staged is not None and c2 == M.E_OK
+          and r2.get("status") == "passed"
+          and k2 == ["tests/test_t.py", ""] and names == [step]
+          and steps[0].get("exit") == 0
+          and r2.get(_ev_io.VERDICT_SOURCE) is None
+          and _ev_io.declared_steps(names)[0] == [step]
+          and "red-first" in t2)
+
+    # No red before: nothing runs first; a green before: nothing runs first.
+    played, _plan, _root = _rf_play("rtg-rf-none-", ({}, {"tests/test_u.py":
+                                                         ("c1",)}))
+    (c1, t1, r1, k1), (c2, _t2, r2, k2) = played
+    check("rf4 ALLOW: WITH NO RED BEFORE IT, A RUN TAKES NO RED-FIRST STAGE - "
+          "the first run and the run after a green each hand the runner the "
+          "whole step once, nothing named red-first: first %r / after green "
+          "%r" % ((c1, k1, [s.get("name") for s in r1.get("steps") or []]),
+                  (c2, k2, [s.get("name") for s in r2.get("steps") or []])),
+          c1 == M.E_OK and k1 == [""] and "red-first" not in t1
+          and [s.get("name") for s in r1.get("steps") or []] == [step]
+          and c2 == M.E_FAIL and k2 == [""]
+          and [s.get("name") for s in r2.get("steps") or []] == [step])
+
+    # A red whose runner named no suite: nothing to run first.
+    root, mpath, log = _ps_repo("rtg-rf-unnamed-", die_at_task=True)
+    try:
+        _c, _t, unnamed, _k = _rf_round(root, mpath, log, {})
+        os.remove(os.path.join(root, "gate-out", "die.task"))
+        c2, _t2, r2, k2 = _rf_round(root, mpath, log,
+                                    {"tests/test_u.py": ("c1",)})
+    finally:
+        _ps_remove(root, log)
+    check("rf5 ALLOW: A RED NAMING NO SUITE HAS NO SUITE TO RUN FIRST, so the "
+          "next run is the whole gate once: red %r / then %r"
+          % (unnamed.get("status"), (c2, k2, [s.get("name") for s in
+                                              r2.get("steps") or []])),
+          unnamed.get("status") == "failed" and c2 == M.E_FAIL
+          and k2 == [""]
+          and [s.get("name") for s in r2.get("steps") or []] == [step])
+
+    # Three rounds: the second stopped on t, the third runs the same step
+    # first again, under the same name.
+    played, _plan, _root = _rf_play("rtg-rf-third-", (
+        {"tests/test_t.py": ("c1",)}, {"tests/test_t.py": ("c2",)},
+        {"tests/test_t.py": ("c3",)}))
+    (_c1, _t1, _r1, _k1), (_c2, _t2, r2, _k2), (c3, _t3, r3, k3) = played
+    check("rf6 A STOPPED RUN'S RED IS LAST ROUND'S RED: the round after it "
+          "runs the same red-first step first, under the same name - never "
+          "the prefix twice - and stops on it again: %r / %r"
+          % ([s.get("name") for s in r2.get("steps") or []],
+             (c3, k3, [s.get("name") for s in r3.get("steps") or []])),
+          staged is not None and c3 == M.E_FAIL
+          and k3 == ["tests/test_t.py"]
+          and [s.get("name") for s in r3.get("steps") or []]
+          == [staged, step])
+
+    # The same tree again but for the plan, which the first round's record
+    # rewrote and the identity leaves out: an entry reading it makes the
+    # rest of the gate a part repeat - unless last round was red.
+    root, mpath, log = _ps_repo("rtg-rf-part-", plan_entry=True)
+    try:
+        g1 = _rf_round(root, mpath, log, {})
+        g2 = _rf_round(root, mpath, log, {}, write=False)
+        _rf_round(root, mpath, log, {"tests/test_t.py": ("c1",)})
+        c4, t4, r4, k4 = _rf_round(root, mpath, log, {}, write=False)
+    finally:
+        _ps_remove(root, log)
+    check("rf7 A RUN AFTER A RED REPEATS NO PART OF AN EARLIER RUN: the allow "
+          "twin first - after a green, the plan alone changed, the gate's "
+          "`selftests` is repeated and only the plan check runs - then after "
+          "a red on the same bytes, last round's red suite runs first and "
+          "stops the gate, measured, nothing repeated, and the run says it "
+          "measured rather than repeated: twin %r / after red %r"
+          % ((g1[3], g2[3], g2[2].get(_ev_io.VERDICT_SOURCE)),
+             (c4, k4, r4.get(_ev_io.VERDICT_SOURCE),
+              [s.get("name") for s in r4.get("steps") or []])),
+          staged is not None and g1[3] == [""] and g2[3] == []
+          and g2[2].get(_ev_io.VERDICT_SOURCE) == _ev_io.PART_REUSED
+          and c4 == M.E_FAIL and k4 == ["tests/test_t.py"]
+          and r4.get(_ev_io.VERDICT_SOURCE) is None
+          and [s.get("name") for s in r4.get("steps") or []]
+          == [staged, step, "plan"]
+          and "measured again rather than repeated" in t4)
+
+    # Unit readings over red rows nothing runs: which red steps the stage
+    # takes, and which it leaves in their place in the gate.
+    root, mpath, log = _ps_repo("rtg-rf-which-")
+    try:
+        plan = _mio_load(mpath)
+        named_basis = "the runner %s these suites" % (_ev_io.NAMED_FAILING,)
+        bare = {"name": step, "exit": 1, "command": sweep,
+                "failingSuites": ["tests/test_t.py"],
+                "failingSuitesBasis": named_basis}
+
+        def stage_of(*steps, **row):
+            red = dict({"runId": "r-red", "taskId": "P1.1", "phaseId": "P1",
+                        "scope": "task", "status": "failed",
+                        "ts": "2026-11-27T10:00:00Z",
+                        "steps": list(steps)}, **row)
+            return M.red_first_stage([red], plan, "P1", "P1.1", root)
+        taken = stage_of(bare)
+        whole = stage_of(dict(bare, name="lint", command=sweep + " -x"))
+        pre = stage_of(dict(bare, name=_ev_io.PRE_GATE_STEP,
+                            command="python3 pre.py"))
+        other = stage_of(bare, taskId="P1.2")
+        green = stage_of(dict(bare, exit=0), status="passed")
+    finally:
+        _ps_remove(root, log)
+    check("rf8 WHICH REDS RUN FIRST: a red step in the bare form of the "
+          "recorded spelling is taken over its named suites; one only the "
+          "whole step can run stays in its place in the gate and is said; a "
+          "red pre-gate, another task's red and a green run take no stage: "
+          "taken %r / whole %r / pre %r / other %r / green %r"
+          % (taken, whole, pre, other, green),
+          staged is not None
+          and taken[0] == [(staged, sweep + " tests/test_t.py")]
+          and whole[0] == [] and any("lint runs in its place" in ln
+                                     for ln in whole[1])
+          and pre == ([], []) and other == ([], []) and green == ([], []))
+
+
+def _red_first_unit_cases(check):
+    """`run_gate`'s red-first stage over a scripted runner: run after the
+    pre-gate and before the gate; a red there records every later step as
+    not run; green there leaves `steps` the gate's own, the stage on
+    `redFirst`."""
+    prefix = getattr(M, "RED_FIRST_PREFIX", None)
+    if prefix is None:
+        check("rfu1 the runner names a red-first prefix", False,
+              "RED_FIRST_PREFIX is missing")
+        return
+    tmp = _mini_repo("rtg-rf-unit-")
+    stage = [(prefix + "unit", "run-first")]
+    try:
+        calls = []
+        red = M.run_gate(tmp, [("unit", "run-unit"), ("lint", "run-lint")],
+                         runner=_scripted({"run-first": (1, "FAIL x\n"),
+                                           "run-unit": (0, "ok\n"),
+                                           "run-lint": (0, "ok\n")}, calls),
+                         red_first=stage)
+        green_calls = []
+        green = M.run_gate(tmp, [("unit", "run-unit")],
+                           runner=_scripted({"run-first": (0, "ok\n"),
+                                             "run-unit": (0, "ok\n"),
+                                             "run-pre": (0, "ok\n")},
+                                            green_calls),
+                           red_first=stage,
+                           pre_gate=(_ev_io.PRE_GATE_STEP, "run-pre", None))
+        pre_calls = []
+        pre_red = M.run_gate(tmp, [("unit", "run-unit")],
+                             runner=_scripted({"run-first": (0, "ok\n"),
+                                               "run-unit": (0, "ok\n"),
+                                               "run-pre": (1, "bad\n")},
+                                              pre_calls),
+                             red_first=stage,
+                             pre_gate=(_ev_io.PRE_GATE_STEP, "run-pre", None))
+    finally:
+        _harness.remove_tree(tmp)
+    steps = red.get("steps") or []
+    check("rfu1 A RED RED-FIRST STEP STOPS THE GATE: the runner is handed the "
+          "red-first command alone, the run is failed on it and on nothing "
+          "else, and each gate step is recorded under its own name as not "
+          "run, its `stoppedBy` the red-first step: calls %r / status %r / "
+          "failed %r / steps %r"
+          % (calls, red.get("status"), red.get("failed"), steps),
+          calls == ["run-first"] and red.get("status") == "failed"
+          and red.get("failed") == [prefix + "unit"]
+          and [s.get("name") for s in steps] == [prefix + "unit", "unit",
+                                                 "lint"]
+          and all(s.get("exit") is None and s.get("outcome") == M.CANNOT_RUN
+                  and s.get("stoppedBy") == prefix + "unit"
+                  for s in steps[1:])
+          and red.get("redFirst") == [])
+    check("rfu2 GREEN RED-FIRST IS NO STEP OF THE GATE: run after the pre-gate "
+          "and before the gate, it leaves `steps` the pre-gate and the gate's "
+          "own, and is carried on `redFirst` as it ran: calls %r / steps %r / "
+          "redFirst %r / status %r"
+          % (green_calls, [s.get("name") for s in green.get("steps") or []],
+             [(s.get("name"), s.get("exit"))
+              for s in green.get("redFirst") or []], green.get("status")),
+          green_calls == ["run-pre", "run-first", "run-unit"]
+          and [s.get("name") for s in green.get("steps") or []]
+          == [_ev_io.PRE_GATE_STEP, "unit"]
+          and [(s.get("name"), s.get("exit"))
+               for s in green.get("redFirst") or []]
+          == [(prefix + "unit", 0)]
+          and green.get("status") == "passed")
+    check("rfu3 A RED PRE-GATE STOPS THE RED-FIRST STAGE TOO: nothing after "
+          "the pre-gate is started, and the red-first step is named as not "
+          "run beside the gate's: calls %r / steps %r"
+          % (pre_calls, [(s.get("name"), s.get("exit"))
+                         for s in pre_red.get("steps") or []]),
+          pre_calls == ["run-pre"]
+          and [(s.get("name"), s.get("exit"))
+               for s in pre_red.get("steps") or []]
+          == [(_ev_io.PRE_GATE_STEP, 1), (prefix + "unit", None),
+              ("unit", None)]
+          and pre_red.get("status") == "failed")
 
 
 def _joined_run_cases(check):
@@ -16732,6 +17041,8 @@ def _selftest():
         _harness.stage(check, "kbg-block", _kept_base_gate_cases)
         _harness.stage(check, "bps-block", _base_per_suite_cases)
         _harness.stage(check, "bpr-block", _per_suite_reading_cases)
+        _harness.stage(check, "rf-block", _red_first_cases)
+        _harness.stage(check, "rfu-block", _red_first_unit_cases)
         _harness.stage(check, "jn-block", _joined_run_cases)
         _joined_repeat_cases(check)
         _harness.stage(check, "jnb-block", _joined_base_cases)
