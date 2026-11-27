@@ -1,0 +1,22 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_task.py": "pass",
+    "ruff check tests/test_audit_task.py": "pass",
+    "vermin -t=3.8- tests/test_audit_task.py": "pass",
+    "python3 tools/lints/_deps.py --register-citations": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with expectRedFirst false and no tests.add: a test-only path-spelling fix that cannot be red on this POSIX host (os.path.join and normpath agree on posix); the Windows red is CI run 45982661598. Simulated with ntpath on a drive-rooted path: the raw join of a manifest dir and the stub's forward-slash shard differs from the os.walk-style join (False); after ntpath.normpath both equal the walked spelling (True).",
+    "at": "2026-11-27"
+  },
+  "outcome": {
+    "technical": "tests/test_audit_task.py, _settle_task_scope_cases (wgt block): shard_of() now returns os.path.normpath(os.path.join(dirname(mpath), stub['shard'])), and plan_bytes() keys with os.path.normpath(os.path.join(where, name)) so both sides of the wgt2 compare `changed == [shard_a]` / `shard_b not in changed` are one spelling whatever the walk root's own spelling. Audited the rest of the wgt block: the other path compare is `os.sep + 'journal' + os.sep not in p` over walked keys only (already platform spelling, left); wgt5/wgt6 compare plan_bytes() to plan_bytes() (same producer, left); no other stub-spelled path is compared. Ran: sweep-selftests tests/test_audit_task.py -> '1/1 files ok, 1294 cases', wgt-block ran; ruff check -> All checks passed; vermin -t=3.8- -> no violations; _deps.py --register-citations -> 0 found. Dependants (test_commit_task_work.py, test__filed_returns.py, sweep-costs.json, audit-task.py, affected.py, sweep-selftests.py, CHANGELOG.md, pipeline-cost-levers.md): still correct - only a test-local helper changed inside one block, no name, case id, case count or product path they use moved.",
+    "descriptive": "The task-scoped settle case compares shard paths in one normalised spelling, so wgt2 no longer fails on Windows."
+  },
+  "testsAdded": [],
+  "claims": "claims:\n1 tests/test_audit_task.py shard_of and plan_bytes (wgt block) normpath their paths; comment states only that the stub uses a forward slash and the walk keys differ on Windows\n2 not provable red on posix; ntpath simulation: raw join != walked join (False), normpath(raw) == normpath(walked) == walked (True); wgt-block green\n3 bare shape grep in wgt block: os.path.join(...) sites - shard_of (fixed), plan_bytes (normalised), journal separator test over walked keys only (left, same producer); no other stub-spelled compare\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:6bfe355a9e54b6acf5f29914a1f757be202478cc1b7bbe29a0173399450414f7\",\"dirtyDigest\":\"sha256:f274f071c3c59065a6a7ec4264602e316c39c82c9233d31b3bf12ae0502d2df0\",\"dirtyPaths\":{\"tests/test_audit_task.py\":\"53ab9d39a85fc0b7\"},\"head\":\"5e97ad87\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:5c299596395eff63b4b342e18fbc96f9b3ee88b800a330d382ae2154a3054cec\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -23919,7 +23919,11 @@ def _settle_task_scope_cases(check):
         def shard_of(pid):
             for stub in _mio.read_json(mpath)["phases"]:
                 if stub.get("id") == pid:
-                    return os.path.join(os.path.dirname(mpath), stub["shard"])
+                    # The stub spells the shard with a forward slash and
+                    # `plan_bytes` keys by os.walk + os.path.join, so on
+                    # Windows the two spell one path two ways until normalised.
+                    return os.path.normpath(
+                        os.path.join(os.path.dirname(mpath), stub["shard"]))
             return None
 
         def plan_bytes():
@@ -23927,7 +23931,8 @@ def _settle_task_scope_cases(check):
             for where, _dirs, names in os.walk(os.path.dirname(mpath)):
                 for name in names:
                     with open(os.path.join(where, name), "rb") as fh:
-                        found[os.path.join(where, name)] = fh.read()
+                        found[os.path.normpath(os.path.join(where, name))] = (
+                            fh.read())
             return found
 
         ids = dict((ph["id"], [t["id"] for t in ph.get("tasks") or []

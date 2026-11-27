@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task clause: 'Normalise shard_of's result with os.path.normpath (and any other path compare in the wgt block that mixes the stub's spelling with walked paths). Test-only; no product change.' Diff (tests/test_audit_task.py:23919-23935): shard_of() now returns os.path.normpath(os.path.join(dirname(mpath), stub['shard'])), and plan_bytes() keys with os.path.normpath(os.path.join(where, name)), so `changed == [shard_a]` and `shard_b not in changed` (wgt2) compare one spelling. I read the whole wgt block: the only other path compare is `os.sep + 'journal' + os.sep not in p` over plan_bytes keys (platform spelling after normpath, still matches on Windows); wgt5/wgt6 compare plan_bytes() to plan_bytes() (same producer). No assertion was removed or loosened; only the path spelling changed, and on posix normpath is a no-op for these paths. No product file touched. The executor's outcome describes the diff accurately (shard_of and plan_bytes only, wgt-block audit, dependants unchanged since only a test-local helper changed). Extending the key normalisation into plan_bytes is within the clause's parenthetical.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor filed not-attempted: regression task, expectRedFirst false, no tests.add; a Windows-only path-spelling failure that cannot be red on this POSIX host (CI run 45982661598 is the red). Its ntpath simulation (raw join != walked join; normpath equal) is a stated basis, not a run I repeated. No new test was added.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate is `python3 tools/sweep-selftests.py tests/test_audit_task.py`, which selects tests/test_audit_task.py. I read the changed _settle_task_scope_cases block (wgt1-wgt7). Each check asserts a real outcome (gate narrowing, byte-identical sibling shard, journal row count, unscoped settle still settling, refusal exit 2). I found no assertion the behaviour never reaches, no swallowing try, and no filter that narrows to nothing. changed is computed from the set union of before/after keys and wgt2 also requires code == 0 and the task's gate to have narrowed. The rest of the 1294-case file was not read."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

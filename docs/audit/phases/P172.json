@@ -29,17 +29,23 @@
         "severity": "low",
         "file": "PLUGIN-BUILD-GUIDE.md:7215",
         "issue": "The audit-task.py section still describes `settle [manifest]` as storing every derived value of the plan, with no mention of `--task ID` (scoped to one task's stale wide gate, no phase/bug/stub writes, unknown task refused with exit 2). The drive-phase.py section (~5533) likewise does not mention the scoped call or the new 'gate did not move' did-line. The executor flagged this as NOT DONE.",
-        "resolution": "Add one sentence per section stating the `--task` scope and the unmoved-gate did-line, without writing a count."
+        "resolution": "fixed in P172.13-mrj (5e97ad871a9d): Add one sentence per section stating the `--task` scope and the unmoved-gate did-line, without writing a count.",
+        "fixTask": "P172.13-mrj",
+        "commit": "5e97ad871a9d",
+        "status": "fixed"
       },
       {
         "id": "P172-R2",
         "severity": "med",
         "file": "PLUGIN-BUILD-GUIDE.md:7219-7230",
         "issue": "contradicts task clause: the task asks to update PLUGIN-BUILD-GUIDE.md's audit-task.py settle line to say settle --task ID is task-scoped (one task's stale wide gate, only its phase shard written, phase/bug values and stale stubs left to the whole-plan call, unknown task refused with exit 2, 'nothing to settle' when nothing narrows). The diff does not touch the `settle [manifest]` paragraph at all (the guide diff holds only the red-first sentences at ~5090/5106 and the settle_stale_gate paragraph at ~5532). The executor's claim 1 and outcome say a paragraph was added after the settle [manifest] description; no such hunk exists. The verb's own usage line (audit-task.py:82) is `settle [manifest] [--task ID]`, so the guide's verb description now omits a flag the verb takes and still reads as a whole-plan-only verb.",
-        "resolution": "Add to the `settle [manifest]` paragraph (PLUGIN-BUILD-GUIDE.md:7219-7230) a sentence read off audit-task.py _locked_settle/_settle_wide_gates: `settle [manifest] --task ID` settles that task's stale wide gate only (_settle_wide_gates(only_task)), writes only the shard of the phase the task sits in, leaves phase/bug values and stale index stubs to the whole-plan call (rows and stale_stubs are empty when scoped), refuses an unknown task with the ids the plan holds (E_USAGE, exit 2) before any write, and prints `nothing to settle` naming the task when its gate does not narrow."
+        "resolution": "fixed in P172.13-mrj (5e97ad871a9d): Add to the `settle [manifest]` paragraph (PLUGIN-BUILD-GUIDE.md:7219-7230) a sentence read off audit-task.py _locked_settle/_settle_wide_gates: `settle [manifest] --task ID` settles that task's stale wide gate only (_settle_wide_gates(only_task)), writes only the shard of the phase the task sits in, leaves phase/bug values and stale index stubs to the whole-plan call (rows and stale_stubs are empty when scoped), refuses an unknown task with the ids the plan holds (E_USAGE, exit 2) before any write, and prints `nothing to settle` naming the task when its gate does not narrow.",
+        "fixTask": "P172.13-mrj",
+        "commit": "5e97ad871a9d",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 1 med, 1 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 2 - 0 high, 1 med, 1 low; 2 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2495,7 +2501,7 @@
     {
       "id": "P172.13-mrj",
       "title": "The settle verb's task scope is documented where the verb is",
-      "status": "in_progress",
+      "status": "done",
       "description": "Docs follow-up to the task-scoped settle. audit-task.py settle now takes --task ID: only that task's stale wide gate is settled and only its phase's shard is written; phase and bug derived values and stale index stubs stay with the whole-plan call; an unknown task is refused (exit 2); nothing stale prints 'nothing to settle'. drive-phase.settle_stale_gate passes --task and reports '<id>'s gate did not move' when the verb exits 0 without moving it. Update verbs-in-full.md's 'Subcommand: settle' section and PLUGIN-BUILD-GUIDE.md's audit-task.py settle line and drive-phase.py settle_stale_gate paragraph to say so, read off the code, no numbers in prose, no register ids.",
       "files": [
         "PLUGIN-BUILD-GUIDE.md",
@@ -2521,13 +2527,13 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "5e97ad871a9d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Added to plugins/audit/reference/verbs-in-full.md (Subcommand: settle) a paragraph on settle --task ID; added to PLUGIN-BUILD-GUIDE.md a paragraph after the settle [manifest] description (audit-task.py settle) and extended the settle_stale_gate paragraph (passes --task, 'did not move' did-line); wrote changelog.d/P172.13-mrj.changed.md. Existing sentences untouched except one mid-line insertion in the settle_stale_gate paragraph (wrapped). Read off audit-task.py _locked_settle/_settle_wide_gates(only_task) and drive-phase.py settle_stale_gate at HEAD; unknown task returns E_USAGE (=2, audit-task.py line 495). Gates: sweep of the 5 named suites 5/5 files ok (exit 0, 1861 cases); --register-citations 0 found, exit 0; changelog-check exit 0. Dependants: PLUGIN-BUILD-GUIDE.md and verbs-in-full.md readers (tests/test__affected_tests.py, test__doctor_trail.py, test_drive_phase.py, tools/prove-gates.py) still correct - tests pass, only additions/one insertion; verbs-in-full.md dependants (_areas.py, test_audit_task.py, CHANGELOG.md, guide.md, execute-task.md) unaffected, nothing removed.\n\nclaims:\n1 verbs-in-full.md settle paragraph / PLUGIN-BUILD-GUIDE.md: --task scoping = audit-task.py _locked_settle (only_task, rows=[] and stale_stubs=[] when scoped, E_USAGE for unknown task, 'nothing to settle -- task X's derived wide gate does not narrow'); drive-phase.py settle_stale_gate passes --task and appends '<id>'s gate did not move'\n2 n/a - no check touched\n3 grep of settle in both docs: other hits are settle/settlement in unrelated senses; the three settle-verb sites (verbs-in-full section, guide settle description, guide settle_stale_gate paragraph) all updated; guide line naming staleGates unaffected\n4 n/a - no rule to an agent\n5 n/a - no property measured\n6 n/a - no guard\n7 n/a - no number written (exit 2 is E_USAGE's code, quoted from the verb, not a count)",
+        "descriptive": "The settle verb's --task scope, its refusal and its did-not-move report are now documented where the verb and its driver caller are described."
       },
       "startedAt": "2026-11-27T10:30:00Z",
-      "completedAt": null,
+      "completedAt": "2026-11-27T10:56:06Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -2584,6 +2590,30 @@
             "ms": 390166,
             "basis": "durationMs in run 2026-11-27T10:55:56Z.5501cc's record (run-test-gate --record)",
             "runId": "2026-11-27T10:55:56Z.5501cc"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-27T10:35:43Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 341000,
+            "startedAt": "2026-11-27T10:30:02Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-27T10:45:27Z.ccef01",
+            "kind": "wait",
+            "ms": 8000,
+            "startedAt": "2026-11-27T10:38:49Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-27T10:46:28Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 52000,
+            "startedAt": "2026-11-27T10:45:36Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 5e97ad871a9d",
+            "kind": "commit",
+            "ms": 1726,
+            "startedAt": "2026-11-27T10:56:03Z"
           }
         ],
         "firstStartedAt": "2026-11-27T10:30:00Z"
@@ -2663,6 +2693,182 @@
         "runId": "2026-11-27T10:55:56Z.5501cc",
         "status": "passed",
         "at": "2026-11-27T10:55:56Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "5e97ad871a9d",
+        "at": "2026-11-27T10:56:06Z",
+        "return": "docs/audit/evidence/returns/P172.13-mrj/20261127T103000Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only documentation task, expectRedFirst false, no tests added",
+        "at": "n/a"
+      }
+    },
+    {
+      "id": "P172.14-mrj",
+      "title": "The task-scoped settle cases compare shard paths in the platform's spelling",
+      "status": "in_progress",
+      "description": "CI windows plain 4 (run 45982661598) failed wgt2 in tests/test_audit_task.py: shard_of() joins the index stub's 'phases/P2.json' (forward slash) onto the manifest dir, while plan_bytes() keys files by os.walk + os.path.join (backslash on Windows), so changed == [shard_a] compares two spellings of one path and fails although only the right shard changed. Normalise shard_of's result with os.path.normpath (and any other path compare in the wgt block that mixes the stub's spelling with walked paths). Test-only; no product change.",
+      "files": [
+        "tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-27T10:57:35Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-27T10:59:11Z",
+            "ms": 15842,
+            "basis": "selectionMs in run 2026-11-27T11:03:23Z.5d5585's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-27T11:03:23Z.5d5585"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-27T10:59:27Z",
+            "ms": 235426,
+            "basis": "durationMs in run 2026-11-27T11:03:23Z.5d5585's record (run-test-gate --record)",
+            "runId": "2026-11-27T11:03:23Z.5d5585"
+          }
+        ],
+        "firstStartedAt": "2026-11-27T10:57:35Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-27T11:03:32Z.c2ee74",
+        "status": "passed",
+        "durationMs": 214,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:827504f057810c8b28992d80a9212aad1de27bbdcff68fdc254f12cbfef3aa1b",
+        "reuseKey": "1:sha256:4faabb98317a91f6740cf9bdb5b1178e216a6fe675503d88c0cc45887a4d365d",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-27T11:03:23Z.5d5585",
+          "ts": "2026-11-27T11:03:23Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+        "selectionMs": 123,
+        "at": "2026-11-27T11:03:32Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "runId": "2026-11-27T11:03:23Z.5d5585",
+          "startedAt": "2026-11-27T10:59:27Z",
+          "durationMs": 235426,
+          "selectionMs": 15842,
+          "status": "passed",
+          "failed": [],
+          "reuseKey": "1:sha256:4faabb98317a91f6740cf9bdb5b1178e216a6fe675503d88c0cc45887a4d365d",
+          "gateDigest": "sha256:827504f057810c8b28992d80a9212aad1de27bbdcff68fdc254f12cbfef3aa1b",
+          "gateSource": "task",
+          "banners": [],
+          "machine": "this run had the machine to itself",
+          "launch": "2026-11-27T10:59:07Z-93bce51a",
+          "gateReach": {
+            "gaps": []
+          },
+          "observations": {
+            "ranTotal": null,
+            "countsBasis": "no step printed a summary this reader can count (pre-gate/preGate and 1 more), so the size of this gate is not knowable from its output",
+            "treeMutated": [],
+            "treeBasis": "git described the tree before and after",
+            "coverage": [
+              "tests/test_audit_task.py"
+            ],
+            "coverageBasis": "the runner named 28 path(s); the work under test declares 1 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 16/16 and 23 more; every declared file was named by the run; breadth: the run named 19 suite path(s) and this task declares 1 file(s), and 17 of them are suites the task neither declares nor is named after (test__deps.py, test__output.py, test_commit_task_work.py, test_drive_phase.py, test_stamp_verification.py, tests/_harness.py, tests/test__affected_tests.py and 10 more) - this gate asks more than the task changed; that is reported, not refused"
+          },
+          "recorderHeld": true,
+          "via": "cli",
+          "attempt": 1,
+          "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+          "at": "2026-11-27T11:03:23Z",
+          "testedState": {
+            "head": "5e97ad87",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeDigest": "sha256:5c299596395eff63b4b342e18fbc96f9b3ee88b800a330d382ae2154a3054cec",
+            "scopeBasis": "1 declared file(s); 1 read, 0 missing",
+            "scopeListDigest": "sha256:70db3ccc6a5cd7711b061a15d18db5c1d616e187dbd7deeb620fc9b91f55ebb4",
+            "dirtyDigest": "sha256:0b9608e285b7f086b7e376f00e00e303d4fb6195e047ead56b96d4711db10ff7",
+            "dirtyBasis": "git described the tree before the run; 5 dirty path(s)"
+          },
+          "steps": [
+            {
+              "name": "pre-gate/preGate",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 7614,
+              "suiteReader": "none",
+              "command": "python3 tools/lints/_deps.py --register-citations"
+            },
+            {
+              "name": "python3 tools/sweep-selftests.py tests/test_audit_task.py + affected/related: tests/test__refs.py, tests/test_commit_task_work.py + affected/walk: tests/test__affected_tests.py, tests/test__deps.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_settings.py, tests/test_derive_phase_gate.py, tests/test_drive_phase.py, tests/test_run_test_gate.py, tests/test_stamp_verification.py, tools/_suite.py, tools/affected.py, tools/count-ui-pins.py, tools/sweep-selftests.py",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 227758,
+              "suiteReader": "none",
+              "commandBytes": 439,
+              "commandSha256": "f07790fa2a34b39dae7535060937bf06790956dfa4559c7fc6645cfabb4bcc5e",
+              "program": "python3"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-27T11:03:23Z.5d5585",
+            "launch": "2026-11-27T10:59:07Z-93bce51a",
+            "status": "passed",
+            "at": "2026-11-27T11:03:23Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-27T11:03:32Z.c2ee74",
+        "status": "passed",
+        "at": "2026-11-27T11:03:32Z"
       }
     }
   ],
