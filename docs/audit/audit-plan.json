@@ -2241,7 +2241,8 @@
       "P173.4",
       "P173.5",
       "P173.6",
-      "P173.7"
+      "P173.7",
+      "P173.12-s6m"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -5385,7 +5386,8 @@
       "P173.5",
       "P173.7",
       "P173.10-s6m",
-      "P173.6"
+      "P173.6",
+      "P173.12-s6m"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -11795,7 +11797,8 @@
       "P173.2",
       "P173.4",
       "P173.6",
-      "P173.10-s6m"
+      "P173.10-s6m",
+      "P173.12-s6m"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -14215,7 +14218,9 @@
       "P173.4",
       "P173.6",
       "P173.10-s6m",
-      "P173.11-s6m"
+      "P173.11-s6m",
+      "P173.12-s6m",
+      "P173.13-s6m"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -14494,7 +14499,8 @@
       "P172.8",
       "P172.10-mrj",
       "P173.8",
-      "P173.11-s6m"
+      "P173.11-s6m",
+      "P173.13-s6m"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -14566,7 +14572,8 @@
       "P173.5",
       "P173.7",
       "P173.10-s6m",
-      "P173.6"
+      "P173.6",
+      "P173.12-s6m"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",
@@ -15077,6 +15084,12 @@
     ],
     "changelog.d/P173.11-s6m.fixed.md": [
       "P173.11-s6m"
+    ],
+    "changelog.d/P173.12-s6m.fixed.md": [
+      "P173.12-s6m"
+    ],
+    "changelog.d/P173.13-s6m.fixed.md": [
+      "P173.13-s6m"
     ]
   },
   "bugs": [

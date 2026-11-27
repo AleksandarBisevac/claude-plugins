@@ -332,6 +332,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import tokenize
 import warnings
@@ -604,28 +605,33 @@ def read_stamp_text(args, stdin=None):
 # ground, and a host refused it beside a sibling's uncommitted work. So the proof
 # is made somewhere else: a `git worktree add --detach` of HEAD in a temp
 # directory, with the working tree's copy of the task's TEST files laid over it
-# and its implementation files left at HEAD. HEAD's own test files run FIRST,
-# before any file of the task's is laid over - each declared test file new at
-# HEAD written as an EMPTY file, or left absent where it is a jest or vitest
-# one, so the same command reaches what the task's run reaches minus the new
-# files' content - and must be green; then the task's run
-# must be red, the fix run - the task's tests on the working tree's
+# and its implementation files left at HEAD. HEAD's own test files run in a
+# throwaway of their own, with no file of the task's laid over - each declared
+# test file new at HEAD written as an EMPTY file, or left absent where it is a
+# jest or vitest one, so the same command reaches what the task's run reaches
+# minus the new files' content - and must be green; the task's run, made at
+# the same time in the other throwaway (`_concurrent_legs`), must be red, and
+# the fix run, made after both - the task's tests on the working tree's
 # implementation - green, and only a failure the runner locates in a declared
 # test file, whose named class defines it with no ast-identical def of that class
 # chain and name anywhere in HEAD's test files (for jest and vitest: whose
 # title chain it defines, with no identical test body under that chain in
-# HEAD's test files), is the task's. Every run is made in the throwaway reset to HEAD with an isolated
+# HEAD's test files), is the task's. Every run is made in a throwaway reset to HEAD with an isolated
 # environment of its own, so the runs differ only in the files laid over. What
 # that cannot see - state reached by an absolute path or the shared git
-# directory, network state, a flaky HEAD case - is named in the guide.
+# directory, which the baseline and the task's run, made at once, could each
+# write while the other reads it; network state; a flaky HEAD case - is named
+# in the guide.
 #
 # WHAT IT WRITES, AND WHAT IT CANNOT PROMISE, so nobody has to discover it.
 # `git worktree add` registers the throwaway in the repository's administrative
 # directory; the `finally` below removes that registration with the directory and
 # then asks git whether either is still there, and a registration it could not
 # remove is its own exit code. SIGINT and SIGTERM are turned into an exception so
-# that `finally` runs, and the run's whole process group is torn down on a timeout
-# or an interrupt, so no grandchild writes into a directory being removed.
+# that `finally` runs, and each running leg's whole process group is torn down on
+# a timeout or an interrupt - the baseline's, run on a thread the interrupt does
+# not reach, by the main thread (`_concurrent_legs`) - so no grandchild writes
+# into a directory being removed.
 # SIGKILL cannot be caught: a run killed that way leaves its throwaway, and the
 # next `red` REPORTS it by name, never prunes it - it may be another run's, still
 # going. The throwaway also shares the repository's git directory, so a test that
@@ -661,18 +667,21 @@ DEFAULT_TIMEOUT = 480
 # (`sized_deadline`). `_isolated_run` makes no run, and `_isolate` starts neither of the
 # reset's git calls, with less than a whole second left, so none of those is
 # started past the deadline on the one-second floor a timeout is given. The
-# git calls before the throwaway exists (listing and reading HEAD's files,
-# building it) keep that floor and can overrun it by up to a second each. What happens after the deadline has to fit in
+# git calls before the throwaways exist (listing and reading HEAD's files,
+# building them) keep that floor and can overrun it by up to a second each. What happens after the deadline has to fit in
 # the rest of the host's limit, so it is bounded and summed here: one teardown
-# of a timed-out run, or of a git call building or resetting the throwaway,
+# of a timed-out run, or of a git call building or resetting a throwaway,
 # which is torn down the same way (`_proc_group.GRACE_SECONDS` for SIGTERM,
-# again for SIGKILL, again for the drain - at most one of them can time out,
-# because each is given what is left of the deadline and each later one is
-# started only when the one before it finished and a second is left), and the
-# removal's two git calls, each capped at `REMOVE_GIT_TIMEOUT`.
-# Copying files and deleting the temp directory are local and are not budgeted.
+# again for SIGKILL, again for the drain). The baseline and task legs run at
+# once (`_concurrent_legs`), each in a throwaway of its own, so both can time
+# out at that one deadline - but each tears its own down on its own thread, at
+# the same time, so their teardowns overlap and cost one; every other run is
+# started only when the one before it finished and a second is left. Then the
+# removals: two throwaways, two git calls each, each capped at
+# `REMOVE_GIT_TIMEOUT`.
+# Copying files and deleting the temp directories are local and are not budgeted.
 REMOVE_GIT_TIMEOUT = 10
-TEARDOWN_MARGIN = 3 * _proc_group.GRACE_SECONDS + 2 * REMOVE_GIT_TIMEOUT
+TEARDOWN_MARGIN = 3 * _proc_group.GRACE_SECONDS + 4 * REMOVE_GIT_TIMEOUT
 # A killed process's handles are released asynchronously on Windows, so the
 # `rmtree` right after tearing down a timed-out run's process group can still
 # find the holder busy on the very first try. Retried through
@@ -3427,9 +3436,14 @@ def _canonical_path(path):
     return os.path.normcase(os.path.realpath(path))
 
 
-def _run_in(path, cmd, timeout, env):
+def _run_in(path, cmd, timeout, env, started=None):
     """`(code, text, problem)` for the command, run in the throwaway as a process
     group, so a timeout or an interrupt stops everything it started.
+
+    `started`, when given, is handed the process as soon as it exists: a run
+    made on a thread of its own cannot receive the interrupt, which Python
+    raises on the main thread only, so the main thread tears its group down
+    through the process `started` handed it (`_concurrent_legs`).
 
     On a timeout this returns only after the kill AND the drain, so the
     removal that follows never races the tree it killed: on Windows
@@ -3445,6 +3459,8 @@ def _run_in(path, cmd, timeout, env):
                                 **_proc_group.group_kwargs())
     except OSError as exc:
         return None, "", "the command could not start: %s" % (exc,)
+    if started is not None:
+        started(proc)
     try:
         out, _err = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -3763,18 +3779,18 @@ def _isolate(path, deadline):
     return None
 
 
-def _timed_run(path, cmd, deadline, timeout, env):
+def _timed_run(path, cmd, deadline, timeout, env, started=None):
     """`{"code", "text", "problem", "seconds"}` for one more run in the
-    throwaway, within what is left of the deadline."""
+    throwaway, within what is left of the deadline. `started` is `_run_in`'s."""
     left = _left(deadline)
-    started = time.time()
+    began = time.time()
     if left < 1:
         code, text, problem = None, "", ("the run timed out: no time was left of "
                                          "the %s-second deadline" % (timeout,))
     else:
-        code, text, problem = _run_in(path, cmd, left, env)
+        code, text, problem = _run_in(path, cmd, left, env, started=started)
     return {"code": code, "text": text, "problem": problem,
-            "seconds": round(time.time() - started, 2)}
+            "seconds": round(time.time() - began, 2)}
 
 
 # Every name a home-directory lookup reads - the same table
@@ -3802,14 +3818,14 @@ def _isolated_env(env, scratch, tag):
 
 
 def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
-                  stubs=(), deps=None, texts=None):
+                  stubs=(), deps=None, texts=None, started=None):
     """`(run, copied)` - the throwaway reset to HEAD, `rels` laid over it from
     the working tree, each of `texts` (`{rel: text}`, an inline suite's
     test-only copy) written over that, each of `stubs` written as an EMPTY
     file and the `deps` plan's directories linked in again - the reset removed
     them - and the command run in an isolated environment. With less than a
     second of the deadline left no run is made at all - not even the reset's
-    git calls, which would otherwise run past it."""
+    git calls, which would otherwise run past it. `started` is `_run_in`'s."""
     if _left(deadline) < 1:
         return {"code": None, "text": "", "seconds": 0.0,
                 "problem": "the run timed out: no time was left of the "
@@ -3832,7 +3848,64 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
     if problem is not None:
         return {"code": None, "text": "", "problem": problem, "seconds": 0.0}, copied
     return _timed_run(path, cmd, deadline, timeout,
-                      _isolated_env(env, scratch, tag)), copied
+                      _isolated_env(env, scratch, tag), started=started), copied
+
+
+# --- the baseline and task legs, made at once ---
+# The two read nothing of each other: each is reset to HEAD in a throwaway of its
+# own, with a home and a temp directory of its own (`_isolated_env`). Two sweeps
+# of this repository's `tests/test_stamp_verification.py` at once took 1.22x and
+# 1.24x one sweep's wall time, measured twice on a 10-cpu darwin host with a
+# 150 s gap between the readings (2026-11-27, a sibling session loading the
+# machine), against 2x made one after the other. The fix leg is judged against
+# both of their outputs, so it still runs after them.
+def _concurrent_legs(aside, here):
+    """`(aside(started), here())` - `aside` made on a thread of its own while
+    `here` runs on this one, both finished before this returns.
+
+    Python raises an interrupt on the main thread only, so `aside` cannot hear
+    one: it is handed `started`, which `_run_in` calls with each process it
+    starts, and an interrupt or error raised on this thread tears down every
+    process group `aside` started - and any it starts after that, the moment
+    it starts it - waits for the thread, then raises on. An error `aside`
+    raised is raised here, never dropped."""
+    lock = threading.Lock()
+    state = {"live": [], "stopping": False, "result": None, "error": None}
+
+    def started(proc):
+        with lock:
+            state["live"].append(proc)
+            stopping = state["stopping"]
+        if stopping:
+            _proc_group.tear_down(proc)
+
+    def body():
+        try:
+            state["result"] = aside(started)
+        except BaseException as exc:
+            state["error"] = exc
+
+    worker = threading.Thread(target=body, name="red-first-baseline")
+    worker.daemon = True
+    worker.start()
+    try:
+        mine = here()
+        # Joined in short waits, so an interrupt still reaches this thread on a
+        # platform whose plain join does not wake for one.
+        while worker.is_alive():
+            worker.join(0.2)
+    except BaseException:
+        with lock:
+            state["stopping"] = True
+            live = list(state["live"])
+        for proc in live:
+            if proc.poll() is None:
+                _proc_group.tear_down(proc)
+        worker.join()
+        raise
+    if state["error"] is not None:
+        raise state["error"]
+    return state["result"], mine
 
 
 # --- a leg kept under the exact inputs it read ---
@@ -3841,7 +3914,7 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
 # `CODE_KEYED_LEGS`, their bytes for the rest), the stubs, the inline overlays, the
 # linked dependencies, this helper's own code, the interpreter and the
 # environment. A leg whose inputs are all the same as a recorded one is replayed
-# instead of run, and the throwaway is built only when a leg misses.
+# instead of run, and a throwaway is built only when a leg that runs in it misses.
 LEG_STORE_DIR = "audit-red-legs"
 LEG_STORE_KEEP = 24
 # Version 2: the task legs read their laid-over files' code, not their bytes, so
@@ -4627,14 +4700,21 @@ def run_red(args, cmd, out):
                          "the shared tree %s, and a throwaway there would be a "
                          "worktree siblings see; set TMPDIR outside it\n" % (root,))
         return E_USAGE
+    # Two throwaways, each in a holder of its own carrying the owner record
+    # `leftover_throwaways` grades it by: the baseline leg's, and the one every
+    # other leg runs in. Each is built only when a leg that is not replayed
+    # needs it, and both are removed whether or not they were.
     holder = tempfile.mkdtemp(prefix=THROWAWAY_PREFIX, dir=base)
+    side_holder = tempfile.mkdtemp(prefix=THROWAWAY_PREFIX, dir=base)
+    for each in (holder, side_holder):
+        try:
+            with open(os.path.join(each, OWNER_FILE), "w", encoding="utf-8",
+                      newline="\n") as fh:
+                json.dump({"pid": os.getpid()}, fh)
+        except OSError:
+            pass
     path = os.path.join(holder, "tree")
-    try:
-        with open(os.path.join(holder, OWNER_FILE), "w", encoding="utf-8",
-                  newline="\n") as fh:
-            json.dump({"pid": os.getpid()}, fh)
-    except OSError:
-        pass
+    side_path = os.path.join(side_holder, "tree")
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None,
            "head": None, "fix": None, "withdrawn": None, "tag": "task",
            "support": []}
@@ -4644,32 +4724,49 @@ def run_red(args, cmd, out):
     copied = []
     # Every run made, by leg, for the payload's `legs`.
     made = {}
-    # The throwaway is built when the first leg that is not replayed needs it.
-    tree = {"tried": False, "problem": None}
+    # A throwaway is built when the first leg that is not replayed needs it.
+    tree = {"tried": False, "problem": None, "path": path, "holder": holder}
+    side = {"tried": False, "problem": None, "path": side_path,
+            "holder": side_holder}
 
-    def ensure_tree():
-        if not tree["tried"]:
-            tree["tried"] = True
-            _copied, tree["problem"] = _build_throwaway(
-                root, path, [], timeout=max(1, _left(deadline)))
-            if tree["problem"] is None and _left(deadline) < 1:
-                tree["problem"] = ("the run timed out: building the throwaway "
-                                   "spent the %s-second deadline" % (args.timeout,))
-        return tree["problem"]
+    # Two `git worktree add` calls at once on one repository race over its
+    # administrative directory - one read the other's half-written entry and
+    # failed - so the builds take turns, while the runs still overlap.
+    build_turn = threading.Lock()
 
-    def leg(tag, rels, limit, stubs=(), texts=None):
-        """`(record, copied)` of one leg - replayed from the store when its
-        inputs are those of a kept one - or `(None, [])` with the proof's
-        problem set when the throwaway it needed could not be built."""
+    def ensure_tree(where):
+        if not where["tried"]:
+            where["tried"] = True
+            with build_turn:
+                _copied, where["problem"] = _build_throwaway(
+                    root, where["path"], [], timeout=max(1, _left(deadline)))
+            if where["problem"] is None and _left(deadline) < 1:
+                where["problem"] = ("the run timed out: building the throwaway "
+                                    "spent the %s-second deadline" % (args.timeout,))
+        return where["problem"]
+
+    def made_leg(tag, rels, limit, where, stubs=(), texts=None, started=None):
+        """`(record, copied)` of one leg in the throwaway `where` - replayed
+        from the store when its inputs are those of a kept one - or `(None,
+        [])` when the throwaway it needed could not be built, which
+        `where["problem"]` then says. Writes nothing of `run`, so it may run
+        on a thread of its own."""
         def make():
-            if ensure_tree() is not None:
+            if ensure_tree(where) is not None:
                 return None, []
-            return _isolated_run(root, path, rels, cmd, limit, args.timeout, env,
-                                 holder, tag, stubs=stubs, deps=deps, texts=texts)
+            extra = {} if started is None else {"started": started}
+            return _isolated_run(root, where["path"], rels, cmd, limit,
+                                 args.timeout, env, where["holder"], tag,
+                                 stubs=stubs, deps=deps, texts=texts, **extra)
 
-        record, copied = reuse_or_run(
+        return reuse_or_run(
             store, lambda: leg_inputs(root, head, tag, cmd, rels, stubs,
                                       state["absent"], texts, deps, env), make)
+
+    def leg(tag, rels, limit, stubs=(), texts=None):
+        """`made_leg` in the throwaway every leg but the baseline runs in, with
+        the proof's problem set when that throwaway could not be built."""
+        record, copied = made_leg(tag, rels, limit, tree, stubs=stubs, texts=texts)
         if record is None:
             run["problem"] = tree["problem"]
         return record, copied
@@ -4700,27 +4797,34 @@ def run_red(args, cmd, out):
                     _test_texts(root, scope["tests"]))
             # Each run is started only with the wall time it needs left: one
             # started short would time out for want of time, and that timeout
-            # would read as the run's own.
+            # would read as the run's own. The baseline and task runs start
+            # together (`_concurrent_legs`) under the one deadline, and the
+            # check still asks for both runs' wall time end to end - more than
+            # two runs side by side take, so it errs toward not starting.
             if run["problem"] is None:
                 run["problem"] = start_problem(["baseline", "task"], budget,
                                                _left(early))
             if run["problem"] is None:
-                head_run, _c = leg("baseline", [], early,
-                                   stubs=[rel for rel in state["new"]
-                                          if rel not in state["absent"]])
+                stubs = [rel for rel in state["new"] if rel not in state["absent"]]
+                (head_run, _c), (task, task_copied) = _concurrent_legs(
+                    lambda started: made_leg("baseline", [], early, side,
+                                             stubs=stubs, started=started),
+                    lambda: made_leg("task", scope["declared"], early, tree,
+                                     texts=overlays))
+                if head_run is None:
+                    run["problem"] = side["problem"]
+                elif task is None:
+                    run["problem"] = tree["problem"]
                 if head_run is not None:
                     run["head"] = head_run
                     run["head"]["absent"] = state["absent"]
                     made["baseline"] = run["head"]
-            if run["problem"] is None:
-                run["problem"] = start_problem(["task"], budget, _left(early))
-            if run["problem"] is None:
-                task, copied = leg("task", scope["declared"], early,
-                                   texts=overlays)
                 if task is not None:
+                    copied = task_copied
+                    made["task"] = task
+                if task is not None and run["problem"] is None:
                     run["code"], run["text"], run["problem"] = (
                         task["code"], task["text"], task["problem"])
-                    made["task"] = task
             # What was pulled in may be the fix the new case tests, so a pass
             # with it cannot be credited: run again with it held back.
             held = (run["problem"] is None and _pulled_in(inline)
@@ -4810,9 +4914,18 @@ def run_red(args, cmd, out):
         # A junction left in the throwaway is one git's removal may descend
         # through into the shared tree's dependencies: the removal is skipped
         # and the junction named, rather than trusted to tell the two apart.
-        unremoved = unlink_junctions(path, deps)
-        removed = (False if unremoved is not None
-                   else _remove_throwaway(root, holder, path))
+        # Both throwaways, each judged alone: the first one left behind is the
+        # one the payload and the error name.
+        left_behind = []
+        for where in (tree, side):
+            problem = unlink_junctions(where["path"], deps)
+            if problem is not None or not _remove_throwaway(
+                    root, where["holder"], where["path"]):
+                left_behind.append((where["path"], problem))
+        removed = not left_behind
+        unremoved = left_behind[0][1] if left_behind else None
+        if left_behind:
+            path = left_behind[0][0]
         if previous is not None:
             _proc_group.disarm_interrupt(previous)
     # The labels the suite printed, from the run that shows the work whole
@@ -4848,7 +4961,8 @@ def run_red(args, cmd, out):
                                "set": ["%s=%s" % (k, env[k]) for k in
                                        ("PYTHONDONTWRITEBYTECODE",) if k in env]},
                "throwaway": {"path": path, "head": head, "removed": removed,
-                             "problem": unremoved},
+                             "problem": unremoved,
+                             "trees": [tree["path"], side["path"]]},
                "run": {"argv": cmd, "exit": run["code"],
                        "outputTail": run["text"].splitlines()[-20:],
                        "second": None if run["second"] is None else

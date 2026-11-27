@@ -842,7 +842,7 @@ def _judged(root, man, cmd, key, *extra, module=None):
     lay_over = mod._lay_over
 
     def isolated_run(top, path, rels, _cmd, _deadline, _timeout, _env, _scratch,
-                     tag, stubs=(), deps=None, texts=None):
+                     tag, stubs=(), deps=None, texts=None, started=None):
         slot = _RECORDED_SLOT.get(tag)
         if slot is None or rec.get(slot) is None:
             _unjudged(key, "`red` starts the %s run, which the record lacks"
@@ -1258,10 +1258,10 @@ def _red_cases(check):
     sleeper = [py, "-c", "import time; time.sleep(30)"]
     real_run_in = M._run_in
 
-    def run_on_its_floor(path, cmd, timeout, env):
+    def run_on_its_floor(path, cmd, timeout, env, started=None):
         if cmd != sleeper:
-            return real_run_in(path, cmd, timeout, env)
-        return real_run_in(path, cmd, timeout=1, env=env)
+            return real_run_in(path, cmd, timeout, env, started=started)
+        return real_run_in(path, cmd, timeout=1, env=env, started=started)
     M._run_in = run_on_its_floor
     try:
         code_t, got_t = _red(root, man, sleeper)
@@ -1770,6 +1770,13 @@ def _process_cases(check):
 # the mark appears or the helper exits; the host's own limit is the outer
 # bound, since a helper still running past it is one the host kills too.
 START_DEADLINE = M.HOST_BASH_LIMIT
+# How long the SIGKILL case waits, between its two reads of the pids the held
+# command wrote, for a run started just before the kill to write its own.
+_LATE_PID_WAIT = 0.5
+# How long a helper may take, from the signal to its exit, to tear down every
+# leg's process group and remove its throwaways. A helper that waited for a
+# leg it did not tear down would end only at that leg's own deadline.
+_TEARDOWN_BOUND = 120.0
 
 
 def _await_mark(path, seconds, poll=0.05, running=None):
@@ -1794,35 +1801,70 @@ def _signal_mid_run(root, man, marks, tag, sig, delay=0.0, wait_s=START_DEADLINE
     script = os.path.join(_output.PLUGIN_ROOT, "scripts", "governance",
                           "stamp-verification.py")
     mark = os.path.join(marks, tag + "-started")
-    # The pid is written beside the mark and renamed onto it, so a mark seen
-    # always carries its whole pid.
+    # Every run of the command appends its pid to `pids` - the baseline and
+    # task legs both run it, at once - and writes the mark. The pid is written
+    # beside the mark, under a name of its own run's, and renamed onto it, so a
+    # mark seen always carries one run's whole pid.
+    pids = mark + ".pids"
     hold = ("import os, time\ntime.sleep(%r)\n"
-            "with open(%r, 'w') as fh:\n    fh.write(str(os.getpid()))\n"
-            "os.replace(%r, %r)\nwhile True:\n    time.sleep(1)\n"
-            % (delay, mark + ".part", mark + ".part", mark))
+            "with open(%r, 'a') as fh:\n    fh.write('%%d\\n' %% os.getpid())\n"
+            "part = %r + '.%%d.part' %% os.getpid()\n"
+            "with open(part, 'w') as fh:\n    fh.write(str(os.getpid()))\n"
+            "os.replace(part, %r)\nwhile True:\n    time.sleep(1)\n"
+            % (delay, pids, mark, mark))
     proc = subprocess.Popen([py, script, "red", "--project", root, "--manifest",
                              man, "--task", "P1.1", "--json", "--", py, "-c", hold],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             universal_newlines=True)
     started = _await_mark(mark, wait_s, running=lambda: proc.poll() is None)
+    signalled = time.time()
     if proc.poll() is None:
         proc.send_signal(sig)
     # The helper's teardown is bounded by its own budget, which fits inside
     # the host's limit; a helper still going past that limit is a fault the
     # host would see too, not a slow runner.
     out, _e = proc.communicate(timeout=M.HOST_BASH_LIMIT)
+    ended_after = time.time() - signalled
+    # Which runs of the command are still alive once the helper has ended -
+    # read before any is stopped here, so a teardown that missed one shows.
+    alive = [pid for pid in _held_pids(pids) if _pid_running(pid)]
     if started and sig == getattr(signal, "SIGKILL", None):
-        # A SIGKILL'd helper tears nothing down, so its command is still
-        # holding; it is stopped here rather than left to outlive the case.
-        try:
-            with open(mark, encoding="utf-8") as fh:
-                pid = int(fh.read().strip() or "0")
-            if pid > 0:
-                os.kill(pid, sig)
-        except (OSError, ValueError):
-            pass
+        # A SIGKILL'd helper tears nothing down, so every run of its command
+        # is still holding - both legs' - and each is stopped here rather
+        # than left to outlive the case. Read twice, apart, because a run
+        # the helper started just before the kill may write its pid late.
+        for _pass in range(2):
+            for pid in _held_pids(pids):
+                try:
+                    os.kill(pid, sig)
+                except OSError:
+                    pass
+            time.sleep(_LATE_PID_WAIT)
     return {"started": started, "code": proc.returncode,
-            "left": _throwaways_of(root), "out": out}
+            "left": _throwaways_of(root), "out": out, "alive": alive,
+            "pids": _held_pids(pids), "ended_after": ended_after}
+
+
+def _held_pids(path):
+    """The pids the held command's runs appended to `path`, or [] when none
+    did."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return [int(ln) for ln in fh.read().split("\n")[:-1] if ln.strip()]
+    except (OSError, ValueError):
+        return []
+
+
+def _pid_running(pid):
+    """Whether `pid` names a live process. A run the helper tore down was
+    waited for by it, so it is gone, not a zombie."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
 
 
 def _throwaways_of(root):
@@ -1896,6 +1938,24 @@ def _sigterm_cases(check):
     else:
         check("%s: exit=%r left=%r %r" % (label, got["code"], got["left"],
                                          got["out"][-200:]), _removal_holds(got))
+    # The baseline and task legs run the held command at once, the baseline on
+    # a thread the signal does not reach: both process groups are torn down.
+    label5 = ("cl5 SIGTERM mid-run tears down the process group of EVERY leg "
+              "running - the baseline's, run on a thread of its own, as well as "
+              "the task's - so no run of the command outlives the helper")
+    if not got["started"]:
+        _harness.could_not_run(check, label5, "the nested `red` never reached "
+                               "its command: exit=%r" % (got["code"],))
+    else:
+        # The bound is what tells a teardown from a wait: a helper that joined
+        # the baseline's thread without stopping its run would still end with
+        # nothing alive, at that run's own deadline.
+        check("%s: pids %r, alive after the helper ended %r, %.1fs from the "
+              "signal to its exit" % (label5, got["pids"], got["alive"],
+                                      got["ended_after"]),
+              len(got["pids"]) >= 1 and got["alive"] == []
+              and got["ended_after"] < _TEARDOWN_BOUND
+              and _TEARDOWN_BOUND < M.DEFAULT_TIMEOUT)
     slow = _signal_mid_run(root, man, marks, "slow", signal.SIGTERM, delay=12.0)
     check("sr23b a nested run that reaches its command only after the fixed "
           "window sr23 once waited is still waited for, and its removal "
@@ -2397,6 +2457,23 @@ def _build_counted(t):
 # naming a figure that is gone, so a fixed window added later is judged
 # before it lands rather than after a loaded runner trips it.
 _CLOCK_LITERALS_JUDGED = {
+    ("<module>", "_RENDEZVOUS = 30.0"):
+        "how long each leg of cl1's suite waits for the other to start: the "
+        "correct helper starts both legs together, so the wait ends after the "
+        "skew between two throwaway resets, and only a helper making the legs "
+        "one after the other waits it out. A slower runner lengthens that "
+        "skew, and turns a correct helper red only if two resets started "
+        "together finish this far apart",
+    ("<module>", "_LATE_PID_WAIT = 0.5"):
+        "cleanup only: the pause between the SIGKILL case's two reads of the "
+        "pids it stops. No case reads it, so a slower runner can leave a held "
+        "run unstopped, never turn a case red",
+    ("<module>", "_TEARDOWN_BOUND = 120.0"):
+        "cl5's bound from the signal to the helper's exit: the correct helper "
+        "spends a process group's grace per running leg and two worktree "
+        "removals in it, which a slower runner lengthens by seconds; the "
+        "helper it is there to catch ends at the leg's own deadline, "
+        "`DEFAULT_TIMEOUT` from its start, which cl5 also asserts is longer",
     ("<module>", "_FIRST_RUNG = 6"):
         "the ladder's first rung: a runner too slow for it climbs, and the "
         "ladder has no top below the helper's own ceiling",
@@ -2501,12 +2578,14 @@ def _clock_literal_cases(check):
 def _budget_cases(check):
     py = sys.executable
     check("sr41 the margin under the host's limit pays for ONE teardown (two waits "
-          "and a drain) and the throwaway's removal (two git calls, each capped), "
-          "so the largest accepted --timeout still leaves the host room: %r"
+          "and a drain - the baseline and task legs time out at once, each "
+          "tearing its own down beside the other) and both throwaways' removals "
+          "(two git calls each, each capped), so the largest accepted --timeout "
+          "still leaves the host room: %r"
           % ((M.MAX_TIMEOUT, M.TEARDOWN_MARGIN, M.HOST_BASH_LIMIT),),
           M.MAX_TIMEOUT + M.TEARDOWN_MARGIN == M.HOST_BASH_LIMIT
           and M.TEARDOWN_MARGIN >= 3 * _proc_group.GRACE_SECONDS
-          + 2 * M.REMOVE_GIT_TIMEOUT)
+          + 4 * M.REMOVE_GIT_TIMEOUT)
     root, man = _red_repo("stamp-red-budget-", _red_test("import mine", "mine.v == 2"))
     tries = _build_counted_tries(py, root, man)
     check("sr42 the FIRST run gets what the build left of the deadline, not a "
@@ -3502,9 +3581,8 @@ def _every_run_cases(check):
     # rewrites one line of `run_red` in a fresh copy of the module, and the
     # judged case must see it - a copy of those lines in `_judged` would not.
     emptied = _mutated_module(
-        'stubs=[rel for rel in state["new"]\n'
-        '                                          if rel not in state["absent"]])',
-        'stubs=[])', "sv_jd1")
+        'stubs = [rel for rel in state["new"] if rel not in state["absent"]]',
+        'stubs = []', "sv_jd1")
     code_m, got_m = _judged(root_o, man_o, cmd_o, "sr138", module=emptied)
     check("jd1 with `run_red`'s stub list for HEAD's run emptied, sr138's judged "
           "run sees it: HEAD's run is handed no stub, and sr138's own check "
@@ -4735,13 +4813,18 @@ def _killed_build_cases(check):
           % (code, events, built, block.get("status"), tw.get("removed"),
              listed, block.get("basis", "")[:200]),
           code == M.E_CANNOT_PROVE
-          and len(built) == 1
-          and events == ["kill", "drain", "remove"]
+          # Two builds, made at once: the baseline's throwaway and the one the
+          # task leg runs in. Each is killed and drained before either removal.
+          and len(built) == 2
+          and sorted(events[:-2]) == ["drain", "drain", "kill", "kill"]
+          and events[-2:] == ["remove", "remove"]
           and block.get("status") == M.RED_CANNOT
           and "could not build the throwaway tree: the run timed out"
           in block.get("basis", "")
           and tw.get("removed") is True
           and not os.path.exists(tw.get("path") or "")
+          and len(tw.get("trees") or []) == 2
+          and not any(os.path.exists(t) for t in tw.get("trees") or [])
           and listed == 1)
     # A POSIX kill is SIGTERM first, and git answers it by removing the tree
     # it was building, lock and all; `taskkill /F` gives it no such chance.
@@ -4783,16 +4866,23 @@ def _killed_reset_cases(check):
     _hanging_file(root, armed)
     real_build, real_git = M._build_throwaway, M._git
     resets = []
+    # The baseline's throwaway and the task leg's are built at once, so only
+    # the first build to finish arms the filter, and only that tree's reset is
+    # given the short timeout: the other tree keeps its file, so its reset
+    # never calls the filter.
+    armed_tree = []
 
     def build_then_arm(*args, **kwargs):
         made = real_build(*args, **kwargs)
-        if made[1] is None:
+        if made[1] is None and not armed_tree:
+            armed_tree.append(args[1])
             os.remove(os.path.join(args[1], "hang.txt"))
             _write(armed, "")
         return made
 
     def reset_on_its_floor(where, args, **kwargs):
-        if not (args and args[0] == "checkout" and os.path.exists(armed)):
+        if not (args and args[0] == "checkout" and os.path.exists(armed)
+                and armed_tree and where == armed_tree[0]):
             return real_git(where, args, **kwargs)
         resets.append(kwargs.get("group", False))
         try:
@@ -4817,10 +4907,11 @@ def _killed_reset_cases(check):
              listed, block.get("basis", "")[:240]),
           code == M.E_CANNOT_PROVE
           and resets == [True]
-          and events == ["kill", "drain", "remove"]
+          and events == ["kill", "drain", "remove", "remove"]
           and block.get("status") == M.RED_CANNOT
           and tw.get("removed") is True
-          and not os.path.exists(tw.get("path") or "")
+          and len(tw.get("trees") or []) == 2
+          and not any(os.path.exists(t) for t in tw.get("trees") or [])
           and listed == 1)
 
     seeded = _seeded_repo("stamp-reset-grouped-")
@@ -5967,8 +6058,11 @@ def _edge_cases(check):
         thrown = {}
     holder = os.path.dirname(thrown.get("path") or "")
     kept = bool(holder) and os.path.isdir(holder)
-    if kept:
-        _harness.remove_tree(holder)
+    # Every throwaway the proof made is left, not only the one `path` names:
+    # the baseline's has a holder of its own, listed in `trees`.
+    for tree in [thrown.get("path") or ""] + list(thrown.get("trees") or []):
+        if tree and os.path.isdir(os.path.dirname(tree)):
+            _harness.remove_tree(os.path.dirname(tree))
     subprocess.run(["git", "-C", root_k, "worktree", "prune"],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     # sw7 is the other direction: junctions that do come out leave
@@ -7201,10 +7295,10 @@ def _leg_reuse_cases(check):
     real_run, real_build = M._isolated_run, M._build_throwaway
 
     def counting_run(top, path, rels, cmd, deadline, timeout, env, scratch, tag,
-                     stubs=(), deps=None, texts=None):
+                     stubs=(), deps=None, texts=None, started=None):
         made.append(tag)
         return real_run(top, path, rels, cmd, deadline, timeout, env, scratch,
-                        tag, stubs=stubs, deps=deps, texts=texts)
+                        tag, stubs=stubs, deps=deps, texts=texts, started=started)
 
     def counting_build(top, path, tests, timeout=120):
         built.append(path)
@@ -7220,17 +7314,19 @@ def _leg_reuse_cases(check):
             M._isolated_run, M._build_throwaway = real_run, real_build
         legs = dict((l.get("leg"), l) for l in got.get("legs") or []
                     if isinstance(l, dict))
-        return code, got, legs, list(made), list(built)
+        return code, got, legs, _in_leg_order(made), list(built)
 
     code1, got1, legs1, made1, built1 = proof()
     code2, got2, legs2, made2, built2 = proof()
     block1, block2 = got1.get("redFirst") or {}, got2.get("redFirst") or {}
+    # Two throwaways on the first proof: the baseline runs in one of its own,
+    # beside the task leg (`_concurrent_legs`).
     check("lr10 a second proof over the same tree makes NO run and builds NO "
           "throwaway - first made %r and built %d, second made %r and built "
           "%d - yet reaches the same verdict and the same basis: %r / %r"
           % (made1, len(built1), made2, len(built2), block1, block2),
           code1 == code2 == M.E_PROVED and made1 == ["baseline", "task", "fix"]
-          and len(built1) == 1 and made2 == [] and built2 == []
+          and len(built1) == 2 and made2 == [] and built2 == []
           and block1.get("status") == block2.get("status") == "proved"
           and block1.get("basis") == block2.get("basis"))
     say = legs2.get("baseline", {})
@@ -7304,23 +7400,36 @@ def _leg_reuse_cases(check):
           and "code without comments" in basis5 and "line numbers" in basis5)
 
 
+def _in_leg_order(made):
+    """`made` with the baseline and task tags - made at once, so recorded in
+    whichever order their two threads reached the call - put baseline first;
+    every other tag keeps the place it was made in, so a fix run made before
+    either of them still shows there."""
+    slots = [i for i, tag in enumerate(made) if tag in ("baseline", "task")]
+    out = list(made)
+    for i, tag in zip(slots, sorted(made[i] for i in slots)):
+        out[i] = tag
+    return out
+
+
 def _counted_red(root, man, cmd, *extra):
     """`(exit, payload, tags)` - `_red` with the tag of every run `red` made
-    recorded in order, through the real `_isolated_run`."""
+    recorded in order (`_in_leg_order`), through the real `_isolated_run`."""
     made = []
     real_run = M._isolated_run
 
     def counting_run(top, path, rels, run_cmd, deadline, timeout, env, scratch,
-                     tag, stubs=(), deps=None, texts=None):
+                     tag, stubs=(), deps=None, texts=None, started=None):
         made.append(tag)
         return real_run(top, path, rels, run_cmd, deadline, timeout, env,
-                        scratch, tag, stubs=stubs, deps=deps, texts=texts)
+                        scratch, tag, stubs=stubs, deps=deps, texts=texts,
+                        started=started)
     M._isolated_run = counting_run
     try:
         code, got = _red(root, man, cmd, *extra)
     finally:
         M._isolated_run = real_run
-    return code, got, list(made)
+    return code, got, _in_leg_order(made)
 
 
 def _fix_by_gate_cases(check):
@@ -7431,6 +7540,102 @@ def _fix_by_gate_deadline_cases(check, sized_for):
           sized_for == [two])
 
 
+# How long a leg of the rendezvous suite waits for the other leg to start. A
+# helper running the legs one after the other makes the baseline wait all of
+# it and see nothing; legs started together see each other within the time a
+# throwaway takes to reset, which this bounds generously for a loaded machine.
+_RENDEZVOUS = 30.0
+
+
+def _rendezvous_test(witness, mine, other, cases):
+    """A suite that stamps `<mine>.start` and `<mine>.where` (the tree it runs
+    in), waits up to `_RENDEZVOUS` seconds for `<other>.start`, appends `1` to
+    `<mine>.saw` when it appeared and `0` when it did not, then stamps
+    `<mine>.end`. Every stamp is appended, so the fix leg - which runs the
+    task's file again - adds a second line rather than overwriting the task
+    leg's first."""
+    prelude = "\n".join([
+        "import mine",
+        "import time",
+        "W = %r" % (witness,),
+        "def put(name, text):",
+        "    with open(os.path.join(W, name), 'a') as fh:",
+        "        fh.write(text + '\\n')",
+        "put(%r, repr(time.time()))" % (mine + ".start",),
+        "put(%r, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))"
+        % (mine + ".where",),
+        "until = time.time() + %r" % (_RENDEZVOUS,),
+        "seen = False",
+        "while not seen and time.time() < until:",
+        "    seen = os.path.exists(os.path.join(W, %r))" % (other + ".start",),
+        "    if not seen:",
+        "        time.sleep(0.05)",
+        "put(%r, '1' if seen else '0')" % (mine + ".saw",),
+        "put(%r, repr(time.time()))" % (mine + ".end",)])
+    return _house_test(prelude, cases)
+
+
+def _witness_lines(witness, name):
+    """Every complete line of a witness file, or [] when it was never written."""
+    try:
+        with open(os.path.join(witness, name), encoding="utf-8") as fh:
+            return fh.read().split("\n")[:-1]
+    except OSError:
+        return []
+
+
+def _concurrent_legs_cases(check):
+    """The baseline and task legs run at once, each in a throwaway of its own,
+    and the fix leg after both: observed through a suite whose two legs wait
+    for each other, so legs made one after the other leave the baseline
+    waiting for a task leg that has not started."""
+    py = sys.executable
+    witness = _harness.fixture_root("stamp-concurrent-witness-")
+    head = _rendezvous_test(witness, "baseline", "task",
+                            [("old1", "mine.v >= 1")])
+    wt = _rendezvous_test(witness, "task", "baseline",
+                          [("old1", "True"), ("new1", "mine.v == 2")])
+    root, man = _red_repo("stamp-concurrent-", wt, head_test=head)
+    code, got = _red(root, man, [py, "tests/test_mine.py"])
+    saw_b = _witness_lines(witness, "baseline.saw")
+    saw_t = _witness_lines(witness, "task.saw")
+    where_b = _witness_lines(witness, "baseline.where")
+    where_t = _witness_lines(witness, "task.where")
+    check("cl1 the baseline and task legs run AT ONCE, each in a throwaway of "
+          "its own: each saw the other start (baseline %r, task %r) and they "
+          "ran in two trees %r / %r: exit=%r"
+          % (saw_b, saw_t, where_b, where_t, code),
+          code == M.E_PROVED and saw_b[:1] == ["1"] and saw_t[:1] == ["1"]
+          and len(where_b) == 1 and len(where_t) >= 1
+          and where_b[0] != where_t[0])
+    legs = got.get("legs") if isinstance(got.get("legs"), list) else []
+    by_name = dict((l.get("leg"), l) for l in legs if isinstance(l, dict))
+    check("cl2 ...and both are reported: `legs` names baseline, task and fix in "
+          "that order, each run with its own seconds, and `run.seconds` is the "
+          "task leg's: %r %r" % (legs, got.get("run")),
+          [l.get("leg") for l in legs] == ["baseline", "task", "fix"]
+          and all(l.get("ran") is True and isinstance(l.get("seconds"), float)
+                  for l in legs)
+          and (got.get("run") or {}).get("seconds")
+          == by_name.get("task", {}).get("seconds")
+          and (got.get("redFirst") or {}).get("status") == "proved")
+    # The fix leg reads the working tree's implementation and is judged against
+    # both runs before it, so it starts only after both ended: its start (the
+    # task file's second stamp) is no earlier than either leg's end.
+    starts_t = _witness_lines(witness, "task.start")
+    ends = (_witness_lines(witness, "baseline.end")[:1]
+            + _witness_lines(witness, "task.end")[:1])
+    check("cl3 the fix leg runs after both concurrent legs ended - its start "
+          "%r, their ends %r" % (starts_t[1:2], ends),
+          len(starts_t) == 2 and len(ends) == 2
+          and float(starts_t[1]) >= max(float(e) for e in ends))
+    check("cl4 both throwaways are gone after the proof: `leftovers` is empty "
+          "and git lists no worktree but the main one: %r %r"
+          % (got.get("leftovers"), _worktrees(root)),
+          not got.get("leftovers")
+          and len(_wt.parse_list(_worktrees(root))) == 1)
+
+
 # Every block, in replay order. A full run starts one process per block, a few
 # at a time, and replays their cases in this order (`_harness.staged_main`);
 # `--stage LABEL` narrows a run to the blocks it names, run in this process,
@@ -7450,6 +7655,7 @@ STAGES = (
     ("sr-leg-inputs", "_leg_inputs_cases"),
     ("sr-leg-reuse", "_leg_reuse_cases"),
     ("sr-fix-by-gate", "_fix_by_gate_cases"),
+    ("sr-concurrent-legs", "_concurrent_legs_cases"),
     ("sr-introduces", "_introduces_cases"),
     ("sh-house-abort", "_house_abort_cases"),
     ("sh-owner-module", "_owner_module_cases"),
@@ -8193,9 +8399,11 @@ def _wall_cases(check):
           and "the deadline is %ss" % (short,) in basis_g
           and "timed out" not in basis_g)
 
-    # A FAKE CLOCK, not a short deadline: once the baseline returns, the
-    # helper's clock is moved to half a run's wall time before the runs ahead of
-    # the fix run must end, so the task run would start with less than it needs.
+    # A FAKE CLOCK, not a short deadline: once the task run returns, the
+    # helper's clock is moved to half a run's wall time before the one deadline
+    # ends, so the fix run would start with less than it needs. The baseline
+    # and task runs start together, so the run after them is the one a clock
+    # spent by an earlier run can leave short.
     run_wall = 40
     root, man = _sweep_repo("stamp-swt-short-", wt,
                             costs={"tests/test_mine.py": float(run_wall)})
@@ -8205,21 +8413,23 @@ def _wall_cases(check):
         sleep=real_time.sleep)
 
     def jump(tag, deadline):
-        if tag == "baseline":
-            offset[0] += (deadline - M.time.time()) - run_wall // 2
+        # The task run's deadline ends where the fix run's held-back wall time
+        # - one run's - begins.
+        if tag == "task":
+            offset[0] += (deadline + run_wall - M.time.time()) - run_wall // 2
     try:
         code_s, got_s, seen_s = _spied_red(root, man, cmd, after=jump)
     finally:
         M.time = real_time
     block_s = got_s.get("redFirst") or {}
     basis_s = block_s.get("basis") or ""
-    check("swt5 a task run left less than the wall time it needs is not started, "
+    check("swt5 a fix run left less than the wall time it needs is not started, "
           "and the basis says so - its need and what was left - rather than "
           "reporting a timeout the helper caused: %r"
           % ((code_s, sorted(seen_s), basis_s[:400]),),
           code_s == M.E_CANNOT_PROVE and block_s.get("status") == "could-not-prove"
-          and sorted(seen_s) == ["baseline"]
-          and "the task run was not started" in basis_s
+          and sorted(seen_s) == ["baseline", "task"]
+          and "the fix run was not started" in basis_s
           and "needs about %ds of wall time" % (run_wall,) in basis_s
           and "timed out" not in basis_s)
 

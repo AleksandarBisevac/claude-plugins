@@ -6637,13 +6637,22 @@ deadline, `--timeout` included, `fit_problem` starts nothing - the throwaway is 
 basis names the need, the wall time one run takes, how that was read, and the deadline. **And no
 run is started short**: before each one, `start_problem` asks whether the time left - for the runs
 before the fix run, the time left short of what is held back for it - covers that run's wall time
-(the baseline's check counts the task's run after it too), and when it does not, that run is not
+(the baseline's check counts the task's run beside it too, end to end, which is more than the two
+take side by side), and when it does not, that run is not
 started and the basis names the time left. A run started with less than it needs times out for
 want of time, and that timeout would say nothing about the task. A command whose wall time nothing
-measured is checked by neither. At most one run can time out, because each later run is made only
+measured is checked by neither. **The baseline and the task's run are made at once**
+(`_concurrent_legs`), each in a throwaway of its own - its own holder and owner record, its own
+home and temp - and the fix run after both, since it is judged against them; the baseline's run
+is on a thread of its own, and the interrupt Python raises on the main thread only reaches it
+through the process `_run_in` hands back (`started`), so a stop signal tears down both legs'
+process groups before either throwaway is removed. Two sweeps of
+`tests/test_stamp_verification.py` at once took 1.22x and 1.24x one sweep's wall time, measured
+twice with a gap on a 10-cpu darwin host (2026-11-27), against 2x made one after the other. Those two can time out together at
+the one deadline, each tearing its own group down beside the other; every later run is made only
 when the one before it finished. What follows the
-deadline is bounded and summed in `TEARDOWN_MARGIN` - one teardown and the removal's git
-calls, each capped at `REMOVE_GIT_TIMEOUT` - and `--timeout` is refused above `MAX_TIMEOUT`, the
+deadline is bounded and summed in `TEARDOWN_MARGIN` - one teardown and both throwaways' removal
+git calls, each capped at `REMOVE_GIT_TIMEOUT` - and `--timeout` is refused above `MAX_TIMEOUT`, the
 host's limit less that margin, so the helper's own deadline and cleanup finish before the host
 kills it. SIGKILL cannot be caught; a throwaway left
 that way is reported by name the next time - `leftover_throwaways` reads `git worktree list` for
@@ -6693,12 +6702,13 @@ assertions. `proved` needs one of those failures to be the TASK'S OWN, and that 
 GREEN BASELINE, not by reading output (`baseline_problem()`, `fix_problem()`, `own_failures()`):
 
 Every run - HEAD's baseline, the task's run, the `--introduces` second run and the fix run - is made
-in the throwaway reset to HEAD (a forced checkout and a clean of untracked and ignored files), with
+in a throwaway reset to HEAD (a forced checkout and a clean of untracked and ignored files), with
 an isolated environment of its own (`_isolated_env()`): a new empty home under every name a home
 lookup reads (`HOME_VARS`, the table `tools/sweep-selftests.py` isolates its children with), a new
 TMPDIR/TMP/TEMP, and `PYTHONNOUSERSITE=1`. So the runs differ only in the files laid over the tree.
 
-1. HEAD's baseline runs FIRST, before any file of the task's is laid over or run: HEAD's own test
+1. HEAD's baseline runs in a throwaway of its own, beside the task's run, with no file of the
+   task's laid over: HEAD's own test
    files, the same command, HEAD's implementation, with every declared test file new at HEAD laid
    over as an EMPTY file - except a jest or vitest one (`_is_js_test_path()`), which is left ABSENT,
    because both runners fail an empty suite (measured in `stamp-verification.py`'s design note,
@@ -6760,9 +6770,9 @@ TMPDIR/TMP/TEMP, and `PYTHONNOUSERSITE=1`. So the runs differ only in the files 
 
 `--introduces` requires the same baseline. **What this cannot see**, each a named limit: state
 outside the throwaway that a run reaches by an absolute path or through the git directory the
-throwaway shares with the repository (config, refs) - HEAD's baseline runs first, so nothing of the
-task's can reach it, but the task's run and the fix run could still read what an earlier run wrote
-there; network or service state that changes between runs; a flaky or time-dependent HEAD case,
+throwaway shares with the repository (config, refs) - HEAD's baseline and the task's run are made
+at once, so either could read there what the other is writing, and the fix run what either wrote;
+network or service state that changes between runs; a flaky or time-dependent HEAD case,
 which can fail in the task's run and pass in the baseline and the fix run; and a house suite - its
 `FAIL` lines carry no location, so a run of exactly one declared file is credited with every case
 that file's run prints, including one it imported from HEAD's tests and ran itself; under pytest
