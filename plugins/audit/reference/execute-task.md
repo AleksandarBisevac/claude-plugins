@@ -359,7 +359,19 @@ verb writes and refuses, and what the run commands leave behind, is
         the `gated` mark's, read back from the ledger as `passed` - named each test
         file the proof was made over in its recorded coverage
         (`observations.coverage`, the gate's "declared file(s) named by the run"
-        line), the path itself and not a source named after it (`gate_binding`).
+        line), the path itself and not a source named after it, and holds a step of
+        the proof's own command that stands for the fix run (`gate_binding`, each
+        step read by `step_standing`): the step ran in that run and was not reused
+        from an earlier one, exited 0 with no outcome beside it, had no suite
+        muted, and reported at least as many checks as the proof's task run
+        collected (the helper's `fixLegOwes`). The count is the runner's own
+        (`ran`), or for the selftest sweep, which reports none, the total its
+        summary line printed (the step's `sweepCases`); a house suite run directly
+        reports no count and so never stands. Where the task run's sweep graded
+        files red and swept more than one, each of those files needs its own
+        count printed on the step's sweep line, no lower than the task run's for
+        it - a file the sweep's quiet form printed no line for, or one past the
+        row's cut, is unknown and does not stand.
         Otherwise the helper is run again without `--fix-by-gate`, making the fix run
         as `submit`'s proof does, and that proof is held and filed, the reason noted
         in what the drive did (`fix_leg_proof`). `_filed_returns.fix_leg_problem`

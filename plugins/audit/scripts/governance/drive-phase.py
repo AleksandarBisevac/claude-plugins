@@ -5872,9 +5872,9 @@ def hold_proof(ctx, state, task, block, payload=None):
 
 # The key `stamp-verification.py red --fix-by-gate` puts its task leg's counts
 # under in the payload, and the held proof keeps them under: what a gate run
-# must show to stand for the fix leg (`step_standing`). Spelled again in the
-# helper, which this entry point cannot import; `fbg16` holds the two equal.
-FIX_LEG_OWES = "fixLegOwes"
+# must show to stand for the fix leg (`step_standing`). One spelling, in
+# `_filed_returns`, which the helper reads as well.
+FIX_LEG_OWES = _fr.FIX_LEG_OWES
 
 
 def by_gate_proof(block):
@@ -5914,8 +5914,14 @@ def step_standing(run_id, step, command, owes):
     passing on the working tree's code, none gone missing instead - is asked of
     the step the way the helper's own fix check asks it of a fix run
     (`fix_problem`): exit 0 with a verdict, and at least as many checks as the
-    task's run collected. A count the step does not report, or a sweep's
-    per-file count a row does not keep, leaves the question open."""
+    task's run collected - the runner's own count (`ran`), or for a sweep, which
+    reports none, the total its summary line printed (`step_count`). Where the
+    task leg's sweep graded files red, each of those files must have its own
+    printed count on the step, no lower than the task leg's for it: a sweep's
+    total spans every file it swept, so one file's missing case hides behind
+    the others'. A count the step does not report, or a file whose count the
+    sweep did not print (its quiet form, or a file past the row's cut), leaves
+    the question open."""
     said = "run %s's step `%s`" % (run_id, command)
     if _evio.step_repeated(step):
         return "%s repeated another run's measurement rather than ran" % (said,)
@@ -5929,20 +5935,45 @@ def step_standing(run_id, step, command, owes):
     if not _is_count(collected):
         return ("the proof records no count of its task leg's cases, so %s "
                 "cannot be read for a failing case gone missing" % (said,))
-    if not _is_count(step.get("ran")):
+    ran = step_count(step)
+    if ran is None:
         return ("%s reported no count of the checks it ran (%s), so a failing "
                 "case may be missing rather than passing"
                 % (said, step.get("measured") or "no reading"))
-    if step["ran"] < collected:
+    if ran < collected:
         return ("%s ran %d check(s) and the task leg collected %d, so a failing "
                 "case may be missing rather than passing"
-                % (said, step["ran"], collected))
+                % (said, ran, collected))
     red_files = (owes or {}).get("redFiles")
-    if isinstance(red_files, dict) and red_files and owes.get("files") != 1:
-        return ("the task leg's sweep graded %s red, and a recorded run keeps no "
-                "per-file count, so %s cannot show each of those files' cases "
-                "passing" % (", ".join(sorted(red_files)), said))
+    if not (isinstance(red_files, dict) and red_files
+            and owes.get("files") != 1):
+        return None
+    printed = _evio.sweep_file_cases(step)
+    unknown = sorted(p for p in red_files if p not in printed)
+    if unknown:
+        return ("the task leg's sweep graded %s red, and %s printed no count of "
+                "its own for %s, so it cannot show each of those files' cases "
+                "passing" % (", ".join(sorted(red_files)), said,
+                             ", ".join(unknown)))
+    short = sorted(p for p in red_files if _is_count(red_files[p])
+                   and printed[p] < red_files[p])
+    if short:
+        return ("%s ran fewer cases than the task leg collected in %s (%s), so "
+                "a failing case may be missing rather than passing" % (
+                    said, ", ".join(short), ", ".join(
+                        "%d of %d" % (printed[p], red_files[p]) for p in short)))
     return None
+
+
+def step_count(step):
+    """How many checks a recorded step says it ran: its runner's own count
+    (`ran`), else the total a sweep's summary line printed
+    (`_evidence_io.SWEEP_CASES_KEY`), else None - never a count inferred."""
+    if _is_count(step.get("ran")):
+        return step["ran"]
+    kept = step.get(_evio.SWEEP_CASES_KEY)
+    total = kept.get("total") if isinstance(kept, dict) else None
+    return total if _is_count(total) else None
 
 
 def gate_binding(ctx, state, manifest, phase, task, proof):
@@ -5998,7 +6029,7 @@ def gate_binding(ctx, state, manifest, phase, task, proof):
     missing = [p for p in paths if not _evio.listed_by(p, named)]
     if missing:
         return None, None, "run %s did not name %s" % (run_id, ", ".join(missing))
-    ran = min(s["ran"] for s in steps)
+    ran = min(step_count(s) for s in steps)
     return run_id, (
         "; fix leg: the task gate's green run %s, held for this start, ran the "
         "proof's command `%s` as a step of its own, exit 0 over %d check(s) - "

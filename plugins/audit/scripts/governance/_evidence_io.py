@@ -90,6 +90,7 @@ import _usage_core  # noqa: E402  (parse_ts: a full run's ts read as a moment)
 import _task_timing as _timing  # noqa: E402  (a recorded run's stages, appended once)
 import _json_schema  # noqa: E402  (a record read against the published `lastRun`)
 import _filed_returns  # noqa: E402  (RETURNS_DIRNAME: the filed returns' folder)
+import _runner_output  # noqa: E402  (the sweep's summary and red blocks, read once)
 from _journal_io import (command_facts, redacted_paths,  # noqa: E402
                          redacted_text, repo_relative_or_token)
 from _machine_paths import OUTSIDE_TOKEN  # noqa: E402
@@ -804,6 +805,85 @@ MAX_PATHS = 40
 # caller cannot widen a row.
 MAX_FAILING = 10
 
+# The step key a sweep's own printed case counts are kept under (`sweep_cases`).
+SWEEP_CASES_KEY = "sweepCases"
+# A file the sweep's loud form graded ok: `  ok  <path>  <N> cases`, then the
+# timing suffix `render` in `tools/sweep-selftests.py` writes, when it wrote one.
+_SWEEP_OK_ROW = re.compile(r"^  ok  +(\S(?:.*?\S)?) +(\d+) cases"
+                           r"(?: +\[[^\]]*\])?[ \t]*$", re.M)
+
+
+def sweep_ok_counts(text):
+    """`{path: cases}` off the sweep's loud rows for the files it graded ok.
+    The quiet form prints no such row, so it gives `{}`."""
+    return dict((path, int(n)) for path, n in
+                _SWEEP_OK_ROW.findall(_runner_output.plain_text(text)))
+
+
+def sweep_red_counts(text):
+    """`{path: collected}` - the house tally each file a sweep graded red printed
+    in the block the sweep reprints it under; a block printing no tally is left
+    out. Empty when `text` is not a sweep's run or no red file printed one."""
+    body = _runner_output.plain_text(text)
+    if _runner_output.sweep_summary(body) is None:
+        return {}
+    counts = {}
+    for path, block in _runner_output._sweep_blocks(body):
+        tally = _runner_output.read_tally(block)
+        if tally is not None and tally["runner"] == "house":
+            counts[path] = tally["collected"]
+    return counts
+
+
+def sweep_cases(text):
+    """`{"total", "files"[, "filesDropped"]}` - the cases a sweep's output says
+    it ran: `total` off its summary line, `files` as `[{"path", "cases"}]`
+    sorted by path, one per file whose own count was printed - an ok row's, or a
+    red file's reprinted tally, at the cases its suite ran rather than the ones
+    that passed - cut at `MAX_PATHS` with `filesDropped` counting the rest.
+    None when the output carries no sweep summary.
+
+    NOTHING IS INFERRED FOR A FILE WHOSE COUNT WAS NOT PRINTED: the quiet form
+    prints no row for a passing file, so such a file is absent and a reader
+    asking for it learns it is unknown - never a share of the total, and never
+    the total of a one-file sweep assigned to a path the output did not name."""
+    body = _runner_output.plain_text(text)
+    summary = _runner_output.sweep_summary(body)
+    if summary is None:
+        return None
+    counts = sweep_ok_counts(body)
+    counts.update(sweep_red_counts(body))
+    files = [{"path": path, "cases": counts[path]} for path in sorted(counts)]
+    out = {"total": summary["cases"], "files": files[:MAX_PATHS]}
+    if len(files) > MAX_PATHS:
+        out["filesDropped"] = len(files) - MAX_PATHS
+    return out
+
+
+def sweep_file_cases(step):
+    """`{path: cases}` off a recorded step's `SWEEP_CASES_KEY`, `{}` for a step
+    carrying none - the files whose count the sweep printed and the row kept."""
+    kept = step.get(SWEEP_CASES_KEY) if isinstance(step, dict) else None
+    files = kept.get("files") if isinstance(kept, dict) else None
+    return dict((f["path"], f["cases"]) for f in files or []
+                if isinstance(f, dict) and isinstance(f.get("path"), str)
+                and _is_count(f.get("cases")))
+
+
+def _sweep_cases_row(project, kept):
+    """A step's `SWEEP_CASES_KEY` as a committed row keeps it: each path
+    redacted as `failingSuites`' are, the list cut at `MAX_PATHS` by the writer
+    whatever the caller cut, and `filesDropped` counting every file left out."""
+    files = [f for f in (kept.get("files") or []) if isinstance(f, dict)]
+    out = {"total": kept.get("total"),
+           "files": [{"path": repo_relative_or_token(project, str(f.get("path"))),
+                      "cases": f.get("cases")} for f in files[:MAX_PATHS]]}
+    dropped = max(0, len(files) - MAX_PATHS) + (kept.get("filesDropped") or 0)
+    if dropped:
+        out["filesDropped"] = dropped
+    return out
+
+
 # `measured` IS THE ONE DERIVED FIELD THIS ROW KEEPS, and the exception is
 # deliberate rather than an oversight of the rule beside it. `signal` stays off
 # the row because `exit` and `outcome` can be read for it - or, for a jest
@@ -878,11 +958,19 @@ MAX_FAILING = 10
 #
 # `reusedFrom` (`STEP_REUSED_KEY`) IS THE RUN A REPEATED STEP COPIES, kept to
 # its `runId` and `ts`; `_step` writes no `durationMs` beside it.
+#
+# `sweepCases` (`SWEEP_CASES_KEY`) IS WHAT A SWEEP PRINTED ABOUT ITS CASES, and
+# only that: the total off its summary line and each file's count off the line
+# that printed one (`sweep_cases`). It sits BESIDE `ran`, which stays None for a
+# sweep: the sweep's total adds up the suites' own claims rather than counting
+# checks a runner watched, so it moves no `measured` word and no status - it is
+# read by the one question that needs a count per file, whether a gate step
+# showed each of a proof's files passing (`drive-phase.py`'s `step_standing`).
 STEP_KEYS = ("name", "exit", "ran", "measured", "durationMs", "outcome",
              "timeoutSeconds", "teardown", "failing", "failingBasis",
              "failingSuites", "failingSuitesBasis", "suiteReader",
              "retriedAfterSignal", "retryBasis", "outcomeBasis", "derivedGap",
-             "flaky", "flakyBasis", "muted", STEP_REUSED_KEY)
+             "flaky", "flakyBasis", "muted", STEP_REUSED_KEY, SWEEP_CASES_KEY)
 
 
 def step_repeated(step):
@@ -1040,6 +1128,10 @@ def _step(project, step, published):
             continue
         if key == "muted":
             out[key] = _mute_rows(project, step[key])
+            continue
+        if key == SWEEP_CASES_KEY:
+            if isinstance(step[key], dict):
+                out[key] = _sweep_cases_row(project, step[key])
             continue
         if key == "outcomeBasis":
             # WHY THIS `could-not-run` STEP HAS NO VERDICT, bounded and
@@ -1607,7 +1699,7 @@ def followers_in(text):
     """`(records, unread)` - every follower line in `text`, distinct, in the
     order printed, and how many marked lines were not a follower record."""
     records, unread = [], 0
-    for found in _FOLLOWER_LINE.finditer(text or ""):
+    for found in _FOLLOWER_LINE.finditer(_runner_output.plain_text(text or "")):
         try:
             record = _follower(json.loads(found.group(1)))
         except ValueError:
@@ -4395,6 +4487,11 @@ def _object(fields, required=()):
 _MUTE = _object((("test", _TEXT), ("bugId", _TEXT), ("until", _TEXT)),
                 ("test", "bugId", "until"))
 _RUN_NAMED = _object((("runId", _NAMED), ("ts", _MOMENT)), ("runId",))
+_SWEEP_CASES = _object((
+    ("total", _COUNT),
+    ("files", ("list", _object((("path", _TEXT), ("cases", _COUNT)),
+                               ("path", "cases")), 0)),
+    ("filesDropped", _POSITIVE)), ("total", "files"))
 STEP_GRAMMAR = _object((
     ("name", _NAMED), ("exit", _or_null(("leaf", "an integer", lambda v:
                                          isinstance(v, int)
@@ -4410,7 +4507,8 @@ STEP_GRAMMAR = _object((
     ("retriedAfterSignal", _NAMED), ("retryBasis", _TEXT),
     ("outcomeBasis", _TEXT), ("derivedGap", _TRUE), ("flaky", _TEXTS),
     ("flakyBasis", _TEXT), ("muted", ("list", _MUTE, 0)),
-    (STEP_REUSED_KEY, _RUN_NAMED), ("command", _TEXT),
+    (STEP_REUSED_KEY, _RUN_NAMED), (SWEEP_CASES_KEY, _SWEEP_CASES),
+    ("command", _TEXT),
     ("commandBytes", _COUNT), ("commandSha256", _NAMED), ("program", _TEXT)),
     ("name",))
 TESTED_STATE_GRAMMAR = _object((

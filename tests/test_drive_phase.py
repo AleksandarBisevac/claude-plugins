@@ -17747,9 +17747,13 @@ def _fix_by_gate_units(check):
     helper = _loader.load_script("stamp-verification.py",
                                  "stamp_verification_fbg", cache=False)
     check("fbg16 the key the drive reads a fix-by-gate proof's owed counts "
-          "under is the one the helper writes them under: %r"
-          % ((M.FIX_LEG_OWES, getattr(helper, "FIX_LEG_OWES", None)),),
-          getattr(helper, "FIX_LEG_OWES", None) == M.FIX_LEG_OWES)
+          "under is the one the helper writes them under, both read off its "
+          "one spelling beside `FIX_LEG_FIELD`: %r"
+          % ((M.FIX_LEG_OWES, getattr(helper, "FIX_LEG_OWES", None),
+              getattr(_fr, "FIX_LEG_OWES", None)),),
+          getattr(_fr, "FIX_LEG_OWES", None) is not None
+          and getattr(helper, "FIX_LEG_OWES", None) == M.FIX_LEG_OWES
+          == _fr.FIX_LEG_OWES)
     # The executor path's ask: the other direction, a flag that leaked into
     # every proof the drive asks for.
     ctx, calls_s = _submit_rig(M, task_u, {("stamp-verification.py", "red"): (
@@ -17800,7 +17804,7 @@ def _fix_by_gate_filing_units(check, M, task_u, phase, plan_u, full):
     step = {"name": "true", "command": "true", "exit": 0, "ran": 3,
             "measured": "checks"}
 
-    def filed_over(row, block, fallback=None):
+    def filed_over(row, block, fallback=None, owes=None):
         M.recorded_runs = lambda ctx: {"rows": [row]}
         M.run_verb, calls = _verb_rig({
             ("stamp-verification.py", "red"): (0, fallback or full, ""),
@@ -17810,7 +17814,8 @@ def _fix_by_gate_filing_units(check, M, task_u, phase, plan_u, full):
         held = M.writer_state(state, task_u)
         held["proof"] = {"block": dict(block), "head": "abc1234",
                          "printed": ["new1 mine.v == 2"], "implementation": None,
-                         "testCode": None, "fixLegOwes": {"collected": 2}}
+                         "testCode": None,
+                         "fixLegOwes": owes or {"collected": 2}}
         M._mark(state, "writer", task_u, held)
         M._mark(state, "gated", task_u, {"runId": row["runId"], "at": _STEP_START,
                                          "tree": None, "failing": []})
@@ -17918,6 +17923,66 @@ def _fix_by_gate_filing_units(check, M, task_u, phase, plan_u, full):
           "id bound, no helper run at the filing: %r" % ((out, asked, red),),
           out is None and count == 1 and asked == []
           and _fr.FIX_LEG_RUN_FIELD not in red and _fr.FIX_LEG_FIELD not in red)
+    _fix_by_gate_sweep_units(check, filed_over, named, step, held_block)
+
+
+def _fix_by_gate_sweep_units(check, filed_over, named, step, held_block):
+    """A sweep step reports no runner count (`ran` None), so it binds a held
+    fix-by-gate proof through what the sweep printed (`sweepCases`): its
+    total against the task leg's collected count, and each file the task
+    leg's sweep graded red against its own printed count."""
+    rel = "tests/test_mine.py"
+    other = "tests/test_other.py"
+    # The task leg swept two files and graded the proof's file red, at the
+    # count `owes` gives it.
+    owes = {"collected": 2, "redFiles": {rel: 2}, "files": 2}
+
+    def swept(run_id, files, total=9):
+        return dict(named, runId=run_id, steps=[dict(
+            step, ran=None, measured="not-knowable",
+            sweepCases={"total": total, "files": [
+                {"path": p, "cases": n} for p, n in files]})])
+
+    out, asked, red, did, count = filed_over(
+        swept("R20", [(rel, 2), (other, 7)]), held_block, owes=owes)
+    basis = str(red.get("basis") or "")
+    check("fbg17 a sweep step binds the proof through the cases it printed: no "
+          "runner count, but a summary total no lower than the task leg's and "
+          "the red file's own printed count no lower than its - the block keeps "
+          "`fixLeg: task-gate`, names the run, and no helper run is made: %r"
+          % ((out, asked, red.get(_fr.FIX_LEG_RUN_FIELD), basis[-160:]),),
+          out is None and count == 1 and asked == []
+          and red.get(_fr.FIX_LEG_FIELD) == _fr.FIX_LEG_BY_GATE
+          and red.get(_fr.FIX_LEG_RUN_FIELD) == "R20"
+          and "9 check(s)" in basis)
+    # Each refusal is read for its own reason, so a case cannot pass on an arm
+    # another case was written for.
+    for case, row, why in (
+            # The quiet form, or a file past the row's cut: the red file's own
+            # count was never printed, so whether its cases all ran is unknown.
+            ("fbg18", swept("R21", [(other, 7)]),
+             "printed no count of its own for %s" % (rel,)),
+            # The red file printed fewer cases than the task leg collected in it.
+            ("fbg19", swept("R22", [(rel, 1), (other, 8)]),
+             "ran fewer cases than the task leg collected in %s" % (rel,)),
+            # The total is lower than the task leg's collected count.
+            ("fbg20", swept("R23", [(rel, 2)], total=1),
+             "ran 1 check(s) and the task leg collected 2")):
+        out, asked, red, did, count = filed_over(row, held_block, owes=owes)
+        check("%s a sweep step whose %s binds nothing, for that reason: the "
+              "helper makes the fix leg and the proof it files names no gate "
+              "run: %r"
+              % (case, {"fbg18": "red file has no printed count of its own",
+                        "fbg19": "red file printed fewer cases than the task "
+                                 "leg collected in it",
+                        "fbg20": "summary total is under the task leg's count"
+                        }[case], (out, asked, red, did, count)),
+              out is None and count == 1 and len(asked) == 1
+              and "--fix-by-gate" not in _helper_flags(asked[0])
+              and _fr.FIX_LEG_FIELD not in red
+              and _fr.FIX_LEG_RUN_FIELD not in red
+              and any(row["runId"] in d and "fix leg" in d and why in d
+                      for d in did))
 
 
 def _fix_by_gate_drift_units(check, M, task_u, src):

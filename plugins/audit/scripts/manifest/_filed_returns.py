@@ -124,6 +124,13 @@ RED_FIRST_WORDS = ("proved", "could-not-prove", "not-attempted")
 FIX_LEG_FIELD = "fixLeg"
 FIX_LEG_BY_GATE = "task-gate"
 FIX_LEG_RUN_FIELD = "fixLegRunId"
+# The key such a proof's helper payload states its task leg's counts under,
+# and the drive's held proof keeps them under: what a gate run must show to
+# stand for the fix leg - the task leg's collected count, each file a sweep
+# graded red with its own count, and how many files the sweep swept. Spelled
+# here, once, because the helper and the drive are entry points that cannot
+# import each other.
+FIX_LEG_OWES = "fixLegOwes"
 
 # The executor's binding of each declared test to the case that carries it: a
 # list parallel to `tests.add`, by index.

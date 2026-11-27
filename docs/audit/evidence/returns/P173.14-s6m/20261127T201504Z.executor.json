@@ -1,0 +1,34 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__output_lints.py tests/test__evidence_io.py tests/test_run_test_gate.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test__filed_returns.py tests/test_drive_phase.py tests/test_stamp_verification.py": "pass",
+    "python3 tools/lints/_deps.py --register-citations": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-27T20:22:02Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test__filed_returns.py tests/test_drive_phase.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with 9 of 812 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fbg16 (house FAIL), fbg17 (house FAIL), fbg18 (house FAIL), fbg19 (house FAIL), fbg20 (house FAIL), swc1 (house FAIL), swc2 (house FAIL), swc4 (house FAIL) and 1 more: SELFTEST FAILED: 808/812 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; task leg keyed on the declared tests' code without comments (sha256:8dd54476698174af0d913b851c2fb10aa12cfc18223286c6b701721a50ba00ac; a file that is not Python or does not tokenize by its bytes), which does not cover a test reading its own comments or line numbers",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Work was already in the tree (attempt 1); this attempt only re-verified and submitted. Confirmed git diff HEAD --stat and the _evidence_io.py diff match the task: SWEEP_CASES_KEY 'sweepCases' on sweep steps (total off the 'files ok, N cases' summary, per-file counts off ok rows and red files' reprinted house tallies, never inferred, cut at MAX_PATHS with filesDropped), sweep_ok_counts/sweep_red_counts moved into _evidence_io, STEP_KEYS and STEP_GRAMMAR carry the key; followers_in now reads through _runner_output.plain_text (the le4 fix). drive-phase.py gate_binding/step_standing read step_count; FIX_LEG_OWES lives once in _filed_returns.py beside FIX_LEG_FIELD and is aliased from drive-phase.py and stamp-verification.py; execute-task.md states the binding conditions; changelog P173.12-s6m.fixed folded into P173.6.changed, new P173.14-s6m.changed.md. Verification this attempt: python3 tools/sweep-selftests.py tests/test__output_lints.py tests/test__evidence_io.py tests/test_run_test_gate.py exit 0, '3/3 files ok, 1610 cases' (test__output_lints 183 cases incl. le4, test_run_test_gate 812 cases). Dependants (unchanged from attempt 1): _evidence_io step readers and coverage - still correct, ran/tallies unchanged, new key additive; commit-task-work.py verdict - still correct, reads rows through the record grammar which now names the key; audit-lookup answer_lines - still correct, renders a fixed subset (its comment listing STEP_KEYS is one key short, not this task's file); tools/check-example-ledgers.py - still correct, example rows carry no sweepCases; _filed_returns importers (close-phase, audit-task, _status_facts, audit-lookup) - still correct, one additive constant.",
+    "descriptive": "A sweep step now records the cases it printed, so a fix-by-gate proof can bind to the sweep step and skip the duplicate fix leg."
+  },
+  "testsAdded": [
+    "swc1-swc5 in tests/test_run_test_gate.py: a sweep step's record carries the cases it ran, whole and per file, read from the sweep's own tally lines (never invented)",
+    "swr1-swr3 in tests/test__evidence_io.py",
+    "fbg16-fbg20 in tests/test_drive_phase.py"
+  ],
+  "casesAdded": [
+    [
+      "swc1",
+      "swc2",
+      "swc3",
+      "swc4",
+      "swc5"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:02cb4c7e5ca01821d41acdb39fdc194c8bcf85b43c60f347a42272964242bf77\",\"dirtyDigest\":\"sha256:2b936963f01e391a948fbc61f4d30e39a74e370874fc87b596f7cc509b8adf07\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"60a2832c1db5befc\",\"changelog.d/P173.12-s6m.fixed.md\":null,\"changelog.d/P173.14-s6m.changed.md\":\"506f693a45216242\",\"changelog.d/P173.6.changed.md\":\"07091cfe3fe110a7\",\"plugins/audit/reference/execute-task.md\":\"7065af47555f5ecb\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"e52b4622e526f21c\",\"plugins/audit/scripts/governance/drive-phase.py\":\"6bb6c28a150181f4\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"e3e7ed449b362f84\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"0f429d1cdd63ef8e\",\"plugins/audit/scripts/manifest/_filed_returns.py\":\"7129a8723594145b\",\"tests/test__evidence_io.py\":\"631784f0a5a77c9b\",\"tests/test_drive_phase.py\":\"e6523e95f16d792c\",\"tests/test_run_test_gate.py\":\"a1af73cbcd5becc4\"},\"head\":\"5ad5c5b3\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"changelog.d/P173.12-s6m.fixed.md\",\"changelog.d/P173.14-s6m.changed.md\",\"changelog.d/P173.6.changed.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/scripts/manifest/_filed_returns.py\",\"tests/test__evidence_io.py\",\"tests/test__filed_returns.py\",\"tests/test_drive_phase.py\",\"tests/test_run_test_gate.py\",\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:fdc7830cd852edaf01d3319953b409938ffba213b2aafef5d4a999ad8303606e\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

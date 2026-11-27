@@ -2364,7 +2364,9 @@ and an earlier start's return is never read as this one's; `return_problems` nam
 a return falls short on against the shape its role's agent definition declares (the
 executor's red-first words are `RED_FIRST_WORDS`, held equal to the schema enum by `fr7`, and a
 block whose `fixLeg` is `task-gate` - a proof that made no fix run - is refused by
-`fix_leg_problem` until `fixLegRunId` binds the gate run that showed the fix, `fl1`/`fl2`);
+`fix_leg_problem` until `fixLegRunId` binds the gate run that showed the fix, `fl1`/`fl2`, and
+`FIX_LEG_OWES` is the one spelling of the key such a proof's owed counts travel under, read by
+the helper that writes them and the drive that binds them);
 `file_once` is the exclusive create that refuses a second filing and leaves the first
 byte-identical; `read_filed_return` reports a file that will not parse as a problem, never as
 an absence; `claims_from_return` hands the commit path the `claims` text verbatim. The evidence
@@ -3986,6 +3988,19 @@ their shape end to end: an unknown tree stays `None` rather than flattening to t
 truthy reader would call clean, and a step's `ran` keeps its `None` rather than vanishing into
 "absent", which a reader could mistake for zero.
 
+**A sweep step keeps what the sweep printed about its cases, beside `ran` and never in it.**
+`sweep_cases()` reads a selftest sweep's output into `{"total", "files"}`: the total off its
+`files ok, N cases` summary, and one `{"path", "cases"}` per file whose own count was printed -
+an `ok` row's (`sweep_ok_counts`), or a red file's reprinted suite tally at the cases the suite
+ran rather than the ones that passed (`sweep_red_counts`). A file the sweep printed no count for
+(its quiet form prints no row per passing file) is absent, never given a share of the total.
+`run-test-gate.py` stores it on the step as `SWEEP_CASES_KEY`; `_step` redacts each path and cuts
+the list at `MAX_PATHS`, `filesDropped` counting what went, and `STEP_GRAMMAR` carries it into
+the stored record. `ran` stays `None` for a sweep - its total adds up the suites' own claims
+rather than counting checks a runner watched - so no `measured` word or verdict moves; the one
+reader is the drive's fix-by-gate binding, through `sweep_file_cases()`. `swr1`-`swr3` hold the
+writer's cut and redaction and the reader's refusal of a malformed entry.
+
 **A step can repeat another run's measurement.** On a `part-reused` row (`PART_REUSED`, the third
 `verdictSource` word beside `reused` and absent), a copied step carries `reusedFrom`
 (`STEP_REUSED_KEY`, kept to `runId` and `ts`) and `_step` writes no `durationMs` for it.
@@ -4996,7 +5011,13 @@ printed; zero is `NO CHECK RAN`, which is not the word green. The same live run,
 the task's two markdown files, SKIPPED every hook on a Python-only config: exit 0, nothing
 verified, task done. One design, both failure modes, and the exit code separated neither from
 a verdict. A runner that does not report a count yields `None`, printed as not-knowable —
-guessing zero would refuse a passing gate and guessing one would bless a skipped one.
+guessing zero would refuse a passing gate and guessing one would bless a skipped one. The
+selftest sweep is one such runner, and its step still keeps what the sweep printed about its
+cases - the summary's total and each file's own printed count - under
+`_evidence_io.SWEEP_CASES_KEY` (`observed_step`, read by `_evidence_io.sweep_cases`), beside
+`ran` and not in it, so the count and the verdict above are unchanged; `swc1`-`swc5` in
+`tests/test_run_test_gate.py` hold the reading, the quiet form's empty per-file list, its absence
+on a step that is not a sweep, and the row's cut.
 
 **And the count vocabulary was one entry wide, which made a documented rule unreachable.**
 Only `pre-commit` reported a step count, so jest, vitest, mocha and pytest all answered
@@ -6274,8 +6295,15 @@ verbatim or by the digest a row keeps for an unpublished command: `proof_steps`)
 a verdict, unmuted, over at least the task run's collected count, and the run's recorded coverage
 names each test file the proof was made over (`gate_binding`, `step_standing`). That is the
 helper's own fix check (`fix_problem`) asked of the gate's step, so a red case gone missing does
-not bind; a step reporting no count - the house suites and the sweep - and a sweep's red files,
-whose per-file counts no row keeps, leave it unbound. The run's id goes to
+not bind. The step's count is its runner's own (`ran`), or for the selftest sweep, which reports
+none, the total the sweep's summary printed (`step_count`, off the step's
+`_evidence_io.SWEEP_CASES_KEY`); a house suite run directly reports no count and leaves it
+unbound. Where the task run's sweep graded files red over more than one swept file, each of those
+files must carry its own printed count on the step (`_evidence_io.sweep_file_cases`), no lower
+than the task run's for it - the sweep's total spans every file it swept, so one file's missing
+case would hide behind the others' - and a file whose count was never printed is unknown and
+leaves it unbound. The `fbg17`-`fbg20` cases hold the sweep's binding in both directions, each
+refusal read for its own reason. The run's id goes to
 `redFirst.fixLegRunId` and a clause saying what the run showed to the basis; the block carries no
 `implementationDigest`, since no fix run of it read the implementation (`writer_prove` puts none
 on it, and the filing drops one a held block still carries). Any other run has the helper make
@@ -6906,7 +6934,11 @@ to `sized_deadline` as `runs`; `fit_problem` names the runs it was sized for). T
 filable only with the gate run bound to it (`_filed_returns.fix_leg_problem`), and what that run
 must show is in the payload under `FIX_LEG_OWES` (`fix_leg_owes`): the task run's collected count,
 each file a sweep graded red with its own count, and the files swept - written only beside a
-block that left its fix leg to the gate. `fg1`-`fg5` hold the flag's runs and block in both
+block that left its fix leg to the gate. The key is spelled once, in `_filed_returns` beside
+`FIX_LEG_FIELD`, and read from there by this helper and by the drive; the per-file sweep readers
+(`sweep_red_counts`, `sweep_ok_counts`) are `_evidence_io`'s, the same ones the gate records a
+sweep step's counts with, so the counts a proof owes and the counts a gate run shows are read
+one way. `fg1`-`fg5` hold the flag's runs and block in both
 directions, `fg6`-`fg8` the deadline sized for two runs, and `fg9`/`fg10` the owed counts in both
 directions.
 

@@ -17441,8 +17441,103 @@ def _pre_gate_cases(check):
           and "pre-gate" not in text.lower())
 
 
+def _sweep_loud(oks, red, summary):
+    """A sweep's loud output, built through its own line formats: `oks` is
+    `[(path, cases)]` printed as ok rows, `red` is `[(path, passed, total)]`
+    printed as FAILED rows whose suite output the sweep reprints whole under
+    its `--- <path>: <why> ---` header, and `summary` is `(ok, files, cases)`."""
+    out = ["sweep: %d files, %d workers" % (summary[1], 8)]
+    out += ["  ok      %-58s %d cases  [%.1fs]" % (p, n, 0.4) for p, n in oks]
+    out += ["  FAILED  %-58s exit 1  [%.1fs]" % (p, 0.9) for p, _a, _b in red]
+    out.append("")
+    for path, passed, total in red:
+        out.append("--- %s: exit 1 ---" % (path,))
+        out.append("PASS x1 kept")
+        out.append("FAIL x2 broke")
+        out.append("SELFTEST FAILED: %d/%d cases passed" % (passed, total))
+    out.append("")
+    out += ["FAIL  %s: exit 1" % (p,) for p, _a, _b in red]
+    out.append("%d/%d files ok, %d cases" % summary)
+    return "\n".join(out) + "\n"
+
+
+def _sweep_cases_cases(check):
+    """(swc) A sweep step's record carries the cases it ran, whole and per
+    suite file, read from the sweep's own printed tallies and from nothing
+    else - so a proof that left its fix leg to the gate can be bound to the
+    step, and a file whose count was never printed stays unknown."""
+    root = _mini_repo("run-test-gate-swc-")
+    cmd = "python3 tools/sweep-selftests.py tests/test_a.py tests/test_b.py"
+    # Values chosen so each wrong reading disagrees with the right one: the
+    # red file's suite passed fewer than it ran (a reader taking the passed
+    # half would say 3, not 5), and the summary total is not the sum of the
+    # ok rows alone.
+    loud = _sweep_loud([("tests/test_a.py", 120), ("tests/test_c.py", 7)],
+                       [("tests/test_b.py", 3, 5)], (2, 3, 130))
+    res = M.run_gate(root, [("sweep", cmd)],
+                     runner=_scripted({cmd: (1, loud)}))
+    step = res["steps"][0]
+    got = step.get("sweepCases")
+    check("swc1 a sweep step records the cases it ran WHOLE, off the sweep's "
+          "own summary line, and PER FILE, off each ok row and each red file's "
+          "own reprinted tally - the red file at the total its suite ran, not "
+          "the half that passed: %r" % (got,),
+          isinstance(got, dict) and got.get("total") == 130
+          and got.get("files") == [{"path": "tests/test_a.py", "cases": 120},
+                                   {"path": "tests/test_b.py", "cases": 5},
+                                   {"path": "tests/test_c.py", "cases": 7}]
+          and "filesDropped" not in got)
+    quiet = ("sweep: 2 files, 8 workers\n\n"
+             + "%d/%d files ok, %d cases\n" % (2, 2, 41))
+    res_q = M.run_gate(root, [("sweep", cmd)],
+                       runner=_scripted({cmd: (0, quiet)}))
+    got_q = res_q["steps"][0].get("sweepCases")
+    check("swc2 THE QUIET FORM PRINTS NO ROW PER PASSING FILE, so no file is "
+          "given a count: the whole is the summary's and the per-file list is "
+          "empty, never a share of the total guessed for each file: %r"
+          % (got_q,),
+          isinstance(got_q, dict) and got_q.get("total") == 41
+          and got_q.get("files") == [])
+    plain = M.run_gate(root, [("unit", "pytest -q")],
+                       runner=_scripted({"pytest -q": (
+                           0, "=== 4 passed in 0.10s ===\n")}))
+    check("swc3 OVER-FIRE GUARD: a step whose output is not the sweep's carries "
+          "no sweep count at all - the key's presence is the claim that a "
+          "sweep printed one: %r" % (plain["steps"][0],),
+          "sweepCases" not in plain["steps"][0]
+          and plain["steps"][0].get("ran") == 4)
+    many = [("tests/test_%03d.py" % (i,), i + 1)
+            for i in range(_ev_io.MAX_PATHS + 5)]
+    wide = _sweep_loud(many, [], (len(many), len(many),
+                                  sum(n for _p, n in many)))
+    res_w = M.run_gate(root, [("sweep", cmd)],
+                       runner=_scripted({cmd: (0, wide)}))
+    _ident = {"runId": "run-swc", "ts": "2026-11-27T00:00:00Z"}
+    row_w = _ev_io.row_for(root, res_w, "phase", {"phaseId": "P1"}, _ident)
+    kept = (row_w["steps"][0] or {}).get("sweepCases") or {}
+    check("swc4 THE ROW KEEPS IT, BOUNDED: the per-file list is cut at the "
+          "row's path bound and says how many files it left out, and the whole "
+          "is the summary's untouched - a file past the cut is unknown, never "
+          "zero: %r" % ((kept.get("total"), len(kept.get("files") or []),
+                         kept.get("filesDropped")),),
+          kept.get("total") == sum(n for _p, n in many)
+          and len(kept.get("files") or []) == _ev_io.MAX_PATHS
+          and kept.get("filesDropped") == 5
+          and (kept.get("files") or [{}])[0] == {"path": "tests/test_000.py",
+                                                 "cases": 1})
+    stored = _ev_io.stored_record({"steps": row_w["steps"]})
+    check("swc5 ...and the record a plan stores projects it through the step "
+          "grammar rather than dropping it as a key the grammar does not name: "
+          "%r" % (((stored.get("steps") or [{}])[0].get("sweepCases")
+                   or {}).get("total"),),
+          bool(kept)
+          and ((stored.get("steps") or [{}])[0].get("sweepCases") or {})
+          == kept)
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "swc-block", _sweep_cases_cases)
         _harness.stage(check, "pgt-block", _pre_gate_cases)
         _harness.stage(check, "rcp-block", _recorded_paths_cases)
         _harness.stage(check, "tp-block", _plan_handed_cases)

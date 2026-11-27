@@ -5284,6 +5284,12 @@ def observed_step(name, command, code, text, facts, duration_ms):
     # never by this - `pre-commit run --all-files` measures hooks, and a hook
     # list is not a suite whatever `ran` says it counted.
     step["suiteReader"] = summary_reader(text)[0] or "none"
+    # WHAT A SWEEP PRINTED ABOUT ITS CASES, beside `ran` and never into it
+    # (`_evidence_io.SWEEP_CASES_KEY` says why): absent for output that is not
+    # the sweep's, so the key's presence is the claim that a sweep printed one.
+    swept = _ev.sweep_cases(text)
+    if swept is not None:
+        step[_ev.SWEEP_CASES_KEY] = swept
     # ON ANY STEP, WHATEVER ITS EXIT - a flaky test is a doubt about a pass as
     # much as a detail of a failure. Absent when the runner named none, so the
     # key's presence is itself the claim that somebody reported one.

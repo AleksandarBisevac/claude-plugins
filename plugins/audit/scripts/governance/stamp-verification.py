@@ -4173,33 +4173,12 @@ def new_suite_clause(files):
         ", ".join(files), "it" if len(files) == 1 else "each")
 
 
-# A green file's row in the sweep's loud form: its path, then its own count of
-# cases. The quiet form prints none.
-_SWEEP_OK_ROW = re.compile(r"^  ok  +(\S(?:.*?\S)?) +(\d+) cases(?: +\[[^\]]*\])?[ \t]*$",
-                           re.M)
-
-
-def sweep_red_counts(text):
-    """`{path: collected}` - the house tally each file a sweep graded red printed
-    in the block the sweep reprints it under; a block printing no tally is left
-    out. Empty when `text` is not a sweep's run or no red file printed one."""
-    body = _runner_output.plain_text(text)
-    if _runner_output.sweep_summary(body) is None:
-        return {}
-    heads = list(_runner_output._SWEEP_BLOCK.finditer(body))
-    counts = {}
-    for i, head in enumerate(heads):
-        end = heads[i + 1].start() if i + 1 < len(heads) else len(body)
-        tally = _runner_output.read_tally(body[head.end():end])
-        if tally is not None and tally["runner"] == "house":
-            counts[head.group(1)] = tally["collected"]
-    return counts
-
-
-def sweep_ok_counts(text):
-    """`{path: cases}` off the sweep's loud rows for the files it graded ok."""
-    return dict((path, int(n)) for path, n in
-                _SWEEP_OK_ROW.findall(_runner_output.plain_text(text)))
+# Each file's own count of cases, as the sweep printed it: a red file's off the
+# tally reprinted under its header, a green file's off its loud row. One reading,
+# shared with the gate that records a sweep step's counts (`_evidence_io`), so
+# the proof's per-file counts and the gate's cannot be read two ways.
+sweep_red_counts = _evidence_io.sweep_red_counts
+sweep_ok_counts = _evidence_io.sweep_ok_counts
 
 
 def sweep_count_problem(task_text, fix_text):
@@ -5015,10 +4994,9 @@ CORE_LEGS = ("baseline", "task", "fix")
 
 # The payload key a `--fix-by-gate` proof states its task leg's counts under:
 # what the gate run its filer binds must show, as `fix_problem` asks it of a fix
-# run - every case of the task's run passing, none gone missing instead. The
-# drive reads it under the same spelling (`drive-phase.py`'s own copy, held
-# equal to this one by a case in its suite).
-FIX_LEG_OWES = "fixLegOwes"
+# run - every case of the task's run passing, none gone missing instead. Spelled
+# once, beside `FIX_LEG_FIELD` in `_filed_returns`, which the drive reads too.
+FIX_LEG_OWES = _filed_returns.FIX_LEG_OWES
 
 
 def fix_leg_owes(run, cmd):

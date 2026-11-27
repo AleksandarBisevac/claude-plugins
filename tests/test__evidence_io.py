@@ -12810,6 +12810,47 @@ def _recorder_held_cases(check):
               "introduced": ["tests/test_t.py"]}))
 
 
+def _sweep_row_cases(check):
+    """(swr) A step's sweep counts as a committed row keeps them, and as a
+    reader gets them back: paths redacted, the list cut by the writer whatever
+    the caller handed it, and only well-formed entries read back."""
+    root = _output.REPO_ROOT
+    outside = os.path.join(os.path.dirname(os.path.abspath(root)),
+                           "elsewhere", "test_x.py")
+    handed = {"total": 50, "files": [{"path": "tests/test_%03d.py" % (i,),
+                                      "cases": 1}
+                                     for i in range(M.MAX_PATHS + 2)]
+              + [{"path": outside, "cases": 3}], "filesDropped": 4}
+    row = M._step(root, {"name": "sweep", M.SWEEP_CASES_KEY: handed}, ())
+    kept = row.get(M.SWEEP_CASES_KEY) or {}
+    paths = [f.get("path") for f in kept.get("files") or []]
+    check("swr1 THE WRITER CUTS AND COUNTS: a caller handing more files than "
+          "the row's bound keeps `MAX_PATHS` of them, and `filesDropped` adds "
+          "the ones cut here to the ones the caller already left out: %r"
+          % ((kept.get("total"), len(paths), kept.get("filesDropped")),),
+          kept.get("total") == 50 and len(paths) == M.MAX_PATHS
+          and kept.get("filesDropped") == 4 + 3)
+    short = M._step(root, {"name": "sweep", M.SWEEP_CASES_KEY: {
+        "total": 3, "files": [{"path": outside, "cases": 3}]}}, ())
+    short_paths = [f.get("path") for f in
+                   (short.get(M.SWEEP_CASES_KEY) or {}).get("files") or []]
+    check("swr2 A PATH OUTSIDE THE PROJECT IS REDACTED, never stored as this "
+          "machine's spelling, and a list inside the bound says nothing was "
+          "dropped: %r" % (short.get(M.SWEEP_CASES_KEY),),
+          len(short_paths) == 1 and outside not in short_paths
+          and "filesDropped" not in (short.get(M.SWEEP_CASES_KEY) or {}))
+    step = {M.SWEEP_CASES_KEY: {"total": 9, "files": [
+        {"path": "tests/a.py", "cases": 4}, {"path": "tests/b.py",
+                                              "cases": True},
+        {"path": None, "cases": 2}, "tests/c.py"]}}
+    check("swr3 THE READER TAKES ONLY WHAT A COUNT CAN BE READ FOR: a flag is "
+          "not a count, an entry naming no path names no file, and a step "
+          "with no sweep counts gives none: %r"
+          % ((M.sweep_file_cases(step), M.sweep_file_cases({"ran": 3})),),
+          M.sweep_file_cases(step) == {"tests/a.py": 4}
+          and M.sweep_file_cases({"ran": 3}) == {})
+
+
 # A STAGED SUITE: each row is a block the sweep runs as a job of its own, on one
 # slot, and replays in this order (`_harness.staged_main`), so the case ids,
 # their order and the tally are a one-process run's. Run whole in one process,
@@ -12844,7 +12885,8 @@ STAGES = (("wh-block", "_withheld_cases"), ("rf-block", "_read_field_cases"),
           ("bu-block", "_boundary_upgrade_cases"),
           ("pk-block", "_plan_readers_cases"),
           ("rh-block", "_recorder_held_cases"),
-          ("bsu-block", "_per_suite_base_cases"))
+          ("bsu-block", "_per_suite_base_cases"),
+          ("swr-block", "_sweep_row_cases"))
 # The prefix of the directory a full run's blocks report into.
 _STAGE_PREFIX = "evidence-io-stages-"
 
