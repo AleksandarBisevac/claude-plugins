@@ -1113,6 +1113,39 @@ def _literal_text(value):
     return repr(value.value)
 
 
+def _leg_cases(check, proved):
+    """The payload's `legs` and `run.seconds`: what each run of a proof cost,
+    and which run was not made. `proved` is a payload of a red proof."""
+    py = sys.executable
+    legs = proved.get("legs")
+    legs = legs if isinstance(legs, list) else []
+    by_name = dict((l.get("leg"), l) for l in legs if isinstance(l, dict))
+    check("sr4l a proof that shows the red records each leg it made - baseline, "
+          "task, fix, in that order - with its own seconds, and `run.seconds` is "
+          "the task leg's: %r" % (legs,),
+          [l.get("leg") for l in legs] == ["baseline", "task", "fix"]
+          and all(l.get("ran") is True and isinstance(l.get("seconds"), float)
+                  and "why" not in l for l in legs)
+          and (proved.get("run") or {}).get("seconds")
+          == by_name.get("task", {}).get("seconds"))
+    # THE OTHER DIRECTION: a leg that was not made says so and why, rather than
+    # reading as a zero - a record that listed only the legs that ran, or gave
+    # the missing one 0.0 seconds, would pass the case above.
+    root, man = _red_repo("stamp-red-legs-", _red_test("import mine", "True"))
+    code, got = _red(root, man, [py, "tests/test_mine.py"])
+    legs_n = got.get("legs") if isinstance(got.get("legs"), list) else []
+    fix = dict((l.get("leg"), l) for l in legs_n if isinstance(l, dict)).get("fix", {})
+    check("sr4n a proof whose task run is green makes no fix run, and its `legs` "
+          "names the fix leg as not run with the reason, seconds None: "
+          "exit=%r %r" % (code, legs_n),
+          code != M.E_PROVED
+          and [l.get("leg") for l in legs_n] == ["baseline", "task", "fix"]
+          and fix.get("ran") is False and fix.get("seconds") is None
+          and isinstance(fix.get("why"), str) and fix["why"].strip()
+          and all(l.get("ran") is True for l in legs_n[:2])
+          and isinstance((got.get("run") or {}).get("seconds"), float))
+
+
 def _red_cases(check):
     py = sys.executable
     root, man = _red_repo("stamp-red-", _red_test("import mine", "mine.v == 2"))
@@ -1152,6 +1185,7 @@ def _red_cases(check):
           got.get("atHead") == ["src/mine.py"]
           and got.get("copied") == ["tests/test_mine.py"]
           and len(str(tw.get("head") or "")) >= 7)
+    _leg_cases(check, got)
 
     check("sr4p the payload names the labels the suite printed, from the run that "
           "shows the work whole (the fix run), so `drive-phase.py submit` can grade "

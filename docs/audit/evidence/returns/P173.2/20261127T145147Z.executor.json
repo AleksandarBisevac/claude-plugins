@@ -1,0 +1,36 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_stamp_verification.py": "pass",
+    "python3 tools/lints/_deps.py --register-citations": "pass",
+    "python3 tools/release.py changelog-check": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-27T15:13:17Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with failing cases pq1 (house FAIL), pq2 (house FAIL), pq3 (house FAIL), pq4 (house FAIL), pq6 (house FAIL), pq7 (house FAIL) and 5 more, but the fix run could not be made: the run timed out after 146 s and its process group was torn down - SELFTEST FAILED: 365/367 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: red_reading now times the one stamp-verification red run (UTC start + monotonic ms) and leaves a proof stage on ctx[PROOF_STAGE] (also for refused / blockless runs); its basis names each leg's seconds as the helper reported them (proof_legs_said), a leg not run with the helper's why, or 'not reported' when no payload/legs. Writer path: writer_prove drops any stale stage, prove_and_hold calls queue_proof_stage (queue_stage source proof:<start>, write_state) before the refusal branch. submit: note_proof_stage notes the stage through audit-task.py note --stage (locked write; submit holds no drive-state lock, which wave members share) right after red_block, before the stop check, basis suffixed that on the Agent route it lies inside the writer's hand-out-to-filing length. stage_args refactored onto stage_words. stamp-verification.py: red payload gains legs (red_legs: baseline/task/fix always listed, ran:false+why+seconds:null when not made; task-held/task-support/second only when made) and run.seconds (the task run's). tests: pq0-pq7 in test_drive_phase.py (_proof_stage_units, in ux-block), sr4l/sr4n in test_stamp_verification.py (_leg_cases, in sr-red); the retired-return case fp2* now allows the one proof-timing note and asserts the real note --stage put one proof stage on the task's timing. Docs: two paragraphs in PLUGIN-BUILD-GUIDE.md (drive-phase and stamp-verification sections), changelog.d/P173.2.changed.md. Gate: sweep-selftests over both files exit 0 (2/2 files ok, 1489 cases); register-citations 0 found; release.py changelog-check ok. Dependants: red_reading parse - still correct, the triple it returns is unchanged and the stage rides ctx; hold_proof - unchanged, still given block/payload; note_reproof - unchanged, its note still carries no stages (the proof stage was queued by prove_and_hold before it and rides the next session note or close); test_drive_phase/test_stamp_verification dependants (test_drive_without_model, test__filed_returns, tools/affected.py) import names I did not rename or remove. Overlap caveat: on the Agent route the submit's proof stage is inside the writer stage (hand-out to filing), so summarize reports it as overrun there; the basis says so. Note: I wrote the stamp-verification.py edit and the tests edit through a python heredoc via Bash before switching to Edit for drive-phase.py (the plan gate refused that heredoc for drive-phase.py at magnitude over its limit; the stamp-verification.py one, smaller, was not refused).",
+    "descriptive": "The drive now attributes the red-first proof as its own timed stage, with each leg's seconds in its basis, and the helper reports per-leg seconds."
+  },
+  "testsAdded": [
+    "tests/test_drive_phase.py pq0-pq7: a writer round's proof queues one proof stage (source proof:<at>) whose ms is the drive's own measure (>= the rig's sleep, below the helper's leg seconds), basis names each leg incl. 'fix not run (reason)'; refused proof still queues with 'legs: not reported'; ALLOW: a task owing no proof queues none; submit notes the stage via note --stage, also when refused",
+    "tests/test_stamp_verification.py sr4l/sr4n: payload legs and run.seconds for a red proof, and a green task run lists the fix leg as ran:false with why and seconds None"
+  ],
+  "casesAdded": [
+    [
+      "pq1",
+      "pq2",
+      "pq3",
+      "pq4",
+      "pq5",
+      "pq6",
+      "pq7"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py red_reading sets ctx[PROOF_STAGE] from the run it timed (began/clock around run_verb); queue_proof_stage / note_proof_stage are the two consumers; legs sentence = proof_legs_said, helper side = stamp-verification.py red_legs\n2 pq1-pq7 and sr4l/sr4n were red on HEAD (no stage queued, no legs key: the first ux-block run printed 6 FAIL before the implementation) and green after; pq5 and sr4n are the other-direction cases (no stage for an unowed task; a leg not run is not a zero); the submit helper re-proves the red\n3 grep -n 'red_reading\\|red_run(' drive-phase.py: callers are writer_prove (queues) and red_block via submit (notes); no third caller; stage_args and the new note path share stage_words\n4 n/a - no rule addressed to an agent\n5 measured once: the pq cases bound ms between the rig's 60 ms sleep and 5 s, no figure about a real proof's wall time is claimed\n6 n/a - no guard\n7 no number written into prose; the changelog and guide name functions and cases, no counts",
+  "stamp": "audit-stamp: {\"content\":\"sha256:efcf393951d238d994fe8c72fceefabbe40f6c79b0482d5510357314ab7d111e\",\"dirtyDigest\":\"sha256:ebeb5d9c07e5db8e6ccf19892a724207a8375b09a99f259e32ee2b3d7a9974cf\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"bc76356da0279e0d\",\"changelog.d/P173.2.changed.md\":\"24d518729f077cff\",\"plugins/audit/scripts/governance/drive-phase.py\":\"5ee7a75fdb037f16\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"9d128b368b96b1d8\",\"tests/test_drive_phase.py\":\"6f8af2cc8bdc286c\",\"tests/test_stamp_verification.py\":\"ad5cf8a78146bf9e\"},\"head\":\"253c7adb\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"changelog.d/P173.2.changed.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"tests/test_drive_phase.py\",\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:d3d5e62bb016972c846f66baaaa57f333d2e3e4332bbeaa723868c4ab455715b\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -6247,6 +6247,19 @@ journal's actions and the commit count with a drive whose stages are never queue
 the Agent route, `tm9` a wave member's stages in the phase tree's shard, and `tm10` to `tm16` the
 set-aside's commit stage, the no-change close, the unread lines and the fallback bases.
 
+**The red-first proof is a `proof` stage of its own.** `red_reading` times the one
+`stamp-verification.py red` run by the drive's own clock and leaves the stage on the step's context
+(`PROOF_STAGE`), its basis naming each leg's seconds as the helper reported them and a leg it did
+not run with the helper's reason (`proof_legs_said`); a refused run or one that printed no block
+leaves a stage too, its basis saying no legs were reported, since the time was spent either way.
+The writer path queues it as every stage here (`queue_proof_stage`, source `proof:<start>`),
+whether or not the proof held. `submit` holds no lock on the drive's state, which a wave's members
+share, so it notes its own stage through the locked `note` verb instead (`note_proof_stage`) -
+and on the Agent route that length lies inside the executor's hand-out-to-filing stage, which
+its basis says. The stage's length is the whole of the helper's run, set-up and tear-down
+included, so it is not the sum of its legs. The `pq` cases in `tests/test_drive_phase.py` hold
+the writer path and `submit`.
+
 ### `plugins/audit/scripts/governance/propose-gates.py`
 A plan proposal that reads what previous runs in THIS repository actually ran and what they
 caught, instead of the tree alone — the waste `/audit:init`'s recon step pays everywhere except
@@ -6796,6 +6809,13 @@ not read is `no-tally`, also `could-not-prove`. A green run
 gets no word at all (exit `1`): a test that passes without the fix is work left, not an outcome to
 record. The block it prints is the executor's own `redFirst` shape, `{status, basis, at}`, and
 every word it can print is one the schema's enum declares.
+
+**`red` reports what each run of the proof cost.** The `--json` payload carries `legs` - one entry
+per run it made, `{leg, ran, seconds, exit, problem}`, in the order it made them (`LEG_ORDER`) - and
+`run.seconds`, the task run's own. The baseline, task and fix legs are listed whether or not they
+were made: one that was not carries `ran: false`, `seconds: null` and the `why`, so a missing leg
+is never read as a leg of no time (`red_legs`; the `sr4l` and `sr4n` cases hold both directions).
+The drive turns that into a `proof` stage of the task's timing (`drive-phase.py`, `red_reading`).
 
 ### `plugins/audit/scripts/governance/run-agent-session.py`
 One role run as a headless top-level Claude Code session in a task's tree, priced by the session's

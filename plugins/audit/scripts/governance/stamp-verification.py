@@ -4388,6 +4388,8 @@ def run_red(args, cmd, out):
     state = {"new": [], "absent": [], "stages": [], "head_files": None, "head_defs": None,
              "head_modules": None, "head_js": None}
     copied = []
+    # Every run made, by leg, for the payload's `legs`.
+    made = {}
     previous = _arm()
     try:
         try:
@@ -4429,6 +4431,7 @@ def run_red(args, cmd, out):
                     "baseline", stubs=[rel for rel in state["new"]
                                        if rel not in state["absent"]], deps=deps)
                 run["head"]["absent"] = state["absent"]
+                made["baseline"] = run["head"]
             if run["problem"] is None:
                 run["problem"] = start_problem(["task"], budget, _left(early))
             if run["problem"] is None:
@@ -4437,6 +4440,7 @@ def run_red(args, cmd, out):
                                              "task", deps=deps, texts=overlays)
                 run["code"], run["text"], run["problem"] = (
                     task["code"], task["text"], task["problem"])
+                made["task"] = task
             # What was pulled in may be the fix the new case tests, so a pass
             # with it cannot be credited: run again with it held back.
             held = (run["problem"] is None and _pulled_in(inline)
@@ -4452,6 +4456,7 @@ def run_red(args, cmd, out):
                     task["code"], task["text"], task["problem"])
                 run["withdrawn"] = _pulled_in(inline)
                 run["tag"] = "task-held"
+                made["task-held"] = task
             # A test-support module HEAD has may carry the work the new cases
             # test - the helper they call, or the fix itself - so a pass with
             # the task's copy laid over cannot be credited: run again with
@@ -4473,6 +4478,7 @@ def run_red(args, cmd, out):
                 run["code"], run["text"], run["problem"] = (
                     task["code"], task["text"], task["problem"])
                 run["support"], run["tag"] = support, "task-support"
+                made["task-support"] = task
             second = run["problem"] is None and _wants_second(
                 run["code"], run["text"], args.introduces, cmd, sources,
                 _roots(root, path))
@@ -4482,6 +4488,7 @@ def run_red(args, cmd, out):
                 run["second"], _c = _isolated_run(
                     root, path, scope["declared"] + scope["implementation"], cmd,
                     early, args.timeout, env, holder, "second", deps=deps)
+                made["second"] = run["second"]
             verdict1 = (classify_run(run["code"], run["text"], cmd)[0]
                         if run["problem"] is None and run["code"] is not None
                         else None)
@@ -4494,6 +4501,7 @@ def run_red(args, cmd, out):
                     run["fix"], _c = _isolated_run(
                         root, path, scope["declared"] + scope["implementation"],
                         cmd, deadline, args.timeout, env, holder, "fix", deps=deps)
+                    made["fix"] = run["fix"]
         except KeyboardInterrupt as exc:
             run["problem"] = ("interrupted by %s before the run finished; the "
                               "run's process group was torn down"
@@ -4523,6 +4531,7 @@ def run_red(args, cmd, out):
     # prints none this reads - `drive-phase.py submit` grades a case id against it.
     shown, printed_from = printed_run(run)
     payload = {"verdict": verdict, "redFirst": block, "note": note,
+               "legs": red_legs(made, run["problem"]),
                "printed": _runner_output.printed_labels(shown, cmd),
                "printedFrom": printed_from,
                "supportAtHead": run["support"],
@@ -4555,6 +4564,7 @@ def run_red(args, cmd, out):
                        "second": None if run["second"] is None else
                        {"exit": run["second"]["code"],
                         "outputTail": run["second"]["text"].splitlines()[-20:]},
+                       "seconds": (made.get("task") or {}).get("seconds"),
                        "head": _run_record(run["head"]),
                        "fix": _run_record(run["fix"])}}
     if args.as_json:
@@ -4582,6 +4592,34 @@ def run_red(args, cmd, out):
                             % (unremoved,)))
         return E_LEFT_BEHIND
     return exit_code
+
+
+# The runs a proof may make, in the order it makes them. The first three are
+# listed whether or not they were made, so a reader never has to infer a leg
+# from its absence; the others appear only when the proof made them.
+LEG_ORDER = ("baseline", "task", "task-held", "task-support", "second", "fix")
+CORE_LEGS = ("baseline", "task", "fix")
+
+
+def red_legs(made, problem):
+    """`[{"leg", "ran", "seconds", ...}]` - one entry per run `red` made, by
+    its own measured seconds, and for each of `CORE_LEGS` it did not make an
+    entry saying so with `why` and `seconds` None: a leg not run is not a leg
+    of zero seconds. `made` maps a leg's name to the record `_isolated_run`
+    returned for it; `problem` is what stopped the proof, or None."""
+    legs = []
+    for name in LEG_ORDER:
+        record = made.get(name)
+        if record is not None:
+            legs.append({"leg": name, "ran": True, "seconds": record["seconds"],
+                         "exit": record["code"], "problem": record["problem"]})
+        elif name in CORE_LEGS:
+            why = ("the proof stopped before it was made: %s" % (problem,)
+                   if problem is not None else
+                   "not owed: it follows a task run that showed a red over a "
+                   "sound baseline, and this one did not")
+            legs.append({"leg": name, "ran": False, "seconds": None, "why": why})
+    return legs
 
 
 def _run_record(extra):

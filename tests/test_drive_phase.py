@@ -15965,6 +15965,7 @@ def _steps_unit_cases(check):
     _submit_mutant_units(check)
     _review_skill_submit_units(check)
     _unchecked_ids_units(check)
+    _proof_stage_units(check)
     _brief_scope_units(check)
     _banner_units(check)
     _preflight_units(check)
@@ -17340,6 +17341,138 @@ UNCHECKED_CLAUSE = ("ids bound to a suite the submit's command did not run are "
                     "brief shows them")
 
 
+# The helper's payload as the drive reads it back: its three legs, each with the
+# seconds the helper measured - figures no clock the drive holds can produce.
+_PROOF_LEGS = [{"leg": "baseline", "ran": True, "seconds": 12.34, "exit": 0},
+               {"leg": "task", "ran": True, "seconds": 11.1, "exit": 1},
+               {"leg": "fix", "ran": False, "seconds": None,
+                "why": "no fix run was owed"}]
+_PROOF_PAYLOAD = json.dumps({
+    "redFirst": {"status": "proved", "basis": "new1 red", "at": "z"},
+    "legs": _PROOF_LEGS, "printed": ["new1 mine.v == 2"]})
+_PROOF_GAP = 0.06
+
+
+def _proof_stages(state, task_id="P1.1"):
+    return ((state.get("timing") or {}).get(task_id) or {}).get("pending") or []
+
+
+def _slow_answer(text, code=0):
+    """A `run_verb` answer that takes `_PROOF_GAP` seconds to give `text`, so a
+    stage's length can be told from the helper's own seconds."""
+    def answer(args):
+        time.sleep(_PROOF_GAP)
+        return code, text, ""
+    return answer
+
+
+def _proof_stage_units(check):
+    """A writer round's red-first proof is a timed stage of its own: its length
+    is the drive's measure of the helper's one run, and its basis names each
+    leg's seconds as the helper reported them - also when the helper refused."""
+    M, why = _unit_driver("drive_phase_proof_stage")
+    check("pq0 the driver loads: %r" % (why,), M is not None)
+    if M is None:
+        return
+    task_u = _step_task(files=["src/mine.py", "tests/test_mine.py"], tests={
+        "mode": "tdd", "add": ["tests/test_mine.py: new1"], "gate": ["true"],
+        "expectRedFirst": True})
+    phase = _step_phase([task_u])
+    plan_u = _step_plan(phase)
+    M.writer_test_command = lambda manifest, phase_, task_: (["true"], None)
+    M.tree_head = lambda ctx, tree=None: "abc1234"
+    results = {}
+    for name, answer in (("proved", _slow_answer(_PROOF_PAYLOAD)),
+                         ("refused", _slow_answer("not json at all\n", 2))):
+        M.run_verb, _calls = _verb_rig({("stamp-verification.py", "red"): answer})
+        state = {}
+        ctx = _step_ctx()
+        out = _caught(M.prove_and_hold, ctx, state, plan_u, phase, task_u,
+                      "round 1")
+        results[name] = (out, _proof_stages(state),
+                         ((state.get("timing") or {}).get("P1.1") or {}).get("seen"))
+    out_p, stages_p, seen_p = results["proved"]
+    stage = stages_p[0] if len(stages_p) == 1 else {}
+    check("pq1 a writer round whose proof held queues one `proof` stage, once, "
+          "its source `proof:<at>`: %r" % ((out_p, stages_p, seen_p),),
+          out_p is None and len(stages_p) == 1 and stage.get("kind") == "proof"
+          and seen_p == ["proof:%s" % (stage.get("startedAt"),)]
+          and M._usage_core.parse_ts(stage.get("startedAt")) is not None)
+    check("pq2 its length is the drive's own measure of the run - at least the "
+          "%.2f s the helper took here, and far below the seconds its legs report: "
+          "%r" % (_PROOF_GAP, stage.get("ms")),
+          isinstance(stage.get("ms"), int)
+          and _PROOF_GAP * 1000 <= stage["ms"] < 5000)
+    basis = str(stage.get("basis"))
+    check("pq3 its basis names each leg as the helper reported it - the seconds "
+          "of those it ran and that the fix leg was not run, with the reason: "
+          "%r" % (basis,),
+          "baseline 12.34 s" in basis and "task 11.10 s" in basis
+          and "fix not run (no fix run was owed)" in basis
+          and "the helper's own seconds" in basis)
+    out_r, stages_r, _seen = results["refused"]
+    refused = stages_r[0] if len(stages_r) == 1 else {}
+    check("pq4 a proof the helper refused still queues its length, and the basis "
+          "says it printed no legs rather than naming none: %r"
+          % ((out_r if not isinstance(out_r, tuple) else out_r[:1], stages_r),),
+          len(stages_r) == 1 and refused.get("kind") == "proof"
+          and _PROOF_GAP * 1000 <= refused.get("ms", -1) < 5000
+          and "legs: not reported" in str(refused.get("basis"))
+          and "exit 2" in str(refused.get("basis")))
+    # A proof that was not made - a task owing none - has no length to record.
+    unowed = _step_task(tests={"mode": "gate-only", "add": [], "gate": ["true"],
+                               "expectRedFirst": False})
+    M.writer_test_command = lambda manifest, phase_, task_: (None, None)
+    M.run_verb, calls_u = _verb_rig()
+    state_u = {}
+    _caught(M.prove_and_hold, _step_ctx(), state_u, plan_u, phase, unowed, "r")
+    check("pq5 ALLOW: a task that owes no proof runs no helper and queues no "
+          "stage: %r" % ((_scripts(calls_u), _proof_stages(state_u)),),
+          _proof_stages(state_u) == [] and ("stamp-verification.py", "red")
+          not in _scripts(calls_u))
+    _submit_proof_units(check, M)
+
+
+def _submit_proof_units(check, M):
+    """`submit`'s red-first run is timed the same way, and its stage reaches the
+    task through the locked `note` verb: a submit holds no lock on the drive's
+    state, which wave members share."""
+    task_u = _step_task(files=["src/mine.py", "tests/test_mine.py"], tests={
+        "mode": "tdd", "add": ["tests/test_mine.py: new1"], "gate": ["true"],
+        "expectRedFirst": True})
+    plan_u = _step_plan(_step_phase([task_u]))
+    seen = {}
+    for name, answer in (("proved", _slow_answer(_PROOF_PAYLOAD)),
+                         ("refused", _slow_answer("refused: no test file\n", 2))):
+        ctx, calls = _submit_rig(M, task_u, {("stamp-verification.py", "red"): answer})
+        body = _executor_body("P1.1", {"testsAdded": ["tests/test_mine.py: new1"],
+                                       "casesAdded": ["new1"]})
+        try:
+            said = _caught(M.submit, ctx, plan_u, _submit_args(), [
+                sys.executable, "tests/test_mine.py"], json.dumps(body))
+        finally:
+            _harness.remove_tree(ctx["project"])
+        notes = [a for s, a, _i in calls if s == "audit-task.py" and a[:1] == ["note"]]
+        staged = [json.loads(a[i + 1]) for a in notes
+                  for i, w in enumerate(a) if w == "--stage"]
+        seen[name] = (said[0], staged, len(_filed_bodies(calls)))
+    code_p, staged_p, filed_p = seen["proved"]
+    got = staged_p[0] if len(staged_p) == 1 else {}
+    check("pq6 submit's red-first run is noted with one `proof` stage whose "
+          "length is the measured run and whose basis names the legs, and the "
+          "return is filed: %r" % (seen["proved"],),
+          code_p == 0 and filed_p == 1 and got.get("kind") == "proof"
+          and _PROOF_GAP * 1000 <= got.get("ms", -1) < 5000
+          and "baseline 12.34 s" in str(got.get("basis"))
+          and "writer's hand-out" in str(got.get("basis")))
+    code_r, staged_r, filed_r = seen["refused"]
+    check("pq7 a submit whose proof the helper refused notes the length it spent "
+          "all the same, and files nothing: %r" % (seen["refused"],),
+          code_r != 0 and filed_r == 0 and len(staged_r) == 1
+          and staged_r[0].get("kind") == "proof"
+          and _PROOF_GAP * 1000 <= staged_r[0].get("ms", -1) < 5000)
+
+
 def _unchecked_ids_units(check):
     """A tdd task binding ids in two suites, submitted with a command that runs
     one: the other suite's id is neither graded nor a gap, and it must still
@@ -18114,7 +18247,15 @@ def _retired_return_cases(check, M):
                   started[0] == 0 and filed[0] == 0
                   and "falsifiers" not in (task_u.get("tests") or {})
                   and "falsifier" not in filed[1].lower()
-                  and not task_u.get("notes"))
+                  # The one note a submit leaves is the red-first proof's own
+                  # timing (`note_proof_stage`); nothing else is noted.
+                  and all("red-first proof ran" in str(n.get("text"))
+                          for n in task_u.get("notes") or [])
+                  # ...and it carried the stage: the verb recorded one `proof`
+                  # stage on the task's own timing, for the real helper's run.
+                  and [st.get("kind") for st in
+                       (task_u.get("timing") or {}).get("stages") or []
+                       if st.get("kind") == "proof"] == ["proof"])
     finally:
         _harness.remove_tree(root_u)
 

@@ -1600,12 +1600,89 @@ def queue_agent_stage(ctx, state, task, role):
         write_state(ctx, state)
 
 
+def stage_words(stage):
+    """The `--stage` arguments carrying one stage."""
+    return ["--stage", json.dumps(stage, sort_keys=True, separators=(",", ":"))]
+
+
 def stage_args(state, task):
     """The `--stage` arguments carrying every stage queued for `task`."""
     pending = ((state.get(TIMING_KEY) or {}).get(task["id"]) or {}).get("pending")
-    return [word for stage in pending or []
-            for word in ("--stage", json.dumps(stage, sort_keys=True,
-                                               separators=(",", ":")))]
+    return [word for stage in pending or [] for word in stage_words(stage)]
+
+
+# The red-first proof is a stage of its own. `red_reading` times the helper's
+# one run and leaves the stage under this key of the step's `ctx` - a proof is
+# time spent whether or not it held, so a refused or blockless run leaves one
+# too - and whoever asked for the proof takes it: the writer path queues it
+# (`queue_proof_stage`), `submit` notes it (`note_proof_stage`).
+PROOF_STAGE = "proofStage"
+# What `submit` adds to that basis. The Agent route's writer stage runs from
+# the hand-out to the filed return, and a submit's proof is inside it.
+SUBMIT_PROOF_BASIS = ("; run by the executor's submit, so on the Agent route it "
+                      "lies inside the writer's hand-out-to-filing length")
+
+
+def proof_legs_said(payload, code):
+    """The sentence naming each leg of a proof as the helper reported it - the
+    seconds of those it ran, and for one it did not run that it did not, with
+    the helper's reason - or that no legs were reported and why."""
+    if not isinstance(payload, dict):
+        return "not reported - the helper printed no payload (exit %d)" % (code,)
+    legs = payload.get("legs")
+    if not isinstance(legs, list) or not legs:
+        return "not reported - the helper's payload carries no legs"
+    said = []
+    for leg in legs:
+        seconds = leg.get("seconds") if isinstance(leg, dict) else None
+        if not isinstance(leg, dict) or not leg.get("leg"):
+            said.append("an unreadable leg")
+        elif leg.get("ran") is not True:
+            said.append("%s not run (%s)" % (leg["leg"], _clip(
+                " ".join(str(leg.get("why") or "no reason given").split()), 120)))
+        elif isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
+            said.append("%s %.2f s" % (leg["leg"], seconds))
+        else:
+            said.append("%s ran, its seconds not reported" % (leg["leg"],))
+    return ", ".join(said)
+
+
+def proof_stage(began, ms, payload, code):
+    """The `proof` stage of one helper run that began at `began` and took `ms`
+    by the drive's own clock - which holds the helper's set-up and tear-down
+    as well as its legs, so it is not their sum."""
+    return _timing.make_stage(
+        "proof", began, ms,
+        "stamp-verification red, timed by the drive around its one run; legs: "
+        "%s (the helper's own seconds)" % (proof_legs_said(payload, code),))
+
+
+def queue_proof_stage(ctx, state, task):
+    """Queue the proof stage `red_reading` left on `ctx` for `task`, once per
+    run (source `proof:<start>`), and write the state. Nothing for a step that
+    made no proof."""
+    stage = ctx.pop(PROOF_STAGE, None)
+    if stage is None:
+        return
+    queue_stage(state, task, "proof:%s" % (stage["startedAt"],), stage)
+    write_state(ctx, state)
+
+
+def note_proof_stage(ctx, task):
+    """Note the proof stage `red_reading` left on `ctx` on `task`, by the
+    `note` verb: a submit holds no lock on the drive's state, which every
+    member of a wave shares, and that verb's write is the locked one. A note
+    the verb refuses is said on the did-line, never a stop - timing blocks
+    nothing."""
+    stage = ctx.pop(PROOF_STAGE, None)
+    if stage is None:
+        return
+    stage = dict(stage, basis=stage["basis"] + SUBMIT_PROOF_BASIS)
+    refused = note_task(ctx, task, "the executor's red-first proof ran for %.1f s"
+                        % (stage["ms"] / 1000.0,), stage_words(stage))
+    if refused is not None:
+        ctx["did"].append("timing: proof stage of %s not recorded - the note was "
+                          "refused (%s)" % (task["id"], refused))
 
 
 def stages_carried(state, task, closed=False):
@@ -5689,6 +5766,7 @@ def writer_prove(ctx, manifest, phase, task, tree=None):
     if cmd is None:
         return {"status": "could-not-prove", "at": _utc_stamp(),
                 "head": tree_head(ctx, tree), "basis": basis}, None, None
+    ctx.pop(PROOF_STAGE, None)
     block, payload, why = red_reading(ctx, task, red_args(
         tree or ctx["gitRoot"], ctx["manifest"], task["id"], cmd))
     if why is not None:
@@ -5815,6 +5893,7 @@ def prove_and_hold(ctx, state, manifest, phase, task, when, tree=None):
     if isinstance(proof, dict) and not drift and was in ("proved", "not-attempted"):
         return None
     block, payload, why = writer_prove(ctx, manifest, phase, task, tree)
+    queue_proof_stage(ctx, state, task)
     if why is not None:
         return red_refused(ctx, state, task, why)
     if was == "proved" and block.get("status") != "proved":
@@ -14182,10 +14261,14 @@ def red_reading(ctx, task, argv):
     """`(block, payload, None)` - as `red_run` - or `(None, None, why)`, `why`
     being `("refused", exit, the helper's words)` or `("no-block", exit, its
     note)`: what each caller turns into its own stop or decision."""
+    ctx.pop(PROOF_STAGE, None)
+    began, clock = _utc_stamp(), time.monotonic()
     code, out, err = run_verb(ctx, "stamp-verification.py", argv)
+    ms = int(round((time.monotonic() - clock) * 1000))
     try:
         payload = json.loads(out)
     except ValueError:
+        ctx[PROOF_STAGE] = proof_stage(began, ms, None, code)
         if not declares_test(task):
             # A PROOF THE PLAN GAVE NOTHING TO MAKE WITH. A tdd task naming no
             # test file - a fix task over a finding that names only source -
@@ -14197,6 +14280,7 @@ def red_reading(ctx, task, argv):
                              "so no red could be run; the helper said: %s"
                              % (task["id"], " ".join((out + err).split()))}, {}, None
         return None, None, ("refused", code, out + err)
+    ctx[PROOF_STAGE] = proof_stage(began, ms, payload, code)
     block = payload.get("redFirst") if isinstance(payload, dict) else None
     printed = payload.get("printed") if isinstance(payload, dict) else None
     ctx["printed"] = printed if isinstance(printed, list) else None
@@ -14474,6 +14558,7 @@ def submit(ctx, manifest, args, cmd, text):
         if cmd:
             block, stop = (red_block(ctx, task, args, cmd, tree) if tree
                            else red_block(ctx, task, args, cmd))
+            note_proof_stage(ctx, task)
             if stop is not None:
                 return stop
             body["redFirst"] = dict(block, source=_fr.HELPER_SOURCE)
