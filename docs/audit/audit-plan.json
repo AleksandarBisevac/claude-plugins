@@ -25,7 +25,8 @@
       "shots": "node tools/capture-screenshots.mjs --check",
       "interactive": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html",
       "vitest": "npx vitest run",
-      "lintProbe": "python3 tools/prove-gates.py"
+      "lintProbe": "python3 tools/prove-gates.py",
+      "preGate": "python3 tools/lints/_deps.py --register-citations"
     },
     "evidenceSince": {
       "at": "2026-09-08T21:36:02Z",

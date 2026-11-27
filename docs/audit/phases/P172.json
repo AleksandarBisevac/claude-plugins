@@ -22,7 +22,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P172-R1",
@@ -45,9 +45,10 @@
         "status": "fixed"
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 1 med, 1 low; 2 with a recorded fix commit]"
+    "outcome": "[findings: 2 - 0 high, 1 med, 1 low; 2 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P172: one red costs one red. Nine planned tasks plus five fix tasks: four from the independent opus phase review (no high; four mediums fixed in P172.10-mrj..P172.13-mrj, the missing preGate key written by the build-command verb, lows folded in) and one Windows-only test path compare (P172.14-mrj) found by CI. Per-task reviews on .12, .13, .14: one docs medium, fixed in .13. Per-task reviewer answers continued over: P172.13-mrj intent diverges: The reviewer's one finding (the guide's settle verb paragraph omitted --task) is fixed in this commit: the paragraph now states the task scope, read off _locked_settle and _settle_wide_gates; gate re-run green on the edited docs.",
   "tasks": [
     {
       "id": "P172.1",
@@ -2709,7 +2710,7 @@
     {
       "id": "P172.14-mrj",
       "title": "The task-scoped settle cases compare shard paths in the platform's spelling",
-      "status": "in_progress",
+      "status": "done",
       "description": "CI windows plain 4 (run 45982661598) failed wgt2 in tests/test_audit_task.py: shard_of() joins the index stub's 'phases/P2.json' (forward slash) onto the manifest dir, while plan_bytes() keys files by os.walk + os.path.join (backslash on Windows), so changed == [shard_a] compares two spellings of one path and fails although only the right shard changed. Normalise shard_of's result with os.path.normpath (and any other path compare in the wgt block that mixes the stub's spelling with walked paths). Test-only; no product change.",
       "files": [
         "tests/test_audit_task.py"
@@ -2730,13 +2731,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c962b3b4d2f3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_audit_task.py, _settle_task_scope_cases (wgt block): shard_of() now returns os.path.normpath(os.path.join(dirname(mpath), stub['shard'])), and plan_bytes() keys with os.path.normpath(os.path.join(where, name)) so both sides of the wgt2 compare `changed == [shard_a]` / `shard_b not in changed` are one spelling whatever the walk root's own spelling. Audited the rest of the wgt block: the other path compare is `os.sep + 'journal' + os.sep not in p` over walked keys only (already platform spelling, left); wgt5/wgt6 compare plan_bytes() to plan_bytes() (same producer, left); no other stub-spelled path is compared. Ran: sweep-selftests tests/test_audit_task.py -> '1/1 files ok, 1294 cases', wgt-block ran; ruff check -> All checks passed; vermin -t=3.8- -> no violations; _deps.py --register-citations -> 0 found. Dependants (test_commit_task_work.py, test__filed_returns.py, sweep-costs.json, audit-task.py, affected.py, sweep-selftests.py, CHANGELOG.md, pipeline-cost-levers.md): still correct - only a test-local helper changed inside one block, no name, case id, case count or product path they use moved.",
+        "descriptive": "The task-scoped settle case compares shard paths in one normalised spelling, so wgt2 no longer fails on Windows."
       },
       "startedAt": "2026-11-27T10:57:35Z",
-      "completedAt": null,
+      "completedAt": "2026-11-27T11:04:11Z",
       "verifiedBy": [],
       "timing": {
         "stages": [
@@ -2753,6 +2754,30 @@
             "ms": 235426,
             "basis": "durationMs in run 2026-11-27T11:03:23Z.5d5585's record (run-test-gate --record)",
             "runId": "2026-11-27T11:03:23Z.5d5585"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-27T10:58:56Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 80000,
+            "startedAt": "2026-11-27T10:57:36Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-27T11:03:23Z.5d5585",
+            "kind": "wait",
+            "ms": 4000,
+            "startedAt": "2026-11-27T10:59:07Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-27T11:03:57Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 24000,
+            "startedAt": "2026-11-27T11:03:33Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit c962b3b4d2f3",
+            "kind": "commit",
+            "ms": 1827,
+            "startedAt": "2026-11-27T11:04:08Z"
           }
         ],
         "firstStartedAt": "2026-11-27T10:57:35Z"
@@ -2869,14 +2894,298 @@
         "runId": "2026-11-27T11:03:32Z.c2ee74",
         "status": "passed",
         "at": "2026-11-27T11:03:32Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c962b3b4d2f3",
+        "at": "2026-11-27T11:04:11Z",
+        "return": "docs/audit/evidence/returns/P172.14-mrj/20261127T105735Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with expectRedFirst false and no tests.add: a test-only path-spelling fix that cannot be red on this POSIX host (os.path.join and normpath agree on posix); the Windows red is CI run 45982661598. Simulated with ntpath on a drive-rooted path: the raw join of a manifest dir and the stub's forward-slash shard differs from the os.walk-style join (False); after ntpath.normpath both equal the walked spelling (True).",
+        "at": "2026-11-27"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
+  "startedAt": "2026-11-26T18:24:58Z",
+  "lastRun": {
+    "runId": "2026-11-27T11:19:14Z.9783f1",
+    "status": "passed",
+    "durationMs": 4550,
+    "failed": [],
+    "observations": {
+      "ranTotal": null,
+      "countsBasis": "no step printed a summary this reader can count (validate, gate, report), so the size of this gate is not knowable from its output; counted over the step(s) measured here only - the repeated step(s) selftests, plugin-validate, lint, shots, interactive, vitest ran no check in this run",
+      "treeMutated": [],
+      "treeBasis": "git described the tree before and after",
+      "coverageBasis": "the runner named 3 path(s); the work under test declares 37 file(s); among them: <outside-repo>, <outside-repo>, docs/audit/audit-plan.json; declared but not named by the run: CLAUDE.md, PLUGIN-BUILD-GUIDE.md, changelog.d/P172.1.fixed.md, changelog.d/P172.10-mrj.changed.md, changelog.d/P172.11-mrj.changed.md and 31 more; joined with the paths run 2026-11-27T11:19:01Z.da2ff5's repeated step(s) selftests, plugin-validate, lint, shots, interactive, vitest named"
+    },
+    "banners": [],
+    "recorderHeld": true,
+    "gateSource": "phase",
+    "gateDigest": "sha256:e8312fb8f9c94dbe9df9bce082512eec91a04ad94b9a2938a23f7d6bd7005252",
+    "reuseKey": "1:sha256:b00ca08bf7ceb9c07c71a4ca5f5d122a8d3f1161556228b58f2cbcd5879df7f1",
+    "verdictSource": "part-reused",
+    "reusedFrom": {
+      "runId": "2026-11-27T11:19:01Z.da2ff5",
+      "ts": "2026-11-27T11:19:01Z",
+      "status": "passed"
+    },
+    "via": "cli",
     "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
-    "branch": "audit/p172-one-red-costs-one-red-not-two",
-    "at": "2026-11-26T18:24:58Z"
+    "startedAt": "2026-11-27T11:19:10Z",
+    "selectionMs": 292,
+    "at": "2026-11-27T11:19:14Z",
+    "steps": [
+      {
+        "name": "selftests",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-27T11:19:01Z.da2ff5",
+          "ts": "2026-11-27T11:19:01Z"
+        },
+        "command": "python3 tools/sweep-selftests.py"
+      },
+      {
+        "name": "validate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 776,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json"
+      },
+      {
+        "name": "plugin-validate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-27T11:19:01Z.da2ff5",
+          "ts": "2026-11-27T11:19:01Z"
+        },
+        "command": "claude plugin validate . && claude plugin validate plugins/audit"
+      },
+      {
+        "name": "gate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 1428,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate"
+      },
+      {
+        "name": "report",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 2306,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report"
+      },
+      {
+        "name": "lint",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-27T11:19:01Z.da2ff5",
+          "ts": "2026-11-27T11:19:01Z"
+        },
+        "command": "ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints"
+      },
+      {
+        "name": "shots",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-27T11:19:01Z.da2ff5",
+          "ts": "2026-11-27T11:19:01Z"
+        },
+        "command": "node tools/capture-screenshots.mjs --check"
+      },
+      {
+        "name": "interactive",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-27T11:19:01Z.da2ff5",
+          "ts": "2026-11-27T11:19:01Z"
+        },
+        "command": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
+      },
+      {
+        "name": "vitest",
+        "exit": 0,
+        "ran": 870,
+        "measured": "checks",
+        "suiteReader": "vitest",
+        "reusedFrom": {
+          "runId": "2026-11-27T11:19:01Z.da2ff5",
+          "ts": "2026-11-27T11:19:01Z"
+        },
+        "command": "npx vitest run"
+      }
+    ],
+    "machine": "this run had the machine to itself",
+    "repeatedRun": {
+      "runId": "2026-11-27T11:19:01Z.da2ff5",
+      "startedAt": "2026-11-27T11:04:38Z",
+      "durationMs": 863724,
+      "selectionMs": 303,
+      "status": "passed",
+      "failed": [],
+      "reuseKey": "1:sha256:b00ca08bf7ceb9c07c71a4ca5f5d122a8d3f1161556228b58f2cbcd5879df7f1",
+      "gateDigest": "sha256:e8312fb8f9c94dbe9df9bce082512eec91a04ad94b9a2938a23f7d6bd7005252",
+      "gateSource": "phase",
+      "banners": [],
+      "machine": "this run had the machine to itself",
+      "launch": "2026-11-27T11:04:27Z-fcb8e9f4",
+      "observations": {
+        "ranTotal": 870,
+        "countsBasis": "1 of 9 step(s) printed a summary this reader counted; selftests, validate, plugin-validate, gate, report, lint, shots, interactive did not, so this total is a floor and not a size",
+        "treeMutated": [],
+        "treeBasis": "git described the tree before and after",
+        "coverage": [
+          "docs/audit/audit-plan.json",
+          "tests/test__affected_tests.py",
+          "tests/test__config_rules.py",
+          "tests/test__deps.py",
+          "tests/test__evidence_io.py",
+          "tests/test__manifest_phases.py",
+          "tests/test__manifest_vocab.py",
+          "tests/test_audit_lookup.py",
+          "tests/test_audit_task.py",
+          "tests/test_drive_phase.py",
+          "tests/test_run_test_gate.py"
+        ],
+        "coverageBasis": "the runner named 341 path(s); the work under test declares 37 file(s); 58 of them are test paths, matched to the files they are named after; among them: .claude-plugin/icon.png, .claude-plugin/plugin.json, .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py and 336 more; declared but not named by the run: CLAUDE.md, PLUGIN-BUILD-GUIDE.md, changelog.d/P172.1.fixed.md, changelog.d/P172.10-mrj.changed.md, changelog.d/P172.11-mrj.changed.md and 21 more"
+      },
+      "recorderHeld": true,
+      "via": "cli",
+      "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+      "at": "2026-11-27T11:19:01Z",
+      "testedState": {
+        "head": "c962b3b4",
+        "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+        "scopeDigest": "sha256:14f46673caeddff994ef4dfd8f407b011bb5cef6e89720e758853b39d849b141",
+        "scopeBasis": "36 declared file(s); 36 read, 0 missing; 1 declared path(s) this recorder writes itself were left out: docs/audit/audit-plan.json",
+        "scopeListDigest": "sha256:f26807566028dcbea86843f920ff30da5c40430dd0f796ae957817ecfef18d26",
+        "dirtyDigest": "sha256:f168f7f926424ac6bf0e197e7e6c83949a3b126cd4d10869882319579cf8c270",
+        "dirtyBasis": "git described the tree before the run; 3 dirty path(s)"
+      },
+      "steps": [
+        {
+          "name": "selftests",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 383114,
+          "suiteReader": "none",
+          "command": "python3 tools/sweep-selftests.py"
+        },
+        {
+          "name": "validate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 798,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json"
+        },
+        {
+          "name": "plugin-validate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 1188,
+          "suiteReader": "none",
+          "command": "claude plugin validate . && claude plugin validate plugins/audit"
+        },
+        {
+          "name": "gate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 1471,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate"
+        },
+        {
+          "name": "report",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 2275,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report"
+        },
+        {
+          "name": "lint",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 3409,
+          "suiteReader": "none",
+          "command": "ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints"
+        },
+        {
+          "name": "shots",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 295525,
+          "suiteReader": "none",
+          "command": "node tools/capture-screenshots.mjs --check"
+        },
+        {
+          "name": "interactive",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 172271,
+          "suiteReader": "none",
+          "command": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
+        },
+        {
+          "name": "vitest",
+          "exit": 0,
+          "ran": 870,
+          "measured": "checks",
+          "durationMs": 3580,
+          "suiteReader": "vitest",
+          "command": "npx vitest run"
+        }
+      ]
+    },
+    "sharedWithRepeated": [
+      "observations.coverage",
+      "testedState"
+    ],
+    "replacedLaunches": [
+      {
+        "runId": "2026-11-27T11:19:01Z.da2ff5",
+        "launch": "2026-11-27T11:04:27Z-fcb8e9f4",
+        "status": "passed",
+        "at": "2026-11-27T11:19:01Z"
+      }
+    ]
   },
-  "startedAt": "2026-11-26T18:24:58Z"
+  "testEvidence": {
+    "runId": "2026-11-27T11:19:14Z.9783f1",
+    "status": "passed",
+    "at": "2026-11-27T11:19:14Z"
+  }
 }
