@@ -1,0 +1,28 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__task_timing.py": "pass",
+    "python3 tools/lints/_deps.py --register-citations": "pass",
+    "python3 tools/release.py changelog-check": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-27T14:03:49Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__task_timing.py` in a throwaway tree at HEAD exited 1 with 2 of 30 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tt10c (house FAIL): SELFTEST FAILED: 28/30 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added 'proof' to KINDS (after writer, work order) in _task_timing.py and to the timingStage.kind enum (+description) in audit-plan.schema.json; PLUGIN-BUILD-GUIDE.md section for _task_timing.py gains one sentence; changelog.d/P173.1.added.md. Tests: tt10 pin updated to the new list; new tt10c (a proof stage passes stage_problems, KINDS and the schema enum each hold proof once, summarize totals it as its own kind with gate total unchanged at 150000). Red before fix: 28/30 (tt10, tt10c). After: tests/test__task_timing.py 30/30 (sweep exit 0); register-citations 0 found exit 0; release.py changelog-check exit 0. Dependant suites run green: test__status_facts 213, test__manifest_io 207, test__manifest_phases 155, test__manifest_vocab 73, test_audit_status 441, test__evidence_io all blocks ok (6/6 files ok). Dependants: _manifest_phases.py validator reads stage_problems/KINDS - still correct, proof is now accepted; _manifest_vocab.py - no kind list of its own, unchanged and green; audit-task.py --stage - validates through stage_problems against KINDS, accepts proof with no edit; _status_facts.py - iterates _task_timing.KINDS so by_kind shows proof when a stage exists, absent otherwise; audit-status.py - renders kinds in KINDS order from the aggregate, no literal list (its docstring line 1041 says so); _evidence_io.py - imports append_run_stages/_is_count only, unaffected. Out of scope, not touched: harness wall.py (outside repo).",
+    "descriptive": "A task's timing can carry a proof stage, validated by the schema and totalled as its own kind in /audit:status."
+  },
+  "testsAdded": [
+    "tt10c: a proof stage validates, KINDS and the schema enum hold proof once, summarize totals it separately from gate",
+    "tt10 pin updated to include proof"
+  ],
+  "casesAdded": [
+    "tt10c"
+  ],
+  "claims": "claims:\n1 n/a - the one added sentence (guide) says a proof stage is the red-first run timed as its own stretch; _task_timing.py:68 KINDS holds it, schema enum line 1668 lists it\n2 proof test written first and run on unchanged code: 28/30 with tt10, tt10c FAIL; after the change 30/30; tt10c asserts count==1 in both lists plus summarize totals, so a list updated in one place only fails\n3 grep for kind lists (selection.*base.*reviewer): hits in CHANGELOG.md:216 (history, left), schema description+enum (updated), _task_timing.py:68 (updated), tests tt10 (updated); audit-status.py and _status_facts.py iterate KINDS (no literal list)\n4 n/a - no rule addressed to an agent\n5 n/a - no property measured\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:7f1f34c6a27720a2307840fc1bd7854f69af0a50f29e868476b47e84b5ddbffa\",\"dirtyDigest\":\"sha256:c833df49199edd44d59787c37d3cbc4708db8652eea910df4a3ad92ef2c9f0b9\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"585477d9070ce707\",\"changelog.d/P173.1.added.md\":\"481a4ab2af2fd491\",\"plugins/audit/schema/audit-plan.schema.json\":\"f022c579b11c0dd3\",\"plugins/audit/scripts/manifest/_task_timing.py\":\"305e798b3b32cb3a\",\"tests/test__task_timing.py\":\"0b268a9f475e8fda\"},\"head\":\"c4ee25b8\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"changelog.d/P173.1.added.md\",\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/scripts/manifest/_task_timing.py\",\"tests/test__task_timing.py\"],\"scopeDigest\":\"sha256:5a4eeb77703b7a84661f765a4514087bcdc6847a0a9ba3fc71b0e7de71801ab8\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

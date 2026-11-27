@@ -2426,7 +2426,8 @@ restart moves — `startedAt` is re-stamped on every restart, so it cannot open 
 window — and `stages`, one entry per measured stretch (`kind`, `startedAt`, `ms`, `basis`, and
 `round`/`runId` when they apply). The kinds are a closed list, `KINDS`; the schema's
 `$defs/timingStage` enum states the same list, and `tests/test__task_timing.py` holds the two,
-and both key sets, to agreeing.
+and both key sets, to agreeing. A `proof` stage is the red-first run, timed as its own
+stretch so it is not left as unattributed time between the writer and the gate.
 
 **One module, every writer and every reader.** `make_stage` and `append_stage` build a stage
 and the record it joins, returning new values rather than editing the task; `first_start` is

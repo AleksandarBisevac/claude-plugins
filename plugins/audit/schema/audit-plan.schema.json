@@ -1662,9 +1662,10 @@
       "description": "One measured stretch of a task's work: what it was, when it began, how long it took, and the record the length was read from.",
       "properties": {
         "kind": {
-          "description": "A closed list, the same one `_task_timing.KINDS` holds: writer (a writer round), gate (a recorded gate run), selection (choosing what a gate runs), base (a base measurement), reviewer (the review), commit (the record commit), wait (the time a handed-out step waited before it started).",
+          "description": "A closed list, the same one `_task_timing.KINDS` holds: writer (a writer round), proof (the red-first run that shows a new test fails without the fix), gate (a recorded gate run), selection (choosing what a gate runs), base (a base measurement), reviewer (the review), commit (the record commit), wait (the time a handed-out step waited before it started).",
           "enum": [
             "writer",
+            "proof",
             "gate",
             "selection",
             "base",

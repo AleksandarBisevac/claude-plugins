@@ -146,8 +146,28 @@ def _cases(check):
           "the validator and the schema read one list: module=%r schema=%r"
           % (list(T.KINDS), _schema_kinds()),
           list(T.KINDS) == _schema_kinds()
-          and list(T.KINDS) == ["writer", "gate", "selection", "base",
+          and list(T.KINDS) == ["writer", "proof", "gate", "selection", "base",
                                 "reviewer", "commit", "wait"])
+    # A proof stage (the red-first run) is a stage like any other: it passes
+    # the validator, it lands in the per-kind totals, and the schema's enum
+    # names it. Each half is asserted apart so a list that gained the word in
+    # one place only cannot pass on the other's strength.
+    pstage = _stage("proof", "2026-01-01T00:04:00Z", 90000,
+                    basis="stamp-verification red")
+    ptask = _timed_task()
+    ptask["timing"]["stages"].append(pstage)
+    psum = T.summarize(ptask)
+    check("tt10c a stage of kind proof validates, KINDS and the schema's enum "
+          "both hold it exactly once, and summarize totals it as its own kind "
+          "beside the gate's (the gate total stays 150000): %r"
+          % (psum["byKind"],),
+          T.stage_problems(pstage) == []
+          and list(T.KINDS).count("proof") == 1
+          and _schema_kinds().count("proof") == 1
+          and psum["missing"] == []
+          and psum["byKind"]["proof"]["ms"] == 90000
+          and psum["byKind"]["proof"]["stages"] == 1
+          and psum["byKind"]["gate"]["ms"] == 150000)
     defs = _schema_defs()
     keys = {"timing": (sorted(T.TIMING_KEYS), sorted(defs["timing"]["properties"])),
             "stage": (sorted(T.STAGE_KEYS),

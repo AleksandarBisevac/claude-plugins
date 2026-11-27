@@ -61,11 +61,13 @@ import _usage_core  # noqa: E402  (parse_ts: the one reading of an ISO stamp)
 
 
 # --- the vocabulary -----------------------------------------------------------
-# A CLOSED LIST, in the order a task's work runs: the writer, the gate and the
-# choosing of what it ran, the base measurement, the review, the record commit,
-# and the wait before a handed-out step started. The schema's
-# `timingStage` definition gives `kind` the same list as its enum.
-KINDS = ("writer", "gate", "selection", "base", "reviewer", "commit", "wait")
+# A CLOSED LIST, in the order a task's work runs: the writer, the red-first
+# proof of its tests, the gate and the choosing of what it ran, the base
+# measurement, the review, the record commit, and the wait before a handed-out
+# step started. The schema's `timingStage` definition gives `kind` the same
+# list as its enum.
+KINDS = ("writer", "proof", "gate", "selection", "base", "reviewer", "commit",
+         "wait")
 TIMING_KEYS = frozenset(["firstStartedAt", "stages"])
 STAGE_KEYS = frozenset(["kind", "startedAt", "ms", "basis", "round", "runId"])
 WINDOW_BASIS = "timing.firstStartedAt -> completedAt"

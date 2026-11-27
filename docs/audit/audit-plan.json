@@ -1103,6 +1103,12 @@
       "title": "One red costs one red, not two full sweeps",
       "status": "done",
       "shard": "phases/P172.json"
+    },
+    {
+      "id": "P173",
+      "title": "The red-first proof is timed and costs one run, not three",
+      "status": "in_progress",
+      "shard": "phases/P173.json"
     }
   ],
   "fileIndex": {
@@ -2225,7 +2231,11 @@
       "P172.5",
       "P172.3",
       "P172.7",
-      "P172.13-mrj"
+      "P172.13-mrj",
+      "P173.1",
+      "P173.3",
+      "P173.8",
+      "P173.9"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3811,7 +3821,8 @@
       "P169.23-6l3",
       "P169.24-6l3",
       "P169.37-6l3",
-      "P169.38-6l3"
+      "P169.38-6l3",
+      "P173.6"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -4122,7 +4133,8 @@
       "P169.19-6l3",
       "P169.23-6l3",
       "P169.27-6l3",
-      "P169.41-6l3"
+      "P169.41-6l3",
+      "P173.1"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -4719,7 +4731,8 @@
       "P171.2-71o",
       "P172.4",
       "P172.3",
-      "P172.10-mrj"
+      "P172.10-mrj",
+      "P173.8"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -5244,7 +5257,8 @@
       "P172.5",
       "P172.7",
       "P172.8",
-      "P172.10-mrj"
+      "P172.10-mrj",
+      "P173.8"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -5357,7 +5371,12 @@
       "P156.7",
       "P156.8-3st",
       "P169.8",
-      "P169.38-6l3"
+      "P169.38-6l3",
+      "P173.2",
+      "P173.3",
+      "P173.4",
+      "P173.5",
+      "P173.7"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -11763,7 +11782,10 @@
       "P171.2-71o",
       "P172.6",
       "P172.8",
-      "P172.12-mrj"
+      "P172.12-mrj",
+      "P173.2",
+      "P173.4",
+      "P173.6"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11942,7 +11964,8 @@
       "P131.2",
       "P131.6",
       "P132.3",
-      "P155.13"
+      "P155.13",
+      "P173.5"
     ],
     "plugins/audit/tests/test__filed_returns.py": [
       "P118.3",
@@ -12502,7 +12525,8 @@
       "P169.42-6l3",
       "P172.4",
       "P172.7",
-      "P172.10-mrj"
+      "P172.10-mrj",
+      "P173.9"
     ],
     "plugins/audit/tests/test__affected_tests.py": [
       "P125.8",
@@ -13078,7 +13102,8 @@
       "P169.42-6l3",
       "P172.4",
       "P172.7",
-      "P172.10-mrj"
+      "P172.10-mrj",
+      "P173.9"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -13307,7 +13332,8 @@
       "P169.44-6l3",
       "P171.2-71o",
       "P172.4",
-      "P172.3"
+      "P172.3",
+      "P173.8"
     ],
     "tests/test__evidence_view.py": [
       "P131.1",
@@ -13323,7 +13349,8 @@
       "P131.1",
       "P131.6",
       "P132.3",
-      "P155.13"
+      "P155.13",
+      "P173.5"
     ],
     "tests/test__fmt.py": [
       "P131.1"
@@ -14171,7 +14198,10 @@
       "P171.2-71o",
       "P172.6",
       "P172.8",
-      "P172.12-mrj"
+      "P172.12-mrj",
+      "P173.2",
+      "P173.4",
+      "P173.6"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -14448,7 +14478,8 @@
       "P172.5",
       "P172.7",
       "P172.8",
-      "P172.10-mrj"
+      "P172.10-mrj",
+      "P173.8"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -14513,7 +14544,12 @@
       "P156.8-3st",
       "P169.8",
       "P169.33-6l3",
-      "P169.38-6l3"
+      "P169.38-6l3",
+      "P173.2",
+      "P173.3",
+      "P173.4",
+      "P173.5",
+      "P173.7"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",
@@ -14891,12 +14927,14 @@
     "plugins/audit/scripts/manifest/_task_timing.py": [
       "P167.2",
       "P167.7-fge",
-      "P169.3"
+      "P169.3",
+      "P173.1"
     ],
     "tests/test__task_timing.py": [
       "P167.2",
       "P167.7-fge",
-      "P169.3"
+      "P169.3",
+      "P173.1"
     ],
     "tools/replay-affected.py": [
       "P168.7"
@@ -14989,6 +15027,33 @@
     ],
     "changelog.d/P172.13-mrj.changed.md": [
       "P172.13-mrj"
+    ],
+    "changelog.d/P173.1.added.md": [
+      "P173.1"
+    ],
+    "changelog.d/P173.2.changed.md": [
+      "P173.2"
+    ],
+    "changelog.d/P173.3.changed.md": [
+      "P173.3"
+    ],
+    "changelog.d/P173.4.changed.md": [
+      "P173.4"
+    ],
+    "changelog.d/P173.5.changed.md": [
+      "P173.5"
+    ],
+    "changelog.d/P173.6.changed.md": [
+      "P173.6"
+    ],
+    "changelog.d/P173.7.changed.md": [
+      "P173.7"
+    ],
+    "changelog.d/P173.8.changed.md": [
+      "P173.8"
+    ],
+    "changelog.d/P173.9.changed.md": [
+      "P173.9"
     ]
   },
   "bugs": [
