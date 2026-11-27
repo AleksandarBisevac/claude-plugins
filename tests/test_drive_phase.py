@@ -15966,6 +15966,7 @@ def _steps_unit_cases(check):
     _review_skill_submit_units(check)
     _unchecked_ids_units(check)
     _proof_stage_units(check)
+    _fix_by_gate_units(check)
     _brief_scope_units(check)
     _banner_units(check)
     _preflight_units(check)
@@ -17543,6 +17544,184 @@ def _comment_only_reproof_units(check, M):
           and "test files changed" in notes_k[0]
           and "task leg ran" in notes_k[0]
           and not any(said in d for d in did_k))
+
+
+def _red_argv(calls):
+    """The argument lists of every `stamp-verification.py red` call a rig saw."""
+    return [a for s, a, _i in calls
+            if s == "stamp-verification.py" and a[:1] == ["red"]]
+
+
+def _helper_flags(argv):
+    """The helper's own flags in one `red` argument list - the words before the
+    `--` that opens the test command, so a word of the command is not one."""
+    return argv[:argv.index("--")] if "--" in argv else list(argv)
+
+
+def _fix_by_gate_units(check):
+    """The writer path leaves the proof's fix leg to the task gate: the drive
+    asks the helper for `red --fix-by-gate`, and files that block only over the
+    green recorded run it files with, when that run named each test file the
+    proof was made over - binding the run's id to the block. A run that did
+    not name them, or was not green, sends the drive back to the helper for the
+    fix leg as an executor's proof makes it. `submit` keeps the fix leg."""
+    M, why = _unit_driver("drive_phase_fix_by_gate")
+    check("fbg0 the driver loads: %r" % (why,), M is not None)
+    if M is None:
+        return
+    rel, src = "tests/test_mine.py", "src/mine.py"
+    task_u = _step_task(files=[src, rel], tests={
+        "mode": "tdd", "add": [rel + ": new1"], "gate": ["true"],
+        "expectRedFirst": True})
+    phase = _step_phase([task_u])
+    plan_u = _step_plan(phase)
+    M.writer_test_command = lambda manifest, phase_, task_: (["true"], None)
+    M.tree_head = lambda ctx, tree=None: "abc1234"
+    full = json.dumps({"redFirst": {"status": "proved", "basis": "new1 red",
+                                    "at": "z"},
+                       "legs": _PROOF_LEGS, "printed": ["new1 mine.v == 2"]})
+    by_gate = json.dumps({"redFirst": {
+        "status": "proved", "basis": "new1 red; no fix run made here",
+        "at": "z", _fr.FIX_LEG_FIELD: _fr.FIX_LEG_BY_GATE},
+        "legs": _PROOF_LEGS, "printed": ["new1 mine.v == 2"]})
+    # The writer path's ask.
+    M.run_verb, calls = _verb_rig({("stamp-verification.py", "red"): (
+        0, by_gate, "")})
+    _caught(M.writer_prove, _step_ctx(), plan_u, phase, task_u)
+    asked = _red_argv(calls)
+    check("fbg1 the writer path asks the helper for `red --fix-by-gate`, once: "
+          "%r" % (asked,),
+          len(asked) == 1 and "--fix-by-gate" in _helper_flags(asked[0]))
+    # The executor path's ask: the other direction, a flag that leaked into
+    # every proof the drive asks for.
+    ctx, calls_s = _submit_rig(M, task_u, {("stamp-verification.py", "red"): (
+        0, full, "")})
+    try:
+        body = _executor_body("P1.1", {"testsAdded": [rel + ": new1"],
+                                       "casesAdded": ["new1"]})
+        _caught(M.submit, ctx, plan_u, _submit_args(),
+                [sys.executable, rel], json.dumps(body))
+    finally:
+        _harness.remove_tree(ctx["project"])
+    asked_s = _red_argv(calls_s)
+    check("fbg2 THE OTHER DIRECTION: `submit` (the executor path) keeps the fix "
+          "leg - its one `red` carries no --fix-by-gate: %r" % (asked_s,),
+          len(asked_s) == 1 and "--fix-by-gate" not in _helper_flags(asked_s[0]))
+    _fix_by_gate_filing_units(check, M, task_u, phase, plan_u, full)
+    # A fresh driver: the filing cases above replaced `tree_since_proof`.
+    fresh, _w = _unit_driver("drive_phase_fix_by_gate_drift")
+    _fix_by_gate_drift_units(check, fresh, task_u, src)
+
+
+def _fix_by_gate_filing_units(check, M, task_u, phase, plan_u, full):
+    """`file_writer_return` over a held fix-by-gate proof, under four recorded
+    runs: green naming the test file (bound), green naming only the source,
+    green with no coverage read, and red - the last three each make the fix leg
+    with the helper first."""
+    rel = "tests/test_mine.py"
+    held_block = {"status": "proved", "basis": "new1 red; no fix run made here",
+                  "at": "y", "head": "abc1234", "source": _fr.HELPER_SOURCE,
+                  _fr.FIX_LEG_FIELD: _fr.FIX_LEG_BY_GATE,
+                  "testDigest": {"sha256": "sha256:t", "files": [
+                      {"path": rel, "sha256": "sha256:" + "a" * 64}]}}
+    M.tree_since_proof = lambda ctx, state, task_, tree=None: ([], [])
+    M.diff_paths = lambda ctx, phase_, tree=None: ["src/mine.py", rel]
+    M.writer_claim = lambda state, task_: ("claim", None)
+    M.carried_paths = lambda ctx, phase_, task_, tree=None: ([], [], None)
+    M._cc = types.SimpleNamespace(
+        task_clauses=lambda task_: [],
+        check=lambda *a, **k: {"covered": True, "declined": []})
+
+    def filed_over(row, block):
+        M.recorded_runs = lambda ctx: {"rows": [row]}
+        M.run_verb, calls = _verb_rig({
+            ("stamp-verification.py", "red"): (0, full, ""),
+            ("stamp-verification.py", "take"): (0, _TAKEN, ""),
+            ("audit-task.py", "file-return"): (0, "filed\n", "")})
+        state = {}
+        held = M.writer_state(state, task_u)
+        held["proof"] = {"block": dict(block), "head": "abc1234",
+                         "printed": ["new1 mine.v == 2"], "implementation": None,
+                         "testCode": None}
+        M._mark(state, "writer", task_u, held)
+        M._mark(state, "gated", task_u, {"runId": row["runId"], "at": _STEP_START,
+                                         "tree": None, "failing": []})
+        ctx = _step_ctx()
+        out = _caught(M.file_writer_return, ctx, state, plan_u, phase, task_u)
+        bodies = _filed_bodies(calls)
+        red = (bodies[0].get("redFirst") or {}) if len(bodies) == 1 else {}
+        return out, _red_argv(calls), red, list(ctx.get("did") or []), len(bodies)
+
+    named = {"runId": "R7", "status": _evio.RUN_PASSED,
+             "observations": {"coverage": ["src/mine.py", rel]}}
+    out, asked, red, did, count = filed_over(named, held_block)
+    check("fbg3 a held fix-by-gate proof is filed over the green recorded run "
+          "that named its test file whole: the block keeps `fixLeg: task-gate`, "
+          "carries the run's id, and no helper run is made at the filing: %r"
+          % ((out, asked, red, count),),
+          out is None and count == 1 and asked == []
+          and red.get(_fr.FIX_LEG_FIELD) == _fr.FIX_LEG_BY_GATE
+          and red.get(_fr.FIX_LEG_RUN_FIELD) == "R7"
+          and red.get("status") == "proved")
+    for case, row in (
+            ("fbg4", {"runId": "R8", "status": _evio.RUN_PASSED,
+                      "observations": {"coverage": ["src/mine.py"]}}),
+            ("fbg5", {"runId": "R9", "status": _evio.RUN_PASSED,
+                      "observations": {"coverage": None}}),
+            ("fbg6", {"runId": "R10", "status": "failed",
+                      "observations": {"coverage": ["src/mine.py", rel]}})):
+        out, asked, red, did, count = filed_over(row, held_block)
+        check("%s a recorded run that %s binds nothing: the drive asks the "
+              "helper for the fix leg - one `red` without --fix-by-gate - and "
+              "files that proof, no `fixLeg` and no run id on it, saying why: %r"
+              % (case, {"fbg4": "named only the source, not the test file",
+                        "fbg5": "read no coverage",
+                        "fbg6": "was not green"}[case],
+                 (out, asked, red, did, count)),
+              out is None and count == 1 and len(asked) == 1
+              and "--fix-by-gate" not in _helper_flags(asked[0])
+              and red.get("status") == "proved"
+              and _fr.FIX_LEG_FIELD not in red
+              and _fr.FIX_LEG_RUN_FIELD not in red
+              and any(row["runId"] in d and "fix leg" in d for d in did))
+    # THE OVER-FIRE TWIN: a proof the helper made whole (an executor-shaped
+    # block, no fixLeg) is filed as it is - no run id bound to a fix leg it
+    # ran itself, and no second helper run.
+    whole = dict(held_block)
+    whole.pop(_fr.FIX_LEG_FIELD)
+    out, asked, red, did, count = filed_over(named, whole)
+    check("fbg7 a held proof that made its own fix leg is filed as held: no run "
+          "id bound, no helper run at the filing: %r" % ((out, asked, red),),
+          out is None and count == 1 and asked == []
+          and _fr.FIX_LEG_RUN_FIELD not in red and _fr.FIX_LEG_FIELD not in red)
+
+
+def _fix_by_gate_drift_units(check, M, task_u, src):
+    """Implementation drift alone needs no re-proof of a fix-by-gate proof: its
+    fix leg is the gate's, run over the tree the return is filed with. A proof
+    that made its own fix leg read the implementation, so drift still counts."""
+    M.tree_head = lambda ctx, tree=None: "abc1234"
+    M.locked_paths_now = lambda ctx, lock, tree=None: {"files": [
+        {"path": src, "sha256": "sha256:now"}]}
+    seen = {}
+    for name, extra in (("by-gate", {_fr.FIX_LEG_FIELD: _fr.FIX_LEG_BY_GATE}),
+                        ("whole", {})):
+        state = {}
+        held = M.writer_state(state, task_u)
+        held["proof"] = {"block": dict({"status": "proved", "at": "y"}, **extra),
+                         "head": "abc1234",
+                         "implementation": {"files": [
+                             {"path": src, "sha256": "sha256:then"}]}}
+        held["lock"] = None
+        M._mark(state, "writer", task_u, held)
+        seen[name] = _caught(M.tree_since_proof, _step_ctx(), state, task_u)
+    check("fbg8 a fix-by-gate proof is not drifted by a change of the "
+          "implementation alone: %r" % (seen["by-gate"],),
+          seen["by-gate"] == ([], []))
+    check("fbg9 THE OTHER DIRECTION: a proof that made its own fix leg still "
+          "reads the implementation change as drift: %r" % (seen["whole"],),
+          isinstance(seen["whole"], tuple)
+          and seen["whole"][0] == ["implementation changed: %s" % (src,)])
 
 
 def _unchecked_ids_units(check):

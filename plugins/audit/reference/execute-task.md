@@ -258,7 +258,10 @@ verb writes and refuses, and what the run commands leave behind, is
         the arguments `submit` builds (`red_args`) over the gate command naming a
         `tests.add` file as a path (`_filed_returns.red_command`, the reader the brief's
         `--` command comes from) in a throwaway at HEAD with only the task's test files
-        copied over it, so it proves red on the uncommitted change. No derivable command
+        copied over it, so it proves red on the uncommitted change - plus
+        `--fix-by-gate`, which `submit` never passes: the helper makes the baseline and
+        the task's run and leaves the fix run to the task gate, its block saying
+        `fixLeg: task-gate`. No derivable command
         is `could-not-prove` with that basis. A red the helper will not grade, or a
         re-proof that stops proving, is `red-refused-writer`: `resume` sends the helper's
         words to the session.
@@ -351,14 +354,27 @@ verb writes and refuses, and what the run commands leave behind, is
         to a `tests.add` entry, and the last session's final message in `writerClaim`, as
         the session wrote it apart from the machine paths `file-return` scrubs from every
         committed return. That message is the writer's claim; the gate and the reviewer
-        grade the work, never the message.
+        grade the work, never the message. A proof whose fix leg is the gate's is
+        filed with the green run's id in `redFirst.fixLegRunId` only when that run -
+        the `gated` mark's, read back from the ledger as `passed` - named each test
+        file the proof was made over in its recorded coverage
+        (`observations.coverage`, the gate's "declared file(s) named by the run"
+        line), the path itself and not a source named after it (`gate_binding`).
+        Otherwise the helper is run again without `--fix-by-gate`, making the fix run
+        as `submit`'s proof does, and that proof is held and filed, the reason noted
+        in what the drive did (`fix_leg_proof`). `_filed_returns.fix_leg_problem`
+        refuses a `fixLeg: task-gate` block with no run id, so neither path can file
+        one unbound.
 
      **A proof is filed only over the HEAD and the declared files it was made on.** The
      held proof records the HEAD its throwaway ran at and the digests of the task's
      declared test files and declared implementation files, and `tree_since_proof` is
      the one reading of whether those still match. Every settle and the filing itself
      ask it, and a HEAD or a declared file that moved is proved again first, the changed
-     test files noted on the task. A file the task does not declare is not in that
+     test files noted on the task. A proof whose fix leg is the gate's read no
+     implementation file, so a declared implementation file that moved is no drift of
+     it: the gate the return is filed over ran on that file as it stands, and the
+     filing binds that run. A file the task does not declare is not in that
      reading: one the diff touches after the proof is caught later, when
      `commit-task-work.py`'s `attempt_refusal` refuses by name a path changed during the
      attempt that no in_progress task declares. **The digest binds the commit**:

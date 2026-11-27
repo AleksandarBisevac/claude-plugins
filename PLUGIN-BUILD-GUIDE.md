@@ -6262,6 +6262,18 @@ its basis says. The stage's length is the whole of the helper's run, set-up and 
 included, so it is not the sum of its legs. The `pq` cases in `tests/test_drive_phase.py` hold
 the writer path and `submit`.
 
+**The writer path leaves the fix leg to the task gate.** `writer_prove` asks for
+`red --fix-by-gate` (`red_args`' `fix_by_gate`, which `submit` never sets), so the held proof
+made the baseline and the task's run only. `file_writer_return` files it bound to the green run
+the return is filed over - the `gated` mark's run, read back from the ledger - and only when that
+run's recorded coverage names each test file the proof was made over (`gate_binding`), writing the
+run's id to `redFirst.fixLegRunId`. A run that was not `passed`, recorded no coverage, or named a
+source in place of the test file has the helper make the fix leg after all (`fix_leg_proof`,
+`red` without the flag), and that whole proof is held and filed. Because such a proof read no
+implementation file, `tree_since_proof` does not count one that moved as its drift
+(`by_gate_proof`). `fbg1`-`fbg9` hold the ask, the binding, each fallback and both directions of
+the drift reading.
+
 ### `plugins/audit/scripts/governance/propose-gates.py`
 A plan proposal that reads what previous runs in THIS repository actually ran and what they
 caught, instead of the tree alone — the waste `/audit:init`'s recon step pays everywhere except
@@ -6862,9 +6874,10 @@ where it would have started one) and is still `proved` - no new word - its block
 (`red_verdict`). The `legs` entry for the fix leg says `ran: false` with that reason
 (`red_legs`), no wall time is held back for a fix run (`sweep_budget`'s reserve is zero and
 `budget_clause` says why), and the labels a case id is graded against are read off the task run.
-The deadline is still sized for three runs (`sized_deadline`), which only loosens it. The block is
+The deadline is sized, and its fit judged, for the two runs the flag leaves (`BY_GATE_RUNS`, passed
+to `sized_deadline` as `runs`; `fit_problem` names the runs it was sized for). The block is
 filable only with the gate run bound to it (`_filed_returns.fix_leg_problem`); `fg1`-`fg5` hold
-the flag's runs and block in both directions.
+the flag's runs and block in both directions, and `fg6`-`fg8` the deadline sized for two runs.
 
 ### `plugins/audit/scripts/governance/run-agent-session.py`
 One role run as a headless top-level Claude Code session in a task's tree, priced by the session's

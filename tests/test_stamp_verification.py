@@ -7330,7 +7330,18 @@ def _fix_by_gate_cases(check):
     py = sys.executable
     cmd = [py, "tests/test_mine.py"]
     root, man = _red_repo("stamp-fix-gate-", _red_test("import mine", "mine.v == 2"))
-    code, got, made = _counted_red(root, man, cmd, "--fix-by-gate")
+    # What `red` sized its deadline for, asked of the call itself.
+    sized_for = []
+    real_sized = M.sized_deadline
+
+    def spied_sized(*a, **k):
+        sized_for.append(k.get("runs"))
+        return real_sized(*a, **k)
+    M.sized_deadline = spied_sized
+    try:
+        code, got, made = _counted_red(root, man, cmd, "--fix-by-gate")
+    finally:
+        M.sized_deadline = real_sized
     block = got.get("redFirst") or {}
     legs = dict((l.get("leg"), l) for l in got.get("legs") or []
                 if isinstance(l, dict))
@@ -7384,6 +7395,40 @@ def _fix_by_gate_cases(check):
           % (code_g, got_g.get("redFirst"), made_g),
           code_g == M.E_NOT_RED and got_g.get("redFirst") is None
           and "fix" not in made_g)
+    _fix_by_gate_deadline_cases(check, sized_for)
+
+
+def _fix_by_gate_deadline_cases(check, sized_for):
+    """Under --fix-by-gate a proof makes two runs, so its deadline is sized, and
+    its fit judged, for those two - not for the three a whole proof makes."""
+    py = sys.executable
+    cmd = [py, "tools/sweep-selftests.py", "tests/a.py"]
+    costs = {"tests/a.py": 100.0}
+    two = ("baseline", "task")
+    whole = M.sized_deadline(cmd, costs, None, None, 20)
+    by_gate = M.sized_deadline(cmd, costs, None, None, 20, runs=two)
+    wall = (whole.get("wall") or {}).get("wall") or 0
+    check("fg6 a deadline sized for the runs a --fix-by-gate proof makes is the "
+          "factor times two runs' wall time, not three, and its basis names the "
+          "baseline and task runs only: %r" % ((whole, by_gate),),
+          wall > 0
+          and whole["seconds"] == min(M.TIMEOUT_PER_COST * 3 * wall, M.MAX_TIMEOUT)
+          and by_gate["seconds"] == min(M.TIMEOUT_PER_COST * 2 * wall,
+                                        M.MAX_TIMEOUT)
+          and by_gate["need"] == 2 * wall
+          and "fix" not in by_gate["why"] and "fix" in whole["why"])
+    # Fit is judged for the same runs: a deadline two runs fit and three do
+    # not refuses only the whole proof.
+    tight = dict(by_gate, seconds=int(2.5 * wall))
+    tight_whole = dict(whole, seconds=int(2.5 * wall))
+    check("fg7 ...and fit is judged for those runs: a deadline two runs fit and "
+          "three do not refuses only the whole proof: %r"
+          % ((M.fit_problem(tight), M.fit_problem(tight_whole)),),
+          M.fit_problem(tight) is None
+          and "baseline, task and fix" in str(M.fit_problem(tight_whole)))
+    check("fg8 `red --fix-by-gate` sizes its deadline for the baseline and task "
+          "runs it makes: %r" % (sized_for,),
+          sized_for == [two])
 
 
 # Every block, in replay order. A full run starts one process per block, a few

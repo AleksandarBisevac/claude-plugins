@@ -37,9 +37,37 @@
         "file": "plugins/audit/scripts/governance/stamp-verification.py:4604-4622 (red_legs) with _isolated_run :3742-3762",
         "issue": "A leg is listed as `ran: true` with `seconds: 0.0` when _isolated_run returned before starting the command: no time left, a failed reset or unlink, or a failed dependency link. The drive's proof_legs_said then prints 'task 0.00 s' without the leg's problem. That is the 'missing leg read as a leg of no time' that the red_legs docstring and the guide paragraph say cannot happen.",
         "resolution": "In red_legs, list a record whose code is None and whose problem is set as `ran: false` with that problem as `why`. Alternatively, have proof_legs_said add a ran leg's `problem` when one is present."
+      },
+      {
+        "id": "P173-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:5816-5858,6155-6177",
+        "issue": "contradicts task clause \"a gate that does not name them runs the fix leg as today\": the fix leg runs as today, but its outcome is handled differently. Before this change a writer's first proof whose fix leg could not prove was held by prove_and_hold, which refuses only when was == proved, and was filed honestly as could-not-prove. Causes include a fix-run timeout, a start_problem budget, fix_problem's collected-count check, and a throwaway missing an ignored build output or an undeclared file. Now the first proof is a by-gate `proved` that made no fix run. When gate_binding fails (for example a runner printing no paths, so coverage is None), fix_leg_proof gets could-not-prove and returns red_refused. That is red-refused-writer, which sends the writer session a timeout or environment reason it cannot fix, for up to MAX_RESUME_ROUNDS, then red-refused. The held by-gate proof stays, so every later filing repeats the fallback. A return that used to file now never files. No fbg case covers a non-proved fallback.",
+        "resolution": "In fix_leg_proof, hold and file a non-proved fallback block the way prove_and_hold treats a first proof: hold the could-not-prove block and let file_writer_return file it, with the binding failure added to the basis. Keep red_refused only for a helper refusal or a block that no longer shows red. Add an fbg case where the fallback helper answers could-not-prove and assert that exactly one return is filed with that status."
+      },
+      {
+        "id": "P173-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:5893-5915,5787-5793,6145-6149,215-225",
+        "issue": "A by-gate proof is now filed carrying an implementationDigest that can name bytes other than the ones it is filed with. The helper still computes implementationDigest under --fix-by-gate (stamp-verification.py:4621), and writer_prove puts it on the block (5790-5792). tree_since_proof now ignores implementation drift for such a proof. Example: a resume round changes only src/mine.py and the gate names the test file. The binding holds, nothing re-proves, and the filed redFirst.implementationDigest is round 0's. The comments on file_writer_return (\"a return is filed only with a proof made over the HEAD and the declared test and implementation files it is filed with\") and the module docstring's THE INVARIANT (\"a HEAD or a declared file that moved is proved again before anything is filed\") are now false for this path, and neither was updated. That leaves a false statement in committed evidence and in the code's own invariant prose.",
+        "resolution": "When filing a bound by-gate block, drop implementationDigest, which no fix run of this proof read, or replace it with the digest of the declared implementation as the bound gate ran it. Reword the module docstring at ~215-225 and the THE INVARIANT comment in file_writer_return to exempt a fix-by-gate proof's implementation half, as execute-task.md's drift paragraph now does. Add a case on the bound path where only the implementation moved, and assert what the filed block says about the implementation."
+      },
+      {
+        "id": "P173-R5",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:5835-5857",
+        "issue": "gate_binding stands in for the helper's fix leg with a weaker check, and the filed basis does not say so. It reads the run-wide `observations.coverage`, which run-test-gate builds from the output text of every step (run-test-gate.py:5812, 5858), plus the run's `passed` status. It never checks that the step running the proof's own command (writer_test_command, the red_command entry) ran in that run. task_gate_steps drops entries matching executor.phaseGateOnly, and red_command does not consult that setting. A test entry left to the phase gate can therefore be absent from the bound run while another step (a lint or typecheck printing the path) makes coverage name the test file, and the block is filed `proved` and bound to a run that never ran the test. The binding also skips fix_problem's collected-count and per-file sweep-count checks, which caught a red case that went missing (skipped or deselected) rather than passing. Meanwhile the basis claims a \"green run of these tests on the working tree\".",
+        "resolution": "Bind only when the run's step whose resolved command equals the proof's command is present, measured (not left out), passed, and itself named the test file. Use the row's per-step data, or the step text run-test-gate keeps. When that step is absent, fall back to fix_leg_proof. Optionally compare the step's collected count with the task leg's collected count, as fix_problem does. Add an fbg case: coverage names the test file through another step while the proof's step is absent, and assert the fallback."
+      },
+      {
+        "id": "P173-R6",
+        "severity": "low",
+        "file": "docs/audit (filed return)",
+        "issue": "testsAdded names the fg6-fg8 cases in tests/test_stamp_verification.py, but casesAdded binds only fbg1-fbg9, so the stamp-verification cases are not bound for case grading.",
+        "resolution": "Add a casesAdded entry for fg6-fg8 on the next filing."
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 1 med, 1 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 0 high, 4 med, 2 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1008,7 +1036,7 @@
     {
       "id": "P173.5",
       "title": "The red-first helper can leave the fix leg to the task gate",
-      "status": "in_progress",
+      "status": "done",
       "description": "Design: quality-gates-internal plans/2026-11-27-speed-red-first.md section 2, T5a. red --fix-by-gate skips the fix leg; the block keeps status proved (no new enum word) and adds fixLeg: 'task-gate', its basis saying the fix leg is the task gate's; _HELPER_BASIS in _filed_returns.py must still match. A block with fixLeg task-gate and no bound gate run is not filable. Dependants: audit-lookup.py answer_lines, mechanical_answers, complete_phase_return.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -1038,14 +1066,17 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "670ceb77cce2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py: new `red --fix-by-gate` flag. run_red computes `owes_fix` (task run red over a sound baseline) and, with the flag, sets run['fixByGate'] instead of starting the fix leg; sweep_budget's reserve is zeroed under the flag (budget['byGate']) and budget_clause says no time was held back because the fix leg is the task gate's. red_verdict: with fixByGate a red skips fix_problem and returns status `proved` with `fixLeg: task-gate` (via _filed_returns.FIX_LEG_FIELD/FIX_LEG_BY_GATE) and a basis that opens as every helper basis does (_HELPER_BASIS still matches - fg2) and says no fix run was made here, the fix leg being the task gate's. red_legs gains by_gate: the fix leg entry says ran false, seconds None, why naming the task gate. printed labels then come from the task run (printed_run unchanged). Module docstring usage + a paragraph, --help text. _filed_returns.py: FIX_LEG_FIELD='fixLeg', FIX_LEG_BY_GATE='task-gate', FIX_LEG_RUN_FIELD='fixLegRunId'; fix_leg_problem(red) refuses a fixLeg other than task-gate and a task-gate fixLeg with no non-blank fixLegRunId; _executor_problems (so return_problems, so submit and every filing reader) appends it; mechanical_answers owes redFirst with that reason for an unbound helper block, and for a bound one appends '; its fix leg the task gate's run <id>' to redFirstBasis. DESIGN CHOICE for T5b: the bound run is a SIBLING key `fixLegRunId` on the redFirst block (fixLeg stays the string 'task-gate', as T5a's text says), not an object `fixLeg.runId`; the drive must write redFirst.fixLegRunId before filing. Tests: tests/test_stamp_verification.py new staged block sr-fix-by-gate (_fix_by_gate_cases, fg1-fg5, helper _counted_red) - first run on unchanged code: SELFTEST FAILED 0/5 (exit 1, usage error on the unknown flag); and the jd2 anchor in _every_run_cases updated to the renamed predicate line (`owes_fix = verdict1 == V_RED and baseline_problem(`), same mutation. tests/test__filed_returns.py new fl-block (fl1, fl2) - red first 118/120, then 120/120. Mutations (in memory via _mutated_module / monkeypatch, no file touched): fix leg run despite the flag -> fg1,fg3,fg4 red; no fixLeg on block -> fg1,fg2 red; flag leaking into every proof -> fg4 red; fix_leg_problem never fires -> fl1 red (+fl-block raise); always fires -> fl1,fl2 red. Gate `python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__filed_returns.py` exit 0, '2/2 files ok, 508 cases' (first try had exit 1 only from the jd2 anchor, fixed). Pre-gate register-citations exit 0 (0 found); changelog-check exit 0; ruff, vermin 3.8 clean on the four .py; prose_number_claims/house_style/doc_prose_numbers report nothing for touched files. Also ran dependant suites tests/test_audit_lookup.py + tests/test__refs.py: exit 0, 2/2 files ok. NOT run: tests/test_drive_phase.py (T5b's, expensive). Known looseness left: sized_deadline still sizes the deadline for three runs under the flag (only loosens the cap; fit_problem could refuse a proof that two runs would fit) - stated in PLUGIN-BUILD-GUIDE. DEPENDANTS: audit-lookup.py answer_lines - still correct, reads answers/owed unchanged in shape; an unbound by-gate block now shows as 'yours - <fix_leg_problem reason>' (test_audit_lookup green). mechanical_answers - changed as above (fl2). complete_phase_return - still correct, consumes computed answers untouched. Other importers of _filed_returns (close-phase, _evidence_io, commit-task-work, drive-phase, stamp-verification, audit-task, _status_facts) - still correct: the new refusal fires only on a block carrying fixLeg, which only `red --fix-by-gate` writes and nothing passes yet; drive-phase (T5b) must bind fixLegRunId. Importers of stamp-verification (tests, tools/affected.py path) - behaviour without the flag unchanged; sr1/sdr2 still hold the 3-key block. tests/test_stamp_verification.py readers (.github/sweep-costs.json has no figure for the new block - the sweep weighs it by the suite figure; tools/affected.py names _cli/_scan/_worktrees, untouched). PLUGIN-BUILD-GUIDE.md: edits inside the stamp-verification and _filed_returns sections only.",
+        "descriptive": "red --fix-by-gate skips the fix run and writes a proved block with fixLeg task-gate, filable only once a gate run id is bound to it"
       },
       "startedAt": "2026-11-27T16:30:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-27T16:48:19Z",
+      "verifiedBy": [
+        "sr-fix-by-gate block fg1-fg5: --fix-by-gate makes only baseline and task runs and writes proved with fixLeg task-gate; basis still matches _HELPER_BASIS and says no fix run; legs name the fix leg not run with the gate reason; without the flag the fix run is made and no fixLeg; a green task run stays not red",
+        "fl-block fl1-fl2 in tests/test__filed_returns.py: unbound or foreign fixLeg refused at filing, bound accepted, plain block untouched; mechanical_answers names the bound run and owes an unbound one"
+      ],
       "notes": [
         {
           "at": "2026-11-27T15:46:17Z",
@@ -1079,6 +1110,24 @@
             "ms": 391451,
             "basis": "durationMs in run 2026-11-27T16:48:01Z.56c0e5's record (run-test-gate --record)",
             "runId": "2026-11-27T16:48:01Z.56c0e5"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-27T16:40:33Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 630000,
+            "startedAt": "2026-11-27T16:30:03Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-27T16:48:01Z.56c0e5",
+            "kind": "wait",
+            "ms": 3000,
+            "startedAt": "2026-11-27T16:41:05Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 670ceb77cce2",
+            "kind": "commit",
+            "ms": 1816,
+            "startedAt": "2026-11-27T16:48:16Z"
           }
         ],
         "firstStartedAt": "2026-11-27T16:30:01Z"
@@ -1196,19 +1245,33 @@
         "runId": "2026-11-27T16:48:07Z.47d0be",
         "status": "passed",
         "at": "2026-11-27T16:48:07Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "670ceb77cce2",
+        "at": "2026-11-27T16:48:19Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-27T16:40:30Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__filed_returns.py` in a throwaway tree at HEAD exited 1 with 7 of 384 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fg1 (house FAIL): SELFTEST FAILED: 378/384 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; task leg keyed on the declared tests' code without comments (sha256:d011fee0e1c01565530635d5e724cc7dda99156ad75e707e1b3b4ca5e38fd8ba; a file that is not Python or does not tokenize by its bytes), which does not cover a test reading its own comments or line numbers",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P173.6",
       "title": "The drive files a fix-by-gate proof only over a green gate that ran the proof's tests",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Design: quality-gates-internal plans/2026-11-27-speed-red-first.md section 2, T5b. On the writer path the drive asks for red --fix-by-gate; file_writer_return requires the green recorded run it files over to name each proof test file whole and records fixLeg.runId; a gate that does not name them runs the fix leg as today. submit (executor path) keeps the fix leg. Implementation drift alone then needs no re-proof. Dependants: settle_aside, tree_since_proof, audit-reviewer.md/execute-task.md wording.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
         "tests/test_drive_phase.py",
         "plugins/audit/reference/execute-task.md",
         "changelog.d/P173.6.changed.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test_stamp_verification.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1217,7 +1280,7 @@
         ],
         "expectRedFirst": true,
         "gate": [
-          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_stamp_verification.py"
         ],
         "gateBasis": "tests.add"
       },
@@ -1228,14 +1291,14 @@
       "dependsOn": [
         "P173.5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-27T16:48:31Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1248,8 +1311,156 @@
         {
           "at": "2026-11-27T16:41:03Z",
           "text": "From P173.5: the gate run is bound through redFirst.fixLegRunId (a separate key); fixLeg stays the string 'task-gate'. The drive must write fixLegRunId before filing or _filed_returns.fix_leg_problem refuses the return. Also: sized_deadline still sizes for three runs under --fix-by-gate; size it for two when the drive passes the flag (stamp-verification.py is P173.7's file too)."
+        },
+        {
+          "at": "2026-11-27T16:48:28Z",
+          "text": "quotes the per-gate sentence of execute-task.md, which this task leaves unchanged",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-27T17:08:17Z",
+          "text": "the executor's red-first proof ran for 479.6 s"
         }
-      ]
+      ],
+      "timing": {
+        "stages": [
+          {
+            "basis": "stamp-verification red, timed by the drive around its one run; legs: baseline 163.26 s, task 163.18 s, fix 143.01 s (the helper's own seconds); run by the executor's submit, so on the Agent route it lies inside the writer's hand-out-to-filing length",
+            "kind": "proof",
+            "ms": 479595,
+            "startedAt": "2026-11-27T17:00:16Z"
+          },
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-27T17:08:50Z",
+            "ms": 20852,
+            "basis": "selectionMs in run 2026-11-27T17:15:45Z.70d9da's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-27T17:15:45Z.70d9da"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-27T17:09:11Z",
+            "ms": 393527,
+            "basis": "durationMs in run 2026-11-27T17:15:45Z.70d9da's record (run-test-gate --record)",
+            "runId": "2026-11-27T17:15:45Z.70d9da"
+          }
+        ],
+        "firstStartedAt": "2026-11-27T16:48:31Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-27T17:15:51Z.1ff6ba",
+        "status": "passed",
+        "durationMs": 232,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:9780b77d11c5fb6dee8f8633ace4e477d534a672f89b7ec5cd6ce5eb5fc1d169",
+        "reuseKey": "1:sha256:bed1e76495fed3499174fdb733f9b48c78adb1d59ddaba2084c3e1998f619730",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-27T17:15:45Z.70d9da",
+          "ts": "2026-11-27T17:15:45Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+        "selectionMs": 136,
+        "at": "2026-11-27T17:15:51Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "runId": "2026-11-27T17:15:45Z.70d9da",
+          "startedAt": "2026-11-27T17:09:11Z",
+          "durationMs": 393527,
+          "selectionMs": 20852,
+          "status": "passed",
+          "failed": [],
+          "reuseKey": "1:sha256:bed1e76495fed3499174fdb733f9b48c78adb1d59ddaba2084c3e1998f619730",
+          "gateDigest": "sha256:9780b77d11c5fb6dee8f8633ace4e477d534a672f89b7ec5cd6ce5eb5fc1d169",
+          "gateSource": "task",
+          "banners": [],
+          "machine": "this run had the machine to itself",
+          "launch": "2026-11-27T17:08:47Z-ce76f872",
+          "gateReach": {
+            "gaps": []
+          },
+          "observations": {
+            "ranTotal": null,
+            "countsBasis": "no step printed a summary this reader can count (pre-gate/preGate and 1 more), so the size of this gate is not knowable from its output",
+            "treeMutated": [],
+            "treeBasis": "git described the tree before and after",
+            "coverage": [
+              "tests/test_drive_phase.py",
+              "tests/test_stamp_verification.py"
+            ],
+            "coverageBasis": "the runner named 206 path(s); the work under test declares 7 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 195/195 and 201 more; declared but not named by the run: PLUGIN-BUILD-GUIDE.md, changelog.d/P173.6.changed.md, plugins/audit/reference/execute-task.md, plugins/audit/scripts/governance/drive-phase.py and 1 more; breadth: the run named 174 suite path(s) and this task declares 7 file(s), and 170 of them are suites the task neither declares nor is named after (test__deps.py, test__evidence_io.py, test__output.py, test_audit_task.py, test_close_phase.py, test_commit_task_work.py, tests/_harness.py and 163 more) - this gate asks more than the task changed; that is reported, not refused"
+          },
+          "recorderHeld": true,
+          "via": "cli",
+          "attempt": 1,
+          "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+          "at": "2026-11-27T17:15:45Z",
+          "testedState": {
+            "head": "670ceb77",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeDigest": "sha256:5724ebd56f053dd0e5f6037d1cb0b5fb5f77fd5d93ecb295278b91879e432e28",
+            "scopeBasis": "7 declared file(s); 7 read, 0 missing",
+            "scopeListDigest": "sha256:762f9baa3307161584c86d014e6d4344b0cc6536ad24b35c33fead92c01a7645",
+            "dirtyDigest": "sha256:32b13ca45528bceb6d4ed900329bfffdb2d5afad8e1f3fbac90b14d90c625f09",
+            "dirtyBasis": "git described the tree before the run; 11 dirty path(s)"
+          },
+          "steps": [
+            {
+              "name": "pre-gate/preGate",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 7680,
+              "suiteReader": "none",
+              "command": "python3 tools/lints/_deps.py --register-citations"
+            },
+            {
+              "name": "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_stamp_verification.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_io.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_run_test_gate.py, tests/test_set_priority.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 385794,
+              "suiteReader": "none",
+              "commandBytes": 5400,
+              "commandSha256": "719c78da4d2c3f2f6cfea6887e5de28bfa0963af0b80e85cdd4af9ae55e5bb79",
+              "program": "python3"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-27T17:15:45Z.70d9da",
+            "launch": "2026-11-27T17:08:47Z-ce76f872",
+            "status": "passed",
+            "at": "2026-11-27T17:15:45Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-27T17:15:51Z.1ff6ba",
+        "status": "passed",
+        "at": "2026-11-27T17:15:51Z"
+      }
     },
     {
       "id": "P173.7",
@@ -1777,6 +1988,44 @@
       "dependsOn": [
         "P173.3"
       ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P173.11-s6m",
+      "title": "The re-gate's suite narrowing and the proof-stage timing case hold on Windows",
+      "status": "pending",
+      "description": "CI run 46034178894 (windows legs, head cf9cdddf) failed two cases that pass on darwin/linux. (1) tests/test_run_test_gate.py rfb1 (the re-gate that runs a one-suite red beside the rest): the recorded runner calls were ['tests/test_u.py', 'ests/test_v.py'] - the joined step's path list loses the first character of a path on Windows. Find whether the cut is in run-test-gate.py's narrowing (taking red suites out of a step's path list: an index/length computed on one spelling and applied to another, a separator or quoting difference, CRLF, a backslash path) or in the test's fake runner, and fix the product if it is the product; the case must assert the exact call list. Reproduce on darwin by feeding the Windows-shaped inputs (backslash paths, the quoted interpreter path CI uses: \"C:/hostedtoolcache/.../python3.exe\") rather than guessing. (2) tests/test_drive_phase.py pq2 asserts the proof stage's length is at least the 0.06 s the rig's helper sleeps; Windows measured 47 ms (coarse sleep/monotonic resolution). Bound it on what is certain (positive and well below the legs' reported seconds) or make the rig's elapsed time certain; do not weaken the upper bound. Get the failing log lines with: gh run view 46034178894 --log-failed | grep -E 'Z FAIL (rfb1|pq2)'. Dependants: drive-phase gate_red_decision/red_runs, _evidence_io step readers, commit-task-work.py verdict.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "tests/test_run_test_gate.py",
+        "tests/test_drive_phase.py",
+        "changelog.d/P173.11-s6m.fixed.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: the re-gate's narrowed path list keeps every remaining path whole under a Windows-shaped command"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,

@@ -5755,13 +5755,16 @@ def fix_prove_lines(task):
     return ["Prove each with a case that fails on the code at HEAD."]
 
 
-def writer_prove(ctx, manifest, phase, task, tree=None):
+def writer_prove(ctx, manifest, phase, task, tree=None, by_gate=True):
     """`(block, payload, None)` - the red-first block for the writer's work: the
     helper's over the derived test command, carrying the digest it was proved
     over and the HEAD its throwaway ran at; `could-not-prove` naming the basis
     where no command can be derived; `not-attempted` where the task owes no
     red-first proof (`unowed_red_first`) - or `(None, None, why)` with the
-    helper's own words when it gave no block or refused."""
+    helper's own words when it gave no block or refused. `by_gate` asks the
+    helper to leave the fix leg to the task gate (`red --fix-by-gate`), which
+    the filing binds (`gate_binding`) or, where the gate cannot stand for it,
+    makes after all with `by_gate` False (`fix_leg_proof`)."""
     cmd, basis = writer_test_command(manifest, phase, task)
     if cmd is None and basis is None:
         return dict(unowed_red_first(task), at=_utc_stamp(),
@@ -5771,7 +5774,8 @@ def writer_prove(ctx, manifest, phase, task, tree=None):
                 "head": tree_head(ctx, tree), "basis": basis}, None, None
     ctx.pop(PROOF_STAGE, None)
     block, payload, why = red_reading(ctx, task, red_args(
-        tree or ctx["gitRoot"], ctx["manifest"], task["id"], cmd))
+        tree or ctx["gitRoot"], ctx["manifest"], task["id"], cmd,
+        fix_by_gate=by_gate))
     if why is not None:
         return None, None, "%s (exit %d): %s" % (
             "the helper refused" if why[0] == "refused" else
@@ -5809,6 +5813,77 @@ def hold_proof(ctx, state, task, block, payload=None):
     write_state(ctx, state)
 
 
+def by_gate_proof(block):
+    """Whether `block` is a proof whose fix leg the helper left to the task gate
+    (`red --fix-by-gate`: `fixLeg: task-gate`)."""
+    return (isinstance(block, dict)
+            and block.get(_fr.FIX_LEG_FIELD) == _fr.FIX_LEG_BY_GATE)
+
+
+def proof_test_paths(block):
+    """The test files `block` was proved over, as its `testDigest` names them,
+    sorted; `[]` when it names none."""
+    digest = block.get("testDigest") if isinstance(block, dict) else None
+    return sorted(set(
+        f["path"] for f in (digest or {}).get("files") or []
+        if isinstance(f, dict) and isinstance(f.get("path"), str)))
+
+
+def gate_binding(ctx, state, task, block):
+    """`(runId, None)` - the green recorded task-gate run the writer's return is
+    filed over (the `gated` mark's), when that run named each test file the
+    fix-by-gate proof `block` was made over, whole: so the gate ran the proof's
+    tests on the implementation the return is filed with, which is the fix
+    leg's question - or `(None, why)`.
+
+    NAMED WHOLE: the file's own path is among the declared files the run's
+    coverage recorded (`observations.coverage`, the gate's "declared file(s)
+    named by the run" line), matched as `_evidence_io.listed_by` matches a
+    suite. A run naming only a source the test is named after did not show
+    that test passing, and a run with no coverage reading shows nothing."""
+    paths = proof_test_paths(block)
+    if not paths:
+        return None, "the proof names no test file it was made over"
+    held = _marked(state, "gated", task)
+    run_id = held.get("runId") if isinstance(held, dict) else None
+    if not run_id:
+        return None, "no recorded green task-gate run is held for %s" % (task["id"],)
+    row, why = ledger_row(ctx, run_id)
+    if row is None:
+        return None, "run %s: %s" % (run_id, why)
+    if row.get("status") != _evio.RUN_PASSED:
+        return None, "run %s is %s, not %s" % (
+            run_id, row.get("status") or "of no status", _evio.RUN_PASSED)
+    named = (row.get("observations") or {}).get("coverage")
+    if not isinstance(named, list):
+        return None, ("run %s recorded no coverage of the declared files, so "
+                      "whether it ran %s is not known" % (run_id, ", ".join(paths)))
+    missing = [p for p in paths if not _evio.listed_by(p, named)]
+    if missing:
+        return None, "run %s did not name %s" % (run_id, ", ".join(missing))
+    return run_id, None
+
+
+def fix_leg_proof(ctx, state, manifest, phase, task, why, tree=None):
+    """Replace the held fix-by-gate proof with one whose fix leg the helper
+    makes, as an executor's proof makes it, because the task gate cannot stand
+    for that leg (`why`, `gate_binding`'s). None once it is held, else the
+    decision a proof that did not hold asks (`red_refused`)."""
+    block, payload, refused = writer_prove(ctx, manifest, phase, task, tree,
+                                           by_gate=False)
+    queue_proof_stage(ctx, state, task)
+    if refused is not None:
+        return red_refused(ctx, state, task, refused)
+    if block.get("status") != "proved":
+        return red_refused(ctx, state, task, "the proof with its fix leg (%s) is "
+                           "%s: %s" % (why, block.get("status"), " ".join(
+                               str(block.get("basis") or "").split())))
+    hold_proof(ctx, state, task, block, payload)
+    ctx["did"].append("%s: red-first fix leg made by the helper - %s"
+                      % (task["id"], why))
+    return None
+
+
 def tree_since_proof(ctx, state, task, tree=None):
     """`(drift, changed_tests)` - how the tree the work would be filed or
     committed with differs from what the held proof was made over, in the
@@ -5818,7 +5893,12 @@ def tree_since_proof(ctx, state, task, tree=None):
     declare is not read here; `commit-task-work.py`'s `attempt_refusal` is what
     refuses one the attempt changed, and on the writer path `settle_aside`
     sets it aside instead. THE ONE READING every filing and every
-    re-proof decision asks."""
+    re-proof decision asks.
+
+    A proof whose fix leg is the task gate's (`by_gate_proof`) read no
+    implementation file - only the fix leg does - so a change to one is no
+    drift of it: the gate the return is filed over runs on the implementation
+    as it stands, and the filing binds that run (`gate_binding`)."""
     proof = writer_state(state, task).get("proof")
     if not isinstance(proof, dict):
         return [], []
@@ -5829,7 +5909,7 @@ def tree_since_proof(ctx, state, task, tree=None):
                                                 (proof.get("head") or "unknown")[:12]))
     tests = lock_moved(ctx, state, task, tree)
     drift.extend(changed_tests_said(tests))
-    impl = proof.get("implementation")
+    impl = None if by_gate_proof(proof.get("block")) else proof.get("implementation")
     moved = changed_tests(impl, locked_paths_now(ctx, impl, tree)) \
         if isinstance(impl, dict) else []
     if moved:
@@ -6075,9 +6155,26 @@ def file_writer_return(ctx, state, manifest, phase, task, tree=None):
         return _stopped(ctx, "the tree of %s moved while its proof ran (%s), so "
                         "nothing was filed; next proves it again"
                         % (task["id"], "; ".join(drift)))
+    # A FIX LEG LEFT TO THE GATE IS FILED ONLY BOUND TO IT: the green run this
+    # return is filed over must have run each of the proof's test files, and
+    # its id goes on the block (`_filed_returns.fix_leg_problem` refuses the
+    # block without one). A run that cannot stand for the leg has the helper
+    # make it instead, so the return still files a whole proof.
+    bound = None
+    held_block = (writer_state(state, task).get("proof") or {}).get("block")
+    if by_gate_proof(held_block):
+        bound, why = gate_binding(ctx, state, task, held_block)
+        if bound is None:
+            stop = fix_leg_proof(ctx, state, manifest, phase, task, why, tree)
+            if stop is not None:
+                return stop
     held = writer_state(state, task)
     proof = held.get("proof") or {}
     block = proof.get("block") or {}
+    if bound is not None:
+        block = dict(block, **{_fr.FIX_LEG_RUN_FIELD: bound})
+        ctx["did"].append("%s: red-first fix leg bound to the task gate's run %s"
+                          % (task["id"], bound))
     paths = diff_paths(ctx, phase, tree)
     if paths is None:
         return _stopped(ctx, "git could not list what the writer session of %s "
@@ -14274,11 +14371,14 @@ def declares_test(task):
 
 
 def red_args(project, manifest, task_id, cmd, cases=(), introduces=(),
-             deps_from=None):
+             deps_from=None, fix_by_gate=False):
     """The arguments of `stamp-verification.py red` for `task_id` over `cmd`, in
     the tree `project`: the one spelling `submit` runs for an executor and the
     drive runs after a writer session, so the two proofs cannot differ by how
-    they were asked for."""
+    they were asked for - but for `fix_by_gate`, which the writer path alone
+    passes: its return is filed only over a green task gate that can stand
+    for the fix leg (`gate_binding`), while an executor's return has no such
+    gate behind it when `submit` files it."""
     extra = []
     for flag, values in (("--case", cases), ("--introduces", introduces)):
         for value in values:
@@ -14286,6 +14386,8 @@ def red_args(project, manifest, task_id, cmd, cases=(), introduces=(),
     if deps_from:
         extra += ["--deps-from", deps_from]
     extra.append("--derive-introduces")
+    if fix_by_gate:
+        extra.append("--fix-by-gate")
     return ["red", "--project", project, "--manifest", manifest, "--task",
             task_id, "--json"] + extra + ["--"] + list(cmd)
 

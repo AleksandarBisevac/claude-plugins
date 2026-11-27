@@ -4259,8 +4259,11 @@ def load_sweep_costs(root, host=None):
 # A proof is the runs `PROOF_RUNS` names - the baseline, the task's run and the
 # fix run - and each takes that wall time. When they cannot fit the deadline, no run is
 # started: a run started with less time than it needs times out for want of
-# time, and its timeout is no fact about the task.
+# time, and its timeout is no fact about the task. Under `--fix-by-gate` the fix
+# run is the task gate's, so a proof is the runs `BY_GATE_RUNS` names and its
+# deadline is sized, and its fit judged, for those alone.
 PROOF_RUNS = ("baseline", "task", "fix")
+BY_GATE_RUNS = ("baseline", "task")
 
 
 def _flag_word(args, name):
@@ -4351,26 +4354,27 @@ def _runs_named(names):
     return "the %s runs" % ("%s and %s" % (head, names[-1]) if head else names[-1],)
 
 
-def proof_need(wall):
-    """The wall seconds every run of a proof together takes, or None when no
+def proof_need(wall, runs=PROOF_RUNS):
+    """The wall seconds the `runs` of a proof together take, or None when no
     suite the command names has a recorded cost."""
     if wall is None or not wall["costed"]:
         return None
-    return len(PROOF_RUNS) * wall["wall"]
+    return len(runs) * wall["wall"]
 
 
 def fit_problem(sized):
     """Why no run is started at all - the runs a proof needs come to more wall
     time than its deadline - or None when they fit, or when nothing measured
-    what they need."""
+    what they need. The runs are the ones `sized` was sized for."""
     need = sized.get("need")
     if need is None or need <= sized["seconds"]:
         return None
     return ("no run was started: %s need about %ds of wall time - %ds "
             "each, %s - and the deadline is %ds, so a run started inside it "
             "could not finish and its timeout would be the deadline's, not the "
-            "task's" % (_runs_named(PROOF_RUNS), need, sized["wall"]["wall"],
-                        wall_clause(sized["wall"]), sized["seconds"]))
+            "task's" % (_runs_named(sized.get("runs") or PROOF_RUNS), need,
+                        sized["wall"]["wall"], wall_clause(sized["wall"]),
+                        sized["seconds"]))
 
 
 def start_problem(owed, budget, left):
@@ -4394,8 +4398,9 @@ def start_problem(owed, budget, left):
 
 # THE DEADLINE IS SIZED FROM THE COMMAND, not typed once for every command. The
 # default is a figure for a test file that runs in seconds; a sweep over a suite
-# the table records as heavy needs the baseline, the task's run and the fix run
-# each to finish inside it, and a deadline under that makes the proof
+# the table records as heavy needs each run the proof makes - the baseline, the
+# task's run and, unless --fix-by-gate leaves it to the task gate, the fix run -
+# to finish inside it, and a deadline under that makes the proof
 # `could-not-prove` for a reason that is the helper's, not the task's. So a
 # sweep-shaped command that names suites the table times gets
 # `TIMEOUT_PER_COST` times the wall time those runs need (`proof_need`) - the
@@ -4404,21 +4409,24 @@ def start_problem(owed, budget, left):
 # `MAX_TIMEOUT`. A command the table says nothing about keeps the default, and
 # the basis says that was the reason. `--timeout`, when given, is used as given;
 # what the runs need is measured either way, and `fit_problem` reads the two.
-def sized_deadline(cmd, costs, problem, explicit, default, blocks=None, jobs=None):
-    """`{"seconds", "source", "why", "wall", "need"}` - the deadline `red` works
-    to, where it came from, and what one run and the whole proof take in wall
-    time. `explicit` is `--timeout` or None, `default` the figure used when
-    nothing sizes it, `costs`, `blocks` and `problem` what `load_sweep_table`
-    answered, `jobs` the `(workers, why)` the sweep runs on (`sweep_jobs` when
-    None).
+def sized_deadline(cmd, costs, problem, explicit, default, blocks=None, jobs=None,
+                   runs=PROOF_RUNS):
+    """`{"seconds", "source", "why", "wall", "need", "runs"}` - the deadline
+    `red` works to, where it came from, and what one run and the proof's `runs`
+    take in wall time. `explicit` is `--timeout` or None, `default` the figure
+    used when nothing sizes it, `costs`, `blocks` and `problem` what
+    `load_sweep_table` answered, `jobs` the `(workers, why)` the sweep runs on
+    (`sweep_jobs` when None), `runs` the runs the proof makes (`PROOF_RUNS`, or
+    `BY_GATE_RUNS` under --fix-by-gate).
 
     `source` is one of "timeout", "costs" and "default"; `why` is what the
     clause quotes: the suites and the wall time for "costs", else the sentence
     saying why the default stood. `wall` is `sweep_wall`'s answer and `need`
     `proof_need`'s, both None when nothing measured them."""
+    runs = tuple(runs)
     wall = None if problem else sweep_wall(cmd, costs, blocks, jobs)
-    need = proof_need(wall)
-    measured = {"wall": wall, "need": need}
+    need = proof_need(wall, runs)
+    measured = {"wall": wall, "need": need, "runs": runs}
     if explicit is not None:
         return dict(measured, seconds=explicit, source="timeout", why="--timeout")
     suites = sweep_suites(cmd)
@@ -4434,7 +4442,7 @@ def sized_deadline(cmd, costs, problem, explicit, default, blocks=None, jobs=Non
                         % (", ".join(suites), SWEEP_COSTS_REL))
     wanted = TIMEOUT_PER_COST * need
     said = ("%d times the %ds of wall time %s need, %ds each - %s"
-            % (TIMEOUT_PER_COST, need, _runs_named(PROOF_RUNS), wall["wall"],
+            % (TIMEOUT_PER_COST, need, _runs_named(runs), wall["wall"],
                wall_clause(wall)))
     if wanted <= default:
         return dict(measured, seconds=default, source="default",
@@ -4570,7 +4578,8 @@ def run_red(args, cmd, out):
                                    else ({}, {}, None))
     jobs = sweep_jobs(cmd)
     sized = sized_deadline(cmd, costs, cost_problem, explicit, DEFAULT_TIMEOUT,
-                           blocks=blocks, jobs=jobs)
+                           blocks=blocks, jobs=jobs,
+                           runs=BY_GATE_RUNS if args.fix_by_gate else PROOF_RUNS)
     args.timeout = sized["seconds"]
     deadline = start + args.timeout
     budget = sweep_budget(cmd, costs, cost_problem, args.timeout, blocks=blocks,
