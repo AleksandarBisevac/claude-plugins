@@ -4222,15 +4222,28 @@ def not_run_step(name, command, why, stopped_by=None):
 # previous run is the task's newest recorded one (`last_task_row`); when it was
 # red, each red step whose runner named its failing suites is run again over
 # those suites alone, under its own name behind `RED_FIRST_PREFIX`
-# (`red_first_stage`), BESIDE the gate's steps rather than ahead of them
-# (`_run_beside`), and those suites are taken out of every gate step whose path
-# list can be spelled without them (`red_first_beside`) - so the suite runs
-# once, and a green re-gate costs about the longer of the stage and the rest of
-# the gate rather than the two added. A step that cannot be spelled without them
-# keeps them, said once. A red there stands for the whole gate as a red
-# pre-gate does: the gate's step in flight is torn down, and every gate step is
-# recorded under its own name as not run (`not_run_step`), stopped by the
-# stage, so the red row says what it did not run. Green there runs the gate
+# (`red_first_stage`), and those suites are taken out of every gate step whose
+# path list can be spelled without them (`red_first_beside`) - so the suite
+# runs once. A step that cannot be spelled without them keeps them, said once.
+# The stage runs BESIDE the gate's steps (`_run_beside`), so a green re-gate
+# costs about the longer of the stage and the rest of the gate rather than the
+# two added, ONLY WHERE THE TWO CANNOT SHARE STATE (`stage_alongside`): no gate
+# step left keeps the stage's suites, and the runner that ran them is the
+# selftest sweep, which runs every suite in scratch directories of its own. The
+# second is read off the ledger, never off the command's path: the red step the
+# stage was taken from recorded the sweep's own summary (`sweepCases`,
+# `red_first_reading`). Anywhere else it runs AHEAD of the gate, as it did
+# before it ran beside: two runs in one checkout collide wherever the runner
+# keeps state in the tree - a test database created and dropped, a coverage
+# file, a fixed port, a cache directory - and a step that keeps the suite would
+# run it twice at once. THE LIMIT, said rather than hidden: the sweep is
+# recognised by the summary line it prints, so another runner printing that
+# same line would be trusted to isolate its children too. A red there stands
+# for the whole gate as a red pre-gate does: beside it, the gate's step in
+# flight is torn down; ahead of it, none of the gate's steps is started; either
+# way every gate step is recorded under its own name as not run
+# (`not_run_step`), stopped by the stage, so the red row says what it did not
+# run. Green there runs the gate
 # measured - no part of it repeated from an earlier run. A green stage the gate
 # ran again leaves `steps`, which stay the gate's own, and rides on
 # `redFirstStage` in this process; one whose suites a step was run without
@@ -4252,6 +4265,11 @@ RED_FIRST_NOT_RUN = ("not run: red-first (%s) - last round's red suites, run "
 RED_FIRST_SET_ASIDE = ("not run: red-first (%s) came back red beside this step, "
                        "which had answered (exit %s) - a red there stands for "
                        "the whole gate, so that answer is set aside")
+# ...and the one a gate step is recorded under when the stage ran ahead of the
+# gate (`stage_alongside`) and came back red before any gate step started.
+RED_FIRST_NOT_STARTED = ("not run: red-first (%s) - last round's red suites, "
+                         "run ahead of the gate - did not come back green, so "
+                         "the gate's steps were not started")
 
 
 def last_task_row(rows, phase_id, task_id):
@@ -4307,19 +4325,36 @@ def _red_suites_of(step, manifest, phase_id, tree):
 
 def red_first_stage(rows, manifest, phase_id, task_id, tree):
     """`(stage, lines)` - `[(name, command)]` a task-scope run of `task_id`
-    runs ahead of its gate, its previous run's red suites (`last_task_row`),
-    and the sentences to print about it; `([], [])` when that run was not red
-    or the ledger holds none.
+    runs as a stage of its own, its previous run's red suites
+    (`last_task_row`), and the sentences to print about it; `([], [])` when
+    that run was not red or the ledger holds none (`red_first_reading`)."""
+    reading = red_first_reading(rows, manifest, phase_id, task_id, tree)
+    return reading["stage"], reading["lines"]
+
+
+def _swept(step):
+    """Whether a recorded step's output carried the selftest sweep's own
+    summary - the one key `run_gate` writes for it alone (`sweepCases`)."""
+    return isinstance(step.get(_ev.SWEEP_CASES_KEY), dict)
+
+
+def red_first_reading(rows, manifest, phase_id, task_id, tree):
+    """`{"stage", "lines", "isolated"}` - `red_first_stage`'s stage and
+    sentences, and whether every stage step was taken from a red step that
+    recorded the selftest sweep's summary (`_swept`): the ledger's word that
+    the runner which ran those suites is the sweep, which runs each suite in
+    scratch directories of its own. False for an empty stage, so nothing is
+    vouched for that nothing read.
 
     A red-first step of that run is run again as it ran. The pre-gate is no
     red of the gate's: it runs first anyway. A red step whose suites cannot be
     run alone is said, and runs in its place in the gate."""
     last = last_task_row(rows, phase_id, task_id)
     if last is None or not _ev.row_is_red(last):
-        return [], []
+        return {"stage": [], "lines": [], "isolated": False}
     phase = _phase_by_id(manifest, phase_id) or {}
     meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
-    stage, lines = [], []
+    stage, lines, sources = [], [], []
     for step in last.get("steps") or []:
         if not isinstance(step, dict) or not _ev._counts_as_failed(step) \
                 or step.get("name") == _ev.PRE_GATE_STEP:
@@ -4336,13 +4371,16 @@ def red_first_stage(rows, manifest, phase_id, task_id, tree):
                 continue
             commands = [(_red_first_name(n, c, phase, meta), c)
                         for n, c in narrowed]
-        stage += [c for c in commands if c not in stage]
+        fresh = [c for c in commands if c not in stage]
+        stage += fresh
+        sources += [_swept(step)] * len(fresh)
     if stage:
-        lines.insert(0, "red-first: run %s was red, so its red suites run "
-                        "beside the gate (%s) - a red there stops the gate, a "
-                        "green leaves the gate's verdict" % (
+        lines.insert(0, "red-first: run %s was red, so its red suites run as a "
+                        "stage of their own (%s) - a red there stops the gate, "
+                        "a green leaves the gate's verdict" % (
                             last.get("runId"), ", ".join(n for n, _c in stage)))
-    return stage, lines
+    return {"stage": stage, "lines": lines,
+            "isolated": bool(sources) and all(sources)}
 
 
 def _narrowed_published(commands, run_commands, declared, extra):
@@ -4416,17 +4454,64 @@ def red_first_beside(stage, commands, manifest, phase_id):
     return out, held, lines
 
 
+# Why a stage runs ahead of the gate rather than beside it, each sentence
+# opening the same way so a reader can grep the one decision.
+_AHEAD = "red-first: the stage runs ahead of the gate, not beside it: "
+
+
+def stage_alongside(stage, commands, isolated, manifest, phase_id):
+    """`(alongside, line)` - whether the red-first `stage` may run beside the
+    gate's `commands` (as `red_first_beside` narrowed them) in one working
+    tree, and the sentence saying which and why; `(False, None)` for an empty
+    stage, which runs nowhere.
+
+    Beside only when nothing can be shared: every stage step is the plan's
+    recorded spelling over a path list, no command still names one of those
+    paths or is the bare spelling that runs every suite, and `isolated` -
+    `red_first_reading`'s word that the runner is the selftest sweep - holds.
+    Every other case runs the stage first, which is never wrong, only slower.
+    """
+    if not stage:
+        return False, None
+    phase = _phase_by_id(manifest, phase_id) or {}
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    every = []
+    for name, command in stage:
+        paths = _affected.entry_paths(command, phase, meta)
+        if not paths:
+            return False, (_AHEAD + "%s is no spelling of the plan's over a "
+                           "path list, so which gate step keeps its suites "
+                           "is not knowable" % (name,))
+        every += [p for p in paths if p not in every]
+    for name, command in commands or []:
+        kept = [p for p in _affected.entry_paths(command, phase, meta) or []
+                if p in every]
+        if kept or _affected.is_bare_entry(command, phase, meta):
+            return False, (_AHEAD + "%s keeps %s, so beside it the same suite "
+                           "would run twice at once in one tree"
+                           % (name, ", ".join(kept or every)))
+    if not isolated:
+        return False, (_AHEAD + "the run that went red recorded no selftest "
+                       "sweep summary for these suites, so nothing says their "
+                       "runner keeps its state - a database, a coverage "
+                       "file, a port, a cache - out of the shared tree")
+    return True, ("red-first: the stage runs beside the gate: no gate step "
+                  "keeps its suites, and the run that went red recorded the "
+                  "selftest sweep's summary for them - the sweep runs each "
+                  "suite in scratch directories of its own")
+
+
 def red_first_or_why(project, manifest_path, manifest, phase_id, task_id, tree):
-    """`red_first_stage` over the ledger, or no stage and the sentence saying
-    the ledger would not read - advisory, so a ledger that raises costs the
-    stage and never the run (SECURITY.md's fail-open table)."""
+    """`red_first_reading` over the ledger, or no stage and the sentence
+    saying the ledger would not read - advisory, so a ledger that raises costs
+    the stage and never the run (SECURITY.md's fail-open table)."""
     try:
         rows = _ev.read_rows(project, manifest_path=manifest_path)["rows"]
-        return red_first_stage(rows, manifest, phase_id, task_id, tree)
+        return red_first_reading(rows, manifest, phase_id, task_id, tree)
     except Exception as exc:                                   # noqa: BLE001
-        return [], ["red-first: the ledger could not be read (%s: %s), so no "
-                    "red of an earlier run is run first"
-                    % (type(exc).__name__, exc)]
+        return {"stage": [], "isolated": False, "lines": [
+            "red-first: the ledger could not be read (%s: %s), so no red of "
+            "an earlier run is run first" % (type(exc).__name__, exc)]}
 
 
 # --- what a task's run leaves to the phase gate ---------------------------------
@@ -5485,16 +5570,19 @@ def _gate_step(project, name, command, runner, timeout, reading):
     return step, text, named_now
 
 
-# --- the red-first stage, run beside the gate --------------------------------
-# THE STAGE RUNS IN A THREAD OF ITS OWN WHILE THE GATE'S STEPS RUN IN THIS ONE,
-# because run ahead of the gate its wall was added to the gate's: a re-gate
-# after a red cost the red suite's run and then the whole gate, the suite again
-# inside it. Beside the gate, and with its suites taken out of every step that
-# can be spelled without them (`red_first_beside`), a green re-gate costs about
-# the longer of the two. A red there still stands for the whole gate: it sets
-# the gate's stop event, so the step in flight is torn down by its own runner
-# (`_shell`'s `stop`) and no later step starts. A runner handed in by a caller
-# has no stop to read - its step runs to its end and its answer is set aside.
+# --- the red-first stage, run beside the gate or ahead of it ------------------
+# WHERE IT IS SAFE (`stage_alongside`), THE STAGE RUNS IN A THREAD OF ITS OWN
+# WHILE THE GATE'S STEPS RUN IN THIS ONE, because run ahead of the gate its wall
+# is added to the gate's. Beside the gate, and with its suites taken out of
+# every step that can be spelled without them (`red_first_beside`), a green
+# re-gate costs about the longer of the two. A red there still stands for the
+# whole gate: it sets the gate's stop event, so the step in flight is torn down
+# by its own runner (`_shell`'s `stop`) and no later step starts. A runner
+# handed in by a caller has no stop to read - its step runs to its end and its
+# answer is set aside. EVERYWHERE ELSE THE STAGE RUNS FIRST, in this thread,
+# and a red there leaves every gate step unstarted: two runs in one checkout
+# are only safe when neither keeps state in it, and only the plan's evidence
+# can say that.
 STOP_POLL_SECONDS = 0.2
 # The fact a runner's step carries when its stop event tore it down: no
 # measurement, never on a row - `run_gate` records the step as not run.
@@ -5518,14 +5606,15 @@ def _wait_out(worker):
         worker.join(STOP_POLL_SECONDS)
 
 
-def _run_beside(stage, commands, one, runner, stoppable):
+def _run_beside(stage, commands, one, runner, stoppable, alongside=True):
     """`{"stage", "gate", "red", "cancelled"}` - the red-first `stage` run in a
-    thread beside the gate's `commands`, each step through `one(name,
-    command, runner)`. `stage` and `gate` are `[(name, command, got)]` in
-    their own order, `got` `one`'s answer or None for a gate step the stage's
-    red stopped before it started; `red` the stage steps that did not come
-    back green (`pre_gate_stops`), in order; `cancelled` the stop signal's
-    name when one arrived, else None.
+    thread beside the gate's `commands` when `alongside`, else in this thread
+    before the first of them, each step through `one(name, command, runner)`.
+    `stage` and `gate` are `[(name, command, got)]` in their own order, `got`
+    `one`'s answer or None for a gate step the stage's red stopped before it
+    started; `red` the stage steps that did not come back green
+    (`pre_gate_stops`), in order; `cancelled` the stop signal's name when one
+    arrived, else None.
 
     Every stage step runs, red or not, so a stopped row keeps each of them;
     the first red sets the gate's stop. An interrupt stops both: the step in
@@ -5533,18 +5622,23 @@ def _run_beside(stage, commands, one, runner, stoppable):
     and a stage that raised is raised here once both have stopped."""
     halt, gate_stop = threading.Event(), threading.Event()
     stage_ran, gate_ran, red, crashed = [], [], [], []
+    beside = alongside and bool(stage)
+
+    def stage_steps():
+        # Only a stage beside the gate is stopped from the other thread.
+        run = _stopping(runner, halt, stoppable and beside)
+        for name, command in stage:
+            got = one(name, command, run)
+            if got[0].get(TORN_DOWN):
+                return
+            stage_ran.append((name, command, got))
+            if pre_gate_stops(got[0]) is not None:
+                red.append(name)
+                gate_stop.set()
 
     def run_stage():
-        run = _stopping(runner, halt, stoppable)
         try:
-            for name, command in stage:
-                got = one(name, command, run)
-                if got[0].get(TORN_DOWN):
-                    return
-                stage_ran.append((name, command, got))
-                if pre_gate_stops(got[0]) is not None:
-                    red.append(name)
-                    gate_stop.set()
+            stage_steps()
         except BaseException as exc:                           # noqa: BLE001
             # Re-raised in the caller's thread, where it is loud.
             crashed.append(exc)
@@ -5552,13 +5646,18 @@ def _run_beside(stage, commands, one, runner, stoppable):
 
     worker = threading.Thread(target=run_stage, name="red-first-stage")
     worker.daemon = True
-    if stage:
+    if beside:
         worker.start()
-    # With no stage nothing sets the gate's stop, so its runner is left as
-    # handed: a gate step pays for no polling it could never need.
-    run = _stopping(runner, gate_stop, stoppable and bool(stage))
+    # With no stage beside it nothing sets the gate's stop while a gate step
+    # runs, so its runner is left as handed: a gate step pays for no polling
+    # it could never need.
+    run = _stopping(runner, gate_stop, stoppable and beside)
     cancelled = None
     try:
+        # Ahead of the gate, in this thread: an interrupt or a raise inside it
+        # takes the arms below exactly as one inside a gate step does.
+        if stage and not beside:
+            stage_steps()
         for name, command in commands:
             gate_ran.append((name, command, None if gate_stop.is_set()
                              else one(name, command, run)))
@@ -5584,7 +5683,7 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
              derived_check=None, muted=None, today=None, preamble=None,
              withheld=None, task=None, say=print, selection_started=None,
              dirty_excluded=None, pre_gate=None, red_first=None,
-             red_first_held=None):
+             red_first_held=None, red_first_alongside=False):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -5653,9 +5752,12 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     run as they would.
 
     `red_first` is `red_first_stage`'s `[(name, command)]`: run after the
-    pre-gate, in a thread beside `commands` (`_run_beside`). When any of them
-    does not come back green (`pre_gate_stops`), the gate step in flight is
-    torn down and every one of `commands` is recorded as not run, stopped by
+    pre-gate - in a thread beside `commands` when `red_first_alongside`
+    (`stage_alongside`'s word that the two cannot share state), and ahead of
+    them otherwise (`_run_beside`), so a caller that says nothing gets the
+    order that is never wrong. When any of them does not come back green
+    (`pre_gate_stops`), the gate step in flight is torn down - ahead, none has
+    started - and every one of `commands` is recorded as not run, stopped by
     the first red; when all of them do, each not named in `red_first_held`
     leaves `steps` and is `res["redFirstStage"]`, so the steps, their counts
     and the verdict are `commands`' own. `red_first_held` names the stage
@@ -5753,7 +5855,8 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
         # prevent. Anything else still escapes, loudly.
         cancelled_by = str(exc) or UNNAMED_SIGNAL
     if cancelled_by is None and stopped is None:
-        beside = _run_beside(stage, list(commands), one, runner, stoppable)
+        beside = _run_beside(stage, list(commands), one, runner, stoppable,
+                             alongside=red_first_alongside)
         cancelled_by = beside["cancelled"]
     stage_red = beside["red"]
     if pre_gate is not None and pre_gate[1] is None:
@@ -5794,8 +5897,10 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
         answered = got is not None and not got[0].get(TORN_DOWN)
         if got is not None and not answered:
             torn.append(name)
+        unrun = RED_FIRST_NOT_RUN if red_first_alongside \
+            else RED_FIRST_NOT_STARTED
         why = (RED_FIRST_SET_ASIDE % (", ".join(stage_red), got[0].get("exit"))
-               if answered else RED_FIRST_NOT_RUN % (", ".join(stage_red),))
+               if answered else unrun % (", ".join(stage_red),))
         laid.append((name, command, not_run_step(name, command, why,
                                                  stopped_by=stage_red[0])))
         if answered:
@@ -8104,18 +8209,19 @@ def main(argv, out=print):
                                      subject_ids(args.phase, args.task, source),
                                      identity["key"], REUSABLE_STATUS)
             newer = _ev.newer_for_identity(ledger, identity["key"], prior)
-    # LAST ROUND'S REDS, BESIDE THE GATE (`red_first_stage`): a task-scope run
-    # that measures, when the task's previous run was red. A stage taken
-    # measures the whole gate - no part of it repeated from an earlier run - so
-    # a green stage leaves a verdict that is all this run's own. Its suites are
-    # taken out of the gate's steps that can be spelled without them
-    # (`red_first_beside`), so they run once; `commands` stays the declared
-    # gate, and `run_commands` is what runs.
-    stage, leaned_on, run_commands = [], [], commands
+    # LAST ROUND'S REDS, AS A STAGE OF THEIR OWN (`red_first_stage`): a
+    # task-scope run that measures, when the task's previous run was red. A
+    # stage taken measures the whole gate - no part of it repeated from an
+    # earlier run - so a green stage leaves a verdict that is all this run's
+    # own. Its suites are taken out of the gate's steps that can be spelled
+    # without them (`red_first_beside`), so they run once; `commands` stays the
+    # declared gate, and `run_commands` is what runs. It runs beside the gate
+    # only where the two cannot share state (`stage_alongside`), else first.
+    stage, leaned_on, run_commands, alongside = [], [], commands, False
     if prior is None and args.task is not None and not args.own:
-        stage, stage_said = red_first_or_why(project, args.manifest, manifest,
-                                             args.phase, args.task,
-                                             tree or project)
+        stage_read = red_first_or_why(project, args.manifest, manifest,
+                                      args.phase, args.task, tree or project)
+        stage, stage_said = stage_read["stage"], stage_read["lines"]
         for line in stage_said:
             (_say_on_stderr if args.as_json else out)(
                 "[run-test-gate] %s" % (line,))
@@ -8128,7 +8234,10 @@ def main(argv, out=print):
         if stage:
             run_commands, leaned_on, beside_said = red_first_beside(
                 stage, commands, manifest, args.phase)
-            for line in beside_said:
+            alongside, where = stage_alongside(
+                stage, run_commands, stage_read["isolated"], manifest,
+                args.phase)
+            for line in beside_said + [where]:
                 (_say_on_stderr if args.as_json else out)(
                     "[run-test-gate] %s" % (line,))
     if prior is not None:
@@ -8181,7 +8290,8 @@ def main(argv, out=print):
                            # to stderr instead of being dropped.
                            say=(_say_on_stderr if args.as_json else out),
                            pre_gate=pre_stage, red_first=stage,
-                           red_first_held=leaned_on)
+                           red_first_held=leaned_on,
+                           red_first_alongside=alongside)
         finally:
             _disarm_interrupt(previous)
         if part is not None:

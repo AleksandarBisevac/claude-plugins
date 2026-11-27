@@ -12788,14 +12788,16 @@ def _rf_play(prefix, rounds, **fixture):
 def _rf_stage_calls(calls, suite):
     """Whether a stopped re-gate's runner `calls` are the red-first stage's
     one call over `suite` and, at most, the gate's whole step started beside
-    it - torn down or set aside, which its row says, never run twice."""
+    it - torn down or set aside, which its row says, never run twice. Where
+    the stage runs ahead the gate's step is never started; `rfa1` holds that
+    to exactly the one call."""
     return (calls.count(suite) == 1 and len(calls) <= 2
             and all(call in (suite, "") for call in calls))
 
 
 def _red_first_cases(check):
     """A re-gate after a writer round runs the previous round's red suites
-    as a stage beside the gate, in the same run: red there stops the gate -
+    as a stage of their own, in the same run: red there stops the gate -
     recorded red, every gate step named as not run - and green there leaves
     the gate's verdict, measured, its own. A stopped run never vouches for
     more than it ran."""
@@ -12814,8 +12816,8 @@ def _red_first_cases(check):
     unrun = steps[1] if len(steps) > 1 else {}
     check("rf1 RED-FIRST: A RE-GATE AFTER A RED RUNS LAST ROUND'S RED SUITE "
           "AS ITS OWN STAGE, AND ITS RED STOPS THE GATE: the runner is handed "
-          "tests/test_t.py alone once, and the whole step at most once beside "
-          "it - the bare step cannot be spelled without it; the row is red, its "
+          "tests/test_t.py alone once, and never the whole step twice - the "
+          "bare step cannot be spelled without it; the row is red, its "
           "first step the red-first step over that suite, and the gate's own "
           "step is recorded by name as not run - no exit, could-not-run, a "
           "basis saying the red-first stage stopped it: first %r / exit %r / "
@@ -13009,10 +13011,10 @@ def _red_first_cases(check):
 
 def _red_first_unit_cases(check):
     """`run_gate`'s red-first stage over a scripted runner: run after the
-    pre-gate and beside the gate; a red there records every gate step as
-    not run; green there leaves `steps` the gate's own, the stage on
-    `redFirstStage`. Beside the gate, the order of the two calls is the
-    scheduler's, so the calls are compared as a multiset."""
+    pre-gate - ahead of the gate unless told it may run beside it; a red
+    there records every gate step as not run; green there leaves `steps` the
+    gate's own, the stage on `redFirstStage`. The calls are compared as a
+    multiset, so these cases hold in either order; `rfa6` pins the order."""
     prefix = getattr(M, "RED_FIRST_PREFIX", None)
     if prefix is None:
         check("rfu1 the runner names a red-first prefix", False,
@@ -13047,8 +13049,9 @@ def _red_first_unit_cases(check):
         _harness.remove_tree(tmp)
     steps = red.get("steps") or []
     check("rfu1 A RED RED-FIRST STEP STOPS THE GATE: the runner is handed the "
-          "red-first command once - a gate step it raced is set aside, its "
-          "answer not counted - the run is failed on it and on nothing "
+          "red-first command once - a gate step it raced, where it runs "
+          "beside, is set aside, its answer not counted - the run is failed "
+          "on it and on nothing "
           "else, and each gate step is recorded under its own name as not "
           "run, its `stoppedBy` the red-first step: calls %r / status %r / "
           "failed %r / steps %r"
@@ -13064,7 +13067,7 @@ def _red_first_unit_cases(check):
                   for s in steps[1:])
           and red.get("redFirstStage") == [])
     check("rfu2 GREEN RED-FIRST IS NO STEP OF THE GATE: run after the pre-gate "
-          "and beside the gate, it leaves `steps` the pre-gate and the gate's "
+          "and with the gate, it leaves `steps` the pre-gate and the gate's "
           "own, and is carried on `redFirstStage` as it ran: calls %r / steps %r / "
           "redFirstStage %r / status %r"
           % (green_calls, [s.get("name") for s in green.get("steps") or []],
@@ -13147,7 +13150,8 @@ def _red_first_unit_cases(check):
 
 
 def _red_first_beside_cases(check):
-    """The red-first stage runs BESIDE the gate, not ahead of it, and the
+    """Where nothing can be shared (`_red_first_alongside_cases` says when),
+    the red-first stage runs BESIDE the gate, not ahead of it, and the
     suites it runs are taken out of every gate step whose path list can be
     spelled without them: a re-gate after a one-suite red runs that suite
     once. A red there tears the gate down; a step that cannot be spelled
@@ -13208,7 +13212,8 @@ def _red_first_beside_cases(check):
     tmp = _mini_repo("rtg-rfb-unit-")
     try:
         green = M.run_gate(tmp, [("unit", "run-unit")], runner=beside_runner,
-                           red_first=[(prefix + "unit", "run-first")])
+                           red_first=[(prefix + "unit", "run-first")],
+                           red_first_alongside=True)
     finally:
         _harness.remove_tree(tmp)
     check("rfb2 THE STAGE RUNS BESIDE THE GATE'S STEPS, NOT BEFORE THEM: each "
@@ -13235,7 +13240,8 @@ def _red_first_beside_cases(check):
                 fh.write(body)
         began = time.monotonic()
         torn = M.run_gate(tmp, [("unit", "python3 slow.py")],
-                          red_first=[(prefix + "unit", "python3 red.py")])
+                          red_first=[(prefix + "unit", "python3 red.py")],
+                          red_first_alongside=True)
         took = time.monotonic() - began
         marks = (os.path.exists(os.path.join(tmp, "gate.started")),
                  os.path.exists(os.path.join(tmp, "gate.done")))
@@ -13272,7 +13278,8 @@ def _red_first_beside_cases(check):
     tmp = _mini_repo("rtg-rfb-aside-")
     try:
         aside = M.run_gate(tmp, [("unit", "run-unit")], runner=late_red,
-                           red_first=[(prefix + "unit", "run-first")])
+                           red_first=[(prefix + "unit", "run-first")],
+                           red_first_alongside=True)
     finally:
         _harness.remove_tree(tmp)
     a_steps = aside.get("steps") or []
@@ -13387,6 +13394,225 @@ def _red_first_beside_cases(check):
           sorted(recorded) == ["tests/test_t.py tests/test_v.py",
                                "tests/test_u.py"]
           and len(per_file) == 2 and all(len(lines) == 1 for lines in per_file))
+
+
+def _red_first_alongside_cases(check):
+    """The red-first stage runs beside the gate only where the two cannot
+    share state: no gate step left keeps the stage's suites, and the runner
+    that ran them is the selftest sweep, which the ledger says by the summary
+    it recorded. Anywhere else it runs ahead of the gate, and a red there
+    starts none of the gate's steps."""
+    import threading
+    prefix = getattr(M, "RED_FIRST_PREFIX", None) or "red-first/"
+    sweep = "python3 tools/sweep.py"
+    step = "selftests"
+    decide = getattr(M, "stage_alongside", None)
+    reading_of = getattr(M, "red_first_reading", None)
+
+    # The bare step keeps every suite: last round's red stays red. Ahead of
+    # the gate, the runner is handed the stage's suite and NOTHING ELSE - the
+    # gate's whole step is never started, where beside it the same suite ran
+    # twice at once.
+    played, _plan, _root = _rf_play("rtg-rfa-red-", (
+        {"tests/test_t.py": ("c1",)}, {"tests/test_t.py": ("c2",)}))
+    (_c1, _t1, _r1, _k1), (c2, t2, r2, k2) = played
+    steps = r2.get("steps") or []
+    unrun = steps[1] if len(steps) > 1 else {}
+    # The decision's own line, not the not-run step's basis that repeats it.
+    said = [ln for ln in t2.splitlines() if "ahead of the gate, not beside" in ln]
+    # The printed step line carries the basis whole; the row's copy is cut at
+    # its bound, which a long stage name reaches before the sentence's end.
+    unrun_said = [ln for ln in t2.splitlines() if ln.split()[:1] == [step]
+                  and "(not run)" in ln]
+    check("rfa1 A RE-GATE WHOSE REMAINING STEP KEEPS THE STAGE'S SUITE RUNS THE "
+          "STAGE FIRST, NOT BESIDE: the bare step runs every suite, so a red "
+          "re-gate hands the runner tests/test_t.py alone and never starts "
+          "the gate's step; that step is recorded as not run, its basis "
+          "saying the stage ran ahead of the gate, and the run says why the "
+          "stage went first, naming the step that keeps the suite: exit %r / "
+          "calls %r / steps %r / said %r / step line %r"
+          % (c2, k2, [(s.get("name"), s.get("exit"), s.get("outcomeBasis"))
+                      for s in steps], said, unrun_said),
+          c2 == M.E_FAIL and k2 == ["tests/test_t.py"]
+          and [s.get("name") for s in steps][1:] == [step]
+          and unrun.get("exit") is None
+          and unrun.get("outcome") == M.CANNOT_RUN
+          and "red-first" in str(unrun.get("outcomeBasis"))
+          and len(unrun_said) == 1 and "ahead of the gate" in unrun_said[0]
+          and len(said) == 1 and step in said[0].split()
+          and "keeps" in said[0])
+
+    # ...and the green re-gate after it: the stage, then the whole step, in
+    # that order - never the two at once.
+    played, _plan, _root = _rf_play("rtg-rfa-green-", (
+        {"tests/test_t.py": ("c1",)}, {}))
+    (_c1, _t1, _r1, _k1), (c2, _t2, r2, k2) = played
+    check("rfa2 ...AND GREEN THERE, THE GATE'S STEP STARTS AFTER THE STAGE "
+          "ENDED: the runner is handed the suite and then the whole step, in "
+          "that order, and the verdict is the gate's: exit %r / calls %r / "
+          "steps %r" % (c2, k2, [s.get("name") for s in r2.get("steps") or []]),
+          c2 == M.E_OK and k2 == ["tests/test_t.py", ""]
+          and [s.get("name") for s in r2.get("steps") or []] == [step])
+
+    # ALLOW, the over-fire direction: the joined step can be spelled without
+    # the stage's suite, and the runner printed the sweep's summary - beside
+    # is safe, and the run says it runs there.
+    played, _plan, _root = _rf_play("rtg-rfa-beside-", (
+        {"tests/test_u.py": ("c1",)}, {}), joined=True)
+    (_c1, _t1, _r1, _k1), (c2, t2, r2, k2) = played
+    beside_said = [ln for ln in t2.splitlines()
+                   if "the stage runs beside the gate" in ln]
+    ahead_said = [ln for ln in t2.splitlines()
+                  if "ahead of the gate, not beside" in ln]
+    check("rfa3 ALLOW: WHERE NO STEP KEEPS THE SUITE AND THE SWEEP RAN IT, THE "
+          "STAGE STAYS BESIDE THE GATE: green, u run once, one line saying it "
+          "runs beside and none saying ahead: exit %r / calls %r / said %r / "
+          "ahead %r" % (c2, k2, beside_said, ahead_said),
+          c2 == M.E_OK
+          and sorted(k2) == ["tests/test_t.py tests/test_v.py",
+                             "tests/test_u.py"]
+          and len(beside_said) == 1 and ahead_said == [])
+
+    # ...and the run does what that line says: red there, the gate step that
+    # ran beside the stage is recorded under the beside sentence - the one a
+    # run that sent the stage first never writes - whatever the scheduler did.
+    played, _plan, _root = _rf_play("rtg-rfa-beside-red-", (
+        {"tests/test_u.py": ("c1",)}, {"tests/test_u.py": ("c2",)}),
+        joined=True)
+    (_c1, _t1, _r1, _k1), (c2, t2, r2, k2) = played
+    unrun_lines = [ln for ln in t2.splitlines() if "(not run)" in ln
+                   and "red-first (" in ln]
+    check("rfa3b ...AND RUNS IT THERE: a red stage beside the joined step "
+          "records that step as stopped beside it, never as not started "
+          "ahead of it: exit %r / calls %r / not-run lines %r"
+          % (c2, k2, unrun_lines),
+          c2 == M.E_FAIL and len(unrun_lines) == 1
+          and "beside" in unrun_lines[0]
+          and "ahead of the gate" not in unrun_lines[0])
+
+    # The decision itself, over values: each reason to go first, and the one
+    # shape that may go beside.
+    root, mpath, log = _ps_repo("rtg-rfa-which-")
+    try:
+        plan = _mio_load(mpath)
+    finally:
+        _ps_remove(root, log)
+    stage = [(prefix + "selftests[u]", sweep + " tests/test_u.py")]
+    rest = [("joined", sweep + " tests/test_t.py tests/test_v.py"),
+            ("plan", "python3 tools/plan.py docs/audit/audit-plan.json")]
+
+    def decided(stage_, commands, isolated):
+        if decide is None:
+            return None, None
+        return decide(stage_, commands, isolated, plan, "P1")
+    safe = decided(stage, rest, True)
+    alone = decided(stage, rest + [("only", sweep + " tests/test_u.py")], True)
+    bare = decided(stage, rest + [("selftests", sweep)], True)
+    shared = decided(stage, rest, False)
+    unspelled = decided([(prefix + "lint", "ruff check .")], rest, True)
+    none = decided([], rest, True)
+    check("rfa4 THE DECISION: beside only when no step keeps the stage's "
+          "suites and the runner isolates its children; a step over the "
+          "suite alone, the bare step, a runner not known to isolate, and a "
+          "stage no spelling of the plan's each send the stage first, each "
+          "with its sentence; no stage, nothing to say: safe %r / alone %r / "
+          "bare %r / shared %r / unspelled %r / none %r"
+          % (safe, alone, bare, shared, unspelled, none),
+          safe[0] is True and "beside" in str(safe[1])
+          and alone[0] is False and "only" in str(alone[1]).split()
+          and bare[0] is False and "selftests" in str(bare[1]).split()
+          and shared[0] is False and "sweep" in str(shared[1])
+          and unspelled[0] is False and "spelling" in str(unspelled[1])
+          and all("ahead of the gate" in str(got[1])
+                  for got in (alone, bare, shared, unspelled))
+          and none == (False, None))
+
+    # Whether the runner isolates is read off the ledger's red step: the
+    # sweep's summary recorded on it (`sweepCases`), never the command's path.
+    root, mpath, log = _ps_repo("rtg-rfa-iso-")
+    try:
+        plan = _mio_load(mpath)
+        named_basis = "the runner %s these suites" % (_ev_io.NAMED_FAILING,)
+        bare_red = {"name": step, "exit": 1, "command": sweep,
+                    "failingSuites": ["tests/test_t.py"],
+                    "failingSuitesBasis": named_basis}
+
+        def read_of(*red_steps):
+            red = {"runId": "r-red", "taskId": "P1.1", "phaseId": "P1",
+                   "scope": "task", "status": "failed",
+                   "ts": "2026-11-27T10:00:00Z", "steps": list(red_steps)}
+            if reading_of is None:
+                return {}
+            return reading_of([red], plan, "P1", "P1.1", root)
+        swept = read_of(dict(bare_red, **{_ev_io.SWEEP_CASES_KEY: {
+            "total": 2, "files": [{"path": "tests/test_t.py", "cases": 2}]}}))
+        unswept = read_of(bare_red)
+        mixed = read_of(
+            dict(bare_red, **{_ev_io.SWEEP_CASES_KEY: {"total": 2,
+                                                        "files": []}}),
+            # A red-first step of a stopped run, run again as it ran.
+            dict(bare_red, name=prefix + "selftests[u]",
+                 command=sweep + " tests/test_u.py",
+                 failingSuites=["tests/test_u.py"]))
+    finally:
+        _ps_remove(root, log)
+    check("rfa5 THE RUNNER'S ISOLATION IS READ OFF THE LEDGER: a red step that "
+          "recorded the sweep's summary is isolated, one that recorded none is "
+          "not, and one stage step whose source recorded none makes the whole "
+          "stage not isolated - each reading carrying the stage it read: "
+          "swept %r / unswept %r / mixed %r" % (swept, unswept, mixed),
+          swept.get("isolated") is True and len(swept.get("stage") or []) == 1
+          and unswept.get("isolated") is False
+          and len(unswept.get("stage") or []) == 1
+          and len(mixed.get("stage") or []) == 2
+          and mixed.get("isolated") is False)
+
+    # run_gate with no word on where the stage runs runs it ahead: a red
+    # there hands the runner nothing of the gate, and green there the gate
+    # starts only once the stage has answered.
+    tmp = _mini_repo("rtg-rfa-unit-")
+
+    def ordered(first_exit, calls, overlap):
+        gate_started = threading.Event()
+
+        def run(_project, command, _timeout=None):
+            calls.append(command)
+            if command == "run-first":
+                overlap.append(gate_started.wait(0.5))
+                return first_exit, "FAIL x\n" if first_exit else "ok\n", {}
+            gate_started.set()
+            return 0, "ok\n", {}
+        return run
+    try:
+        red_calls, red_seen = [], []
+        red = M.run_gate(tmp, [("unit", "run-unit"), ("lint", "run-lint")],
+                         runner=ordered(1, red_calls, red_seen),
+                         red_first=[(prefix + "unit", "run-first")])
+        green_calls, green_seen = [], []
+        green = M.run_gate(tmp, [("unit", "run-unit")],
+                           runner=ordered(0, green_calls, green_seen),
+                           red_first=[(prefix + "unit", "run-first")])
+    finally:
+        _harness.remove_tree(tmp)
+    r_steps = red.get("steps") or []
+    check("rfa6 BY DEFAULT THE STAGE RUNS AHEAD: red, the runner is handed the "
+          "stage's command alone and every gate step is recorded as not "
+          "started, stopped by the stage; green, the gate's step starts only "
+          "after the stage answered, and the verdict is the gate's: red "
+          "calls %r seen %r steps %r / green calls %r seen %r status %r"
+          % (red_calls, red_seen,
+             [(s.get("name"), s.get("stoppedBy"), s.get("outcomeBasis"))
+              for s in r_steps], green_calls, green_seen, green.get("status")),
+          red_calls == ["run-first"] and red_seen == [False]
+          and red.get("failed") == [prefix + "unit"]
+          and [s.get("name") for s in r_steps] == [prefix + "unit", "unit",
+                                                   "lint"]
+          and all(s.get("stoppedBy") == prefix + "unit"
+                  and "ahead of the gate" in str(s.get("outcomeBasis"))
+                  for s in r_steps[1:])
+          and green_calls == ["run-first", "run-unit"]
+          and green_seen == [False] and green.get("status") == "passed"
+          and [s.get("name") for s in green.get("steps") or []] == ["unit"])
 
 
 def _selection_code_cases(check):
@@ -17575,6 +17801,7 @@ def _selftest():
         _harness.stage(check, "rf-block", _red_first_cases)
         _harness.stage(check, "rfu-block", _red_first_unit_cases)
         _harness.stage(check, "rfb-block", _red_first_beside_cases)
+        _harness.stage(check, "rfa-block", _red_first_alongside_cases)
         _harness.stage(check, "jn-block", _joined_run_cases)
         _joined_repeat_cases(check)
         _harness.stage(check, "jnb-block", _joined_base_cases)

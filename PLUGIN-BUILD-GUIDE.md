@@ -5134,26 +5134,47 @@ and `--full` take no stage at all. The pre-gate's command is kept verbatim on th
 of what a repeat must match. The `pre` cases in `tests/test_run_test_gate.py` drive each arm
 through `main`.
 
-**A task's re-gate after a red runs that red's suites beside the gate, once, and their red stops
-the gate.** Under `--task` (not `--own`), a run that measures rather than repeats reads the task's
-newest recorded run (`last_task_row`: no base run, no `--full` run, a repeat read through the run
-it repeats); when that run was red, `red_first_stage` narrows each red step to the suites its
-runner named, the way a base run does (`_declared_suites_at_base`, `_derived_at_base`,
-`_joined_at_base`), and `run_gate` runs those commands after the pre-gate, in a thread beside the
-gate's steps (`_run_beside`), each named behind `RED_FIRST_PREFIX`. Run ahead of the gate, the
-stage's wall was added to the gate's and the gate ran the red suite again; beside it, and with
-those suites taken out of every gate step that is the plan's recorded spelling over a path list
-still holding another path once they are gone (`red_first_beside`), the suite runs once and a
-green re-gate costs about the longer of the two. A step whose path list is nothing but those
-suites, and the bare form of the spelling, which lists no path to take out, keep them, each said
-once; a step listing none of them is untouched. A narrowed declared command is published on the
-row as a per-suite base command is (`_narrowed_published`). A stage step that does not come back
-green stops the gate: the gate step in flight is torn down by its runner's stop event (`_shell`'s
-`stop`, polled every `STOP_POLL_SECONDS`), no later one starts, and every gate step is recorded
+**A task's re-gate after a red runs that red's suites once, as a stage of their own, and their red
+stops the gate.** Under `--task` (not `--own`), a run that measures rather than repeats reads the
+task's newest recorded run (`last_task_row`: no base run, no `--full` run, a repeat read through
+the run it repeats); when that run was red, `red_first_stage` narrows each red step to the suites
+its runner named, the way a base run does (`_declared_suites_at_base`, `_derived_at_base`,
+`_joined_at_base`), and `run_gate` runs those commands after the pre-gate, each named behind
+`RED_FIRST_PREFIX`. With those suites taken out of every gate step that is the plan's recorded
+spelling over a path list still holding another path once they are gone (`red_first_beside`), the
+suite runs once. A step whose path list is nothing but those suites, and the bare form of the
+spelling, which lists no path to take out, keep them, each said once; a step listing none of them
+is untouched. A narrowed declared command is published on the row as a per-suite base command is
+(`_narrowed_published`).
+
+**Where the stage runs is decided, not assumed: beside the gate only where the two cannot share
+state, ahead of it everywhere else.** Beside the gate - in a thread of its own while the gate's
+steps run (`_run_beside`) - a green re-gate costs about the longer of the stage and the rest of the
+gate rather than the two added. But two runs in one working tree collide wherever the runner keeps
+state there - a test database created and dropped, a coverage file, a fixed port, a cache
+directory - and a step that keeps the stage's suites would run the same suite twice at once, so a
+spurious red would fail the gate. `stage_alongside` therefore allows beside only when every stage
+step is the plan's spelling over a path list, no gate step left after the narrowing names one of
+those paths or is the bare spelling, and the runner is the selftest sweep, which runs every suite in
+scratch directories of its own. The last is read off the plan's evidence, never off the command's
+path: `red_first_reading` calls the stage isolated when every red step it was taken from recorded
+the sweep's own summary (`sweepCases`, written only for output carrying that summary line). Every
+other case runs the stage ahead of the gate, as it ran before it ran beside, and says which arm it
+took and why in one `red-first: the stage runs ...` line. `run_gate` itself runs the stage ahead
+unless its caller passes `red_first_alongside`, so a caller that says nothing gets the order that is
+never wrong, only slower. **The limit:** the sweep is recognised by the summary line it prints, so
+another runner printing that same line would be trusted to isolate its children too; and a project
+whose suites all run under the bare spelling never runs the stage beside the gate, since that step
+keeps every suite.
+
+A stage step that does not come back green stops the gate. Beside it, the gate step in flight is
+torn down by its runner's stop event (`_shell`'s `stop`, polled every `STOP_POLL_SECONDS`) and no
+later one starts; ahead of it, no gate step is started. Either way every gate step is recorded
 under its own name by `not_run_step`, `stoppedBy` the first red stage step - its basis
-`RED_FIRST_NOT_RUN`, or `RED_FIRST_SET_ASIDE` naming the exit of a step that answered before the
-red came back, since a caller's runner has no stop to read - and the run is `failed` on the stage
-alone; a torn-down step makes the tree comparison a race, said as that. A stage that ran whole
+`RED_FIRST_NOT_RUN` beside the gate, `RED_FIRST_NOT_STARTED` ahead of it, or `RED_FIRST_SET_ASIDE`
+naming the exit of a step that answered before the red came back, since a caller's runner has no
+stop to read - and the run is `failed` on the stage alone; a torn-down step makes the tree
+comparison a race, said as that. A stage that ran whole
 and green, and that no gate step was narrowed for, leaves `steps` - it is carried on
 `res["redFirstStage"]` in this process and the `--json` answer, and its output and followers
 leave the row with it, so no file only the stage named counts towards the run's coverage; one a
@@ -5168,8 +5189,11 @@ that, since running it in the stage too would run it twice on a green. Every sta
 kept verbatim on the row, so a stopped run's base and the round after it run it as it ran. A
 ledger that will not read costs the stage, never the run (`red_first_or_why`). The `rf` cases
 drive it through `main` over the per-suite fixture's call log, the `rfu` cases over `run_gate`,
-and the `rfb` cases the stage beside the gate: one call per suite over a joined step, the two
-commands overlapping, a tear-down, a set-aside answer and the narrowing's keep and leave arms.
+the `rfb` cases the stage beside the gate: one call per suite over a joined step, the two
+commands overlapping, a tear-down, a set-aside answer and the narrowing's keep and leave arms -
+and the `rfa` cases where it runs: ahead of a bare step that keeps its suite (the runner handed
+the suite alone on a red, the suite and then the step on a green), beside a joined step the sweep
+ran, each reason `stage_alongside` gives for going first, and the isolation read off the ledger.
 
 **`observations.countsBasis` is written here for the first time.** It has been copied into every
 evidence row by `_evidence_io.row_for` and rendered by the report and the panel since the ledger
