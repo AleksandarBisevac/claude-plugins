@@ -577,6 +577,15 @@ DERIVED_STEP_PREFIX = "affected/"
 # the plan's own key spelled as a gate entry stays an entry.
 PRE_GATE_STEP = "pre-gate/%s" % (_manifest_vocab.PRE_GATE_KEY,)
 
+# THE STEPS A TASK'S RE-GATE TAKES BEFORE ITS GATE WHEN THE ROUND BEFORE IT WAS
+# RED: last round's red suites, run first (`run-test-gate.red_first_stage`),
+# each recorded under a name carrying this prefix. A green stage leaves the row,
+# a red one stays on it - and then it stands among the steps with no gate entry
+# of its own, so `declared_steps` reads past the run of them after the
+# pre-gate, as it reads past the pre-gate. The prefix is reserved as the two
+# above are; only a name that opens with it, and only at the head, is the stage's.
+RED_FIRST_STEP_PREFIX = "red-first/"
+
 
 def is_derived_step(name):
     """True when a recorded step name is one the recorder added, not declared."""
@@ -711,11 +720,17 @@ def declared_steps(names, dropped=0):
     it. A step that ran no declared entry ends the declared part.
 
     A LEADING `PRE_GATE_STEP` is not the gate: the run took it ahead of the
-    gate, so the declared part starts after it.
+    gate, so the declared part starts after it. Nor is the run of
+    `RED_FIRST_STEP_PREFIX` steps after it: a stopped re-gate's row keeps the
+    red-first step that stopped it, which no gate entry of the plan is.
     """
     names = [str(n) for n in (names or [])]
     if names and names[0] == PRE_GATE_STEP:
         names = names[1:]
+    lead = 0
+    while lead < len(names) and names[lead].startswith(RED_FIRST_STEP_PREFIX):
+        lead += 1
+    names = names[lead:]
     dropped = dropped if isinstance(dropped, int) and dropped > 0 else 0
     heads = [step_parts(name)[0] for name in names]
     cut = next((i for i, head in enumerate(heads) if head is None), len(names))

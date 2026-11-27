@@ -1611,6 +1611,10 @@ SELECTION_DIR = "audit-selection"
 # Entries kept: the newest by write time, so a long-lived clone's directory
 # holds the asks of its recent trees and no more.
 SELECTION_KEEP = 8
+# A temp file this old is a killed writer's: `_mio.atomic_write_text` names one
+# per call and removes it on every ordinary exit, so only a writer that never
+# got to its `finally` leaves one, and a live writer's is seconds old at most.
+SELECTION_TMP_STALE_SECONDS = 600
 _SELECTION_VERSION = 1
 
 
@@ -1653,6 +1657,23 @@ def read_selection(project, key):
     return None
 
 
+def _prune_stale_temps(store):
+    """Remove the temp files in `store` a killed writer left behind: a `.tmp`
+    older than `SELECTION_TMP_STALE_SECONDS`. A younger one may be another
+    process's write in flight, and is left. Never raises: a file that is gone
+    already, or that cannot be removed, costs only the next write the try."""
+    cutoff = time.time() - SELECTION_TMP_STALE_SECONDS
+    for name in os.listdir(store):
+        if not name.endswith(".tmp"):
+            continue
+        path = os.path.join(store, name)
+        try:
+            if os.path.getmtime(path) < cutoff:
+                os.remove(path)
+        except OSError:
+            continue
+
+
 def write_selection(project, key, answer):
     """True when `answer` is kept under `key`. An answer JSON would not give
     back as it went in (a tuple reads back a list) is not kept, so what a later
@@ -1672,6 +1693,7 @@ def write_selection(project, key, answer):
                       for n in os.listdir(store) if n.endswith(".json"))
         for _when, name in held[:max(0, len(held) - SELECTION_KEEP)]:
             os.remove(os.path.join(store, name))
+        _prune_stale_temps(store)
         return True
     except (OSError, ValueError, TypeError):
         return False

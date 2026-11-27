@@ -12791,6 +12791,32 @@ def _red_first_cases(check):
           and M.base_commands(r2, plan, "P1", _root)[0]
           == [(staged, sweep + " tests/test_t.py")]
           and any("not run" in ln and step in ln for ln in t2.splitlines()))
+    stopped_names = [s.get("name") for s in steps]
+    pre = _ev_io.PRE_GATE_STEP
+    check("rf2b ...AND ITS DECLARED GATE IS THE PLAN'S: a stopped row's "
+          "red-first step is no entry of the gate the task declares, so "
+          "`declared_steps` skips it as it skips the pre-gate, with and "
+          "without one: stopped %r / with pre-gate %r / two stage steps %r"
+          % (_ev_io.declared_steps(stopped_names),
+             _ev_io.declared_steps([pre] + stopped_names),
+             _ev_io.declared_steps([pre, staged, staged + "2", step])),
+          staged is not None and stopped_names == [staged, step]
+          and _ev_io.declared_steps(stopped_names) == ([step], 0)
+          and _ev_io.declared_steps([pre] + stopped_names) == ([step], 0)
+          and _ev_io.declared_steps([pre, staged, staged + "2", step])
+          == ([step], 0))
+    # ALLOW, the over-fire direction: only a name spelled with the reserved
+    # prefix is the stage's, and only at the head - a declared entry that
+    # merely mentions red-first, or one that follows a gate step, is still
+    # the gate's.
+    check("rf2c ALLOW: a declared entry that only mentions red-first, and a "
+          "red-first-spelled name AFTER a gate step, are not skipped: %r / %r"
+          % (_ev_io.declared_steps(["red-first-lint", step]),
+             _ev_io.declared_steps([step, "red-first/x"])),
+          _ev_io.declared_steps(["red-first-lint", step])
+          == (["red-first-lint", step], 0)
+          and _ev_io.declared_steps([step, "red-first/x"])
+          == ([step, "red-first/x"], 0))
 
     # Round one red on t; the writer's round turns it green.
     played, _plan, _root = _rf_play("rtg-rf-green-", (
@@ -12929,7 +12955,7 @@ def _red_first_unit_cases(check):
     """`run_gate`'s red-first stage over a scripted runner: run after the
     pre-gate and before the gate; a red there records every later step as
     not run; green there leaves `steps` the gate's own, the stage on
-    `redFirst`."""
+    `redFirstStage`."""
     prefix = getattr(M, "RED_FIRST_PREFIX", None)
     if prefix is None:
         check("rfu1 the runner names a red-first prefix", False,
@@ -12976,19 +13002,19 @@ def _red_first_unit_cases(check):
           and all(s.get("exit") is None and s.get("outcome") == M.CANNOT_RUN
                   and s.get("stoppedBy") == prefix + "unit"
                   for s in steps[1:])
-          and red.get("redFirst") == [])
+          and red.get("redFirstStage") == [])
     check("rfu2 GREEN RED-FIRST IS NO STEP OF THE GATE: run after the pre-gate "
           "and before the gate, it leaves `steps` the pre-gate and the gate's "
-          "own, and is carried on `redFirst` as it ran: calls %r / steps %r / "
-          "redFirst %r / status %r"
+          "own, and is carried on `redFirstStage` as it ran: calls %r / steps %r / "
+          "redFirstStage %r / status %r"
           % (green_calls, [s.get("name") for s in green.get("steps") or []],
              [(s.get("name"), s.get("exit"))
-              for s in green.get("redFirst") or []], green.get("status")),
+              for s in green.get("redFirstStage") or []], green.get("status")),
           green_calls == ["run-pre", "run-first", "run-unit"]
           and [s.get("name") for s in green.get("steps") or []]
           == [_ev_io.PRE_GATE_STEP, "unit"]
           and [(s.get("name"), s.get("exit"))
-               for s in green.get("redFirst") or []]
+               for s in green.get("redFirstStage") or []]
           == [(prefix + "unit", 0)]
           and green.get("status") == "passed")
     check("rfu3 A RED PRE-GATE STOPS THE RED-FIRST STAGE TOO: nothing after "
@@ -13002,6 +13028,115 @@ def _red_first_unit_cases(check):
           == [(_ev_io.PRE_GATE_STEP, 1), (prefix + "unit", None),
               ("unit", None)]
           and pre_red.get("status") == "failed")
+
+    # --- what a green stage leaves behind is the stage's, not the gate's -----
+    # The stage prints the task's declared `docs/plan.json`; the gate step
+    # names only a suite that is none of the task's files. Declared files the
+    # GATE reached: none.
+    follower = ('FOLLOWER-OWED {"path": "docs/x.html", "recipe": "regen", '
+                '"owner": "tools/x.py"}\n')
+    stage_out = "checked docs/plan.json\n" + follower + \
+        "Tests:       1 passed, 1 total\n"
+    gate_out = ("\u2713 tools/ui-tests/panel.test.js (5 tests)\n"
+                "Test Files  1 passed (1)\n")
+    tmp2 = _mini_repo("rtg-rf-unit-cov-")
+    try:
+        green_cov = M.run_gate(
+            tmp2, [("unit", "run-unit")],
+            runner=_scripted({"run-first": (0, stage_out),
+                              "run-unit": (0, gate_out)}),
+            red_first=stage, owns=["docs/plan.json"])
+        red_cov = M.run_gate(
+            tmp2, [("unit", "run-unit")],
+            runner=_scripted({"run-first": (1, stage_out),
+                              "run-unit": (0, gate_out)}),
+            red_first=stage, owns=["docs/plan.json"])
+    finally:
+        _harness.remove_tree(tmp2)
+    check("rfu4 A GREEN STAGE VOUCHES FOR NOTHING THE GATE DID NOT RUN: the "
+          "stage names a declared file the gate step does not, so the row's "
+          "overlap is [] - the gate's own output, not the stage's - and the "
+          "coverage basis does not say the run named every declared file: "
+          "overlap %r / basis %r"
+          % (green_cov.get("overlap"), green_cov.get("coverageBasis")),
+          green_cov.get("overlap") == []
+          and "every declared file" not in str(green_cov.get("coverageBasis")))
+    check("rfu5 ...AND THE FOLLOWER IT PRINTED IS THE STAGE'S TOO: a follower "
+          "line only the dropped stage printed is owed by no step of the "
+          "row: %r" % (green_cov.get("followersOwed"),),
+          green_cov.get("followersOwed") == []
+          and green_cov.get("followersUnread") == 0)
+    # ALLOW, the mutation that drops the stage's text whatever its verdict: a
+    # RED stage is a step of the row, so what it printed still counts.
+    check("rfu6 ALLOW: a RED stage stays a step of the row, so what it named "
+          "and the follower it printed are still the row's: overlap %r / "
+          "followers %r"
+          % (red_cov.get("overlap"), red_cov.get("followersOwed")),
+          red_cov.get("overlap") == ["docs/plan.json"]
+          and [f.get("path") for f in red_cov.get("followersOwed") or []]
+          == ["docs/x.html"])
+    check("rfu7 THE RESULT'S STAGE KEY IS NOT THE TDD BLOCK'S NAME: the green "
+          "stage rides on `redFirstStage`, and `redFirst` - the name the "
+          "filed return's red-first block carries - is not a key of the "
+          "gate's result: keys %r"
+          % (sorted(k for k in green_cov if "ed" in k.lower()
+                    and "first" in k.lower()),),
+          [s.get("name") for s in green_cov.get("redFirstStage") or []]
+          == [prefix + "unit"] and "redFirst" not in green_cov)
+
+
+def _selection_code_cases(check):
+    """`scd`: the kept selection's key reads the bytes of every module the
+    selection is computed from, so an upgrade that changes only one of them is
+    asked again rather than served the answer the old code made."""
+    needed = ("_affected_tests.py", "_gate_derive.py", "_manifest_phases.py",
+              "run-test-gate.py", "_runner_collects.py", "_manifest_vocab.py",
+              "_evidence_io.py", "_config.py")
+    real_hash = _journal_io.file_hash
+    real_digest = M._tree_stamp.content_digest
+    real_recorded = M._ev.recorded_paths
+    hooks_dir = os.path.realpath(_output.HOOKS_DIR)
+
+    def keyed(bump):
+        def hashed(path):
+            got = real_hash(path)
+            return got + "!" if got and os.path.basename(path) == bump else got
+        _journal_io.file_hash = hashed
+        try:
+            return M.selection_key("p", "m", "t", {}, ["a.py"], ["unit"])
+        finally:
+            _journal_io.file_hash = real_hash
+    M._tree_stamp.content_digest = lambda tree, excluded=None: ("c0", "basis")
+    M._ev.recorded_paths = lambda project, manifest_path: ([], [])
+    try:
+        base = keyed(None)
+        moved = dict((name, keyed(name)) for name in needed)
+    finally:
+        M._tree_stamp.content_digest = real_digest
+        M._ev.recorded_paths = real_recorded
+    unread = [n for n in needed if moved[n] == base]
+    check("scd1 THE SELECTION'S KEY MOVES WITH EVERY MODULE THE SELECTION IS "
+          "COMPUTED FROM: a change to the bytes of any one of them gives a "
+          "different key, and the key is taken at all (an unreadable module "
+          "would disable the keeping without a word): base %r / modules whose "
+          "change the key did not see: %r" % (base, unread),
+          base is not None and None not in moved.values() and unread == [])
+    listed = [n for n in M.SELECTION_CODE] \
+        + list(getattr(M, "SELECTION_HOOK_CODE", ()))
+    check("scd2 ...and every name the code lists is a file the plugin holds, "
+          "found where the key looks for it: %r"
+          % ([n for n in listed
+              if not os.path.isfile(os.path.join(hooks_dir, n))
+              and not _module_in_scripts(n)],),
+          all(os.path.isfile(os.path.join(hooks_dir, n))
+              or _module_in_scripts(n) for n in listed))
+
+
+def _module_in_scripts(name):
+    try:
+        return os.path.isfile(M._loader.script_path(name))
+    except ImportError:
+        return False
 
 
 def _joined_run_cases(check):
@@ -17056,6 +17191,7 @@ def _selftest():
         _full_review_only_cases(check)
         _hand_run_project_cases(check)
         _selection_miss_cases(check)
+        _selection_code_cases(check)
     return _harness.run(body)
 
 

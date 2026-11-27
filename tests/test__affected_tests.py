@@ -22,8 +22,9 @@ import os
 import re
 import shlex
 import sys
+import time
 
-import _harness                                   # sets sys.path for scripts/ + hooks/
+import _harness                                  # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402
 from _output import safe_stdio                     # noqa: E402
 import _affected_tests as M                        # noqa: E402
@@ -1236,6 +1237,29 @@ def _selection_store_cases(check):
               len(held) == M.SELECTION_KEEP
               and M.read_selection(
                   root, "bound%d" % (M.SELECTION_KEEP + 2)) == answer)
+        # A writer killed between mkstemp and replace leaves its temp file; the
+        # next write sweeps the stale ones and leaves a young one, which may be
+        # a live writer's.
+        stale = os.path.join(store, "tmpdead1.tmp")
+        young = os.path.join(store, "tmplive2.tmp")
+        other = os.path.join(store, "notes.txt")
+        for path_ in (stale, young, other):
+            with open(path_, "w") as fh:
+                fh.write("x")
+        long_ago = time.time() - 2 * M.SELECTION_TMP_STALE_SECONDS
+        os.utime(stale, (long_ago, long_ago))
+        os.utime(other, (long_ago, long_ago))
+        M.write_selection(root, "tmpclean", answer)
+        check("afs9 a stale temp file left by a killed writer is removed by "
+              "the next write, while a young one, an old file that is no "
+              "temp file and the kept answers are left: stale %r / young %r "
+              "/ other %r / kept %r"
+              % (os.path.exists(stale), os.path.exists(young),
+                 os.path.exists(other),
+                 M.read_selection(root, "tmpclean") is not None),
+              not os.path.exists(stale) and os.path.exists(young)
+              and os.path.exists(other)
+              and M.read_selection(root, "tmpclean") == answer)
         plain = tempfile.mkdtemp(prefix="affected-store-plain-")
         try:
             check("afs8 a directory git cannot place keeps nothing and says so "

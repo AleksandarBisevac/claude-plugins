@@ -3064,8 +3064,30 @@ def _affected_facts(tree, meta, changed, seen=None):
 # THE MODULES WHOSE CODE IS PART OF A KEPT SELECTION'S KEY: the answer is a
 # function of them as much as of the tree, so a plugin upgraded between two asks
 # is asked again rather than read a selection the old code made.
+#
+# THE LIST IS THE MODULES THAT DECIDE, NOT EVERY MODULE IMPORTED. Beside the
+# selection's own three and this file: the one that reads what a runner
+# collected (`_runner_collects.py`), the vocabulary the plan's meta and the
+# step names are read through (`_manifest_vocab.py`), the step-name grammar and
+# the recorder paths the identity leaves out (`_evidence_io.py`), and the hooks'
+# `_config.py`, which places git's directories and the checkout's top.
+# `SELECTION_HOOK_CODE` is the part that lives under `hooks/`, which
+# `_loader.script_path` does not search. A module added to either decides
+# nothing until it is named here, and a name that resolves to no file would
+# leave the key untaken (`selection_key` returns None), so the keeping would be
+# off without a word - `scd2` asks every listed name to be a file.
 SELECTION_CODE = ("_affected_tests.py", "_gate_derive.py", "_manifest_phases.py",
+                  "_runner_collects.py", "_manifest_vocab.py", "_evidence_io.py",
                   "run-test-gate.py")
+SELECTION_HOOK_CODE = ("_config.py",)
+
+
+def selection_code_paths():
+    """The absolute path of every module `SELECTION_CODE` and
+    `SELECTION_HOOK_CODE` name, the scripts' first, in the listed order."""
+    return ([_loader.script_path(name) for name in SELECTION_CODE]
+            + [os.path.join(_output.HOOKS_DIR, name)
+               for name in SELECTION_HOOK_CODE])
 
 
 def selection_key(project, manifest_path, tree, manifest, changed, names):
@@ -3081,7 +3103,8 @@ def selection_key(project, manifest_path, tree, manifest, changed, names):
     decide them, so they are in the key through here), the plan's meta as the
     reuse key holds it (`meta_part`, which is where `meta.phaseGate` is), the
     names of the task's own gate entries (what `select` leaves out), and the
-    bytes of the modules that make the selection (`SELECTION_CODE`). The
+    bytes of the modules that make the selection (`SELECTION_CODE`, and the
+    hooks' one in `SELECTION_HOOK_CODE`). The
     selection reads nothing of the phase and the task but those.
 
     WHAT IT DOES NOT REACH is `_tree_stamp.CONTENT_LIMIT`'s: a listing that
@@ -3089,8 +3112,7 @@ def selection_key(project, manifest_path, tree, manifest, changed, names):
     the same here as it did when it was kept."""
     excluded, _unexcluded = _ev.recorded_paths(project, manifest_path)
     content, _basis = _tree_stamp.content_digest(tree, excluded=excluded)
-    code = [_journal_io.file_hash(_loader.script_path(name))
-            for name in SELECTION_CODE]
+    code = [_journal_io.file_hash(path) for path in selection_code_paths()]
     if content is None or None in code:
         return None
     return _tree_stamp.identity_of(["selection", content, list(changed),
@@ -4204,13 +4226,13 @@ def not_run_step(name, command, why, stopped_by=None):
 # the red row says what it did not run. Green there runs the whole gate,
 # measured - no part of it repeated from an earlier run - and the stage leaves
 # `steps`, which stay the gate's own: the verdict and the declared gate it binds
-# are the gate's alone, and the stage rides on `redFirst` in this process. A
+# are the gate's alone, and the stage rides on `redFirstStage` in this process. A
 # red step that can only run whole runs in its place in the gate, said as that,
 # since running it first would run it twice on a green. The narrowing is the
 # one a base run takes (`_declared_suites_at_base`, `_derived_at_base`,
 # `_joined_at_base`), and every red-first command is kept verbatim on the row,
 # so a stopped run's base and the round after it run it as it ran.
-RED_FIRST_PREFIX = "red-first/"
+RED_FIRST_PREFIX = _ev.RED_FIRST_STEP_PREFIX
 RED_FIRST_NOT_RUN = ("not run: last round's red suites, run first as red-first "
                      "(%s), did not come back green, so the gate stopped before "
                      "this step")
@@ -5300,7 +5322,7 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     `red_first` is `red_first_stage`'s `[(name, command)]`: run after the
     pre-gate and before `commands`. When any of them does not come back green
     (`pre_gate_stops`), every one of `commands` is recorded as not run; when
-    all of them do, they leave `steps` and are `res["redFirst"]`, so the
+    all of them do, they leave `steps` and are `res["redFirstStage"]`, so the
     steps, their counts and the verdict are `commands`' own. `[]` when no
     stage ran green - a red one is in `steps`, where its red is.
     """
@@ -5346,6 +5368,12 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     step_text = [] if keep_text else None
     cancelled_by = None
     followers, followers_unread = [], 0
+    # WHAT THE RED-FIRST STAGE PRINTED IS HELD APART from the gate's own, because
+    # whether it belongs to the row is known only when the stage has ended: a
+    # stage that ran whole and green is no step of the gate, so the paths its
+    # output named and the follower lines it printed are no gate step's either
+    # (merged back below when the stage turns out to be a step of the row).
+    stage_texts, stage_followers, stage_unread = [], [], 0
     stage = list(red_first or [])
     staged = stage + list(commands)
     if pre_gate is not None and pre_gate[1] is None:
@@ -5465,11 +5493,14 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
                 step["muteRefused"] = refused
             if unmatched:
                 step["muteUnmatched"] = unmatched
+            # Read before the step joins `steps`, so the position is the one
+            # `stage_at` counts from.
+            held_apart = stage_at <= len(steps) < stage_at + len(stage)
             steps.append(step)
             # The attempt that ANSWERED, if one did: a retried step's first
             # attempt was ended by a signal, so only the second can speak here.
             if not step.get("outcome"):
-                texts.append(text or "")
+                (stage_texts if held_apart else texts).append(text or "")
             if step_text is not None:
                 step_text.append((name, text or ""))
             # APPENDED WITH THE ROW AND NEVER BEFORE IT, so the two lists cannot
@@ -5480,8 +5511,12 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             # A follower is owed by whatever step printed its line, answered or
             # not: the drive regenerates it from the record this run writes.
             owed, unread = _ev.followers_in(text)
-            followers.extend(f for f in owed if f not in followers)
-            followers_unread += unread
+            if held_apart:
+                stage_followers.extend(owed)
+                stage_unread += unread
+            else:
+                followers.extend(f for f in owed if f not in followers)
+                followers_unread += unread
             came_back = (pre_gate_stops(step) if name == _ev.PRE_GATE_STEP
                          and pre_gate is not None and len(steps) == 1 else None)
             if came_back is not None:
@@ -5526,6 +5561,12 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
         del step_named[stage_at:stage_at + len(stage)]
         if step_text is not None:
             del step_text[stage_at:stage_at + len(stage)]
+    else:
+        # A stage that stopped the gate, or was cut short, stays a step of the
+        # row, so what it printed is the row's: nothing after it ran.
+        texts.extend(stage_texts)
+        followers.extend(f for f in stage_followers if f not in followers)
+        followers_unread += stage_unread
     after = _tree_stamp.porcelain(project)
     interrupted = (cancelled_by is not None
                    or any(st.get("outcome") == TIMED_OUT for st in steps))
@@ -5632,7 +5673,10 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             # producer scan reads to know the key exists.
             "recorderHeld": held,
             # `[]` WHEN NO RED-FIRST STAGE RAN GREEN: a red one is in `steps`.
-            "redFirst": green_stage,
+            # NOT `redFirst`: that is the name of the filed return's TDD block,
+            # which every other reader of a task takes, and a `--json` consumer
+            # reading this key must not be able to mistake one for the other.
+            "redFirstStage": green_stage,
             "failed": failed}
 
 

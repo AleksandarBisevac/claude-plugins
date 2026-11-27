@@ -1934,10 +1934,116 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-27T10:15:29Z",
+            "ms": 24545,
+            "basis": "selectionMs in run 2026-11-27T10:22:22Z.ee69b7's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-27T10:22:22Z.ee69b7"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-27T10:15:54Z",
+            "ms": 387979,
+            "basis": "durationMs in run 2026-11-27T10:22:22Z.ee69b7's record (run-test-gate --record)",
+            "runId": "2026-11-27T10:22:22Z.ee69b7"
+          },
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-27T10:22:30Z",
+            "ms": 23744,
+            "basis": "selectionMs in run 2026-11-27T10:29:32Z.28499a's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-27T10:29:32Z.28499a"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-27T10:22:54Z",
+            "ms": 397622,
+            "basis": "durationMs in run 2026-11-27T10:29:32Z.28499a's record (run-test-gate --record)",
+            "runId": "2026-11-27T10:29:32Z.28499a"
+          }
+        ],
         "firstStartedAt": "2026-11-27T09:41:01Z"
       },
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-27T10:29:32Z.28499a",
+        "status": "passed",
+        "durationMs": 397622,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no step printed a summary this reader can count (pre-gate/preGate and 1 more), so the size of this gate is not knowable from its output",
+          "treeMutated": [],
+          "treeBasis": "git described the tree before and after",
+          "coverage": [
+            "tests/test__affected_tests.py",
+            "tests/test_run_test_gate.py"
+          ],
+          "coverageBasis": "the runner named 206 path(s); the work under test declares 6 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 195/195 and 201 more; declared but not named by the run: changelog.d/P172.10-mrj.changed.md, plugins/audit/scripts/governance/_affected_tests.py, plugins/audit/scripts/governance/_evidence_io.py and 1 more; breadth: the run named 174 suite path(s) and this task declares 6 file(s), and 172 of them are suites the task neither declares nor is named after (test__deps.py, test__evidence_io.py, test__output.py, test_audit_task.py, test_close_phase.py, test_commit_task_work.py, test_drive_phase.py and 165 more) - this gate asks more than the task changed; that is reported, not refused"
+        },
+        "banners": [],
+        "recorderHeld": false,
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:5b153a1faf7de2660e8bccfdba9eb916342eb9093109546b62414acf20f47e69",
+        "reuseKey": "1:sha256:d971d629af5b2b82a7141c3fb90f8b2bc5ddc597063785a0a00bc6919f3db38e",
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+        "startedAt": "2026-11-27T10:22:54Z",
+        "selectionMs": 23744,
+        "at": "2026-11-27T10:29:32Z",
+        "testedState": {
+          "head": "7ad5bce6",
+          "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+          "scopeDigest": "sha256:e9807f323d8f67b58707abd47b6961e22ec9239c2fb7b2b3201481ac791cbf44",
+          "scopeBasis": "6 declared file(s); 6 read, 0 missing",
+          "scopeListDigest": "sha256:31e7cc1aad80e4a97e5df142bcf8c1ac0237dfc11e88e84850607a23da4a07d3",
+          "dirtyDigest": "sha256:f5b590c17ec609e1e2f1cf2c9a1712a4453ec878a382e195299c188a0014703d",
+          "dirtyBasis": "git described the tree before the run; 6 dirty path(s)",
+          "treeKey": "ecad81d6ca27"
+        },
+        "steps": [
+          {
+            "name": "pre-gate/preGate",
+            "exit": 0,
+            "ran": null,
+            "measured": "not-knowable",
+            "durationMs": 7942,
+            "suiteReader": "none",
+            "command": "python3 tools/lints/_deps.py --register-citations"
+          },
+          {
+            "name": "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__affected_tests.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_io.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+            "exit": 0,
+            "ran": null,
+            "measured": "not-knowable",
+            "durationMs": 389629,
+            "suiteReader": "none",
+            "commandSha256": "37a4bc33e0777c81744dad5b67eba6f0426c02c74e5a53823f3224302f2d8b23",
+            "commandBytes": 5400,
+            "program": "python3"
+          }
+        ],
+        "machine": "this run had the machine to itself",
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-27T10:22:22Z.ee69b7",
+            "launch": "2026-11-27T10:15:08Z-359fa0a1",
+            "status": "passed",
+            "at": "2026-11-27T10:22:22Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-27T10:29:32Z.28499a",
+        "status": "passed",
+        "at": "2026-11-27T10:29:32Z"
+      }
     },
     {
       "id": "P172.11-mrj",
@@ -2153,7 +2259,7 @@
     {
       "id": "P172.12-mrj",
       "title": "Starting a task settles only that task's stale gate",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review, regression. settle_stale_gate (drive-phase.py, called first in start_task) runs 'audit-task.py settle <manifest>' with no task scope, so _locked_settle runs _settle(assembled, None) and _settle_wide_gates over every phase: in a sharded plan the drive of phase A rewrites phase B's shard in A's tree, unreported (the did line names only this task), and the docstring says it settles the task's gate. Give settle a task scope (e.g. settle --task ID that settles only that task's stale wide gate and writes only its phase's shard) and have settle_stale_gate use it; a case proves another phase's shard is untouched (red before). Also: settle_stale_gate reports 'settled: X -> X' when the verb exits 0 but the task's gate did not move; report that nothing moved instead.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -2180,14 +2286,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "7ad5bce62c22",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: settle gains --task ID (parser flag, VERB_FLAGS['settle']=('task',), usage line). _locked_settle with --task refuses an unknown task (exit 2, names it and lists tasks), skips _settle over phase/bug values and the stale index stubs, and passes the id to _settle_wide_gates (new only_task parameter) so only that task's gate is written and only its phase's shard (_write_add per moved phase) is rewritten; a task with nothing stale prints 'nothing to settle' naming the task. drive-phase.py settle_stale_gate: runs 'settle <manifest> --task ID', docstring says why, and when the verb exits 0 but the task's gate list did not move it reports \"<id>'s gate did not move: audit-task.py settle exited 0 and the task still holds <gate>\" instead of 'settled: X -> X'. Tests: ssg5 (sharded two-phase plan, both tasks called stale by the plan; start P1.1 -> P1.1 narrowed, P2.1 gate and P2 shard bytes unchanged) and ssg6 (settle stubbed to exit 0 with no move) in tests/test_drive_phase.py; wgt1-wgt7 (new block wgt-block, _settle_task_scope_cases) in tests/test_audit_task.py: scoped settle changes only its phase's shard (journal excluded, index/stub/bug untouched), one journal row naming the task, unscoped settle still settles the sibling task, bug status and stub (allow twin), nothing-stale, unknown task refusal, another verb refuses --task. Mutations proved red, each restored byte-identical with __pycache__ purged: drop --task from the drive call -> ssg5 red; drop the unmoved check -> ssg6 red; ignore only_task in _settle_wide_gates -> wgt2,wgt3 red; scoped call still runs _settle -> wgt2,wgt3 red (after adding a stale bug to the fixture; first version of the case survived); scoped call still re-mirrors stubs -> wgt2 red; unscoped call also skips _settle -> wgt4 red; drop the unknown-task refusal -> wgt6 red. Commands: sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py exit 0 '2/2 files ok, 2408 cases'; _deps.py --register-citations exit 0 (0 found); ruff check exit 0; vermin exit 0 (323 files, min 3.8); release.py changelog-check ok. Dependants: drive-phase.py importers and audit-task.py importers (full-gate.py, run-test-gate.py, tests) call neither settle_stale_gate nor cmd_settle/_settle_wide_gates positionally in a changed way - _settle_wide_gates' new third parameter defaults to None and the one other caller is unchanged; settle without --task behaves exactly as before (wgt4/wg5-wg9 green); the vf grid (every unread flag refuses on every verb) stayed green with --task declared on settle only. NOT DONE, outside my files: PLUGIN-BUILD-GUIDE.md ### audit-task.py section (line ~7215 'settle [manifest]') and ### drive-phase.py section (line ~5533, which describes the settle before a start) would now be incomplete about --task and the 'did not move' line; plugins/audit/reference/verbs-in-full.md / commands/task.md were not checked for a settle usage line. The scope should be widened to those docs if a reviewer wants them updated.",
+        "descriptive": "Driving one phase no longer rewrites a sibling phase's shard: the pre-start settle is scoped to the task being started, and a settle that moved nothing says so."
       },
       "startedAt": "2026-11-27T09:41:27Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-27T10:15:14Z",
+      "verifiedBy": [
+        "ssg5: sharded two-phase plan, start a task in the first phase, the sibling phase's stale task, gate and shard bytes are unchanged",
+        "ssg6: settle exits 0 with the gate unmoved is reported as not moving, with no arrow and no 'settled'",
+        "wgt1-wgt7: settle --task scope, own-shard-only write, journal row, unscoped allow twin, nothing-stale, unknown task refusal, flag stays settle-only"
+      ],
       "notes": [
         {
           "at": "2026-11-27T09:41:21Z",
@@ -2224,6 +2334,30 @@
             "ms": 410499,
             "basis": "durationMs in run 2026-11-27T10:13:25Z.e88774's record (run-test-gate --record)",
             "runId": "2026-11-27T10:13:25Z.e88774"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-27T09:56:53Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 920000,
+            "startedAt": "2026-11-27T09:41:33Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-27T10:06:04Z.391819",
+            "kind": "wait",
+            "ms": 10000,
+            "startedAt": "2026-11-27T09:57:26Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-27T10:14:53Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 84000,
+            "startedAt": "2026-11-27T10:13:29Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 7ad5bce62c22",
+            "kind": "commit",
+            "ms": 1770,
+            "startedAt": "2026-11-27T10:15:11Z"
           }
         ],
         "firstStartedAt": "2026-11-27T09:41:27Z"
@@ -2305,6 +2439,18 @@
         "runId": "2026-11-27T10:13:25Z.e88774",
         "status": "passed",
         "at": "2026-11-27T10:13:25Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "7ad5bce62c22",
+        "at": "2026-11-27T10:15:14Z",
+        "return": "docs/audit/evidence/returns/P172.12-mrj/20261127T094127Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-27T09:56:51Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py` in a throwaway tree at HEAD: the run timed out after 149 s and its process group was torn down; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
