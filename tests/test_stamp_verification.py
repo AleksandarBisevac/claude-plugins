@@ -3502,9 +3502,9 @@ def _every_run_cases(check):
     # rewrites one line of `run_red` in a fresh copy of the module, and the
     # judged case must see it - a copy of those lines in `_judged` would not.
     emptied = _mutated_module(
-        '"baseline", stubs=[rel for rel in state["new"]\n'
-        '                                       if rel not in state["absent"]], '
-        'deps=deps)', '"baseline", stubs=[], deps=deps)', "sv_jd1")
+        'stubs=[rel for rel in state["new"]\n'
+        '                                          if rel not in state["absent"]])',
+        'stubs=[])', "sv_jd1")
     code_m, got_m = _judged(root_o, man_o, cmd_o, "sr138", module=emptied)
     check("jd1 with `run_red`'s stub list for HEAD's run emptied, sr138's judged "
           "run sees it: HEAD's run is handed no stub, and sr138's own check "
@@ -6973,6 +6973,284 @@ def _new_stage_unit_cases(check):
           == ["aa", "zz"])
 
 
+# --- a leg whose exact inputs did not change is replayed, not rerun -----------
+def _leg_store_cases(check):
+    """The store's own rules, with a stand-in for the run: replayed on equal
+    inputs, rerun on any change, never written from a run whose inputs moved
+    under it or whose run did not finish, newest N kept, a bad entry a miss."""
+    store = _harness.fixture_root("stamp-legs-store-")
+    calls = []
+
+    def run_one():
+        calls.append(1)
+        return ({"code": 1, "text": "out\n", "problem": None, "seconds": 3.5},
+                ["tests/x.py"])
+
+    base = {"head": "a" * 40, "leg": "baseline", "argv": ["t"]}
+    rec1, copied1 = M.reuse_or_run(store, lambda: dict(base), run_one)
+    rec2, copied2 = M.reuse_or_run(store, lambda: dict(base), run_one)
+    reused = rec2.get("reused") or {}
+    check("lr1 the same inputs twice make ONE run: the second call replays the "
+          "first's code, text and copied files, says it was reused under the "
+          "key the inputs hash to and when it was recorded, and costs no "
+          "seconds, while the first carries no `reused` word: %r %r"
+          % (rec1, rec2),
+          len(calls) == 1 and "reused" not in rec1
+          and (rec2["code"], rec2["text"], rec2["problem"]) == (1, "out\n", None)
+          and copied1 == copied2 == ["tests/x.py"]
+          and rec2["seconds"] == 0.0 and reused.get("seconds") == 3.5
+          and reused.get("key") == M.leg_key(base)
+          and isinstance(reused.get("recordedAt"), str) and reused["recordedAt"])
+
+    # THE OTHER DIRECTION: every changed field is a miss. One variant per field,
+    # each in a store of its own so a hit on an earlier variant cannot answer.
+    stale = []
+    for field, other in (("head", "b" * 40), ("leg", "task"), ("argv", ["u"]),
+                         ("extra", 1)):
+        calls[:] = []
+        shared = _harness.fixture_root("stamp-legs-var-")
+        M.reuse_or_run(shared, lambda: dict(base), run_one)
+        M.reuse_or_run(shared, lambda: dict(base, **{field: other}), run_one)
+        if len(calls) != 2:
+            stale.append(field)
+    check("lr2 a changed input reruns the leg, whichever field moved: %r"
+          % (stale,), not stale)
+
+    # An input that moves WHILE the leg runs: the key read after differs from the
+    # one before, so the result belongs to neither and is not kept.
+    moved = _harness.fixture_root("stamp-legs-moved-")
+    reads = iter([{"head": "c" * 40}, {"head": "d" * 40}])
+    calls[:] = []
+    M.reuse_or_run(moved, lambda: next(reads), run_one)
+    first_inputs = {"head": "c" * 40}
+    M.reuse_or_run(moved, lambda: dict(first_inputs), run_one)
+    check("lr3 a leg whose inputs moved while it ran is NOT written: the next "
+          "call with the first inputs runs again (calls=%r), and its own result "
+          "is kept after that: %r" % (len(calls), os.listdir(moved)),
+          len(calls) == 2 and len(os.listdir(moved)) == 1)
+
+    # A run that did not finish is not a result of its inputs.
+    timed = _harness.fixture_root("stamp-legs-timed-")
+    calls[:] = []
+
+    def run_timed():
+        calls.append(1)
+        return ({"code": None, "text": "", "problem": "the run timed out",
+                 "seconds": 9.0}, [])
+
+    M.reuse_or_run(timed, lambda: dict(base), run_timed)
+    M.reuse_or_run(timed, lambda: dict(base), run_timed)
+    check("lr4 a leg that timed out is not kept and so not replayed: calls=%r "
+          "files=%r" % (len(calls), os.listdir(timed)),
+          len(calls) == 2 and os.listdir(timed) == [])
+
+    # Newest N: the oldest entry goes, the newest stays.
+    ring = _harness.fixture_root("stamp-legs-ring-")
+    total = M.LEG_STORE_KEEP + 3
+    for i in range(total):
+        M.reuse_or_run(ring, lambda i=i: {"n": i}, run_one)
+        path = os.path.join(ring, M.leg_key({"n": i}) + ".json")
+        os.utime(path, (1000000 + i, 1000000 + i))
+    calls[:] = []
+    M.reuse_or_run(ring, lambda: {"n": total - 1}, run_one)
+    newest_kept = not calls
+    M.reuse_or_run(ring, lambda: {"n": 0}, run_one)
+    check("lr5 the store keeps the newest %d legs: %d files after %d writes, the "
+          "newest replays and the oldest reruns: %r"
+          % (M.LEG_STORE_KEEP, len(os.listdir(ring)), total, len(calls)),
+          newest_kept and len(calls) == 1
+          and len(os.listdir(ring)) == M.LEG_STORE_KEEP)
+
+    # No store: every call runs, nothing raises.
+    calls[:] = []
+    M.reuse_or_run(None, lambda: dict(base), run_one)
+    M.reuse_or_run(None, lambda: dict(base), run_one)
+    gone = os.path.join(store, "not-here")
+    M.reuse_or_run(gone, lambda: dict(base), run_one)
+    check("lr6 with no store - none given, or one that is not a directory - "
+          "every call runs: calls=%r" % (len(calls),), len(calls) == 3)
+
+    # A bad entry is a miss and is replaced, not replayed and not fatal.
+    bad = _harness.fixture_root("stamp-legs-bad-")
+    M.reuse_or_run(bad, lambda: dict(base), run_one)
+    entry = os.path.join(bad, M.leg_key(base) + ".json")
+    results = []
+    for text in ("not json {", json.dumps({"key": "other", "code": 1, "text": "x",
+                                           "copied": []}),
+                 json.dumps({"key": M.leg_key(base), "code": "one", "text": 3})):
+        with open(entry, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        calls[:] = []
+        M.reuse_or_run(bad, lambda: dict(base), run_one)
+        results.append(len(calls))
+    calls[:] = []
+    M.reuse_or_run(bad, lambda: dict(base), run_one)
+    check("lr7 an entry that is not JSON, names another key or holds the wrong "
+          "types is a miss that reruns the leg (runs %r), and the rewritten "
+          "entry then replays (runs after: %d)" % (results, len(calls)),
+          results == [1, 1, 1] and not calls)
+
+
+def _leg_inputs_cases(check):
+    """What a leg reads, field by field: moving any one of them moves the key."""
+    root = _harness.fixture_root("stamp-legs-inputs-")
+    os.makedirs(os.path.join(root, "tests"))
+    os.makedirs(os.path.join(root, "src"))
+    _write(os.path.join(root, "tests", "t.py"), "one\n")
+    _write(os.path.join(root, "src", "a.py"), "alpha\n")
+    deps = {"source": root, "linked": ["node_modules"], "skipped": [],
+            "npmrc": ["none"]}
+    env = {"PATH": "/bin", "K": "v"}
+    texts = {"tests/t.py": "inline one"}
+    args = {"root": root, "head": "a" * 40, "tag": "task",
+            "cmd": ["python3", "tests/t.py"], "rels": ["tests/t.py"],
+            "stubs": ["tests/new.py"], "absent": ["tests/gone.js"], "texts": texts,
+            "deps": deps, "env": env}
+
+    def key(**over):
+        got = dict(args, **over)
+        return M.leg_key(M.leg_inputs(
+            got["root"], got["head"], got["tag"], got["cmd"], got["rels"],
+            got["stubs"], got["absent"], got["texts"], got["deps"], got["env"]))
+
+    base = key()
+    variants = {
+        "head": key(head="b" * 40), "tag": key(tag="fix"),
+        "cmd": key(cmd=["python3", "tests/u.py"]),
+        "rels": key(rels=["tests/t.py", "src/a.py"]),
+        "stubs": key(stubs=[]), "absent": key(absent=[]),
+        "texts": key(texts={"tests/t.py": "inline two"}),
+        "deps": key(deps=dict(deps, linked=[])),
+        "npmrc": key(deps=dict(deps, npmrc=["copied"])),
+        "env": key(env=dict(env, K="w"))}
+    _write(os.path.join(root, "tests", "t.py"), "two\n")
+    variants["laid-over bytes"] = key()
+    _write(os.path.join(root, "tests", "t.py"), "one\n")
+    held_digest, held_py = M.helper_code_digest, M._python_version
+    try:
+        M.helper_code_digest = lambda: "another helper"
+        variants["helper code"] = key()
+    finally:
+        M.helper_code_digest = held_digest
+    try:
+        M._python_version = lambda: "0.0.0 elsewhere"
+        variants["interpreter"] = key()
+    finally:
+        M._python_version = held_py
+    unmoved = [name for name, k in variants.items() if k == base]
+    check("lr8 every input the design names is IN the key - a leg is replayed "
+          "only when the head, argv, leg name, the laid-over files' bytes, "
+          "stubs, absent files, inline overlays, dependency plan, helper code, "
+          "interpreter and environment are all the same; a field left out "
+          "reuses a stale leg. Fields that did not move the key: %r" % (unmoved,),
+          not unmoved and key() == base and len(set(variants.values())) == len(variants))
+    check("lr9 a file a leg lays over that the working tree lacks reads as "
+          "absent, not as its last bytes: %r"
+          % (M.leg_inputs(root, "a" * 40, "task", ["t"], ["nope.py"], [], [], {},
+                          deps, env).get("laid"),),
+          (M.leg_inputs(root, "a" * 40, "task", ["t"], ["nope.py"], [], [], {},
+                        deps, env).get("laid") or {}).get("nope.py") is None
+          and "nope.py" in (M.leg_inputs(root, "a" * 40, "task", ["t"],
+                                         ["nope.py"], [], [], {}, deps,
+                                         env).get("laid") or {}))
+
+
+def _leg_reuse_cases(check):
+    """`red` end to end: the second proof of one tree replays all three legs and
+    builds no throwaway; an edit to the test reruns the task and fix legs and
+    still replays the baseline; an edit to the implementation alone reruns only
+    the fix leg."""
+    py = sys.executable
+    root, man = _red_repo("stamp-reuse-", _red_test("import mine", "mine.v == 2"))
+    made = []
+    built = []
+    real_run, real_build = M._isolated_run, M._build_throwaway
+
+    def counting_run(top, path, rels, cmd, deadline, timeout, env, scratch, tag,
+                     stubs=(), deps=None, texts=None):
+        made.append(tag)
+        return real_run(top, path, rels, cmd, deadline, timeout, env, scratch,
+                        tag, stubs=stubs, deps=deps, texts=texts)
+
+    def counting_build(top, path, tests, timeout=120):
+        built.append(path)
+        return real_build(top, path, tests, timeout=timeout)
+
+    def proof():
+        made[:] = []
+        built[:] = []
+        M._isolated_run, M._build_throwaway = counting_run, counting_build
+        try:
+            code, got = _red(root, man, [py, "tests/test_mine.py"])
+        finally:
+            M._isolated_run, M._build_throwaway = real_run, real_build
+        legs = dict((l.get("leg"), l) for l in got.get("legs") or []
+                    if isinstance(l, dict))
+        return code, got, legs, list(made), list(built)
+
+    code1, got1, legs1, made1, built1 = proof()
+    code2, got2, legs2, made2, built2 = proof()
+    block1, block2 = got1.get("redFirst") or {}, got2.get("redFirst") or {}
+    check("lr10 a second proof over the same tree makes NO run and builds NO "
+          "throwaway - first made %r and built %d, second made %r and built "
+          "%d - yet reaches the same verdict and the same basis: %r / %r"
+          % (made1, len(built1), made2, len(built2), block1, block2),
+          code1 == code2 == M.E_PROVED and made1 == ["baseline", "task", "fix"]
+          and len(built1) == 1 and made2 == [] and built2 == []
+          and block1.get("status") == block2.get("status") == "proved"
+          and block1.get("basis") == block2.get("basis"))
+    say = legs2.get("baseline", {})
+    check("lr11 each replayed leg says so in the payload's `legs` - not run, "
+          "reused, its key, when it was recorded, zero seconds and the seconds "
+          "it first cost - and the first proof's legs do not: %r %r"
+          % (legs2.get("baseline"), legs1.get("baseline")),
+          all(legs2.get(n, {}).get("reused") is True
+              and legs2[n].get("ran") is False and legs2[n].get("seconds") == 0.0
+              and legs2[n].get("key") and legs2[n].get("recordedAt")
+              for n in ("baseline", "task", "fix"))
+          and "reused" in say.get("why", "") and say.get("key", "?")[:8] in say.get("why", "")
+          and isinstance(say.get("recordedSeconds"), float)
+          and all("reused" not in l for l in legs1.values())
+          and (got2.get("run") or {}).get("seconds") == 0.0)
+    store = os.path.join(root, ".git", M.LEG_STORE_DIR)
+    check("lr12 the store lives under git's common directory, holds the legs, "
+          "and is no throwaway: it is not in the working tree, `leftovers` is "
+          "empty (its name starts with the throwaways' prefix) and git lists no "
+          "worktree but the main one: %r %r"
+          % (got2.get("leftovers"), _worktrees(root)),
+          M.LEG_STORE_DIR.startswith(M.THROWAWAY_PREFIX)
+          and not got2.get("leftovers")
+          and len(os.listdir(store)) >= 3
+          and len(_wt.parse_list(_worktrees(root))) == 1
+          and M.LEG_STORE_DIR not in os.listdir(root))
+
+    # The test file's bytes move: baseline reads none of them and replays; the
+    # task and fix legs lay it over and rerun.
+    _write(os.path.join(root, "tests", "test_mine.py"),
+           _red_test("import mine", "mine.v == 2 and True"))
+    code3, got3, legs3, made3, built3 = proof()
+    check("lr13 an edit to the declared test reruns the task and fix legs and "
+          "REPLAYS the baseline (it lays nothing over): made %r, built %d, "
+          "reused %r"
+          % (made3, len(built3), sorted(n for n, l in legs3.items()
+                                        if l.get("reused"))),
+          code3 == M.E_PROVED and made3 == ["task", "fix"] and len(built3) == 1
+          and legs3["baseline"].get("reused") is True
+          and not legs3["task"].get("reused") and not legs3["fix"].get("reused"))
+
+    # An edit to the implementation alone: only the fix leg lays it over.
+    _write(os.path.join(root, "src", "mine.py"), "v = 2  # edited\n")
+    code4, got4, legs4, made4, built4 = proof()
+    check("lr14 an edit to the implementation alone reruns ONLY the fix leg - "
+          "the task leg runs HEAD's implementation, so it replays: made %r, "
+          "reused %r"
+          % (made4, sorted(n for n, l in legs4.items() if l.get("reused"))),
+          code4 == M.E_PROVED and made4 == ["fix"] and len(built4) == 1
+          and legs4["baseline"].get("reused") is True
+          and legs4["task"].get("reused") is True
+          and not legs4["fix"].get("reused"))
+
+
 # Every block, in replay order. A full run starts one process per block, a few
 # at a time, and replays their cases in this order (`_harness.staged_main`);
 # `--stage LABEL` narrows a run to the blocks it names, run in this process,
@@ -6988,6 +7266,9 @@ STAGES = (
     ("sr-run-confirm", "_run_confirmation_cases"),
     ("su-records", "_su_records_cases"),
     ("sr-red", "_red_cases"),
+    ("sr-leg-store", "_leg_store_cases"),
+    ("sr-leg-inputs", "_leg_inputs_cases"),
+    ("sr-leg-reuse", "_leg_reuse_cases"),
     ("sr-introduces", "_introduces_cases"),
     ("sh-house-abort", "_house_abort_cases"),
     ("sh-owner-module", "_owner_module_cases"),

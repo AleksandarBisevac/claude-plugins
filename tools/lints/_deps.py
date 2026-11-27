@@ -3102,6 +3102,11 @@ OTHER_WRITERS = (
      ("<write>", "<write>"), _PW_SCRATCH),
     ("scripts/governance/stamp-verification.py", "_lay_over",
      "<write>", _PW_SCRATCH),
+    ("scripts/governance/stamp-verification.py", "_save_leg",
+     "_manifest_io.atomic_write_text",
+     "a kept red-first leg, one `.json` file under `audit-red-legs` in the "
+     "repository's common git directory - never the working tree, never "
+     "tracked, and no plan reader opens it"),
     ("scripts/governance/stamp-verification.py", "run_red", "<write>", _PW_SCRATCH),
     ("scripts/governance/verify-invariants.py", "_baseline_answer",
      "_invariants.write_baseline",

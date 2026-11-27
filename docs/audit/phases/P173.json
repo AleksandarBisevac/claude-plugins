@@ -264,7 +264,7 @@
     {
       "id": "P173.2",
       "title": "The drive times the red-first proof and the helper reports each leg's seconds",
-      "status": "in_progress",
+      "status": "done",
       "description": "Design: quality-gates-internal plans/2026-11-27-speed-red-first.md section 2, T2. Around red_reading's run in writer_prove and in submit's red_block, stamp start and measured length and queue_stage a 'proof' stage (source proof:<at>, basis naming the legs: baseline/task/fix seconds from the helper). The helper adds each leg's seconds and a legs list to its payload; a leg not run says so. A refused or blockless proof still queues its length. Acceptance: on a recorded run the window between writer end and gate selection is covered by proof + wait stages. Dependants: red_reading parse, hold_proof, note_reproof. test_drive_phase.py is expensive: run named cases via --stage while iterating.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -294,14 +294,17 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e9ccb282951e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: red_reading now times the one stamp-verification red run (UTC start + monotonic ms) and leaves a proof stage on ctx[PROOF_STAGE] (also for refused / blockless runs); its basis names each leg's seconds as the helper reported them (proof_legs_said), a leg not run with the helper's why, or 'not reported' when no payload/legs. Writer path: writer_prove drops any stale stage, prove_and_hold calls queue_proof_stage (queue_stage source proof:<start>, write_state) before the refusal branch. submit: note_proof_stage notes the stage through audit-task.py note --stage (locked write; submit holds no drive-state lock, which wave members share) right after red_block, before the stop check, basis suffixed that on the Agent route it lies inside the writer's hand-out-to-filing length. stage_args refactored onto stage_words. stamp-verification.py: red payload gains legs (red_legs: baseline/task/fix always listed, ran:false+why+seconds:null when not made; task-held/task-support/second only when made) and run.seconds (the task run's). tests: pq0-pq7 in test_drive_phase.py (_proof_stage_units, in ux-block), sr4l/sr4n in test_stamp_verification.py (_leg_cases, in sr-red); the retired-return case fp2* now allows the one proof-timing note and asserts the real note --stage put one proof stage on the task's timing. Docs: two paragraphs in PLUGIN-BUILD-GUIDE.md (drive-phase and stamp-verification sections), changelog.d/P173.2.changed.md. Gate: sweep-selftests over both files exit 0 (2/2 files ok, 1489 cases); register-citations 0 found; release.py changelog-check ok. Dependants: red_reading parse - still correct, the triple it returns is unchanged and the stage rides ctx; hold_proof - unchanged, still given block/payload; note_reproof - unchanged, its note still carries no stages (the proof stage was queued by prove_and_hold before it and rides the next session note or close); test_drive_phase/test_stamp_verification dependants (test_drive_without_model, test__filed_returns, tools/affected.py) import names I did not rename or remove. Overlap caveat: on the Agent route the submit's proof stage is inside the writer stage (hand-out to filing), so summarize reports it as overrun there; the basis says so. Note: I wrote the stamp-verification.py edit and the tests edit through a python heredoc via Bash before switching to Edit for drive-phase.py (the plan gate refused that heredoc for drive-phase.py at magnitude over its limit; the stamp-verification.py one, smaller, was not refused).",
+        "descriptive": "The drive now attributes the red-first proof as its own timed stage, with each leg's seconds in its basis, and the helper reports per-leg seconds."
       },
       "startedAt": "2026-11-27T14:51:47Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-27T15:24:13Z",
+      "verifiedBy": [
+        "tests/test_drive_phase.py pq0-pq7: a writer round's proof queues one proof stage (source proof:<at>) whose ms is the drive's own measure (>= the rig's sleep, below the helper's leg seconds), basis names each leg incl. 'fix not run (reason)'; refused proof still queues with 'legs: not reported'; ALLOW: a task owing no proof queues none; submit notes the stage via note --stage, also when refused",
+        "tests/test_stamp_verification.py sr4l/sr4n: payload legs and run.seconds for a red proof, and a green task run lists the fix leg as ran:false with why and seconds None"
+      ],
       "notes": [
         {
           "at": "2026-11-27T14:51:45Z",
@@ -325,6 +328,30 @@
             "ms": 389502,
             "basis": "durationMs in run 2026-11-27T15:20:37Z.3914b3's record (run-test-gate --record)",
             "runId": "2026-11-27T15:20:37Z.3914b3"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-27T15:13:17Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1287000,
+            "startedAt": "2026-11-27T14:51:50Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-27T15:20:37Z.3914b3",
+            "kind": "wait",
+            "ms": 3000,
+            "startedAt": "2026-11-27T15:13:43Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-27T15:23:53Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 187000,
+            "startedAt": "2026-11-27T15:20:46Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit e9ccb282951e",
+            "kind": "commit",
+            "ms": 1887,
+            "startedAt": "2026-11-27T15:24:09Z"
           }
         ],
         "firstStartedAt": "2026-11-27T14:51:47Z"
@@ -442,18 +469,31 @@
         "runId": "2026-11-27T15:20:43Z.3745cf",
         "status": "passed",
         "at": "2026-11-27T15:20:43Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "e9ccb282951e",
+        "at": "2026-11-27T15:24:13Z",
+        "return": "docs/audit/evidence/returns/P173.2/20261127T145147Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-27T15:13:17Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with failing cases pq1 (house FAIL), pq2 (house FAIL), pq3 (house FAIL), pq4 (house FAIL), pq6 (house FAIL), pq7 (house FAIL) and 5 more, but the fix run could not be made: the run timed out after 146 s and its process group was torn down - SELFTEST FAILED: 365/367 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P173.3",
       "title": "A red-first leg whose exact inputs did not change is reused, not rerun",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Design: quality-gates-internal plans/2026-11-27-speed-red-first.md section 2, T3. Keep each leg's result under the exact inputs it read (HEAD sha, argv, leg name, files laid over by path+sha256, stubs, absent, inline overlays digest, dependency plan, the helper's own code digest, interpreter version) under the git common dir, newest N, written only when the key read after the leg equals the key before. A hit replays code/text and says 'reused, key K, recorded at T'; the throwaway tree is built only when a leg misses. Dependants: red_verdict, leftover_throwaways (must ignore the store). Red-first case: leaving one key field out (mutation) makes a changed-input case reuse a stale leg and must go red.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
         "tests/test_stamp_verification.py",
         "PLUGIN-BUILD-GUIDE.md",
-        "changelog.d/P173.3.changed.md"
+        "changelog.d/P173.3.changed.md",
+        "tools/lints/_deps.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -473,16 +513,164 @@
       "dependsOn": [
         "P173.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-27T15:24:15Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "timing": {
+        "stages": [
+          {
+            "basis": "stamp-verification red, timed by the drive around its one run; legs: baseline 31.45 s, task 31.63 s, fix 32.05 s (the helper's own seconds); run by the executor's submit, so on the Agent route it lies inside the writer's hand-out-to-filing length",
+            "kind": "proof",
+            "ms": 104369,
+            "startedAt": "2026-11-27T15:37:02Z"
+          },
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-27T15:38:58Z",
+            "ms": 20272,
+            "basis": "selectionMs in run 2026-11-27T15:45:53Z.4821f5's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-27T15:45:53Z.4821f5"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-27T15:39:19Z",
+            "ms": 394356,
+            "basis": "durationMs in run 2026-11-27T15:45:53Z.4821f5's record (run-test-gate --record)",
+            "runId": "2026-11-27T15:45:53Z.4821f5"
+          }
+        ],
+        "firstStartedAt": "2026-11-27T15:24:15Z"
+      },
+      "reviewPerTask": "signals",
+      "notes": [
+        {
+          "at": "2026-11-27T15:36:46Z",
+          "text": "Scope widened: the leg store's writer _save_leg needs its OTHER_WRITERS row in tools/lints/_deps.py (test__deps sw1/pw1 fail by name without it), the same precedent as the affected-selection store rows."
+        },
+        {
+          "at": "2026-11-27T15:38:47Z",
+          "text": "the executor's red-first proof ran for 104.4 s"
+        }
+      ],
+      "lastRun": {
+        "runId": "2026-11-27T15:45:59Z.8c7645",
+        "status": "passed",
+        "durationMs": 225,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:7f784e527b0739ea7672878369863d0bdc6a139aa2e33984a03bdbd761629c93",
+        "reuseKey": "1:sha256:00723799b6b4d0c1248f5989d959848d7ac85dadef62239d43e175b216919fe6",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-27T15:45:53Z.4821f5",
+          "ts": "2026-11-27T15:45:53Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+        "selectionMs": 124,
+        "at": "2026-11-27T15:45:59Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "runId": "2026-11-27T15:45:53Z.4821f5",
+          "startedAt": "2026-11-27T15:39:19Z",
+          "durationMs": 394356,
+          "selectionMs": 20272,
+          "status": "passed",
+          "failed": [],
+          "reuseKey": "1:sha256:00723799b6b4d0c1248f5989d959848d7ac85dadef62239d43e175b216919fe6",
+          "gateDigest": "sha256:7f784e527b0739ea7672878369863d0bdc6a139aa2e33984a03bdbd761629c93",
+          "gateSource": "task",
+          "banners": [],
+          "machine": "this run had the machine to itself",
+          "launch": "2026-11-27T15:38:55Z-6e7a7b9d",
+          "gateReach": {
+            "gaps": []
+          },
+          "observations": {
+            "ranTotal": null,
+            "countsBasis": "no step printed a summary this reader can count (pre-gate/preGate and 1 more), so the size of this gate is not knowable from its output",
+            "treeMutated": [],
+            "treeBasis": "git described the tree before and after",
+            "coverage": [
+              "tests/test_stamp_verification.py"
+            ],
+            "coverageBasis": "the runner named 206 path(s); the work under test declares 5 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 195/195 and 201 more; declared but not named by the run: PLUGIN-BUILD-GUIDE.md, changelog.d/P173.3.changed.md, plugins/audit/scripts/governance/stamp-verification.py, tools/lints/_deps.py; breadth: the run named 174 suite path(s) and this task declares 5 file(s), and 172 of them are suites the task neither declares nor is named after (test__deps.py, test__evidence_io.py, test__output.py, test_audit_task.py, test_close_phase.py, test_commit_task_work.py, test_drive_phase.py, tests/_harness.py and 164 more) - this gate asks more than the task changed; that is reported, not refused"
+          },
+          "recorderHeld": true,
+          "via": "cli",
+          "attempt": 1,
+          "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+          "at": "2026-11-27T15:45:53Z",
+          "testedState": {
+            "head": "e9ccb282",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeDigest": "sha256:958afd9e6ad7c475f17fb2eb5e529a8386af0fda7c0b71788b3b410b217c1ed4",
+            "scopeBasis": "5 declared file(s); 5 read, 0 missing",
+            "scopeListDigest": "sha256:2a6c024ffdc65be0aecb80555a7b7f6f1c83bca2505cf11bff1b25eb33e03969",
+            "dirtyDigest": "sha256:62b5e30aeb01e788f13bf8ccc7db558eb5d2e5b781e7629b52da60c534be12e6",
+            "dirtyBasis": "git described the tree before the run; 9 dirty path(s)"
+          },
+          "steps": [
+            {
+              "name": "pre-gate/preGate",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 7641,
+              "suiteReader": "none",
+              "command": "python3 tools/lints/_deps.py --register-citations"
+            },
+            {
+              "name": "python3 tools/sweep-selftests.py tests/test_stamp_verification.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_io.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_run_test_gate.py, tests/test_set_priority.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "durationMs": 386662,
+              "suiteReader": "none",
+              "commandBytes": 5400,
+              "commandSha256": "e9dc152197dc5d1023a30468442c9715e7aa5ce25afdf21fd3d69c317627215c",
+              "program": "python3"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-27T15:45:53Z.4821f5",
+            "launch": "2026-11-27T15:38:55Z-6e7a7b9d",
+            "status": "passed",
+            "at": "2026-11-27T15:45:53Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-27T15:45:59Z.8c7645",
+        "status": "passed",
+        "at": "2026-11-27T15:45:59Z"
+      }
     },
     {
       "id": "P173.4",
@@ -1091,6 +1279,48 @@
         "status": "proved",
         "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P173.10-s6m",
+      "title": "A proof noted on the Agent route is not also counted inside the writer stage",
+      "status": "pending",
+      "description": "Task review of the proof stage. (1, medium) agent_stage in drive-phase.py records the writer stage from hand-out to filed return; submit's proof runs inside that window and note_proof_stage records it again as a proof stage; _task_timing.summarize adds both, so unattributedMs shrinks by the proof and /audit:status per-kind totals overstate the work; a retried submit adds one more each time. Fix: subtract the proof stages that fall inside the hand-out-to-filing window from the Agent writer stage and say so in its basis (or split it), so writer + proof equals the window. (2, low) red_legs in stamp-verification.py lists a leg that never reached its command (no time left, reset/link failed, dependency linking failed) as ran: true, seconds: 0.0, and the drive prints 'task 0.00 s'; list it as ran: false with its problem as why. Dependants: queue_proof_stage, note_proof_stage, agent_stage callers, _task_timing.summarize readers (_status_facts).",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test_drive_phase.py",
+        "tests/test_stamp_verification.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "changelog.d/P173.10-s6m.changed.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: on the Agent route the writer stage plus the proof stages inside its window equal the hand-out-to-filing length"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P173.3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "reviewPerTask": "signals",

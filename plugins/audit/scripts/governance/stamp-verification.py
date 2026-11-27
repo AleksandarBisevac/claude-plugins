@@ -3764,6 +3764,161 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
                       _isolated_env(env, scratch, tag)), copied
 
 
+# --- a leg kept under the exact inputs it read ---
+# Every leg of a proof is a function of what it read: HEAD, the command, which leg
+# it is, the working-tree bytes laid over HEAD, the stubs, the inline overlays, the
+# linked dependencies, this helper's own code, the interpreter and the
+# environment. A leg whose inputs are all the same as a recorded one is replayed
+# instead of run, and the throwaway is built only when a leg misses.
+LEG_STORE_DIR = "audit-red-legs"
+LEG_STORE_KEEP = 24
+LEG_KEY_VERSION = 1
+# The modules whose code decides what a leg does with its inputs: the isolation,
+# the lay-over and the run live here, the process group's teardown beside it.
+HELPER_MODULES = ("stamp-verification.py", "_proc_group.py")
+_HEAD_SHAPE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+
+
+def _python_version():
+    """The interpreter's own version string, a field of every leg's key."""
+    return sys.version
+
+
+def helper_code_digest():
+    """A digest over the bytes of `HELPER_MODULES`, or None when one cannot be
+    read - and a key with no helper digest is no key, so the leg is run."""
+    found = dict((os.path.basename(rel), path)
+                 for rel, path in _output.script_files())
+    parts = []
+    for name in HELPER_MODULES:
+        sha = _file_sha(found[name]) if name in found else None
+        if sha is None:
+            return None
+        parts.append("%s %s" % (name, sha))
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+
+
+def _digest_text(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, default=str)
+                          .encode("utf-8", "replace")).hexdigest()
+
+
+def leg_inputs(root, head, tag, cmd, rels, stubs, absent, texts, deps, env):
+    """`{field: value}` - everything the leg `tag` reads, as it is now, or None
+    when the helper's own code cannot be digested. `rels` are digested by their
+    bytes in the working tree under `root` (None for a file it lacks), `texts`
+    (the inline suites' overlays) by their text, `deps` and `env` whole."""
+    helper = helper_code_digest()
+    if helper is None:
+        return None
+    return {"v": LEG_KEY_VERSION, "head": head, "leg": tag, "argv": list(cmd),
+            "laid": dict((f["path"], f["sha256"])
+                         for f in test_digest(root, rels)["files"]),
+            "stubs": sorted(stubs), "absent": sorted(absent),
+            "texts": dict((rel, _digest_text(text))
+                          for rel, text in sorted((texts or {}).items())),
+            "deps": _digest_text(deps), "helper": helper,
+            "python": _python_version(), "env": _digest_text(env)}
+
+
+def leg_key(inputs):
+    """The hex key a leg is kept under: a hash of every field of `inputs`."""
+    return _digest_text(inputs)
+
+
+def leg_store(root, head):
+    """The directory the legs are kept in - under git's COMMON directory, so a
+    linked worktree and the main one share it and nothing lands in a tree git
+    reports on - or None when HEAD is not a commit id (a key over a head nobody
+    read would match any other) or the directory cannot be made."""
+    if not _HEAD_SHAPE.match(head or ""):
+        return None
+    code, text = _git(root, ["rev-parse", "--git-common-dir"], timeout=30)
+    if code != 0 or not text:
+        return None
+    common = text if os.path.isabs(text) else os.path.join(root, text)
+    store = os.path.join(os.path.abspath(common), LEG_STORE_DIR)
+    try:
+        os.makedirs(store, exist_ok=True)
+    except OSError:
+        return None
+    return store
+
+
+def _load_leg(store, key):
+    """`(record, copied)` of the leg kept under `key`, or None when there is none
+    or what is there is not a whole entry for this key - a miss, never an error."""
+    path = os.path.join(store, key + ".json")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            entry = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(entry, dict) or entry.get("key") != key:
+        return None
+    code, text, copied = entry.get("code"), entry.get("text"), entry.get("copied")
+    seconds, at = entry.get("seconds"), entry.get("recordedAt")
+    if (isinstance(code, bool) or not isinstance(code, int)
+            or not isinstance(text, str) or not isinstance(at, str)
+            or not isinstance(copied, list)
+            or not all(isinstance(c, str) for c in copied)
+            or isinstance(seconds, bool) or not isinstance(seconds, (int, float))):
+        return None
+    try:
+        os.utime(path, None)
+    except OSError:
+        pass
+    return {"code": code, "text": text, "problem": None, "seconds": 0.0,
+            "reused": {"key": key, "recordedAt": at,
+                       "seconds": float(seconds)}}, list(copied)
+
+
+def _save_leg(store, key, record, copied):
+    """Keep one finished leg under `key`, then drop all but the newest
+    `LEG_STORE_KEEP` entries. A keep that fails costs the next proof a run and
+    nothing else, so it is not an error."""
+    entry = {"key": key, "code": record["code"], "text": record["text"],
+             "seconds": record["seconds"], "copied": list(copied),
+             "recordedAt": datetime.datetime.now(datetime.timezone.utc).strftime(
+                 "%Y-%m-%dT%H:%M:%SZ")}
+    try:
+        _mio.atomic_write_text(os.path.join(store, key + ".json"),
+                               json.dumps(entry))
+        kept = []
+        for name in os.listdir(store):
+            if name.endswith(".json"):
+                kept.append((os.stat(os.path.join(store, name)).st_mtime_ns, name))
+        for _mtime, name in sorted(kept, reverse=True)[LEG_STORE_KEEP:]:
+            os.remove(os.path.join(store, name))
+    except OSError:
+        pass
+
+
+def reuse_or_run(store, read_inputs, run):
+    """`(record, copied)` of one leg: the kept one when the inputs `read_inputs()`
+    returns hash to a key the `store` holds, else `run()`'s, which is kept under
+    that key only when it finished (a code and no problem) AND the inputs read
+    again afterwards hash to the same key - a file edited while the leg ran
+    belongs to neither version. A replayed record carries `reused`: `key`,
+    `recordedAt` and the `seconds` the run first cost, and its own `seconds` is
+    0.0. `store` None, or inputs None, runs the leg and keeps nothing. A `run()`
+    that answers a record of None (no tree could be built) keeps nothing."""
+    before = read_inputs() if store else None
+    if before is None:
+        return run()
+    key = leg_key(before)
+    hit = _load_leg(store, key)
+    if hit is not None:
+        return hit
+    record, copied = run()
+    if record is not None and record.get("problem") is None \
+            and record.get("code") is not None:
+        after = read_inputs()
+        if after is not None and leg_key(after) == key:
+            _save_leg(store, key, record, copied)
+    return record, copied
+
+
 def _wants_second(code, text, symbols, cmd=None, sources=(), roots=()):
     """Whether a second run is owed: a run that reached no assertion, with a
     missing-name or missing-module error (`missing_subjects`) naming one of
@@ -4367,6 +4522,7 @@ def run_red(args, cmd, out):
     digest = test_digest(root, scope["declared"])
     implementation_digest = test_digest(root, scope["implementation"])
     _c, head = _git(root, ["rev-parse", "HEAD"], timeout=max(1, _left(deadline)))
+    store = leg_store(root, head)
     base = holder_base(root)
     if base is None:
         sys.stderr.write("ERROR: every temp directory this machine offers is inside "
@@ -4390,6 +4546,36 @@ def run_red(args, cmd, out):
     copied = []
     # Every run made, by leg, for the payload's `legs`.
     made = {}
+    # The throwaway is built when the first leg that is not replayed needs it.
+    tree = {"tried": False, "problem": None}
+
+    def ensure_tree():
+        if not tree["tried"]:
+            tree["tried"] = True
+            _copied, tree["problem"] = _build_throwaway(
+                root, path, [], timeout=max(1, _left(deadline)))
+            if tree["problem"] is None and _left(deadline) < 1:
+                tree["problem"] = ("the run timed out: building the throwaway "
+                                   "spent the %s-second deadline" % (args.timeout,))
+        return tree["problem"]
+
+    def leg(tag, rels, limit, stubs=(), texts=None):
+        """`(record, copied)` of one leg - replayed from the store when its
+        inputs are those of a kept one - or `(None, [])` with the proof's
+        problem set when the throwaway it needed could not be built."""
+        def make():
+            if ensure_tree() is not None:
+                return None, []
+            return _isolated_run(root, path, rels, cmd, limit, args.timeout, env,
+                                 holder, tag, stubs=stubs, deps=deps, texts=texts)
+
+        record, copied = reuse_or_run(
+            store, lambda: leg_inputs(root, head, tag, cmd, rels, stubs,
+                                      state["absent"], texts, deps, env), make)
+        if record is None:
+            run["problem"] = tree["problem"]
+        return record, copied
+
     previous = _arm()
     try:
         try:
@@ -4414,11 +4600,6 @@ def run_red(args, cmd, out):
                 state["stages"] = new_stages(
                     cmd, None if unread else head_texts,
                     _test_texts(root, scope["tests"]))
-                _copied, run["problem"] = _build_throwaway(
-                    root, path, [], timeout=max(1, _left(deadline)))
-            if run["problem"] is None and _left(deadline) < 1:
-                run["problem"] = ("the run timed out: building the throwaway spent "
-                                  "the %s-second deadline" % (args.timeout,))
             # Each run is started only with the wall time it needs left: one
             # started short would time out for want of time, and that timeout
             # would read as the run's own.
@@ -4426,21 +4607,22 @@ def run_red(args, cmd, out):
                 run["problem"] = start_problem(["baseline", "task"], budget,
                                                _left(early))
             if run["problem"] is None:
-                run["head"], _c = _isolated_run(
-                    root, path, [], cmd, early, args.timeout, env, holder,
-                    "baseline", stubs=[rel for rel in state["new"]
-                                       if rel not in state["absent"]], deps=deps)
-                run["head"]["absent"] = state["absent"]
-                made["baseline"] = run["head"]
+                head_run, _c = leg("baseline", [], early,
+                                   stubs=[rel for rel in state["new"]
+                                          if rel not in state["absent"]])
+                if head_run is not None:
+                    run["head"] = head_run
+                    run["head"]["absent"] = state["absent"]
+                    made["baseline"] = run["head"]
             if run["problem"] is None:
                 run["problem"] = start_problem(["task"], budget, _left(early))
             if run["problem"] is None:
-                task, copied = _isolated_run(root, path, scope["declared"], cmd,
-                                             early, args.timeout, env, holder,
-                                             "task", deps=deps, texts=overlays)
-                run["code"], run["text"], run["problem"] = (
-                    task["code"], task["text"], task["problem"])
-                made["task"] = task
+                task, copied = leg("task", scope["declared"], early,
+                                   texts=overlays)
+                if task is not None:
+                    run["code"], run["text"], run["problem"] = (
+                        task["code"], task["text"], task["problem"])
+                    made["task"] = task
             # What was pulled in may be the fix the new case tests, so a pass
             # with it cannot be credited: run again with it held back.
             held = (run["problem"] is None and _pulled_in(inline)
@@ -4448,15 +4630,15 @@ def run_red(args, cmd, out):
             if held:
                 run["problem"] = start_problem(["task-held"], budget, _left(early))
             if held and run["problem"] is None:
-                task, _c = _isolated_run(
-                    root, path, scope["declared"], cmd, early, args.timeout,
-                    env, holder, "task-held", deps=deps,
+                task, _c = leg(
+                    "task-held", scope["declared"], early,
                     texts=dict((rel, n["plain"]) for rel, n in inline.items()))
-                run["code"], run["text"], run["problem"] = (
-                    task["code"], task["text"], task["problem"])
-                run["withdrawn"] = _pulled_in(inline)
-                run["tag"] = "task-held"
-                made["task-held"] = task
+                if task is not None:
+                    run["code"], run["text"], run["problem"] = (
+                        task["code"], task["text"], task["problem"])
+                    run["withdrawn"] = _pulled_in(inline)
+                    run["tag"] = "task-held"
+                    made["task-held"] = task
             # A test-support module HEAD has may carry the work the new cases
             # test - the helper they call, or the fix itself - so a pass with
             # the task's copy laid over cannot be credited: run again with
@@ -4470,25 +4652,25 @@ def run_red(args, cmd, out):
             if support and run["problem"] is None:
                 texts = (dict((rel, n["plain"]) for rel, n in inline.items())
                          if run["withdrawn"] else overlays)
-                task, copied = _isolated_run(
-                    root, path, [rel for rel in scope["declared"]
-                                 if rel not in support], cmd, early,
-                    args.timeout, env, holder, "task-support", deps=deps,
-                    texts=texts)
-                run["code"], run["text"], run["problem"] = (
-                    task["code"], task["text"], task["problem"])
-                run["support"], run["tag"] = support, "task-support"
-                made["task-support"] = task
+                task, copied_support = leg(
+                    "task-support", [rel for rel in scope["declared"]
+                                     if rel not in support], early, texts=texts)
+                if task is not None:
+                    copied = copied_support
+                    run["code"], run["text"], run["problem"] = (
+                        task["code"], task["text"], task["problem"])
+                    run["support"], run["tag"] = support, "task-support"
+                    made["task-support"] = task
             second = run["problem"] is None and _wants_second(
                 run["code"], run["text"], args.introduces, cmd, sources,
                 _roots(root, path))
             if second:
                 run["problem"] = start_problem(["second"], budget, _left(early))
             if second and run["problem"] is None:
-                run["second"], _c = _isolated_run(
-                    root, path, scope["declared"] + scope["implementation"], cmd,
-                    early, args.timeout, env, holder, "second", deps=deps)
-                made["second"] = run["second"]
+                run["second"], _c = leg(
+                    "second", scope["declared"] + scope["implementation"], early)
+                if run["second"] is not None:
+                    made["second"] = run["second"]
             verdict1 = (classify_run(run["code"], run["text"], cmd)[0]
                         if run["problem"] is None and run["code"] is not None
                         else None)
@@ -4498,10 +4680,11 @@ def run_red(args, cmd, out):
                      if rel not in state["absent"]]) is None:
                 run["problem"] = start_problem(["fix"], budget, _left(deadline))
                 if run["problem"] is None:
-                    run["fix"], _c = _isolated_run(
-                        root, path, scope["declared"] + scope["implementation"],
-                        cmd, deadline, args.timeout, env, holder, "fix", deps=deps)
-                    made["fix"] = run["fix"]
+                    run["fix"], _c = leg(
+                        "fix", scope["declared"] + scope["implementation"],
+                        deadline)
+                    if run["fix"] is not None:
+                        made["fix"] = run["fix"]
         except KeyboardInterrupt as exc:
             run["problem"] = ("interrupted by %s before the run finished; the "
                               "run's process group was torn down"
@@ -4610,7 +4793,17 @@ def red_legs(made, problem):
     legs = []
     for name in LEG_ORDER:
         record = made.get(name)
-        if record is not None:
+        reused = record.get("reused") if record is not None else None
+        if reused is not None:
+            # Replayed, so not run: its seconds are none this proof spent, and
+            # the key and the moment say which earlier run answered for it.
+            legs.append({"leg": name, "ran": False, "reused": True,
+                         "seconds": 0.0, "recordedSeconds": reused["seconds"],
+                         "key": reused["key"], "recordedAt": reused["recordedAt"],
+                         "exit": record["code"], "problem": record["problem"],
+                         "why": "reused, key %s, recorded at %s"
+                                % (reused["key"][:16], reused["recordedAt"])})
+        elif record is not None:
             legs.append({"leg": name, "ran": True, "seconds": record["seconds"],
                          "exit": record["code"], "problem": record["problem"]})
         elif name in CORE_LEGS:

@@ -6817,6 +6817,27 @@ were made: one that was not carries `ran: false`, `seconds: null` and the `why`,
 is never read as a leg of no time (`red_legs`; the `sr4l` and `sr4n` cases hold both directions).
 The drive turns that into a `proof` stage of the task's timing (`drive-phase.py`, `red_reading`).
 
+**A leg whose exact inputs did not change is replayed, not run.** Each leg is a function of what it
+read, and `leg_inputs` names every field of that: HEAD's commit id, the command, which leg it is,
+the bytes of the working-tree files laid over HEAD (path and sha256, `None` for one the tree lacks),
+the stubs, the files left absent, the inline suites' overlays, the dependency plan, the code of
+`HELPER_MODULES`, the interpreter's version and the environment the child inherits. `leg_key` hashes
+them, and `reuse_or_run` keeps a finished leg's code, text and copied files under that key in
+`LEG_STORE_DIR` under git's common directory - so it sits in no tree git reports on, and
+`leftover_throwaways`, which reads `git worktree list`, never sees it - newest `LEG_STORE_KEEP`
+entries, a hit refreshing its entry. A leg is kept only when it finished (a code and no problem) and
+the inputs read again after it hash to the key read before it, so a file edited while the leg ran is
+kept under neither version; an entry that is not whole for its key is a miss. A key with no helper
+digest, or a HEAD that is not a commit id, keeps and replays nothing. The throwaway is built when
+the first leg that is not replayed needs it (`ensure_tree` in `run_red`), so a proof every leg of
+which hits builds none. The payload's `legs` entry for a replayed leg says so: `ran: false`,
+`reused: true`, `seconds: 0.0`, `recordedSeconds`, `key`, `recordedAt` and a `why` - the drive's
+`proof_legs_said` already prints a leg that did not run with its `why`. What the key cannot see is
+the content of a linked dependency directory and a test that reads a clock or the network; a
+replay of such a leg is the cost of reusing one, and `lr8` holds that every named field is in the
+key, `lr13` and `lr14` that the legs a changed test or implementation file reaches are the ones
+that rerun.
+
 ### `plugins/audit/scripts/governance/run-agent-session.py`
 One role run as a headless top-level Claude Code session in a task's tree, priced by the session's
 own result. A writer dispatched as a subagent arrived with its spend folded into the main loop's;
