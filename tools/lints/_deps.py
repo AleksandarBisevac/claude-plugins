@@ -3015,6 +3015,12 @@ OTHER_WRITERS = (
      "a kept affected selection, one file under `audit-selection` in the "
      "repository's common git directory - never the working tree, never "
      "tracked, and no plan reader opens it"),
+    ("scripts/governance/_affected_tests.py", "write_facts",
+     "_manifest_io.atomic_write_text",
+     "what the affected selection read of each Python file, kept by "
+     "content: one `.facts` file under `audit-selection` in the "
+     "repository's common git directory - never the working tree, never "
+     "tracked, and no plan reader opens it"),
     ("scripts/governance/_evidence_io.py", "append_row",
      "<write>",
      "one ledger row appended to the evidence shard of this run - a ledger "

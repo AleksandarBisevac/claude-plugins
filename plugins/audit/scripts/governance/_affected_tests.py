@@ -209,11 +209,13 @@ def _refs(path, source, tree=None):
     return names, scripts
 
 
-def _python_arm(changed, sources, trees=None):
+def _python_arm(changed, sources, trees=None, refs=None):
     """`{test: basis}` for every Python test whose import closure reaches a
     changed `.py` path. A changed path whose source is gone (a deletion, a
     rename's old side) is still a node, so its importers are found. `trees`,
-    when given, is `_parsed(sources)`."""
+    when given, is `_parsed(sources)`; `refs`, when given, is `{path: (names,
+    scripts) or None}` - what `_refs` answers for each source, read from what
+    was kept for its content - and then nothing here parses."""
     targets = set(p for p in changed if p.endswith(".py"))
     known = sorted(set(sources) | targets)
     by_name, by_file = {}, {}
@@ -222,7 +224,8 @@ def _python_arm(changed, sources, trees=None):
             by_name.setdefault(name, set()).add(path)
         by_file.setdefault(path.rsplit("/", 1)[-1], set()).add(path)
     trees = trees if trees is not None else {}
-    refs = dict((p, _refs(p, sources[p], trees.get(p))) for p in sources)
+    if refs is None:
+        refs = dict((p, _refs(p, sources[p], trees.get(p))) for p in sources)
     importers = {}
     for path, got in refs.items():
         if got is None:
@@ -763,16 +766,17 @@ def _covers(root, path):
     return root == "" or path == root or path.startswith(root + "/")
 
 
-def _walk_arm(suites, runners, trees, gone=()):
+def _walk_arm(suites, runners, walks, gone=()):
     """`{runner: basis}` for every runner whose walk holds a changed suite, or
     held one of `gone` - a suite the change deleted, whose absence the walk
-    now reads."""
-    index = _walk_index(trees)
+    now reads. `walks` is `{runner: sorted roots or None}`, what `runner_walks`
+    answers for each runner (`read_python`); a runner it holds None for is no
+    module the walk can be read from, and is left out."""
     out = {}
     for runner in sorted(set(runners)):
-        if runner not in index["modules"]:
+        roots = walks.get(runner)
+        if roots is None:
             continue
-        roots = sorted(runner_walks(runner, index))
         for suite in suites:
             hit = [r for r in roots if _covers(r, suite)]
             if hit and runner not in out:
@@ -896,24 +900,35 @@ def select(changed, meta, facts, exclude=None):
     sources = facts.get("pySources")
     python = any(p.endswith(".py") for p in changed)
     edited = changed_suites(changed)
-    trees = _parsed(sources) if isinstance(sources, dict) \
-        and (python or edited) else None
+    readable = isinstance(sources, dict) and (python or edited)
+    # The sources that are text, by path: what the arms below name their files
+    # from. `parsed` is the trees a reading made here, so the two arms that
+    # read Python parse a file once between them.
+    named = dict((p, None) for p, t in sources.items() if isinstance(t, str)) \
+        if readable else None
+    parsed = {}
     if python:
-        if trees is None:
+        if not readable:
             return _widened("python: a .py path changed and no sources were "
                             "read to graph its importers", lines)
-        for path, basis in sorted(_python_arm(changed, sources, trees).items()):
+        reading = _reading_of(facts, sources, None, True, parsed)
+        refs = dict((p, (set(got[0]), set(got[1])) if got is not None else None)
+                    for p, got in reading["refs"].items())
+        for path, basis in sorted(
+                _python_arm(changed, sources, refs=refs).items()):
             add(path, "python", basis)
 
     if edited:
-        runners, why = _walk_runners(meta, facts, trees)
+        runners, why = _walk_runners(meta, facts, named)
         if why:
             return _widened("walk: %s" % (why,), lines)
-        if trees is None:
+        if not readable:
             lines.append("walk: no Python sources were read, so no runner's "
                          "walk over %s was looked for" % (", ".join(edited),))
         else:
-            for path, basis in sorted(_walk_arm(edited, runners, trees,
+            reading = _reading_of(facts, sources, runners, False, parsed)
+            for path, basis in sorted(_walk_arm(edited, runners,
+                                                reading["walks"],
                                                 absent).items()):
                 add(path, "walk", basis)
 
@@ -1594,6 +1609,9 @@ def gather_facts(project, meta, changed, seen=None, sources=True):
         if "sources" not in seen:
             seen["sources"] = _python_sources(project, files)
         facts["pySources"] = seen["sources"]
+        facts["pyReading"] = _gathered_reading(
+            project, meta, facts, seen, any(p.endswith(".py")
+                                            for p in changed or []), edited)
     return facts
 
 
@@ -1697,6 +1715,320 @@ def write_selection(project, key, answer):
         return True
     except (OSError, ValueError, TypeError):
         return False
+
+
+# --- what is read of each Python file, kept by its content -------------------------
+# THE WHOLE-ANSWER KEY ABOVE IS THE CALLER'S AND MOVES WITH EVERY BYTE OF THE
+# TREE, so a task's second gate - the writer changed a file between the two -
+# asks again, and nearly all of what it asks is per-file work over files that did
+# not change: parsing every Python source, its imports, and what each runner's
+# cases walk. That work is kept here, per file, under the file's own CONTENT: a
+# path alone is not an identity (an edited file keeps its path), so every entry
+# is under `(path, sha256 of the text read, digest of this module's code)`.
+#
+# TWO KINDS OF ENTRY. A file's own reading (`ok`: whether it parses, and its
+# imports) depends on that file's text alone. A RUNNER'S WALK does not: it is
+# followed through the modules the runner calls and imports, so its entry names
+# every module and every stem the reading touched, with the content each had, and
+# holds only while all of them still read the same. A module's parsed facts are
+# not kept themselves - measured once on this repository, loading a serialized
+# form of their syntax nodes took about as long as building them.
+#
+# THE KEPT READING IS NEVER TRUSTED OVER THE SOURCES: `select` takes a reading
+# from `facts` only when its per-file digests are the sources' own, and measures
+# otherwise, so a stale reading can slow a selection and cannot change one. The
+# file sits beside the kept selections under a suffix their bound does not
+# count, and is dropped as a whole when this module's code changes.
+FACTS_PREFIX = "reading-"
+FACTS_SUFFIX = ".facts"
+# Reading files kept in the store: this code's, and the newest of other code's -
+# two plugin copies asking one clone do not erase each other's.
+FACTS_KEEP = 3
+_FACTS_VERSION = 1
+
+
+class _Tracked(object):
+    """A lookup that remembers every key it was asked, with what it answered.
+    The walk reading resolves modules and stems through two of them, so that
+    what a runner's walk touched is known when it is kept: a class because the
+    reading's own functions take their index as a mapping and reach it with
+    `.get`, `[]` and `in`."""
+
+    def __init__(self, lookup):
+        self.lookup = lookup
+        self.seen = {}
+
+    def get(self, key, default=None):
+        value = self.lookup(key)
+        self.seen[key] = value
+        return default if value is None else value
+
+    def __getitem__(self, key):
+        value = self.get(key)
+        if value is None:
+            raise KeyError(key)
+        return value
+
+    def __contains__(self, key):
+        return self.get(key) is not None
+
+
+def _kept_key(path, sha):
+    return "%s\0%s" % (path, sha)
+
+
+def _shas(sources):
+    """`{path: sha256 of its text}` for every source that is text."""
+    return dict((p, hashlib.sha256(t.encode("utf-8", "replace")).hexdigest())
+                for p, t in sources.items() if isinstance(t, str))
+
+
+def _pairs(value):
+    return isinstance(value, list) and all(
+        isinstance(p, list) and len(p) == 2 and all(isinstance(x, str) for x in p)
+        for p in value)
+
+
+def _strings(value):
+    return isinstance(value, list) and all(isinstance(x, str) for x in value)
+
+
+def _usable_file(entry, want_refs):
+    """True when a kept per-file entry is well formed and holds what is
+    wanted: its imports, when asked for and when the file parses."""
+    if not isinstance(entry, dict) or not isinstance(entry.get("ok"), bool):
+        return False
+    if "refs" in entry:
+        refs = entry["refs"]
+        if not (isinstance(refs, list) and len(refs) == 2
+                and all(_strings(r) for r in refs)):
+            return False
+    return not want_refs or not entry["ok"] or "refs" in entry
+
+
+def _file_entry(path, source, want_refs, trees):
+    """The reading of one file: whether it parses and, asked for, its imports.
+    `trees` is the parse cache of the call, which this fills."""
+    if path not in trees:
+        trees[path] = _parse(path, source)
+    tree = trees[path]
+    entry = {"ok": tree is not None}
+    if want_refs and tree is not None:
+        names, scripts = _refs(path, source, tree)
+        entry["refs"] = [sorted(names), sorted(scripts)]
+    return entry
+
+
+def _walk_entry_holds(entry, status, stems):
+    """True when a kept walk is well formed and every module and stem it
+    touched reads as it did: `status(path)` is a module's content digest, or ""
+    for none, and `stems` is the stem-to-module map of this tree."""
+    return (isinstance(entry, dict) and _strings(entry.get("roots"))
+            and _pairs(entry.get("deps")) and _pairs(entry.get("stems"))
+            and all(status(path) == sha for path, sha in entry["deps"])
+            and all((stems.get(stem) or "") == path
+                    for stem, path in entry["stems"]))
+
+
+def _read_walk(runner, load, stems, status):
+    """What `runner` walks and everything the reading touched to know it. Each
+    runner is read over caches of its own: a shared cache would answer one
+    runner from what another's reading touched, and the touched set kept would
+    then be short of what the answer depends on."""
+    modules, stem_map = _Tracked(load), _Tracked(stems.get)
+    index = {"modules": modules, "stems": stem_map, "names": {}, "summaries": {}}
+    roots = sorted(runner_walks(runner, index))
+    return {"roots": roots,
+            "deps": [[p, status(p)] for p in sorted(modules.seen)],
+            "stems": [[s, stem_map.seen[s] or ""] for s in sorted(stem_map.seen)]}
+
+
+def _walk_readings(sources, shas, entries, runners, held, trees):
+    """`({runner: roots or None}, kept)` - what each of `runners` walks, from a
+    kept entry that still holds or by reading it; None for a runner that is no
+    parsed `.py` module. A module's facts are built when a reading first asks
+    for it, and once for all the runners."""
+    ok = set(p for p, e in entries.items() if e["ok"] and p.endswith(".py"))
+    by_stem = {}
+    for path in sorted(ok):
+        by_stem.setdefault(path.rsplit("/", 1)[-1][:-3], []).append(path)
+    stems = dict((s, ps[0]) for s, ps in by_stem.items() if len(ps) == 1)
+    built = {}
+
+    def load(path):
+        if path not in ok:
+            return None
+        if path not in built:
+            if path not in trees:
+                trees[path] = _parse(path, sources[path])
+            built[path] = (_module_facts(path, trees[path])
+                           if trees[path] is not None else None)
+        return built[path]
+
+    def status(path):
+        return shas[path] if path in ok else ""
+
+    walks, kept = {}, {}
+    for runner in sorted(set(runners)):
+        if runner not in ok:
+            walks[runner] = None
+            continue
+        key = _kept_key(runner, shas[runner])
+        entry = held.get(key)
+        if not _walk_entry_holds(entry, status, stems):
+            entry = _read_walk(runner, load, stems, status)
+        walks[runner] = entry["roots"]
+        kept[key] = entry
+    return walks, kept
+
+
+def read_python(sources, runners=None, want_refs=False, held=None, trees=None):
+    """`(reading, kept)` - what the selection reads of `sources`: `shas`, the
+    digest of each text; `refs`, `{path: [names, scripts] or None}` when
+    `want_refs`; `walks`, `{runner: sorted roots or None}` when `runners` is
+    given. `held` is what an earlier reading kept (`read_facts`): an entry is
+    used only when its path AND its content digest are this source's, and
+    otherwise the file is read again. `kept` is every entry this reading holds,
+    for `write_facts`. `trees` is a parse cache the caller shares between
+    readings."""
+    held = held if isinstance(held, dict) else {}
+    held_files = held.get("files") if isinstance(held.get("files"), dict) else {}
+    held_walks = held.get("walks") if isinstance(held.get("walks"), dict) else {}
+    trees = trees if trees is not None else {}
+    shas = _shas(sources)
+    entries, kept_files = {}, {}
+    for path in sorted(shas):
+        key = _kept_key(path, shas[path])
+        entry = held_files.get(key)
+        if not _usable_file(entry, want_refs):
+            entry = _file_entry(path, sources[path], want_refs, trees)
+        entries[path] = entry
+        kept_files[key] = entry
+    walks, kept_walks = None, {}
+    if runners is not None:
+        walks, kept_walks = _walk_readings(sources, shas, entries, runners,
+                                           held_walks, trees)
+    reading = {"shas": shas,
+               "refs": dict((p, e.get("refs")) for p, e in entries.items())
+               if want_refs else None,
+               "walks": walks}
+    return reading, {"files": kept_files, "walks": kept_walks}
+
+
+def _reading_of(facts, sources, runners, want_refs, trees):
+    """The reading `select` judges from: the one `gather_facts` made, when its
+    digests are exactly these sources' and it holds what is asked, else one
+    measured here. Never a reading of other sources."""
+    held = facts.get("pyReading")
+    if (isinstance(held, dict) and held.get("shas") == _shas(sources)
+            and (not want_refs or isinstance(held.get("refs"), dict))
+            and (runners is None or (isinstance(held.get("walks"), dict)
+                                     and all(r in held["walks"]
+                                             for r in runners)))):
+        return held
+    return read_python(sources, runners, want_refs, None, trees)[0]
+
+
+def _code_digest():
+    """A digest of what this module's readings are made by - its own bytes and
+    the interpreter's syntax-tree version - or None when its file cannot be
+    read, and then nothing is kept or read."""
+    try:
+        with open(_loader.script_path("_affected_tests.py"), "rb") as fh:
+            body = fh.read()
+    except (OSError, ImportError, ValueError):
+        return None
+    return hashlib.sha256(b"%d.%d\0" % sys.version_info[:2] + body).hexdigest()
+
+
+def _facts_file(store, code):
+    return os.path.join(store, FACTS_PREFIX + code[:32] + FACTS_SUFFIX)
+
+
+def read_facts(project, code):
+    """`{files, walks}` kept under `code`, or an empty one: no code, no store,
+    no file, one that does not parse or names other code. An empty answer is
+    only ever the caller measuring."""
+    empty = {"files": {}, "walks": {}}
+    store = selection_store(project) if code else None
+    if store is None:
+        return empty
+    try:
+        with open(_facts_file(store, code), encoding="utf-8") as fh:
+            kept = json.load(fh)
+    except (OSError, ValueError):
+        return empty
+    if (isinstance(kept, dict) and kept.get("version") == _FACTS_VERSION
+            and kept.get("code") == code and isinstance(kept.get("files"), dict)
+            and isinstance(kept.get("walks"), dict)):
+        return {"files": kept["files"], "walks": kept["walks"]}
+    return empty
+
+
+def _merged_facts(held, kept):
+    """`held` and `kept` as one: every entry `kept` holds, after the entries of
+    `held` it does not - the newest of those, no more than `kept` holds, so a
+    tree's edits leave history bounded by the tree's own size."""
+    merged = {}
+    for section in ("files", "walks"):
+        current = kept.get(section) or {}
+        stale = [(k, v) for k, v in (held.get(section) or {}).items()
+                 if k not in current]
+        merged[section] = dict(stale[max(0, len(stale) - len(current)):]
+                               + list(current.items()))
+    return merged
+
+
+def write_facts(project, code, held, kept):
+    """True when the reading is written, False when there is nothing new to
+    keep or it could not be: no code, no store, a failed write. A False costs
+    only the next ask its measurement."""
+    store = selection_store(project) if code else None
+    if store is None:
+        return False
+    merged = _merged_facts(held, kept)
+    if merged == {"files": held.get("files"), "walks": held.get("walks")}:
+        return False
+    try:
+        _mio.atomic_write_text(
+            _facts_file(store, code),
+            json.dumps({"version": _FACTS_VERSION, "code": code,
+                        "files": merged["files"], "walks": merged["walks"]}))
+        mine = _facts_file(store, code)
+        others = sorted(
+            (os.path.getmtime(os.path.join(store, n)), n)
+            for n in os.listdir(store)
+            if n.startswith(FACTS_PREFIX) and n.endswith(FACTS_SUFFIX)
+            and os.path.join(store, n) != mine)
+        for _when, name in others[:max(0, len(others) - (FACTS_KEEP - 1))]:
+            os.remove(os.path.join(store, name))
+        _prune_stale_temps(store)
+        return True
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def _gathered_reading(project, meta, facts, seen, python, edited):
+    """The reading `gather_facts` hands `select`: the Python sources' imports
+    when a `.py` changed, and the walks of the runners when a suite did, each
+    from what an earlier ask kept for the same content, and then kept. Asked
+    twice over one `seen` with the same needs, it is read once."""
+    sources = seen["sources"]
+    runners = None
+    if edited:
+        runners, why = _walk_runners(
+            meta, facts, dict((p, None) for p, t in sources.items()
+                              if isinstance(t, str)))
+        runners = None if why else runners
+    need = (bool(python), tuple(runners) if runners is not None else None)
+    if seen.get("reading", (None, None))[0] == need:
+        return seen["reading"][1]
+    code = _code_digest()
+    held = read_facts(project, code)
+    reading, kept = read_python(sources, runners, bool(python), held)
+    write_facts(project, code, held, kept)
+    seen["reading"] = (need, reading)
+    return reading
 
 
 # --- which declared files a gate's suites reach -----------------------------------

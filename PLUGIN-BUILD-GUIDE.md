@@ -4682,6 +4682,19 @@ selection's answer in `<common git dir>/audit-selection` (`selection_store()`), 
 content identity or what `git status` reports. A file that is missing, unparseable or names another
 key reads as nothing kept, and an answer JSON would not give back as written is not kept.
 
+The per-file work under that key is kept too, because the key moves with every byte of the tree and a
+task's second gate asks again after the writer edited one file. `gather_facts()` hands `select()` a
+`pyReading` made by `read_python()`: for each Python source whether it parses and its imports, and for
+each runner the directories its cases walk, the runner list being the one `select()` derives. Entries
+sit in `<common git dir>/audit-selection/reading-<code digest>.facts` (`read_facts()`, `write_facts()`),
+a suffix the answers' bound does not count, each under the path AND the sha256 of the text AND a digest
+of this module's own bytes with the interpreter's version. A runner's walk is followed through other
+modules, so its entry also names every module and every import stem the reading touched, with the
+content each had, and holds only while all of them read the same (`_walk_entry_holds()`); a module's
+parsed facts are not kept: measured once on this repository, loading a serialized form of them took
+about as long as building them. A reading in `facts` is used only when its digests are exactly the sources' own
+(`_reading_of()`), so a kept reading can slow a selection and cannot change one (`afm1`-`afm9`).
+
 `reach_answers()` is the gate-reach reading's half of this module: each path asked of `select()`
 ALONE (`path_reach()`), its listings run side by side first (`prefetch_listings()`), because a
 listing handed every changed path at once cannot say which path each suite it names is for. The

@@ -1276,6 +1276,163 @@ def _selection_store_cases(check):
         shutil.rmtree(root, ignore_errors=True)
 
 
+def _kept_reading_cases(check):
+    """`afm`: the per-file reading kept by content. Two asks over trees that
+    differ in one file must select exactly what a cold ask does, and the
+    second must read only the file that changed. Each ask is the whole
+    gathering plus the selection, over a scratch repository, because the
+    subject is the answer that comes back through the store."""
+    import shutil
+    import tempfile
+    tree = tempfile.mkdtemp(prefix="affected-kept-")
+    files = {
+        "pkg/core.py": "import os\n",
+        "pkg/other.py": "import json\n",
+        "tests/test_direct.py": "import pkg.core\n",
+        "tests/test_lint.py": ("import os\n"
+                               "HERE = os.path.dirname(os.path.abspath("
+                               "__file__))\n"
+                               "def cases():\n"
+                               "    return os.listdir(HERE)\n"),
+        "tests/_lintlib.py": ("import os\n"
+                              "def scan(root):\n"
+                              "    return os.listdir(root)\n"),
+        "tests/test_via.py": ("import os\n"
+                              "import _lintlib\n"
+                              "ROOT = os.path.join(os.path.dirname("
+                              "os.path.abspath(__file__)), 'suites')\n"
+                              "def cases():\n"
+                              "    return _lintlib.scan(ROOT)\n"),
+        "tests/suites/test_new.py": "x = 1\n",
+    }
+    changed = ["pkg/core.py", "tests/suites/test_new.py"]
+
+    def write(rel, text):
+        path = os.path.join(tree, *rel.split("/"))
+        if not os.path.isdir(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        with open(path, "w") as fh:
+            fh.write(text)
+
+    def ask():
+        """`(selection, cold selection over the same facts, paths parsed)`."""
+        real = M._parse
+        parsed = []
+
+        def counted(path, source):
+            parsed.append(path)
+            return real(path, source)
+        M._parse = counted
+        try:
+            facts = M.gather_facts(tree, {}, changed)
+            got = M.select(changed, {}, facts)
+        finally:
+            M._parse = real
+        bare = dict((k, v) for k, v in facts.items() if k == "pySources"
+                    or not k.startswith("py"))
+        return got, M.select(changed, {}, bare), sorted(set(parsed))
+
+    try:
+        _harness.git(None, "init", "-q", tree)
+        for rel, text in files.items():
+            write(rel, text)
+        first, first_cold, first_parsed = ask()
+        picked = sorted((s["path"], s["arm"]) for s in first["suites"])
+        check("afm1 the cold ask reads every Python file and selects through "
+              "all three arms - the importer of pkg/core.py and the two "
+              "runners whose walks hold the new suite, one of them through a "
+              "helper it calls: %r" % ((picked, len(first_parsed)),),
+              first["widen"] is None and len(first_parsed) == len(files)
+              and picked == [("tests/suites/test_new.py", "python"),
+                             ("tests/test_direct.py", "python"),
+                             ("tests/test_lint.py", "walk"),
+                             ("tests/test_via.py", "walk")])
+
+        write("pkg/other.py", "import json\nVALUE = 1\n")
+        second, second_cold, second_parsed = ask()
+        check("afm2 a second ask over a tree that differs in ONE file "
+              "recomputes only that file - the others are read from what the "
+              "first ask kept, by their content: parsed %r" % (second_parsed,),
+              second_parsed == ["pkg/other.py"])
+        check("afm3 ...and the selection it gives equals a cold ask's, whole: "
+              "%r / %r" % (second, second_cold),
+              second == second_cold and second == first)
+
+        write("tests/_lintlib.py",
+              "def scan(root):\n    return []\n")
+        third, third_cold, third_parsed = ask()
+        got = sorted(s["path"] for s in third["suites"] if s["arm"] == "walk")
+        check("afm4 a file changed in place under the SAME path is read again, "
+              "not served from what the path held before: the helper stopped "
+              "walking, so the runner that reached its walk through it is no "
+              "longer selected, exactly as a cold ask says: %r / %r"
+              % (got, third_parsed),
+              third == third_cold and got == ["tests/test_lint.py"]
+              and "tests/_lintlib.py" in third_parsed)
+
+        write("tests/_lintlib.py", files["tests/_lintlib.py"])
+        write("tests/test_bad.py", "def (:\n")
+        bad, bad_cold, _bad_parsed = ask()
+        check("afm5 a file that does not parse is kept as one that does not, "
+              "and the selection over it equals a cold ask's - it is selected "
+              "for its unreadable imports and joins no runner's walk: %r"
+              % ((sorted(s["path"] for s in bad["suites"]),),),
+              bad == bad_cold and "tests/test_bad.py"
+              in [s["path"] for s in bad["suites"]]
+              and bad != first)
+        again, _again_cold, again_parsed = ask()
+        check("afm6 an ask over the tree it was just kept for reads nothing "
+              "again: parsed %r" % (again_parsed,),
+              again == bad and again_parsed == [])
+        for n in range(M.SELECTION_KEEP + 3):
+            M.write_selection(tree, "bound%d" % n, {"suites": [], "lines": [],
+                                                    "widen": None})
+        store = M.selection_store(tree)
+        answers = [n for n in os.listdir(store) if n.endswith(".json")]
+        after, _after_cold, after_parsed = ask()
+        check("afm7 what is kept per file sits beside the kept selections but "
+              "is none of them: a store written past its bound of answers "
+              "still holds the answers' bound and still serves the per-file "
+              "reading: %d answers, parsed %r" % (len(answers), after_parsed),
+              len(answers) == M.SELECTION_KEEP and after == bad
+              and after_parsed == [])
+        write("tests/test_direct.py", "import pkg.other\n")
+        moved, moved_cold, moved_parsed = ask()
+        direct = [s["path"] for s in moved["suites"] if s["arm"] == "python"]
+        check("afm8 a test that now imports another module is selected for the "
+              "change to THAT module and no longer for pkg/core.py, as a cold "
+              "ask says - what was kept for its path before is not served for "
+              "its new text: %r / %r" % (direct, moved_parsed),
+              moved == moved_cold and "tests/test_direct.py" not in direct
+              and moved_parsed == ["tests/test_direct.py"])
+        facts = M.gather_facts(tree, {}, changed)
+        edited_sources = dict(facts["pySources"],
+                              **{"tests/test_via.py": "x = 1\n"})
+        served = M.select(changed, {}, dict(facts, pySources=edited_sources))
+        measured = M.select(changed, {}, {"pySources": edited_sources})
+        check("afm9 a reading gathered over one set of sources is never served "
+              "for another: facts whose sources were edited after the "
+              "gathering select exactly what a cold ask over them does, and "
+              "the runner whose text was emptied is gone from them: %r"
+              % ([s["path"] for s in served["suites"]],),
+              served == measured and "tests/test_via.py"
+              not in [s["path"] for s in served["suites"]]
+              and "tests/test_via.py"
+              in [s["path"] for s in M.select(changed, {}, facts)["suites"]])
+        write("pkg/_lintlib.py", "x = 1\n")
+        shared, shared_cold, _shared_parsed = ask()
+        walked = sorted(s["path"] for s in shared["suites"]
+                        if s["arm"] == "walk")
+        check("afm10 a file that makes a stem ambiguous changes what the "
+              "runners importing it by that stem read, though neither the "
+              "runner nor the helper changed: the stem now names no module, "
+              "and the runner that reached its walk through it is gone from "
+              "the selection, as a cold ask says: %r" % (walked,),
+              shared == shared_cold and walked == ["tests/test_lint.py"])
+    finally:
+        shutil.rmtree(tree, ignore_errors=True)
+
+
 def _selftest():
     def body(check):
         _cases(check)
@@ -1283,6 +1440,7 @@ def _selftest():
         _bare_cases(check)
         _gather_cases(check)
         _selection_store_cases(check)
+        _kept_reading_cases(check)
         _interrupt_cases(check)
     return _harness.run(body)
 
