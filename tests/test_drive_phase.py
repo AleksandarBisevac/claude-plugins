@@ -17472,7 +17472,58 @@ def _submit_proof_units(check, M):
           code_r != 0 and filed_r == 0 and len(staged_r) == 1
           and staged_r[0].get("kind") == "proof"
           and _PROOF_GAP * 1000 <= staged_r[0].get("ms", -1) < 5000)
+    _agent_window_units(check, M)
     _comment_only_reproof_units(check, M)
+
+
+def _agent_window_units(check, M):
+    """On the Agent route a submit's proof runs inside the writer's hand-out-to-
+    filing window and is noted as a `proof` stage of its own, so the writer stage
+    is that window less the proofs noted inside it: the two add up to the window
+    and `summarize` does not count the proof twice."""
+    handed = "2026-11-27T10:00:00Z"
+    filed_at = "2026-11-27T10:00:30Z"
+    window = 30000
+
+    def proof(at, ms):
+        return {"kind": "proof", "startedAt": at, "ms": ms,
+                "basis": "stamp-verification red" + M.SUBMIT_PROOF_BASIS}
+
+    def writer_of(stages):
+        task_u = _step_task(timing={"firstStartedAt": handed, "stages": stages})
+        state = {"timing": {"P1.1": {"handout": {"executor": {
+            "at": handed, "start": M.start_key(task_u)}}}}}
+        M.filed_moment = lambda ctx, task_, role: (filed_at, "journal row")
+        M.queue_agent_stage(_step_ctx(), state, task_u, "executor")
+        got = _proof_stages(state)
+        return got[0] if len(got) == 1 else {}
+
+    # A refused submit and its retry both ran inside the window; a proof from
+    # before the hand-out (the drive's own earlier run) did not.
+    inside = [proof("2026-11-27T10:00:05Z", 12000),
+              proof("2026-11-27T10:00:20Z", 3000)]
+    before = proof("2026-11-27T09:00:00Z", 5000)
+    got = writer_of([before] + inside)
+    check("pq8 the Agent writer stage and the proof stages inside its window "
+          "add up to the hand-out-to-filing length, the proof from before the "
+          "hand-out left out: %r" % (got,),
+          got.get("kind") == "writer"
+          and got.get("ms", -1) + sum(s["ms"] for s in inside) == window
+          and got.get("ms") == window - 15000)
+    check("pq9 its basis says the proof was taken out of the window: %r"
+          % (got.get("basis"),),
+          "proof" in str(got.get("basis")) and "less" in str(got.get("basis")))
+    # ALLOW: no proof noted inside the window, so the writer keeps all of it and
+    # its basis claims no subtraction.
+    plain = writer_of([before])
+    check("pq10 ALLOW: a window with no proof noted inside it is the writer's "
+          "whole length, and its basis names no subtraction: %r" % (plain,),
+          plain.get("ms") == window and "less" not in str(plain.get("basis")))
+    # A proof that ends past the filing stamp (stamps are whole seconds) never
+    # takes the writer below zero.
+    over = writer_of([proof("2026-11-27T10:00:10Z", 45000)])
+    check("pq11 proofs longer than the window leave a writer stage of zero, "
+          "never a negative one: %r" % (over,), over.get("ms") == 0)
 
 
 def _comment_only_reproof_units(check, M):

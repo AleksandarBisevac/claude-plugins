@@ -7636,6 +7636,47 @@ def _concurrent_legs_cases(check):
           and len(_wt.parse_list(_worktrees(root))) == 1)
 
 
+def _unreached_leg_cases(check):
+    """A leg that never reached its command - no time left, the reset failed -
+    is listed as a leg that did not run, with its problem as the reason: a leg
+    not run is not a leg of zero seconds. A leg whose command started and was
+    then timed out did run, and stays listed so."""
+    scratch = tempfile.mkdtemp(prefix="stamp-unreached-")
+    try:
+        ample = M.DEFAULT_TIMEOUT
+        no_time, _c = M._isolated_run(scratch, scratch, [], ["true"],
+                                      time.time() - ample, ample, {}, scratch, "t")
+        no_reset, _c = M._isolated_run(scratch, scratch, [], ["true"],
+                                       time.time() + ample, ample, {}, scratch, "t")
+    finally:
+        _harness.remove_tree(scratch)
+    started = {"code": None, "text": "", "seconds": 31.5,
+               "problem": "the run timed out: the command ran 30 seconds"}
+    done = {"code": 1, "text": "x", "seconds": 4.2, "problem": None}
+    legs = dict((l["leg"], l) for l in M.red_legs(
+        {"baseline": no_time, "task": no_reset, "fix": started}, None))
+    check("ul1 a leg stopped for want of time is listed ran false with the "
+          "problem as `why`, not as a run of zero seconds: %r" % (legs["baseline"],),
+          legs["baseline"].get("ran") is False
+          and "no time was left" in str(legs["baseline"].get("why"))
+          and legs["baseline"].get("seconds") is None)
+    check("ul2 ...and so is one whose reset failed, with git's reason: %r"
+          % (legs["task"],),
+          legs["task"].get("ran") is False
+          and "could not reset" in str(legs["task"].get("why"))
+          and legs["task"].get("seconds") is None)
+    # ALLOW: a command that started and was timed out ran; reading every
+    # run with no exit code as not run would erase its seconds.
+    check("ul3 ALLOW: a leg whose command started and timed out stays a run, "
+          "with the seconds it took: %r" % (legs["fix"],),
+          legs["fix"].get("ran") is True and legs["fix"].get("seconds") == 31.5)
+    ran = dict((l["leg"], l) for l in M.red_legs({"baseline": done}, None))
+    check("ul4 ALLOW: a leg that ran to an exit is a run with its seconds: %r"
+          % (ran["baseline"],),
+          ran["baseline"].get("ran") is True
+          and ran["baseline"].get("seconds") == 4.2)
+
+
 # Every block, in replay order. A full run starts one process per block, a few
 # at a time, and replays their cases in this order (`_harness.staged_main`);
 # `--stage LABEL` narrows a run to the blocks it names, run in this process,
@@ -7656,6 +7697,7 @@ STAGES = (
     ("sr-leg-reuse", "_leg_reuse_cases"),
     ("sr-fix-by-gate", "_fix_by_gate_cases"),
     ("sr-concurrent-legs", "_concurrent_legs_cases"),
+    ("sr-unreached-legs", "_unreached_leg_cases"),
     ("sr-introduces", "_introduces_cases"),
     ("sh-house-abort", "_house_abort_cases"),
     ("sh-owner-module", "_owner_module_cases"),

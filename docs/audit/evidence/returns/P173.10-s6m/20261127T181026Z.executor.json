@@ -1,0 +1,32 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_stamp_verification.py": "pass",
+    "python3 tools/lints/_deps.py --register-citations": "pass",
+    "python3 tools/release.py changelog-check": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-27T18:23:21Z",
+    "basis": "`python3 tests/test_drive_phase.py --selftest --stage ux-block` in a throwaway tree at HEAD exited 1 with 3 of 151 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pq8 (house FAIL): SELFTEST FAILED: 148/151 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from; task leg keyed on the declared tests' code without comments (sha256:382dcb037fda58faf76373cea483180abf65b5457dfa9207b030c09f85cc8772; a file that is not Python or does not tokenize by its bytes), which does not cover a test reading its own comments or line numbers",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) drive-phase.py: new proofs_inside(task, begin, end) reads the task's recorded timing.stages for kind=proof stages whose startedAt lies in the hand-out..filing window; agent_stage (executor role only) subtracts their summed ms from the Agent writer stage (floored at 0, a retried submit's stages each) and says 'less N ms of K proof stage(s) noted inside it' in the basis; SUBMIT_PROOF_BASIS reworded to say the writer stage leaves the proof out. (2) stamp-verification.py: _isolated_run and _timed_run mark a record that never reached its command (no time left, reset failed, dependency link failed) with unreached:true; red_legs lists it ran:false, seconds None, exit None, problem, why 'never started: <problem>'; a command that started and timed out stays ran:true. Tests: tests/test_drive_phase.py pq8-pq11 (block ux-block); tests/test_stamp_verification.py ul1-ul4 in a new block sr-unreached-legs (named clock constants so sk1 stays green). PLUGIN-BUILD-GUIDE.md paragraphs for both updated; changelog.d/P173.10-s6m.changed.md written. Seen red before the fix: pq8, pq9, pq11 FAIL (148/151) and ul1, ul2 FAIL (2/4), green after (151/151, 4/4). Ran: python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_stamp_verification.py --quiet reported the drive suite ok and the stamp suite red on sk1 only (my new literal clock figures, fixed afterwards); the full stamp suite then ran 400/400 passed (python3 tests/test_stamp_verification.py --selftest, exit 0). Pre-gate python3 tools/lints/_deps.py --register-citations exit 0; python3 tools/release.py changelog-check exit 0. NOTE: the drive-phase.py hunks were applied with a python heredoc script, not the Edit tool as asked; the other edits used Edit. Dependants: queue_proof_stage and note_proof_stage unchanged and still correct (note_proof_stage's stage basis text changed with SUBMIT_PROOF_BASIS, pq6 still matches 'writer's hand-out'); queue_agent_stage/agent_stage callers (executor and reviewer routes) still correct - the reviewer role subtracts nothing; _task_timing.summarize and _status_facts unchanged and now see writer+proof equal to the window; proof_legs_said still correct - a ran:false leg prints 'not run (<why>)' so an unreached leg now reads 'baseline not run (never started: ...)' instead of 'baseline 0.00 s'; importers of these two modules in other suites (test_audit_status, test_audit_lookup, _filed_returns) were not run. claims: 1 drive-phase.py agent_stage subtracts proofs_inside; stamp-verification.py red_legs reads unreached. 2 pq8/pq9/pq11 and ul1/ul2 red before fix, green after; ALLOW cases pq10, ul3, ul4 pass (ul3 is the over-fire guard against reading every code-None record as not run). 3 only agent_stage consumes kind-proof stages from the task timing; the four code-None unreached sites in stamp-verification.py are all marked, the line-4718 run template is not a leg record. 4 n/a. 5 n/a no timing measured. 6 n/a. 7 no numbers written into prose.",
+    "descriptive": "The Agent writer stage and the submit's proof stages now add up to the hand-out-to-filing window, and a proof leg that never started is listed as not run with its reason."
+  },
+  "testsAdded": [
+    "pq8-pq11 in tests/test_drive_phase.py: writer plus proofs inside the window equal the window, basis says so, an allow case with no proof, and a zero floor",
+    "ul1-ul4 in tests/test_stamp_verification.py: unreached legs listed ran false with their problem, with allow cases for a started-then-timed-out leg and a normal leg"
+  ],
+  "casesAdded": [
+    [
+      "pq8",
+      "pq9",
+      "pq10",
+      "pq11"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:86668ab49780209419fd8ef198d09d46e82b707060c870b0de245e9833151790\",\"dirtyDigest\":\"sha256:dcae915a4ea52d9e51aa155a8a330abcdd2ea93627b2dbf88aeafa34ad9d2292\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"51a4d9dcf594c26c\",\"changelog.d/P173.10-s6m.changed.md\":\"d3267b4eed804390\",\"plugins/audit/scripts/governance/drive-phase.py\":\"4623c49a5432db12\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"06936c8bac7cead4\",\"tests/test_drive_phase.py\":\"bebe9fc431e7e104\",\"tests/test_stamp_verification.py\":\"796cad3131095d9c\"},\"head\":\"8bf56d49\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"changelog.d/P173.10-s6m.changed.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"tests/test_drive_phase.py\",\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:c66ea56e7c25ccf32066be7a39553da19a4968f2e6f4e432ab2ef02229089d02\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -1558,9 +1558,31 @@ def filed_moment(ctx, task, role):
     return stamp, "the filed file's modification time, %s - %s" % (stamp, why)
 
 
+def proofs_inside(task, begin, end):
+    """The `proof` stages on `task`'s recorded timing that began from `begin` to
+    `end` (epoch seconds, both ends in): the red-first runs a submit noted while
+    its Agent was out, a retried one each. Stages that do not read are left to
+    the validator."""
+    stages = (task.get("timing") or {}).get("stages")
+    if not isinstance(stages, list):
+        return []
+    found = []
+    for stage in stages:
+        began = _usage_core.parse_ts(stage.get("startedAt")) \
+            if isinstance(stage, dict) else None
+        if (isinstance(stage, dict) and stage.get("kind") == "proof"
+                and began is not None and begin <= began <= end
+                and _timing.whole_ms(stage.get("ms")) is not None):
+            found.append(stage)
+    return found
+
+
 def agent_stage(ctx, task, role, at):
     """`(stage, None)` for an Agent `role` handed out at `at` whose return is
-    filed: from the hand-out to the filing (`filed_moment`). `(None, why)`
+    filed: from the hand-out to the filing (`filed_moment`), less the `proof`
+    stages a submit noted inside that window - they are stages of their own, and
+    `summarize` adds every stage, so the writer's length and theirs add up to
+    the window instead of counting the proof twice (never below zero). `(None, why)`
     for a hand-out with no stamp, a filing whose time cannot be read, and a
     filing stamped more than a second before its hand-out - both stamps are
     whole seconds - since that is a clock that moved. NO WAIT STAGE ON THIS
@@ -1578,10 +1600,18 @@ def agent_stage(ctx, task, role, at):
     if end < begin - 1:
         return None, ("the %s's filing (%s) reads before its hand-out at %s"
                       % (role, what, at))
+    ms = int(round(max(0.0, end - begin) * 1000))
+    proofs = proofs_inside(task, begin, end) if role == "executor" else []
+    taken = sum(_timing.whole_ms(p["ms"]) for p in proofs)
+    left = ""
+    if proofs:
+        left = (", less %d ms of %d proof stage%s noted inside it (the proof is "
+                "recorded as a stage of its own)" % (
+                    min(taken, ms), len(proofs), "" if len(proofs) == 1 else "s"))
     return _timing.make_stage(
-        AGENT_KINDS[role], at, int(round(max(0.0, end - begin) * 1000)),
-        "hand-out to the filed return (%s); the agent's own start is not "
-        "recorded, so any wait before it is inside this length" % (what,)), None
+        AGENT_KINDS[role], at, max(0, ms - taken),
+        "hand-out to the filed return (%s)%s; the agent's own start is not "
+        "recorded, so any wait before it is inside this length" % (what, left)), None
 
 
 def queue_agent_stage(ctx, state, task, role):
@@ -1621,9 +1651,11 @@ def stage_args(state, task):
 # (`queue_proof_stage`), `submit` notes it (`note_proof_stage`).
 PROOF_STAGE = "proofStage"
 # What `submit` adds to that basis. The Agent route's writer stage runs from
-# the hand-out to the filed return, and a submit's proof is inside it.
+# the hand-out to the filed return, a submit's proof is inside that window, and
+# `agent_stage` takes it out of the writer's length.
 SUBMIT_PROOF_BASIS = ("; run by the executor's submit, so on the Agent route it "
-                      "lies inside the writer's hand-out-to-filing length")
+                      "lies inside the writer's hand-out-to-filing window, which "
+                      "the writer stage leaves it out of")
 
 
 def proof_legs_said(payload, code):

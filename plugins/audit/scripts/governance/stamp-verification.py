@@ -3781,14 +3781,16 @@ def _isolate(path, deadline):
 
 def _timed_run(path, cmd, deadline, timeout, env, started=None):
     """`{"code", "text", "problem", "seconds"}` for one more run in the
-    throwaway, within what is left of the deadline. `started` is `_run_in`'s."""
+    throwaway, within what is left of the deadline - and `"unreached": True`
+    when no time was left, so the command was never started. `started` is
+    `_run_in`'s."""
     left = _left(deadline)
     began = time.time()
     if left < 1:
-        code, text, problem = None, "", ("the run timed out: no time was left of "
-                                         "the %s-second deadline" % (timeout,))
-    else:
-        code, text, problem = _run_in(path, cmd, left, env, started=started)
+        return {"code": None, "text": "", "seconds": 0.0, "unreached": True,
+                "problem": "the run timed out: no time was left of the "
+                           "%s-second deadline" % (timeout,)}
+    code, text, problem = _run_in(path, cmd, left, env, started=started)
     return {"code": code, "text": text, "problem": problem,
             "seconds": round(time.time() - began, 2)}
 
@@ -3827,12 +3829,13 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
     second of the deadline left no run is made at all - not even the reset's
     git calls, which would otherwise run past it. `started` is `_run_in`'s."""
     if _left(deadline) < 1:
-        return {"code": None, "text": "", "seconds": 0.0,
+        return {"code": None, "text": "", "seconds": 0.0, "unreached": True,
                 "problem": "the run timed out: no time was left of the "
                            "%s-second deadline" % (timeout,)}, []
     problem = unlink_junctions(path, deps) or _isolate(path, deadline)
     if problem is not None:
-        return {"code": None, "text": "", "problem": problem, "seconds": 0.0}, []
+        return {"code": None, "text": "", "problem": problem, "seconds": 0.0,
+                "unreached": True}, []
     copied = _lay_over(root, path, rels)
     for rel, text in sorted((texts or {}).items()):
         dst = os.path.join(path, *rel.split("/"))
@@ -3846,7 +3849,8 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
         open(dst, "w", encoding="utf-8", newline="\n").close()
     problem = link_dependencies(path, deps)
     if problem is not None:
-        return {"code": None, "text": "", "problem": problem, "seconds": 0.0}, copied
+        return {"code": None, "text": "", "problem": problem, "seconds": 0.0,
+                "unreached": True}, copied
     return _timed_run(path, cmd, deadline, timeout,
                       _isolated_env(env, scratch, tag), started=started), copied
 
@@ -5009,7 +5013,9 @@ def red_legs(made, problem, by_gate=False):
     """`[{"leg", "ran", "seconds", ...}]` - one entry per run `red` made, by
     its own measured seconds, and for each of `CORE_LEGS` it did not make an
     entry saying so with `why` and `seconds` None: a leg not run is not a leg
-    of zero seconds. `made` maps a leg's name to the record `_isolated_run`
+    of zero seconds, and a leg whose record says it was `unreached` (stopped
+    before its command started) is listed the same way, its problem the `why`.
+    `made` maps a leg's name to the record `_isolated_run`
     returned for it; `problem` is what stopped the proof, or None; `by_gate`
     is whether the fix run was owed and left to the task gate
     (`--fix-by-gate`)."""
@@ -5026,6 +5032,12 @@ def red_legs(made, problem, by_gate=False):
                          "exit": record["code"], "problem": record["problem"],
                          "why": "reused, key %s, recorded at %s"
                                 % (reused["key"][:16], reused["recordedAt"])})
+        elif record is not None and record.get("unreached"):
+            # Stopped before its command started - no time left, the reset or
+            # the dependency link failed - so it has no seconds, only its reason.
+            legs.append({"leg": name, "ran": False, "seconds": None,
+                         "exit": None, "problem": record["problem"],
+                         "why": "never started: %s" % (record["problem"],)})
         elif record is not None:
             legs.append({"leg": name, "ran": True, "seconds": record["seconds"],
                          "exit": record["code"], "problem": record["problem"]})

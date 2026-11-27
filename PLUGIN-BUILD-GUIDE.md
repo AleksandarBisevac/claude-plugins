@@ -6257,8 +6257,10 @@ leaves a stage too, its basis saying no legs were reported, since the time was s
 The writer path queues it as every stage here (`queue_proof_stage`, source `proof:<start>`),
 whether or not the proof held. `submit` holds no lock on the drive's state, which a wave's members
 share, so it notes its own stage through the locked `note` verb instead (`note_proof_stage`) -
-and on the Agent route that length lies inside the executor's hand-out-to-filing stage, which
-its basis says. The stage's length is the whole of the helper's run, set-up and tear-down
+and on the Agent route that length lies inside the executor's hand-out-to-filing window, so
+`agent_stage` takes the proof stages noted inside the window (`proofs_inside`, a retried submit's
+each) out of the writer stage's length and says so in its basis: the writer's stage and the proofs
+add up to the window, and `summarize` does not count the proof twice. The stage's length is the whole of the helper's run, set-up and tear-down
 included, so it is not the sum of its legs. The `pq` cases in `tests/test_drive_phase.py` hold
 the writer path and `submit`.
 
@@ -6839,6 +6841,9 @@ per run it made, `{leg, ran, seconds, exit, problem}`, in the order it made them
 `run.seconds`, the task run's own. The baseline, task and fix legs are listed whether or not they
 were made: one that was not carries `ran: false`, `seconds: null` and the `why`, so a missing leg
 is never read as a leg of no time (`red_legs`; the `sr4l` and `sr4n` cases hold both directions).
+So is a leg that never reached its command - no time left, the reset or the dependency link failed
+(`_isolated_run`'s record carries `unreached`): `ran: false`, no seconds, the problem as its `why`
+(the `ul` cases); a command that started and was then timed out did run, and stays listed so.
 The drive turns that into a `proof` stage of the task's timing (`drive-phase.py`, `red_reading`).
 
 **A leg whose exact inputs did not change is replayed, not run.** Each leg is a function of what it
