@@ -17773,6 +17773,153 @@ def _fix_by_gate_units(check):
     # A fresh driver: the filing cases above replaced `tree_since_proof`.
     fresh, _w = _unit_driver("drive_phase_fix_by_gate_drift")
     _fix_by_gate_drift_units(check, fresh, task_u, src)
+    _fix_by_gate_moved_units(check)
+
+
+def _fix_by_gate_moved_units(check):
+    """The green run a fix-by-gate proof is filed bound to must still hold for
+    the tree being filed: the declared files as they stand now against the
+    declared-work digest the run recorded (`testedState.scopeDigest`), and the
+    gate as it resolves now against the run's gate digest. An implementation
+    edit after the green gate - while the helper ran, say - is no drift of the
+    proof (it read no implementation), so only this check sees it: the drive
+    measures the gate again over the tree being filed and binds THAT run, and
+    a red re-gate files nothing."""
+    M, why = _unit_driver("drive_phase_fix_by_gate_moved")
+    check("fbm0 the driver loads: %r" % (why,), M is not None)
+    if M is None:
+        return
+    rel, src = "tests/test_mine.py", "src/mine.py"
+    task_u = _step_task(files=[src, rel], tests={
+        "mode": "tdd", "add": [rel + ": new1"], "gate": ["true"],
+        "expectRedFirst": True})
+    phase = _step_phase([task_u])
+    plan_u = _step_plan(phase)
+    proj = os.path.realpath(_harness.fixture_root("drive-fbg-moved-"))
+    try:
+        _fix_by_gate_moved_filings(check, M, proj, task_u, phase, plan_u)
+    finally:
+        _harness.remove_tree(proj)
+
+
+def _fix_by_gate_moved_filings(check, M, proj, task_u, phase, plan_u):
+    """The `fbm` filings over a scratch project `proj` holding the task's two
+    declared files, whose implementation each filing edits after the gate."""
+    rel, src = "tests/test_mine.py", "src/mine.py"
+    for path, text in ((src, "v = 1\n"), (rel, "assert True\n")):
+        os.makedirs(os.path.dirname(os.path.join(proj, path)), exist_ok=True)
+        with open(os.path.join(proj, path), "w", encoding="utf-8") as fh:
+            fh.write(text)
+    excluded, _dropped = _evio.recorded_paths(proj, os.path.join(
+        proj, "audit-plan.json"), {})
+
+    def digest_now():
+        return _tree_stamp.scope_digest(proj, task_u["files"],
+                                        excluded=excluded)[0]
+
+    entries, _source = _mio.gate_entries(phase, task_u)
+    gate_now = _evio.gate_digest(entries, None)
+    M.tree_head = lambda ctx, tree=None: "abc1234"
+    M.writer_test_command = lambda manifest, phase_, task_: (["true"], None)
+    M.writer_test_text = lambda manifest, phase_, task_: ("true", None)
+    M.tree_since_proof = lambda ctx, state, task_, tree=None: ([], [])
+    M.diff_paths = lambda ctx, phase_, tree=None: [src, rel]
+    M.writer_claim = lambda state, task_: ("claim", None)
+    M.carried_paths = lambda ctx, phase_, task_, tree=None: ([], [], None)
+    M._cc = types.SimpleNamespace(
+        task_clauses=lambda task_: [],
+        check=lambda *a, **k: {"covered": True, "declined": []})
+    block = {"status": "proved", "basis": "new1 red; no fix run made here",
+             "at": "y", "head": "abc1234", "source": _fr.HELPER_SOURCE,
+             _fr.FIX_LEG_FIELD: _fr.FIX_LEG_BY_GATE,
+             "testDigest": {"sha256": "sha256:t", "files": [
+                 {"path": rel, "sha256": "sha256:" + "a" * 64}]}}
+
+    def green_row(run_id, gate=None):
+        return {"runId": run_id, "ts": _STEP_START, "status": _evio.RUN_PASSED,
+                "taskId": task_u["id"], "phaseId": phase["id"],
+                "gateDigest": gate or gate_now,
+                "testedState": {"scopeDigest": digest_now()},
+                "steps": [{"name": "true", "command": "true", "exit": 0,
+                           "ran": 3, "measured": "checks"}],
+                "observations": {"coverage": [src, rel]}}
+
+    def filing(edit, gate=None, regate_red=False):
+        rows = [green_row("R30", gate)]
+        M.recorded_runs = lambda ctx: {"rows": list(rows)}
+        regated = []
+
+        def gate_step(ctx, state, manifest, phase_, task_, tree=None):
+            # The re-gate as the real step leaves it: a new green run over the
+            # tree as it stands, marked `gated`, or a red's decision.
+            regated.append(_marked_value(M, state, "gated", task_))
+            if regate_red:
+                return ("decision", "gate-red %s" % (task_["id"],))
+            rows.append(green_row("R31"))
+            M._mark(state, "gated", task_, {"runId": "R31", "at": _STEP_START,
+                                            "tree": None, "failing": []})
+            return None
+
+        M.gate_step = gate_step
+        M.run_verb, calls = _verb_rig({
+            ("stamp-verification.py", "red"): (0, json.dumps({
+                "redFirst": dict(block, status="proved"), "legs": _PROOF_LEGS,
+                "printed": ["new1 mine.v == 2"]}), ""),
+            ("stamp-verification.py", "take"): (0, _TAKEN, ""),
+            ("audit-task.py", "file-return"): (0, "filed\n", "")})
+        state = {}
+        held = M.writer_state(state, task_u)
+        held["proof"] = {"block": dict(block), "head": "abc1234",
+                         "printed": ["new1 mine.v == 2"], "implementation": None,
+                         "testCode": None, "fixLegOwes": {"collected": 2}}
+        M._mark(state, "writer", task_u, held)
+        M._mark(state, "gated", task_u, {"runId": "R30", "at": _STEP_START,
+                                         "tree": None, "failing": []})
+        # The implementation edit lands after the green gate, before the
+        # filing - the window the helper's minutes leave open.
+        with open(os.path.join(proj, src), "w", encoding="utf-8") as fh:
+            fh.write(edit)
+        ctx = _step_ctx(project=proj, gitRoot=proj, manifest=os.path.join(
+            proj, "audit-plan.json"), evidence=os.path.join(
+                proj, "docs", "audit", "evidence"))
+        out = _caught(M.file_writer_return, ctx, state, plan_u, phase, task_u)
+        bodies = _filed_bodies(calls)
+        red = (bodies[0].get("redFirst") or {}) if len(bodies) == 1 else {}
+        return (out, regated, red, len(bodies), list(ctx.get("did") or []),
+                _red_argv(calls))
+
+    out, regated, red, count, did, asked = filing("v = 2\n")
+    check("fbm1 an implementation edit between the green gate and the filing "
+          "makes the bound run not hold: the drive measures the gate again "
+          "(its `gated` mark spent first) and files bound to THAT run, never to "
+          "the run over the old implementation, with no helper run: %r"
+          % ((out, regated, red.get(_fr.FIX_LEG_RUN_FIELD), count, asked),),
+          out is None and regated == [None] and count == 1 and asked == []
+          and red.get(_fr.FIX_LEG_RUN_FIELD) == "R31"
+          and red.get(_fr.FIX_LEG_FIELD) == _fr.FIX_LEG_BY_GATE
+          and any("R30" in d and "again" in d for d in did))
+    out, regated, red, count, did, asked = filing("v = 3\n", regate_red=True)
+    check("fbm2 a re-gate that goes red files nothing: its decision is the "
+          "step's answer: %r" % ((out, regated, count),),
+          out == ("decision", "gate-red P1.1") and regated == [None]
+          and count == 0)
+    out, regated, red, count, did, asked = filing("v = 3\n",
+                                                  gate="sha256:" + "b" * 64)
+    check("fbm3 a held green whose gate resolves to other commands now does "
+          "not hold either - the bound run is asked through `stored_green` - "
+          "and the drive measures again before it binds: %r"
+          % ((out, regated, red.get(_fr.FIX_LEG_RUN_FIELD), count),),
+          out is None and regated == [None] and count == 1
+          and red.get(_fr.FIX_LEG_RUN_FIELD) == "R31")
+    # THE TWIN, for the over-fire mutation (a re-gate on every filing): the
+    # implementation as the run read it, the gate unchanged - filed bound to
+    # the held run, nothing measured again.
+    out, regated, red, count, did, asked = filing("v = 3\n")
+    check("fbm4 THE TWIN: with the tree as the held run read it and the gate "
+          "unchanged, the filing binds the held run and measures nothing again: "
+          "%r" % ((out, regated, red.get(_fr.FIX_LEG_RUN_FIELD), count),),
+          out is None and regated == [] and count == 1
+          and red.get(_fr.FIX_LEG_RUN_FIELD) == "R30")
 
 
 def _fix_by_gate_filing_units(check, M, task_u, phase, plan_u, full):
@@ -17803,8 +17950,18 @@ def _fix_by_gate_filing_units(check, M, task_u, phase, plan_u, full):
     # collected (`fixLegOwes` below), so only the field a case changes decides.
     step = {"name": "true", "command": "true", "exit": 0, "ran": 3,
             "measured": "checks"}
+    # The declared-work digest a run over the declared files as they stand
+    # records, read the way the binding reads them now: each row below was
+    # measured on the tree being filed unless a case says otherwise
+    # (`_fix_by_gate_moved_units` is where it does).
+    ctx0 = _step_ctx()
+    scope_now = _tree_stamp.scope_digest(
+        ctx0["project"], task_u["files"], excluded=_evio.recorded_paths(
+            ctx0["project"], ctx0["manifest"], ctx0["config"])[0])[0]
 
     def filed_over(row, block, fallback=None, owes=None):
+        row = dict(row, testedState=row.get("testedState")
+                   or {"scopeDigest": scope_now})
         M.recorded_runs = lambda ctx: {"rows": [row]}
         M.run_verb, calls = _verb_rig({
             ("stamp-verification.py", "red"): (0, fallback or full, ""),

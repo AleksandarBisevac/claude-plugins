@@ -6314,7 +6314,15 @@ the writer path and `submit`.
 made the baseline and the task's run only, and keeps the helper's `fixLegOwes` - the task run's
 collected count and each file a sweep graded red - beside it. `file_writer_return` files it bound
 to the green run the return is filed over - the `gated` mark's run, read back from the ledger -
-and only when that run holds a step of the proof's own command (`writer_test_text`, matched
+and only when that run still holds for the tree being filed, asked at the filing rather than at
+the gate (`held_green_moved`): the gate resolves to what the run measured (`stored_green`, which
+reads no bytes), and the declared files as they stand match the digest the run recorded of them
+(`testedState.scopeDigest`, through `_verdict_binding.digest_binding`, the committer's own
+comparison). The helper runs for minutes after the gate, so an implementation edited in that
+window is exactly what the second question sees; a run that does not hold has its `gated` mark
+spent and the gate measured again before anything binds (`regate_moved_green`), a red re-gate
+filing nothing - `fbm1`-`fbm3` hold each arm, `fbm4` the twin that binds the held run untouched.
+Past that, the run must hold a step of the proof's own command (`writer_test_text`, matched
 verbatim or by the digest a row keeps for an unpublished command: `proof_steps`) that passed with
 a verdict, unmuted, over at least the task run's collected count, and the run's recorded coverage
 names each test file the proof was made over (`gate_binding`, `step_standing`). That is the
@@ -6336,7 +6344,8 @@ whatever it says, its basis naming why the gate could not stand for the leg: a f
 could not prove files as `could-not-prove`, the way a first proof that could not prove always
 did, and only a helper that gave no block or refused goes back to the writer (`red_refused`).
 Because such a proof read no implementation file, `tree_since_proof` does not count one that
-moved as its drift (`by_gate_proof`). The `fbg` cases hold the ask, the binding, each fallback
+moved as its drift (`by_gate_proof`); the bound run's digest check above is where that edit is
+read. The `fbg` cases hold the ask, the binding, each fallback
 and both directions of the drift reading; `wi7` drives the bound path end to end, over a suite
 printing what pytest prints, where `wi4`'s house suite takes the fallback.
 

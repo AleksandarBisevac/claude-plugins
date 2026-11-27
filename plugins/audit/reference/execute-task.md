@@ -356,7 +356,15 @@ verb writes and refuses, and what the run commands leave behind, is
         committed return. That message is the writer's claim; the gate and the reviewer
         grade the work, never the message. A proof whose fix leg is the gate's is
         filed with the green run's id in `redFirst.fixLegRunId` only when that run -
-        the `gated` mark's, read back from the ledger as `passed` - named each test
+        the `gated` mark's, read back from the ledger as `passed` - still holds for
+        the tree being filed, asked at the filing (`held_green_moved`): the gate
+        resolves to what it ran under (`stored_green`), and the declared files -
+        the implementation among them - match the digest the run recorded of them
+        (`testedState.scopeDigest`, compared by `_verdict_binding.digest_binding`,
+        the committer's own comparison). A run that does not - an implementation
+        edited while the helper ran, say - has its mark spent and the gate is
+        measured again before anything binds (`regate_moved_green`); a red re-gate
+        files nothing. The run must also have named each test
         file the proof was made over in its recorded coverage
         (`observations.coverage`, the gate's "declared file(s) named by the run"
         line), the path itself and not a source named after it, and holds a step of
@@ -385,8 +393,9 @@ verb writes and refuses, and what the run commands leave behind, is
      ask it, and a HEAD or a declared file that moved is proved again first, the changed
      test files noted on the task. A proof whose fix leg is the gate's read no
      implementation file, so a declared implementation file that moved is no drift of
-     it: the gate the return is filed over ran on that file as it stands, and the
-     filing binds that run. A file the task does not declare is not in that
+     it: that edit is the bound gate run's question instead, and the filing binds a
+     run only while the declared files match the digest it recorded, measuring the
+     gate again when they do not (`held_green_moved`, above). A file the task does not declare is not in that
      reading: one the diff touches after the proof is caught later, when
      `commit-task-work.py`'s `attempt_refusal` refuses by name a path changed during the
      attempt that no in_progress task declares. **The digest binds the commit**:

@@ -11386,6 +11386,8 @@ _BB_DRIVE_SITES = {
                     "tests/test_drive_phase.py)",
     "gate_went_red": "a fix task's re-review, refusing on a lost record "
                      "(cases gu1 and gu2 of tests/test_drive_phase.py)",
+    "held_green_moved": _BB_BY_ID + " (the `gated` mark's), then the run it "
+                        "repeated; a row it cannot read binds nothing",
 }
 
 

@@ -223,8 +223,11 @@ run read - and `tree_since_proof` is the one reading of whether those three stil
 match. A proof that left its fix leg to the task gate (`red --fix-by-gate`) made
 no fix run, so it read no implementation: a change there is not its drift, its
 block carries no implementation digest, and the filing binds it to the green
-gate run that ran the proof's own command on the implementation as it stands
-(`gate_binding`) or has the helper make the leg first (`fix_leg_proof`). Every
+gate run that ran the proof's own command (`gate_binding`) or has the helper
+make the leg first (`fix_leg_proof`). That run is asked at the filing whether
+it still holds for the tree being filed - the gate resolving as it did, the
+declared files matching the digest it recorded of them (`held_green_moved`) -
+and one that does not is measured again first (`regate_moved_green`). Every
 settle and `file_writer_return` itself ask it: a HEAD or a declared file the
 proof read that moved is proved again before anything is filed, the changed test files
 noted on the task - those whose code digest (`testCodeDigest`, held beside the
@@ -5838,9 +5841,10 @@ def writer_prove(ctx, manifest, phase, task, tree=None, by_gate=True):
     impl = payload.get("implementationDigest") if isinstance(payload, dict) else None
     # A FIX LEG LEFT TO THE GATE READ NO IMPLEMENTATION, so its block names
     # none: the bytes the helper hashed are the round's it was asked in, and
-    # the gate the filing binds (`gate_binding`) is the run that read the
-    # implementation the return is filed with - a digest from here would name
-    # other bytes than those once a later round moved only the implementation.
+    # the gate run the filing binds is the one whose recorded digest of the
+    # declared files matches them as filed (`held_green_moved`, re-gated when
+    # it does not) - a digest from here would name other bytes than those once
+    # a later round moved only the implementation.
     if isinstance(impl, dict) and not by_gate_proof(block):
         block["implementationDigest"] = impl
     return block, dict(payload or {}, implementationDigest=impl), None
@@ -5976,11 +5980,82 @@ def step_count(step):
     return total if _is_count(total) else None
 
 
-def gate_binding(ctx, state, manifest, phase, task, proof):
+def held_green_moved(ctx, state, manifest, task, tree=None):
+    """Why the green run the `gated` mark holds for `task`'s start no longer
+    holds for the tree being filed (`tree`, else the project) - or None when it
+    does, and when no run is held or its row cannot be read, which
+    `gate_binding` names as binding nothing.
+
+    TWO QUESTIONS, both asked at the filing rather than at the gate: the gate
+    as it resolves now and the tree the run was measured in, through
+    `stored_green` (which spends a moved mark); and the declared files as they
+    stand now against the declared-work digest the run recorded
+    (`testedState.scopeDigest`), through `_verdict_binding.digest_binding`, the
+    committer's own comparison. The first deliberately reads no bytes
+    (`_evidence_io.stored_verdict_moved`), so the second is the only one that
+    sees an implementation file edited after the green run - an edit a
+    fix-by-gate proof never reads and so never counts as its drift
+    (`tree_since_proof`). A run whose digest cannot be compared does not hold
+    either: what it read is not established."""
+    held = _marked(state, "gated", task)
+    run_id = held.get("runId") if isinstance(held, dict) else None
+    if not run_id:
+        return None
+    if stored_green(ctx, state, manifest, task, "gated") != _evio.STORED_HOLDS:
+        return ("run %s no longer answers the gate as it resolves now, or was "
+                "measured in another tree" % (run_id,))
+    try:
+        rows = recorded_runs(ctx)["rows"]
+    except Exception:                                          # noqa: BLE001
+        return None
+    measured = _evio.measured_row(rows, _evio.row_by_run(rows, run_id))
+    if not isinstance(measured, dict):
+        return None
+    answer = _vb.digest_binding(
+        ctx["project"], ctx["manifest"], task["id"],
+        list(task.get("files") or []), ctx["config"], measured,
+        "run %s" % (run_id,), "the drive measures the gate again",
+        digest_root=member_project(ctx, tree) or ctx["project"])
+    if answer.get("state") == "bound":
+        return None
+    if answer.get("arm") == _vb.ARM_DIGEST_MOVED:
+        return ("run %s read the declared files other than they stand now - "
+                "one was edited after it" % (run_id,))
+    return ("whether run %s read the declared files as they stand now is not "
+            "established (%s)" % (run_id, _clip(str(answer.get("sentence")
+                                                    or ""), 200)))
+
+
+def regate_moved_green(ctx, state, manifest, phase, task, tree=None):
+    """Measure `task`'s gate again when the green run held for the filing no
+    longer holds for the tree being filed (`held_green_moved`): its mark is
+    spent and the gate step runs. None when the held run holds, or once the
+    new run is green and marked; else the decision or stop the gate step
+    returns - a red re-gate files nothing."""
+    held = _marked(state, "gated", task)
+    moved = held_green_moved(ctx, state, manifest, task, tree)
+    if moved is None:
+        return None
+    _spend(state, "gated", task)
+    write_state(ctx, state)
+    ctx["did"].append("%s: the green gate run %s held for the filing does not "
+                      "hold for the tree being filed (%s); the gate is measured "
+                      "again" % (task["id"], held.get("runId")
+                                 if isinstance(held, dict) else None, moved))
+    return gate_step(ctx, state, manifest, phase, task, tree)
+
+
+def gate_binding(ctx, state, manifest, phase, task, proof, tree=None):
     """`(runId, clause, None)` - the green recorded task-gate run the writer's
     return is filed over (the `gated` mark's), when it stands for the fix leg
     the held fix-by-gate `proof` left to it, and the basis clause saying what
     that run showed - or `(None, None, why)`.
+
+    IT HOLDS FOR THE TREE BEING FILED FIRST (`held_green_moved`): the gate it
+    ran under is the one the task resolves to now, and the declared files -
+    the implementation among them - are the bytes it recorded reading. The
+    filing re-gates a run that does not (`regate_moved_green`) before it asks
+    here, so a run refused for this reason is one that moved again since.
 
     IT STANDS WHEN IT RAN THE PROOF'S OWN COMMAND: a step of the run whose
     command is the one the helper proved the red with (`writer_test_text`),
@@ -6004,6 +6079,9 @@ def gate_binding(ctx, state, manifest, phase, task, proof):
     if not run_id:
         return None, None, ("no recorded green task-gate run is held for %s"
                             % (task["id"],))
+    moved = held_green_moved(ctx, state, manifest, task, tree)
+    if moved is not None:
+        return None, None, moved
     row, why = ledger_row(ctx, run_id)
     if row is None:
         return None, None, "run %s: %s" % (run_id, why)
@@ -6033,8 +6111,8 @@ def gate_binding(ctx, state, manifest, phase, task, proof):
     return run_id, (
         "; fix leg: the task gate's green run %s, held for this start, ran the "
         "proof's command `%s` as a step of its own, exit 0 over %d check(s) - "
-        "no fewer than the task leg's %d collected - and named %s, on the "
-        "implementation the return is filed with" % (
+        "no fewer than the task leg's %d collected - and named %s, its "
+        "recorded digest of the declared files matching them as filed" % (
             run_id, command, ran, owes["collected"], ", ".join(paths))), None
 
 
@@ -6072,8 +6150,10 @@ def tree_since_proof(ctx, state, task, tree=None):
 
     A proof whose fix leg is the task gate's (`by_gate_proof`) read no
     implementation file - only the fix leg does - so a change to one is no
-    drift of it: the gate the return is filed over runs on the implementation
-    as it stands, and the filing binds that run (`gate_binding`)."""
+    drift of it. That edit is the bound gate run's question instead: the
+    filing binds a run only while the declared files match the digest it
+    recorded (`held_green_moved`), and measures the gate again when they do
+    not (`regate_moved_green`)."""
     proof = writer_state(state, task).get("proof")
     if not isinstance(proof, dict):
         return [], []
@@ -6322,9 +6402,12 @@ def file_writer_return(ctx, state, manifest, phase, task, tree=None):
     # such a file that moved since the held proof is proved again first (or
     # goes back to the writer). A proof that left its fix leg to the task gate
     # read no implementation, so a change there is not its drift: it is filed
-    # bound to the green gate run that ran its own command on the
-    # implementation as it stands (`gate_binding`), carrying no implementation
-    # digest, or has the helper make the leg first. An undeclared file is
+    # bound to the green gate run that ran its own command, carrying no
+    # implementation digest, or has the helper make the leg first. That run
+    # must hold for the tree being filed - the gate resolving as it did, and
+    # the declared files matching the digest the run recorded - and one that
+    # no longer does (an edit while the helper ran) is measured again before
+    # anything binds (`regate_moved_green`). An undeclared file is
     # commit-task-work's to refuse, which the writer's close meets by setting
     # it aside (`settle_aside`).
     stop = prove_and_hold(ctx, state, manifest, phase, task, "before the filing",
@@ -6344,8 +6427,11 @@ def file_writer_return(ctx, state, manifest, phase, task, tree=None):
     bound = said = None
     held_proof = writer_state(state, task).get("proof") or {}
     if by_gate_proof(held_proof.get("block")):
+        stop = regate_moved_green(ctx, state, manifest, phase, task, tree)
+        if stop is not None:
+            return stop
         bound, said, why = gate_binding(ctx, state, manifest, phase, task,
-                                        held_proof)
+                                        held_proof, tree)
         if bound is None:
             stop = fix_leg_proof(ctx, state, manifest, phase, task, why, tree)
             if stop is not None:

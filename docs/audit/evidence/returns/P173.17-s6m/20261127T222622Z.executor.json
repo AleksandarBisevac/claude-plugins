@@ -1,0 +1,31 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_drive_phase.py": "pass",
+    "python3 tools/lints/_deps.py --register-citations": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-27T22:35:54Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 3 of 1155 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fbm1 (house FAIL), fbm2 (house FAIL), fbm3 (house FAIL): SELFTEST FAILED: 1152/1155 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; task leg keyed on the declared tests' code without comments (sha256:e49c36c0b82ca8325aca71f48c63bf4e93c221542ed4e1b3d14a16b5529ca623; a file that is not Python or does not tokenize by its bytes), which does not cover a test reading its own comments or line numbers",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Work already in the tree from attempt 1, not rewritten. Confirmed git diff HEAD matches the task: drive-phase.py adds held_green_moved (stored_green + digest binding of the run's testedState.scopeDigest against the declared files as filed), regate_moved_green (spends the gated mark and re-gates when the held run does not hold, called by file_writer_return before gate_binding for a by-gate proof), and gate_binding takes tree and re-asks held_green_moved itself. The gate's previous red was only test__evidence_io bb-drive-sites; tests/test__evidence_io.py now carries a held_green_moved row in _BB_DRIVE_SITES with its reason (scope widened by the orchestrator, the one 2-line diff). Ran `python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_drive_phase.py`: '2/2 files ok, 1770 cases'. Dependants: file_writer_return changed (re-gates before binding); settle_aside unchanged and still correct (re-proves then gate_step with a rerun mark, binds nothing); tree_since_proof behaviour unchanged (by-gate proofs not drifted by an implementation edit), docstring points at the bound run's check; other importers of drive-phase.py call no changed signature (gate_binding gained an optional tree kwarg, one caller); execute-task.md and PLUGIN-BUILD-GUIDE.md updated to name held_green_moved/regate_moved_green, their other dependants read no edited text.",
+    "descriptive": "A fix-by-gate filing now binds only a gate run whose recorded digest of the declared files still matches them as filed, and re-gates otherwise."
+  },
+  "testsAdded": [
+    "fbm1-fbm4: an implementation edit between the green gate and the filing makes the bound run not hold, so the drive re-gates instead of filing (re-gate happens, red re-gate files nothing, stored_green moved, and an untouched tree still files)"
+  ],
+  "casesAdded": [
+    [
+      "fbm1",
+      "fbm2",
+      "fbm3",
+      "fbm4"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:583024b92129b649b2e09e8d77abe1a7a68ccdcb55c3533116c388957b3e9058\",\"dirtyDigest\":\"sha256:9fbdb987ae9cdcc8ea1b5ab88c5337e7dee1d4afc55fcb61775958b3c255987d\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"42821420d1a28f7d\",\"changelog.d/P173.17-s6m.fixed.md\":\"752416083784d763\",\"plugins/audit/reference/execute-task.md\":\"9a98ac173f6ce667\",\"plugins/audit/scripts/governance/drive-phase.py\":\"62a4692c6c1e12a3\",\"tests/test__evidence_io.py\":\"1a14845215395dd6\",\"tests/test_drive_phase.py\":\"e8bb7da6a8fb85a0\"},\"head\":\"a0d23d30\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"changelog.d/P173.17-s6m.fixed.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test__evidence_io.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:d6467d314aab8c0a67479d88d17081508cc4ba1cdc21e77a92a4346eb2f4010e\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
