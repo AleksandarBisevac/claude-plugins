@@ -113,6 +113,18 @@ REVIEW_VERDICTS = ("clean", "findings")
 # the enum.
 RED_FIRST_WORDS = ("proved", "could-not-prove", "not-attempted")
 
+# A proof that left its fix leg to the task gate: `stamp-verification.py red
+# --fix-by-gate` writes `FIX_LEG_FIELD: FIX_LEG_BY_GATE` on a `proved` block
+# and makes no fix run, so whether the task's tests pass on the working tree's
+# implementation is the green task gate's to show. The caller that files the
+# block over that gate writes the gate run's id in `FIX_LEG_RUN_FIELD`; a block
+# naming the gate with no run bound is refused at filing (`fix_leg_problem`,
+# read by `_executor_problems`), because it claims a fix no run was seen
+# passing. Additive: a block without the field made its own fix run.
+FIX_LEG_FIELD = "fixLeg"
+FIX_LEG_BY_GATE = "task-gate"
+FIX_LEG_RUN_FIELD = "fixLegRunId"
+
 # The executor's binding of each declared test to the case that carries it: a
 # list parallel to `tests.add`, by index.
 CASES_FIELD = "casesAdded"
@@ -322,11 +334,31 @@ def _executor_problems(body, task=None):
                             % (red.get("status"), ", ".join(RED_FIRST_WORDS)))
         if not _text_field(red, "basis"):
             problems.append("`redFirst.basis` is missing or empty")
+        fix_leg = fix_leg_problem(red)
+        if fix_leg:
+            problems.append(fix_leg)
     if not _text_field(body, "stamp"):
         problems.append("`stamp` is missing or empty")
     if "claims" in body and not isinstance(body.get("claims"), str):
         problems.append("`claims` is not text")
     return problems
+
+
+def fix_leg_problem(red):
+    """Why a `redFirst` block's fix leg cannot be filed, or None. A block with
+    no `FIX_LEG_FIELD` made its own fix run and is not this question's; one
+    naming the task gate is filable only with the gate run bound to it."""
+    if not isinstance(red, dict) or FIX_LEG_FIELD not in red:
+        return None
+    if red[FIX_LEG_FIELD] != FIX_LEG_BY_GATE:
+        return ("`redFirst.%s` is %r, and the only fix leg a block may name is "
+                "%r" % (FIX_LEG_FIELD, red[FIX_LEG_FIELD], FIX_LEG_BY_GATE))
+    if not _text_field(red, FIX_LEG_RUN_FIELD):
+        return ("`redFirst.%s` is %r but no gate run is bound to it "
+                "(`redFirst.%s` is missing or empty): the proof made no fix run, "
+                "so it is filable only over the green task gate run that ran its "
+                "tests" % (FIX_LEG_FIELD, FIX_LEG_BY_GATE, FIX_LEG_RUN_FIELD))
+    return None
 
 
 def _clause_quoted(description, note, span=4):
@@ -1602,10 +1634,15 @@ def mechanical_answers(executor, gate):
     rel, body, problem = executor
     answers, owed = {}, {}
     block = None if problem else helper_red_first(body)
-    if block is not None:
+    unbound = fix_leg_problem(block) if block is not None else None
+    if unbound:
+        owed["redFirst"] = "%s, in %s" % (unbound, rel)
+    elif block is not None:
         answers["redFirst"] = block["status"]
-        answers["redFirstBasis"] = "%s (the red-first helper's block in %s, at %s)" \
-            % (block["basis"], rel, block["at"])
+        answers["redFirstBasis"] = "%s (the red-first helper's block in %s, at %s%s)" \
+            % (block["basis"], rel, block["at"],
+               "; its fix leg the task gate's run %s" % (block[FIX_LEG_RUN_FIELD],)
+               if FIX_LEG_FIELD in block else "")
     elif problem:
         owed["redFirst"] = problem
     elif body is None:

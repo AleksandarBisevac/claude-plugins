@@ -2362,7 +2362,9 @@ here once. `return_rel`/`return_path` derive `<evidence dir>/returns/<taskId>/<s
 from the task's current `startedAt`, so a re-start files beside the earlier attempt's return
 and an earlier start's return is never read as this one's; `return_problems` names every field
 a return falls short on against the shape its role's agent definition declares (the
-executor's red-first words are `RED_FIRST_WORDS`, held equal to the schema enum by `fr7`);
+executor's red-first words are `RED_FIRST_WORDS`, held equal to the schema enum by `fr7`, and a
+block whose `fixLeg` is `task-gate` - a proof that made no fix run - is refused by
+`fix_leg_problem` until `fixLegRunId` binds the gate run that showed the fix, `fl1`/`fl2`);
 `file_once` is the exclusive create that refuses a second filing and leaves the first
 byte-identical; `read_filed_return` reports a file that will not parse as a problem, never as
 an absence; `claims_from_return` hands the commit path the `claims` text verbatim. The evidence
@@ -6851,6 +6853,18 @@ its own comments or line numbers (`inspect.getsource`, a lint over its own file)
 by it. The drive holds `testCodeDigest` beside its proof, and a re-proof over test files whose code
 digest did not move says they changed outside their code (comments only), with whether the task
 leg was replayed (`drive-phase.py`, `comment_only`; `cq1`, `cq2`).
+
+**`red --fix-by-gate` leaves the fix leg to the task gate.** The fix run asks whether the task's
+tests pass on the working tree's implementation, which a green task gate over that tree also
+shows. With the flag, a red over a sound baseline makes no fix run (`run_red` sets `fixByGate`
+where it would have started one) and is still `proved` - no new word - its block adding
+`fixLeg: task-gate` and its basis saying no fix run was made here and whose run the fix leg is
+(`red_verdict`). The `legs` entry for the fix leg says `ran: false` with that reason
+(`red_legs`), no wall time is held back for a fix run (`sweep_budget`'s reserve is zero and
+`budget_clause` says why), and the labels a case id is graded against are read off the task run.
+The deadline is still sized for three runs (`sized_deadline`), which only loosens it. The block is
+filable only with the gate run bound to it (`_filed_returns.fix_leg_problem`); `fg1`-`fg5` hold
+the flag's runs and block in both directions.
 
 ### `plugins/audit/scripts/governance/run-agent-session.py`
 One role run as a headless top-level Claude Code session in a task's tree, priced by the session's

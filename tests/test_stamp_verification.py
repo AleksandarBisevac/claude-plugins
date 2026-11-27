@@ -3510,8 +3510,8 @@ def _every_run_cases(check):
           "run sees it: HEAD's run is handed no stub, and sr138's own check "
           "fails: exit=%r stubs handed %r" % (code_m, _stubs_handed(got_m)),
           _stubs_handed(got_m) == [] and not _new_only_proved(code_m, got_m))
-    unowed = _mutated_module("if verdict1 == V_RED and baseline_problem(",
-                             "if False and baseline_problem(", "sv_jd2")
+    unowed = _mutated_module("owes_fix = verdict1 == V_RED and baseline_problem(",
+                             "owes_fix = False and baseline_problem(", "sv_jd2")
     try:
         _judged(root_o, man_o, cmd_o, "sr138", module=unowed)
         refused = None
@@ -7304,6 +7304,88 @@ def _leg_reuse_cases(check):
           and "code without comments" in basis5 and "line numbers" in basis5)
 
 
+def _counted_red(root, man, cmd, *extra):
+    """`(exit, payload, tags)` - `_red` with the tag of every run `red` made
+    recorded in order, through the real `_isolated_run`."""
+    made = []
+    real_run = M._isolated_run
+
+    def counting_run(top, path, rels, run_cmd, deadline, timeout, env, scratch,
+                     tag, stubs=(), deps=None, texts=None):
+        made.append(tag)
+        return real_run(top, path, rels, run_cmd, deadline, timeout, env,
+                        scratch, tag, stubs=stubs, deps=deps, texts=texts)
+    M._isolated_run = counting_run
+    try:
+        code, got = _red(root, man, cmd, *extra)
+    finally:
+        M._isolated_run = real_run
+    return code, got, list(made)
+
+
+def _fix_by_gate_cases(check):
+    """`red --fix-by-gate`: the fix leg is the task gate's, so the helper makes
+    no fix run, keeps the word `proved` and says in the block whose run the
+    fix leg is - and a block saying so is filable only with that run bound."""
+    py = sys.executable
+    cmd = [py, "tests/test_mine.py"]
+    root, man = _red_repo("stamp-fix-gate-", _red_test("import mine", "mine.v == 2"))
+    code, got, made = _counted_red(root, man, cmd, "--fix-by-gate")
+    block = got.get("redFirst") or {}
+    legs = dict((l.get("leg"), l) for l in got.get("legs") or []
+                if isinstance(l, dict))
+    fix = legs.get("fix", {})
+    check("fg1 red --fix-by-gate runs no fix leg - the runs made are %r - and "
+          "writes `fixLeg: task-gate` with status proved, the block's own three "
+          "fields kept beside it: exit=%r %r"
+          % (made, code, block),
+          code == M.E_PROVED and made == ["baseline", "task"]
+          and got.get("verdict") == "red"
+          and block.get("status") == "proved"
+          and block.get("fixLeg") == "task-gate"
+          and set(block) == set(("status", "basis", "at", "fixLeg")))
+    basis = block.get("basis", "")
+    check("fg2 ...its basis opens the way every helper basis does, so the filing "
+          "side still recognises it (`_HELPER_BASIS`), and says the fix leg is "
+          "the task gate's rather than claiming a fix run it never made: %r"
+          % (basis,),
+          bool(_filed_returns._HELPER_BASIS.match(basis))
+          and "fix leg is the task gate's" in basis
+          and "each passing with the working tree's implementation" not in basis)
+    check("fg3 ...the payload's `legs` names the fix leg as not run, seconds "
+          "None, the reason naming the task gate - not a zero and not a reuse - "
+          "and `printed` still carries the labels, read off the task run: %r %r"
+          % (fix, got.get("printed")),
+          [l.get("leg") for l in got.get("legs") or []]
+          == ["baseline", "task", "fix"]
+          and fix.get("ran") is False and fix.get("seconds") is None
+          and "task gate" in str(fix.get("why") or "")
+          and "reused" not in fix
+          and got.get("printed") == ["old1", "new1"])
+    # THE OTHER DIRECTION: without the flag the same tree still owes, and makes,
+    # its fix run - and the leg store held no fix leg for it to replay, since
+    # none was run. A flag that leaked into every proof, or a skipped leg stored
+    # as if it had passed, would leave `made` empty and the block carrying the
+    # field.
+    code_n, got_n, made_n = _counted_red(root, man, cmd)
+    block_n = got_n.get("redFirst") or {}
+    check("fg4 the same tree proved WITHOUT the flag makes the fix run (baseline "
+          "and task replayed from the store) and its block carries no `fixLeg`: "
+          "made %r, exit=%r %r" % (made_n, code_n, block_n),
+          code_n == M.E_PROVED and made_n == ["fix"]
+          and block_n.get("status") == "proved"
+          and set(block_n) == set(("status", "basis", "at")))
+    root_g, man_g = _red_repo("stamp-fix-gate-green-",
+                              _red_test("import mine", "mine.v >= 1"))
+    code_g, got_g, made_g = _counted_red(root_g, man_g, cmd, "--fix-by-gate")
+    check("fg5 the flag proves nothing by itself: a test that passes without the "
+          "fix is still not red under it, with no block to file and no fix run: "
+          "exit=%r %r made %r"
+          % (code_g, got_g.get("redFirst"), made_g),
+          code_g == M.E_NOT_RED and got_g.get("redFirst") is None
+          and "fix" not in made_g)
+
+
 # Every block, in replay order. A full run starts one process per block, a few
 # at a time, and replays their cases in this order (`_harness.staged_main`);
 # `--stage LABEL` narrows a run to the blocks it names, run in this process,
@@ -7322,6 +7404,7 @@ STAGES = (
     ("sr-leg-store", "_leg_store_cases"),
     ("sr-leg-inputs", "_leg_inputs_cases"),
     ("sr-leg-reuse", "_leg_reuse_cases"),
+    ("sr-fix-by-gate", "_fix_by_gate_cases"),
     ("sr-introduces", "_introduces_cases"),
     ("sh-house-abort", "_house_abort_cases"),
     ("sh-owner-module", "_owner_module_cases"),

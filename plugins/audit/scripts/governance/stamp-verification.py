@@ -42,8 +42,8 @@ Usage:
                                 [--json]
   stamp-verification.py red     [--project DIR] --manifest M --task T
                                 [--case ID|LABEL ...] [--introduces SYMBOL ...]
-                                [--derive-introduces] [--deps-from DIR] [--timeout S] [--json]
-                                -- <test command>
+                                [--derive-introduces] [--fix-by-gate] [--deps-from DIR]
+                                [--timeout S] [--json] -- <test command>
 
   `compare` reads the stamp from stdin when neither --stamp nor --stamp-file is
   given, so a report or a commit message can be piped straight in.
@@ -76,6 +76,14 @@ was proved over - the step driver hashes the same paths again before it files or
 commits a writer session's work, and re-proves when one moved. `testCodeDigest`
 is the same over the test files' code without comments (`code_sha`): what the
 task leg is kept under, so a comment-only edit replays it; it locks nothing.
+
+RED CAN LEAVE ITS FIX LEG TO THE TASK GATE. `--fix-by-gate` makes no fix run:
+a red over a sound baseline is still `proved`, and the block adds
+`fixLeg: task-gate`, its basis saying no fix run was made here. Whether the
+task's tests pass on the working tree's implementation is then the green task
+gate's to show, and the block is filable only with that gate run's id bound to
+it - `_filed_returns.fix_leg_problem`, which every executor return's shape check
+reads, refuses it otherwise.
 
 WHY THREE CODES AND NOT TWO. `unestablished` must not share an exit code with
 either neighbour. Sharing 0 makes an unanswerable comparison read as "unchanged",
@@ -3497,7 +3505,10 @@ def red_verdict(run, ctx):
     """`(exit, verdict, block, note)` - what the run in the throwaway proved.
 
     `run` is `{"cmd", "code", "text", "problem", "second", "head", "fix",
-    "withdrawn", "support"}`; `support` the test-support modules the task's
+    "withdrawn", "support"}`, plus `fixByGate` True when the fix run was owed
+    and left to the task gate (`--fix-by-gate`): a red is then `proved`
+    without one, its block naming the gate as its fix leg (`FIX_LEG_FIELD`
+    in `_filed_returns`); `support` the test-support modules the task's
     run held at HEAD's copy (`support_at_head`), empty when it held none;
     `second` is the `--introduces` re-run with the working tree's
     implementation copied in, `head` the baseline - HEAD's own test files on
@@ -3580,7 +3591,9 @@ def red_verdict(run, ctx):
     baseline = baseline_problem(run.get("head"), run["cmd"], ctx.get("stages"),
                                 stubbed)
     if verdict == V_RED:
-        problem = baseline or fix_problem(run.get("fix"), run["cmd"], tally, text)
+        by_gate = bool(run.get("fixByGate"))
+        problem = baseline or (None if by_gate else
+                               fix_problem(run.get("fix"), run["cmd"], tally, text))
         if problem is not None:
             return E_CANNOT_PROVE, verdict, {
                 "status": RED_CANNOT, "at": at,
@@ -3615,6 +3628,17 @@ def red_verdict(run, ctx):
                          "a declared test file (%s) %s - %s%s"
                          % (where, _ids(failing), uncredited or "none asserted",
                             ", ".join(ctx["tests"]), rule, line, env_clause)}, None
+        if own and by_gate:
+            return E_PROVED, verdict, {
+                "status": RED_PROVED, "at": at,
+                _filed_returns.FIX_LEG_FIELD: _filed_returns.FIX_LEG_BY_GATE,
+                "basis": "%s with %d of %d collected tests failing an assertion, "
+                         "the task's own among them (%s) - %s: %s; no fix run was "
+                         "made here: the fix leg is the task gate's, whose green "
+                         "run of these tests on the working tree the block is "
+                         "filed over%s%s"
+                         % (where, tally["assertions"], tally["collected"], how,
+                            _ids(own), line, refused_clause, env_clause)}, None
         if own:
             return E_PROVED, verdict, {
                 "status": RED_PROVED, "at": at,
@@ -4459,6 +4483,9 @@ def budget_clause(budget):
     wall time was read, and which suite has no recorded cost."""
     if budget is None:
         return ""
+    if budget.get("byGate"):
+        return ("; fix run: none made and no time held back for one - the fix "
+                "leg is the task gate's (--fix-by-gate)")
     if budget["problem"]:
         return "; fix run: no time held back, %s" % (budget["problem"],)
     missing = ("; no recorded cost for %s" % (", ".join(budget["uncosted"]),)
@@ -4548,6 +4575,9 @@ def run_red(args, cmd, out):
     deadline = start + args.timeout
     budget = sweep_budget(cmd, costs, cost_problem, args.timeout, blocks=blocks,
                           jobs=jobs)
+    if budget is not None and args.fix_by_gate:
+        # No fix run is made, so none has wall time held back for it.
+        budget = dict(budget, reserve=0, byGate=True)
     # The runs before the fix run end where the fix run's held-back time begins.
     early = deadline - (budget["reserve"] if budget else 0)
     overlays, inline, inline_problem = inline_overlays(root, scope["tests"], deadline)
@@ -4733,10 +4763,15 @@ def run_red(args, cmd, out):
             verdict1 = (classify_run(run["code"], run["text"], cmd)[0]
                         if run["problem"] is None and run["code"] is not None
                         else None)
-            if verdict1 == V_RED and baseline_problem(
-                    run["head"], cmd, state["stages"],
-                    [rel for rel in state["new"]
-                     if rel not in state["absent"]]) is None:
+            owes_fix = verdict1 == V_RED and baseline_problem(
+                run["head"], cmd, state["stages"],
+                [rel for rel in state["new"]
+                 if rel not in state["absent"]]) is None
+            if owes_fix and args.fix_by_gate:
+                # The fix leg is the task gate's: the caller files this block
+                # only over a green gate run of these tests on the tree.
+                run["fixByGate"] = True
+            elif owes_fix:
                 run["problem"] = start_problem(["fix"], budget, _left(deadline))
                 if run["problem"] is None:
                     run["fix"], _c = leg(
@@ -4776,7 +4811,7 @@ def run_red(args, cmd, out):
     # prints none this reads - `drive-phase.py submit` grades a case id against it.
     shown, printed_from = printed_run(run)
     payload = {"verdict": verdict, "redFirst": block, "note": note,
-               "legs": red_legs(made, run["problem"]),
+               "legs": red_legs(made, run["problem"], run.get("fixByGate")),
                "printed": _runner_output.printed_labels(shown, cmd),
                "printedFrom": printed_from,
                "supportAtHead": run["support"],
@@ -4847,12 +4882,14 @@ LEG_ORDER = ("baseline", "task", "task-held", "task-support", "second", "fix")
 CORE_LEGS = ("baseline", "task", "fix")
 
 
-def red_legs(made, problem):
+def red_legs(made, problem, by_gate=False):
     """`[{"leg", "ran", "seconds", ...}]` - one entry per run `red` made, by
     its own measured seconds, and for each of `CORE_LEGS` it did not make an
     entry saying so with `why` and `seconds` None: a leg not run is not a leg
     of zero seconds. `made` maps a leg's name to the record `_isolated_run`
-    returned for it; `problem` is what stopped the proof, or None."""
+    returned for it; `problem` is what stopped the proof, or None; `by_gate`
+    is whether the fix run was owed and left to the task gate
+    (`--fix-by-gate`)."""
     legs = []
     for name in LEG_ORDER:
         record = made.get(name)
@@ -4872,6 +4909,9 @@ def red_legs(made, problem):
         elif name in CORE_LEGS:
             why = ("the proof stopped before it was made: %s" % (problem,)
                    if problem is not None else
+                   "not run: the fix leg is the task gate's (--fix-by-gate), "
+                   "the green gate run the block is filed over"
+                   if name == "fix" and by_gate else
                    "not owed: it follows a task run that showed a red over a "
                    "sound baseline, and this one did not")
             legs.append({"leg": name, "ran": False, "seconds": None, "why": why})
@@ -4923,6 +4963,12 @@ def build_parser():
                              "files add over HEAD; `drive-phase.py submit` passes "
                              "it, and --introduces stays the override that names "
                              "one more")
+    parser.add_argument("--fix-by-gate", action="store_true", dest="fix_by_gate",
+                        help="red: make no fix run - whether the task's tests "
+                             "pass on the working tree's implementation is left "
+                             "to the green task gate the block is filed over; a "
+                             "proved block says `fixLeg: task-gate` and is "
+                             "filable only with that gate run bound to it")
     parser.add_argument("--introduces", action="append", default=[],
                         help="a symbol the task creates; `red` only - a compile "
                              "or collection error counts as red only when the "

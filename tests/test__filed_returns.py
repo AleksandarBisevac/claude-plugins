@@ -1040,6 +1040,7 @@ def _selftest():
         _harness.stage(check, "ss-block", _same_second_cases)
         _harness.stage(check, "um-block", _um_cases)
         _harness.stage(check, "ma-block", _mechanical_cases)
+        _harness.stage(check, "fl-block", _fix_leg_cases)
         _harness.stage(check, "pk-block", _held_cases)
         _harness.stage(check, "orf-block", _owes_red_first_cases)
         _harness.stage(check, "hn-block", _human_cases)
@@ -1805,6 +1806,56 @@ def _read_set_cases(check):
     finally:
         _harness.remove_tree(root)
         _harness.remove_tree(outside)
+
+
+def _fix_leg_cases(check):
+    """A proof that leaves its fix leg to the task gate (`red --fix-by-gate`)
+    is filable only with the gate run that showed the fix bound to it: unbound,
+    the block claims a fix no run here was seen passing."""
+    bound = {"status": "proved", "basis": "b", "at": "z", "fixLeg": "task-gate",
+             "fixLegRunId": "run-7"}
+    unbound = dict((k, v) for k, v in bound.items() if k != "fixLegRunId")
+    empty = dict(bound, fixLegRunId="  ")
+    other = dict(bound, fixLeg="skipped")
+    plain = {"status": "proved", "basis": "b", "at": "z"}
+
+    def said(red):
+        return [p for p in M.return_problems("executor", _executor(redFirst=red))
+                if "fixLeg" in p]
+    got = dict((name, said(red)) for name, red in (
+        ("bound", bound), ("unbound", unbound), ("empty", empty),
+        ("other", other), ("plain", plain)))
+    check("fl1 an executor return whose block says `fixLeg: task-gate` is refused "
+          "with no gate run bound (`fixLegRunId` missing or blank) and with a "
+          "`fixLeg` naming anything else, and is filable once a run is bound - "
+          "and a block with no `fixLeg` at all, every proof that made its fix "
+          "run, is untouched: %r" % (got,),
+          got["bound"] == [] and got["plain"] == []
+          and len(got["unbound"]) == 1 and "fixLegRunId" in got["unbound"][0]
+          and len(got["empty"]) == 1 and "fixLegRunId" in got["empty"][0]
+          and len(got["other"]) == 1 and "'skipped'" in got["other"][0]
+          and (getattr(M, "FIX_LEG_FIELD", None), getattr(M, "FIX_LEG_BY_GATE", None),
+               getattr(M, "FIX_LEG_RUN_FIELD", None))
+          == ("fixLeg", "task-gate", "fixLegRunId"))
+
+    block = _helper_block()
+    by_gate = dict(block, fixLeg="task-gate", fixLegRunId="run-7")
+    rel = "returns/P1.1/20260101T000000Z.executor.json"
+    took = M.mechanical_answers((rel, _executor(redFirst=by_gate), None),
+                                ("whole", "w"))
+    left = M.mechanical_answers(
+        (rel, _executor(redFirst=dict((k, v) for k, v in by_gate.items()
+                                      if k != "fixLegRunId")), None),
+        ("whole", "w"))
+    check("fl2 a helper block whose fix leg is the task gate's gives its word, "
+          "the basis naming the gate run that showed the fix; the same block "
+          "with no run bound gives no word, and says why it is the reviewer's: "
+          "%r / %r" % (took, left),
+          took[0].get("redFirst") == block["status"]
+          and "run-7" in took[0].get("redFirstBasis", "")
+          and "task gate" in took[0].get("redFirstBasis", "")
+          and "redFirst" not in left[0]
+          and "fixLegRunId" in left[1].get("redFirst", ""))
 
 
 def _owes_red_first_cases(check):
