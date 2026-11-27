@@ -79,7 +79,7 @@ Usage:
   audit-task.py seed ["<phase title>"] [manifest]
                 [--gate CMD ... | --gate-clear] [--no-task]
                 [--project-dir DIR] [--takeover] [--json]
-  audit-task.py settle [manifest]
+  audit-task.py settle [manifest] [--task ID]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py reopen <taskId> --reason "<why>|-" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
@@ -10641,11 +10641,15 @@ def _narrowed_wide_gates(assembled, project):
     return found
 
 
-def _settle_wide_gates(assembled, project):
+def _settle_wide_gates(assembled, project, only_task=None):
     """`(rows, phase_ids)` - `_narrowed_wide_gates` written onto `assembled`,
-    as `_settle`'s rows (`kind` "task") and the phases whose shards they move."""
+    as `_settle`'s rows (`kind` "task") and the phases whose shards they move.
+    `only_task` is one task id: the gate of that task alone is written, so the
+    phases returned are at most the one it sits in."""
     rows, phase_ids = [], []
     for phase, task, now, changes in _narrowed_wide_gates(assembled, project):
+        if only_task is not None and task.get("id") != only_task:
+            continue
         basis = ("the derivation now narrows it; stored as the fallback `%s`"
                  % (task["tests"].get("gateBasis"),))
         task["tests"] = now
@@ -14072,12 +14076,23 @@ def _locked_settle(args, project, config, mpath, out):
         for line in pre_findings:
             out("FINDING: " + line)
         return E_INVALID
-    rows = _settle(assembled, None)
-    gate_rows, gate_phases = _settle_wide_gates(assembled, project)
+    only_task = getattr(args, "task", None)
+    if only_task is not None and only_task not in _mio.tasks_by_id(assembled):
+        out("[audit-task] settle --task: the plan holds no task %s; tasks: %s"
+            % (only_task, ", ".join(
+                sorted(str(k) for k in _mio.tasks_by_id(assembled))) or "(none)"))
+        return E_USAGE
+    # A TASK-SCOPED SETTLE TOUCHES ONE TASK'S GATE AND NOTHING ELSE: the phase
+    # and bug values and the stale index stubs are the whole-plan call's, and a
+    # caller that asked about one task (the drive, before it starts that task)
+    # must not find another phase's shard rewritten in its tree.
+    rows = _settle(assembled, None) if only_task is None else []
+    gate_rows, gate_phases = _settle_wide_gates(assembled, project, only_task)
     rows = rows + gate_rows
     moved_phases = [r["id"] for r in rows if r["kind"] == "phase"] + gate_phases
+    stale_stubs = _mio.stale_stubs(mpath) if only_task is None else []
     phase_ids = []
-    for pid in (moved_phases + [row[0] for row in _mio.stale_stubs(mpath)]):
+    for pid in (moved_phases + [row[0] for row in stale_stubs]):
         if pid not in phase_ids:
             phase_ids.append(pid)
     bugs_moved = any(r["kind"] == "bug" for r in rows)
@@ -14090,6 +14105,10 @@ def _locked_settle(args, project, config, mpath, out):
                       "phases": n_phases, "bugs": n_bugs}
             result.update(project_basis_key(args))
             out(json.dumps(result, indent=2, sort_keys=True))
+            return 0
+        if only_task is not None:
+            out("[audit-task] nothing to settle -- task %s's derived wide gate "
+                "does not narrow" % (only_task,))
             return 0
         out("[audit-task] nothing to settle -- %s, every stored status is the "
             "derived one, and no task's derived wide gate narrows" % (examined,))
@@ -16112,9 +16131,9 @@ VERB_FLAGS = {
     "signoff": ("verdict", "summary", "review_outcome", "branch", "plan", "bind",
                 "no_evidence_reason", "accept", "reason", "accept_open",
                 "carried"),
-    # `settle` stores what the derivations already answer, over the whole plan, so
-    # there is nothing for a flag to choose - an empty row, for `start`'s reason.
-    "settle": (),
+    # `settle` stores what the derivations already answer, over the whole plan -
+    # or, with `--task`, the one task's stale wide gate and nothing else.
+    "settle": ("task",),
     # `reopen` undoes one close and records why, so its one flag is `cancel`'s.
     "reopen": ("reason",),
     # `move` takes the phase the task goes to; the new id is allocated, never
@@ -16441,6 +16460,10 @@ def build_parser():
     # anything, so the door grades the word and says it takes no path.
     p.add_argument("--role", default=None,
                    help="file-return: %s" % ("|".join(_fr.RETURN_ROLES),))
+    # `settle` only. One task id: settle that task's stale wide gate alone.
+    p.add_argument("--task", default=None, metavar="ID",
+                   help="settle: settle only this task's stale wide gate and "
+                        "write only its phase's shard")
     # `move` only. The phase the task moves into - `--phase` stays `add`'s, where
     # it names the phase a new task is born in.
     p.add_argument("--to", default=None, metavar="PHASE")

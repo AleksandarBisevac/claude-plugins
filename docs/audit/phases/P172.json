@@ -23,7 +23,16 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P172-R1",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md:7215",
+        "issue": "The audit-task.py section still describes `settle [manifest]` as storing every derived value of the plan, with no mention of `--task ID` (scoped to one task's stale wide gate, no phase/bug/stub writes, unknown task refused with exit 2). The drive-phase.py section (~5533) likewise does not mention the scoped call or the new 'gate did not move' did-line. The executor flagged this as NOT DONE.",
+        "resolution": "Add one sentence per section stating the `--task` scope and the unmoved-gate did-line, without writing a count."
+      }
+    ],
+    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1883,7 +1892,8 @@
         "plugins/audit/scripts/governance/_affected_tests.py",
         "tests/test_run_test_gate.py",
         "tests/test__affected_tests.py",
-        "changelog.d/P172.10-mrj.changed.md"
+        "changelog.d/P172.10-mrj.changed.md",
+        "plugins/audit/scripts/governance/_evidence_io.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -1932,7 +1942,7 @@
     {
       "id": "P172.11-mrj",
       "title": "The brief offers no command a runner refuses for a suite kind it does not collect",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase review, regression from the brief's recorded-spelling reading. suite_taking_runners adds _ANY_KIND for a runner spelled with {paths}, so _takes_kind, _runs_whole_tree and suite_coverage treat python3 tools/sweep-selftests.py {paths} as running suites of every kind. With a task adding tools/ui-tests/calendar.test.mjs the brief either counts the .mjs suite covered by the bare sweep or tells the writer to run 'python3 tools/sweep-selftests.py tools/ui-tests/calendar.test.mjs', which the sweep refuses (tools/sweep-selftests.py 'not a suite this sweep covers'). Before the change both cases said honestly 'no command to run it is given'. A {paths} spelling must not widen the kinds a runner takes beyond what its collection rule reads; when the kind is unknown, say so rather than offer a command. Case red before the fix on this repo's spelling.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -1957,14 +1967,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0e81e0f8a542",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-lookup.py: removed _ANY_KIND. A runner spelled with the recorded {paths} slot now takes the kinds its collection rule reads (_collected_kinds over _runner_collects.LANGUAGE_RUNNERS: sweep script and pytest -> .py, vitest/jest -> JS/TS kinds); a runner that table does not name gets an empty kind set (known to take suite paths, no kind), so _takes_kind, _runs_whole_tree and suite_coverage hand it no suite and _unrun_line says 'the kind of suite X takes is not known'. Added import _runner_collects as _collects (low layer; layer lint shows no new violation, the one it reports is panel/_panel_state.py, untouched). tests/test_audit_lookup.py: ws28-ws33 now use this repo's sweep runner instead of tools/x.py; ws32 rewritten (the .js suite is not handed to the sweep, the .py one is); new ws34 (slow and fast variants: .mjs suite under the sweep {paths} spelling gets no command and is not counted covered by the bare sweep) and ws35 (unknown-kind runner handed no suite, line says kind). changelog.d/P172.11-mrj.changed.md added. Mutations (restored byte-identical, sha unchanged 8a7e563c..., __pycache__ purged): A) _collected_kinds returns every kind -> ws32, ws34 slow, ws34 fast, ws35 red; B) returns empty set -> ws28, ws29, ws32 red. Commands: sweep tests/test_audit_lookup.py exit 0, 219/219; ruff exit 0; vermin exit 0; register-citations exit 0 (0 found); changelog-check exit 0; house_style/prose_number/preamble/navigability lints 0 violations. Dependants: audit-lookup.py's importers (test__evidence_io, test__filed_returns, test_audit_lookup, test_drive_phase) call public names whose signatures are unchanged - still correct; PLUGIN-BUILD-GUIDE.md section at :3565 and docs/research/pipeline-cost-design.md say nothing about the any-kind reading (grep for 'any kind'/'whatever its extension' found none), still correct; schema and _clause_coverage reference by basename only, unaffected; execute-task.md/README rows on own-tests/runsGate describe unchanged behaviour. test_audit_lookup.py dependants (sweep-costs.json, affected.py, test_audit_task.py) unaffected - no names renamed. Caveat: a plan whose only evidence is the recorded spelling for a runner outside the LANGUAGE_RUNNERS table (e.g. python3 tools/x.py) now gets no derived command - intended per the task ('when the kind is unknown, say so').",
+        "descriptive": "A {paths} spelling no longer makes the brief offer or credit a runner for suite kinds its collection rule does not read; unknown kinds are said, not guessed."
       },
       "startedAt": "2026-11-27T09:41:24Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-27T09:58:58Z",
+      "verifiedBy": [
+        "ws34: a .mjs suite under the sweep's {paths} spelling gets no sweep command and is not counted covered by the bare sweep (slow and fast gate step)",
+        "ws35: a runner of unknown collection rule spelled with {paths} is handed no suite and the line says its kind is unknown",
+        "ws32 rewritten: the spelling no longer hands a .js suite to the sweep"
+      ],
       "notes": [
         {
           "at": "2026-11-27T09:41:20Z",
@@ -1987,6 +2001,24 @@
             "ms": 674136,
             "basis": "durationMs in run 2026-11-27T09:58:43Z.b4c3b6's record (run-test-gate --record)",
             "runId": "2026-11-27T09:58:43Z.b4c3b6"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-27T09:46:27Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 301000,
+            "startedAt": "2026-11-27T09:41:26Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-27T09:58:43Z.b4c3b6",
+            "kind": "wait",
+            "ms": 12000,
+            "startedAt": "2026-11-27T09:46:48Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 0e81e0f8a542",
+            "kind": "commit",
+            "ms": 2598,
+            "startedAt": "2026-11-27T09:58:54Z"
           }
         ],
         "firstStartedAt": "2026-11-27T09:41:24Z"
@@ -2104,6 +2136,18 @@
         "runId": "2026-11-27T09:58:51Z.f8c99f",
         "status": "passed",
         "at": "2026-11-27T09:58:51Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "0e81e0f8a542",
+        "at": "2026-11-27T09:58:58Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-27T09:46:26Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_lookup.py` in a throwaway tree at HEAD exited 1 with 4 of 219 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ws32 (house FAIL), ws34 (house FAIL), ws34 (house FAIL), ws35 (house FAIL): SELFTEST FAILED: 215/219 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2152,10 +2196,116 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-27T09:57:36Z",
+            "ms": 27793,
+            "basis": "selectionMs in run 2026-11-27T10:06:04Z.391819's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-27T10:06:04Z.391819"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-27T09:58:04Z",
+            "ms": 479694,
+            "basis": "durationMs in run 2026-11-27T10:06:04Z.391819's record (run-test-gate --record)",
+            "runId": "2026-11-27T10:06:04Z.391819"
+          },
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-27T10:06:10Z",
+            "ms": 24837,
+            "basis": "selectionMs in run 2026-11-27T10:13:25Z.e88774's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-27T10:13:25Z.e88774"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-27T10:06:35Z",
+            "ms": 410499,
+            "basis": "durationMs in run 2026-11-27T10:13:25Z.e88774's record (run-test-gate --record)",
+            "runId": "2026-11-27T10:13:25Z.e88774"
+          }
+        ],
         "firstStartedAt": "2026-11-27T09:41:27Z"
       },
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-27T10:13:25Z.e88774",
+        "status": "passed",
+        "durationMs": 410499,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no step printed a summary this reader can count (pre-gate/preGate and 1 more), so the size of this gate is not knowable from its output",
+          "treeMutated": [],
+          "treeBasis": "git described the tree before and after",
+          "coverage": [
+            "tests/test_audit_task.py",
+            "tests/test_drive_phase.py"
+          ],
+          "coverageBasis": "the runner named 206 path(s); the work under test declares 5 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 195/195 and 201 more; declared but not named by the run: changelog.d/P172.12-mrj.changed.md, plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/manifest/audit-task.py; breadth: the run named 174 suite path(s) and this task declares 5 file(s), and 170 of them are suites the task neither declares nor is named after (test__deps.py, test__evidence_io.py, test__output.py, test_close_phase.py, test_commit_task_work.py, test_stamp_verification.py, tests/_harness.py and 163 more) - this gate asks more than the task changed; that is reported, not refused"
+        },
+        "banners": [],
+        "recorderHeld": false,
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:ed17a386437989dce8899c3df7f7a7b092a21a04392ae1fda1e4d0928ddd1604",
+        "reuseKey": "1:sha256:da02f6ac1e9be2b118edc7c8dab8bf881d3e221b3220d7b3b7348ca668e8dcf6",
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+        "startedAt": "2026-11-27T10:06:35Z",
+        "selectionMs": 24837,
+        "at": "2026-11-27T10:13:25Z",
+        "testedState": {
+          "head": "0e81e0f8",
+          "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+          "scopeDigest": "sha256:4728b4f580033105a84b9b59ebb7314e8d8fc8ed4fad1b1df2c93ed253baa0ac",
+          "scopeBasis": "5 declared file(s); 5 read, 0 missing",
+          "scopeListDigest": "sha256:487080e9b6a3db1969162471a1799f95b07986e8133aaef9b68e1c65196bafeb",
+          "dirtyDigest": "sha256:98e90ff79dce0e262be7af94960123b4b01fbb7d2bfdcc81b4a376cfc6988d42",
+          "dirtyBasis": "git described the tree before the run; 5 dirty path(s)",
+          "treeKey": "3e63fb7445d7"
+        },
+        "steps": [
+          {
+            "name": "pre-gate/preGate",
+            "exit": 0,
+            "ran": null,
+            "measured": "not-knowable",
+            "durationMs": 8337,
+            "suiteReader": "none",
+            "command": "python3 tools/lints/_deps.py --register-citations"
+          },
+          {
+            "name": "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_io.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_run_test_gate.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+            "exit": 0,
+            "ran": null,
+            "measured": "not-knowable",
+            "durationMs": 402114,
+            "suiteReader": "none",
+            "commandSha256": "6d3e5f9099907b615a8c3e57d2c33195d76801435c25ee4bc40ae7b95c3c83ba",
+            "commandBytes": 5400,
+            "program": "python3"
+          }
+        ],
+        "machine": "this run had the machine to itself",
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-27T10:06:04Z.391819",
+            "launch": "2026-11-27T09:57:26Z-4bdc3519",
+            "status": "passed",
+            "at": "2026-11-27T10:06:04Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-27T10:13:25Z.e88774",
+        "status": "passed",
+        "at": "2026-11-27T10:13:25Z"
+      }
     },
     {
       "id": "P172.13-mrj",
@@ -2181,7 +2331,8 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [
-        "P172.12-mrj"
+        "P172.12-mrj",
+        "P172.10-mrj"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -2192,7 +2343,13 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-27T10:02:52Z",
+          "text": "Also from the red-first fix: PLUGIN-BUILD-GUIDE.md lines for run-test-gate.py's result key redFirstStage (was redFirst), SELECTION_HOOK_CODE beside SELECTION_CODE, _affected_tests' stale temp prune (SELECTION_TMP_STALE_SECONDS), and _evidence_io's RED_FIRST_STEP_PREFIX (declared_steps skips a leading red-first run as it skips the pre-gate). Depends on P172.10-mrj too."
+        }
+      ]
     }
   ],
   "reviewPerTask": "signals",

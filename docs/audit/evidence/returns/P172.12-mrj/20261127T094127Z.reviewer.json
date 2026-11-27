@@ -1,0 +1,18 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "PLUGIN-BUILD-GUIDE.md:7215",
+   "issue": "The audit-task.py section still describes `settle [manifest]` as storing every derived value of the plan, with no mention of `--task ID` (scoped to one task's stale wide gate, no phase/bug/stub writes, unknown task refused with exit 2). The drive-phase.py section (~5533) likewise does not mention the scoped call or the new 'gate did not move' did-line. The executor flagged this as NOT DONE.",
+   "resolution": "Add one sentence per section stating the `--task` scope and the unmoved-gate did-line, without writing a count."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause 1 'Give settle a task scope (settle --task ID that settles only that task's stale wide gate and writes only its phase's shard) and have settle_stale_gate use it': audit-task.py adds --task (parser, VERB_FLAGS, usage), _locked_settle skips _settle and stale_stubs when scoped and passes only_task to _settle_wide_gates; drive-phase.py:2484 passes --task task['id']. Clause 2 'a case proves another phase's shard is untouched (red before)': ssg5 compares the sibling shard bytes before/after; wgt2 compares every plan file byte-for-byte. Clause 3 'report that nothing moved instead of settled: X -> X': drive-phase.py:2493 appends \"<id>'s gate did not move...\" when after gate == before gate. The filed outcome describes this diff accurately (flag, refusal of unknown task, skipped _settle/stubs, only_task parameter, did-line, ssg5/ssg6, wgt1-wgt7); its dependants claim holds (only other caller of _settle_wide_gates passes two args; default None; unscoped path unchanged, wgt4 and wg5-wg9 cover it). casesAdded lists only ssg5 while ssg6 and wgt1-7 are also added - cosmetic.",
+  "missing": [],
+  "redFirst": "could-not-prove",
+  "redFirstBasis": "Executor's filed word is could-not-prove: the helper's run of `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py` timed out after 149 s at HEAD, so no per-case red was printed. Independently, I exported base 0e81e0f8 (git archive) to a scratch dir, copied only the two new test files over it and ran the staged blocks with the old code: `python3 tests/test_drive_phase.py --selftest --stage ssg-block` exit 1, 4/6 passed, FAIL ssg5 (P2.1 gate narrowed to ['runner tests/test_b.py'], i.e. the sibling task was rewritten) and FAIL ssg6; `python3 tests/test_audit_task.py --selftest --stage wgt-block` exit 1, 2/7 passed, FAIL wgt2, wgt3, wgt5, wgt6, wgt7 (unknown flag on old verb), PASS wgt1 (precondition) and wgt4 (the allow twin, which must pass on old code). So the executor's claim that ssg5/ssg6/wgt* fail on the old code holds; filed here as the echo of the helper's word because the filed record carries no per-case red.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Gate is `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py` (two whole files). Read only the settle-related blocks they select: ssg1-ssg4 in tests/test_drive_phase.py (ssg2 asserts the settle-before-start verb order, narrowed gate and did-line; ssg4 asserts the REFUSED warning) and wg1-wg9 in tests/test_audit_task.py (wg5 asserts the stale gate is rewritten, wg9 nothing written when nothing stale); each asserts on written plan values or call order, none a swallowing try or a does-not-raise shape. The rest of the two files was not read."
+ },
+ "verdict": "findings"
+}

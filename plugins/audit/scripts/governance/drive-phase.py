@@ -2462,7 +2462,10 @@ def settle_stale_gate(ctx, task):
     task starts: `audit-task.py settle`, the one writer of a derived value,
     rewrites the phase's wide gate a task stored before the project recorded
     how to run a subset (`_phases.stale_spelled_gates` names which tasks), under
-    the verb's own lock and revalidation. Asked of the task about to start,
+    the verb's own lock and revalidation. `--task` scopes the call to this task:
+    the verb then writes this task's phase shard alone, where a call over the
+    whole plan rewrote every other phase's stale gate in this tree with a
+    did-line naming only this task. Asked of the task about to start,
     because a started task keeps the gate its attempt is graded against - a
     settle after the start is a settle of nothing - and so a task with an
     attempt is never named.
@@ -2478,7 +2481,8 @@ def settle_stale_gate(ctx, task):
         return
     before = _mio.tasks_by_id(manifest).get(task["id"], {}).get("tests") or {}
     code, out, err = run_verb(ctx, "audit-task.py", [
-        "settle", ctx["manifest"], "--project-dir", ctx["project"]])
+        "settle", ctx["manifest"], "--task", task["id"],
+        "--project-dir", ctx["project"]])
     if code != 0:
         warn(ctx, "%s's gate was not settled to the narrow one before its "
                   "start: audit-task.py settle refused (exit %d): %s" % (
@@ -2486,6 +2490,11 @@ def settle_stale_gate(ctx, task):
         return
     after = _mio.tasks_by_id(load_phase(ctx)[0]).get(task["id"], {}).get(
         "tests") or {}
+    if after.get("gate") == before.get("gate"):
+        ctx["did"].append("%s's gate did not move: audit-task.py settle exited 0 "
+                          "and the task still holds %s"
+                          % (task["id"], before.get("gate")))
+        return
     ctx["did"].append("%s's stale wide gate settled before its start: %s -> %s"
                       % (task["id"], before.get("gate"), after.get("gate")))
 

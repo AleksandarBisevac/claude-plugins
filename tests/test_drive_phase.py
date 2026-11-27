@@ -27344,6 +27344,77 @@ def _settle_stale_gate_cases(check):
                   for w in ctx.get("warnings") or [])
           and ("%s %s" % (N.STARTED, ids[0])) in ctx["did"])
 
+    # THE SIBLING PHASE'S SHARD. A settle asked for the whole plan rewrote every
+    # phase's stale gate, so the drive of one phase changed another phase's
+    # shard in its own tree with the did-line naming this task alone.
+    root_s, mpath_s = _repo("ssg-shard", task_ids=ids)
+    _stale_spelling_plan(mpath_s)
+    _record_spelling(root_s, mpath_s)
+    plan = _mio.load_manifest(mpath_s)
+    sibling = json.loads(json.dumps(plan["phases"][0]["tasks"][0]))
+    sibling.update({"id": "P2.1", "title": "the sibling phase's stale task",
+                    "files": ["src/f3.txt", "tests/test_b.py"]})
+    sibling["tests"]["add"] = ["tests/test_b.py: asserts the sibling change"]
+    plan["phases"].append({"id": "P2", "title": "two", "status": "pending",
+                           "desiredOutcome": "a sibling phase",
+                           "review": {"model": "sonnet"}, "testGate": ["true"],
+                           "tasks": [sibling]})
+    plan["fileIndex"]["src/f3.txt"] = ["P2.1"]
+    plan["fileIndex"]["tests/test_b.py"] = ["P2.1"]
+    os.remove(mpath_s)
+    _mio.save_sharded(mpath_s, plan)
+
+    def shard_bytes(pid):
+        for stub in _mio.read_json(mpath_s)["phases"]:
+            if stub.get("id") == pid:
+                with open(os.path.join(os.path.dirname(mpath_s), stub["shard"]),
+                          "rb") as fh:
+                    return fh.read()
+        return None
+    sibling_before = shard_bytes("P2")
+    stale = list(M._phases.stale_spelled_gates(_mio.load_manifest(mpath_s)))
+    ctx = _drive_ctx(root_s, mpath_s)
+    tasks = _mio.tasks_by_id(_mio.load_manifest(mpath_s))
+    with _Env(root_s):
+        stop = M.start_task(ctx, tasks[ids[0]])
+    check("ssg5 starting a task settles that task's gate and leaves another "
+          "phase's stale task and shard as they were, though the plan calls "
+          "both stale: %r"
+          % ((stop, stale, _gate_of(mpath_s, ids[0]), _gate_of(mpath_s, "P2.1"),
+              ctx["did"]),),
+          stop is None
+          and any(f.startswith("task %s: " % (ids[0],)) for f in stale)
+          and any(f.startswith("task P2.1: ") for f in stale)
+          and _gate_of(mpath_s, ids[0]).get("gate") == want.get("gate")
+          and _gate_of(mpath_s, "P2.1").get("gate") == ["true"]
+          and shard_bytes("P2") == sibling_before and sibling_before)
+
+    # A settle that exits 0 and moves nothing is said to have moved nothing: the
+    # did-line used to read `X -> X`, the shape of a gate that changed.
+    root_i, mpath_i = _repo("ssg-idle", task_ids=ids)
+    _stale_spelling_plan(mpath_i)
+    _record_spelling(root_i, mpath_i)
+    I, _why = _load("drive_phase_settle_idle")
+    real_i = I.run_verb
+
+    def idle_settle(ctx, script, args, stdin=None, record=False):
+        if script == "audit-task.py" and args[0] == "settle":
+            ctx["log"].append((script, list(args), 0, "idle"))
+            return 0, "[audit-task] nothing to settle", ""
+        return real_i(ctx, script, args, stdin=stdin, record=record)
+    I.run_verb = idle_settle
+    ctx = _drive_ctx(root_i, mpath_i)
+    tasks = _mio.tasks_by_id(_mio.load_manifest(mpath_i))
+    with _Env(root_i):
+        stop = I.start_task(ctx, tasks[ids[0]])
+    said = [d for d in ctx["did"] if ids[0] in d and "gate" in d]
+    check("ssg6 a settle that exits 0 with the gate unmoved says the gate did "
+          "not move, and does not say it was settled or print one gate as "
+          "both sides of an arrow: %r" % ((stop, said, ctx["did"]),),
+          stop is None and len(said) == 1 and "not move" in said[0]
+          and "->" not in said[0] and "settled" not in said[0]
+          and ("%s %s" % (I.STARTED, ids[0])) in ctx["did"])
+
 
 if __name__ == "__main__":
     safe_stdio()

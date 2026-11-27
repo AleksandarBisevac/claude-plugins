@@ -4717,7 +4717,8 @@
       "P169.44-6l3",
       "P171.2-71o",
       "P172.4",
-      "P172.3"
+      "P172.3",
+      "P172.10-mrj"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",

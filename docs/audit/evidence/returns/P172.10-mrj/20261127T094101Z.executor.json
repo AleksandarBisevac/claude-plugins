@@ -1,0 +1,27 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__affected_tests.py tests/test__evidence_io.py tests/test__verdict_binding.py tests/test_commit_task_work.py tests/test__deps.py tests/test__output_lints.py": "pass",
+    "ruff check plugins/audit tools tests .claude/hooks": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints": "pass",
+    "python3 tools/lints/_deps.py --register-citations": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-27T10:09:19Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__affected_tests.py` in a throwaway tree at HEAD exited 1 with 7 of 799 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rfu4 (house FAIL): SELFTEST FAILED: 792/799 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "run-test-gate.py: a red-first stage's output and follower lines are held apart (stage_texts/stage_followers) and dropped with a green stage's steps, merged back when the stage stopped the gate; res['redFirst'] renamed res['redFirstStage']; SELECTION_CODE extended with _runner_collects, _manifest_vocab, _evidence_io plus SELECTION_HOOK_CODE (hooks _config.py) via selection_code_paths(). _evidence_io.py: RED_FIRST_STEP_PREFIX and declared_steps skips the leading red-first run. _affected_tests.py: write_selection prunes .tmp files older than SELECTION_TMP_STALE_SECONDS. Cases rfu4-rfu7, rf2b, rf2c, scd1, scd2, afs9; 12 mutations (incl. over-fire twins) each turned the named case red on a scratch copy. Sweep over 7 suites: 7/7 files ok, 2299 cases; ruff, vermin, register-citations clean. Dependants (drive-phase, full-gate, _verdict_binding, commit-task-work) still correct: they read the filed return's redFirst, not the gate result's key, and declared_steps differs only for a stopped row.",
+    "descriptive": "A green red-first stage no longer lends its output to the gate's coverage, overlap or followers; declared gate, key name, selection cache key and temp pruning corrected."
+  },
+  "testsAdded": [
+    "a green red-first stage that names a declared file the gate step does not leaves overlap empty (rfu4), with its follower (rfu5), the red-stage allow case (rfu6), the redFirstStage key (rfu7), declared_steps skipping red-first (rf2b, rf2c), selection key over every listed module (scd1, scd2), stale temp pruning (afs9)"
+  ],
+  "casesAdded": [
+    "rfu4"
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:bfe0f1ae21ad5271fc1cfdd0da6d3b208ecbe20b31b1794744c4b9f924e8f32e\",\"dirtyDigest\":\"sha256:f5b590c17ec609e1e2f1cf2c9a1712a4453ec878a382e195299c188a0014703d\",\"dirtyPaths\":{\"changelog.d/P172.10-mrj.changed.md\":\"67247edbec3cb566\",\"plugins/audit/scripts/governance/_affected_tests.py\":\"aedd357b9506870a\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"8135cd6d6d79e401\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"e00e248e334f9463\",\"tests/test__affected_tests.py\":\"9797db9b2f61c9b0\",\"tests/test_run_test_gate.py\":\"4c3a18671be51355\"},\"head\":\"e15f58d4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"changelog.d/P172.10-mrj.changed.md\",\"plugins/audit/scripts/governance/_affected_tests.py\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"tests/test__affected_tests.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:e9807f323d8f67b58707abd47b6961e22ec9239c2fb7b2b3201481ac791cbf44\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

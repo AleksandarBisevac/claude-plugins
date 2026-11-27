@@ -23878,6 +23878,127 @@ def _stale_wide_gate_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _settle_task_scope_cases(check):
+    """`settle --task ID` settles one task's stale wide gate and writes only the
+    shard of the phase that task sits in: a sibling phase's stale task, a stub
+    fallen behind its shard and the index are left as they were, which a call
+    with no scope does not do."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+    try:
+        plan = base_manifest()
+        plan["phases"][2]["testGate"] = ["test"]
+        # A bug whose fix task is done and which still reads `in_progress`: a
+        # derived value kept on the INDEX, which only the unscoped call stores.
+        plan["phases"][1]["tasks"][1].update(status="done", commit="a" * 40,
+                                             bugId="BUG-1")
+        plan["bugs"] = [{"id": "BUG-1", "title": "b", "status": "in_progress",
+                         "taskId": "P2.3", "fixedIn": None}]
+        proj, mpath = mk("wgt", plan, sharded=True, git=True)
+        suite = "tests/test_a.py: the case the task adds"
+        for phase in ("P2", "P3"):
+            run(["add", "stale in " + phase, "--phase", phase, "--tests-mode",
+                 "tdd", "--tests-add", suite, "--project-dir", proj])
+        # A stub fallen behind its shard: a derived value the no-scope call
+        # re-mirrors and a task-scoped one has no business with.
+        idx = _mio.read_json(mpath)
+        for stub in idx["phases"]:
+            if stub.get("id") == "P1":
+                stub["status"] = "in_progress"
+        _panel_write._atomic_write_json(mpath, idx)
+        code_rl, _t = run(["record-listing", "--listing-all", "lister --all",
+                           "--listing-related", "lister --related {paths}",
+                           "--spelling", "runner {paths}",
+                           "--verified-on", "echo v-wgt",
+                           "--project-dir", proj])
+
+        def tests_of(tid):
+            return dict((task_in(mpath, tid) or {}).get("tests") or {})
+
+        def shard_of(pid):
+            for stub in _mio.read_json(mpath)["phases"]:
+                if stub.get("id") == pid:
+                    return os.path.join(os.path.dirname(mpath), stub["shard"])
+            return None
+
+        def plan_bytes():
+            found = {}
+            for where, _dirs, names in os.walk(os.path.dirname(mpath)):
+                for name in names:
+                    with open(os.path.join(where, name), "rb") as fh:
+                        found[os.path.join(where, name)] = fh.read()
+            return found
+
+        ids = dict((ph["id"], [t["id"] for t in ph.get("tasks") or []
+                               if t["id"] not in ("P2.1", "P2.3", "P1.1")])
+                   for ph in _mio.load_manifest(mpath)["phases"])
+        a, b = ids["P2"][0], ids["P3"][0]
+        stale = [w for w in _rules.validate(_mio.load_manifest(mpath))[1]
+                 if "settle" in w and w.startswith("task ")]
+        check("wgt1 PRECONDITION: with the spelling recorded, the stored wide "
+              "gate of a task in each of two phases is called stale, and both "
+              "hold the wide gate: %r" % ((code_rl, a, b, stale),),
+              code_rl == 0 and len(stale) == 2
+              and any(a in w for w in stale) and any(b in w for w in stale)
+              and tests_of(a).get("gate") == ["test"]
+              and tests_of(b).get("gate") == ["test"])
+        before = plan_bytes()
+        shard_a, shard_b = shard_of("P2"), shard_of("P3")
+        code, txt = run(["settle", "--task", a, "--project-dir", proj])
+        after = plan_bytes()
+        # The journal row is the write's own audit trail, so it is not a plan
+        # file a scoped settle could have touched by mistake.
+        changed = sorted(p for p in set(before) | set(after)
+                         if before.get(p) != after.get(p)
+                         and os.sep + "journal" + os.sep not in p)
+        check("wgt2 settling one task narrows its gate and rewrites its own "
+              "phase's shard - and no other file: the sibling phase's shard, "
+              "the index and its fallen-behind stub are byte-identical: %r / %s"
+              % ((changed, tests_of(a), tests_of(b)), txt),
+              code == 0 and tests_of(a).get("gate") != ["test"]
+              and tests_of(a).get("gateBasis") != "phase-no-spelling"
+              and tests_of(b).get("gate") == ["test"]
+              and changed == [shard_a] and shard_b not in changed
+              and a in txt)
+        rows = [r for r in _journal_io.read_all(proj)
+                if r.get("action") == "plan.settle"]
+        moved = sorted(set(c.get("id") for r in rows
+                           for c in (r.get("details") or {}).get("changes") or []))
+        check("wgt3 ...with one plan.settle journal row naming that task alone: "
+              "%r" % (moved,), len(rows) == 1 and moved == [a])
+        # THE ALLOW TWIN: a call with no scope still settles every stale value,
+        # which a scope that leaked into the unscoped call would not.
+        code_w, txt_w = run(["settle", "--project-dir", proj])
+        bug = dict((x["id"], x) for x in
+                   _mio.read_json(mpath).get("bugs") or [])["BUG-1"]
+        check("wgt4 an unscoped settle still settles the sibling phase's task, "
+              "stores the bug's derived status and re-mirrors the stub: %r / %s"
+              % ((tests_of(b), bug), txt_w),
+              code_w == 0 and tests_of(b).get("gate") != ["test"]
+              and bug["status"] == "fixed"
+              and dict((s["id"], s.get("status"))
+                       for s in _mio.read_json(mpath)["phases"])["P1"] == "done")
+        settled = plan_bytes()
+        code_n, txt_n = run(["settle", "--task", a, "--project-dir", proj])
+        check("wgt5 a task with nothing stale is said to have nothing to "
+              "settle, naming the task, and writes nothing: %s" % (txt_n,),
+              code_n == 0 and "nothing to settle" in txt_n and a in txt_n
+              and plan_bytes() == settled)
+        code_u, txt_u = run(["settle", "--task", "P9.9", "--project-dir", proj])
+        check("wgt6 a task the plan does not hold is a usage refusal naming it, "
+              "and writes nothing, rather than reading as nothing stale: %s"
+              % (txt_u,),
+              code_u == 2 and "P9.9" in txt_u and plan_bytes() == settled)
+        code_f, txt_f = run(["scope", a, "--description", "x", "--task", a,
+                             "--project-dir", proj])
+        check("wgt7 `--task` stays a flag only `settle` reads: another verb "
+              "refuses it, naming the verb that does: %s" % (txt_f,),
+              code_f == 2 and "settle" in txt_f)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _group_record_cases(check):
     """(grc) The record a group's members take with the carrier's pointer: the
     carrier's own when it names the run, else built from the run's row - and a
@@ -24149,6 +24270,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("rr-block", "_record_run_cases"),
           ("grc-block", "_group_record_cases"),
           ("wg-block", "_stale_wide_gate_cases"),
+          ("wgt-block", "_settle_task_scope_cases"),
           ("cis-block", "_ci_schema_cases"))
 
 
