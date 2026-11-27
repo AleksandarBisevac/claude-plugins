@@ -222,7 +222,10 @@ the `implementationDigest` of its declared implementation files, the ones the fi
 run read - and `tree_since_proof` is the one reading of whether those three still
 match. Every settle and `file_writer_return` itself ask it: a HEAD or a declared
 file that moved is proved again before anything is filed, the changed test files
-noted on the task. A file the task does not declare is not in that reading: one
+noted on the task - those whose code digest (`testCodeDigest`, held beside the
+proof) did not move noted as changed outside their code (comments only), since
+the helper replays the task leg for them; the lock itself stays on bytes. A file
+the task does not declare is not in that reading: one
 the diff touches is caught at the close, where `commit-task-work.py`'s
 `attempt_refusal` refuses by name a path changed during the attempt that no
 in_progress task declares. On the writer path that refusal, when it is the
@@ -5788,13 +5791,17 @@ def writer_prove(ctx, manifest, phase, task, tree=None):
 
 def hold_proof(ctx, state, task, block, payload=None):
     """Hold `block` as the proof the writer's return is filed with, beside what
-    it was proved over: the HEAD, the test digest (locked) and the digest of
-    the implementation files the fix run read."""
+    it was proved over: the HEAD, the test digest (locked, bytes), the digest
+    of the implementation files the fix run read, and the test files' code
+    digest the helper keyed the task leg on (`testCodeDigest`), which only
+    words a later re-proof (`comment_only`) and moves no lock."""
     held = writer_state(state, task)
     impl = (payload or {}).get("implementationDigest")
+    test_code = (payload or {}).get("testCodeDigest")
     held["proof"] = {"block": block, "printed": ctx.get("printed"),
                      "head": block.get("head"),
-                     "implementation": impl if isinstance(impl, dict) else None}
+                     "implementation": impl if isinstance(impl, dict) else None,
+                     "testCode": test_code if isinstance(test_code, dict) else None}
     digest = block.get("testDigest")
     held["lock"] = dict(digest, at=block.get("at")) if isinstance(digest, dict) \
         else None
@@ -5821,8 +5828,7 @@ def tree_since_proof(ctx, state, task, tree=None):
         drift.append("HEAD %s, proved at %s" % ((now or "unknown")[:12],
                                                 (proof.get("head") or "unknown")[:12]))
     tests = lock_moved(ctx, state, task, tree)
-    if tests:
-        drift.append("test files changed: %s" % (", ".join(tests),))
+    drift.extend(changed_tests_said(tests))
     impl = proof.get("implementation")
     moved = changed_tests(impl, locked_paths_now(ctx, impl, tree)) \
         if isinstance(impl, dict) else []
@@ -5863,20 +5869,63 @@ def clauses_uncovered(ctx, state, task, result, clauses, left=()):
     return decision(ctx, state, "clauses-uncovered", task, why)
 
 
-def note_reproof(ctx, state, task, when, changed, block):
-    """Keep a re-proof over changed test files, for the return and the task."""
+TESTS_DRIFT = "test files changed"
+COMMENTS_ONLY = "outside their code (comments only)"
+
+
+def changed_tests_said(changed, quiet=()):
+    """The drift phrases for the test files `changed`: one for those whose code
+    moved, one for `quiet` - those whose bytes moved and whose code did not."""
+    loud = [p for p in changed if p not in quiet]
+    return ((["%s: %s" % (TESTS_DRIFT, ", ".join(loud))] if loud else [])
+            + (["%s %s: %s" % (TESTS_DRIFT, COMMENTS_ONLY, ", ".join(quiet))]
+               if quiet else []))
+
+
+def comment_only(before, after, changed):
+    """The paths of `changed` whose code digest (`testCodeDigest`, the helper's
+    reading of a Python test file without its comments) is the same in the
+    held proof's `before` and the re-proof's `after`, sorted. A path either
+    lacks, or holds no digest for, is not among them: this side never reads a
+    file's code itself, so a reading the helper did not give is not assumed."""
+    def files(d):
+        return dict((f.get("path"), f.get("sha256"))
+                    for f in (d or {}).get("files") or [] if isinstance(f, dict))
+    was, cur = files(before), files(after)
+    return sorted(p for p in changed if was.get(p) and was.get(p) == cur.get(p))
+
+
+def task_leg_word(payload):
+    """`replayed` or `ran` for the re-proof's task leg as the helper's `legs`
+    report it, or None when they do not say."""
+    for leg in (payload or {}).get("legs") or []:
+        if isinstance(leg, dict) and leg.get("leg") == "task":
+            if leg.get("reused") is True:
+                return "replayed"
+            if leg.get("ran") is True:
+                return "ran"
+    return None
+
+
+def note_reproof(ctx, state, task, when, changed, block, quiet=(), leg=None):
+    """Keep a re-proof over changed test files, for the return and the task;
+    `quiet` names those that changed outside their code (`comment_only`) and
+    `leg` what the helper did with the task leg (`task_leg_word`)."""
     held = writer_state(state, task)
     held["reproofs"] = list(held["reproofs"]) + [
         {"when": when, "changed": list(changed), "status": block.get("status"),
          "at": block.get("at")}]
     _mark(state, "writer", task, held)
     write_state(ctx, state)
-    refused = note_task(ctx, task, "test files changed after the red proof (%s): "
-                        "%s; re-proved red over them: %s - %s" % (
-                            when, ", ".join(changed), block.get("status"),
+    said = " (%s: %s)" % (COMMENTS_ONLY, ", ".join(quiet)) if quiet else ""
+    refused = note_task(ctx, task, "%s after the red proof (%s): %s%s; re-proved "
+                        "red over them%s: %s - %s" % (
+                            TESTS_DRIFT, when, ", ".join(changed), said,
+                            "" if leg is None else ", task leg %s" % (leg,),
+                            block.get("status"),
                             _clip(str(block.get("basis") or ""), 300)))
-    ctx["did"].append("red-first re-proved %s over %s%s" % (
-        block.get("status"), ", ".join(changed),
+    ctx["did"].append("red-first re-proved %s over %s%s%s" % (
+        block.get("status"), ", ".join(changed), said,
         "" if refused is None else " (not noted: %s)" % (refused,)))
 
 
@@ -5900,9 +5949,19 @@ def prove_and_hold(ctx, state, manifest, phase, task, when, tree=None):
         return red_refused(ctx, state, task, "the re-proof (%s) is %s: %s" % (
             "; ".join(drift) or "the held tests", block.get("status"),
             " ".join(str(block.get("basis") or "").split())))
+    # Which changed test files moved outside their code is known only now: the
+    # helper read the code the task leg was keyed on, and the held proof kept
+    # the code it read before (`comment_only`). The drift is worded with it.
+    quiet = comment_only((proof or {}).get("testCode") if isinstance(proof, dict)
+                         else None, (payload or {}).get("testCodeDigest"), changed)
+    if quiet:
+        plain = changed_tests_said(changed)
+        drift = [x for d in drift
+                 for x in (changed_tests_said(changed, quiet) if d in plain else [d])]
     hold_proof(ctx, state, task, block, payload)
     if changed:
-        note_reproof(ctx, state, task, when, changed, block)
+        note_reproof(ctx, state, task, when, changed, block, quiet,
+                     task_leg_word(payload))
     ctx["did"].append("red-first %s%s" % (block.get("status"), (
         " again (%s)" % ("; ".join(drift),)) if proof else ""))
     return None

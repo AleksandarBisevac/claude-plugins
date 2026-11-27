@@ -73,7 +73,9 @@ digest over the list - and `implementationDigest`, the same over the declared
 implementation files the fix run took from the working tree; the throwaway's
 `head` is the commit it ran at. A caller that keeps them holds a red to what it
 was proved over - the step driver hashes the same paths again before it files or
-commits a writer session's work, and re-proves when one moved.
+commits a writer session's work, and re-proves when one moved. `testCodeDigest`
+is the same over the test files' code without comments (`code_sha`): what the
+task leg is kept under, so a comment-only edit replays it; it locks nothing.
 
 WHY THREE CODES AND NOT TWO. `unestablished` must not share an exit code with
 either neighbour. Sharing 0 makes an unanswerable comparison read as "unchanged",
@@ -312,6 +314,7 @@ import ast
 import datetime
 import difflib
 import hashlib
+import io
 import json
 import os
 import posixpath
@@ -322,6 +325,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tokenize
 import warnings
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -1013,7 +1017,7 @@ def split_scope(task):
 
 
 # --- the digest of a task's test files: what a proof was made over ---
-def test_digest(root, rels):
+def test_digest(root, rels, read=None):
     """`{"sha256", "files": [{"path", "sha256"}]}` over the files `rels` (the
     declared test files, or the implementation files the fix run reads) as the
     tree under `root` holds them now: one entry per path, sorted, its
@@ -1021,8 +1025,11 @@ def test_digest(root, rels):
     (None where the path is absent), and one digest over the list. A red is
     proved over these bytes, so a caller holding the digest a proof reported
     can hash the same paths later and name any that changed - the step driver
-    does, with `file_hash`, and its twin cases hold the two readings equal."""
-    files = [{"path": rel, "sha256": _file_sha(os.path.join(root, *rel.split("/")))}
+    does, with `file_hash`, and its twin cases hold the two readings equal.
+    `read` replaces the per-file reading: `code_sha` gives the same shape over
+    each file's code (`code_digest`)."""
+    read = read or _file_sha
+    files = [{"path": rel, "sha256": read(os.path.join(root, *rel.split("/")))}
              for rel in sorted(set(rels))]
     listing = "".join("%s %s\n" % (f["sha256"] or "absent", f["path"]) for f in files)
     return {"sha256": "sha256:" + hashlib.sha256(listing.encode("utf-8")).hexdigest(),
@@ -1037,6 +1044,46 @@ def _file_sha(path):
             return "sha256:" + hashlib.sha256(fh.read()).hexdigest()
     except OSError:
         return None
+
+
+# A Python file's code is its token stream without the COMMENT and NL tokens:
+# what a comment-only edit (a note added, a citation removed, a blank line)
+# leaves as it was. A reading only - it moves no lock, and the stamp and every
+# lock the drive holds stay on bytes. It does not see a test that reads its
+# own source: comments through `inspect.getsource`, a line number through a
+# traceback or a lint over its own file.
+CODE_SHA_PREFIX = "code:sha256:"
+_PY_SUFFIXES = (".py", ".pyw")
+
+
+def code_sha(path):
+    """`code:sha256:<hex>` over the tokens of the Python file at `path` with
+    every COMMENT and NL token left out, each token read as its type and text;
+    `_file_sha`'s byte digest for a file that is not Python or does not
+    tokenize, so a reading that could not be made falls back to the stricter
+    one rather than to a key that matches anything; None when it cannot be read."""
+    if not path.endswith(_PY_SUFFIXES):
+        return _file_sha(path)
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return None
+    digest = hashlib.sha256()
+    try:
+        for tok in tokenize.tokenize(io.BytesIO(data).readline):
+            if tok.type in (tokenize.COMMENT, tokenize.NL):
+                continue
+            digest.update(("%d %r\n" % (tok.type, tok.string)).encode("utf-8"))
+    except (tokenize.TokenError, SyntaxError, UnicodeDecodeError, ValueError):
+        return _file_sha(path)
+    return CODE_SHA_PREFIX + digest.hexdigest()
+
+
+def code_digest(root, rels):
+    """`test_digest`'s shape over each file's code (`code_sha`) - what the task
+    leg is keyed on, and what a proof's basis names it was made over."""
+    return test_digest(root, rels, read=code_sha)
 
 
 def declared_tests(project, manifest_path, task_id, deadline=None):
@@ -3766,13 +3813,21 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
 
 # --- a leg kept under the exact inputs it read ---
 # Every leg of a proof is a function of what it read: HEAD, the command, which leg
-# it is, the working-tree bytes laid over HEAD, the stubs, the inline overlays, the
+# it is, the working-tree files laid over HEAD (their code for the task legs,
+# `CODE_KEYED_LEGS`, their bytes for the rest), the stubs, the inline overlays, the
 # linked dependencies, this helper's own code, the interpreter and the
 # environment. A leg whose inputs are all the same as a recorded one is replayed
 # instead of run, and the throwaway is built only when a leg misses.
 LEG_STORE_DIR = "audit-red-legs"
 LEG_STORE_KEEP = 24
-LEG_KEY_VERSION = 1
+# Version 2: the task legs read their laid-over files' code, not their bytes, so
+# no entry kept under the byte reading can answer for one.
+LEG_KEY_VERSION = 2
+# The legs that run HEAD's implementation under the task's test files: what they
+# print is decided by the tests' CODE (`code_sha`), so a comment-only edit to a
+# test replays them. Every other leg lays the working tree's implementation
+# over HEAD too and stays keyed on bytes.
+CODE_KEYED_LEGS = ("task", "task-held", "task-support")
 # The modules whose code decides what a leg does with its inputs: the isolation,
 # the lay-over and the run live here, the process group's teardown beside it.
 HELPER_MODULES = ("stamp-verification.py", "_proc_group.py")
@@ -3805,15 +3860,17 @@ def _digest_text(value):
 
 def leg_inputs(root, head, tag, cmd, rels, stubs, absent, texts, deps, env):
     """`{field: value}` - everything the leg `tag` reads, as it is now, or None
-    when the helper's own code cannot be digested. `rels` are digested by their
-    bytes in the working tree under `root` (None for a file it lacks), `texts`
-    (the inline suites' overlays) by their text, `deps` and `env` whole."""
+    when the helper's own code cannot be digested. `rels` are digested as the
+    working tree under `root` holds them (None for a file it lacks): by their
+    code for a leg of `CODE_KEYED_LEGS`, else by their bytes; `texts` (the
+    inline suites' overlays) by their text, `deps` and `env` whole."""
     helper = helper_code_digest()
     if helper is None:
         return None
+    read = code_sha if tag in CODE_KEYED_LEGS else _file_sha
     return {"v": LEG_KEY_VERSION, "head": head, "leg": tag, "argv": list(cmd),
             "laid": dict((f["path"], f["sha256"])
-                         for f in test_digest(root, rels)["files"]),
+                         for f in test_digest(root, rels, read=read)["files"]),
             "stubs": sorted(stubs), "absent": sorted(absent),
             "texts": dict((rel, _digest_text(text))
                           for rel, text in sorted((texts or {}).items())),
@@ -4520,6 +4577,8 @@ def run_red(args, cmd, out):
     # The bytes the proof is made over, read before the throwaway copies them:
     # a caller locks this and re-proves when a test file moves after it.
     digest = test_digest(root, scope["declared"])
+    # The same files' code: what the task leg is keyed on, named in the basis.
+    test_code = code_digest(root, scope["declared"])
     implementation_digest = test_digest(root, scope["implementation"])
     _c, head = _git(root, ["rev-parse", "HEAD"], timeout=max(1, _left(deadline)))
     store = leg_store(root, head)
@@ -4700,6 +4759,9 @@ def run_red(args, cmd, out):
             "head_js": state["head_js"], "path": path, "stages": state["stages"],
             "deadline": deadline, "deps": deps, "sources": sources,
             "inline": inline, "budget": budget, "sized": sized})
+        if block is not None and any(name in made for name in CODE_KEYED_LEGS):
+            block = dict(block, basis=str(block.get("basis") or "")
+                         + code_key_clause(test_code))
     finally:
         # A junction left in the throwaway is one git's removal may descend
         # through into the shared tree's dependencies: the removal is skipped
@@ -4719,6 +4781,7 @@ def run_red(args, cmd, out):
                "printedFrom": printed_from,
                "supportAtHead": run["support"],
                "testDigest": digest,
+               "testCodeDigest": test_code,
                "implementationDigest": implementation_digest,
                "atHead": scope["implementation"], "copied": copied,
                "leftovers": leftovers,
@@ -4813,6 +4876,16 @@ def red_legs(made, problem):
                    "sound baseline, and this one did not")
             legs.append({"leg": name, "ran": False, "seconds": None, "why": why})
     return legs
+
+
+def code_key_clause(test_code):
+    """The basis clause naming what the task leg was kept under - the declared
+    tests' code (`code_digest`), so a replay after a comment-only edit is a
+    claim about that reading - and the one thing that reading cannot see."""
+    return ("; task leg keyed on the declared tests' code without comments "
+            "(%s; a file that is not Python or does not tokenize by its bytes), "
+            "which does not cover a test reading its own comments or line numbers"
+            % ((test_code or {}).get("sha256") or "no digest",))
 
 
 def _run_record(extra):

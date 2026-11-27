@@ -17471,6 +17471,78 @@ def _submit_proof_units(check, M):
           code_r != 0 and filed_r == 0 and len(staged_r) == 1
           and staged_r[0].get("kind") == "proof"
           and _PROOF_GAP * 1000 <= staged_r[0].get("ms", -1) < 5000)
+    _comment_only_reproof_units(check, M)
+
+
+def _comment_only_reproof_units(check, M):
+    """A re-proof over test files whose bytes moved but whose code did not says
+    so: the drift and the task note read "outside their code (comments only)",
+    beside whether the helper replayed the task leg - and a code edit, the
+    other direction, keeps the plain wording."""
+    rel = "tests/test_mine.py"
+    task_u = _step_task(files=["src/mine.py", rel], tests={
+        "mode": "tdd", "add": [rel + ": new1"], "gate": ["true"],
+        "expectRedFirst": True})
+    phase = _step_phase([task_u])
+    plan_u = _step_plan(phase)
+    M.writer_test_command = lambda manifest, phase_, task_: (["true"], None)
+    M.tree_head = lambda ctx, tree=None: "abc1234"
+    M.tree_since_proof = lambda ctx, state, task_, tree=None: (
+        ["test files changed: %s" % (rel,)], [rel])
+    held_code = {"sha256": "sha256:list-one",
+                 "files": [{"path": rel, "sha256": "code:sha256:" + "a" * 64}]}
+    seen = {}
+    for name, now_code, task_reused in (("comments", "a" * 64, True),
+                                        ("code", "b" * 64, False)):
+        legs = [{"leg": "baseline", "ran": False, "reused": True, "seconds": 0.0},
+                dict({"leg": "task", "seconds": 0.0 if task_reused else 1.5},
+                     **({"ran": False, "reused": True} if task_reused
+                        else {"ran": True})),
+                {"leg": "fix", "ran": True, "seconds": 2.0}]
+        payload = json.dumps({
+            "redFirst": {"status": "proved", "basis": "new1 red", "at": "z"},
+            "legs": legs, "printed": ["new1 mine.v == 2"],
+            "testCodeDigest": {"sha256": "sha256:list-two", "files": [
+                {"path": rel, "sha256": "code:sha256:" + now_code}]}})
+        M.run_verb, calls = _verb_rig({("stamp-verification.py", "red"): (
+            0, payload, "")})
+        state = {}
+        held = M.writer_state(state, task_u)
+        held["proof"] = {"block": {"status": "proved", "at": "y"},
+                         "head": "abc1234", "implementation": None,
+                         "testCode": held_code}
+        M._mark(state, "writer", task_u, held)
+        ctx = _step_ctx()
+        out = _caught(M.prove_and_hold, ctx, state, plan_u, phase, task_u,
+                      "resume round 2")
+        # The note's text reaches the verb on stdin (`--text -`).
+        notes = [" ".join(a) + " " + str(i or "") for s, a, i in calls
+                 if s == "audit-task.py" and a[:1] == ["note"]]
+        seen[name] = (out, notes, list(ctx.get("did") or []),
+                      (M.writer_state(state, task_u).get("proof") or {})
+                      .get("testCode"))
+    out_c, notes_c, did_c, kept_c = seen["comments"]
+    said = "outside their code (comments only)"
+    check("cq1 a re-proof over a test file whose code digest did not move says "
+          "the file changed outside its code (comments only) - in the task's "
+          "note and in what the drive did - names the task leg as replayed, and "
+          "holds the new code digest for the next comparison: %r"
+          % (seen["comments"],),
+          out_c is None and len(notes_c) == 1 and said in notes_c[0]
+          and "task leg replayed" in notes_c[0]
+          and any(said in d for d in did_c)
+          and (kept_c or {}).get("files") == [
+              {"path": rel, "sha256": "code:sha256:" + "a" * 64}])
+    out_k, notes_k, did_k, _kept = seen["code"]
+    # THE OTHER DIRECTION: a check that called every byte move comments-only
+    # would pass cq1; a moved code digest must keep the plain wording.
+    check("cq2 a re-proof over a test file whose CODE moved keeps the plain "
+          "wording - no comments-only claim, and the task leg named as run: %r"
+          % (seen["code"],),
+          out_k is None and len(notes_k) == 1 and said not in notes_k[0]
+          and "test files changed" in notes_k[0]
+          and "task leg ran" in notes_k[0]
+          and not any(said in d for d in did_k))
 
 
 def _unchecked_ids_units(check):

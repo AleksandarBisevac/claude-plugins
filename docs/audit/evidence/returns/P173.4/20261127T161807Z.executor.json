@@ -1,0 +1,31 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__output_lints.py tools/prove-gates.py": "pass",
+    "python3 tests/test_drive_phase.py --selftest --stage ux-block": "pass",
+    "python3 tests/test_stamp_verification.py --selftest --stage sr-leg-inputs --stage sr-leg-reuse": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-27T16:22:40Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 4 of 383 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cq1 (house FAIL), cq2 (house FAIL), lr15 (house FAIL), lr16 (house FAIL): SELFTEST FAILED: 381/383 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Retry confirmation, no rewrite. Read git diff HEAD: stamp-verification.py gains code_sha/code_digest (token stream without COMMENT/NL for Python, bytes otherwise), test_digest read= argument, leg_inputs keys task/task-held/task-support legs on code (CODE_KEYED_LEGS), LEG_KEY_VERSION 2, run_red reports testCodeDigest and appends code_key_clause (names the digest and the limit: a test reading its own comments or line numbers) to the basis; drive-phase.py hold_proof keeps proof.testCode, changed_tests_said (renamed from tests_drift), comment_only, task_leg_word, prove_and_hold rewords drift as 'outside their code (comments only)', note_reproof takes quiet and leg. The lock, take and _tree_stamp stay on bytes. Runs: `python3 tools/sweep-selftests.py tests/test__output_lints.py tools/prove-gates.py` -> 2/2 files ok, 249 cases (183 + 66); `python3 tests/test_drive_phase.py --selftest --stage ux-block` -> ALL PASS 137/137; `python3 tests/test_stamp_verification.py --selftest --stage sr-leg-inputs --stage sr-leg-reuse` -> ALL PASS 9/9 (lr16 prints the basis naming the code digest and the limit). Dependants as in attempt 1: lock_moved/changed_tests/locked_paths_now unchanged (bytes); note_reproof changed (quiet and leg, wording extended); file_writer_return drift check unchanged; take/_tree_stamp untouched; _filed_returns._HELPER_BASIS prefix still matches; other importers only gain names (test_digest gets an optional argument). Deviation from the description, unchanged from attempt 1: tree_since_proof does not itself say comments only before the re-proof, because the drive may not import stamp-verification and a second tokenizer would be two homes for one fact; prove_and_hold words it after the helper reports the code digest. Known limit stated in the basis: a test reading its own comments or line numbers.",
+    "descriptive": "A comment-only edit to a task's test files replays the task leg of the red-first proof instead of rerunning it, and the drift is worded as outside their code."
+  },
+  "testsAdded": [
+    "lr15: a comment-only change to the task's test file keeps the task leg's key, a code change moves it",
+    "lr16: a comment-only edit to the declared test does not rerun the task leg and the basis names the code digest and its limit",
+    "cq1/cq2: the drive words comment-only drift and comment_only picks exactly the paths whose code digest is equal"
+  ],
+  "casesAdded": [
+    [
+      "lr15",
+      "lr16"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:05a192e5a4593b579367171c4c0c1c4de7b02aaa05dd60e49382538344bcc802\",\"dirtyDigest\":\"sha256:476cc3fd2ed7c206a9134a5fc0421dc6bc591cc460e73f78441077a7596b72b3\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"2db87ba02da214fc\",\"changelog.d/P173.4.changed.md\":\"b8f838378f19d5bd\",\"plugins/audit/scripts/governance/drive-phase.py\":\"0a28b1eb62640017\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"bf5fd5e43cb3e9c7\",\"tests/test_drive_phase.py\":\"fb11895f8318fe13\",\"tests/test_stamp_verification.py\":\"dd790687918d3ea9\"},\"head\":\"94cbab41\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"changelog.d/P173.4.changed.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"tests/test_drive_phase.py\",\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:c1a427783597fb0927da44c66664b984093af9171bba4aa6425be48a69706e61\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

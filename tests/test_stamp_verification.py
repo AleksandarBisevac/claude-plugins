@@ -7154,6 +7154,40 @@ def _leg_inputs_cases(check):
                                          ["nope.py"], [], [], {}, deps,
                                          env).get("laid") or {}))
 
+    # The task leg runs HEAD's implementation under the task's tests, so only the
+    # tests' CODE decides what it prints: a comment-only edit keeps its key, a
+    # code edit moves it. The other legs, and a file that is not Python or does
+    # not tokenize, stay on bytes - each half is a mutation of the other.
+    def leg_key_over(tag, rel, text):
+        _write(os.path.join(root, *rel.split("/")), text)
+        return M.leg_key(M.leg_inputs(root, "a" * 40, tag, ["t"], [rel], [], [],
+                                      {}, deps, env))
+
+    plain = "x = 1\n\ndef f():\n    return x\n"
+    noted = ("# a reviewer's note\nx = 1  # why one\n\ndef f():\n"
+             "    # inside\n    return x\n")
+    coded = "x = 2\n\ndef f():\n    return x\n"
+    task_plain = leg_key_over("task", "tests/t.py", plain)
+    task_noted = leg_key_over("task", "tests/t.py", noted)
+    task_coded = leg_key_over("task", "tests/t.py", coded)
+    fix_plain = leg_key_over("fix", "tests/t.py", plain)
+    fix_noted = leg_key_over("fix", "tests/t.py", noted)
+    js_plain = leg_key_over("task", "tests/t.js", "let x = 1;\n")
+    js_noted = leg_key_over("task", "tests/t.js", "// a note\nlet x = 1;\n")
+    broken = "s = '''never closed\n"
+    bad_plain = leg_key_over("task", "tests/b.py", broken)
+    bad_noted = leg_key_over("task", "tests/b.py", broken + "# a note\n")
+    _write(os.path.join(root, "tests", "t.py"), "one\n")
+    check("lr15 the task leg's key reads the test file's code, not its comments: "
+          "a comment-only edit keeps it (%s), a code edit moves it (%s); the fix "
+          "leg still reads bytes (%s), and so does a file that is not Python "
+          "(%s) or does not tokenize (%s)"
+          % (task_plain == task_noted, task_plain != task_coded,
+             fix_plain != fix_noted, js_plain != js_noted, bad_plain != bad_noted),
+          task_plain == task_noted and task_plain != task_coded
+          and fix_plain != fix_noted and js_plain != js_noted
+          and bad_plain != bad_noted)
+
 
 def _leg_reuse_cases(check):
     """`red` end to end: the second proof of one tree replays all three legs and
@@ -7249,6 +7283,25 @@ def _leg_reuse_cases(check):
           and legs4["baseline"].get("reused") is True
           and legs4["task"].get("reused") is True
           and not legs4["fix"].get("reused"))
+
+    # A comment-only edit to the declared test: the task leg runs HEAD's
+    # implementation under the test's code, which did not move, so it replays;
+    # the fix leg still reads the file's bytes and reruns.
+    _write(os.path.join(root, "tests", "test_mine.py"),
+           "# a reviewer's note, and nothing else\n"
+           + _red_test("import mine", "mine.v == 2 and True"))
+    code5, got5, legs5, made5, built5 = proof()
+    basis5 = (got5.get("redFirst") or {}).get("basis") or ""
+    check("lr16 a comment-only edit to the declared test does NOT rerun the task "
+          "leg - made %r, reused %r - and the basis names what the task leg was "
+          "keyed on (the tests' code without comments, its digest) and the limit "
+          "of that reading (a test reading its own comments or line numbers): %r"
+          % (made5, sorted(n for n, l in legs5.items() if l.get("reused")),
+             basis5),
+          code5 == M.E_PROVED and made5 == ["fix"]
+          and legs5["task"].get("reused") is True
+          and not legs5["fix"].get("reused")
+          and "code without comments" in basis5 and "line numbers" in basis5)
 
 
 # Every block, in replay order. A full run starts one process per block, a few

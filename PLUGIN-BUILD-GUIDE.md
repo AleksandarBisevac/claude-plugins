@@ -6819,7 +6819,8 @@ The drive turns that into a `proof` stage of the task's timing (`drive-phase.py`
 
 **A leg whose exact inputs did not change is replayed, not run.** Each leg is a function of what it
 read, and `leg_inputs` names every field of that: HEAD's commit id, the command, which leg it is,
-the bytes of the working-tree files laid over HEAD (path and sha256, `None` for one the tree lacks),
+the working-tree files laid over HEAD (path and the sha256 of their bytes - of their code for the
+task legs, below - `None` for one the tree lacks),
 the stubs, the files left absent, the inline suites' overlays, the dependency plan, the code of
 `HELPER_MODULES`, the interpreter's version and the environment the child inherits. `leg_key` hashes
 them, and `reuse_or_run` keeps a finished leg's code, text and copied files under that key in
@@ -6837,6 +6838,19 @@ the content of a linked dependency directory and a test that reads a clock or th
 replay of such a leg is the cost of reusing one, and `lr8` holds that every named field is in the
 key, `lr13` and `lr14` that the legs a changed test or implementation file reaches are the ones
 that rerun.
+
+**The task leg is keyed on the tests' code, not their bytes.** It runs HEAD's implementation under
+the task's test files, so only their code decides what it prints: for the legs in `CODE_KEYED_LEGS`
+the laid-over files are read by `code_sha` - a Python file's token stream without its `COMMENT`
+and `NL` tokens; a file that is not Python, or does not tokenize, by its bytes - and a comment-only
+edit to a test replays the task leg while the fix leg, which reads bytes, reruns (`lr15`, `lr16`).
+It narrows a claim and moves no lock: `testDigest`, the lock the drive holds and the stamp stay
+on bytes. The payload carries the same reading as `testCodeDigest`, and the basis of a proof
+that made or replayed a task leg names that digest and the reading's limit - a test that reads
+its own comments or line numbers (`inspect.getsource`, a lint over its own file) is not covered
+by it. The drive holds `testCodeDigest` beside its proof, and a re-proof over test files whose code
+digest did not move says they changed outside their code (comments only), with whether the task
+leg was replayed (`drive-phase.py`, `comment_only`; `cq1`, `cq2`).
 
 ### `plugins/audit/scripts/governance/run-agent-session.py`
 One role run as a headless top-level Claude Code session in a task's tree, priced by the session's
