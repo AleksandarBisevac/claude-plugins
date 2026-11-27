@@ -3061,8 +3061,64 @@ def _affected_facts(tree, meta, changed, seen=None):
     return _affected.gather_facts(tree, meta, changed, seen=seen)
 
 
+# THE MODULES WHOSE CODE IS PART OF A KEPT SELECTION'S KEY: the answer is a
+# function of them as much as of the tree, so a plugin upgraded between two asks
+# is asked again rather than read a selection the old code made.
+SELECTION_CODE = ("_affected_tests.py", "_gate_derive.py", "_manifest_phases.py",
+                  "run-test-gate.py")
+
+
+def selection_key(project, manifest_path, tree, manifest, changed, names):
+    """The identity a task's affected selection is kept under, or None when one
+    cannot be taken - and then nothing is kept or read.
+
+    THE TREE'S IDENTITY IS THE REUSE IDENTITY'S: `_tree_stamp.content_digest`
+    over the tree the commands run in, the project's recorder paths left out
+    (`_evidence_io.recorded_paths`), hashed with `identity_of` - so a run the
+    recorder itself wrote between two asks is not a move of the tree, and a
+    change to any other file is. Over it, what the selection reads that the
+    tree does not hold: the paths it is asked about (a task's declared files
+    decide them, so they are in the key through here), the plan's meta as the
+    reuse key holds it (`meta_part`, which is where `meta.phaseGate` is), the
+    names of the task's own gate entries (what `select` leaves out), and the
+    bytes of the modules that make the selection (`SELECTION_CODE`). The
+    selection reads nothing of the phase and the task but those.
+
+    WHAT IT DOES NOT REACH is `_tree_stamp.CONTENT_LIMIT`'s: a listing that
+    answers from the network, the clock or a package outside the tree answers
+    the same here as it did when it was kept."""
+    excluded, _unexcluded = _ev.recorded_paths(project, manifest_path)
+    content, _basis = _tree_stamp.content_digest(tree, excluded=excluded)
+    code = [_journal_io.file_hash(_loader.script_path(name))
+            for name in SELECTION_CODE]
+    if content is None or None in code:
+        return None
+    return _tree_stamp.identity_of(["selection", content, list(changed),
+                                    meta_part(manifest), list(names), code])
+
+
+def kept_selection(project, manifest_path, tree, manifest, changed, names, own,
+                   meta, facts_for):
+    """`select(changed, ...)`'s answer: read from the one kept under this tree's
+    identity when there is one, else measured (`facts_for()` is the gathering)
+    and kept - but only when the identity read after the measurement is the one
+    read before it, because an answer measured while the tree moved says
+    nothing about either tree. No `project` or no plan to take the identity
+    over measures every time."""
+    key = (selection_key(project, manifest_path, tree, manifest, changed, names)
+           if project and manifest_path else None)
+    held = _affected.read_selection(tree, key)
+    if held is not None:
+        return held
+    info = _affected.select(changed, meta, facts_for(), exclude=own)
+    if key is not None and key == selection_key(project, manifest_path, tree,
+                                                manifest, changed, names):
+        _affected.write_selection(tree, key, info)
+    return info
+
+
 def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
-                   records=(), seen=None):
+                   records=(), seen=None, project=None, manifest_path=None):
     """`(steps, published, info)` - the steps that join a task's measured run,
     the manifest-published commands among them, and `{lines, suites, widen}`
     saying why. Nothing joins a gate that already carries the phase's wide one,
@@ -3070,7 +3126,10 @@ def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
     test-support change that entry covers does not widen to the phase gate
     (`_affected_tests.steps_for`). `records` is `member_records`' answer,
     git-root-relative, left out of what a task's own tree changed; `seen` is
-    the gathering's shared answers (`_affected_facts`)."""
+    the gathering's shared answers (`_affected_facts`). `project` and
+    `manifest_path`, handed together, let the selection be kept per tree
+    identity (`kept_selection`): a second ask over the same identity reads it
+    and gathers nothing, and then `seen` stays as it was handed in."""
     meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
     build = meta.get("buildCommands")
     build = build if isinstance(build, dict) else {}
@@ -3092,8 +3151,12 @@ def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
                 "widen": "%s - the task's gate widens to the phase gate" % (why,)}
     else:
         own = _affected.gate_runs(names)
-        facts = _affected_facts(tree, meta, changed, seen) if changed else {}
-        info = _affected.select(changed, meta, facts, exclude=own)
+        if changed:
+            info = kept_selection(
+                project, manifest_path, tree, manifest, changed, names, own,
+                meta, lambda: _affected_facts(tree, meta, changed, seen))
+        else:
+            info = _affected.select(changed, meta, {}, exclude=own)
     steps, info = _affected.steps_for(info, phase, meta, tree, names)
     if info["widen"] is None:
         return steps, [], info
@@ -7419,7 +7482,8 @@ def main(argv, out=print):
                 args.task, commands,
                 records=member_records(project, args.manifest, manifest,
                                        args.phase, tree)
-                if tree is not None else (), seen=seen)
+                if tree is not None else (), seen=seen,
+                project=project, manifest_path=args.manifest)
         except KeyboardInterrupt as exc:
             return stopped_before_run(
                 exc, _say_on_stderr if args.as_json else out)

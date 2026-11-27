@@ -11730,17 +11730,25 @@ def _affected_cases(check):
           and isinstance(took, int) and 0 <= took - step_sum < sleep_ms)
 
     # THE REPEAT OF THAT RUN: the same gate over the same tree, the reuse lookup
-    # allowed. Its gathering sleeps the listing's sleep again, and its identity
-    # is made to take a second sleep of its own, so the two windows are each
-    # long and told apart: a duration that also lies inside the selection makes
-    # their sum exceed the wall time the whole call took.
+    # allowed. Its selection is no longer measured - the run above kept it under
+    # the tree's identity and this one reads it - so what its selection window
+    # holds is the taking of that key, made slow here; and its identity is made
+    # to take a second sleep of its own, so the two windows are each long and
+    # told apart: a duration that also lies inside the selection makes their
+    # sum exceed the wall time the whole call took.
     identity_ms = 600
     held_identity = M.reuse_identity
+    held_key = M.selection_key
 
     def slow_identity(*args, **kwargs):
         time.sleep(identity_ms / 1000.0)
         return held_identity(*args, **kwargs)
+
+    def slow_key(*args, **kwargs):
+        time.sleep(sleep_ms / 1000.0)
+        return held_key(*args, **kwargs)
     M.reuse_identity = slow_identity
+    M.selection_key = slow_key
     try:
         began = time.monotonic()
         M.main([mpath, "P1", "--task", "P1.2", "--project-dir", root, "--record"],
@@ -11748,11 +11756,12 @@ def _affected_cases(check):
         wall_ms = int((time.monotonic() - began) * 1000)
     finally:
         M.reuse_identity = held_identity
+        M.selection_key = held_key
     again = _task_run(os.path.join(root, "docs", "audit", "evidence"), "P1.2")
     took, chose = again.get("durationMs"), again.get("selectionMs")
     check("ag7 a REPEATED run's selectionMs and durationMs do not overlap: the "
-          "selection holds the gathering's %d ms sleep, the duration the "
-          "identity's %d ms, and the two add up to no more than the %r ms the "
+          "selection holds the kept selection's key's %d ms sleep, the duration "
+          "the identity's %d ms, and the two add up to no more than the %r ms the "
           "whole call took: repeat=%r selectionMs=%r durationMs=%r"
           % (sleep_ms, identity_ms, wall_ms,
              again.get(M._ev.VERDICT_SOURCE), chose, took),
@@ -13379,6 +13388,220 @@ def _shared_runner_cases(check):
           and not [n for n in ("AFFECTED_LISTING_TIMEOUT_SECONDS",
                                "AFFECTED_GIT_TIMEOUT_SECONDS")
                    if hasattr(M, n)])
+
+
+def _selection_fixture(root):
+    """A committed project whose plan carries a related listing, one task
+    declaring two files, and two untracked files in `app/`: the changed set of a
+    task asked about its own files. Returns `(mpath, manifest, commands)`."""
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    os.makedirs(os.path.join(root, ".claude"))
+    os.makedirs(os.path.join(root, "app"))
+    os.makedirs(os.path.join(root, "tests"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    related = "printf '%s\\n' tests/smoke_test.sh # {paths}"
+    task = {"id": "P1.2", "title": "move", "status": "in_progress",
+            "files": ["app/new.tsx", "app/more.tsx"],
+            "tests": {"mode": "regression", "gate": ["sh tests/i18n_test.sh"]}}
+    phase = {"id": "P1", "title": "one", "status": "in_progress",
+             "testGate": ["wide"], "tasks": [task]}
+    meta = {"version": 3, "buildCommands": {"wide": "true"},
+            "phaseGate": {"derived": {
+                "listing": {"related": related},
+                "verifiedOn": {"command": "echo v1", "answer": "v1"}}}}
+    with open(mpath, "w") as fh:
+        json.dump({"meta": meta, "phases": [
+            {"id": "P1", "title": "one", "shard": "phases/P1.json"}]}, fh)
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+              "w") as fh:
+        json.dump(phase, fh)
+    for rel in ("tests/smoke_test.sh", "tests/i18n_test.sh"):
+        with open(os.path.join(root, rel), "w") as fh:
+            fh.write("exit 0\n")
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", "."],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    for rel in ("app/new.tsx", "app/more.tsx"):
+        with open(os.path.join(root, rel), "w") as fh:
+            fh.write("export {}\n")
+    return mpath, {"meta": meta, "phases": [phase]}, [
+        ("sh tests/i18n_test.sh", "sh tests/i18n_test.sh")]
+
+
+def _selection_cache_cases(check):
+    """`sel`: the affected selection is gathered once per tree identity. A
+    second ask over the same identity reads the answer kept the first time;
+    each input the answer depends on - the plan's meta, the task's declared
+    files, a file outside the recorder paths - is part of the identity, so
+    moving it asks again; a write the recorder itself makes is not, so it does
+    not. Each of those is a case that goes red when its input is left out of
+    the key, and the last is the one that goes red when the key is widened."""
+    root = _harness.fixture_root("run-test-gate-selection-")
+    mpath, manifest, commands = _selection_fixture(root)
+    gathered = []
+    real = M._affected.gather_facts
+
+    def counting(project, meta, changed, seen=None, sources=True):
+        gathered.append(list(changed))
+        return real(project, meta, changed, seen=seen, sources=sources)
+
+    def ask(plan=None, **over):
+        args = dict(records=(), seen={}, project=root, manifest_path=mpath)
+        args.update(over)
+        return M.affected_steps(root, False, plan or manifest, "P1", "P1.2",
+                                commands, **args)
+
+    M._affected.gather_facts = counting
+    try:
+        first = ask()
+        count_first = len(gathered)
+        second = ask()
+        check("sel1 A SECOND ASK OVER THE SAME IDENTITY DOES NOT GATHER: the "
+              "first ask gathered the facts once, the second read the kept "
+              "answer and gathered none, and its steps, published commands "
+              "and info are the first's: %r / %r"
+              % (gathered, (first, second)),
+              count_first == 1 and len(gathered) == 1 and second == first
+              and first[2].get("suites") is not None)
+
+        moved = json.loads(json.dumps(manifest))
+        moved["meta"]["phaseGate"]["derived"]["listing"]["related"] = \
+            "printf '%s\\n' tests/smoke_test.sh tests/i18n_test.sh # {paths}"
+        third = ask(plan=moved)
+        check("sel2 A CHANGE TO meta.phaseGate ASKS AGAIN: the same tree, the "
+              "same task and a different recorded listing is a different "
+              "selection, and its answer is the new listing's, not the kept "
+              "one: %r / %r" % (len(gathered), third[2].get("suites")),
+              len(gathered) == 2 and third != first
+              and third[2].get("suites") != first[2].get("suites"))
+
+        wider = json.loads(json.dumps(manifest))
+        wider["phases"][0]["tasks"][0]["files"] = ["app/new.tsx"]
+        ask(plan=wider)
+        check("sel3 A CHANGE TO THE TASK'S FILES ASKS AGAIN: the tree and the "
+              "plan's meta are the first ask's, the declared files are not, "
+              "so the changed set the selection is asked about is not either: "
+              "%r" % (gathered,),
+              len(gathered) == 3 and gathered[2] == ["app/new.tsx"]
+              and sorted(gathered[0]) == ["app/more.tsx", "app/new.tsx"])
+
+        with open(os.path.join(root, "app", "new.tsx"), "w") as fh:
+            fh.write("export const moved = 1\n")
+        ask()
+        check("sel4 A FILE OUTSIDE THE RECORDER PATHS ASKS AGAIN: the same "
+              "paths changed, one of them with other bytes - the path set "
+              "alone would read it as the same tree: %r" % (len(gathered),),
+              len(gathered) == 4)
+
+        ask()
+        with open(os.path.join(root, "docs", "audit", "phases", "P1.json")) as fh:
+            shard = json.load(fh)
+        shard["tasks"][0]["notes"] = ["written by a recorded run"]
+        with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+                  "w") as fh:
+            json.dump(shard, fh)
+        os.makedirs(os.path.join(root, "docs", "audit", "journal"), exist_ok=True)
+        with open(os.path.join(root, "docs", "audit", "journal", "2026-11.x.jsonl"),
+                  "w") as fh:
+            fh.write("{}\n")
+        ask()
+        check("sel5 ALLOW: A WRITE THE RECORDER ITSELF MAKES IS NOT A MOVE OF "
+              "THE TREE - a shard and a journal row written between two asks "
+              "leave the identity where it was, so the ask after them still "
+              "reads the answer kept: %r" % (len(gathered),),
+              len(gathered) == 4)
+
+        before = _tree_stamp.content_digest(
+            root, excluded=_ev_io.recorded_paths(root, mpath)[0])
+        porcelain = _harness.git(root, "status", "--porcelain", "-uall",
+                                 prefix=_PLAIN_GIT)
+        ask(plan=moved)
+        after = _tree_stamp.content_digest(
+            root, excluded=_ev_io.recorded_paths(root, mpath)[0])
+        stored = M._affected.selection_store(root)
+        check("sel6 THE KEPT ANSWER IS NOT IN THE TREE IT JUDGES: it lives "
+              "under git's own directory, so writing one moves neither the "
+              "content identity nor what git reports: %r / %r"
+              % (stored, (before == after)),
+              stored is not None and os.path.isdir(stored)
+              and os.path.realpath(stored).startswith(
+                  os.path.realpath(os.path.join(root, ".git")) + os.sep)
+              and before == after
+              and _harness.git(root, "status", "--porcelain", "-uall",
+                               prefix=_PLAIN_GIT) == porcelain)
+
+        mark = len(gathered)
+        ask(project=None, manifest_path=None)
+        ask(project=None, manifest_path=None)
+        check("sel7 A CALLER THAT NAMES NO PROJECT AND NO PLAN IS NEVER "
+              "SERVED A KEPT ANSWER: with nothing to take the identity over "
+              "there is no key, and each ask gathers: %r"
+              % (len(gathered) - mark,),
+              len(gathered) - mark == 2)
+
+        for name in os.listdir(stored):
+            with open(os.path.join(stored, name), "w") as fh:
+                fh.write("{not json")
+        mark = len(gathered)
+        broken = ask()
+        check("sel8 A KEPT ANSWER THAT CANNOT BE READ IS NOT AN ANSWER: the "
+              "ask gathers and returns a selection, and says nothing is wrong "
+              "with the run: %r" % (len(gathered) - mark,),
+              len(gathered) - mark == 1 and broken[2].get("suites") is not None)
+
+        more = os.path.join(root, "app", "more.tsx")
+        with open(more) as fh:
+            resting = fh.read()
+
+        def moving(project, meta, changed, seen=None, sources=True):
+            with open(more, "a") as fh:
+                fh.write("// moved while measured\n")
+            return counting(project, meta, changed, seen=seen, sources=sources)
+        M._affected.gather_facts = moving
+        ask(plan=wider)
+        M._affected.gather_facts = counting
+        # THE TREE IS PUT BACK to what it was when the identity was first
+        # read, so an answer kept under that identity would be served now.
+        with open(more, "w") as fh:
+            fh.write(resting)
+        mark = len(gathered)
+        ask(plan=wider)
+        check("sel9 AN ANSWER MEASURED WHILE THE TREE MOVED IS NOT KEPT: the "
+              "identity read after the gathering is not the one read before, "
+              "so the tree put back to the first one is asked again rather "
+              "than served an answer about what it was becoming: %r"
+              % (len(gathered) - mark,),
+              len(gathered) - mark == 1)
+
+        # THE PLUGIN'S OWN CODE IS PART OF THE IDENTITY: one of the modules that
+        # make the selection reads as other bytes, and the same tree, plan and
+        # task are asked again.
+        ask(plan=wider)
+        held_path = M._loader.script_path
+        # Outside the project: a file in it would move the tree's identity.
+        elsewhere = tempfile.mkdtemp(prefix="rtg-selection-code-")
+        other = os.path.join(elsewhere, "other-gate-derive.py")
+        with open(other, "w") as fh:
+            fh.write("# a selection written by other code\n")
+        M._loader.script_path = lambda name, *a, **k: (
+            other if name == "_gate_derive.py" else held_path(name, *a, **k))
+        mark = len(gathered)
+        try:
+            ask(plan=wider)
+        finally:
+            M._loader.script_path = held_path
+            shutil.rmtree(elsewhere, ignore_errors=True)
+        check("sel10 THE CODE THAT MADE A SELECTION IS PART OF ITS KEY: the "
+              "same tree, plan and task, with one module of the selection read "
+              "as other bytes, is asked again: %r" % (len(gathered) - mark,),
+              len(gathered) - mark == 1)
+    finally:
+        M._affected.gather_facts = real
 
 
 def _gate_reach_cases(check):
@@ -16492,6 +16715,7 @@ def _selftest():
         _harness.stage(check, "gtd-block", _task_bug_definition_cases)
         _shared_facts_cases(check)
         _shared_runner_cases(check)
+        _harness.stage(check, "sel-block", _selection_cache_cases)
         _harness.stage(check, "grh-block", _gate_reach_cases)
         _harness.stage(check, "fo-block", _follower_cases)
         _harness.stage(check, "br-block", _base_red_cases)

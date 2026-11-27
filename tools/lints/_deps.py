@@ -3010,6 +3010,11 @@ OTHER_WRITERS = (
      "the conflicted journal or evidence file named on the command line, "
      "refused unless `in_journal` or `in_evidence` places it in the trail, "
      "replaced by `write_merged` under the journal lock - never a plan file"),
+    ("scripts/governance/_affected_tests.py", "write_selection",
+     "_manifest_io.atomic_write_text",
+     "a kept affected selection, one file under `audit-selection` in the "
+     "repository's common git directory - never the working tree, never "
+     "tracked, and no plan reader opens it"),
     ("scripts/governance/_evidence_io.py", "append_row",
      "<write>",
      "one ledger row appended to the evidence shard of this run - a ledger "

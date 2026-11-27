@@ -4674,6 +4674,13 @@ the same word-for-word relation the evidence side checks when it reads a per-sui
 `_evidence_io.suite_base_step()` lets one answer a red step only when its command, with its
 listed suites taken out, is the red step's own.
 
+The selection is gathered once per tree identity. `write_selection()` and `read_selection()` keep a
+selection's answer in `<common git dir>/audit-selection` (`selection_store()`), the newest
+`SELECTION_KEEP` of them, under a key the caller hands in; the key is `run-test-gate.py`'s
+`selection_key()`. The directory is git's own so that keeping an answer cannot move the tree's
+content identity or what `git status` reports. A file that is missing, unparseable or names another
+key reads as nothing kept, and an answer JSON would not give back as written is not kept.
+
 `reach_answers()` is the gate-reach reading's half of this module: each path asked of `select()`
 ALONE (`path_reach()`), its listings run side by side first (`prefetch_listings()`), because a
 listing handed every changed path at once cannot say which path each suite it names is for. The
@@ -5220,6 +5227,16 @@ The full run passes no task, so only the closed-bug rule applies there.
 **The project is the manifest's.** Without `--project-dir`, the project is
 `_panel_write.project_of_manifest(manifest)`, the answer `full-gate.py` and `audit-task.py` read, never a count of directories up from the file — that count is right only for
 `<T>/docs/audit/<file>` and would record anywhere else into a ledger outside the project.
+
+**A task's affected selection is kept per tree identity.** `affected_steps()`, handed the project and
+the plan, takes `selection_key()` over the tree's content identity (the reuse identity's own digest, the
+recorder's paths left out), the changed paths the selection is asked about, `meta_part`, the names of
+the task's gate entries and the bytes of the modules that make the selection, and reads the answer
+`_affected_tests.read_selection()` holds under it before it gathers anything. A second ask over the same
+identity - a read-back of a recorded green is one - gathers no listing; a change to any part of the key
+asks again, and a write the recorder itself makes does not. An answer is kept only when the key read after
+its gathering is the one read before it, so a selection measured while the tree moved is never filed under
+either tree. A caller that names no project and no plan has no key and gathers every time.
 
 **Which declared files a task's run reaches** (`gate_reach`). A passed gate run is evidence only
 for the files its suites read, so a `--task` run with a gate of its own says which of the task's

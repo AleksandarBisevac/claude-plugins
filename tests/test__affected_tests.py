@@ -1181,12 +1181,84 @@ def _bare_cases(check):
           isinstance(arm, str) and arm and arm not in M.ARMS)
 
 
+def _selection_store_cases(check):
+    """`afs`: what is kept of a selection under one key, and what is refused.
+    The key is the caller's; this is the store behind it, in a scratch
+    repository, so each case reads and writes real files."""
+    import tempfile
+    root = tempfile.mkdtemp(prefix="affected-store-")
+    try:
+        _harness.git(None, "init", "-q", root)
+        answer = {"suites": [{"path": "tests/a.sh", "arm": "related"}],
+                  "lines": ["x"], "widen": None}
+        check("afs1 an answer written under a key is read back under that key, "
+              "equal to what went in: %r" % (M.read_selection(root, "k1"),),
+              M.write_selection(root, "k1", answer) is True
+              and M.read_selection(root, "k1") == answer)
+        check("afs2 ...and no other key reads it, and a missing key reads and "
+              "writes nothing: %r"
+              % ((M.read_selection(root, "k2"), M.read_selection(root, None),
+                  M.write_selection(root, None, answer)),),
+              M.read_selection(root, "k2") is None
+              and M.read_selection(root, None) is None
+              and M.write_selection(root, None, answer) is False)
+        store = M.selection_store(root)
+        check("afs3 the store is under git's own directory, so it is in no "
+              "tree: %r" % (store,),
+              store is not None
+              and os.path.realpath(store).startswith(
+                  os.path.realpath(os.path.join(root, ".git")) + os.sep)
+              and not _harness.git(root, "status", "--porcelain", "-uall"))
+        check("afs4 an answer JSON would not give back as it went in (a tuple "
+              "reads back a list) is not kept: %r"
+              % (M.write_selection(root, "k3", {"steps": [("a", "b")]}),),
+              M.write_selection(root, "k3", {"steps": [("a", "b")]}) is False
+              and M.read_selection(root, "k3") is None)
+        path = M._selection_file(store, "k1")
+        with open(path, "w") as fh:
+            fh.write('{"version": 1, "key": "other", "answer": {}}')
+        check("afs5 a file naming another key than the one asked is not the "
+              "answer, and neither is one that does not parse: %r"
+              % (M.read_selection(root, "k1"),),
+              M.read_selection(root, "k1") is None)
+        with open(path, "w") as fh:
+            fh.write("{not json")
+        check("afs6 ...a file that does not parse reads as nothing kept, never "
+              "as an exception: %r" % (M.read_selection(root, "k1"),),
+              M.read_selection(root, "k1") is None)
+        for n in range(M.SELECTION_KEEP + 3):
+            M.write_selection(root, "bound%d" % n, answer)
+        held = [n for n in os.listdir(store) if n.endswith(".json")]
+        check("afs7 the store keeps the newest SELECTION_KEEP answers and no "
+              "more, and the newest is among them: %d / %r"
+              % (len(held), M.read_selection(
+                  root, "bound%d" % (M.SELECTION_KEEP + 2)) is not None),
+              len(held) == M.SELECTION_KEEP
+              and M.read_selection(
+                  root, "bound%d" % (M.SELECTION_KEEP + 2)) == answer)
+        plain = tempfile.mkdtemp(prefix="affected-store-plain-")
+        try:
+            check("afs8 a directory git cannot place keeps nothing and says so "
+                  "by returning False: %r"
+                  % ((M.selection_store(plain),
+                      M.write_selection(plain, "k", answer)),),
+                  M.write_selection(plain, "k", answer) is False
+                  and M.read_selection(plain, "k") is None)
+        finally:
+            import shutil
+            shutil.rmtree(plain, ignore_errors=True)
+    finally:
+        import shutil
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _join_cases(check)
         _bare_cases(check)
         _gather_cases(check)
+        _selection_store_cases(check)
         _interrupt_cases(check)
     return _harness.run(body)
 

@@ -53,6 +53,8 @@ said, so a full-sweep key does not run the same suites again beside it.
 import ast
 import concurrent.futures
 import contextvars
+import hashlib
+import json
 import os
 import posixpath
 import shlex
@@ -84,6 +86,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_phases as _phases   # noqa: E402  (is_suite_path, gate_entry_paths)
+import _manifest_io as _mio          # noqa: E402  (atomic_write_text: a kept selection is never read half-written)
 import _gate_derive                  # noqa: E402  (the e2e reading of a path, the
 #                                       path-scoped shape and its re-pointing:
 #                                       asked, not copied)
@@ -1592,6 +1595,86 @@ def gather_facts(project, meta, changed, seen=None, sources=True):
             seen["sources"] = _python_sources(project, files)
         facts["pySources"] = seen["sources"]
     return facts
+
+
+# --- the selection kept per tree identity ----------------------------------------
+# THE ANSWER IS KEPT UNDER GIT'S OWN DIRECTORY, NOT IN THE TREE IT JUDGES. A file
+# written beside the work is untracked in a project that does not ignore it, so
+# keeping one would move the content identity the next ask is keyed on - and the
+# recorder paths that identity leaves out are the recorder's, not a directory
+# this module may invent. `<common git dir>/audit-selection` is in no tree, no
+# ignore list and no record, and is shared by every worktree of one clone, as
+# `_locks.lock_dir`'s directory is. THE KEY IS THE CALLER'S: this section holds
+# what was measured under it, and reads one back only when the file names that
+# very key.
+SELECTION_DIR = "audit-selection"
+# Entries kept: the newest by write time, so a long-lived clone's directory
+# holds the asks of its recent trees and no more.
+SELECTION_KEEP = 8
+_SELECTION_VERSION = 1
+
+
+def selection_store(project):
+    """The directory the kept selections live in, or None when `project` is not
+    a repository git can place."""
+    try:
+        got, _why = _loader.load_hooks_config(modname="audit__config").git_place(
+            project, ["--git-common-dir"], timeout=GIT_TIMEOUT_SECONDS)
+        common = (got or [""])[0]
+        if not common:
+            return None
+        if not os.path.isabs(common):
+            common = os.path.join(project, common)
+        return os.path.join(os.path.realpath(common), SELECTION_DIR)
+    except Exception:
+        return None
+
+
+def _selection_file(store, key):
+    return os.path.join(
+        store, hashlib.sha256(key.encode("utf-8")).hexdigest()[:40] + ".json")
+
+
+def read_selection(project, key):
+    """The answer kept under `key`, or None: no key, no store, no file, a file
+    that does not parse, or one that names another key. A None is only ever
+    the caller measuring, which is the direction that cannot be wrong."""
+    store = selection_store(project) if key else None
+    if store is None:
+        return None
+    try:
+        with open(_selection_file(store, key), encoding="utf-8") as fh:
+            kept = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if (isinstance(kept, dict) and kept.get("version") == _SELECTION_VERSION
+            and kept.get("key") == key and isinstance(kept.get("answer"), dict)):
+        return kept["answer"]
+    return None
+
+
+def write_selection(project, key, answer):
+    """True when `answer` is kept under `key`. An answer JSON would not give
+    back as it went in (a tuple reads back a list) is not kept, so what a later
+    ask is served is exactly what this one was; any failure to write is False
+    and costs only the next ask its measurement."""
+    store = selection_store(project) if key else None
+    if store is None:
+        return False
+    try:
+        if json.loads(json.dumps(answer)) != answer:
+            return False
+        _mio.atomic_write_text(
+            _selection_file(store, key),
+            json.dumps({"version": _SELECTION_VERSION, "key": key,
+                        "answer": answer}, sort_keys=True))
+        held = sorted((os.path.getmtime(os.path.join(store, n)), n)
+                      for n in os.listdir(store) if n.endswith(".json"))
+        for _when, name in held[:max(0, len(held) - SELECTION_KEEP)]:
+            os.remove(os.path.join(store, name))
+        return True
+    except (OSError, ValueError, TypeError):
+        return False
 
 
 # --- which declared files a gate's suites reach -----------------------------------

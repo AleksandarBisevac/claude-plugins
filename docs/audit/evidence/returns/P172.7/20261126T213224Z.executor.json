@@ -1,0 +1,46 @@
+{
+  "gates": {
+    "ruff": "pass",
+    "vermin": "pass",
+    "full-sweep": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-26T22:23:06Z",
+    "basis": "`python3 tests/test_run_test_gate.py --selftest --stage sel-block` in a throwaway tree at HEAD exited 1 on \"AttributeError: module 'rtg' has no attribute 'selection_key'. Did you mean: 'selection_lines'?\" (read as python), and the task introduces 'selection_key': absent from HEAD's plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/governance/_affected_tests.py, changelog.d/P172.7.changed.md, tools/lints/_deps.py, PLUGIN-BUILD-GUIDE.md and present in the working tree's plugins/audit/scripts/governance/run-test-gate.py, PLUGIN-BUILD-GUIDE.md; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "The affected selection is kept per tree identity. run-test-gate.py selection_key() hashes the reuse identity's own content digest (recorder paths excluded), the changed paths, meta_part, the task's gate step names and the bytes of the modules that make the selection; kept_selection() reads _affected_tests.read_selection() before gathering and keeps an answer only if the key is unchanged after the gathering. The store is <git common dir>/audit-selection (write_selection via _manifest_io.atomic_write_text, newest SELECTION_KEEP kept). affected_steps gained optional project and manifest_path; main passes them. Added OTHER_WRITERS row in tools/lints/_deps.py and guide paragraphs for _affected_tests.py and run-test-gate.py. Existing case ag7 adapted: a repeat's selection window now holds the key's time, not the gathering's. Cases sel1-sel10 (test_run_test_gate.py) and afs1-afs8 (test__affected_tests.py). Nine mutations each turned its case red and were restored with cmp: key omits meta (sel2), changed (sel3), content (sel4), code (sel10); recorder paths not excluded (sel5); stored though tree moved (sel9); store inside tree (sel6); never a hit (sel1); key unchecked on read (afs5). Measured on this repo, two cold runs 45 s apart: miss 15.45 s and 15.34 s, hit 0.10 s both. Gates after the last edit: ruff pass, vermin pass, full sweep 196/196 files ok, 20098 cases, exit 0.",
+    "descriptive": "A second ask over the same tree reads the kept selection instead of recomputing it, saving about 15 s per repeated gate ask on this repo."
+  },
+  "testsAdded": [
+    "sel1-sel10: counter on gather_facts for a repeated ask; invalidation by meta.phaseGate, task files, a non-recorder file's bytes and the plugin code; allow case for a recorder-path write; store outside the tree; no project means no key; unreadable kept file; answer measured while the tree moved not kept",
+    "afs1-afs8: the store's round trip, key mismatch, location under git dir, non-round-trippable answer refused, unparseable file, bound, non-git directory"
+  ],
+  "casesAdded": [
+    [
+      "sel1",
+      "sel2",
+      "sel3",
+      "sel4",
+      "sel5",
+      "sel6",
+      "sel7",
+      "sel8",
+      "sel9",
+      "sel10",
+      "afs1",
+      "afs2",
+      "afs3",
+      "afs4",
+      "afs5",
+      "afs6",
+      "afs7",
+      "afs8"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:a0764e5717ad8d83a99f85cbad459466ab147072f270ec2fd05978e1f17faecb\",\"dirtyDigest\":\"sha256:0af2990ae58071adc415647b57f6923d69fdfab9af96f1f3f60b72fab0cdbf01\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"effe58a8cd4d4e07\",\"changelog.d/P172.7.changed.md\":\"2c0923af2a4221de\",\"plugins/audit/scripts/governance/_affected_tests.py\":\"d6e675980e6e6b04\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"e329a681c8ea047e\",\"tests/test__affected_tests.py\":\"95b9e2954197a8c8\",\"tests/test_run_test_gate.py\":\"928550ad00c8d75f\",\"tools/lints/_deps.py\":\"c61310afa3996a98\"},\"head\":\"1f5f3e09\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"changelog.d/P172.7.changed.md\",\"plugins/audit/scripts/governance/_affected_tests.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"tests/test__affected_tests.py\",\"tests/test_run_test_gate.py\",\"tools/lints/_deps.py\"],\"scopeDigest\":\"sha256:0e2bc1f945299fb25d004d31e3a0a0eeb60d1c0dfaffd6739596cd5d93502b5e\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
