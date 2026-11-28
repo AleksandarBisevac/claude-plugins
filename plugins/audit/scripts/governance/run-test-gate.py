@@ -5398,6 +5398,14 @@ def observed_step(name, command, code, text, facts, duration_ms, sweep_keep=()):
     swept = _ev.sweep_cases(text, sweep_keep)
     if swept is not None:
         step[_ev.SWEEP_CASES_KEY] = swept
+    # WHERE A SWEEP'S TIME WENT, off the seconds its own rows printed and over
+    # every row rather than the cut list above: the sentence names the longest
+    # files, and a long file past the per-file bound is still one of them.
+    # Measurement only - no outcome, status or verdict is read from it - and
+    # absent when no row printed seconds, so its presence says one did.
+    time_basis = _ev.sweep_time_basis(text)
+    if time_basis is not None:
+        step[_ev.SWEEP_BASIS_KEY] = time_basis
     # ON ANY STEP, WHATEVER ITS EXIT - a flaky test is a doubt about a pass as
     # much as a detail of a failure. Absent when the runner named none, so the
     # key's presence is itself the claim that somebody reported one.

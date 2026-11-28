@@ -12892,7 +12892,8 @@ def _sweep_keep_cases(check):
           and bare.get("filesDropped") == cut
           and held_paths[0] == kept_path and len(held_paths) == M.MAX_PATHS
           and held.get("filesDropped") == cut
-          and held["files"][0] == {"path": kept_path, "cases": len(others) + 1}
+          and held["files"][0] == {"path": kept_path, "cases": len(others) + 1,
+                                   "seconds": 0.4}
           and held_paths[1:] == sorted(others)[:M.MAX_PATHS - 1]
           and held["total"] == bare["total"])
     check("swk2 NO KEEP LEAVES THE OLD ORDER, whether it is absent, empty or "
@@ -12937,6 +12938,118 @@ def _sweep_keep_cases(check):
           and "filesDropped" not in short)
 
 
+def _sweep_timed_text(rows, newline="\n"):
+    """A sweep's output over `(path, cases, suffix)` rows, the suffix being
+    whatever the runner printed after the case count - `"  [92.9s]"`, `""`."""
+    out = ["sweep: %d files, 8 workers" % (len(rows),)]
+    out += ["  ok      %-58s %d cases%s" % row for row in rows]
+    out += ["", "%d/%d files ok, %d cases" % (len(rows), len(rows),
+                                              sum(r[1] for r in rows))]
+    return newline.join(out) + newline
+
+
+def _sweep_time_cases(check):
+    """(swt) A sweep's printed seconds - and the slots a file held - ride on
+    each file's entry beside its count, absent (never zero) when the row printed
+    none, and the three longest are named in a basis a reader can check."""
+    rows = [("tests/test_a.py", 3, "  [92.9s]"),
+            ("tests/test_b.py", 4, "  [128.0s, 6 slots]"),
+            ("tests/test_c.py", 5, ""),
+            ("tests/test_d.py", 6, "  [912.3s, 40 blocks]"),
+            ("tests/test_e.py", 7, "  [0.4s]")]
+    got = M.sweep_cases(_sweep_timed_text(rows))
+    by_path = dict((f["path"], f) for f in got["files"])
+    check("swt1 A ROW'S PRINTED SECONDS ARE READ OFF ITS SUFFIX: `[92.9s]` "
+          "gives seconds 92.9 and no slots, `[128.0s, 6 slots]` gives 128.0 and "
+          "6 slots, and the seconds of a suite run block by block are read "
+          "while its block count is not mistaken for slots: %r"
+          % ([by_path.get(p) for p in sorted(by_path)],),
+          by_path["tests/test_a.py"] == {"path": "tests/test_a.py", "cases": 3,
+                                         "seconds": 92.9}
+          and by_path["tests/test_b.py"] == {"path": "tests/test_b.py",
+                                             "cases": 4, "seconds": 128.0,
+                                             "slots": 6}
+          and by_path["tests/test_d.py"] == {"path": "tests/test_d.py",
+                                             "cases": 6, "seconds": 912.3}
+          and by_path["tests/test_e.py"].get("seconds") == 0.4)
+    # Fixture: a row with no suffix is the one a `0.0` default would fake; the
+    # entry must not carry the key at all, so an unmeasured file reads as unknown.
+    bare = by_path["tests/test_c.py"]
+    check("swt2 A ROW WITH NO SUFFIX CARRIES NO SECONDS KEY, and no slots key "
+          "either - absent, never 0: %r" % (bare,),
+          bare == {"path": "tests/test_c.py", "cases": 5}
+          and all("slots" not in f for f in got["files"]
+                  if f["path"] != "tests/test_b.py"))
+    crlf = M.sweep_cases(_sweep_timed_text(rows, "\r\n"))
+    check("swt3 A CRLF-ENDED SWEEP READS THE SAME as an LF one, seconds and "
+          "slots included: %r" % (crlf == got,), crlf == got)
+    root = _output.REPO_ROOT
+    row = M._step(root, {"name": "sweep", M.SWEEP_CASES_KEY: got}, ())
+    kept = (row.get(M.SWEEP_CASES_KEY) or {}).get("files") or []
+    stored = M.stored_record({"steps": [row]})
+    stored_files = (((stored.get("steps") or [{}])[0]).get(M.SWEEP_CASES_KEY)
+                    or {}).get("files") or []
+    junk = M._step(root, {"name": "sweep", M.SWEEP_CASES_KEY: {
+        "total": 1, "files": [{"path": "tests/x.py", "cases": 1,
+                               "seconds": True, "slots": 0},
+                              {"path": "tests/y.py", "cases": 1,
+                               "seconds": -2.0, "slots": 2.5}]}}, ())
+    junk_files = (junk.get(M.SWEEP_CASES_KEY) or {}).get("files") or []
+    check("swt4 THE ROW KEEPS THEM AND THE STORED RECORD PROJECTS THEM: the "
+          "writer carries seconds and slots on an entry that has them, the "
+          "step grammar names both, and a flag, a negative or a fractional "
+          "slot count is dropped from the entry rather than stored: %r / %r"
+          % (kept == got["files"], junk_files),
+          kept == got["files"] and stored_files == got["files"]
+          and junk_files == [{"path": "tests/x.py", "cases": 1},
+                             {"path": "tests/y.py", "cases": 1}])
+    basis = M.sweep_time_basis(_sweep_timed_text(rows))
+    check("swt5 THE BASIS NAMES THE THREE LONGEST FILES, longest first, by the "
+          "seconds the sweep printed - the file with no seconds is not among "
+          "them, and the held slots are named where there were more than one: "
+          "%r" % (basis,),
+          isinstance(basis, str)
+          and basis.index("tests/test_d.py") < basis.index("tests/test_b.py")
+          < basis.index("tests/test_a.py")
+          and "tests/test_e.py" not in basis and "tests/test_c.py" not in basis
+          and "912.3s" in basis and "6 slots" in basis)
+    check("swt6 NO TIMED ROW, NO BASIS: output that is not a sweep, and a sweep "
+          "whose rows printed no seconds, give None rather than an empty "
+          "sentence: %r"
+          % ((M.sweep_time_basis("4 passed in 0.1s\n"),
+              M.sweep_time_basis(_sweep_timed_text([("tests/q.py", 2, "")]))),),
+          M.sweep_time_basis("4 passed in 0.1s\n") is None
+          and M.sweep_time_basis(_sweep_timed_text([("tests/q.py", 2, "")]))
+          is None)
+    ties = M.sweep_time_basis(_sweep_timed_text(
+        [("tests/t_%d.py" % (i,), 1, "  [5.0s]") for i in (4, 2, 3, 1)]))
+    check("swt7 THE CUT IS THREE AND DETERMINISTIC: equal seconds are ordered "
+          "by path, so the same output names the same files: %r" % (ties,),
+          isinstance(ties, str) and ties.count("tests/t_") == 3
+          and "tests/t_1.py" in ties and "tests/t_3.py" in ties
+          and "tests/t_4.py" not in ties)
+    # Fixture: three names long enough that the whole sentence passes the
+    # one-line bound a runner string gets, so a row bounding the sentence as a
+    # whole clips the third name where per-segment bounding keeps all three.
+    outside = os.path.join(os.path.dirname(os.path.abspath(root)),
+                           "elsewhere", "test_x.py")
+    longs = ["tests/%s_%d.py" % ("l" * 50, i) for i in range(3)]
+    wide = M.sweep_time_basis(_sweep_timed_text(
+        [(p, 1, "  [%d.0s]" % (30 - i,)) for i, p in enumerate(longs)]
+        + [(outside, 1, "  [99.0s]")]))
+    wide_row = M._step(root, {"name": "sweep", M.SWEEP_BASIS_KEY: wide}, ())
+    kept_basis = wide_row.get(M.SWEEP_BASIS_KEY) or ""
+    check("swt8 THE ROW BOUNDS EACH NAMED FILE, NOT THE SENTENCE, and redacts "
+          "a path outside the project: a sentence past the one-line bound keeps "
+          "every file it names, and the outside path is a token, never this "
+          "machine's spelling: %r"
+          % (kept_basis,),
+          len(wide) > 120 and outside not in kept_basis
+          and all(p in kept_basis for p in longs[:2])
+          and kept_basis.count(M.SWEEP_BASIS_JOIN) == M.SWEEP_TIME_NAMED
+          and "[truncated]" not in kept_basis)
+
+
 # A STAGED SUITE: each row is a block the sweep runs as a job of its own, on one
 # slot, and replays in this order (`_harness.staged_main`), so the case ids,
 # their order and the tally are a one-process run's. Run whole in one process,
@@ -12973,7 +13086,8 @@ STAGES = (("wh-block", "_withheld_cases"), ("rf-block", "_read_field_cases"),
           ("rh-block", "_recorder_held_cases"),
           ("bsu-block", "_per_suite_base_cases"),
           ("swr-block", "_sweep_row_cases"),
-          ("swk-block", "_sweep_keep_cases"))
+          ("swk-block", "_sweep_keep_cases"),
+          ("swt-block", "_sweep_time_cases"))
 # The prefix of the directory a full run's blocks report into.
 _STAGE_PREFIX = "evidence-io-stages-"
 

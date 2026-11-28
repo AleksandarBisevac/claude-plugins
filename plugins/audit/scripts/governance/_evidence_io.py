@@ -808,16 +808,73 @@ MAX_FAILING = 10
 # The step key a sweep's own printed case counts are kept under (`sweep_cases`).
 SWEEP_CASES_KEY = "sweepCases"
 # A file the sweep's loud form graded ok: `  ok  <path>  <N> cases`, then the
-# timing suffix `render` in `tools/sweep-selftests.py` writes, when it wrote one.
+# timing suffix `render` in `tools/sweep-selftests.py` writes, when it wrote one:
+# `[N.Ns]`, then `, K slots` for a file that held more than one, or `, K blocks`
+# for a suite run block by block. The two groups after the cases are the seconds
+# and the slots, each empty when the suffix did not print it - the block count
+# is tolerated and read as neither, being a count of processes and not of slots.
 _SWEEP_OK_ROW = re.compile(r"^  ok  +(\S(?:.*?\S)?) +(\d+) cases"
-                           r"(?: +\[[^\]]*\])?[ \t]*$", re.M)
+                           r"(?: +\[(?:(\d+(?:\.\d+)?)s)?(?:, (\d+) slots)?"
+                           r"[^\]]*\])?[ \t]*$", re.M)
 
 
 def sweep_ok_counts(text):
     """`{path: cases}` off the sweep's loud rows for the files it graded ok.
     The quiet form prints no such row, so it gives `{}`."""
-    return dict((path, int(n)) for path, n in
+    return dict((path, int(n)) for path, n, _s, _k in
                 _SWEEP_OK_ROW.findall(_runner_output.plain_text(text)))
+
+
+def sweep_ok_times(text):
+    """`{path: {"seconds"[, "slots"]}}` off the same rows, for the files whose
+    row printed seconds. A file whose row printed none is absent - never a zero
+    standing for an unmeasured file - and `slots` is there only when the row
+    said the file held more than one."""
+    times = {}
+    for path, _n, seconds, slots in _SWEEP_OK_ROW.findall(
+            _runner_output.plain_text(text)):
+        if not seconds:
+            continue
+        times[path] = {"seconds": float(seconds)}
+        if slots:
+            times[path]["slots"] = int(slots)
+    return times
+
+
+# The step key `sweep_time_basis`'s sentence is kept under: a sweep step's own
+# statement of where its time went, beside `SWEEP_CASES_KEY` and read by no
+# verdict.
+SWEEP_BASIS_KEY = "sweepBasis"
+# What separates the head of that sentence and each file it names. A committed
+# row redacts and bounds each segment on its own (`_sweep_basis_row`): one
+# bound over the whole sentence would clip the third file's path at the first
+# long name, losing the file the sentence exists to name.
+SWEEP_BASIS_JOIN = "; "
+# How many files the basis `sweep_time_basis` writes names.
+SWEEP_TIME_NAMED = 3
+
+
+def sweep_time_basis(text):
+    """A sentence naming the `SWEEP_TIME_NAMED` files the sweep's own rows
+    print the most seconds for, longest first (equal seconds by path), each with
+    the slots it held when more than one - or None when the output is not a
+    sweep's or none of its rows printed seconds. MEASUREMENT ONLY: it says where
+    the time a sweep printed went, and no status or verdict reads it. It reads
+    every printed row, so a file past the per-file list's cut is still named."""
+    body = _runner_output.plain_text(text)
+    if _runner_output.sweep_summary(body) is None:
+        return None
+    times = sweep_ok_times(body)
+    if not times:
+        return None
+    longest = sorted(times, key=lambda p: (-times[p]["seconds"], p))
+    named = ["%s %.1fs%s" % (p, times[p]["seconds"],
+                             " (%d slots)" % (times[p]["slots"],)
+                             if "slots" in times[p] else "")
+             for p in longest[:SWEEP_TIME_NAMED]]
+    head = "longest files by the seconds the sweep printed (%d timed)" % (
+        len(times),)
+    return SWEEP_BASIS_JOIN.join([head] + named)
 
 
 def sweep_red_counts(text):
@@ -877,7 +934,9 @@ def sweep_cases(text, keep=()):
     kept = set(sweep_path_key(p) for p in keep)
     ordered = (sorted(p for p in counts if sweep_path_key(p) in kept)
                + sorted(p for p in counts if sweep_path_key(p) not in kept))
-    files = [{"path": path, "cases": counts[path]} for path in ordered]
+    times = sweep_ok_times(body)
+    files = [dict({"path": path, "cases": counts[path]}, **times.get(path, {}))
+             for path in ordered]
     out = {"total": summary["cases"], "files": files[:MAX_PATHS]}
     if len(files) > MAX_PATHS:
         out["filesDropped"] = len(files) - MAX_PATHS
@@ -894,14 +953,36 @@ def sweep_file_cases(step):
                 and _is_count(f.get("cases")))
 
 
+def _sweep_file_row(project, entry):
+    """One file of a sweep's per-file list as a committed row keeps it: the path
+    redacted and the count as given, then the seconds and the slots only where
+    each is a number it can be - a flag, a negative or a fraction of a slot is
+    left off, never stored as a measurement."""
+    row = {"path": repo_relative_or_token(project, str(entry.get("path"))),
+           "cases": entry.get("cases")}
+    if _is_number(entry.get("seconds")):
+        row["seconds"] = entry["seconds"]
+    if _is_positive(entry.get("slots")):
+        row["slots"] = entry["slots"]
+    return row
+
+
+def _sweep_basis_row(project, text):
+    """`sweep_time_basis`'s sentence as a committed row keeps it: the head and
+    each named file redacted and bounded as one line of runner output is
+    (`redacted_text`), the segments cut at the head plus `SWEEP_TIME_NAMED`
+    files whatever the caller handed."""
+    segments = str(text).split(SWEEP_BASIS_JOIN)[:SWEEP_TIME_NAMED + 1]
+    return SWEEP_BASIS_JOIN.join(redacted_text(project, s) for s in segments)
+
+
 def _sweep_cases_row(project, kept):
     """A step's `SWEEP_CASES_KEY` as a committed row keeps it: each path
     redacted as `failingSuites`' are, the list cut at `MAX_PATHS` by the writer
     whatever the caller cut, and `filesDropped` counting every file left out."""
     files = [f for f in (kept.get("files") or []) if isinstance(f, dict)]
     out = {"total": kept.get("total"),
-           "files": [{"path": repo_relative_or_token(project, str(f.get("path"))),
-                      "cases": f.get("cases")} for f in files[:MAX_PATHS]]}
+           "files": [_sweep_file_row(project, f) for f in files[:MAX_PATHS]]}
     dropped = max(0, len(files) - MAX_PATHS) + (kept.get("filesDropped") or 0)
     if dropped:
         out["filesDropped"] = dropped
@@ -990,11 +1071,15 @@ def _sweep_cases_row(project, kept):
 # checks a runner watched, so it moves no `measured` word and no status - it is
 # read by the one question that needs a count per file, whether a gate step
 # showed each of a proof's files passing (`drive-phase.py`'s `step_standing`).
+# Each file's entry also keeps the seconds its row printed and the slots it
+# held, when the row printed them, and `sweepBasis` (`SWEEP_BASIS_KEY`) names
+# the longest files over every printed row; no status or verdict reads either.
 STEP_KEYS = ("name", "exit", "ran", "measured", "durationMs", "outcome",
              "timeoutSeconds", "teardown", "failing", "failingBasis",
              "failingSuites", "failingSuitesBasis", "suiteReader",
              "retriedAfterSignal", "retryBasis", "outcomeBasis", "derivedGap",
-             "flaky", "flakyBasis", "muted", STEP_REUSED_KEY, SWEEP_CASES_KEY)
+             "flaky", "flakyBasis", "muted", STEP_REUSED_KEY, SWEEP_CASES_KEY,
+             SWEEP_BASIS_KEY)
 
 
 def step_repeated(step):
@@ -1156,6 +1241,9 @@ def _step(project, step, published):
         if key == SWEEP_CASES_KEY:
             if isinstance(step[key], dict):
                 out[key] = _sweep_cases_row(project, step[key])
+            continue
+        if key == SWEEP_BASIS_KEY:
+            out[key] = _sweep_basis_row(project, step[key])
             continue
         if key == "outcomeBasis":
             # WHY THIS `could-not-run` STEP HAS NO VERDICT, bounded and
@@ -4513,7 +4601,8 @@ _MUTE = _object((("test", _TEXT), ("bugId", _TEXT), ("until", _TEXT)),
 _RUN_NAMED = _object((("runId", _NAMED), ("ts", _MOMENT)), ("runId",))
 _SWEEP_CASES = _object((
     ("total", _COUNT),
-    ("files", ("list", _object((("path", _TEXT), ("cases", _COUNT)),
+    ("files", ("list", _object((("path", _TEXT), ("cases", _COUNT),
+                                ("seconds", _NUMBER), ("slots", _POSITIVE)),
                                ("path", "cases")), 0)),
     ("filesDropped", _POSITIVE)), ("total", "files"))
 STEP_GRAMMAR = _object((
@@ -4532,7 +4621,7 @@ STEP_GRAMMAR = _object((
     ("outcomeBasis", _TEXT), ("derivedGap", _TRUE), ("flaky", _TEXTS),
     ("flakyBasis", _TEXT), ("muted", ("list", _MUTE, 0)),
     (STEP_REUSED_KEY, _RUN_NAMED), (SWEEP_CASES_KEY, _SWEEP_CASES),
-    ("command", _TEXT),
+    (SWEEP_BASIS_KEY, _TEXT), ("command", _TEXT),
     ("commandBytes", _COUNT), ("commandSha256", _NAMED), ("program", _TEXT)),
     ("name",))
 TESTED_STATE_GRAMMAR = _object((

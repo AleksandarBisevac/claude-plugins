@@ -4007,6 +4007,18 @@ rather than counting checks a runner watched - so no `measured` word or verdict 
 reader is the drive's fix-by-gate binding, through `sweep_file_cases()`. `swr1`-`swr3` hold the
 writer's cut and redaction and the reader's refusal of a malformed entry.
 
+**A sweep step also keeps where its time went, as measurement only.** `_SWEEP_OK_ROW` already
+tolerated the timing suffix the sweep's loud form prints; it now reads it. Each `files[]` entry
+carries `seconds` off `[N.Ns]` and `slots` off `, K slots` (`sweep_ok_times`), and a row that printed
+no seconds - or whose suffix counts blocks, which are processes and not slots - leaves the key off:
+absent, never 0. `sweep_time_basis()` reads the same rows, before the per-file cut, and names the
+`SWEEP_TIME_NAMED` longest files in one sentence (equal seconds ordered by path); `run-test-gate.py`
+stores it on the step as `SWEEP_BASIS_KEY` (`sweepBasis`), absent when no row printed seconds. `_step`
+redacts and bounds each segment (`SWEEP_BASIS_JOIN`) on its own, since one bound over the whole sentence
+would clip the last path. Only a file graded ok is timed; a red file's row is not read for seconds. No
+status, outcome or verdict reads any of it. `swt1`-`swt8` hold the reading, the absent keys, the CRLF
+twin, the row and its grammar, the basis and its bound; `swc8` and `swc9` the gate's step.
+
 **A step can repeat another run's measurement.** On a `part-reused` row (`PART_REUSED`, the third
 `verdictSource` word beside `reused` and absent), a copied step carries `reusedFrom`
 (`STEP_REUSED_KEY`, kept to `runId` and `ts`) and `_step` writes no `durationMs` for it.

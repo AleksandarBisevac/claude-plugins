@@ -17669,11 +17669,13 @@ def _pre_gate_cases(check):
 
 def _sweep_loud(oks, red, summary):
     """A sweep's loud output, built through its own line formats: `oks` is
-    `[(path, cases)]` printed as ok rows, `red` is `[(path, passed, total)]`
+    `[(path, cases[, seconds])]` printed as ok rows (0.4 seconds when none is
+    given), `red` is `[(path, passed, total)]`
     printed as FAILED rows whose suite output the sweep reprints whole under
     its `--- <path>: <why> ---` header, and `summary` is `(ok, files, cases)`."""
     out = ["sweep: %d files, %d workers" % (summary[1], 8)]
-    out += ["  ok      %-58s %d cases  [%.1fs]" % (p, n, 0.4) for p, n in oks]
+    out += ["  ok      %-58s %d cases  [%.1fs]"
+            % (o[0], o[1], o[2] if len(o) > 2 else 0.4) for o in oks]
     out += ["  FAILED  %-58s exit 1  [%.1fs]" % (p, 0.9) for p, _a, _b in red]
     out.append("")
     for path, passed, total in red:
@@ -17709,9 +17711,11 @@ def _sweep_cases_cases(check):
           "own reprinted tally - the red file at the total its suite ran, not "
           "the half that passed: %r" % (got,),
           isinstance(got, dict) and got.get("total") == 130
-          and got.get("files") == [{"path": "tests/test_a.py", "cases": 120},
+          and got.get("files") == [{"path": "tests/test_a.py", "cases": 120,
+                                    "seconds": 0.4},
                                    {"path": "tests/test_b.py", "cases": 5},
-                                   {"path": "tests/test_c.py", "cases": 7}]
+                                   {"path": "tests/test_c.py", "cases": 7,
+                                    "seconds": 0.4}]
           and "filesDropped" not in got)
     quiet = ("sweep: 2 files, 8 workers\n\n"
              + "%d/%d files ok, %d cases\n" % (2, 2, 41))
@@ -17750,7 +17754,7 @@ def _sweep_cases_cases(check):
           and len(kept.get("files") or []) == _ev_io.MAX_PATHS
           and kept.get("filesDropped") == 5
           and (kept.get("files") or [{}])[0] == {"path": "tests/test_000.py",
-                                                 "cases": 1})
+                                                 "cases": 1, "seconds": 0.4})
     stored = _ev_io.stored_record({"steps": row_w["steps"]})
     check("swc5 ...and the record a plan stores projects it through the step "
           "grammar rather than dropping it as a key the grammar does not name: "
@@ -17759,6 +17763,32 @@ def _sweep_cases_cases(check):
           bool(kept)
           and ((stored.get("steps") or [{}])[0].get("sweepCases") or {})
           == kept)
+    # Fixture: the longest file is NOT the one with the most cases and not the
+    # one sorting first, and four files carry seconds, so a basis that named the
+    # first three by path or by cases names the wrong ones.
+    timed = _sweep_loud([("tests/test_a.py", 90, 4.0),
+                         ("tests/test_b.py", 3, 250.5),
+                         ("tests/test_c.py", 2, 31.2),
+                         ("tests/test_d.py", 70, 12.0)], [], (4, 4, 165))
+    res_t = M.run_gate(root, [("sweep", cmd)],
+                       runner=_scripted({cmd: (0, timed)}))
+    basis = res_t["steps"][0].get("sweepBasis")
+    row_t = _ev_io.row_for(root, res_t, "phase", {"phaseId": "P1"}, _ident)
+    check("swc8 THE STEP'S BASIS NAMES THE THREE LONGEST FILES by the seconds "
+          "the sweep printed, longest first - not the first three by path or "
+          "by cases - and the committed row keeps it: %r / %r"
+          % (basis, (row_t["steps"][0] or {}).get("sweepBasis") == basis),
+          isinstance(basis, str)
+          and basis.index("tests/test_b.py") < basis.index("tests/test_c.py")
+          < basis.index("tests/test_d.py") and "tests/test_a.py" not in basis
+          and (row_t["steps"][0] or {}).get("sweepBasis") == basis)
+    check("swc9 OVER-FIRE GUARD: a step that is not the sweep's carries no "
+          "basis, and a sweep whose rows printed no seconds carries none "
+          "either - absent, not an empty sentence: %r"
+          % ((plain["steps"][0].get("sweepBasis"),
+              res_q["steps"][0].get("sweepBasis")),),
+          "sweepBasis" not in plain["steps"][0]
+          and "sweepBasis" not in res_q["steps"][0])
     _sweep_keep_run_cases(check)
 
 

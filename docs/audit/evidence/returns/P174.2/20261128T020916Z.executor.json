@@ -1,0 +1,43 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__evidence_io.py": "pass",
+    "python3 tools/lints/_deps.py --register-citations": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-28T02:40:23Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__evidence_io.py` in a throwaway tree at HEAD exited 1 with failing cases fbj1 (house FAIL), fbk1 (house FAIL), fbj6 (house FAIL), fbb1 (house FAIL), fbj9 (house FAIL), fbj2 (house FAIL), fbj3 (house FAIL), fbj7 (house FAIL) and 4 more, but the fix run could not be made: the run timed out after 140 s and its process group was torn down - SELFTEST FAILED: 1165/1177 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; task leg keyed on the declared tests' code without comments (sha256:0f146e67c1c76579e06468637e6c2f3643841150b91cff940c924c07afe7b904; a file that is not Python or does not tokenize by its bytes), which does not cover a test reading its own comments or line numbers",
+    "status": "could-not-prove",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: proof_steps(row, command, phase, meta) now returns [(step, shape)] with shape exact (command or digest equality, unchanged rule), joined (step_parts head == proof command, derived parts non-empty) or bare (declared step whose verbatim command satisfies _affected.is_bare_entry and the proof command has _affected.entry_paths). New spelled_proof_paths (entry_paths must name every testDigest path under sweep_path_key), _keyed_counts (one key, min for printed counts, max for owed), _file_counts_standing (no files==1 shortcut: red file count >= owed, other proof file printed, no redFiles + one path count >= collected, no redFiles + several paths refuse), file_counts_said/_shape_said for the basis clause. step_standing gains shape/paths; the exact red-files check now compares under sweep_path_key too. gate_binding passes manifest meta and phase, refuses when spelled paths cannot be read, and its 'ran no step' reason names all three shapes. Docstrings (module, proof_steps, step_standing, gate_binding), PLUGIN-BUILD-GUIDE.md drive-phase section, execute-task.md fix-by-gate paragraph (now also says a held repeat is followed to its measured run via reusedFrom) updated; changelog.d/P174.2.changed.md added. tests/test_drive_phase.py: filed_over takes plan=; new _fix_by_gate_joined_units adds fbj1-fbj9, fbb1-fbb5, fbk1-fbk2 in stage ux-block. Red first: on unchanged drive-phase.py the stage printed 'SELFTEST FAILED: 174/184' (fbj1,fbk1,fbj6,fbb1,fbj2,fbj3,fbj7,fbk2,fbb3,fbj5 FAIL). Mutations in a scratch rsync copy (never in the tree), each red: m1 joined read as exact -> fbj2,fbj3,fbj7,fbk2,fbb3,fbj5; m2 suffix alias -> fbk2; m2b sweep_path_key as basename -> fbk2 and 8 others; m3 raw key -> fbk1; m4 any joined head -> fbj4; m5 drop is_bare_entry -> fbb4; m5b drop spelled guard -> fbb5; m6 several paths allowed -> fbj5; m7 one-path collected dropped -> fbj7; m8 short check dropped -> fbj2; m11 testDigest agreement dropped -> fbj8; over-fire m9 always refuse -> fbj1,fbk1,fbj6,fbb1 (+refusals); m10 no joined shape -> fbj1,fbk1,fbj6,fbj9; restored copy 187/187. Final: --stage ux-block ALL PASS 188/188; gate command exit 0 '2/2 files ok, 1798 cases' (run twice); pre-gate exit 0 '0 register citation(s)'; ruff clean; changelog-check exit 0; measure-context --gate OK; tests/test__output_lints.py + test__deps.py 2/2 ok (after rewording three test literals the prose-number lint flagged); dependants sweep test__refs, test__invariants, test__config, test_stamp_verification, test_run_test_gate, test_hooks, test_audit_task exit 0 '7/7 files ok, 3620 cases'. TDD note: I read proof_steps/step_standing/gate_binding before drafting the tests (needed the harness and signatures), so the tests were not written blind to the code. Dependants: execute-task.md readers - still correct, only the fix-by-gate prose changed and the suites that read it are green; drive-phase.py importers - proof_steps/step_standing have no callers outside drive-phase.py (grep over *.py), new params default to the old behaviour; tests/test_drive_phase.py dependants untouched beyond the new units; tests/test__evidence_io.py not changed - no new drive function calls recorded_runs, so no _BB_DRIVE_SITES row is owed (its site lint green); PLUGIN-BUILD-GUIDE.md dependants - test__deps green; changelog fragment named by nothing.",
+    "descriptive": "A joined or bare sweep step now binds a fix-by-gate proof's fix leg on the proof files' own printed counts, compared under one path key, and refuses every way those counts are short, absent or not the proof's file."
+  },
+  "testsAdded": [
+    "fix-by-gate filing over a joined step (binds at the owed count; refuses one case fewer, file absent with total far above, another head command, two proof files with no redFiles, one file under the collected count, a proof file the command does not name), over the bare recorded sweep (binds; refuses under a plan with no recorded spelling, with the file absent, with an option added, for a proof command that is not the spelling), a held repeat of a joined-step run binding to the run it repeats, a backslash redFiles key matching its posix row path, and a same-named file in another directory not matching"
+  ],
+  "casesAdded": [
+    [
+      "fbj1",
+      "fbj2",
+      "fbj3",
+      "fbj4",
+      "fbj5",
+      "fbj6",
+      "fbj7",
+      "fbj8",
+      "fbj9",
+      "fbb1",
+      "fbb2",
+      "fbb3",
+      "fbb4",
+      "fbb5",
+      "fbk1",
+      "fbk2"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py proof_steps (shape classification), _file_counts_standing (per-file rule), spelled_proof_paths (testDigest agreement), gate_binding (meta/phase passed, reason names three shapes) are the lines the updated docstrings, guide section and execute-task.md paragraph describe\n2 red on unchanged code 174/184; twelve mutations in a scratch copy each turned a named case red, over-fire m9/m10 turned the binding twins fbj1,fbk1,fbj6,fbb1,fbj9 red; restored 187/187\n3 grep 'spelled otherwise|another spelling|narrowed' over drive-phase.py, PLUGIN-BUILD-GUIDE.md, execute-task.md: drive-phase.py:6102-6103 and 6149 fixed; other hits (9949, 10198, guide 1583/4522/4572.../7557, execute-task.md:149) are about other narrowings, left\n4 n/a - no rule to an agent; execute-task.md describes drive behaviour enforced by gate_binding, named in the sentence\n5 n/a - no property recorded\n6 decision reads the recorded step's name parts, verbatim command against the plan's recorded spelling, and per-file printed counts, not prose; allow twins fbj1/fbb1/fbk1/fbj6/fbj9 green before and red under over-fire\n7 n/a - no number written in prose (three test literals reworded to build their counts)",
+  "stamp": "audit-stamp: {\"content\":\"sha256:ff1145337f48d8c726a691bbd3df4df134ab7b109f727bb03c82bf94bfa4c408\",\"dirtyDigest\":\"sha256:30cd56c2b26fe96a4a26dd5bf85fd0596ad45825b4b083f89d4ba740ba47a0c5\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"3b4d0a4e50ec7e3f\",\"changelog.d/P174.2.changed.md\":\"21879fc5da47bea2\",\"plugins/audit/reference/execute-task.md\":\"6ce57be404f35060\",\"plugins/audit/scripts/governance/drive-phase.py\":\"b9feceb35ea4ae6b\",\"tests/test_drive_phase.py\":\"5e846c9fab92444e\"},\"head\":\"d24e66ef\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"changelog.d/P174.2.changed.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test__evidence_io.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:1aa3dc18dafa1d3e36b253613afb550868bf2a99e7a5a17a58253c56b7426492\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

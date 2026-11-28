@@ -1,0 +1,35 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py": "pass",
+    "python3 tools/lints/_deps.py --register-citations": "pass",
+    "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test__output_lints.py": "pass",
+    "python3 tools/release.py changelog-check": "pass",
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_run_test_gate.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-28T02:34:52Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py` in a throwaway tree at HEAD exited 1 with 5 of 823 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - swk1 (house FAIL), swt1 (house FAIL), swc1 (house FAIL), swc4 (house FAIL), swc8 (house FAIL): SELFTEST FAILED: 820/823 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; task leg keyed on the declared tests' code without comments (sha256:40fc1dbce1857943f2a8864dc0b3e5b683918073449cf84921b9f2bdf42c8eef; a file that is not Python or does not tokenize by its bytes), which does not cover a test reading its own comments or line numbers",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "_evidence_io.py: _SWEEP_OK_ROW now captures the timing suffix (seconds group; slots group only for ', K slots'; a ', K blocks' suffix is tolerated and read as neither); sweep_ok_counts adapted; new sweep_ok_times, sweep_time_basis (three longest by printed seconds, ties by path, None when no row printed seconds or not a sweep), SWEEP_BASIS_KEY/SWEEP_BASIS_JOIN/SWEEP_TIME_NAMED; sweep_cases entries gain seconds/slots (keys absent, never 0, when not printed); _sweep_file_row keeps them only when numeric (flag, negative, fractional slot dropped); _sweep_basis_row redacts and bounds each segment of the sentence on its own (a whole-sentence bound clipped the third path in the 120-char one-line bound - found when the committed row came back truncated); STEP_KEYS and STEP_GRAMMAR name sweepBasis and the two new entry fields. run-test-gate.py observed_step stores sweep_time_basis(text) as step sweepBasis. Tests: tests/test__evidence_io.py new block swt-block (swt1-swt8, STAGES row added; swk1 expectation gains seconds 0.4); tests/test_run_test_gate.py _sweep_loud takes an optional seconds, swc1/swc4 expectations gain seconds, new swc8, swc9. PLUGIN-BUILD-GUIDE.md section paragraph and changelog.d/P174.4.added.md added. Evidence: sweep of tests/test__evidence_io.py + tests/test_run_test_gate.py + tests/test__output_lints.py exit 0 (3/3 files ok, 1635 cases); tests/test_drive_phase.py + tests/test_run_test_gate.py exit 0 (2/2 ok); --register-citations exit 0 (0 found); release.py changelog-check exit 0. Dependants: drive-phase.py reads sweep_file_cases (path, cases only) - still correct, its suite passes; run-test-gate.py's other readers and the 8 shown importers of _evidence_io only use names unchanged in signature (sweep_ok_counts still returns {path: cases}); no tracked schema names sweepCases or step keys; PLUGIN-BUILD-GUIDE.md updated; changelog fragment has no dependants. PROCESS NOTE: one multi-site edit of _evidence_io.py (entries, row writer, grammar) was made through a short python heredoc rather than the Edit tool, against the brief's instruction; the result is in the diff and all other edits used Edit. claims: 1 _evidence_io.py _SWEEP_OK_ROW/sweep_ok_times/sweep_time_basis/_sweep_basis_row do what the comments and PLUGIN-BUILD-GUIDE paragraph say (swt1-swt8, swc8); 'no verdict reads it' - only run-test-gate stores it and drive-phase reads sweep_file_cases (path, cases), grep of sweepBasis/seconds readers: none. 2 swt1/swt5/swc8 red before the implementation (seen above); swt8 guards the per-segment bound (whole-sentence bound observed truncating); swt2/swt6/swc9 are the absent/over-fire cases and pass on HEAD by construction. 3 bare shape grep of sweepCases/SWEEP_CASES_KEY/sweep_ok_counts across the tree: readers in _evidence_io, run-test-gate, drive-phase (sweep_file_cases) - each checked; red files' FAILED-row seconds are NOT read, left because the task names the ok row's suffix. 4 n/a - no rule to an agent. 5 n/a - no timing property recorded. 6 n/a - no guard. 7 numbers in comments/docs derived: none written; 3 is the SWEEP_TIME_NAMED constant.",
+    "descriptive": "A sweep step's record now says how many seconds (and slots) each ok file took and names the three longest files, so a gate's time is read off its own record."
+  },
+  "testsAdded": [
+    "swt1-swt3: '[92.9s]' gives seconds 92.9, '[128.0s, 6 slots]' gives 128.0 and slots 6, a row with no suffix has no seconds/slots key, a blocks suffix gives seconds only, and the CRLF twin reads identically",
+    "swt4: the row writer and stored-record grammar keep seconds/slots and drop non-numeric ones",
+    "swt5-swt8: sweep_time_basis names the three longest (ties by path, None when untimed) and the row bounds each segment and redacts outside paths",
+    "swc8/swc9: run_gate step carries sweepBasis for a timed sweep and none otherwise"
+  ],
+  "casesAdded": [
+    [
+      "swt1",
+      "swt2",
+      "swt3"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:621d38aba8ca4f42e6b5fc39071cacb8cf409d21350bb2ed2bbd46e36155ee0a\",\"dirtyDigest\":\"sha256:47c78f2221056d0a58c684d0267973e0a2237c18cebd15b05d6d28a91a74f572\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"3a76de2f6ba63cfb\",\"changelog.d/P174.4.added.md\":\"4cad8df7d7cfabd7\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"78917a719d6ca460\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"9643877577047756\",\"tests/test__evidence_io.py\":\"732bb153350ab8b7\",\"tests/test_run_test_gate.py\":\"7b669f3618cf26cf\"},\"head\":\"d24e66ef\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"changelog.d/P174.4.added.md\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"tests/test__evidence_io.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:b89177119077024d2484bc9f9ba1340bd12109cba62d8042280bd94009f51df4\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
