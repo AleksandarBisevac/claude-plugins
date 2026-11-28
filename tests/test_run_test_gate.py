@@ -17954,7 +17954,7 @@ def _step_time_run(root, mpath, shard, red, last_ms):
 
 
 def _step_time_cases(check):
-    """(stt1-stt6) A red run names a step that took more than twice the time
+    """(stt1-stt6, with stt7-stt9 after) A red run names a step that took more than twice the time
     the same subject's previous record holds for it; a green run says nothing;
     a red run with no previous record says the comparison has no basis."""
     root, mpath, shard = _step_time_repo("rtg-stt-")
@@ -18028,6 +18028,74 @@ def _step_time_cases(check):
           and M.step_time_reading(res, rows, "P1", "P1.9")["verdict"]
           == "no-basis"
           and M.step_time_lines(exactly) == [])
+
+    _step_time_repeat_cases(check)
+
+
+def _step_time_repeat_cases(check):
+    """(stt7-stt9) Each step is read against the newest earlier run that timed
+    THAT step itself, and a ratio just over the bound never prints as it."""
+    def row(run_id, ts, steps, status="passed"):
+        return {"scope": "task", "taskId": "P1.1", "phaseId": "P1",
+                "status": status, "ts": ts, "runId": run_id, "steps": steps}
+
+    def step(name, ms=None, source=None):
+        out = {"name": name, "exit": 0}
+        if ms is not None:
+            out["durationMs"] = ms
+        if source is not None:
+            out[_ev_io.STEP_REUSED_KEY] = source
+        return out
+
+    r1 = row("R1", "2026-11-28T10:00:00Z",
+             [step("unit", 1000), step("lint", 500)])
+    # r2 repeats `unit` from r1 (reusedFrom, no time) and measures `lint` itself.
+    r2 = row("R2", "2026-11-28T11:00:00Z",
+             [step("unit", None, "R1"), step("lint", 4000)])
+    res = {"failed": ["unit"],
+           "steps": [{"name": "unit", "exit": 1, "durationMs": 9000},
+                     {"name": "lint", "exit": 0, "durationMs": 4100}]}
+    alone = M.step_time_reading(res, [r1], "P1", "P1.1")
+    both = M.step_time_reading(res, [r1, r2], "P1", "P1.1")
+    check("stt7 A REPEATED STEP HOLDS NO TIME, SO THE NEWER ROW IS NOT ITS "
+          "BASIS: `unit` is read against the older run that measured it (9 s "
+          "against 1 s is slower, as with that run alone) and `lint` against "
+          "the newer run that measured it (4.1 s against 4 s is not), and the "
+          "basis names the run each was read against: %r" % (both,),
+          alone["verdict"] == "slower" and both["verdict"] == "slower"
+          and [(s["name"], s["lastMs"]) for s in both["steps"]]
+          == [("unit", 1000)]
+          and "unit with run R1" in both["basis"]
+          and "lint with run R2" in both["basis"]
+          and "2 step(s)" in both["basis"])
+    calm = M.step_time_reading(
+        dict(res, steps=[dict(res["steps"][0], durationMs=1500)]),
+        [r1, r2], "P1", "P1.1")
+    only = M.step_time_reading(res, [r2], "P1", "P1.1")
+    check("stt8 THE OTHER DIRECTION: a step 1.5x the older run that measured "
+          "it is within the bound however the newer row repeated it, and a "
+          "step no run of the subject measured has no basis (the repeated "
+          "row is not read as a measurement of zero) while `lint` still "
+          "compares: %r" % ((calm["verdict"], only),),
+          calm["verdict"] == "within" and calm["steps"] == []
+          and only["verdict"] == "within" and "unit" not in only["basis"]
+          and "lint with run R2" in only["basis"]
+          and M.step_time_reading(
+              {"steps": [res["steps"][0]]}, [r2], "P1", "P1.1")["verdict"]
+          == "no-basis")
+    printed = {}
+    for now in (2040, 2001, 3000, 2100):
+        found = {"steps": [{"name": "s", "durationMs": now, "lastMs": 1000}]}
+        printed[now] = M.step_time_lines(found)
+    said = dict((now, re.findall(r"([0-9.]+)x its", " ".join(lines)))
+                for now, lines in printed.items())
+    check("stt9 A RATIO OVER THE BOUND NEVER PRINTS AS IT: 2.04 and 2.001 are "
+          "named for taking MORE than twice, so the printed ratio is above 2 "
+          "(rounded up, never down); an exact figure keeps its own digits (3.0 "
+          "and 2.1 print as they are): %r" % (said,),
+          all(len(v) == 1 for v in said.values())
+          and float(said[2040][0]) > 2 and float(said[2001][0]) > 2
+          and said[3000] == ["3.0"] and said[2100] == ["2.1"])
 
 
 def _selftest():

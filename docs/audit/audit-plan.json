@@ -4178,7 +4178,8 @@
       "P169.27-6l3",
       "P169.41-6l3",
       "P173.1",
-      "P175.2"
+      "P175.2",
+      "P175.5-i91"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -5315,7 +5316,8 @@
       "P173.16-s6m",
       "P174.3",
       "P174.4",
-      "P175.3"
+      "P175.3",
+      "P175.5-i91"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -6011,7 +6013,8 @@
       "P169.38-6l3",
       "P172.12-mrj",
       "P175.2",
-      "P175.4-i91"
+      "P175.4-i91",
+      "P175.5-i91"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -14078,7 +14081,8 @@
       "P169.38-6l3",
       "P172.12-mrj",
       "P172.14-mrj",
-      "P175.2"
+      "P175.2",
+      "P175.5-i91"
     ],
     "tests/test_audit_usage.py": [
       "P131.1",
@@ -14613,7 +14617,8 @@
       "P173.16-s6m",
       "P174.3",
       "P174.4",
-      "P175.3"
+      "P175.3",
+      "P175.5-i91"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -14710,7 +14715,8 @@
       "P169.27-6l3",
       "P169.28-6l3",
       "P169.32-6l3",
-      "P169.41-6l3"
+      "P169.41-6l3",
+      "P175.5-i91"
     ],
     "tests/test_verify_invariants.py": [
       "P131.1"
@@ -15248,6 +15254,9 @@
     ],
     "changelog.d/P175.4-i91.added.md": [
       "P175.4-i91"
+    ],
+    "changelog.d/P175.5-i91.fixed.md": [
+      "P175.5-i91"
     ]
   },
   "bugs": [

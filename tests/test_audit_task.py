@@ -10121,6 +10121,25 @@ def _record_cases(check):
               and "blockedReason" not in _hd_r and len(_hd_rel) == 1
               and (_hd_rel[0].get("details") or {}).get("reason")
               == "the vendor signed off")
+        projhb, mphb = mk("hd-hold-blocked", base_manifest())
+        run(["block", "P2.3", "--reason", "waiting on the BE endpoint",
+             "--project-dir", projhb])
+        with open(mphb, "rb") as _fh:
+            _hb_before = _fh.read()
+        _hb = run(["hold", "P2.3", "--reason", "parking it", "--project-dir",
+                   projhb])
+        with open(mphb, "rb") as _fh:
+            _hb_after = _fh.read()
+        _hb_t = task_in(mphb, "P2.3") or {}
+        check("ho6 `hold` on a BLOCKED task is refused, names `unblock` and the "
+              "reason on record, and writes nothing - a hold that took it would "
+              "overwrite the block's reason, and `release` would then return the "
+              "task to pending with the block cleared and no unblock recorded: %r"
+              % (_hb,),
+              _hb_before and _hb[0] == 2 and "unblock" in _hb[1]
+              and "waiting on the BE endpoint" in _hb[1]
+              and _hb_after == _hb_before and _hb_t.get("status") == "blocked"
+              and _hb_t.get("blockedReason") == "waiting on the BE endpoint")
 
         # ---- (nt) an append-only note ----------------------------------------------
         projnt, mpnt = mk("nt-note", pd_fixture())

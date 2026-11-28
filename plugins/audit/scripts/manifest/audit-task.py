@@ -8947,7 +8947,9 @@ def _locked_unblock(args, project, config, mpath, tid, reason, out):
 # the same cause `block`'s is, and rides in the same `blockedReason` key, so the
 # merge rule that carries a block's status and reason carries a hold's too. A hold
 # is refused on terminal work, on a running task (a task in motion is stopped by
-# `block`, not parked) and on one already held, whose reason stands.
+# `block`, not parked), on one already held, whose reason stands, and on a blocked
+# one: holding it would overwrite the block's reason, and `release` would then
+# return it to pending with the block cleared and no `unblock` recorded.
 def cmd_hold(args, out):
     project = _resolve_project(args)
     if not os.path.isdir(project):
@@ -8977,6 +8979,11 @@ def _hold_refusal(node, tid):
     if status == "held":
         return ("%s is already held: %s -- the reason on record stands; add what "
                 "changed with /audit:task note %s --text \"...\""
+                % (tid, node.get("blockedReason") or "(no reason recorded)", tid))
+    if status == "blocked":
+        return ("%s is blocked: %s -- a block is cleared with `unblock %s "
+                "--reason ...`, and held only once it is not blocked; a hold "
+                "would overwrite the reason on record"
                 % (tid, node.get("blockedReason") or "(no reason recorded)", tid))
     if status == "in_progress":
         return ("%s is running -- a task in motion is stopped with `block %s "

@@ -949,13 +949,14 @@ def base_red_lines(found):
 
 
 # --- a red run's steps against the subject's last recorded run -----------------
-# THE COMPARISON IS WITH THE SAME STEP OF THE SAME SUBJECT'S PREVIOUS RUN THAT
-# REACHED A VERDICT, never with a mean over every run (`step_mean_ms` answers
-# that question) and never with another subject's: a task's own record is its
-# own, so a sibling's newer and slower run is no basis for it, and a phase's
+# THE COMPARISON IS WITH THE SAME STEP OF THE SAME SUBJECT'S NEWEST EARLIER RUN
+# THAT REACHED A VERDICT AND TIMED THAT STEP ITSELF, never with a mean over
+# every run (`step_mean_ms` answers that question) and never with another
+# subject's: a task's own record is its own, so a sibling's newer and slower run is no basis for it, and a phase's
 # own gate is a subject of its own. A cancelled or killed run timed its steps
 # for as long as they were let run, so it is no basis either, and a step a run
-# copied from an earlier one (`step_repeated`) took no time there.
+# copied from an earlier one (`step_repeated`) took no time there, so the next
+# older run that did time the step is the one read.
 def _own_rows(rows, phase_id, task_id):
     """The rows of one subject: a task's runs on any gate, or the phase's own
     gate when `task_id` is None - never a base or a `--full` run."""
@@ -979,42 +980,63 @@ def _step_ms(step):
     return ms
 
 
+def _last_measured(ordered_newest_first, name):
+    """`(run, ms)` from the newest of `ordered_newest_first` whose step `name`
+    took time of its own there, or None when no run measured it."""
+    for row in ordered_newest_first:
+        for step in row.get("steps") or []:
+            if isinstance(step, dict) and str(step.get("name")) == name \
+                    and _step_ms(step) is not None:
+                return row.get("runId"), _step_ms(step)
+    return None
+
+
 def step_time_reading(res, rows, phase_id, task_id):
     """`{"run", "verdict", "steps", "basis"}` - this run's steps read against
-    the same steps of the subject's previous run that reached a verdict, among
-    `rows`. `steps` holds each step that took more than `STEP_TIME_FACTOR`
-    times its last recorded time as `{"name", "durationMs", "lastMs"}`;
-    `verdict` is `slower` when it holds one, `within` when steps were compared
-    and none was over the bound, and `no-basis` - with the reason in `basis` -
-    when nothing could be compared. A step with no time of its own here, or
-    one whose last time was under a millisecond, is not compared."""
+    the subject's earlier runs that reached a verdict, among `rows`, each step
+    against the newest run that timed THAT step itself: a run that repeated
+    the step from an earlier one holds no time for it, so the next older run
+    that did time it is the one asked. `steps` holds each step that took more than
+    `STEP_TIME_FACTOR` times its last recorded time as `{"name", "durationMs",
+    "lastMs"}`; `verdict` is `slower` when it holds one, `within` when steps
+    were compared and none was over the bound, and `no-basis` - with the reason
+    in `basis` - when nothing could be compared. `run` is the newest of the
+    runs read against, and `basis` names the run each compared step was read
+    against. A step with no time of its own here, or one whose last time was
+    under a millisecond, is not compared."""
     own = [row for row in _own_rows(rows, phase_id, task_id)
            if row.get("status") in _ev.MEASURED_STATUSES]
-    last = _ev.newest_row(own) if own else None
-    if last is None:
+    if not own:
         return {"run": None, "verdict": "no-basis", "steps": [],
                 "basis": "no earlier run of %s reached a verdict, so no step "
                          "has a recorded time to be compared with"
                          % (task_id if task_id is not None else phase_id,)}
-    before = dict((str(s.get("name")), _step_ms(s))
-                  for s in last.get("steps") or [] if isinstance(s, dict))
-    slow, compared = [], 0
+    newest_first = list(reversed(_ev.oldest_first(own)))
+    slow, compared = [], []
     for step in res.get("steps") or []:
-        now, then = _step_ms(step), before.get(str(step.get("name")))
-        if now is None or not then:
+        now = _step_ms(step)
+        then = _last_measured(newest_first, str(step.get("name"))) \
+            if now is not None else None
+        if then is None or not then[1]:
             continue
-        compared += 1
-        if now > _ev.STEP_TIME_FACTOR * then:
+        compared.append((str(step["name"]), then[0]))
+        if now > _ev.STEP_TIME_FACTOR * then[1]:
             slow.append({"name": str(step["name"]), "durationMs": now,
-                         "lastMs": then})
-    run = last.get("runId")
+                         "lastMs": then[1]})
     if not compared:
+        run = newest_first[0].get("runId")
         return {"run": run, "verdict": "no-basis", "steps": [],
-                "basis": "run %s, the last of this subject, timed none of the "
-                         "steps this run timed" % (run,)}
+                "basis": "no earlier run of this subject (the newest is %s) "
+                         "timed any of the steps this run timed" % (run,)}
+    ran = [name_run[1] for name_run in compared]
+    run = next(r.get("runId") for r in newest_first if r.get("runId") in ran)
     return {"run": run, "verdict": "slower" if slow else "within",
             "steps": slow,
-            "basis": "%d step(s) compared with run %s" % (compared, run)}
+            "basis": "%d step(s) compared, each with the newest run that "
+                     "timed it: %s" % (
+                         len(compared),
+                         "; ".join("%s with run %s" % pair
+                                   for pair in compared))}
 
 
 def step_time_or_none(res, phase_id, task_id, read_rows):
@@ -1033,6 +1055,14 @@ def step_time_or_none(res, phase_id, task_id, read_rows):
                          % (type(exc).__name__, exc)}
 
 
+def _ratio_text(now_ms, last_ms):
+    """`now_ms / last_ms` to one decimal, rounded UP in integer arithmetic: the
+    rule a step is named under is "more than" a bound, so a ratio just over it
+    must not print as the bound itself (a ratio of 2.04 is not "2.0x")."""
+    tenths = -(-now_ms * 10 // last_ms)
+    return "%d.%d" % (tenths // 10, tenths % 10)
+
+
 def step_time_lines(found):
     """The lines a red verdict carries about its steps' times, from
     `step_time_reading`: one per slow step, one sentence when the comparison
@@ -1043,9 +1073,9 @@ def step_time_lines(found):
     if found.get("verdict") == "no-basis":
         return ["  step times: the comparison has no basis - %s"
                 % (found.get("basis"),)]
-    return ["  step %s took %.1f s, %.1fx its last recorded %.1f s"
+    return ["  step %s took %.1f s, %sx its last recorded %.1f s"
             % (s["name"], s["durationMs"] / 1000.0,
-               s["durationMs"] / float(s["lastMs"]), s["lastMs"] / 1000.0)
+               _ratio_text(s["durationMs"], s["lastMs"]), s["lastMs"] / 1000.0)
             for s in found.get("steps") or []]
 
 

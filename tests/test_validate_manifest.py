@@ -599,6 +599,22 @@ def _cases_schema_parity(record, path):
            and "will refuse it from 4.0.0" in _schema_lines(w)[0]
            and code == 0 and "phases[0].priority 0" in out)
 
+    held = {}
+    for label, task_map in (("held", {"held": "On Hold"}),
+                            ("neighbour", {"held": "On Hold", "heldd": "x"})):
+        plan = copy.deepcopy(base)
+        plan["meta"]["ado"] = {"stateMap": {"task": task_map}}
+        held[label] = _schema_lines(M.validate(plan, schema=schema)[0]
+                                    + M.validate(plan, schema=schema)[1])
+    record("sp4 meta.ado.stateMap.task names `held` - the state the built-in "
+           "map and the hold verb already speak - and the schema accepts it "
+           "(no schema line), while a key beside it that no map knows is "
+           "still named, so the allowance is the one key and not the object: "
+           "%r" % (held,),
+           held["held"] == []
+           and [x.split(" ", 1)[0] for x in held["neighbour"]]
+           == ["meta.ado.stateMap.task.heldd"], held)
+
 
 _RR_AT = "2026-11-18T10:00:00Z"
 

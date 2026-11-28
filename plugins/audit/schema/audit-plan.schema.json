@@ -661,6 +661,12 @@
                         "null"
                       ]
                     },
+                    "held": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "done": {
                       "type": [
                         "string",
