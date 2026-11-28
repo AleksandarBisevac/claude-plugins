@@ -359,10 +359,20 @@ ARMED_ACTION = "risk.standing.armed"
 REVOKED_ACTION = "risk.standing.revoked"
 
 
-def _prompt_hook(project, payload):
+WRITER_MARKER = "AUDIT_WRITER_SESSION"
+
+
+def _prompt_hook(project, payload, marker=None):
     """The hook as the harness launches it: a process, the payload on stdin,
-    the project named the way Claude Code names it. `(rc, stdout)`."""
+    the project named the way Claude Code names it. `(rc, stdout)`.
+
+    `marker` is the runner's writer-session mark for the hook's environment.
+    Without one the caller's own mark is DROPPED, so an owner-prompt case
+    means the same thing when this suite is run from inside a writer session."""
     env = dict(os.environ)
+    env.pop(WRITER_MARKER, None)
+    if marker is not None:
+        env[WRITER_MARKER] = marker
     env["CLAUDE_PROJECT_DIR"] = str(project)
     proc = subprocess.run(
         [sys.executable, os.path.join(_harness.HOOKS_DIR, "detect-plan-skip.py")],
@@ -570,6 +580,48 @@ def _bypass_cases(check):
         _sh.rmtree(str(proj), ignore_errors=True)
 
 
+def _writer_session_cases(check):
+    """A runner-started writer or reviewer session's prompt is the brief, which
+    the plan and the model wrote - so a keyword in it arms nothing, exactly as a
+    subagent's would. The payload looks like the owner's (no `agent_id`); only
+    the session's environment says otherwise."""
+    import shutil as _sh
+    import _journal_io
+    proj = Path(tempfile.mkdtemp(prefix="dps-writer-"))
+    try:
+        prompts = ["%s fix the pricing table" % BYPASS_WORD,
+                   "%s for the rest of the run" % ARM_WORD,
+                   "%s then %s" % (BYPASS_WORD, ARM_WORD)]
+        outs = []
+        for n, (role, words) in enumerate(
+                [(r, p) for r in ("writer", "reviewer") for p in prompts]):
+            rc, out = _prompt_hook(proj, _owner_payload(
+                words, session="w%d" % (n,)), marker=role)
+            outs.append((role, rc, out.strip()[:80]))
+        rows = _journal_io.read_all(str(proj))
+        slots = _bypass_slots(proj)
+        check("wsd1 a marked writer or reviewer session's prompt carrying "
+              "#no-plan or #approve-high-risk arms no bypass slot, writes no "
+              "journal row (no owner-prompt standing row among them) and tells "
+              "nobody it armed: %r" % ((slots, len(rows), outs),),
+              slots == [] and rows == [] and _standing_rows(proj) == []
+              and all(rc == 0 and "bypass" not in out.lower()
+                      and "ARMED" not in out for _r, rc, out in outs))
+        # THE SECOND DIRECTION, in the same project: the very same prompts with
+        # no marker are the owner's and arm both. A hook that stopped arming
+        # altogether passes wsd1 and goes red here.
+        for n, words in enumerate(prompts[:2]):
+            _prompt_hook(proj, _owner_payload(words, session="o%d" % (n,)))
+        armed = [r for r in _standing_rows(proj)
+                 if r.get("action") == ARMED_ACTION]
+        check("wsd2 ...and the same prompts with no marker are the owner's: the "
+              "bypass slot is armed and one standing approval row is written: %r"
+              % ((_bypass_slots(proj), len(armed)),),
+              len(_bypass_slots(proj)) == 1 and len(armed) == 1)
+    finally:
+        _sh.rmtree(str(proj), ignore_errors=True)
+
+
 def prompt_readers(source, fields=_PROMPT_FIELDS):
     """Names of every place `source` reads a prompt field off a payload itself:
     a `.get("prompt")`-shaped call or a `["prompt"]` subscript on any of the
@@ -676,6 +728,7 @@ def _all_cases(check):
     _cases(check)
     _standing_cases(check)
     _bypass_cases(check)
+    _writer_session_cases(check)
     _one_reader_cases(check)
     _repo_wide_reader_cases(check)
 

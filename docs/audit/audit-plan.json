@@ -1553,7 +1553,8 @@
       "P155.17-gfj",
       "P157.7-mwz",
       "P170.1",
-      "P172.9"
+      "P172.9",
+      "P176.2-ihj"
     ],
     "COMPATIBILITY.md": [
       "P18.8",
@@ -1736,7 +1737,8 @@
       "P169.25-6l3",
       "P169.26-6l3",
       "P169.29-6l3",
-      "P170.1"
+      "P170.1",
+      "P176.2-ihj"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -3475,7 +3477,8 @@
       "P159.2",
       "P169.9",
       "P169.32-6l3",
-      "P176.1"
+      "P176.1",
+      "P176.2-ihj"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -3492,7 +3495,8 @@
       "P130.25-ywo",
       "P131.1",
       "P131.2",
-      "P169.9"
+      "P169.9",
+      "P176.2-ihj"
     ],
     "plugins/audit/hooks/guard-bash-writes.py": [
       "P4.2",
@@ -9733,7 +9737,8 @@
       "P156.6",
       "P156.7",
       "P156.8-3st",
-      "P157.7-mwz"
+      "P157.7-mwz",
+      "P176.2-ihj"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -13274,7 +13279,8 @@
       "P159.2",
       "P169.9",
       "P169.32-6l3",
-      "P176.1"
+      "P176.1",
+      "P176.2-ihj"
     ],
     "tests/test__config_rules.py": [
       "P131.1",
@@ -14170,7 +14176,8 @@
       "P131.1",
       "P109.4",
       "P109.5",
-      "P169.9"
+      "P169.9",
+      "P176.2-ihj"
     ],
     "tests/test_drive_phase.py": [
       "P131.1",
@@ -15277,6 +15284,9 @@
     ],
     "changelog.d/P176.1.added.md": [
       "P176.1"
+    ],
+    "changelog.d/P176.2-ihj.fixed.md": [
+      "P176.2-ihj"
     ]
   },
   "bugs": [

@@ -2,7 +2,9 @@
 """
 UserPromptSubmit hook — plan-first opt-out logger + config-error surfacing.
 
-1. Bypass arming. Watches every submitted prompt for the bypass keyword
+1. Bypass arming. Watches the owner's prompt (`_config.owner_prompt`: never
+   a subagent's, and never the brief of a writer or reviewer session the
+   runner started) for the bypass keyword
    (default `#no-plan`, overridable via `.claude/audit.config.json` →
    bypassKeyword, case-insensitive). When present, it ARMS a single-use
    plan-first bypass for the current session (see `_arm_bypass`):
@@ -32,7 +34,8 @@ UserPromptSubmit hook — plan-first opt-out logger + config-error surfacing.
 
 4. The standing high-risk approval. `#approve-high-risk` in the owner's own
    prompt arms it and `#revoke-high-risk` revokes it (`_config.owner_prompt`
-   reads the `prompt` of a UserPromptSubmit payload and nothing else). Each is
+   reads the `prompt` of a UserPromptSubmit payload and nothing else, and
+   answers nothing for a subagent or a runner-started writer session). Each is
    one journal row with the prompt's words in it, which is the only record
    `drive-phase.py` reads before letting a high-risk commit through unasked.
 

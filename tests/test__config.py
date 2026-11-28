@@ -2480,6 +2480,51 @@ def _cases(check):
           "does not raise: %r" % ([_ws_live_on, _ws_live_off],),
           _ws_live_on == "reviewer" and _ws_live_off is None)
 
+    # --- whose words a prompt payload carries -----------------------------------
+    # A writer or reviewer session's first prompt is the brief, which the plan
+    # and the model wrote. Its payload has no `agent_id`, so the subagent check
+    # alone reads it as the owner's - and every keyword that arms something by
+    # being typed (`#no-plan`, `#approve-high-risk`, `#release-with-bugs`, the
+    # prompt hook's verb) would arm on a task description that carried it.
+    _op_payload = {"hook_event_name": "UserPromptSubmit", "session_id": "s-op",
+                   "prompt": "#no-plan #approve-high-risk carry on"}
+
+    def _op_read(env):
+        try:
+            return M.owner_prompt(_op_payload, env=env)
+        except TypeError as exc:
+            return "<owner_prompt takes no env: %s>" % (exc,)
+
+    _op_marked = [_op_read({"AUDIT_WRITER_SESSION": r})
+                  for r in ("writer", "reviewer", "orchestrator")]
+    check("wop1 a marked writer or reviewer session's prompt is not the owner's: "
+          "owner_prompt answers \"\" for a payload with no agent_id when the "
+          "marker is set, a value naming no role included: %r" % (_op_marked,),
+          _op_marked == ["", "", ""])
+    # THE SECOND DIRECTION: a reading that refused every prompt passes wop1 and
+    # would leave no keyword the owner could type. Blank is not a mark (wsc5).
+    _op_plain = [_op_read(e) for e in ({}, _ws_bystanders,
+                                        {"AUDIT_WRITER_SESSION": "  "})]
+    check("wop2 ...and with no marker - an empty environment, one carrying only "
+          "the marker's neighbours, and a blank marker - the owner's prompt is "
+          "read back verbatim: %r" % (_op_plain,),
+          _op_plain == [_op_payload["prompt"]] * 3)
+    _op_held = os.environ.get("AUDIT_WRITER_SESSION")
+    try:
+        os.environ["AUDIT_WRITER_SESSION"] = "writer"
+        _op_live_on = M.owner_prompt(_op_payload)
+        os.environ.pop("AUDIT_WRITER_SESSION", None)
+        _op_live_off = M.owner_prompt(_op_payload)
+    finally:
+        if _op_held is None:
+            os.environ.pop("AUDIT_WRITER_SESSION", None)
+        else:
+            os.environ["AUDIT_WRITER_SESSION"] = _op_held
+    check("wop3 called the way every hook calls it - the payload alone - it reads "
+          "the marker off the process environment the hook inherited: %r"
+          % ([_op_live_on, _op_live_off],),
+          _op_live_on == "" and _op_live_off == _op_payload["prompt"])
+
     # --- executor.driveWithoutModel --------------------------------------------
     check("dwm1 the prompt hook's opt-out reads as on when absent, an empty block "
           "included",

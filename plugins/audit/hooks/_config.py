@@ -4723,7 +4723,8 @@ BYPASS_TTL_SECONDS = 30 * 60
 # a named list of tasks. Both keywords are read off the `prompt` of a
 # UserPromptSubmit payload and nothing else (`owner_prompt`): hooks see a human's
 # prompts only, and every other text a payload can carry - a tool result, a file
-# the payload names, a subagent's prompt - is text the model could have written.
+# the payload names, a subagent's prompt, the brief a runner-started writer
+# session is given - is text the model could have written.
 #
 # THE RECORD IS THE JOURNAL, never a state-directory slot: a slot is a file any
 # write can make, and nothing here reads one. The rows the reader honours carry
@@ -4745,15 +4746,19 @@ STANDING_REF_CHARS = 12
 PROMPT_EVENT = "UserPromptSubmit"
 
 
-def owner_prompt(data):
+def owner_prompt(data, env=None):
     """The text the owner typed: the `prompt` of a UserPromptSubmit payload,
     or "" for every other payload. A payload naming an agent is a subagent's,
-    whose prompt the model wrote, so it is "" too. No other key is read -
-    `user_prompt`, `message`, a tool result and the transcript a payload names
-    are all text a keyword could reach without the owner typing it."""
+    whose prompt the model wrote, so it is "" too - and so is any prompt of a
+    writer or reviewer session the runner started (`writer_role`, asked of
+    `env` or this process's environment): that session's prompt is its brief,
+    which the plan and the model wrote, though its payload names no agent. No
+    other key is read - `user_prompt`, `message`, a tool result and the
+    transcript a payload names are all text a keyword could reach without the
+    owner typing it."""
     if not isinstance(data, dict) or data.get("hook_event_name") != PROMPT_EVENT:
         return ""
-    if data.get("agent_id"):
+    if data.get("agent_id") or writer_role(data, env=env) is not None:
         return ""
     prompt = data.get("prompt")
     return prompt if isinstance(prompt, str) else ""

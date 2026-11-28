@@ -123,6 +123,7 @@ if _lints not in sys.path:
 
 import _output_lints  # noqa: E402  (selftest_coverage: which modules have a suite)
 import _runner_output  # noqa: E402  (plain_text: the one reading of a run's line ends)
+import _loader  # noqa: E402  (load_hooks_config: the writer-session marker's name)
 
 
 def child_text(raw):
@@ -455,12 +456,17 @@ def home_env(home):
 # THE SESSION FAMILY IS DERIVED BY PREFIX, not listed, because the harness adds
 # members to it and a list would be one release behind. The names outside the
 # prefix are listed with their reason: `CLAUDECODE` is the harness's own marker that
-# a process was spawned by it, and `AUDIT_LOCK_TOKENS` is how a lock holder hands
+# a process was spawned by it, `AUDIT_LOCK_TOKENS` is how a lock holder hands
 # its claims to its children - a sweep typed from inside a held run would hand
-# every suite a claim it never took. Nothing is allowed through by name: CI's
+# every suite a claim it never took - and the writer-session marker is how the
+# runner tells a session's hooks it started that session, so a sweep typed from
+# inside one would hand every hook a suite starts a writer's verdict. That name is
+# read off the hooks' `_config`, the one place it is spelled for a hook, rather
+# than written a third time here. Nothing is allowed through by name: CI's
 # runners carry none of this family, and a suite that needs one of them sets it.
 SESSION_PREFIX = "CLAUDE_"
-SESSION_NAMES = ("CLAUDECODE", "AUDIT_LOCK_TOKENS")
+SESSION_NAMES = ("CLAUDECODE", "AUDIT_LOCK_TOKENS",
+                 _loader.load_hooks_config().WRITER_SESSION_ENV)
 
 # AN IDENTITY THE CALLER EXPORTS IS AMBIENT TOO. Refusing git's guess closes only
 # half of it: a developer with one of these exported hands every suite an identity
@@ -4472,6 +4478,13 @@ def _cases(check):
           "PATH: %r" % (_amb,),
           _amb.get("PATH") == "/bin" and _amb.get("MY_CLAUDE_NOTE") == "kept"
           and _amb.get("CLAUDEX_NOTE") == "kept")
+    # NAMED HERE as a literal, not read back off SESSION_NAMES: a case asserting
+    # the table against itself passes a table that lost the name.
+    _ws_amb = ambient_env({"AUDIT_WRITER_SESSION": "writer", "PATH": "/bin"})
+    check("se0w the runner's writer-session marker is dropped too, so a sweep typed "
+          "from inside a writer session hands no suite a writer's verdict: %r"
+          % (sorted(_ws_amb),),
+          "AUDIT_WRITER_SESSION" not in _ws_amb and _ws_amb.get("PATH") == "/bin")
     check("se2 git's system config is switched off and identity guessing refused "
           "OVER whatever the caller carried, and no branch or identity is "
           "supplied in their place: %r"
@@ -4739,6 +4752,7 @@ def _cases(check):
                             "    'identity': sorted(k for k in e if k in %r),\n"
                             % (list(GIT_IDENTITY_NAMES),)
                             + "    'prompt': e.get('GIT_TERMINAL_PROMPT'),\n"
+                            "    'writer': e.get('AUDIT_WRITER_SESSION'),\n"
                             "    'own': subprocess.run(['git', 'var', "
                             "'GIT_AUTHOR_IDENT'], stdout=subprocess.PIPE, "
                             "stderr=subprocess.PIPE, env=dict(e, "
@@ -4758,6 +4772,7 @@ def _cases(check):
                          "CLAUDE_PID": str(os.getpid()),
                          "CLAUDECODE": "1",
                          "AUDIT_LOCK_TOKENS": "sweep-probe-token",
+                         "AUDIT_WRITER_SESSION": "writer",
                          "GIT_CONFIG_NOSYSTEM": "0",
                          "SWEEP_CLAUDE_PROBE": "kept",
                          "GIT_TERMINAL_PROMPT": "0"})
@@ -4785,6 +4800,15 @@ def _cases(check):
               "which the lock and journal code otherwise read as a live holder "
               "and an actor that a bare runner never has: %r" % (_shown,),
               ran["code"] == 0 and bool(_env) and _env.get("session") == [])
+        # A SWEEP TYPED FROM INSIDE A WRITER SESSION the runner started carries
+        # that session's mark, and every hook a suite starts reads it and answers
+        # as it does for a writer - so an owner-prompt or orchestrator case would
+        # go red on the caller's environment, never on the code.
+        check("x8w ...nor the writer-session marker the caller exported, which a "
+              "hook the suite starts would read as a runner-started writer "
+              "session: %r" % (_env.get("writer", "<no report>"),),
+              ran["code"] == 0 and bool(_env) and "writer" in _env
+              and _env.get("writer") is None)
         check("x9 ...git's SYSTEM config is switched off in the child, overriding "
               "the value the caller carried, so a default branch the host's git "
               "pins cannot reach a suite: %r" % (_env.get("nosystem"),),
