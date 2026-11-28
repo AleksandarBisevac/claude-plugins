@@ -1,7 +1,7 @@
 {
   "id": "P175",
   "title": "Wave A of S2b: a commit under a slow hook, a held task, a slow step named",
-  "status": "in_progress",
+  "status": "done",
   "description": "S2b wave A (quality-gates-internal plans/2026-11-27-s2b-at-head.md section 3): S2b.1 closes F762, S2b.3 closes F700 (OD3 taken: held), S2b.4 closes F764(b). S2b.2 waits on its haiku probe.",
   "desiredOutcome": "A task commit under a slow pre-commit hook runs under the caller's time limit and leaves no index.lock when killed; a task can be held with a reason so neither the ready set nor the gate counts it; a red gate run names a step that took more than twice its last recorded time.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "7319cf9d53f74f8d8b4842b429b5eaf9ba50c50c",
   "branch": "audit/p175-wave-a-of-s2b-a-commit-under-a",
-  "mergedAt": null,
+  "mergedAt": "2026-11-28T16:56:46Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -3374,5 +3374,6 @@
     "runId": "2026-11-28T16:41:20Z.fdde35",
     "status": "passed",
     "at": "2026-11-28T16:41:20Z"
-  }
+  },
+  "mergedHead": "d968ac62ef90a78444a06990af58b420b6662787"
 }

@@ -1119,7 +1119,7 @@
     {
       "id": "P175",
       "title": "Wave A of S2b: a commit under a slow hook, a held task, a slow step named",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P175.json"
     }
   ],
