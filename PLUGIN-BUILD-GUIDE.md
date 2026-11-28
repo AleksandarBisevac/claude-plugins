@@ -6727,6 +6727,12 @@ refused before anything is built, because it would run the shared files and grad
 **The run is one process group, and a stop signal is an exception.** `_proc_group` is the module
 `run-test-gate.py` and `red` share: the child starts a session of its own, a timeout or an
 interrupt tears the whole group down, and SIGINT/SIGTERM raise so the `finally` runs.
+Python raises that exception on the main thread between any two bytecodes - inside `Popen` past
+the fork, or on its return - so a run started there could exist with nothing holding it, and its
+session outlived the helper. `_run_in` therefore starts every run from a thread of its own
+(`_spawn_held`), into a holder it reads under a lock when stopped: the stop either cancels the
+start or waits for it and tears the process down. `il5` stages that window and `cl5` watches the
+whole helper for a survivor.
 ONE deadline, `--timeout`, starts before anything runs and covers every git call that builds or
 reads the throwaway and every run - HEAD's own, the task's, the task's again with what it pulled
 in held back (made only when its run was green with that code in), the task's again with its

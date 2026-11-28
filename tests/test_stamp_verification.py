@@ -7835,6 +7835,65 @@ def _interrupted_leg_cases(check):
           stopped[0] is None and stopped[2] == M.STOPPED_RUN
           and "out" in stopped[1]
           and kept[0] == 3 and kept[2] is None and bare[0] == 3 and bare[2] is None)
+    _spawn_window_case(check, work, hold)
+
+
+def _spawn_window_case(check, work, hold):
+    """`il5`: a stop that lands after a leg's process exists but before
+    `_run_in` holds it still tears that process down before the interrupt is
+    raised on.
+
+    The window is the one cl5 caught on the task leg, which runs on the main
+    thread: a signal's exception is raised there between any two bytecodes,
+    so one landing inside `Popen` past the fork, or on its return, left a
+    process no hand held, in a session of its own, outliving the helper. It
+    is staged here, not waited for: a `Popen` that signals the thread it runs
+    on the moment the process exists, which is the main thread for a spawn
+    made there and the spawning thread for one made off it."""
+    label = ("il5 a stop that lands while a leg is between spawning its "
+             "process and holding it still tears that process down before the "
+             "interrupt is raised on")
+    if not hasattr(signal, "pthread_kill") or os.name == "nt":
+        _harness.skip(check, label, "posix",
+                      "no thread-directed POSIX signal on this platform")
+        return
+    real = subprocess.Popen
+    made = []
+
+    def signalling_popen(*args, **kwargs):
+        proc = real(*args, **kwargs)
+        made.append(proc)
+        signal.pthread_kill(threading.get_ident(), signal.SIGTERM)
+        return proc
+    try:
+        previous = _proc_group.arm_interrupt()
+    except ValueError as exc:
+        _harness.could_not_run(check, label, "the interrupt handlers could not "
+                               "be armed off the main thread: %s" % (exc,))
+        return
+    raised = None
+    returned = None
+    subprocess.Popen = signalling_popen
+    try:
+        try:
+            returned = M._run_in(work, hold, 60, dict(os.environ))
+        except KeyboardInterrupt as exc:
+            raised = str(exc)
+    finally:
+        subprocess.Popen = real
+        _proc_group.disarm_interrupt(previous)
+    # Read before anything is stopped here: `poll()` is None only for a run
+    # the helper neither tore down nor waited for.
+    alive = [proc.pid for proc in made if proc.poll() is None]
+    for proc in made:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+    check("%s: interrupt raised %r, returned %r, processes made %r, alive "
+          "after `_run_in` raised %r" % (label, raised, returned,
+                                         [p.pid for p in made], alive),
+          raised == "SIGTERM" and returned is None and len(made) == 1
+          and alive == [])
 
 
 def _unreached_leg_cases(check):

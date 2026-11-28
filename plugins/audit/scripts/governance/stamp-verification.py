@@ -3436,6 +3436,47 @@ def _canonical_path(path):
     return os.path.normcase(os.path.realpath(path))
 
 
+# How long one wait on another thread lasts before it is made again: a plain
+# join does not wake for an interrupt on every platform, so it is made in
+# slices and the interrupt is raised between them.
+JOIN_SLICE = 0.2
+
+
+def _spawn_held(cmd, path, env, hold, lock):
+    """Start `cmd` in `path` as a process group, from a thread of its own,
+    into `hold["proc"]` - or the start's OSError into `hold["error"]` - unless
+    `hold["cancelled"]` was set first. Returns once that thread has ended; any
+    other exception the start raised is raised here.
+
+    WHY A THREAD. Python raises a signal's exception on the main thread only,
+    and between any two bytecodes: inside `Popen` past the fork, or on its
+    return before the caller has bound what it returned. A run started there
+    was held by nothing a stop could reach, and its session of its own
+    outlived the helper. No signal's exception is raised on the spawning
+    thread, so the process always reaches `hold`, and under `lock`: a stop
+    that takes `lock` either cancels the spawn before it begins or waits for
+    it to end and finds the process there (`_run_in`)."""
+    def body():
+        with lock:
+            if hold["cancelled"]:
+                return
+            try:
+                hold["proc"] = subprocess.Popen(
+                    cmd, cwd=path, stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, env=env,
+                    **_proc_group.group_kwargs())
+            except BaseException as exc:
+                hold["error"] = exc
+
+    spawner = threading.Thread(target=body, name="red-first-spawn")
+    spawner.daemon = True
+    spawner.start()
+    while spawner.is_alive():
+        spawner.join(JOIN_SLICE)
+    if hold["error"] is not None and not isinstance(hold["error"], OSError):
+        raise hold["error"]
+
+
 def _run_in(path, cmd, timeout, env, started=None):
     """`(code, text, problem)` for the command, run in the throwaway as a process
     group, so a timeout or an interrupt stops everything it started.
@@ -3457,23 +3498,31 @@ def _run_in(path, cmd, timeout, env, started=None):
     process holding its output pipe to let go - bounded by
     `_proc_group.GRACE_SECONDS`. Whether the teardown is confirmed is
     `_proc_group.stop_and_drain`'s answer; one it does not confirm is said
-    as a teardown not confirmed."""
+    as a teardown not confirmed.
+
+    The process is started by `_spawn_held` and every step after it sits in
+    one `try`, so an interrupt landing anywhere from the spawn to the end of
+    the run finds the process in `hold` and tears it down."""
+    hold = {"proc": None, "error": None, "cancelled": False}
+    lock = threading.Lock()
     try:
-        proc = subprocess.Popen(cmd, cwd=path, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, env=env,
-                                **_proc_group.group_kwargs())
-    except OSError as exc:
-        return None, "", "the command could not start: %s" % (exc,)
-    torn_down = started(proc) if started is not None else None
-    try:
+        _spawn_held(cmd, path, env, hold, lock)
+        if hold["error"] is not None:
+            return None, "", "the command could not start: %s" % (hold["error"],)
+        proc = hold["proc"]
+        torn_down = started(proc) if started is not None else None
         out, _err = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        text, confirmed = _proc_group.stop_and_drain(proc)
+        text, confirmed = _proc_group.stop_and_drain(hold["proc"])
         return None, text, ("the run timed out after %s s and its process group "
                             "was torn down%s" % (timeout, "" if confirmed else
                                                  " (not confirmed)"))
     except BaseException:
-        _proc_group.stop_and_drain(proc)
+        with lock:
+            hold["cancelled"] = True
+            proc = hold["proc"]
+        if proc is not None:
+            _proc_group.stop_and_drain(proc)
         raise
     text = (out or b"").decode("utf-8", "replace")
     if callable(torn_down) and torn_down():
@@ -3918,7 +3967,7 @@ def _concurrent_legs(aside, here):
         # Joined in short waits, so an interrupt still reaches this thread on a
         # platform whose plain join does not wake for one.
         while worker.is_alive():
-            worker.join(0.2)
+            worker.join(JOIN_SLICE)
     except BaseException:
         with lock:
             state["stopping"] = True
