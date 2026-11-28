@@ -1,0 +1,33 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_test_gate.py": "pass",
+    "python3 tools/lints/_deps.py --register-citations": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-28T14:37:41Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py` in a throwaway tree at HEAD exited 1 with 1 of 11 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - stt1 (house FAIL): SELFTEST FAILED: 9/11 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; task leg keyed on the declared tests' code without comments (sha256:dee5ae8c1f73ce64f3745c96cd7b90d3ec92582a7dd6fd20051440daadce8988; a file that is not Python or does not tokenize by its bytes), which does not cover a test reading its own comments or line numbers",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "run-test-gate.py: step_time_reading/step_time_or_none/step_time_lines; main sets res['stepTime'] on a measured red run (read before recording); _render_verdict prints the lines under GATE RED. _evidence_io.py: STEP_TIME_KEY, STEP_TIME_FACTOR, _step_time, row_for carry, RECORD_GRAMMAR entry. tests/test_run_test_gate.py: stt1-stt6 (end-to-end through main with a plan record rewritten to 1 ms, over-fire both directions, subject isolation, exactly-2x boundary). tests/test__evidence_io.py: stepTime added to _rs_full_result so rs1 decides the new key. Fragment changelog.d/P175.3.added.md. Gates: sweep test_run_test_gate.py 829 cases ok; test__evidence_io.py 629 ok; test__evidence_view/test_commit_task_work/test__output_lints 531 ok; check-example-ledgers.py exit 0; release.py changelog-check exit 0; --register-citations 0 found. Dependants: check-example-ledgers.py unchanged and still correct (exit 0, rows validated against permissive schema); _evidence_view reads records via the grammar and ignores/keeps the new key (its suite is green); drive-phase.py unaffected, no recorded_runs caller added. Scope note: the plan schema (audit-plan.schema.json) is outside my files and has no stepTime property description; it is permissive (additionalProperties true) and the record-schema cases pass, but a schema description for stepTime would need that file added to scope.",
+    "descriptive": "A red gate run now names any step that took more than twice its last recorded time and carries the reading on its record."
+  },
+  "testsAdded": [
+    "stt1-stt6: red run with no prior record says no basis; red run with a step at 27x a rewritten prior prints the line and carries the field; red under the bound names nothing; green prints and carries nothing; sibling task's record is not borrowed; exactly 2x is not named"
+  ],
+  "casesAdded": [
+    [
+      "stt1",
+      "stt2",
+      "stt3",
+      "stt4",
+      "stt5",
+      "stt6"
+    ]
+  ],
+  "claims": "claims:\n1 run-test-gate.py step_time_reading (strict > STEP_TIME_FACTOR * last) and step_time_lines print the sentence; render arm in _render_verdict; main wiring after base_reading\n2 stt2 red before fix (AttributeError/stt1 FAIL); over-fire cases stt3 (under bound), stt4 (green), stt6 (exactly 2x, other subject) assert silence; red-first helper run by submit\n3 n/a - not a fix of a reported defect\n4 n/a - no rule to an agent\n5 n/a - no property recorded; stt2 uses a rewritten 1 ms prior so the ratio is not timing-dependent\n6 n/a - no guard\n7 n/a - figures in the printed sentence are derived at run time; no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:3b5306930a0884f3686a10a2fe587af64e8fbfd25767d0293b764b0c638ecfef\",\"dirtyDigest\":\"sha256:60d3d9ae5f574ba255445f521cbef5eb2a091a21e789b1b09031c1fb8cecd904\",\"dirtyPaths\":{\"changelog.d/P175.3.added.md\":\"d8fc5d3f24a274b8\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"06a166242e80add0\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"c08df38011b501b4\",\"tests/test__evidence_io.py\":\"192541ea4dc8af30\",\"tests/test_run_test_gate.py\":\"0d35db6d6e0a3e9d\"},\"head\":\"7319cf9d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"changelog.d/P175.3.added.md\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"tests/test__evidence_io.py\",\"tests/test_run_test_gate.py\",\"tools/check-example-ledgers.py\"],\"scopeDigest\":\"sha256:72c8597ab8fdd80c9e63b7c2880e0bf18a564f8f730fd88879f0bf36c6c91d41\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

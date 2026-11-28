@@ -82,6 +82,7 @@ import _excerpt  # noqa: E402  (the one way a tool's output is quoted in a refus
 import _invariants  # noqa: E402  (`_under`: the one answer to "is this inside"; the trailer)
 import _task_outputs  # noqa: E402  (`covers`: the one rule for whether a declared path holds a file)
 import _loader  # noqa: E402  (load_hooks_config: `plan_to_git`, the one door from a plan entry to git's pathspec)
+import _proc_group  # noqa: E402  (a commit's hooks run as one group the time limit can stop whole)
 import _journal_io  # noqa: E402  (the withdrawing row's append)
 import _manifest_io as _mio  # noqa: E402  (atomic_write_text: the start snapshot's one writer)
 import _manifest_phases as _phases  # noqa: E402  (tests_add_path: the file a `tests.add` entry names)
@@ -117,6 +118,102 @@ def run_git(git_root, args, timeout=60, stdin=None, index_file=None):
     return (done.returncode,
             done.stdout.decode("utf-8", "replace"),
             done.stderr.decode("utf-8", "replace"))
+
+
+# How long one `git commit` may run before it is stopped, unless the caller
+# carries its own limit (`commit_timeout`). The commit is the one git call that
+# runs the project's `pre-commit` and `commit-msg` hooks, and a project whose
+# hook is its quality gate may make it take minutes, so it is NOT held to
+# `run_git`'s limit for a read. Read at call time, so one suite can lower it.
+COMMIT_SECONDS = 600
+
+
+def run_git_group(git_root, args, timeout, index_file=None):
+    """`(code, stdout, stderr, stopped)` - `run_git`, for a call that starts
+    children of its own and must be stopped WHOLE when it overruns.
+
+    `subprocess.run(timeout=)` kills only `git`, and the hook git started is
+    its child: it goes on running, holding whatever it holds, and git's own
+    kill leaves `index.lock` behind when it dies uncatchably. So git runs in
+    its own process group and an overrun tears the whole group down
+    (`_proc_group.stop_and_drain`). `stopped` is "" for a call that ended by
+    itself, else the sentence saying it was killed and whether the teardown
+    could be confirmed; `code` is None then, and `stdout` is what had been
+    written by the kill.
+
+    A SIGINT or SIGTERM to this process stops the group too and is re-raised:
+    a child in its own session no longer receives the terminal's Ctrl-C by
+    accident, so without that it would outlive the command that started it.
+    Off the main thread no handler can be installed and the group is stopped
+    only by the time limit.
+    """
+    env = None
+    if index_file is not None:
+        env = dict(os.environ)
+        env["GIT_INDEX_FILE"] = index_file
+    try:
+        proc = subprocess.Popen(["git", "-C", git_root] + list(args),
+                                stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                env=env, **_proc_group.group_kwargs())
+    except Exception as exc:
+        return None, "", "git could not be run (%s)" % (exc,), ""
+    try:
+        previous = _proc_group.arm_interrupt()
+    except ValueError:
+        previous = []
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        text, confirmed = _proc_group.stop_and_drain(proc)
+        return None, text, "", (
+            "git %s ran past the %g s it was allowed, so its process group - "
+            "git and the hooks it started - was killed%s"
+            % (args[0], timeout, "" if confirmed else " (not confirmed)"))
+    except BaseException:
+        _proc_group.stop_and_drain(proc)
+        raise
+    finally:
+        _proc_group.disarm_interrupt(previous)
+    return (proc.returncode, out.decode("utf-8", "replace"),
+            err.decode("utf-8", "replace"), "")
+
+
+def commit_stopped(git_root, head, stopped):
+    """`(sha, why)` for a commit that was killed for overrunning.
+
+    `sha` is set when HEAD is no longer `head`: git moves the ref before a
+    `post-commit` hook runs, so a kill during that hook is a commit that was
+    made, and one a sibling made meanwhile looks the same from here - the
+    sentence names both ends and the subject and leaves the reading to the
+    person. Nothing is reset and the index is left as it is. Otherwise `sha` is
+    empty, `why` says HEAD is where it was, and names an `index.lock` that is
+    still present: a killed git that could not clean up leaves one, and the
+    next git command in the repository refuses until it is gone. It is not
+    removed here - whether it is the killed commit's or a live sibling's is not
+    something this can tell.
+    """
+    code, now, _err = run_git(git_root, ["rev-parse", "--verify", "-q", "HEAD"])
+    now = now.strip() if code == 0 else ""
+    if now and now != head:
+        _c, subject, _e = run_git(git_root, ["log", "-1", "--format=%s", now])
+        return now, ("%s; HEAD had already moved from %s to %s (%s) - the "
+                     "commit was made and the hook that was running when it "
+                     "was killed came after it. Nothing was reset and the "
+                     "index was not touched: read `git log` and decide"
+                     % (stopped, head or "no commit", now,
+                        subject.strip() or "no subject"))
+    code, lock, _err = run_git(git_root, ["rev-parse", "--git-path",
+                                          "index.lock"])
+    lock = os.path.join(git_root, lock.strip()) if code == 0 and lock.strip() \
+        else ""
+    held = ("; %s is still present - git's own cleanup did not run, and every "
+            "git command here refuses until it is removed. It was not "
+            "removed, because a live git elsewhere in this repository would "
+            "hold the same file" % (lock,)) if lock and os.path.exists(lock) \
+        else ""
+    return "", "%s; HEAD is still %s, so nothing was committed%s" % (
+        stopped, head or "no commit", held)
 
 
 def lines(text):
@@ -667,7 +764,7 @@ def unborn_head(git_root):
     return code == 0 and bool(out.strip())
 
 
-def commit_from_index(git_root, paths, paragraphs, head):
+def commit_from_index(git_root, paths, paragraphs, head, commit_timeout=None):
     """`(sha, why)` - a commit of `head` plus the index's entries under `paths`,
     and nothing else. `sha` is set when a commit was made, `why` when this
     refuses; BOTH are set when the commit was made and HEAD had moved under it.
@@ -740,7 +837,11 @@ def commit_from_index(git_root, paths, paragraphs, head):
         argv = ["commit", "-q"]
         for paragraph in paragraphs:
             argv.extend(["-m", paragraph])
-        code, out, err = run_git(git_root, argv, index_file=index_file)
+        code, out, err, stopped = run_git_group(
+            git_root, argv, COMMIT_SECONDS if commit_timeout is None
+            else commit_timeout, index_file=index_file)
+        if stopped:
+            return commit_stopped(git_root, head, stopped)
         if code != 0:
             return "", "git refused the commit (%s)" % (
                 _excerpt.reason_of(err, out),)
@@ -803,7 +904,7 @@ def stage_blobs(git_root, blobs, head):
 
 
 def stage_and_commit(git_root, paths, kinds, paragraphs, refuse_foreign,
-                     blobs=None):
+                     blobs=None, commit_timeout=None):
     """Stage `paths` by kind, read the index back, commit; undo on any failure.
 
     Returns `{"committed", "sha", "staged", "refused", "foreign"}`. `refused` is
@@ -853,7 +954,8 @@ def stage_and_commit(git_root, paths, kinds, paragraphs, refuse_foreign,
         return out
     out["staged"] = [p for p in lines(staged_out) if under_any(p, paths)]
     if blobs or any(kinds.get(p) == DELETED_ON_DISK for p in paths):
-        sha, why = commit_from_index(git_root, paths, paragraphs, head)
+        sha, why = commit_from_index(git_root, paths, paragraphs, head,
+                                     commit_timeout)
         if why and not sha:
             out["refused"] = restored(git_root, snap, paths, why)
             return out
@@ -865,7 +967,16 @@ def stage_and_commit(git_root, paths, kinds, paragraphs, refuse_foreign,
     for paragraph in paragraphs:
         argv.extend(["-m", paragraph])
     argv.extend(["--"] + list(paths))
-    code, c_out, c_err = run_git(git_root, argv)
+    code, c_out, c_err, stopped = run_git_group(
+        git_root, argv, COMMIT_SECONDS if commit_timeout is None
+        else commit_timeout)
+    if stopped:
+        sha, why = commit_stopped(git_root, head, stopped)
+        if sha:
+            out["committed"], out["sha"], out["refused"] = True, sha, why
+        else:
+            out["refused"] = restored(git_root, snap, paths, why)
+        return out
     if code is None or code != 0:
         out["refused"] = restored(git_root, snap, paths,
                                   "git refused the commit (%s)"
@@ -977,9 +1088,9 @@ def withdraw(project, config, nonce, via, ids, reason):
 
 
 def commit_with_rows(git_root, paths, kinds, paragraphs, refuse_foreign,
-                     write_rows, withdraw_rows, blobs=None):
+                     write_rows, withdraw_rows, blobs=None, commit_timeout=None):
     """`stage_and_commit`, carrying the journal rows that name the commit.
-    `blobs` is passed through to it.
+    `blobs` and `commit_timeout` are passed through to it.
 
     `write_rows(nonce)` appends the rows keyed by `nonce` and returns
     `(files, refusal)`: the files they landed in, the anchoring row's first (an
@@ -1016,7 +1127,7 @@ def commit_with_rows(git_root, paths, kinds, paragraphs, refuse_foreign,
     paths, kinds, outside = carry(git_root, paths, kinds, files)
     message = with_row_trailer(paragraphs, nonce) if files else list(paragraphs)
     done = stage_and_commit(git_root, paths, kinds, message, refuse_foreign,
-                            blobs=blobs)
+                            blobs=blobs, commit_timeout=commit_timeout)
     rels = [_invariants._rel(f, git_root) for f in files]
     done["nonce"] = nonce if files else ""
     done["journalled"] = bool(files)

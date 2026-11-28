@@ -1115,6 +1115,12 @@
       "title": "A green task gate stands for the fix leg, so the red-first proof runs once",
       "status": "done",
       "shard": "phases/P174.json"
+    },
+    {
+      "id": "P175",
+      "title": "Wave A of S2b: a commit under a slow hook, a held task, a slow step named",
+      "status": "in_progress",
+      "shard": "phases/P175.json"
     }
   ],
   "fileIndex": {
@@ -1620,7 +1626,8 @@
       "P169.32-6l3",
       "P169.37-6l3",
       "P169.38-6l3",
-      "P169.41-6l3"
+      "P169.41-6l3",
+      "P175.2"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -2257,7 +2264,9 @@
       "P174.1",
       "P174.3",
       "P174.4",
-      "P174.5-njh"
+      "P174.5-njh",
+      "P175.1",
+      "P175.2"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -4159,7 +4168,8 @@
       "P169.23-6l3",
       "P169.27-6l3",
       "P169.41-6l3",
-      "P173.1"
+      "P173.1",
+      "P175.2"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -4760,7 +4770,8 @@
       "P173.8",
       "P173.14-s6m",
       "P174.3",
-      "P174.4"
+      "P174.4",
+      "P175.3"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -4958,7 +4969,8 @@
       "P155.32-gfj",
       "P156.4",
       "P169.2",
-      "P169.38-6l3"
+      "P169.38-6l3",
+      "P175.1"
     ],
     "plugins/audit/scripts/governance/_tree_stamp.py": [
       "P43.4",
@@ -5134,7 +5146,8 @@
       "P169.4",
       "P169.38-6l3",
       "P169.37-6l3",
-      "P169.43-6l3"
+      "P169.43-6l3",
+      "P175.1"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6",
@@ -5291,7 +5304,8 @@
       "P173.14-s6m",
       "P173.16-s6m",
       "P174.3",
-      "P174.4"
+      "P174.4",
+      "P175.3"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -5616,7 +5630,8 @@
       "P156.22-3st",
       "P167.2",
       "P168.5",
-      "P172.3"
+      "P172.3",
+      "P175.2"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -5702,7 +5717,8 @@
       "P169.6",
       "P169.7",
       "P169.41-6l3",
-      "P172.2"
+      "P172.2",
+      "P175.2"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -5983,7 +5999,8 @@
       "P169.26-6l3",
       "P169.41-6l3",
       "P169.38-6l3",
-      "P172.12-mrj"
+      "P172.12-mrj",
+      "P175.2"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -6700,7 +6717,8 @@
       "P167.7-fge",
       "P167.9-fge",
       "P169.2",
-      "P169.31-6l3"
+      "P169.31-6l3",
+      "P175.2"
     ],
     "plugins/audit/scripts/status/audit-doctor.py": [
       "P10.3",
@@ -9259,7 +9277,8 @@
       "P169.8",
       "P169.40-6l3",
       "P169.38-6l3",
-      "P169.44-6l3"
+      "P169.44-6l3",
+      "P175.3"
     ],
     "tools/check-example-ledgers.py: a committed row whose status is not a schema enum member is a finding, and so is a passed verdict carrying a mutated tree": [
       "P32.10"
@@ -10062,7 +10081,8 @@
       "P131.2",
       "P149.3-hwg",
       "P149.9-hwg",
-      "P155.13"
+      "P155.13",
+      "P175.1"
     ],
     "plugins/audit/tests/test__proc_group.py": [
       "P77.3-6u9",
@@ -12884,7 +12904,8 @@
       "P172.9",
       "P172.7",
       "P173.9",
-      "P173.3"
+      "P173.3",
+      "P175.2"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -13269,7 +13290,8 @@
       "P169.41-6l3",
       "P170.3-yl6",
       "P170.4-yl6",
-      "P172.9"
+      "P172.9",
+      "P175.2"
     ],
     "tests/test__doctor_ado.py": [
       "P131.1"
@@ -13387,7 +13409,8 @@
       "P174.3",
       "P174.4",
       "P174.1",
-      "P174.2"
+      "P174.2",
+      "P175.3"
     ],
     "tests/test__evidence_view.py": [
       "P131.1",
@@ -13523,7 +13546,8 @@
       "P156.22-3st",
       "P167.2",
       "P168.5",
-      "P172.3"
+      "P172.3",
+      "P175.2"
     ],
     "tests/test__manifest_rules.py": [
       "P131.1",
@@ -13554,7 +13578,8 @@
       "P169.6",
       "P169.7",
       "P169.19-6l3",
-      "P172.2"
+      "P172.2",
+      "P175.2"
     ],
     "tests/test__merge_install.py": [
       "P131.1"
@@ -13635,7 +13660,8 @@
       "P131.1",
       "P149.3-hwg",
       "P149.9-hwg",
-      "P155.13"
+      "P155.13",
+      "P175.1"
     ],
     "tests/test__proposals.py": [
       "P131.1",
@@ -13754,7 +13780,8 @@
       "P155.11",
       "P155.32-gfj",
       "P156.4",
-      "P169.2"
+      "P169.2",
+      "P175.1"
     ],
     "tests/test__status_facts.py": [
       "P131.1",
@@ -13765,7 +13792,8 @@
       "P167.9-fge",
       "P169.2",
       "P169.31-6l3",
-      "P169.34-6l3"
+      "P169.34-6l3",
+      "P175.2"
     ],
     "tests/test__surface_digest.py": [
       "P131.1",
@@ -14016,7 +14044,8 @@
       "P169.41-6l3",
       "P169.38-6l3",
       "P172.12-mrj",
-      "P172.14-mrj"
+      "P172.14-mrj",
+      "P175.2"
     ],
     "tests/test_audit_usage.py": [
       "P131.1",
@@ -14077,7 +14106,8 @@
       "P169.19-6l3",
       "P169.38-6l3",
       "P169.37-6l3",
-      "P169.43-6l3"
+      "P169.43-6l3",
+      "P175.1"
     ],
     "tests/test_derive_phase_gate.py": [
       "P131.1",
@@ -14548,7 +14578,8 @@
       "P173.14-s6m",
       "P173.16-s6m",
       "P174.3",
-      "P174.4"
+      "P174.4",
+      "P175.3"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -15171,6 +15202,15 @@
     ],
     "changelog.d/P174.5-njh.fixed.md": [
       "P174.5-njh"
+    ],
+    "changelog.d/P175.1.fixed.md": [
+      "P175.1"
+    ],
+    "changelog.d/P175.2.added.md": [
+      "P175.2"
+    ],
+    "changelog.d/P175.3.added.md": [
+      "P175.3"
     ]
   },
   "bugs": [

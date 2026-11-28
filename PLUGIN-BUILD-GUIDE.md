@@ -4787,7 +4787,20 @@ and `commit_from_index()` builds that one in a temporary index (`read-tree` of t
 before staging, the allowed entries over it) and runs a real `git commit` with `GIT_INDEX_FILE`
 pointing at it, so it carries exactly the allow-list and the project's `pre-commit` and
 `commit-msg` hooks run on it as on every other commit; a refusing hook leaves the real index
-untouched. HEAD is checked against the one read before staging just before the commit, and the new
+untouched.
+
+**The commit runs under a limit the caller carries, in a process group of its own.** The
+`pre-commit` hook is often a project's whole quality gate, so `git commit` is the one git call not
+held to `run_git`'s read limit: `run_git_group` starts it in its own session and, past the limit
+(`commit_timeout`, else `COMMIT_SECONDS`), stops the whole group through
+`_proc_group.stop_and_drain` - a kill of `git` alone would leave the hook running. The same call
+turns a SIGINT or SIGTERM to the command into that stop, because a child in a session of its own no
+longer receives the terminal's Ctrl-C. After a kill `commit_stopped` says what state the repository
+is in: HEAD moved (a hook after the commit was what ran long, so the commit exists and the index
+is left alone, reported like a commit made on a HEAD that moved), or HEAD unmoved, the index put
+back as for any refusal, and an `index.lock` still present named by its path - not removed, since a
+live git elsewhere would hold the same file. `commit-task-work.py --commit-timeout SECONDS` is the
+caller's door to it. HEAD is checked against the one read before staging just before the commit, and the new
 commit's first parent after it; a mismatch there is refused with both SHAs named, and nothing is
 reset. The same route commits a path at a blob rather than at the working file's bytes
 (`stage_blobs`, the `blobs` argument): the caller hands a builder, and `stage_blobs` runs it
@@ -4854,6 +4867,12 @@ the work was already done — and what a paragraph gets in that position is gene
 scope breaches on one program came from widening two words of it: a file "obviously" part of the
 change, a sibling the editor had also touched, the shared index because the phase file was
 allowed. Prose cannot refuse; this can.
+
+**How long the commit may take.** `--commit-timeout SECONDS` (and `commit_timeout` on `commit_work`
+and `commit_state`) bounds the one `git commit`, hooks included; past it the whole process group is
+killed and the refusal says what state HEAD, the index and any `index.lock` are in
+(`_scoped_commit.commit_stopped`). Without it the built-in limit applies. Zero or less is a usage
+error, since a spent limit would kill every commit before its hook ran.
 
 **What a task commit says about its verdict.** Its trailer block carries `Audit-Task`, and for
 the run the verdict binding bound - or the run an override goes over - `Audit-Gate: <status>
@@ -6592,8 +6611,9 @@ group down, then drains - in that order, because a timed-out child is often bloc
 pipe - and calls the teardown confirmed only when each of these holds: `tear_down` confirmed the
 kill, `drain_to_eof` reached the end of the pipe, and the root has exited. None stands in for
 another; on Windows a `taskkill` that returned has only asked for the kill.
-`run-test-gate._shell`, `stamp-verification._run_in` (the runs `red` makes) and
-`drive-phase.run_lint_probe` call it on a timeout and on an interrupt alike, so its callers cannot
+`run-test-gate._shell`, `stamp-verification._run_in` (the runs `red` makes),
+`drive-phase.run_lint_probe` and `_scoped_commit.run_git_group` (a commit and the hooks it runs)
+call it on a timeout and on an interrupt alike, so its callers cannot
 come to disagree about what confirmed means. What is theirs is how a timeout whose teardown was
 not confirmed is worded: `run-test-gate._shell` records `teardown: unconfirmed` in the step's
 facts, while `stamp-verification._run_in` and `drive-phase.run_lint_probe` end their timeout

@@ -1,0 +1,35 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__scoped_commit.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test_commit_task_work.py": "pass",
+    "python3 tools/lints/_deps.py --register-citations": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-28T14:35:27Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__scoped_commit.py` in a throwaway tree at HEAD exited 1 on \"AttributeError: module '_scoped_commit' has no attribute 'run_git_group'\" (read as python), and the task introduces 'run_git_group': absent from HEAD's module-level bindings of plugins/audit/scripts/governance/_scoped_commit.py and bound in the working tree's; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; task leg keyed on the declared tests' code without comments (sha256:1f231e20d59b0a8734d4b3eda57025ff5da31d7ca15a40b38305ed29e2d3f531; a file that is not Python or does not tokenize by its bytes), which does not cover a test reading its own comments or line numbers",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "_scoped_commit.py: new COMMIT_SECONDS built-in, run_git_group (git in its own process group via _proc_group.group_kwargs, communicate(timeout), overrun -> _proc_group.stop_and_drain, SIGINT/SIGTERM armed and re-raised), commit_stopped (HEAD moved -> committed+refused like the moved-HEAD precedent, index untouched; else HEAD unmoved, index.lock named by path and not removed, index put back via restored()); stage_and_commit, commit_from_index and commit_with_rows take commit_timeout. commit-task-work.py: --commit-timeout SECONDS (zero or less is a usage error) passed through commit_work/commit_state. _proc_group.py unchanged (its stop_and_drain is reused). Tests: tests/test__scoped_commit.py new block sc-ct (sc-ct0 skip where no killpg, sc-ct1..sc-ct6), sc24's seam moved from run_git to run_git_group because the commit no longer goes through run_git; tests/test_commit_task_work.py block cm-block (lim1..lim3). PLUGIN-BUILD-GUIDE.md sections for _scoped_commit, commit-task-work, _proc_group updated; changelog.d/P175.1.fixed.md. Gates: sweep test__scoped_commit 93 cases ok, sweep test_commit_task_work 262 cases ok, register-citations pass, ruff pass, changelog-check ok, plus test__deps/test__output_lints/test_close_phase/test_integrate_task/test__invariants/test__proc_group/test__config 7/7 files ok. Mutations in a scratch copy (outside the tree): caller limit ignored -> sc-ct1,3,5,6 red; kill git only -> sc-ct2,3,5 red; lock not reported -> sc-ct6 red; restore claim made unconditional -> sc17, sc-ct6 red. Dependants: close-phase.py, integrate-task.py, drive-phase.py, audit-task.py, _live_copy, audit-lookup: still correct - they call run_git/commit_work/commit_state with unchanged signatures (new kwargs default None) and run_git itself is unchanged; _invariants.py: still correct, it uses _commit_trail._git not run_git; tests/test_close_phase.py and tests/test_integrate_task.py pass unchanged; test__scoped_commit sc24 changed (seam moved) as stated. _proc_group.py dependants: unchanged file.",
+    "descriptive": "A task commit under a slow pre-commit hook runs under the caller's limit in its own process group; on overrun the whole group is killed, no index.lock is left in the ordinary case, and a lock that is left is named with the exact state of HEAD and the index."
+  },
+  "testsAdded": [
+    "sc-ct1..sc-ct6 in tests/test__scoped_commit.py: slow hook lands under the caller's limit, built-in limit rules without one, overrun stops in time, hook's child dies, no lock and honest restored message, left lock reported by name",
+    "lim1..lim3 in tests/test_commit_task_work.py: --commit-timeout reaches the commit, longer limit lands, zero is a usage error"
+  ],
+  "casesAdded": [
+    [
+      "sc-ct1",
+      "sc-ct2",
+      "sc-ct3",
+      "sc-ct4",
+      "sc-ct5",
+      "sc-ct6"
+    ]
+  ],
+  "claims": "claims:\n1 _scoped_commit.py run_git_group/commit_stopped: the kill is stop_and_drain over group_kwargs' session, the lock is read with rev-parse --git-path and os.path.exists, HEAD moved read with rev-parse; the PLUGIN-BUILD-GUIDE sentences were written from those functions\n2 four mutations in a scratch copy, each red on the named cases (limit ignored: sc-ct1,3,5,6; kill git only: sc-ct2,3,5; lock unreported: sc-ct6; restore claim unconditional: sc17,sc-ct6); over-fire direction is sc-ct1/lim2 (a limit that always fires fails them)\n3 grep of run_git( in commit paths: the two commit calls (stage_and_commit plain commit, commit_from_index) both moved to run_git_group; every other run_git call is a read and keeps run_git's limit, left because a read has no hook\n4 n/a - no rule addressed to an agent\n5 sc-ct2/lim1 time bounds are one-window measurements with generous bounds (under 3 s for a 3 s hook, under 20 s); not recorded as a property\n6 n/a - no guard\n7 no number written into prose; the built-in limit is named by COMMIT_SECONDS, not its value",
+  "stamp": "audit-stamp: {\"content\":\"sha256:e19a0f46569abbe3edf2549d23d488b9e2593a11863691b6611549849fd25e4a\",\"dirtyDigest\":\"sha256:831685558bbd0b72f2f2048059d256ae98207d73ccc3b961d73f008892c96b6a\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"c175f7fc41f91912\",\"changelog.d/P175.1.fixed.md\":\"15d8e05e519f477b\",\"plugins/audit/scripts/governance/_scoped_commit.py\":\"5d32f29526ec7a5f\",\"plugins/audit/scripts/governance/commit-task-work.py\":\"b87cb3f8689c1cd5\",\"tests/test__scoped_commit.py\":\"8f1e173c7db953ea\",\"tests/test_commit_task_work.py\":\"e9ee66ee5a2f9182\"},\"head\":\"7319cf9d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"changelog.d/P175.1.fixed.md\",\"plugins/audit/scripts/governance/_proc_group.py\",\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/commit-task-work.py\",\"tests/test__proc_group.py\",\"tests/test__scoped_commit.py\",\"tests/test_commit_task_work.py\"],\"scopeDigest\":\"sha256:e742a1db4f48904a61939b1b4d1de66619e42c3ffe8b96d02a99db60856a1be9\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

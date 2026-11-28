@@ -1092,12 +1092,18 @@ def build_parser():
                         help="commit even though the task's newest gate verdict "
                              "does not bind this work; the reason is written to "
                              "the journal with the commit")
+    parser.add_argument("--commit-timeout", type=float, default=None,
+                        dest="commit_timeout", metavar="SECONDS",
+                        help="how long `git commit` - and the pre-commit hook "
+                             "it runs - may take before its whole process "
+                             "group is killed (default: the built-in limit, "
+                             "which a slow hook may need raised)")
     parser.add_argument("--json", action="store_true", dest="as_json")
     return _claude_home.attach_usage_hint(parser)
 
 
 def commit_work(manifest, phase, task, manifest_path, project, git_root,
-                subject=None, config=None, override=None):
+                subject=None, config=None, override=None, commit_timeout=None):
     """`(exitCode, answer)` - do the thing and say what happened. Prints nothing.
 
     A PAIR RATHER THAN AN EXIT CODE, for `run-test-gate.run_gate`'s reason: a
@@ -1107,10 +1113,14 @@ def commit_work(manifest, phase, task, manifest_path, project, git_root,
     `answer` is `_scoped_commit.answer`'s shape plus `verdict`, the
     `verdict_binding` this commit was decided under (None when it never got that
     far) and `overridden`, whether it was committed over that verdict.
+
+    `commit_timeout` is the seconds `git commit` may run, hooks included, before
+    its process group is killed; None is `_scoped_commit.COMMIT_SECONDS`.
     """
     config = _journal_io.load_config(project) if config is None else config
     code, answer = _commit_work(manifest, phase, task, manifest_path, project,
-                                git_root, subject, config, override)
+                                git_root, subject, config, override,
+                                commit_timeout)
     answer.setdefault("verdict", None)
     answer.setdefault("overridden", False)
     answer.setdefault("attempt", None)
@@ -1149,7 +1159,7 @@ def earlier_attempt(plan, task, project, git_root, journal_rows, work):
 
 
 def _commit_work(manifest, phase, task, manifest_path, project, git_root,
-                 subject, config, override):
+                 subject, config, override, commit_timeout=None):
     targets = stage_targets(manifest, phase, task, manifest_path, project,
                             git_root, config=config)
     allowed, skipped = targets["paths"], targets["skipped"]
@@ -1344,7 +1354,8 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
         lambda paths: foreign_refusal(paths, targets), rows,
         lambda nonce, why: _scoped_commit.withdraw(
             project, config, nonce, "commit-task-work",
-            {"taskId": task_id, "phaseId": phase_id}, why), blobs=blobs)
+            {"taskId": task_id, "phaseId": phase_id}, why), blobs=blobs,
+        commit_timeout=commit_timeout)
     needs = carry.get("needs") if carry and carry["rel"] in blobs else {}
     if not done["committed"]:
         answer = _scoped_commit.answer(skipped, staged=done["staged"],
@@ -1674,7 +1685,7 @@ def record_state_row(project, phase_id, nonce, config=None):
 
 
 def commit_state(manifest, phase, manifest_path, project, git_root, subject=None,
-                 config=None):
+                 config=None, commit_timeout=None):
     """`(exitCode, answer)` - a state commit made, or why not. Prints nothing.
 
     `answer` is `_scoped_commit.answer`'s shape plus `needs_fields`,
@@ -1683,10 +1694,12 @@ def commit_state(manifest, phase, manifest_path, project, git_root, subject=None
     caller to print beside the commit it reports (they are among `skipped`
     too, but a caller printing a stamp as committed must not have to pick
     them out of every degraded line).
+
+    `commit_timeout` is `commit_work`'s: the seconds `git commit` may run.
     """
     config = _journal_io.load_config(project) if config is None else config
     code, answer = _commit_state(manifest, phase, manifest_path, project,
-                                 git_root, subject, config)
+                                 git_root, subject, config, commit_timeout)
     return code, state_answer(answer)
 
 
@@ -1704,7 +1717,7 @@ def state_answer(answer):
 
 
 def _commit_state(manifest, phase, manifest_path, project, git_root, subject,
-                  config):
+                  config, commit_timeout=None):
     targets = state_targets(phase, manifest_path, project, git_root,
                             config=config)
     allowed, skipped = targets["paths"], targets["skipped"]
@@ -1782,7 +1795,8 @@ def _commit_state(manifest, phase, manifest_path, project, git_root, subject,
                                          config=config)], ""),
         lambda nonce, why: _scoped_commit.withdraw(
             project, config, nonce, "commit-task-work",
-            {"phaseId": phase_id}, why), blobs=blobs)
+            {"phaseId": phase_id}, why), blobs=blobs,
+        commit_timeout=commit_timeout)
     staged = done["staged"]
     if not done["committed"]:
         return E_FAIL, _scoped_commit.answer(skipped, staged=staged,
@@ -1919,7 +1933,8 @@ def main_state(args, manifest, project, git_root, out):
             return _print(answer, lock, args, out)
     try:
         code, answer = commit_state(manifest, phase, args.manifest, project,
-                                    git_root, subject=args.subject)
+                                    git_root, subject=args.subject,
+                                    commit_timeout=args.commit_timeout)
     finally:
         if lock is not None:
             # A release the lock declines says another run took this over
@@ -1950,6 +1965,10 @@ def main(argv, out=print):
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return E_USAGE if exc.code else E_OK
+    if args.commit_timeout is not None and not args.commit_timeout > 0:
+        return _usage("--commit-timeout is a number of seconds above zero - "
+                      "a limit that is already spent kills every commit "
+                      "before its hook has run")
     if args.state and args.override is not None:
         return _usage("--override-verdict binds a task commit to its gate; a "
                       "--state commit carries no work and has no verdict")
@@ -1988,7 +2007,8 @@ def main(argv, out=print):
                       "what the journal row records")
     code, answer = commit_work(manifest, phase, task, args.manifest, project,
                                git_root, subject=args.subject,
-                               override=override.strip() if override else None)
+                               override=override.strip() if override else None,
+                               commit_timeout=args.commit_timeout)
     if args.as_json:
         out(json.dumps(answer, indent=2, sort_keys=True))
         return code

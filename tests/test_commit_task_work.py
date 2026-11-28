@@ -2443,6 +2443,45 @@ def _success_line_cases(check, repos):
           and refused == _cli(rfx, "--subject", "the work", "--verbose"))
 
 
+@_own_repos
+def _commit_limit_cases(check, repos):
+    """`--commit-timeout` reaches the one `git commit` the command makes."""
+    if not hasattr(os, "killpg"):
+        _harness.skip(check, "lim1 --commit-timeout stops a slow hook as a group",
+                      "this platform has no process groups to kill",
+                      not hasattr(os, "killpg"))
+        return
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    hook = os.path.join(fx["root"], ".git", "hooks", "pre-commit")
+    with io.open(hook, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("#!/bin/sh\nsleep 3\n")
+    os.chmod(hook, 0o755)
+    before = _head(fx)
+    started = time.time()
+    code, text = _cli(fx, "--subject", "the work", "--commit-timeout", "1")
+    took = time.time() - started
+    check("lim1 `--commit-timeout 1` kills a pre-commit hook that sleeps 3 s - "
+          "the commit is refused naming the limit, HEAD has not moved, and "
+          "the command came back before the hook would have (%.1f s): %r"
+          % (took, text[:200]),
+          code != 0 and "ran past the 1 s" in text and _head(fx) == before
+          and took < 3)
+    started = time.time()
+    code, text = _cli(fx, "--subject", "the work", "--commit-timeout", "20")
+    check("lim2 ...and the same hook under 20 s is allowed to finish: the "
+          "commit lands (the other direction - a limit that always fired "
+          "would pass cl1): %r" % (text[:200],),
+          code == 0 and _head(fx) != before)
+    before = _head(fx)
+    _dirty_work(fx)
+    code, text = _cli(fx, "--subject", "the work", "--commit-timeout", "0")
+    check("lim3 a limit of zero is a usage error that commits nothing, not a "
+          "commit killed before its hook starts: %r" % (text[:200],),
+          code == 2 and _head(fx) == before)
+
+
 def _restartable(fx):
     """The fixture's P1.1 put back to `pending` with no attempt spent, committed,
     so the real `start` verb can take it - the record of an attempt is what
@@ -5223,6 +5262,7 @@ STAGES = (("nm-block", "_no_maintenance_cases"),
           ("ag-block", "_affected_gate_cases"),
           ("kd-block", "_kept_deletion_hook_cases"),
           ("cl-block", "_claims_cases"), ("sl-block", "_success_line_cases"),
+          ("cm-block", "_commit_limit_cases"),
           ("dp-block", "_default_project_cases"),
           ("ae-block", "_attempt_cases"),
           ("fi-block", "_index_only_cases"),

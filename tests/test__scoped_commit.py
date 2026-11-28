@@ -26,6 +26,7 @@ import io
 import os
 import subprocess
 import sys
+import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
@@ -224,6 +225,7 @@ def _cases(check):
     _harness.stage(check, "sc-hd", lambda c: _head_memo_cases(c, tmp))
     _harness.stage(check, "sc-tb", lambda c: _tracking_batch_cases(c, tmp))
     _harness.stage(check, "sc-sh", _start_head_cases)
+    _harness.stage(check, "sc-ct", lambda c: _commit_limit_cases(c, tmp))
 
 
 # --- which paths an attempt changed that no task declares ----------------------
@@ -1665,21 +1667,21 @@ def _review2_cases(check, tmp):
     _git(repo, "commit", "-q", "-m", "cfg")
     _git(repo, "rm", "-q", "--cached", "--", "f.cfg")
     head = _git(repo, "rev-parse", "HEAD").strip()
-    real_run = M.run_git
+    real_run = M.run_git_group
     sibling = {}
 
-    def _racing(git_root, args, **kwargs):
+    def _racing(git_root, args, *rest, **kwargs):
         if list(args[:1]) == ["commit"] and not sibling:
             tree = _git(repo, "rev-parse", "HEAD^{tree}").strip()
             sibling["sha"] = _git(repo, "commit-tree", tree, "-p", head,
                                   "-m", "sibling").strip()
             _git(repo, "update-ref", "HEAD", sibling["sha"], head)
-        return real_run(git_root, args, **kwargs)
-    M.run_git = _racing
+        return real_run(git_root, args, *rest, **kwargs)
+    M.run_git_group = _racing
     try:
         sha, why = M.commit_from_index(repo, ["f.cfg"], ["drop f.cfg"], head)
     finally:
-        M.run_git = real_run
+        M.run_git_group = real_run
     check("sc24 a commit made on a HEAD that moved after the check is REPORTED - "
           "its SHA, the HEAD it landed on and the HEAD read before staging all "
           "named - and nothing is reset: %r" % (why,),
@@ -2118,6 +2120,114 @@ def _start_head_cases(check):
           "their order, a later second settles it, and two writers naming one "
           "head name it: %r" % (got,),
           got == [second, second, second])
+
+
+# --- a commit under a slow hook, run under the caller's limit -------------------
+def _hooked(repo, body):
+    """`repo` whose `pre-commit` hook runs the shell lines in `body`."""
+    hooks = os.path.join(repo, ".git", "hooks")
+    _write(os.path.join(hooks, "pre-commit"), "#!/bin/sh\n%s\n" % (body,))
+    os.chmod(os.path.join(hooks, "pre-commit"), 0o755)
+    _git(repo, "config", "core.hooksPath", hooks)
+
+
+def _task_commit(repo, limit=None):
+    """`(result, seconds)` of a task commit of `keep/a.txt` run under `limit`
+    (None: the module's own built-in limit)."""
+    _write(os.path.join(repo, "keep", "a.txt"), "changed\n")
+    kinds = M.classify(repo, [("keep/a.txt", True)])
+    started = time.time()
+    if limit is None:
+        done = M.stage_and_commit(repo, ["keep/a.txt"], kinds, ["task work"],
+                                  lambda f: "foreign")
+    else:
+        done = M.stage_and_commit(repo, ["keep/a.txt"], kinds, ["task work"],
+                                  lambda f: "foreign", commit_timeout=limit)
+    return done, time.time() - started
+
+
+def _commit_limit_cases(check, tmp):
+    if not hasattr(os, "killpg"):
+        _harness.skip(check, "sc-ct0 a commit under a slow hook is stopped as a "
+                      "group", "this platform has no process groups to kill",
+                      not hasattr(os, "killpg"))
+        return
+    built_in = M.COMMIT_SECONDS
+    M.COMMIT_SECONDS = 1
+    try:
+        # A HOOK SLOWER THAN THE BUILT-IN LIMIT BUT INSIDE THE CALLER'S.
+        repo = _repo(tmp, "slow-hook-allowed")
+        _hooked(repo, "sleep 2")
+        done, _took = _task_commit(repo, limit=5)
+        check("sc-ct1 a pre-commit hook sleeping 2 s, under a caller limit of "
+              "5 s and a built-in limit of 1 s, LANDS the commit - the caller's "
+              "limit is the one in force, not the built-in one: %r" % (done,),
+              done["committed"] and not done["refused"] and done["sha"]
+              and done["sha"] == _git(repo, "rev-parse", "HEAD").strip())
+
+        # THE OTHER DIRECTION: without a caller's limit the built-in one rules,
+        # which is what makes the case above prove the caller's limit rather
+        # than a limit that was never applied.
+        repo = _repo(tmp, "slow-hook-built-in")
+        _hooked(repo, "sleep 3")
+        done, took = _task_commit(repo)
+        check("sc-ct2 ...and with NO caller limit the same shape of hook is "
+              "stopped at the built-in one, well before it would have finished "
+              "(%.1f s): %r" % (took, done["refused"]),
+              not done["committed"] and done["refused"] and took < 3.0)
+    finally:
+        M.COMMIT_SECONDS = built_in
+
+    # A HOOK OVER THE LIMIT, WITH A CHILD OF ITS OWN.
+    repo = _repo(tmp, "hook-over-limit")
+    pidfile = os.path.join(tmp, "hook-over-limit.pid")
+    _hooked(repo, "sleep 60 &\necho $! > '%s'\nwait" % (pidfile,))
+    head = _git(repo, "rev-parse", "HEAD").strip()
+    done, took = _task_commit(repo, limit=1)
+    child = int(open(pidfile).read().strip()) if os.path.isfile(pidfile) else 0
+    alive = True
+    for _ in range(40):
+        try:
+            os.kill(child, 0)
+        except OSError:
+            alive = False
+            break
+        time.sleep(0.05)
+    lock = os.path.join(repo, ".git", "index.lock")
+    check("sc-ct3 a hook over the limit is stopped in the time the caller gave "
+          "it (%.1f s), and the refusal names that limit: %r" % (took,
+                                                              done["refused"]),
+          not done["committed"] and took < 20 and "1 s" in done["refused"])
+    check("sc-ct4 ...the hook's OWN child dies with it (a pid file the hook "
+          "wrote names process %r) - killing only git would leave the hook's "
+          "tree running against the repository: alive=%r" % (child, alive),
+          child > 0 and not alive)
+    check("sc-ct5 ...no .git/index.lock is left, HEAD has not moved, the "
+          "staged change is back out of the index, and the refusal does NOT "
+          "claim the index could not be put back - it says it was: %r"
+          % (done["refused"],),
+          not os.path.exists(lock)
+          and _git(repo, "rev-parse", "HEAD").strip() == head
+          and _git(repo, "diff", "--cached", "--name-only").strip() == ""
+          and "could NOT be put back" not in done["refused"]
+          and M.INDEX_RESTORED in done["refused"])
+
+    # A KILL THAT LEAVES THE LOCK: the hook kills git itself, uncatchably, so
+    # git cannot remove the lock it holds, then holds the commit open.
+    repo = _repo(tmp, "lock-left")
+    _hooked(repo, "kill -9 $PPID\nsleep 60")
+    done, _took = _task_commit(repo, limit=1)
+    lock = os.path.join(repo, ".git", "index.lock")
+    check("sc-ct6 a lock the killed commit left is REPORTED BY NAME, and the "
+          "message says the index could not be put back and that the change "
+          "is still staged: lock present=%r, %r"
+          % (os.path.exists(lock), done["refused"]),
+          os.path.exists(lock) and not done["committed"]
+          and ".git/index.lock" in done["refused"].replace("\\", "/")
+          and "could NOT be put back" in done["refused"]
+          and "keep/a.txt" in done["refused"])
+    if os.path.exists(lock):
+        os.remove(lock)
 
 
 def _selftest():
