@@ -12856,6 +12856,87 @@ def _sweep_row_cases(check):
           and M.sweep_file_cases({"ran": 3}) == {})
 
 
+def _sweep_ok_text(paths, newline="\n"):
+    """A sweep's output through its own row formats: one ok row per path, in
+    the order given, and the summary line over them."""
+    rows = ["sweep: %d files, 8 workers" % (len(paths),)]
+    rows += ["  ok      %-58s %d cases  [0.4s]" % (p, i + 1)
+             for i, p in enumerate(paths)]
+    rows += ["", "%d/%d files ok, %d cases"
+             % (len(paths), len(paths), sum(range(1, len(paths) + 1)))]
+    return newline.join(rows) + newline
+
+
+def _sweep_keep_cases(check):
+    """(swk) A sweep's per-file counts put the files a caller asked to keep
+    first, so the writer's cut at `MAX_PATHS` falls on the files nobody asked
+    about - and never invents a count for a kept path the sweep did not print."""
+    kept_path = "tests/test_zzz_declared.py"
+    cut = 20
+    others = ["tests/test_%03d.py" % (i,) for i in range(M.MAX_PATHS + cut - 1)]
+    text = _sweep_ok_text(others + [kept_path])
+    bare = M.sweep_cases(text)
+    held = M.sweep_cases(text, keep=(kept_path,))
+    bare_paths = [f["path"] for f in bare["files"]]
+    held_paths = [f["path"] for f in held["files"]]
+    # Fixture: the kept file sorts LAST of the whole list, so a sort-then-cut
+    # drops it and a keep-first order does not; `cut` files go either way.
+    check("swk1 A KEPT FILE SORTING LAST SURVIVES THE CUT: with no keep the "
+          "sorted list is cut at `MAX_PATHS` and loses it, with it named the "
+          "kept file leads the list and the same number of others are "
+          "dropped, its count the one the sweep printed: %r"
+          % ((kept_path in bare_paths, held_paths[0], len(held_paths),
+              held.get("filesDropped")),),
+          kept_path not in bare_paths and bare["files"][0]["path"]
+          == "tests/test_000.py" and len(bare_paths) == M.MAX_PATHS
+          and bare.get("filesDropped") == cut
+          and held_paths[0] == kept_path and len(held_paths) == M.MAX_PATHS
+          and held.get("filesDropped") == cut
+          and held["files"][0] == {"path": kept_path, "cases": len(others) + 1}
+          and held_paths[1:] == sorted(others)[:M.MAX_PATHS - 1]
+          and held["total"] == bare["total"])
+    check("swk2 NO KEEP LEAVES THE OLD ORDER, whether it is absent, empty or "
+          "names nothing the sweep printed - and a kept path the sweep did "
+          "not print is not given a row: %r"
+          % ([f["path"] for f in M.sweep_cases(text, keep=())["files"]][:2],),
+          M.sweep_cases(text, keep=()) == bare
+          and M.sweep_cases(text, keep=["tests/test_never_ran.py"]) == bare)
+    spellings = ("tests\\test_zzz_declared.py", "./tests/test_zzz_declared.py",
+                 ".\\tests\\test_zzz_declared.py")
+    twins = [M.sweep_cases(text, keep=(s,)) for s in spellings]
+    crlf = M.sweep_cases(_sweep_ok_text(others + [kept_path], "\r\n"),
+                         keep=(kept_path,))
+    check("swk3 A BACKSLASH OR `./` TWIN OF THE PATH IS THE SAME FILE, and a "
+          "CRLF-ended sweep reads the same as an LF one: %r"
+          % ([[f["path"] for f in t["files"]][0] for t in twins],),
+          all(t == held for t in twins) and crlf == held)
+    low, mid = "tests/test_000.py", "tests/test_017.py"
+    two = M.sweep_cases(text, keep=(kept_path, low, mid))
+    two_rev = M.sweep_cases(text, keep=(mid, low, kept_path))
+    two_paths = [f["path"] for f in two["files"]]
+    rest = [p for p in sorted(others) if p not in (low, mid)]
+    check("swk4 KEPT FILES COME FIRST SORTED AMONG THEMSELVES, then the rest "
+          "sorted, whatever order the caller named them in: %r"
+          % (two_paths[:5],),
+          two == two_rev and two_paths[:3] == [low, mid, kept_path]
+          and two_paths[3:] == rest[:M.MAX_PATHS - 3]
+          and two.get("filesDropped") == cut)
+    check("swk5 THE ONE PATH KEY turns a backslash into a slash and drops a "
+          "leading `./`, and leaves a path that has neither as it was: %r"
+          % ((M.sweep_path_key(".\\tests\\a.py"), M.sweep_path_key("./a/b.py"),
+              M.sweep_path_key("a/b.py")),),
+          M.sweep_path_key(".\\tests\\a.py") == "tests/a.py"
+          and M.sweep_path_key("./a/b.py") == "a/b.py"
+          and M.sweep_path_key("a/b.py") == "a/b.py")
+    short = M.sweep_cases(_sweep_ok_text(["tests/test_b.py", "tests/test_a.py"]),
+                          keep=("tests/test_b.py",))
+    check("swk6 ALLOW: a sweep inside the bound keeps every file, the kept one "
+          "first, and says nothing was dropped: %r" % (short,),
+          [f["path"] for f in short["files"]]
+          == ["tests/test_b.py", "tests/test_a.py"]
+          and "filesDropped" not in short)
+
+
 # A STAGED SUITE: each row is a block the sweep runs as a job of its own, on one
 # slot, and replays in this order (`_harness.staged_main`), so the case ids,
 # their order and the tally are a one-process run's. Run whole in one process,
@@ -12891,7 +12972,8 @@ STAGES = (("wh-block", "_withheld_cases"), ("rf-block", "_read_field_cases"),
           ("pk-block", "_plan_readers_cases"),
           ("rh-block", "_recorder_held_cases"),
           ("bsu-block", "_per_suite_base_cases"),
-          ("swr-block", "_sweep_row_cases"))
+          ("swr-block", "_sweep_row_cases"),
+          ("swk-block", "_sweep_keep_cases"))
 # The prefix of the directory a full run's blocks report into.
 _STAGE_PREFIX = "evidence-io-stages-"
 

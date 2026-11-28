@@ -835,25 +835,49 @@ def sweep_red_counts(text):
     return counts
 
 
-def sweep_cases(text):
+def sweep_path_key(path):
+    """The one spelling a sweep's printed path and a declared path are compared
+    under: backslashes read as `/`, a leading `./` dropped. A sweep prints the
+    path its runner was handed and a plan declares it however its author typed
+    it, so two readers each normalising their own way would disagree on which
+    file is which."""
+    key = str(path).replace("\\", "/")
+    while key.startswith("./"):
+        key = key[2:]
+    return key
+
+
+def sweep_cases(text, keep=()):
     """`{"total", "files"[, "filesDropped"]}` - the cases a sweep's output says
-    it ran: `total` off its summary line, `files` as `[{"path", "cases"}]`
-    sorted by path, one per file whose own count was printed - an ok row's, or a
-    red file's reprinted tally, at the cases its suite ran rather than the ones
-    that passed - cut at `MAX_PATHS` with `filesDropped` counting the rest.
-    None when the output carries no sweep summary.
+    it ran: `total` off its summary line, `files` as `[{"path", "cases"}]`, one
+    per file whose own count was printed - an ok row's, or a red file's
+    reprinted tally, at the cases its suite ran rather than the ones that
+    passed. The files named in `keep` (compared under `sweep_path_key`) come
+    first, sorted, then the rest sorted, and the list is cut at `MAX_PATHS` with
+    `filesDropped` counting the rest. None when the output carries no sweep
+    summary.
+
+    A SORT-THEN-CUT DROPS THE FILES A READER MOST WANTS: a full sweep's list
+    opens with the hook directories, so a task's own test file sorts past the
+    bound. `keep` is how the caller names the files whose count it will ask
+    for; while fewer than `MAX_PATHS` are named, every one the sweep printed a
+    count for survives the cut.
 
     NOTHING IS INFERRED FOR A FILE WHOSE COUNT WAS NOT PRINTED: the quiet form
     prints no row for a passing file, so such a file is absent and a reader
     asking for it learns it is unknown - never a share of the total, and never
-    the total of a one-file sweep assigned to a path the output did not name."""
+    the total of a one-file sweep assigned to a path the output did not name. A
+    kept path the sweep did not print is no row either."""
     body = _runner_output.plain_text(text)
     summary = _runner_output.sweep_summary(body)
     if summary is None:
         return None
     counts = sweep_ok_counts(body)
     counts.update(sweep_red_counts(body))
-    files = [{"path": path, "cases": counts[path]} for path in sorted(counts)]
+    kept = set(sweep_path_key(p) for p in keep)
+    ordered = (sorted(p for p in counts if sweep_path_key(p) in kept)
+               + sorted(p for p in counts if sweep_path_key(p) not in kept))
+    files = [{"path": path, "cases": counts[path]} for path in ordered]
     out = {"total": summary["cases"], "files": files[:MAX_PATHS]}
     if len(files) > MAX_PATHS:
         out["filesDropped"] = len(files) - MAX_PATHS

@@ -2674,6 +2674,26 @@ def owned_files(manifest, phase_id, task_id=None):
     return None, "no phase %r in this manifest" % (phase_id,)
 
 
+def declared_test_files(manifest, phase_id, task_id):
+    """The test files `task_id` declares under `tests.add`, in order, for the
+    sweep's per-file counts to keep past their cut (`_evidence_io.sweep_cases`).
+    Empty for no task, an unknown phase or task, and an entry naming no file -
+    a run with nothing to keep reads the sweep exactly as before."""
+    if task_id is None:
+        return []
+    for phase in (manifest.get("phases") or []):
+        if not isinstance(phase, dict) or phase.get("id") != phase_id:
+            continue
+        for task in (phase.get("tasks") or []):
+            if not isinstance(task, dict) or task.get("id") != task_id:
+                continue
+            tests = task.get("tests")
+            added = tests.get("add") if isinstance(tests, dict) else None
+            paths = [_phases.tests_add_path(e) for e in added or []]
+            return [p for p in paths if p is not None]
+    return []
+
+
 def group_owned_files(manifest, phase_id, also):
     """`(files, error)` -- what a GROUP's one gate run owns: the union of `phase_id`'s
     files and every `also` member's, in that order.
@@ -5333,7 +5353,7 @@ def run_status(steps, failed, ran_total, cancelled_by, refused, unattributable):
     return "passed"
 
 
-def observed_step(name, command, code, text, facts, duration_ms):
+def observed_step(name, command, code, text, facts, duration_ms, sweep_keep=()):
     """One step's row, from what the runner returned and from nothing else.
 
     A FUNCTION BECAUSE A STEP IS RUN MORE THAN ONCE. A step the OS ended is run a
@@ -5372,7 +5392,10 @@ def observed_step(name, command, code, text, facts, duration_ms):
     # WHAT A SWEEP PRINTED ABOUT ITS CASES, beside `ran` and never into it
     # (`_evidence_io.SWEEP_CASES_KEY` says why): absent for output that is not
     # the sweep's, so the key's presence is the claim that a sweep printed one.
-    swept = _ev.sweep_cases(text)
+    # `sweep_keep` IS THE TASK'S DECLARED TEST FILES on a task-scope run: a
+    # full sweep prints more files than the row keeps, and the proof's own
+    # file must not be the one the cut takes.
+    swept = _ev.sweep_cases(text, sweep_keep)
     if swept is not None:
         step[_ev.SWEEP_CASES_KEY] = swept
     # ON ANY STEP, WHATEVER ITS EXIT - a flaky test is a doubt about a pass as
@@ -5473,13 +5496,14 @@ def _gate_step(project, name, command, runner, timeout, reading):
     derived_check, withheld = reading["derived_check"], reading["withheld"]
     muted, today = reading["muted"], reading["today"]
     preamble = reading["preamble"]
+    sweep_keep = reading["sweep_keep"]
     step_started = time.monotonic()
     gated, task_note = gate_task_step(command, task, project)
     if task_note:
         say(task_note)
     code, text, facts = runner(project, gated, timeout)
     step = observed_step(name, command, code, text, facts,
-                         _elapsed_ms(step_started))
+                         _elapsed_ms(step_started), sweep_keep)
     # ONE SECOND ATTEMPT, AND ONLY FOR A STEP THE OS ENDED. The key read
     # here is `signal`, never the exit code: a non-zero exit beside an
     # end-of-run report is a measurement, and a re-run of a measurement
@@ -5507,7 +5531,7 @@ def _gate_step(project, name, command, runner, timeout, reading):
             timeout)
         first = step
         step = observed_step(name, command, code, text, facts,
-                             _elapsed_ms(retry_started))
+                             _elapsed_ms(retry_started), sweep_keep)
         step["retriedAfterSignal"] = first["signal"]
         step["retryBasis"] = retry_note(first["signal"], change)
     # NAMED ONCE, HERE, so both `step_named` below and the
@@ -5683,7 +5707,7 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
              derived_check=None, muted=None, today=None, preamble=None,
              withheld=None, task=None, say=print, selection_started=None,
              dirty_excluded=None, pre_gate=None, red_first=None,
-             red_first_held=None, red_first_alongside=False):
+             red_first_held=None, red_first_alongside=False, sweep_keep=()):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -5703,6 +5727,10 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
 
     `task_scope` is whether the work under test is one task, which is the only
     scope a gate can be too WIDE for (`suite_breadth`).
+
+    `sweep_keep` is the test files a task-scope run's task declares
+    (`declared_test_files`): a sweep step's per-file counts keep them past the
+    row's cut (`_evidence_io.sweep_cases`). Empty for every other scope.
 
     `keep_text` IS OFF BY DEFAULT AND COSTS NOTHING WHEN IT IS: an ordinary
     run reads a step's output to decide what happened and lets Python free
@@ -5815,7 +5843,7 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     stage = list(red_first or [])
     reading = {"task": task, "say": say, "derived_check": derived_check,
                "muted": muted, "today": today, "preamble": preamble,
-               "withheld": withheld}
+               "withheld": withheld, "sweep_keep": sweep_keep}
 
     def one(name, command, run):
         return _gate_step(project, name, command, run, timeout, reading)
@@ -8291,7 +8319,9 @@ def main(argv, out=print):
                            say=(_say_on_stderr if args.as_json else out),
                            pre_gate=pre_stage, red_first=stage,
                            red_first_held=leaned_on,
-                           red_first_alongside=alongside)
+                           red_first_alongside=alongside,
+                           sweep_keep=declared_test_files(
+                               manifest, args.phase, args.task))
         finally:
             _disarm_interrupt(previous)
         if part is not None:

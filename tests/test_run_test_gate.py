@@ -17759,6 +17759,98 @@ def _sweep_cases_cases(check):
           bool(kept)
           and ((stored.get("steps") or [{}])[0].get("sweepCases") or {})
           == kept)
+    _sweep_keep_run_cases(check)
+
+
+_SWEEP_EMIT_SCRIPT = (
+    "import sys\n"
+    "with open('sweep.txt', encoding='utf-8', newline='') as fh:\n"
+    "    sys.stdout.write(fh.read())\n")
+
+
+def _sweep_keep_repo(prefix, declared, printed):
+    """`(root, mpath)` - a committed one-task plan whose task declares
+    `tests.add` over `declared` and gates on a command that prints the sweep
+    output `printed` (a sweep's own rows, as `_sweep_loud` builds them)."""
+    root = _harness.fixture_root(prefix)
+    for sub in (("docs", "audit", "phases"), (".claude",), ("src",)):
+        os.makedirs(os.path.join(root, *sub))
+    gate = '"%s" emit.py' % (sys.executable.replace("\\", "/"),)
+    files = (
+        (".claude/audit.config.json",
+         json.dumps({"manifestPath": "docs/audit/audit-plan.json"})),
+        ("docs/audit/audit-plan.json", json.dumps(
+            {"meta": {"version": 3},
+             "phases": [{"id": "P1", "title": "one",
+                         "shard": "phases/P1.json"}]})),
+        ("docs/audit/phases/P1.json", json.dumps(
+            {"id": "P1", "title": "one", "status": "in_progress",
+             "testGate": [gate], "tasks": [
+                 {"id": "P1.1", "title": "the work", "status": "in_progress",
+                  "files": ["src/a.py"] + list(declared),
+                  "tests": {"mode": "tdd", "gate": [gate],
+                            "add": ["%s: the case it adds" % (d,)
+                                    for d in declared]}}]})),
+        ("emit.py", _SWEEP_EMIT_SCRIPT), ("sweep.txt", printed),
+        ("src/a.py", "a = 1\n"))
+    for rel, body in files:
+        with open(os.path.join(root, *rel.split("/")), "w",
+                  newline="\n") as fh:
+            fh.write(body)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", "."],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    return root, os.path.join(root, "docs", "audit", "audit-plan.json")
+
+
+def _sweep_keep_run(prefix, declared, printed, task):
+    """The recorded row of one run over `_sweep_keep_repo`: the task's gate
+    when `task`, the phase's own gate otherwise."""
+    root, mpath = _sweep_keep_repo(prefix, declared, printed)
+    try:
+        argv = [mpath, "P1", "--project-dir", root, "--record", "--no-reuse"]
+        M.main(argv + (["--task", "P1.1"] if task else []), out=lambda _s: None)
+        evdir = os.path.join(os.path.dirname(mpath), "evidence")
+        return _task_run(evdir, "P1.1") if task else _phase_run(evdir)
+    finally:
+        _harness.remove_tree(root)
+
+
+def _sweep_keep_run_cases(check):
+    """(swc6, swc7) A recorded run of one task reads the sweep's counts with
+    the task's own declared test files kept first, so a full sweep printing
+    more files than the row's bound still carries the proof's own count."""
+    declared = "tests/test_zzz_declared.py"
+    many = ["tests/test_%03d.py" % (i,) for i in range(_ev_io.MAX_PATHS + 20)]
+    ok = many + [declared]
+    printed = _sweep_loud([(p, i + 1) for i, p in enumerate(ok)], [],
+                          (len(ok), len(ok), sum(range(1, len(ok) + 1))))
+    row = _sweep_keep_run("rtg-swc6-", [declared], printed, task=True)
+    kept = ((row.get("steps") or [{}])[0].get("sweepCases")) or {}
+    by_path = dict((f.get("path"), f.get("cases"))
+                   for f in kept.get("files") or [])
+    check("swc6 A RECORDED TASK RUN KEEPS THE DECLARED TEST FILE'S COUNT PAST "
+          "THE CUT: the sweep printed more files than the row's bound, the "
+          "file the task declares sorts last of them, and its own count is "
+          "the first of the kept files, the rest of the list cut as before: "
+          "%r" % ((by_path.get(declared), len(by_path),
+                   kept.get("filesDropped")),),
+          by_path.get(declared) == len(ok)
+          and (kept.get("files") or [{}])[0].get("path") == declared
+          and len(by_path) == _ev_io.MAX_PATHS
+          and kept.get("filesDropped") == len(ok) - _ev_io.MAX_PATHS)
+    phase = _sweep_keep_run("rtg-swc7-", [declared], printed, task=False)
+    cut = ((phase.get("steps") or [{}])[0].get("sweepCases")) or {}
+    check("swc7 OVER-FIRE GUARD: the phase's own gate has no task to keep a "
+          "file for, so the same sweep is read in path order and the same "
+          "file is cut - the keep belongs to the task scope alone: %r"
+          % (sorted(f.get("path") for f in cut.get("files") or [])[-1:],),
+          bool(cut.get("files"))
+          and declared not in [f.get("path") for f in cut["files"]]
+          and cut.get("filesDropped") == len(ok) - _ev_io.MAX_PATHS)
 
 
 def _selftest():

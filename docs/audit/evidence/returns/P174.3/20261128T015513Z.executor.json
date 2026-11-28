@@ -1,0 +1,27 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test__output_lints.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-28T02:01:09Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py` in a throwaway tree at HEAD exited 1 with 1 of 821 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - swc6 (house FAIL): SELFTEST FAILED: 820/821 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; task leg keyed on the declared tests' code without comments (sha256:e740e9395c8c87961d9e2e277f37be37ec7a995b2586f15fa939efbb39da30f3; a file that is not Python or does not tokenize by its bytes), which does not cover a test reading its own comments or line numbers",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Retry attempt 2, no rewrite. In the P174.3 tree, git diff HEAD --stat shows PLUGIN-BUILD-GUIDE.md, plugins/audit/scripts/governance/_evidence_io.py, plugins/audit/scripts/governance/run-test-gate.py, tests/test__evidence_io.py, tests/test_run_test_gate.py (5 files, 251 insertions, 17 deletions) plus untracked changelog.d/P174.3.fixed.md. Work as in attempt 1: _evidence_io.sweep_path_key and sweep_cases(text, keep=()) put kept (key-normalised) files first sorted, then the rest, then the MAX_PATHS cut; run-test-gate.py passes the task's declared test files on the task-scoped measured gate run (declared_test_files, sweep_keep); swk1's failure message was changed by the orchestrator to print the first path instead of a slice beside a count. Run: python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test__output_lints.py in the tree: 3/3 files ok, 1625 cases (test__output_lints ok, test_run_test_gate ok, test__evidence_io all blocks incl. swk-block ok); the pipe hid the exit status so the 3/3 files ok line is the evidence. Dependants unchanged from attempt 1: sweep_file_cases readers in drive-phase, RECORD_CUT_ORDER (does not cover sweepCases), run-test-gate.py and _evidence_io importers still correct since keep/sweep_keep default to empty. The cl5 flake did not appear (test_stamp_verification not in this run).",
+    "descriptive": "A task-scoped gate's recorded sweep keeps the task's declared test files' per-file counts past the 40-path cut, so the drive no longer refuses the step as printing no count."
+  },
+  "testsAdded": [
+    "swk1-swk6 in tests/test__evidence_io.py: kept file sorting last survives the cut and twenty others drop, no keep leaves the old order, backslash/./CRLF twins read the same, sweep_path_key, allow case",
+    "swc6/swc7 in tests/test_run_test_gate.py: a recorded task run over a 61-file fixture sweep keeps the declared file's count; the phase gate over the same sweep still cuts it"
+  ],
+  "casesAdded": [
+    "swk1",
+    "swc6"
+  ],
+  "claims": "claims:\n1 _evidence_io.py sweep_cases docstring and code (keep first, then rest, then MAX_PATHS cut) are the lines described; swk1/swc6 pin it\n2 attempt 1 proved swc6 red on HEAD through the helper; allow case swc7 (phase gate still cuts) guards over-fire\n3 n/a \u2014 not a fix of a reported defect\n4 n/a \u2014 no rule to an agent\n5 n/a \u2014 no property recorded\n6 n/a \u2014 no guard\n7 n/a \u2014 no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:c71cb59fa3673914e0717b6c87fcdfcb494fa642a0f37a1ced329436f0dacb0b\",\"dirtyDigest\":\"sha256:9c3e17d434d6cc9f11e98db88a8dc3e10d4655c1a9e4a162a934755c0bed7630\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"e818ef40587ea98d\",\"changelog.d/P174.3.fixed.md\":\"4a71406e93a27984\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"494155c35599045b\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"ebfbd91e745d52cc\",\"tests/test__evidence_io.py\":\"1e6a1b788d806fb2\",\"tests/test_run_test_gate.py\":\"46fcb2b1b5d4196d\"},\"head\":\"8bf7e194\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"changelog.d/P174.3.fixed.md\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"tests/test__evidence_io.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:03bfc4748452051b5f59537878adff7ca9581ff4bca25008f2fc67300fead9b5\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

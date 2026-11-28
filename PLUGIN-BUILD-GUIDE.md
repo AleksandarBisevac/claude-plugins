@@ -3996,7 +3996,13 @@ ran rather than the ones that passed (`sweep_red_counts`). A file the sweep prin
 (its quiet form prints no row per passing file) is absent, never given a share of the total.
 `run-test-gate.py` stores it on the step as `SWEEP_CASES_KEY`; `_step` redacts each path and cuts
 the list at `MAX_PATHS`, `filesDropped` counting what went, and `STEP_GRAMMAR` carries it into
-the stored record. `ran` stays `None` for a sweep - its total adds up the suites' own claims
+the stored record. The list is sorted by path unless the caller names files to keep
+(`sweep_cases(text, keep)`): those lead it, sorted, so the cut falls on the others. A task-scope run
+names the task's own `tests.add` files (`declared_test_files`), because a full sweep's path order
+opens with the hook directories and would otherwise cut the proof's own file; both sides are
+compared under `sweep_path_key` (backslash read as `/`, a leading `./` dropped), and a kept path the
+sweep printed no count for is still absent. `swk1`-`swk6` hold the order, the twin spellings and the
+allow case, `swc6` and `swc7` the recorded task run and the scope that keeps nothing. `ran` stays `None` for a sweep - its total adds up the suites' own claims
 rather than counting checks a runner watched - so no `measured` word or verdict moves; the one
 reader is the drive's fix-by-gate binding, through `sweep_file_cases()`. `swr1`-`swr3` hold the
 writer's cut and redaction and the reader's refusal of a malformed entry.
