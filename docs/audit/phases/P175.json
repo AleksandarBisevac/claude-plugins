@@ -22,33 +22,40 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P175-R1",
         "severity": "low",
         "file": "plugins/audit/scripts/ui/panel/usage-metrics.js:161",
         "issue": "The task description says to find every status enumeration by grepping 'blocked' beside 'pending' and not to leave a surface. This one, ['pending','in_progress','blocked'], is such a hit and was left: the panel's 'remaining' task count (and the economics forecast the executor names at usage/_usage_economics.py:288) leaves a held task out, though held work is unfinished. The executor declared it as a deliberate leave in claim 3, so it is a known gap, not a regression, and a plan with no held task renders unchanged.",
-        "resolution": "Decide the semantics and write it down. Either add 'held' to the remaining list in usage-metrics.js and _usage_economics.py, or leave it out and say in a comment why a parked task is not forecast. Batch it with the other lows."
+        "resolution": "Decide the semantics and write it down. Either add 'held' to the remaining list in usage-metrics.js and _usage_economics.py, or leave it out and say in a comment why a parked task is not forecast. Batch it with the other lows.",
+        "status": "accepted-open",
+        "acceptedReason": "lows, recorded for the low batch (review stopping rule); R2 is a wording gap in a filed claim, the code it names is correct"
       },
       {
         "id": "P175-R2",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:9026-9028",
         "issue": "The hold verb's ADO note is reworded in this diff, but the filed claim 3 lists that same note as LEFT, so the claim does not describe the diff. The new text points at 'reference/orchestrator.md -> ADO echo', which exists (orchestrator.md:478). No test in this task's gate pins either wording.",
-        "resolution": "Correct the claim if the edit was intended, and add a case for the note if the wording is to stay stable."
+        "resolution": "Correct the claim if the edit was intended, and add a case for the note if the wording is to stay stable.",
+        "status": "accepted-open",
+        "acceptedReason": "lows, recorded for the low batch (review stopping rule); R2 is a wording gap in a filed claim, the code it names is correct"
       },
       {
         "id": "P175-R3",
         "severity": "low",
         "file": "plugins/audit/README.md (status paragraph)",
         "issue": "The rewritten sentence reads 'The last two of the first five are TERMINAL'. It is hard to parse and counts the statuses by position in prose, so it goes stale the next time a status is added.",
-        "resolution": "Name the two statuses: 'done and cancelled are TERMINAL'."
+        "resolution": "Name the two statuses: 'done and cancelled are TERMINAL'.",
+        "status": "accepted-open",
+        "acceptedReason": "lows, recorded for the low batch (review stopping rule); R2 is a wording gap in a filed claim, the code it names is correct"
       }
     ],
-    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P175 (S2b wave A): a task commit runs under the caller's time limit in its own process group and reports a left index.lock; a held task status with hold/release, skipped by the ready set and the gate's blocked count and named on every status surface; a red gate run names a step slower than twice its own last measurement. Independent review: one medium (step time lost its basis after a repeated run) and a schema/doc falsehood, both fixed in P175.5; lows in the low batch.",
   "tasks": [
     {
       "id": "P175.1",
@@ -2177,7 +2184,7 @@
     {
       "id": "P175.5-i91",
       "title": "Phase review fixes: step time reads each step's own last measurement; held is a stateMap key; a blocked task is not held",
-      "status": "in_progress",
+      "status": "done",
       "description": "From the P175 phase review. (1) MEDIUM: run-test-gate.py step_time_reading takes the subject's newest row and reads each step's time from it alone; a repeated (reused) run's copied steps carry reusedFrom and no durationMs, so after green -> repeated green -> edit -> red the reading is no-basis although an older measured run exists. Read each step's time from the newest earlier row of the same subject that measured that step itself (durationMs present, no reusedFrom); the basis names that run per step. (2) step_time_lines formats the ratio %.1fx, so 2.04x prints '2.0x' on a 'more than 2x' rule - print enough precision (or round up) that the printed ratio is > 2. (3) User-visible falsehood: verbs-in-full.md says meta.ado.stateMap may name held, but the JSON schema's stateMap.task has additionalProperties false and no held key; add held (task side only; keep the added text minimal - tests/test__help.py p5 has only a few hundred bytes of payload headroom). (4) hold accepts a blocked task, overwriting blockedReason, and release returns it to pending - a block cleared without unblock; refuse hold on a blocked task, naming unblock. Fragment kind fixed.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -2212,14 +2219,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b84a5a0817da",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) run-test-gate.py step_time_reading now reads each step against the newest earlier measured-status row of the same subject whose copy of THAT step has durationMs and no reusedFrom (new _last_measured); the basis names the run per step ('2 step(s) compared, each with the newest run that timed it: unit with run R1; lint with run R2'), run is the newest of the runs read against. (2) step_time_lines prints the ratio via new _ratio_text, rounded UP to one decimal in integer arithmetic (2.04 -> 2.1x, exact 3.0 stays 3.0x). (3) audit-plan.schema.json: stateMap.task gains a held key (string|null), task side only, 6 added lines, multi-line like its siblings; tests/test__help.py passes (80 cases). (4) audit-task.py _hold_refusal refuses a blocked task, naming unblock and the reason on record; the leading comment says why. Cases added: stt7, stt8, stt9 (tests/test_run_test_gate.py), sp4 (tests/test_validate_manifest.py: held accepted, a neighbour key still named), ho6 (tests/test_audit_task.py). Fragment changelog.d/P175.5-i91.fixed.md. Ran: test_run_test_gate 832 cases ok, test_audit_task 1300 ok, test_validate_manifest 70 ok, test__help 80 ok, test__manifest_io/_manifest_rules/_evidence_io ok, release.py changelog-check clean, --register-citations 0 found. Dependants: run-test-gate.py names step_time_reading used by _evidence_io.py (only in a docstring; return keys run/verdict/steps/basis unchanged, so still correct); drive-phase/full-gate import the module and do not call it; schema consumers (examples, starter, manifest_io suites) still validate - starter/examples carry no stateMap.task.held and the added key is optional; audit-task.py dependants unchanged except hold now refuses a blocked task (verbs-in-full.md/task docs not in my scope: hold section there may want a line that a blocked task is refused - PLUGIN-BUILD-GUIDE sections for run-test-gate.py and audit-task.py also outside scope and not edited).",
+        "descriptive": "A red gate run after a repeated green run now compares each step with the run that really timed it, the slow-step ratio never prints as exactly 2.0x, stateMap.task accepts held, and hold no longer silently overwrites a block."
       },
       "startedAt": "2026-11-28T16:08:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-28T16:25:29Z",
+      "verifiedBy": [
+        "stt7/stt8: step_time_reading with r1 measured and r2 repeating unit (reusedFrom, no durationMs) reads unit against r1 (slower, basis names R1) and lint against R2, plus the within and no-basis directions",
+        "stt9: slow-step ratio 2.04 and 2.001 print above 2, exact 3.0 and 2.1 keep their digits",
+        "sp4: stateMap.task.held validates against the schema while a neighbouring unknown key is still named",
+        "ho6: hold on a blocked task is refused naming unblock and the reason, nothing written"
+      ],
       "notes": [
         {
           "at": "2026-11-28T16:08:10Z",
@@ -2262,6 +2274,24 @@
             "ms": 460964,
             "basis": "durationMs in run 2026-11-28T16:25:18Z.35fc2b's record (run-test-gate --record)",
             "runId": "2026-11-28T16:25:18Z.35fc2b"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-28T16:17:00Z), less 224716 ms of 1 proof stage noted inside it (the proof is recorded as a stage of its own); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 300284,
+            "startedAt": "2026-11-28T16:08:15Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-28T16:25:18Z.35fc2b",
+            "kind": "wait",
+            "ms": 3000,
+            "startedAt": "2026-11-28T16:17:12Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit b84a5a0817da",
+            "kind": "commit",
+            "ms": 1999,
+            "startedAt": "2026-11-28T16:25:25Z"
           }
         ],
         "firstStartedAt": "2026-11-28T16:08:13Z"
@@ -2627,14 +2657,722 @@
         "runId": "2026-11-28T16:25:24Z.04290a",
         "status": "passed",
         "at": "2026-11-28T16:25:24Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "b84a5a0817da",
+        "at": "2026-11-28T16:25:29Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-28T16:16:56Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py` in a throwaway tree at HEAD exited 1 with 3 of 832 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - stt7 (house FAIL), stt8 (house FAIL), stt9 (house FAIL): SELFTEST FAILED: 829/832 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; task leg keyed on the declared tests' code without comments (sha256:409c3c1a17d13dea716b7b304ee214416415a75dcf8ccb1ebd4fa1016bfd5c2c; a file that is not Python or does not tokenize by its bytes), which does not cover a test reading its own comments or line numbers",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
+  "startedAt": "2026-11-28T14:20:56Z",
+  "lastRun": {
+    "runId": "2026-11-28T16:41:20Z.fdde35",
+    "status": "passed",
+    "durationMs": 4951,
+    "failed": [],
+    "observations": {
+      "ranTotal": null,
+      "countsBasis": "no step printed a summary this reader can count (validate, gate, report), so the size of this gate is not knowable from its output; counted over the step(s) measured here only - the repeated step(s) selftests, plugin-validate, lint, shots, interactive, vitest ran no check in this run",
+      "treeMutated": [],
+      "treeBasis": "git described the tree before and after",
+      "coverageBasis": "the runner named 3 path(s); the work under test declares 63 file(s); among them: <outside-repo>, <outside-repo>, docs/audit/audit-plan.json; declared but not named by the run: COMPATIBILITY.md, PLUGIN-BUILD-GUIDE.md, changelog.d/P175.1.fixed.md, changelog.d/P175.2.added.md, changelog.d/P175.3.added.md, changelog.d/P175.4-i91.added.md and 57 more; joined with the paths run 2026-11-28T16:41:10Z.b7b6ea's repeated step(s) selftests, plugin-validate, lint, shots, interactive, vitest named"
+    },
+    "banners": [],
+    "recorderHeld": true,
+    "gateSource": "phase",
+    "gateDigest": "sha256:e8312fb8f9c94dbe9df9bce082512eec91a04ad94b9a2938a23f7d6bd7005252",
+    "reuseKey": "1:sha256:cfd68bb64fa8b3611c6c86b8f43f3962c4922a62b22d10c6703fbf12782a7722",
+    "verdictSource": "part-reused",
+    "reusedFrom": {
+      "runId": "2026-11-28T16:41:10Z.b7b6ea",
+      "ts": "2026-11-28T16:41:10Z",
+      "status": "passed"
+    },
+    "via": "cli",
     "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
-    "branch": "audit/p175-wave-a-of-s2b-a-commit-under-a",
-    "at": "2026-11-28T14:20:56Z"
+    "startedAt": "2026-11-28T16:41:15Z",
+    "selectionMs": 348,
+    "at": "2026-11-28T16:41:20Z",
+    "steps": [
+      {
+        "name": "selftests",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-28T16:41:10Z.b7b6ea",
+          "ts": "2026-11-28T16:41:10Z"
+        },
+        "sweepCases": {
+          "total": 20345,
+          "files": [
+            {
+              "path": ".claude/hooks/arm-release-bypass.py",
+              "cases": 22,
+              "seconds": 0.2
+            },
+            {
+              "path": ".claude/hooks/guard-release.py",
+              "cases": 113,
+              "seconds": 0.7
+            },
+            {
+              "path": ".claude/hooks/guard-uncommitted.py",
+              "cases": 43,
+              "seconds": 0.3
+            },
+            {
+              "path": ".claude/hooks/require-claim-block.py",
+              "cases": 34,
+              "seconds": 0.4
+            },
+            {
+              "path": "tests/_harness.py",
+              "cases": 110,
+              "seconds": 8.8
+            },
+            {
+              "path": "tests/test__ado_connect.py",
+              "cases": 49,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__ado_conventions.py",
+              "cases": 83,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__ado_drift.py",
+              "cases": 30,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__ado_fetch.py",
+              "cases": 40,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__ado_fields.py",
+              "cases": 41,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__ado_parent.py",
+              "cases": 85,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__ado_tracked.py",
+              "cases": 46,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__affected_tests.py",
+              "cases": 86,
+              "seconds": 73.4
+            },
+            {
+              "path": "tests/test__areas.py",
+              "cases": 130,
+              "seconds": 0.6
+            },
+            {
+              "path": "tests/test__branch.py",
+              "cases": 39,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__claude_home.py",
+              "cases": 16,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__clause_coverage.py",
+              "cases": 15,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__cli_fmt.py",
+              "cases": 16,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__commit_trail.py",
+              "cases": 57,
+              "seconds": 2.1
+            },
+            {
+              "path": "tests/test__config.py",
+              "cases": 420,
+              "seconds": 11.8
+            },
+            {
+              "path": "tests/test__config_rules.py",
+              "cases": 183,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__config_rules_lints.py",
+              "cases": 20,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__demo_cast.py",
+              "cases": 6,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__deps.py",
+              "cases": 313,
+              "seconds": 112.9
+            },
+            {
+              "path": "tests/test__doctor_ado.py",
+              "cases": 45,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__doctor_completions.py",
+              "cases": 48,
+              "seconds": 1.2
+            },
+            {
+              "path": "tests/test__doctor_hygiene.py",
+              "cases": 44,
+              "seconds": 0.9
+            },
+            {
+              "path": "tests/test__doctor_policy.py",
+              "cases": 60,
+              "seconds": 0.4
+            },
+            {
+              "path": "tests/test__doctor_report.py",
+              "cases": 24,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__doctor_setup.py",
+              "cases": 119,
+              "seconds": 1.7
+            },
+            {
+              "path": "tests/test__doctor_trail.py",
+              "cases": 175,
+              "seconds": 4.7
+            },
+            {
+              "path": "tests/test__evidence_io.py",
+              "cases": 629,
+              "seconds": 130.4
+            },
+            {
+              "path": "tests/test__evidence_view.py",
+              "cases": 89,
+              "seconds": 0.3
+            },
+            {
+              "path": "tests/test__excerpt.py",
+              "cases": 9,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__filed_returns.py",
+              "cases": 120,
+              "seconds": 2.2
+            },
+            {
+              "path": "tests/test__fmt.py",
+              "cases": 83,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__gate_derive.py",
+              "cases": 62,
+              "seconds": 1.4
+            },
+            {
+              "path": "tests/test__gate_feed.py",
+              "cases": 40,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__help.py",
+              "cases": 80,
+              "seconds": 0.2
+            },
+            {
+              "path": "tests/test__help_lints.py",
+              "cases": 14,
+              "seconds": 0.1
+            }
+          ],
+          "filesDropped": 156
+        },
+        "sweepBasis": "longest files by the seconds the sweep printed (196 timed); tests/test_drive_phase.py 888.0s; tests/test_stamp_verification.py 232.4s; tests/test_audit_task.py 142.9s",
+        "command": "python3 tools/sweep-selftests.py"
+      },
+      {
+        "name": "validate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 831,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json"
+      },
+      {
+        "name": "plugin-validate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-28T16:41:10Z.b7b6ea",
+          "ts": "2026-11-28T16:41:10Z"
+        },
+        "command": "claude plugin validate . && claude plugin validate plugins/audit"
+      },
+      {
+        "name": "gate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 1579,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate"
+      },
+      {
+        "name": "report",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 2506,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report"
+      },
+      {
+        "name": "lint",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-28T16:41:10Z.b7b6ea",
+          "ts": "2026-11-28T16:41:10Z"
+        },
+        "command": "ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints"
+      },
+      {
+        "name": "shots",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-28T16:41:10Z.b7b6ea",
+          "ts": "2026-11-28T16:41:10Z"
+        },
+        "command": "node tools/capture-screenshots.mjs --check"
+      },
+      {
+        "name": "interactive",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-28T16:41:10Z.b7b6ea",
+          "ts": "2026-11-28T16:41:10Z"
+        },
+        "command": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
+      },
+      {
+        "name": "vitest",
+        "exit": 0,
+        "ran": 870,
+        "measured": "checks",
+        "suiteReader": "vitest",
+        "reusedFrom": {
+          "runId": "2026-11-28T16:41:10Z.b7b6ea",
+          "ts": "2026-11-28T16:41:10Z"
+        },
+        "command": "npx vitest run"
+      }
+    ],
+    "machine": "this run had the machine to itself",
+    "repeatedRun": {
+      "runId": "2026-11-28T16:41:10Z.b7b6ea",
+      "startedAt": "2026-11-28T16:25:40Z",
+      "durationMs": 929781,
+      "selectionMs": 348,
+      "status": "passed",
+      "failed": [],
+      "reuseKey": "1:sha256:cfd68bb64fa8b3611c6c86b8f43f3962c4922a62b22d10c6703fbf12782a7722",
+      "gateDigest": "sha256:e8312fb8f9c94dbe9df9bce082512eec91a04ad94b9a2938a23f7d6bd7005252",
+      "gateSource": "phase",
+      "banners": [],
+      "machine": "this run had the machine to itself",
+      "launch": "2026-11-28T16:25:36Z-00099e4d",
+      "observations": {
+        "ranTotal": 870,
+        "countsBasis": "1 of 9 step(s) printed a summary this reader counted; selftests, validate, plugin-validate, gate, report, lint, shots, interactive did not, so this total is a floor and not a size",
+        "treeMutated": [],
+        "treeBasis": "git described the tree before and after",
+        "coverage": [
+          "examples/acme-store/acme-store-audit.html",
+          "examples/acme-store/acme-store-audit.md",
+          "plugins/audit/README.md",
+          "tests/test__deps.py",
+          "tests/test__evidence_io.py",
+          "tests/test__manifest_phases.py",
+          "tests/test__manifest_vocab.py",
+          "tests/test__panel_page.py",
+          "tests/test__proc_group.py",
+          "tests/test__refs.py",
+          "tests/test__scoped_commit.py",
+          "tests/test__status_facts.py",
+          "tests/test__ui_theme.py",
+          "tests/test_audit_status.py",
+          "tests/test_audit_task.py",
+          "tests/test_commit_task_work.py",
+          "tests/test_read_ado_links.py",
+          "tests/test_run_test_gate.py",
+          "tests/test_validate_manifest.py",
+          "tools/check-example-ledgers.py"
+        ],
+        "coverageBasis": "the runner named 342 path(s); the work under test declares 63 file(s); 58 of them are test paths, matched to the files they are named after; among them: .claude-plugin/icon.png, .claude-plugin/plugin.json, .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py and 337 more; declared but not named by the run: COMPATIBILITY.md, PLUGIN-BUILD-GUIDE.md, changelog.d/P175.1.fixed.md, changelog.d/P175.2.added.md, changelog.d/P175.3.added.md, changelog.d/P175.4-i91.added.md and 37 more"
+      },
+      "recorderHeld": true,
+      "via": "cli",
+      "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+      "at": "2026-11-28T16:41:10Z",
+      "testedState": {
+        "head": "b84a5a08",
+        "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+        "scopeDigest": "sha256:4970df11ced84723b59983446af9c974bbca50cfdd001e8cb73c9f7f4ce3b502",
+        "scopeBasis": "63 declared file(s); 63 read, 0 missing",
+        "scopeListDigest": "sha256:c55ac73c390f27e25ab456712e8553099ef2073adeb73d2159e588fbdf2a2fcc",
+        "dirtyDigest": "sha256:94cfd896666878e0090824433ec0a789ebc4b2a9e6b45941ddb0af7fecb5845e",
+        "dirtyBasis": "git described the tree before the run; 2 dirty path(s)"
+      },
+      "steps": [
+        {
+          "name": "selftests",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 448521,
+          "suiteReader": "none",
+          "sweepCases": {
+            "total": 20345,
+            "files": [
+              {
+                "path": ".claude/hooks/arm-release-bypass.py",
+                "cases": 22,
+                "seconds": 0.2
+              },
+              {
+                "path": ".claude/hooks/guard-release.py",
+                "cases": 113,
+                "seconds": 0.7
+              },
+              {
+                "path": ".claude/hooks/guard-uncommitted.py",
+                "cases": 43,
+                "seconds": 0.3
+              },
+              {
+                "path": ".claude/hooks/require-claim-block.py",
+                "cases": 34,
+                "seconds": 0.4
+              },
+              {
+                "path": "tests/_harness.py",
+                "cases": 110,
+                "seconds": 8.8
+              },
+              {
+                "path": "tests/test__ado_connect.py",
+                "cases": 49,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__ado_conventions.py",
+                "cases": 83,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__ado_drift.py",
+                "cases": 30,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__ado_fetch.py",
+                "cases": 40,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__ado_fields.py",
+                "cases": 41,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__ado_parent.py",
+                "cases": 85,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__ado_tracked.py",
+                "cases": 46,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__affected_tests.py",
+                "cases": 86,
+                "seconds": 73.4
+              },
+              {
+                "path": "tests/test__areas.py",
+                "cases": 130,
+                "seconds": 0.6
+              },
+              {
+                "path": "tests/test__branch.py",
+                "cases": 39,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__claude_home.py",
+                "cases": 16,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__clause_coverage.py",
+                "cases": 15,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__cli_fmt.py",
+                "cases": 16,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__commit_trail.py",
+                "cases": 57,
+                "seconds": 2.1
+              },
+              {
+                "path": "tests/test__config.py",
+                "cases": 420,
+                "seconds": 11.8
+              },
+              {
+                "path": "tests/test__config_rules.py",
+                "cases": 183,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__config_rules_lints.py",
+                "cases": 20,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__demo_cast.py",
+                "cases": 6,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__deps.py",
+                "cases": 313,
+                "seconds": 112.9
+              },
+              {
+                "path": "tests/test__doctor_ado.py",
+                "cases": 45,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__doctor_completions.py",
+                "cases": 48,
+                "seconds": 1.2
+              },
+              {
+                "path": "tests/test__doctor_hygiene.py",
+                "cases": 44,
+                "seconds": 0.9
+              },
+              {
+                "path": "tests/test__doctor_policy.py",
+                "cases": 60,
+                "seconds": 0.4
+              },
+              {
+                "path": "tests/test__doctor_report.py",
+                "cases": 24,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__doctor_setup.py",
+                "cases": 119,
+                "seconds": 1.7
+              },
+              {
+                "path": "tests/test__doctor_trail.py",
+                "cases": 175,
+                "seconds": 4.7
+              },
+              {
+                "path": "tests/test__evidence_io.py",
+                "cases": 629,
+                "seconds": 130.4
+              },
+              {
+                "path": "tests/test__evidence_view.py",
+                "cases": 89,
+                "seconds": 0.3
+              },
+              {
+                "path": "tests/test__excerpt.py",
+                "cases": 9,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__filed_returns.py",
+                "cases": 120,
+                "seconds": 2.2
+              },
+              {
+                "path": "tests/test__fmt.py",
+                "cases": 83,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__gate_derive.py",
+                "cases": 62,
+                "seconds": 1.4
+              },
+              {
+                "path": "tests/test__gate_feed.py",
+                "cases": 40,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__help.py",
+                "cases": 80,
+                "seconds": 0.2
+              },
+              {
+                "path": "tests/test__help_lints.py",
+                "cases": 14,
+                "seconds": 0.1
+              }
+            ],
+            "filesDropped": 156
+          },
+          "sweepBasis": "longest files by the seconds the sweep printed (196 timed); tests/test_drive_phase.py 888.0s; tests/test_stamp_verification.py 232.4s; tests/test_audit_task.py 142.9s",
+          "command": "python3 tools/sweep-selftests.py"
+        },
+        {
+          "name": "validate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 809,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json"
+        },
+        {
+          "name": "plugin-validate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 1176,
+          "suiteReader": "none",
+          "command": "claude plugin validate . && claude plugin validate plugins/audit"
+        },
+        {
+          "name": "gate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 1562,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate"
+        },
+        {
+          "name": "report",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 2402,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report"
+        },
+        {
+          "name": "lint",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 3563,
+          "suiteReader": "none",
+          "command": "ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints"
+        },
+        {
+          "name": "shots",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 295951,
+          "suiteReader": "none",
+          "command": "node tools/capture-screenshots.mjs --check"
+        },
+        {
+          "name": "interactive",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 171940,
+          "suiteReader": "none",
+          "command": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
+        },
+        {
+          "name": "vitest",
+          "exit": 0,
+          "ran": 870,
+          "measured": "checks",
+          "durationMs": 3756,
+          "suiteReader": "vitest",
+          "command": "npx vitest run"
+        }
+      ]
+    },
+    "sharedWithRepeated": [
+      "observations.coverage",
+      "testedState"
+    ],
+    "replacedLaunches": [
+      {
+        "runId": "2026-11-28T16:41:10Z.b7b6ea",
+        "launch": "2026-11-28T16:25:36Z-00099e4d",
+        "status": "passed",
+        "at": "2026-11-28T16:41:10Z"
+      }
+    ]
   },
-  "startedAt": "2026-11-28T14:20:56Z"
+  "testEvidence": {
+    "runId": "2026-11-28T16:41:20Z.fdde35",
+    "status": "passed",
+    "at": "2026-11-28T16:41:20Z"
+  }
 }
