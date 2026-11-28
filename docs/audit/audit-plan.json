@@ -5413,7 +5413,8 @@
       "P173.6",
       "P173.12-s6m",
       "P173.14-s6m",
-      "P173.15-s6m"
+      "P173.15-s6m",
+      "P174.5-njh"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -14621,7 +14622,8 @@
       "P173.6",
       "P173.12-s6m",
       "P173.14-s6m",
-      "P173.15-s6m"
+      "P173.15-s6m",
+      "P174.5-njh"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",
@@ -15165,6 +15167,9 @@
     ],
     "changelog.d/P174.4.added.md": [
       "P174.4"
+    ],
+    "changelog.d/P174.5-njh.fixed.md": [
+      "P174.5-njh"
     ]
   },
   "bugs": [

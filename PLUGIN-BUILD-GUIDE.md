@@ -6353,7 +6353,21 @@ files must carry its own printed count on the step (`_evidence_io.sweep_file_cas
 than the task run's for it - the sweep's total spans every file it swept, so one file's missing
 case would hide behind the others' - and a file whose count was never printed is unknown and
 leaves it unbound. The `fbg17`-`fbg20` cases hold the sweep's binding in both directions, each
-refusal read for its own reason. The held green is usually a repeat: on the writer path the gate
+refusal read for its own reason. The step may also run the proof's command in another shape
+`proof_steps` names: JOINED, the command and the affected suites run as one call, its step named
+for the command followed by the affected steps (`_evidence_io.step_parts` reads the head) with only
+the union's digest kept; or BARE, the plan's recorded spelling with its `{paths}` word taken out
+(`_affected_tests.is_bare_entry`), when the proof's command is that spelling over a list of paths
+(`_affected_tests.entry_paths`) - a plan recording no spelling of its own has no bare form. Such a
+step's total spans suites the proof never ran, so it stands only file by file
+(`_file_counts_standing`), with no one-file shortcut: over the paths the proof's command hands the
+spelling, which must name each test file the proof was made over (`spelled_proof_paths`), a file
+graded red needs its own printed count no lower than the task run's, any other a printed count,
+and with no file graded red one path needs a count no lower than the collected - several refuse,
+since the collected count is no one file's. Paths meet under one key,
+`_evidence_io.sweep_path_key`, and only as equal: a suffix match would alias two files of one name
+in different directories. `fbj1`-`fbj9`, `fbb1`-`fbb5` and `fbk1`-`fbk2` hold both shapes, each
+refusal and the key. The held green is usually a repeat: on the writer path the gate
 ran in the background and the drive's own ask after it repeated that verdict, so the held row
 measured nothing, its steps are copies marked as such, and it records no coverage or HEAD. So
 every reading above is taken off the run that measured it (`held_and_measured`, through

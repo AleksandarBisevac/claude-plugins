@@ -223,7 +223,8 @@ run read - and `tree_since_proof` is the one reading of whether those three stil
 match. A proof that left its fix leg to the task gate (`red --fix-by-gate`) made
 no fix run, so it read no implementation: a change there is not its drift, its
 block carries no implementation digest, and the filing binds it to the green
-gate run that ran the proof's own command (`gate_binding`) or has the helper
+gate run that ran the proof's own command - itself, joined with the affected
+suites, or under the plan's bare recorded spelling (`gate_binding`) - or has the helper
 make the leg first (`fix_leg_proof`). That run is asked at the filing whether
 it still holds for the tree being filed - the gate resolving as it did, the
 declared files matching the digest it recorded of them (`held_green_moved`) -
@@ -5902,31 +5903,155 @@ def _is_count(value):
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def proof_steps(row, command):
-    """The steps of the recorded run `row` that ran `command`, in step order:
-    the row keeps a command the plan publishes verbatim and any other as its
-    digest (`_journal_io.command_facts`), so either spelling is matched."""
+# THE SHAPES A STEP RUNNING THE PROOF'S COMMAND IS RECORDED IN (`proof_steps`).
+# EXACT: the command itself, kept verbatim or as its digest. JOINED: the
+# command and the affected suites run as one call over the union of their
+# paths, recorded under one name (`_evidence_io.step_parts` reads its head as
+# the command) with only the union's digest kept. BARE: the plan's recorded
+# spelling with its `{paths}` word taken out (`_affected_tests.is_bare_entry`),
+# which runs every suite the spelling over the proof's paths would. A joined
+# or bare step's total spans files the proof never ran, so it stands only on
+# the proof files' own printed counts (`step_standing`).
+STEP_EXACT, STEP_JOINED, STEP_BARE = "exact", "joined", "bare"
+
+
+def proof_steps(row, command, phase=None, meta=None):
+    """`[(step, shape)]` - the steps of the recorded run `row` that ran
+    `command`, in step order, each with the shape it ran it in: EXACT when the
+    step's command is `command` - the row keeps a command the plan publishes
+    verbatim and any other as its digest (`_journal_io.command_facts`), so
+    either spelling is matched - JOINED when the step's name opens with
+    `command` and carries affected steps after it (`_evidence_io.step_parts`),
+    BARE when the step is a declared one whose verbatim command is the bare
+    form of the plan's recorded spelling and `command` is that spelling over a
+    list of paths (`_affected_tests.entry_paths`). A plan recording no
+    spelling of its own has no bare form, so its sweeps are no shape here."""
     digest = _journal_io.command_facts(command)["commandSha256"]
-    return [s for s in (row or {}).get("steps") or [] if isinstance(s, dict)
-            and (s.get("command") == command or s.get("commandSha256") == digest)]
+    spelled = _affected.entry_paths(command, phase, meta) is not None
+    out = []
+    for s in (row or {}).get("steps") or []:
+        if not isinstance(s, dict):
+            continue
+        head, derived = _evio.step_parts(s.get("name") or "")
+        if s.get("command") == command or s.get("commandSha256") == digest:
+            out.append((s, STEP_EXACT))
+        elif derived and head == command:
+            out.append((s, STEP_JOINED))
+        elif (spelled and not derived and head is not None
+              and _affected.is_bare_entry(s.get("command"), phase, meta)):
+            out.append((s, STEP_BARE))
+    return out
 
 
-def step_standing(run_id, step, command, owes):
+def spelled_proof_paths(command, phase, meta, proved):
+    """`(paths, None)` - the paths the proof's `command` hands the plan's
+    recorded spelling (`_affected_tests.entry_paths`), when each test file the
+    proof was made over (`proved`) is among them under one key
+    (`_evidence_io.sweep_path_key`) - or `(None, why)`. A joined or bare step is
+    read file by file over these, so a command that names no list of paths, or
+    one that leaves a proved file out, gives nothing to read."""
+    paths = _affected.entry_paths(command, phase, meta)
+    if not paths:
+        return None, ("the proof's command `%s` hands the plan's recorded "
+                      "spelling no list of paths, so which file's printed count "
+                      "stands for its cases is not known" % (command,))
+    keys = set(_evio.sweep_path_key(p) for p in paths)
+    left = [p for p in proved if _evio.sweep_path_key(p) not in keys]
+    if left:
+        return None, ("the proof's command `%s` does not name %s, which the "
+                      "proof was made over" % (command, ", ".join(left)))
+    return list(paths), None
+
+
+def _keyed_counts(counts, pick=min):
+    """`counts` (`{path: n}`) keyed under `_evidence_io.sweep_path_key`, a value
+    that is no count kept as None. Two spellings of one file keep the count
+    `pick` chooses - the lower of what a step printed (`min`), the higher of
+    what the task leg owes (`max`) - so a collision never makes a file read as
+    having run more than it showed, or owing less than it did."""
+    out = {}
+    for path, n in (counts or {}).items():
+        key = _evio.sweep_path_key(path)
+        n = n if _is_count(n) else None
+        if key in out:
+            n = None if None in (n, out[key]) else pick(n, out[key])
+        out[key] = n
+    return out
+
+
+def _file_counts_standing(said, step, paths, owes):
+    """Why the joined or bare `step` (`said`) cannot show each of the proof's
+    files (`paths`) passing whole, or None. NO ONE-FILE SHORTCUT: the step's
+    total spans suites the proof never ran, so each file is read off its own
+    printed count. A file the task leg graded red needs a count no lower than
+    the task leg's for it, and a file not graded red a printed count at all;
+    with no file graded red, one path needs a count no lower than the task
+    leg's collected - and several give no file a count to read against."""
+    printed = _keyed_counts(_evio.sweep_file_cases(step))
+    red = (owes or {}).get("redFiles")
+    red = _keyed_counts(red if isinstance(red, dict) else {}, max)
+    wanted = []
+    for key in [_evio.sweep_path_key(p) for p in paths] + sorted(red):
+        if key not in wanted:
+            wanted.append(key)
+    collected = owes["collected"]
+    if not red and len(wanted) > 1:
+        return ("the task leg's sweep graded no file red, so its %d collected "
+                "case(s) are no one file's of %s, and %s cannot be read for each "
+                "file's cases passing" % (collected, ", ".join(wanted), said))
+    unknown = [k for k in wanted if printed.get(k) is None]
+    if unknown:
+        return ("%s printed no count of its own for %s, and its total spans "
+                "suites the proof did not run, so it cannot show the proof's "
+                "cases passing" % (said, ", ".join(unknown)))
+    uncounted = sorted(k for k in red if red[k] is None)
+    if uncounted:
+        return ("the task leg's sweep recorded no count of its own for %s, so "
+                "%s cannot be read against it" % (", ".join(uncounted), said))
+    short = sorted(k for k in red if printed[k] < red[k])
+    if short:
+        return ("%s ran fewer cases than the task leg collected in %s (%s), so "
+                "a failing case may be missing rather than passing" % (
+                    said, ", ".join(short), ", ".join(
+                        "%d of %d" % (printed[k], red[k]) for k in short)))
+    if not red and printed[wanted[0]] < collected:
+        return ("%s printed %d case(s) for %s and the task leg collected %d, so "
+                "a failing case may be missing rather than passing"
+                % (said, printed[wanted[0]], wanted[0], collected))
+    return None
+
+
+def file_counts_said(step, paths):
+    """The proof files' own printed counts on `step`, as a basis says them."""
+    printed = _keyed_counts(_evio.sweep_file_cases(step))
+    return ", ".join("%s: %s case(s)" % (k, printed.get(k)) for k in
+                     [_evio.sweep_path_key(p) for p in paths])
+
+
+def step_standing(run_id, step, command, owes, shape=STEP_EXACT, paths=None):
     """Why the recorded step `step` of run `run_id`, which ran the proof's own
-    `command`, cannot stand for the fix leg the helper's `fixLegOwes` (`owes`)
-    describes, or None. The fix leg's question - every case of the task's run
-    passing on the working tree's code, none gone missing instead - is asked of
-    the step the way the helper's own fix check asks it of a fix run
-    (`fix_problem`): exit 0 with a verdict, and at least as many checks as the
-    task's run collected - the runner's own count (`ran`), or for a sweep, which
-    reports none, the total its summary line printed (`step_count`). Where the
-    task leg's sweep graded files red, each of those files must have its own
-    printed count on the step, no lower than the task leg's for it: a sweep's
-    total spans every file it swept, so one file's missing case hides behind
-    the others'. A count the step does not report, or a file whose count the
-    sweep did not print (its quiet form, or a file past the row's cut), leaves
-    the question open."""
-    said = "run %s's step `%s`" % (run_id, command)
+    `command` in `shape` (`proof_steps`), cannot stand for the fix leg the
+    helper's `fixLegOwes` (`owes`) describes, or None. The fix leg's question -
+    every case of the task's run passing on the working tree's code, none gone
+    missing instead - is asked of the step the way the helper's own fix check
+    asks it of a fix run (`fix_problem`): exit 0 with a verdict, and at least as
+    many checks as the task's run collected - the runner's own count (`ran`),
+    or for a sweep, which reports none, the total its summary line printed
+    (`step_count`). Where the task leg's sweep graded files red, each of those
+    files must have its own printed count on the step, no lower than the task
+    leg's for it: a sweep's total spans every file it swept, so one file's
+    missing case hides behind the others'. A count the step does not report,
+    or a file whose count the sweep did not print (its quiet form, or a file
+    past the row's cut), leaves the question open.
+
+    A JOINED OR BARE STEP is read file by file over `paths`, the proof's own
+    (`spelled_proof_paths`), with no one-file shortcut (`_file_counts_standing`):
+    its total spans suites the proof did not run, so it is never read as one
+    file's count. Paths are compared under one key
+    (`_evidence_io.sweep_path_key`) and only as equal - a suffix would alias two
+    files of one name in different directories."""
+    said = "run %s's step `%s`" % (
+        run_id, command if shape == STEP_EXACT else step.get("name") or command)
     if _evio.step_repeated(step):
         return "%s repeated another run's measurement rather than ran" % (said,)
     if step.get("outcome") or step.get("exit") != 0:
@@ -5948,12 +6073,18 @@ def step_standing(run_id, step, command, owes):
         return ("%s ran %d check(s) and the task leg collected %d, so a failing "
                 "case may be missing rather than passing"
                 % (said, ran, collected))
+    if shape != STEP_EXACT:
+        if not paths:
+            return ("%s ran the proof's command in another shape, and the "
+                    "proof's own files are not known to read it by" % (said,))
+        return _file_counts_standing(said, step, paths, owes)
     red_files = (owes or {}).get("redFiles")
     if not (isinstance(red_files, dict) and red_files
             and owes.get("files") != 1):
         return None
-    printed = _evio.sweep_file_cases(step)
-    unknown = sorted(p for p in red_files if p not in printed)
+    red_files = _keyed_counts(red_files, max)
+    printed = _keyed_counts(_evio.sweep_file_cases(step))
+    unknown = sorted(p for p in red_files if printed.get(p) is None)
     if unknown:
         return ("the task leg's sweep graded %s red, and %s printed no count of "
                 "its own for %s, so it cannot show each of those files' cases "
@@ -6097,15 +6228,20 @@ def gate_binding(ctx, state, manifest, phase, task, proof, tree=None):
     (`_evidence_io.same_head`): a run at another commit read other tests.
 
     IT STANDS WHEN IT RAN THE PROOF'S OWN COMMAND: a step of the measured run
-    whose command is the one the helper proved the red with
-    (`writer_test_text`), passing as `step_standing` reads it - so a gate entry
-    left to the phase gate (`executor.phaseGateOnly`), or narrowed into another
-    spelling, is no step of the run and binds nothing - and when the run named
+    that ran the command the helper proved the red with (`writer_test_text`)
+    in one of the shapes `proof_steps` reads - the command itself, the command
+    joined with the affected suites into one call, or the plan's bare recorded
+    spelling - passing as `step_standing` reads it, and when the run named
     each test file the proof was made over, whole: among the declared files
     its coverage recorded (`observations.coverage`), matched as
-    `_evidence_io.listed_by` matches a suite. A row keeps no coverage per step,
-    so the file is read off the run's whole reading; the step is the proof's
-    own command, which is the one the helper's fix leg would have run."""
+    `_evidence_io.listed_by` matches a suite. A gate entry left to the phase
+    gate (`executor.phaseGateOnly`), or spelled in any other way, is no step
+    of the run and binds nothing. A joined or bare step's total spans suites
+    the proof never ran, so it stands only on each proof file's own printed
+    count, over the paths the proof's command hands the recorded spelling
+    (`spelled_proof_paths`) - the count the helper's own fix leg would have
+    read off a run of the command alone. A row keeps no coverage per step, so
+    the file is read off the run's whole reading."""
     block = proof.get("block") or {}
     paths = proof_test_paths(block)
     if not paths:
@@ -6143,15 +6279,24 @@ def gate_binding(ctx, state, manifest, phase, task, proof, tree=None):
             "did not run the tests the proof read"
             % (said, head or "it did not record", proof.get("head")
                or "a HEAD it does not name"))
-    steps = proof_steps(measured, command)
+    meta = (manifest or {}).get("meta")
+    steps = proof_steps(measured, command, phase, meta)
     if not steps:
-        return None, None, ("%s ran no step of the proof's command `%s` (left "
-                            "to the phase gate, spelled otherwise, or not in the "
-                            "task's gate), so it did not show the proof's tests "
-                            "passing" % (said, command))
+        return None, None, ("%s ran no step of the proof's command `%s` - "
+                            "neither the command itself, nor joined with the "
+                            "affected suites, nor the plan's bare recorded "
+                            "spelling (left to the phase gate, spelled another "
+                            "way, or not in the task's gate) - so it did not "
+                            "show the proof's tests passing" % (said, command))
     owes = proof.get(FIX_LEG_OWES)
-    for step in steps:
-        why = step_standing(source, step, command, owes)
+    spelled = None
+    if any(shape != STEP_EXACT for _s, shape in steps):
+        spelled, why = spelled_proof_paths(command, phase, meta, paths)
+        if spelled is None:
+            return None, None, ("%s ran the proof's command joined or bare, "
+                                "and %s" % (said, why))
+    for step, shape in steps:
+        why = step_standing(source, step, command, owes, shape, spelled)
         if why is not None:
             return None, None, why
     named = (measured.get("observations") or {}).get("coverage")
@@ -6162,15 +6307,27 @@ def gate_binding(ctx, state, manifest, phase, task, proof, tree=None):
     missing = [p for p in paths if not _evio.listed_by(p, named)]
     if missing:
         return None, None, "%s did not name %s" % (said, ", ".join(missing))
-    ran = min(step_count(s) for s in steps)
+    ran = min(step_count(s) for s, _shape in steps)
     return source, (
         "; fix leg: the task gate's green run %s, held for this start%s, ran the "
-        "proof's command `%s` as a step of its own, exit 0 over %d check(s) - "
+        "proof's command `%s` %s, exit 0 over %d check(s) - "
         "no fewer than the task leg's %d collected - and named %s, its "
         "recorded digest of the declared files matching them as filed" % (
             source, " as run %s, which repeated its verdict" % (run_id,)
-            if repeated else "", command, ran, owes["collected"],
-            ", ".join(paths))), None
+            if repeated else "", command, " and ".join(
+                _shape_said(step, shape, spelled) for step, shape in steps),
+            ran, owes["collected"], ", ".join(paths))), None
+
+
+def _shape_said(step, shape, paths):
+    """How a binding's basis says one step ran the proof's command."""
+    if shape == STEP_JOINED:
+        return ("joined with the affected suites as step `%s`, printing %s"
+                % (step.get("name"), file_counts_said(step, paths)))
+    if shape == STEP_BARE:
+        return ("under the plan's bare recorded spelling `%s`, printing %s"
+                % (step.get("command"), file_counts_said(step, paths)))
+    return "as a step of its own"
 
 
 def fix_leg_proof(ctx, state, manifest, phase, task, why, tree=None):

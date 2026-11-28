@@ -17965,9 +17965,10 @@ def _fix_by_gate_filing_units(check, M, task_u, phase, plan_u, full):
         return dict(row, testedState=row.get("testedState")
                     or {"scopeDigest": scope_now, "head": "abc1234"})
 
-    def filed_over(row, block, fallback=None, owes=None, ledger=()):
+    def filed_over(row, block, fallback=None, owes=None, ledger=(), plan=None):
         # `ledger`: the other rows the ledger holds beside the held run - the
-        # run a held repeat copied its verdict from, say.
+        # run a held repeat copied its verdict from, say. `plan`: the plan the
+        # filing reads, when a case needs its meta (a recorded spelling).
         row = placed(row)
         rows = [row] + [placed(r) for r in ledger]
         M.recorded_runs = lambda ctx: {"rows": list(rows)}
@@ -17985,7 +17986,8 @@ def _fix_by_gate_filing_units(check, M, task_u, phase, plan_u, full):
         M._mark(state, "gated", task_u, {"runId": row["runId"], "at": _STEP_START,
                                          "tree": None, "failing": []})
         ctx = _step_ctx()
-        out = _caught(M.file_writer_return, ctx, state, plan_u, phase, task_u)
+        out = _caught(M.file_writer_return, ctx, state,
+                      plan if plan is not None else plan_u, phase, task_u)
         bodies = _filed_bodies(calls)
         red = (bodies[0].get("redFirst") or {}) if len(bodies) == 1 else {}
         return out, _red_argv(calls), red, list(ctx.get("did") or []), len(bodies)
@@ -18091,6 +18093,230 @@ def _fix_by_gate_filing_units(check, M, task_u, phase, plan_u, full):
     _fix_by_gate_sweep_units(check, filed_over, named, step, held_block)
     _fix_by_gate_repeat_units(check, filed_over, named, step, held_block,
                               scope_now)
+    _fix_by_gate_joined_units(check, M, filed_over, named, step, held_block,
+                              plan_u["phases"][0])
+
+
+# The plan's recorded subset spelling, the sweep the joined and bare cases run
+# under, and the proof's own command spelled in it over the proof's test file.
+_FBJ_SPELLING = "python3 tools/sweep-selftests.py {paths}"
+_FBJ_BARE = "python3 tools/sweep-selftests.py"
+
+
+def _fix_by_gate_joined_units(check, M, filed_over, named, step, held_block,
+                              phase):
+    """A green task gate whose step ran the proof's command in another shape:
+    JOINED with the affected suites into one call (the step named for the
+    proof's command, then each affected step's name, its command kept only as
+    a digest), or the BARE recorded spelling that runs every suite. Such a step
+    stands for the fix leg only on the proof file's own printed count - the
+    total spans other files, so a missing case hides behind them - and every
+    way that count is short, absent, or not the proof's file refuses."""
+    rel, other, two = ("tests/test_mine.py", "tests/test_other.py",
+                       "tests/test_two.py")
+    proof_cmd = "%s %s" % (_FBJ_BARE, rel)
+    spelled = _step_plan(phase, meta={"phaseGate": {"derived": {
+        "spelling": _FBJ_SPELLING}}})
+    bare_plan = _step_plan(phase)
+    saved = M.writer_test_text
+    M.writer_test_text = lambda manifest, phase_, task_: (proof_cmd, None)
+    # The task leg swept the proof's one file and graded it red, at the count
+    # `owes` gives it.
+    # `files: 1` on purpose: the exact shape takes a one-file sweep's total as
+    # that file's count, which a joined or bare step's total never is.
+    owes = {"collected": 2, "redFiles": {rel: 2}, "files": 1}
+
+    def joined(run_id, files, total=9, head=proof_cmd,
+               derived="affected/related: " + other):
+        union = "%s %s" % (head, other)
+        return dict(named, runId=run_id, steps=[dict(
+            [(k, v) for k, v in step.items() if k != "command"],
+            name="%s + %s" % (head, derived), ran=None,
+            measured="not-knowable",
+            commandSha256=hashlib.sha256(union.encode("utf-8")).hexdigest(),
+            commandBytes=len(union), program="python3",
+            sweepCases={"total": total, "files": [
+                {"path": p, "cases": n} for p, n in files]})])
+
+    def bare(run_id, files, total=40):
+        return dict(named, runId=run_id, steps=[dict(
+            step, name=_FBJ_BARE, command=_FBJ_BARE, ran=None,
+            measured="not-knowable", sweepCases={"total": total, "files": [
+                {"path": p, "cases": n} for p, n in files]})])
+
+    try:
+        out, asked, red, did, count = filed_over(
+            joined("R50", [(rel, 2), (other, 7)]), held_block, owes=owes,
+            plan=spelled)
+        basis = str(red.get("basis") or "")
+        check("fbj1 a joined step - the proof's command and the affected suites "
+              "as one call, its command kept as a digest - binds the fix leg when "
+              "the proof file's own printed count is no lower than the task "
+              "leg's for it: the block names the run, its basis says the step "
+              "was joined and the file's count, and no helper run is made: %r"
+              % ((out, asked, red.get(_fr.FIX_LEG_RUN_FIELD), basis[-260:],
+                  count),),
+              out is None and count == 1 and asked == []
+              and red.get(_fr.FIX_LEG_FIELD) == _fr.FIX_LEG_BY_GATE
+              and red.get(_fr.FIX_LEG_RUN_FIELD) == "R50"
+              and "joined" in basis and "%s: %d case(s)" % (rel, 2) in basis)
+        out, asked, red, did, count = filed_over(
+            joined("R51", [(rel, 2), (other, 7)]), dict(
+                held_block, testDigest={"files": [
+                    {"path": rel, "sha256": "sha256:" + "a" * 64}]}),
+            owes=dict(owes, redFiles={"tests\\test_mine.py": 2}),
+            plan=spelled)
+        check("fbk1 a red file the task leg's sweep named with backslashes is "
+              "the row's posix path - one key, `sweep_path_key` - so the joined "
+              "step binds: %r" % ((out, asked, red.get(_fr.FIX_LEG_RUN_FIELD),
+                                   did[-1:]),),
+              out is None and count == 1 and asked == []
+              and red.get(_fr.FIX_LEG_RUN_FIELD) == "R51")
+        out, asked, red, did, count = filed_over(
+            joined("R52", [(rel, 2), (other, 7)]), held_block,
+            owes={"collected": 2, "redFiles": {}, "files": None}, plan=spelled)
+        check("fbj6 a joined step over a proof that graded no file red (a "
+              "runner that is no sweep) binds on its one file's printed count "
+              "no lower than the task leg's collected: %r"
+              % ((out, asked, red.get(_fr.FIX_LEG_RUN_FIELD)),),
+              out is None and count == 1 and asked == []
+              and red.get(_fr.FIX_LEG_RUN_FIELD) == "R52")
+        out, asked, red, did, count = filed_over(
+            bare("R60", [(rel, 2), (other, 38)]), held_block, owes=owes,
+            plan=spelled)
+        basis = str(red.get("basis") or "")
+        check("fbb1 the bare recorded spelling - every suite, the proof's among "
+              "them - binds the fix leg on the proof file's own printed count: "
+              "the block names the run and its basis says the step was the bare "
+              "sweep: %r" % ((out, asked, red.get(_fr.FIX_LEG_RUN_FIELD),
+                              basis[-260:]),),
+              out is None and count == 1 and asked == []
+              and red.get(_fr.FIX_LEG_RUN_FIELD) == "R60"
+              and "bare" in basis and "%s: %d case(s)" % (rel, 2) in basis)
+        # As a held repeat reads back off the plan's record: the source's
+        # steps, each marked as copied from it, no coverage of its own.
+        source = joined("R71", [(rel, 2), (other, 7)])
+        stamp = {"runId": "R71", "ts": _STEP_START}
+        held_repeat = {"runId": "R70", "status": _evio.RUN_PASSED,
+                       "steps": [dict(s, **{_evio.STEP_REUSED_KEY: stamp})
+                                 for s in source["steps"]],
+                       _evio.VERDICT_SOURCE: _evio.REUSED,
+                       "reusedFrom": dict(stamp, status=_evio.RUN_PASSED),
+                       "testedState": {}, "observations": {"coverage": None}}
+        out, asked, red, did, count = filed_over(
+            held_repeat, held_block, owes=owes, ledger=[source], plan=spelled)
+        check("fbj9 a held repeat of a run whose joined step showed the proof "
+              "file's count binds the fix leg to the run it repeats: %r"
+              % ((out, asked, red.get(_fr.FIX_LEG_RUN_FIELD), did[-1:]),),
+              out is None and count == 1 and asked == []
+              and red.get(_fr.FIX_LEG_RUN_FIELD) == "R71")
+        two_block = dict(held_block, testDigest={"files": [
+            {"path": rel, "sha256": "sha256:" + "a" * 64},
+            {"path": two, "sha256": "sha256:" + "b" * 64}]})
+        two_named = dict(named, observations={"coverage": [
+            "src/mine.py", rel, two]})
+        # Each refusal is read for its own reason, so a case cannot pass on an
+        # arm another case was written for.
+        for case, row, extra, why in (
+                ("fbj2", joined("R53", [(rel, 1), (other, 8)]), {},
+                 "ran fewer cases than the task leg collected in %s" % (rel,)),
+                ("fbj3", joined("R54", [(other, 40)], total=40), {},
+                 "printed no count of its own for %s" % (rel,)),
+                ("fbj4", joined("R55", [(rel, 2), (other, 7)],
+                                head="%s %s" % (_FBJ_BARE, two)), {},
+                 "ran no step of the proof's command"),
+                ("fbj7", joined("R56", [(rel, 1), (other, 30)], total=31),
+                 {"owes": {"collected": 2, "redFiles": {}, "files": None}},
+                 "printed %d case(s) for %s and the task leg collected %d"
+                 % (1, rel, 2)),
+                ("fbk2", joined("R57", [("lib/test_mine.py", 2), (other, 7)]),
+                 {}, "printed no count of its own for %s" % (rel,)),
+                ("fbb2", bare("R61", [(rel, 2), (other, 38)]),
+                 {"plan": bare_plan}, "ran no step of the proof's command"),
+                ("fbb3", bare("R62", [(other, 40)]), {},
+                 "printed no count of its own for %s" % (rel,)),
+                # The recorded spelling with an option added is another check,
+                # not the bare form, whatever count it printed.
+                ("fbb4", dict(bare("R63", [(rel, 2), (other, 38)]), steps=[dict(
+                    bare("R63", [(rel, 2), (other, 38)])["steps"][0],
+                    name=_FBJ_BARE + " --jobs 1",
+                    command=_FBJ_BARE + " --jobs 1")]), {},
+                 "ran no step of the proof's command"),
+                # The proof was made over a second file its command does not
+                # hand the spelling: no count on the step is that file's.
+                ("fbj8", dict(joined("R59", [(rel, 2), (two, 4), (other, 7)]),
+                              observations=two_named["observations"]),
+                 {"block": two_block},
+                 "does not name %s" % (two,))):
+            kwargs = dict({"owes": owes, "plan": spelled}, **extra)
+            block = kwargs.pop("block", held_block)
+            out, asked, red, did, count = filed_over(row, block, **kwargs)
+            check("%s a %s binds nothing, for that reason: the helper makes the "
+                  "fix leg and the proof it files names no gate run: %r"
+                  % (case, {"fbj2": "joined step whose proof file printed one "
+                                    "case fewer than the task leg collected in it",
+                            "fbj3": "joined step that printed no count for the "
+                                    "proof file, its total far above",
+                            "fbj4": "joined step headed by another command",
+                            "fbj7": "joined step whose one file printed fewer "
+                                    "cases than the task leg collected, no "
+                                    "file graded red",
+                            "fbk2": "joined step whose only same-named file "
+                                    "sits in another directory",
+                            "fbb2": "bare sweep under a plan recording no "
+                                    "spelling of its own",
+                            "fbb3": "bare sweep that printed no count for the "
+                                    "proof file",
+                            "fbb4": "declared sweep with an option added - not "
+                                    "the bare spelling",
+                            "fbj8": "joined step over a proof made over a file "
+                                    "its command does not name"}[case],
+                     (out, asked, red, did, count)),
+                  out is None and count == 1 and len(asked) == 1
+                  and "--fix-by-gate" not in _helper_flags(asked[0])
+                  and _fr.FIX_LEG_FIELD not in red
+                  and _fr.FIX_LEG_RUN_FIELD not in red
+                  and any(row["runId"] in d and "fix leg" in d and why in d
+                          for d in did))
+        # Two proof files and no file graded red: which file the task leg's
+        # count belongs to is not said, so neither file's count can be read
+        # against it.
+        M.writer_test_text = lambda manifest, phase_, task_: (
+            "%s %s %s" % (_FBJ_BARE, rel, two), None)
+        row = dict(two_named, runId="R58", steps=[dict(
+            step, name="%s %s %s + affected/related: %s"
+            % (_FBJ_BARE, rel, two, other), ran=None, measured="not-knowable",
+            command="%s %s %s %s" % (_FBJ_BARE, rel, two, other),
+            sweepCases={"total": 13, "files": [
+                {"path": rel, "cases": 4}, {"path": two, "cases": 4},
+                {"path": other, "cases": 5}]})])
+        out, asked, red, did, count = filed_over(
+            row, two_block, owes={"collected": 4, "redFiles": {}, "files": None},
+            plan=spelled)
+        check("fbj5 a joined step over a proof of two files, no file graded red, "
+              "binds nothing - the task leg's count is not any one file's - for "
+              "that reason: %r" % ((out, asked, red, did, count),),
+              out is None and count == 1 and len(asked) == 1
+              and _fr.FIX_LEG_RUN_FIELD not in red
+              and any("R58" in d and "fix leg" in d
+                      and "graded no file red" in d for d in did))
+        # A proof made with another runner: the bare sweep is no shape of its
+        # command, whatever it printed for the file.
+        M.writer_test_text = lambda manifest, phase_, task_: (
+            "python3 -m pytest " + rel, None)
+        out, asked, red, did, count = filed_over(
+            bare("R64", [(rel, 2), (other, 38)]), held_block, owes=owes,
+            plan=spelled)
+        check("fbb5 a bare recorded sweep over a proof whose command is not the "
+              "recorded spelling over its paths binds nothing - no step of the "
+              "proof's command ran: %r" % ((out, asked, red, did, count),),
+              out is None and count == 1 and len(asked) == 1
+              and _fr.FIX_LEG_RUN_FIELD not in red
+              and any("R64" in d and "fix leg" in d
+                      and "ran no step of the proof's command" in d
+                      for d in did))
+    finally:
+        M.writer_test_text = saved
 
 
 def _fix_by_gate_repeat_units(check, filed_over, named, step, held_block,
