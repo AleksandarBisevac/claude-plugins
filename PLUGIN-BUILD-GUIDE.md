@@ -7485,7 +7485,13 @@ resets `attempts` to 0 and, on a blocked one, moves it to `pending` and drops `b
 journaling `task.unblock` with the human's reason. A blocked task with attempts left has only the
 block cleared and keeps its count, so a count is never reset for a block about something else; a
 pending or running task with attempts left is refused (`_unblock_refusal`), since `start` still
-runs it.
+runs it. `hold <taskId> --reason TEXT` parks a task on purpose and `release <taskId> --reason TEXT`
+lifts the hold: `hold` writes `status: held` with the reason in `blockedReason` (journaling
+`task.hold`), and `release` moves a held task back to `pending` and drops the reason (journaling
+`task.release`). A held task is outside the ready set and the gate's `blocked-tasks` count, and it
+is not finished work, so a task waiting on it keeps waiting. `hold` refuses terminal work, a
+running task and one already held; `release` refuses a task that is not held; `start` refuses a
+held task even under `--force`, and `block` and `unblock` refuse one and name `release`.
 
 `finding <phaseId>`, `resolve-finding <findingId>` and `correct <phaseId>` write a sign-off's
 review record, which used to be hand-edited into the shard. `finding` appends entries in the

@@ -1,0 +1,36 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__help.py tests/test__status_facts.py tests/test_audit_task.py tests/test__deps.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__help_lints.py tests/test__json_schema.py tests/test__manifest_io.py tests/test__manifest_vocab.py tests/test__manifest_phases.py tests/test_validate_manifest.py tests/test__panel_page.py": "pass",
+    "python3 tools/lints/_deps.py --register-citations": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-28T15:10:36Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__status_facts.py` in a throwaway tree at HEAD exited 1 with 2 of 220 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ho6 (house FAIL), ho7 (house FAIL): SELFTEST FAILED: 218/220 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; task leg keyed on the declared tests' code without comments (sha256:3f2081b52a05702a83cc62f1f8d7d2272a98cf350c12e87ac13516e4aafd5def; a file that is not Python or does not tokenize by its bytes), which does not cover a test reading its own comments or line numbers",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Attempt 1's work kept (held status, hold/release verbs). Repair: tests/test__help.py p5 failed with the help payload at 162718 bytes against cap 200000 minus headroom 38000 (162000), over by 718. The payload is built from the schema descriptions (help payload plus per-path tables, measured by the suite's own method); at HEAD the same measure is 161529. Attempt 1's additions were repeated three times (the status description, which each of three status sites carries) and in the blockedReason description. Shortened only my own additions in plugins/audit/schema/audit-plan.schema.json: the status description now adds only \" 'held' is parked with a reason, not ready.\" (and 'Two of the five' became 'Two of the words'), and the blockedReason description adds `or held`, `or hold <id> --reason`, and '(a held task must carry one; the task.start row keeps it)'. Cap and headroom untouched, no pre-existing text deleted. Payload now 161728 bytes (measured with a probe that dumps json of payload and tables, same as the suite), margin 272 bytes under the 162000 limit; the schema still parses (json.load ok). Evidence: `python3 tools/sweep-selftests.py tests/test__help.py tests/test__status_facts.py tests/test_audit_task.py tests/test__deps.py` exit 0, 4/4 files ok, 1912 cases; wider `python3 tools/sweep-selftests.py tests/test__help_lints.py tests/test__json_schema.py tests/test__manifest_io.py tests/test__manifest_vocab.py tests/test__manifest_phases.py tests/test_validate_manifest.py tests/test__panel_page.py` 7/7 files ok, 1029 cases; `python3 tools/lints/_deps.py --register-citations` 0 citations, exit 0. Dependants: the schema change is wording only plus the enum value attempt 1 already added; no consumer of the enum text changed; the earlier dependant answers from attempt 1 stand. The margin is smaller than the usual few hundred bytes; the remaining room under the 162000 limit could only grow by cutting the held enum mention or text that predates this task.",
+    "descriptive": "The held status's schema text is shortened so the help payload fits its budget again, with the held feature unchanged."
+  },
+  "testsAdded": [
+    "tests/test__status_facts.py ho1-ho7: three held tasks gate green and none ready, with the blocked twin failing the gate, and the reason-less held finding",
+    "tests/test_audit_task.py ho1-ho5: hold refuses no reason and other bad targets, start refuses held, release refuses a non-held task and returns held to pending"
+  ],
+  "casesAdded": [
+    [
+      "ho1",
+      "ho2",
+      "ho3",
+      "ho4",
+      "ho5",
+      "ho6",
+      "ho7"
+    ]
+  ],
+  "claims": "claims:\n1 schema statuses: audit-plan.schema.json status description says 'held' is parked with a reason, not ready - ready_tasks reads status == pending (_status_facts.py) and the gate counts byStatus blocked only, as attempt 1 recorded; the blockedReason text states a held task must carry one - walk_phases task-held-reason in _manifest_phases.py\n2 p5 was red on the tree (162718 > 162000) and is green after the cut: sweep exit 0, 4/4 files ok; the byte count was re-derived by a probe on the same json.dumps([payload, tables]) the suite measures (161728), and at HEAD's schema the probe gives 161529\n3 grep of the held mentions in the payload: 17 hits - enum x4, status description x3, blockedReason, the rest the unrelated word 'held'; each of mine is shortened, none left long\n4 n/a - no rule addressed to an agent\n5 measured twice by the probe and the suite (162097 then 161887 then 161728 while trimming; final 161728 by the probe, p5 green by the suite)\n6 n/a - no guard\n7 no number written in prose; the byte figures live in this report only, and the suite prints them",
+  "stamp": "audit-stamp: {\"content\":\"sha256:9449c18d6ec9adcf54f010f7622c5110719fc0657d44e6e81c8a98186a65dd4f\",\"dirtyDigest\":\"sha256:11f4c0fb67dff0f4b16ec6d6aecdde3cf0c65712c95578098a55ca233261c385\",\"dirtyPaths\":{\"plugins/audit/schema/audit-plan.schema.json\":\"856684d94ef865ba\"},\"head\":\"cba84a15\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"COMPATIBILITY.md\",\"PLUGIN-BUILD-GUIDE.md\",\"changelog.d/P175.2.added.md\",\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/scripts/manifest/_manifest_phases.py\",\"plugins/audit/scripts/manifest/_manifest_vocab.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/scripts/status/_status_facts.py\",\"tests/test__deps.py\",\"tests/test__manifest_phases.py\",\"tests/test__manifest_vocab.py\",\"tests/test__status_facts.py\",\"tests/test_audit_task.py\",\"tools/lints/_deps.py\"],\"scopeDigest\":\"sha256:9937067a61d7e557620cc203fd80db3407eca8b359655086c5aa722d66a10257\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

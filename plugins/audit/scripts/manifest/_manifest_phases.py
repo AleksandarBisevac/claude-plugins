@@ -2044,6 +2044,15 @@ def _walk_phases(phases, build_keys=()):
                 _check_timing_keys(task["timing"], twhere, w)
             if task.get("status") not in STATUS:
                 f.append(_output.finding("phases.walk_phases.task-status", "%s: status %r not in %s" % (twhere, task.get("status"), list(STATUS))))
+            # A HOLD WITHOUT ITS REASON IS A FINDING, where a block without one is
+            # not: a block waits on something a person can name later, and a hold
+            # is a decision to leave the task alone, whose only record of why is
+            # this string. `blockedReason` is the key both verbs write, so a blank
+            # or non-string value is the same absence.
+            if task.get("status") == "held":
+                why = task.get("blockedReason")
+                if not (isinstance(why, str) and why.strip()):
+                    f.append(_output.finding("phases.walk_phases.task-held-reason", "%s: status 'held' with no blockedReason - a hold records why the task is left alone, and a task parked with no recorded reason is one nobody can release with confidence (`/audit:task hold <id> --reason`)" % (twhere,)))
             if (phase.get("status") == "pending"
                     and task.get("status") == "in_progress"):
                 # WHAT THIS ESTABLISHED, AND NOT A GUESS AT THE DOCUMENT'S AGE.

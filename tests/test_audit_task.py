@@ -4464,6 +4464,8 @@ def _flag_cases(check):
                    "move": ["move", "P2.3", "--to", "P3"],
                    "block": ["block", "P2.3", "--reason", "r"],
                    "unblock": ["unblock", "P2.3", "--reason", "r"],
+                   "hold": ["hold", "P2.3", "--reason", "r"],
+                   "release": ["release", "P2.3", "--reason", "r"],
                    "note": ["note", "P2.3", "--text", "t"],
                    # `couple`/`uncouple` take no id at all - the misplaced-flag
                    # check this grid drives fires BEFORE either verb's own
@@ -4594,9 +4596,17 @@ def _flag_cases(check):
         for _vfargv, _vfwhat in (
                 (["move", "P2.3", "--to", "P3", "--json"], "move/--to"),
                 (["block", "P2.3", "--reason", "r", "--json"], "block/--reason"),
+                (["hold", "P2.3", "--reason", "r", "--json"], "hold/--reason"),
                 (["note", "P2.3", "--text", "t", "--json"], "note/--text")):
             _vf_own_proj, _vf_own_mp = mk("vf-%s" % _vfargv[0], base_manifest())
             _vf_ok[_vfwhat] = run(_vfargv + ["--project-dir", _vf_own_proj])[0]
+        # `release` lifts a hold, so its project carries one.
+        _vf_rl = base_manifest()
+        _vf_rl["phases"][1]["tasks"][1].update(status="held", blockedReason="r")
+        _vf_rl_proj, _vf_rl_mp = mk("vf-release", _vf_rl)
+        _vf_ok["release/--reason"] = run(
+            ["release", "P2.3", "--reason", "r", "--json",
+             "--project-dir", _vf_rl_proj])[0]
         # The review verbs against a phase in sign-off: `finding` appends, then
         # `resolve-finding` settles it with the commit P2.1 is given here, and
         # `correct` rewrites the text once `signoff` has recorded a verdict.
@@ -7972,6 +7982,10 @@ def _close_cases(check):
             ("reindex", ["reindex"]),
             # ...and `unblock`, on a pair whose task has spent its attempts.
             ("unblock", ["unblock", "P2.3", "--reason", "try again"]),
+            # ...and `hold` and `release`, each on a pair of its own: one holds
+            # the pending task, the other lifts a hold already on record.
+            ("hold", ["hold", "P2.3", "--reason", "leave it alone"]),
+            ("release", ["release", "P2.3", "--reason", "it can run"]),
             ("record-listing", ["record-listing", "--listing-all", "lister",
                                 "--listing-related", "lister {paths}",
                                 "--spelling", "runner {paths}",
@@ -7996,7 +8010,14 @@ def _close_cases(check):
         _tw_ub["phases"][1]["tasks"][1].update(status="blocked", attempts=3,
                                               maxAttempts=3)
         tw_ub_proj, _tw_ub_mp, tw_ub_tree = mk_pair("tw-unblock", _tw_ub)
+        tw_hold_proj, _tw_hold_mp, tw_hold_tree = mk_pair("tw-hold")
+        _tw_rl = base_manifest()
+        _tw_rl["phases"][1]["tasks"][1].update(status="held",
+                                              blockedReason="left alone")
+        tw_rl_proj, _tw_rl_mp, tw_rl_tree = mk_pair("tw-release", _tw_rl)
         _tw_pairs = {"unblock": (tw_ub_tree, tw_ub_proj),
+                     "hold": (tw_hold_tree, tw_hold_proj),
+                     "release": (tw_rl_tree, tw_rl_proj),
                      "mute": (tw_mu_tree, tw_mu_proj),
                      "unmute": (tw_mu_tree, tw_mu_proj),
                      "bug-close": (tw_mu_tree, tw_mu_proj),
@@ -10030,6 +10051,76 @@ def _record_cases(check):
               and "blockedReason" not in _bk_s
               and [(c.get("from"), c.get("to")) for c in _bk_start]
               == [("waiting on the BE endpoint", None)])
+
+        # ---- (ho) a task held with a reason, and released -------------------------
+        projhd, mphd = mk("hd-hold", base_manifest())
+        code, txt = run(["hold", "P2.3", "--reason", "waiting for the vendor's sign-off",
+                         "--project-dir", projhd])
+        _hd_t = task_in(mphd, "P2.3") or {}
+        _hd_rows = [r for r in _journal_io.read_all(projhd)
+                    if r.get("action") == "task.hold"]
+        check("ho1 `hold <id> --reason` sets status held, keeps the reason beside "
+              "it and writes one task.hold row carrying it: %s" % (txt,),
+              code == 0 and _hd_t.get("status") == "held"
+              and _hd_t.get("blockedReason") == "waiting for the vendor's sign-off"
+              and len(_hd_rows) == 1
+              and (_hd_rows[0].get("details") or {}).get("reason")
+              == "waiting for the vendor's sign-off")
+        with open(mphd, "rb") as _fh:
+            _hd_before = _fh.read()
+        _hd_noreason = run(["hold", "P2.1", "--project-dir", projhd])
+        _hd_done = run(["hold", "P2.1", "--reason", "r", "--project-dir", projhd])
+        _hd_phase = run(["hold", "P2", "--reason", "r", "--project-dir", projhd])
+        _hd_again = run(["hold", "P2.3", "--reason", "r2", "--project-dir", projhd])
+        projhd2, mphd2 = mk("hd-hold-blank", base_manifest())
+        with open(mphd2, "rb") as _fh:
+            _hd2_before = _fh.read()
+        _hd_blank = run(["hold", "P2.3", "--reason", "   ", "--project-dir", projhd2])
+        with open(mphd2, "rb") as _fh:
+            _hd2_after = _fh.read()
+        with open(mphd, "rb") as _fh:
+            _hd_after = _fh.read()
+        check("ho2 SECOND DIRECTION OF ho1: no reason, a blank reason, a done task, "
+              "a phase id and an already-held task are each refused and nothing is "
+              "written - a hold that takes any of them is a task parked with no "
+              "recorded why: %r"
+              % ([_hd_noreason[0], _hd_blank[0], _hd_done[0], _hd_phase[0],
+                  _hd_again[0]],),
+              [_hd_noreason[0], _hd_blank[0], _hd_done[0], _hd_phase[0],
+               _hd_again[0]] == [2, 2, 2, 2, 2]
+              and "--reason" in _hd_noreason[1] and "already held" in _hd_again[1]
+              and _hd_after == _hd_before and _hd2_after == _hd2_before)
+        _hd_start = run(["start", "P2.3", "--force", "--reason", "x",
+                         "--project-dir", projhd])
+        with open(mphd, "rb") as _fh:
+            _hd_after_start = _fh.read()
+        check("ho3 `start` refuses a held task, `--force` included, and writes "
+              "nothing - held is outside the ready set, and a start that took it "
+              "would put the task back in play with the hold still on record: %r"
+              % (_hd_start,),
+              _hd_start[0] == 2 and "held" in _hd_start[1]
+              and "release" in _hd_start[1] and _hd_after_start == _hd_before)
+        _hd_nohold = run(["release", "P2.1", "--reason", "r", "--project-dir", projhd])
+        _hd_noreason_r = run(["release", "P2.3", "--project-dir", projhd])
+        with open(mphd, "rb") as _fh:
+            _hd_after_refused = _fh.read()
+        check("ho4 `release` refuses a task that is not held and a release with no "
+              "reason, writing nothing: %r"
+              % ([_hd_nohold[0], _hd_noreason_r[0]],),
+              _hd_nohold[0] == 2 and "not held" in _hd_nohold[1]
+              and _hd_noreason_r[0] == 2 and "--reason" in _hd_noreason_r[1]
+              and _hd_after_refused == _hd_before)
+        code, txt = run(["release", "P2.3", "--reason", "the vendor signed off",
+                         "--project-dir", projhd])
+        _hd_r = task_in(mphd, "P2.3") or {}
+        _hd_rel = [r for r in _journal_io.read_all(projhd)
+                   if r.get("action") == "task.release"]
+        check("ho5 `release <id> --reason` returns the task to pending, drops the "
+              "hold's reason and writes one task.release row: %s" % (txt,),
+              code == 0 and _hd_r.get("status") == "pending"
+              and "blockedReason" not in _hd_r and len(_hd_rel) == 1
+              and (_hd_rel[0].get("details") or {}).get("reason")
+              == "the vendor signed off")
 
         # ---- (nt) an append-only note ----------------------------------------------
         projnt, mpnt = mk("nt-note", pd_fixture())

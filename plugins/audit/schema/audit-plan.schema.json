@@ -58,13 +58,14 @@
   },
   "$defs": {
     "status": {
-      "description": "Lifecycle state for a phase, a task or a decision. Two of the five are TERMINAL: 'done' (the work landed) and 'cancelled' (the work will not be done - the feature was dropped, the approach was abandoned, the phase closes with whatever landed). Cancelled is the phase/task twin of a bug's 'wontfix', and the state the trackers call Canceled (Linear), Won't Do (Jira), closed-as-not-planned (GitHub) and Removed (Azure DevOps). Nothing is deleted to express it: a cancelled item keeps its history, its commits and its outcome, and the report files it under the archive beside the done ones. Readiness treats a cancelled blocker as settled - a plan must not deadlock on work nobody will do - so a task waiting on a cancelled one becomes ready and is worth a look before it runs.",
+      "description": "Lifecycle state for a phase, a task or a decision. Two of the words are TERMINAL: 'done' (the work landed) and 'cancelled' (the work will not be done - the feature was dropped, the approach was abandoned, the phase closes with whatever landed). Cancelled is the phase/task twin of a bug's 'wontfix', and the state the trackers call Canceled (Linear), Won't Do (Jira), closed-as-not-planned (GitHub) and Removed (Azure DevOps). Nothing is deleted to express it: a cancelled item keeps its history, its commits and its outcome, and the report files it under the archive beside the done ones. Readiness treats a cancelled blocker as settled - a plan must not deadlock on work nobody will do - so a task waiting on a cancelled one becomes ready and is worth a look before it runs. 'held' is parked with a reason, not ready.",
       "enum": [
         "pending",
         "in_progress",
         "blocked",
         "done",
-        "cancelled"
+        "cancelled",
+        "held"
       ]
     },
     "model": {
@@ -1596,7 +1597,7 @@
             "string",
             "null"
           ],
-          "description": "Why this task is `blocked`, verbatim - written by `/audit:task block <id> --reason` beside the status, and cleared by `/audit:task start` when the task runs again (the task.start row keeps it as the value it moved from). For a dependency no id can name - another team's endpoint, a reply nobody has sent - which `blockedBy` refuses on purpose because nothing could ever clear it. Absent on a task blocked through a hand edit, which states no reason."
+          "description": "Why this task is `blocked` or `held`, verbatim - written by `/audit:task block <id> --reason` or `hold <id> --reason` beside the status, and cleared by `/audit:task start` when the task runs again (a held task must carry one; the task.start row keeps it). For a dependency no id can name - another team's endpoint, a reply nobody has sent - which `blockedBy` refuses on purpose because nothing could ever clear it. Absent on a task blocked through a hand edit, which states no reason."
         },
         "notes": {
           "type": "array",

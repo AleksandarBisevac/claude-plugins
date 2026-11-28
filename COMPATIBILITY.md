@@ -408,6 +408,13 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   keys** and keeps the ones it has. `--gate` reads no timing figure, only the validator's
   verdict on the record: a malformed record is a finding, so the default `invalid` condition
   can trip on it, as on any other malformed key.
+- **`held` is an additive task status, with the `hold` and `release` verbs.** A held task
+  carries its reason in `blockedReason`, is skipped by the ready set, is not counted by the
+  gate's `blocked-tasks` condition and is not read as finished work by readiness, so a task
+  waiting on it keeps waiting. A plan that never holds a task validates and behaves exactly as
+  before: no existing status changed its meaning, and the new word is appended to the enum under
+  the standing exclusion below, so a reader switching on a status needs a default arm. The one
+  new validator rule asks a held task for its reason; no other task is asked anything new.
 - **A ledger written before the evidence rows were hash-chained keeps verifying.**
   Rows now carry `prev` and `hash`; rows written by an earlier release carry neither,
   and `audit-journal.py verify` reports those as a **counted warning naming what is
@@ -443,6 +450,10 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   earlier release minted still does - the widening is additive. An EARLIER plugin's
   validator refuses a suffixed id, so a team upgrades together rather than one clone
   at a time.
+- **That an older plugin accepts a plan carrying a `held` task.** From the release that
+  introduced the word the plan validates; an EARLIER plugin's validator refuses a status
+  outside its enum, so a team that holds a task upgrades together rather than one clone at a
+  time. Nothing here asks an older plan to change.
 - **Nothing about undoing a layout change beyond what `/audit:layout` does.** It moves
   in either direction (`/audit:migrate` is its old name). A layout is a *choice*, not
   an upgrade: a single-file manifest never goes out of date.

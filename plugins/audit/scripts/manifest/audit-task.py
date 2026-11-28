@@ -57,6 +57,10 @@ Usage:
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py unblock <taskId> --reason "<the human's why>|-" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
+  audit-task.py hold <taskId> --reason "<why it is left alone>|-" [manifest]
+                [--project-dir DIR] [--takeover] [--json]
+  audit-task.py release <taskId> --reason "<what changed>|-" [manifest]
+                [--project-dir DIR] [--takeover] [--json]
   audit-task.py note <taskId> --text "<what>|-" [manifest]
                 [--project-dir DIR] [--takeover] [--json]
   audit-task.py cancel <id> --reason "<why>|-" [manifest]
@@ -6636,6 +6640,15 @@ def _locked_start(args, project, config, mpath, tid, out):
             "by this verb; the follow-up is a new task (/audit:task add)"
             % (tid, status))
         return E_USAGE
+    if status == "held":
+        # BEFORE READINESS AND BEFORE `--force`: a hold is a person's decision to
+        # leave the task alone, and `--force` is the way past a dependency, not
+        # past a decision. A start that took the task would run it with the hold
+        # still on record.
+        out("[audit-task] %s is held: %s -- not started, nothing written. Lift "
+            "the hold first: /audit:task release %s --reason \"<what changed>\""
+            % (tid, node.get("blockedReason") or "(no reason recorded)", tid))
+        return E_USAGE
     ceiling = _attempt_ceiling(node)
     attempts = _mio.recorded_attempt(node) or 0
     if attempts + 1 > ceiling:
@@ -8764,6 +8777,11 @@ def _locked_block(args, project, config, mpath, tid, reason, out):
         out("[audit-task] %s is already %s -- terminal work is not blocked; the "
             "follow-up is a new task (/audit:task add)" % (tid, status))
         return E_USAGE
+    if status == "held":
+        out("[audit-task] %s is held: %s -- a block would overwrite the hold's "
+            "reason; lift the hold first (`release %s --reason ...`)"
+            % (tid, node.get("blockedReason") or "(no reason recorded)", tid))
+        return E_USAGE
     if status == "blocked":
         out("[audit-task] %s is already blocked: %s -- the reason on record "
             "stands; add what changed with /audit:task note %s --text \"...\""
@@ -8851,6 +8869,9 @@ def _unblock_refusal(node, tid):
                 "follow-up is a new task (/audit:task add)" % (tid, status))
     if status == "blocked":
         return None
+    if status == "held":
+        return ("%s is held, not blocked -- `release %s --reason ...` lifts a "
+                "hold" % (tid, tid))
     attempts = _mio.recorded_attempt(node) or 0
     if attempts < _attempt_ceiling(node):
         return ("%s is %s with %s of %s attempt(s) spent -- `start %s` still "
@@ -8915,6 +8936,161 @@ def _locked_unblock(args, project, config, mpath, tid, reason, out):
         out("  ADO: this plan links a board, and a task leaving blocked owes the "
             "ADO echo - this verb does not send it")
     _report_tail(out, jres, "task.unblock", warnings, written_manifest, written,
+                 index_note)
+    return 0
+
+
+# `hold` and `release`: a task parked on purpose, and the way back. `held` is not
+# `blocked`: a block waits on something (an endpoint, a reply, attempts spent) and
+# the gate counts it, where a hold is a decision to leave the task alone - the
+# ready set skips it and the gate does not count it. The reason is mandatory for
+# the same cause `block`'s is, and rides in the same `blockedReason` key, so the
+# merge rule that carries a block's status and reason carries a hold's too. A hold
+# is refused on terminal work, on a running task (a task in motion is stopped by
+# `block`, not parked) and on one already held, whose reason stands.
+def cmd_hold(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    tid = (args.title or "").strip()          # positional: the id to hold
+    if not tid:
+        out("[audit-task] hold needs a task id")
+        return E_USAGE
+    reason = (args.reason or "").strip()
+    if not reason:
+        out("[audit-task] hold needs --reason \"<why it is left alone>\" -- a "
+            "task held with no recorded why is one nobody can release with "
+            "confidence, and the validator refuses it")
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_hold(
+                           args, project, config, mpath, tid, reason, out))
+
+
+def _hold_refusal(node, tid):
+    """Why `node` cannot be held, or None."""
+    status = node.get("status")
+    if status in _mio.TERMINAL:
+        return ("%s is already %s -- terminal work is not held; the follow-up "
+                "is a new task (/audit:task add)" % (tid, status))
+    if status == "held":
+        return ("%s is already held: %s -- the reason on record stands; add what "
+                "changed with /audit:task note %s --text \"...\""
+                % (tid, node.get("blockedReason") or "(no reason recorded)", tid))
+    if status == "in_progress":
+        return ("%s is running -- a task in motion is stopped with `block %s "
+                "--reason ...`, and held only once it is not running" % (tid, tid))
+    return None
+
+
+def _locked_hold(args, project, config, mpath, tid, reason, out):
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    node, phase, refusal = _task_target(assembled, tid, "hold")
+    if refusal is None:
+        refusal = _hold_refusal(node, tid)
+    if refusal:
+        out("[audit-task] " + refusal)
+        return E_USAGE
+    status = node.get("status")
+    phase_id = phase.get("id")
+    changes = [{"id": tid, "field": "status", "from": status, "to": "held"},
+               {"id": tid, "field": "blockedReason",
+                "from": node.get("blockedReason"), "to": reason}]
+    node["status"] = "held"
+    node["blockedReason"] = reason
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [phase_id],
+                        "the hold", out)
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    jres = _journal_row(project, config, mpath, "task.hold",
+                        "%s held in %s, was %s: %s"
+                        % (tid, phase_id, status, reason),
+                        {"taskId": tid, "phaseId": phase_id, "reason": reason,
+                         "changes": changes})
+    index_note = _index_dirty_note(written, mpath, project, phase_id)
+    linked = bool(((assembled.get("meta") or {}).get("ado") or {}))
+    if args.as_json:
+        out(_json_tail({"ok": True, "id": tid, "phase": phase_id,
+                        "status": "held", "was": status, "reason": reason,
+                        "changes": changes, "adoEchoOwed": linked,
+                        "written": written},
+                       args, jres, warnings, written_manifest, index_note))
+        return 0
+    out("[audit-task] %s held in %s -- was %s: %s" % (tid, phase_id, status, reason))
+    if linked:
+        out("  ADO: this plan links a board, and the held word needs a stateMap "
+            "entry there to echo - this verb does not send one")
+    _report_tail(out, jres, "task.hold", warnings, written_manifest, written,
+                 index_note)
+    return 0
+
+
+def cmd_release(args, out):
+    project = _resolve_project(args)
+    if not os.path.isdir(project):
+        out("[audit-task] not a directory: %s" % project)
+        return E_USAGE
+    tid = (args.title or "").strip()          # positional: the id to release
+    if not tid:
+        out("[audit-task] release needs a task id")
+        return E_USAGE
+    reason = (args.reason or "").strip()
+    if not reason:
+        out("[audit-task] release needs --reason \"<what changed>\" -- the hold "
+            "was a recorded decision, and lifting it with no recorded why is the "
+            "hand edit this verb replaces")
+        return E_USAGE
+    return _under_lock(args, project, out,
+                       lambda config, mpath: _locked_release(
+                           args, project, config, mpath, tid, reason, out))
+
+
+def _locked_release(args, project, config, mpath, tid, reason, out):
+    plan = _read_plan(mpath, out)
+    if isinstance(plan, int):
+        return plan
+    raw_index, assembled, vm = plan
+    node, phase, refusal = _task_target(assembled, tid, "release")
+    if refusal is None and node.get("status") != "held":
+        refusal = ("%s is %s, not held -- `release` lifts a hold and nothing "
+                   "else (a blocked task is `unblock`'s)"
+                   % (tid, node.get("status")))
+    if refusal:
+        out("[audit-task] " + refusal)
+        return E_USAGE
+    phase_id = phase.get("id")
+    held_for = node.get("blockedReason")
+    changes = [{"id": tid, "field": "status", "from": "held", "to": "pending"},
+               {"id": tid, "field": "blockedReason", "from": held_for, "to": None}]
+    node["status"] = "pending"
+    node.pop("blockedReason", None)
+    wrote = _write_plan(project, mpath, raw_index, assembled, vm, [phase_id],
+                        "the release", out)
+    if isinstance(wrote, int):
+        return wrote
+    written, written_manifest, warnings = wrote
+    jres = _journal_row(project, config, mpath, "task.release",
+                        "%s released in %s, held for %s: %s"
+                        % (tid, phase_id, held_for or "(no reason recorded)",
+                           reason),
+                        {"taskId": tid, "phaseId": phase_id, "reason": reason,
+                         "changes": changes})
+    index_note = _index_dirty_note(written, mpath, project, phase_id)
+    if args.as_json:
+        out(_json_tail({"ok": True, "id": tid, "phase": phase_id,
+                        "status": "pending", "was": "held", "reason": reason,
+                        "heldFor": held_for, "changes": changes,
+                        "written": written},
+                       args, jres, warnings, written_manifest, index_note))
+        return 0
+    out("[audit-task] %s released in %s -- pending again, held for %s: %s"
+        % (tid, phase_id, held_for or "(no reason recorded)", reason))
+    _report_tail(out, jres, "task.release", warnings, written_manifest, written,
                  index_note)
     return 0
 
@@ -16143,6 +16319,9 @@ VERB_FLAGS = {
     "block": ("reason",),
     # `unblock` resets a spent attempt count on a human's word, and records it.
     "unblock": ("reason",),
+    # `hold` and `release` record why, so their one flag is `block`'s too.
+    "hold": ("reason",),
+    "release": ("reason",),
     # `note` appends one entry, and its text is its one flag; the drive's
     # timing stages ride the same write on `--stage`.
     "note": ("text", "stage"),
@@ -16233,9 +16412,9 @@ def build_parser():
                    choices=["add", "add-phase", "cancel", "scope",
                             "retarget", "start", "done", "seed", "next-id",
                             "signoff", "settle", "reopen", "move", "block",
-                            "unblock", "note", "couple", "uncouple", "finding",
-                            "resolve-finding", "correct", "bug-add",
-                            "bug-close", "reindex", "mute", "unmute",
+                            "unblock", "hold", "release", "note", "couple",
+                            "uncouple", "finding", "resolve-finding",
+                            "correct", "bug-add", "bug-close", "reindex", "mute", "unmute",
                             "record-listing", "build-command",
                             "default-skills", "file-return"])
     p.add_argument("title", nargs="?", default="")
@@ -17179,7 +17358,7 @@ def _dispatch(args, argv, out):
              "done": cmd_done, "seed": cmd_seed, "next-id": cmd_next_id,
              "signoff": cmd_signoff, "settle": cmd_settle,
              "reopen": cmd_reopen, "move": cmd_move, "block": cmd_block,
-             "unblock": cmd_unblock,
+             "unblock": cmd_unblock, "hold": cmd_hold, "release": cmd_release,
              "note": cmd_note, "couple": cmd_couple, "uncouple": cmd_uncouple,
              "finding": cmd_finding, "resolve-finding": cmd_resolve_finding,
              "correct": cmd_correct, "bug-add": cmd_bug_add,

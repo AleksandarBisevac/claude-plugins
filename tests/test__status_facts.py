@@ -2215,6 +2215,94 @@ def _gate_exemption_cases(check):
                               unknown) == ["open-high-bugs"])
 
 
+def _held_plan(word):
+    """One phase not started, three tasks all carrying `word` as their status (with
+    the reason a hold or a block records), and a fourth task that depends on the
+    first - so the same fixture reads under `held` and under `blocked`."""
+    return {
+        "meta": {"version": 2},
+        "phases": [
+            {"id": "PH", "title": "waiting", "status": "pending", "tasks": [
+                {"id": "PH.1", "title": "one", "status": word,
+                 "blockedReason": "waiting on the vendor"},
+                {"id": "PH.2", "title": "two", "status": word,
+                 "blockedReason": "waiting on the vendor"},
+                {"id": "PH.3", "title": "three", "status": word,
+                 "blockedReason": "waiting on the vendor"},
+                {"id": "PH.4", "title": "after one", "status": "pending",
+                 "dependsOn": ["PH.1"]},
+            ]},
+        ],
+        "bugs": [],
+        "fileIndex": {},
+    }
+
+
+def _status_cli(plan, argv_extra):
+    """`(exit, stdout)` of `audit-status.py <plan> <argv_extra>` over `plan`,
+    written to a scratch directory removed afterwards."""
+    scratch = tempfile.mkdtemp(prefix="ho-")
+    try:
+        path = os.path.join(scratch, "audit-plan.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh)
+        argv = [sys.executable,
+                os.path.join(_output.SCRIPTS_DIR, "status", "audit-status.py"),
+                path] + list(argv_extra)
+        env = dict((k, v) for k, v in os.environ.items()
+                   if k != _AMBIENT_TASK_VAR)
+        proc = subprocess.run(argv, cwd=scratch, env=env, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, timeout=120)
+        return proc.returncode, proc.stdout.decode("utf-8", "replace")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _held_cases(check):
+    """A held task is outside the ready set and outside the gate's blocked count,
+    and it is not finished work either."""
+    held = _held_plan("held")
+    blocked = _held_plan("blocked")
+    code_h, out_h = _status_cli(held, ["--gate", "--fail-on", "blocked-tasks"])
+    code_b, out_b = _status_cli(blocked, ["--gate", "--fail-on", "blocked-tasks"])
+    check("ho1 a plan of three held tasks in a phase not started passes "
+          "`--gate --fail-on blocked-tasks`: exit %r, %r" % (code_h, out_h[-160:]),
+          code_h == 0 and "GATE PASSED" in out_h and "GATE FAILED" not in out_h)
+    check("ho2 SECOND DIRECTION OF ho1: the same plan with the three BLOCKED "
+          "fails that gate on the count of three, so ho1 is not a gate that "
+          "cannot go red: exit %r, %r" % (code_b, out_b[-160:]),
+          code_b != 0 and "blocked-tasks" in out_b and "3 blocked" in out_b)
+    summ = M.rollup(held, [], [])
+    by_status = summ["tasks"]["byStatus"]
+    check("ho3 the rollup counts the three under `held` and not at all under "
+          "`blocked`: %r" % (by_status,),
+          by_status.get("held") == 3 and "blocked" not in by_status)
+    ready_h = M.ready_tasks(held)
+    ready_p = M.ready_tasks(_held_plan("pending"))
+    check("ho4 none of the three held tasks is ready, and the task depending on "
+          "a held one is not either - held is not finished - while the same "
+          "plan with the three PENDING readies PH.1-PH.3 and still holds PH.4 "
+          "back: held %r, pending %r" % (ready_h, ready_p),
+          ready_h == [] and sorted(ready_p) == ["PH.1", "PH.2", "PH.3"])
+    code_v, out_v = _status_cli(held, ["--gate", "--fail-on", "invalid"])
+    bare = _held_plan("held")
+    del bare["phases"][0]["tasks"][1]["blockedReason"]
+    code_n, out_n = _status_cli(bare, ["--gate", "--fail-on", "invalid"])
+    check("ho6 the plan of three held tasks VALIDATES - `held` is a status the "
+          "vocabulary and the schema accept: exit %r, %r" % (code_v, out_v[-200:]),
+          code_v == 0 and "GATE PASSED" in out_v)
+    check("ho7 SECOND DIRECTION OF ho6: a held task carrying no reason is a "
+          "finding - the one finding, the reason is mandatory - so ho6 is not a "
+          "validator that waves any plan through: exit %r, %r"
+          % (code_n, out_n[-200:]),
+          code_n != 0 and "(1 validator finding(s))" in out_n)
+    code_r, out_r = _status_cli(held, ["--short"])
+    check("ho5 the plain status reads `READY NOW  nothing` for the held plan and "
+          "lists no held id under it: exit %r, %r" % (code_r, out_r[-300:]),
+          code_r == 0 and "READY NOW  nothing" in out_r
+          and "run: /audit:run PH." not in out_r)
+
+
 def _timed_task(tid, first, completed, stages, status="done"):
     """A task carrying a timing record built by the module that builds one in
     production, so the stages here have the shape the drive writes."""
@@ -2671,6 +2759,7 @@ def _selftest():
         _harness.stage(check, "st", _trail_cases)
         _harness.stage(check, "tt", _timing_cases)
         _harness.stage(check, "gx", _gate_exemption_cases)
+        _harness.stage(check, "ho", _held_cases)
         _harness.stage(check, "iu", _intent_unanswered_cases)
         _harness.stage(check, "lf", _left_open_cases)
         _cases(check)

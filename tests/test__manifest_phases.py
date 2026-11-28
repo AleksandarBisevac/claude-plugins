@@ -92,6 +92,26 @@ def _cases(check):
           "around it is not a slip - the case that fails if TERMINAL is "
           "narrowed back to `done`", f == [], f)
 
+    _, f, _ = M._walk_phases([_phase(tasks=[
+        _task("P0.1", status="held", blockedReason="waiting on the vendor")])])
+    check("mph1 a held task carrying its reason is no finding: %r" % (f,), f == [])
+    _, f, _ = M._walk_phases([_phase(tasks=[_task("P0.1", status="held")])])
+    check("mph2 SECOND DIRECTION OF mph1: a held task with NO reason is one "
+          "finding naming the task and the missing reason, since a hold that "
+          "records no why is a task parked for ever: %r" % (f,),
+          len(f) == 1 and "P0.1" in f[0] and "held" in f[0] and "reason" in f[0])
+    _, f, _ = M._walk_phases([_phase(tasks=[
+        _task("P0.1", status="held", blockedReason="  ")])])
+    check("mph3 ...and a blank reason is no reason: %r" % (f,), len(f) == 1)
+    _, f, _ = M._walk_phases([_phase(status="done", tasks=[
+        _task("P0.1", status="held", blockedReason="waiting")])])
+    check("mph4 a phase marked done over a HELD task is the same slip as over a "
+          "pending one - held is not finished, so sign-off cannot pass it: %r"
+          % (f,), any("not finished" in x for x in f))
+    _, f, _ = M._walk_phases([_phase(tasks=[
+        _task("P0.1", status="pending", blockedReason="stale")])])
+    check("mph5 the reason is demanded of a HELD task alone - a pending task "
+          "carrying one is not this rule's: %r" % (f,), f == [])
     _, f, w = M._walk_phases([_phase(status="done",
                                      claim={"sessionId": "s", "branch": "b"})])
     check("mp10 a claim left on a finished phase is a WARNING: it is stale "

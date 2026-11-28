@@ -80,7 +80,13 @@ _output.install_path()
 # `cancelled` and not `deprecated`). The tuple naming that pair is `_manifest_io`'s
 # `TERMINAL`, re-exported from `_manifest_rules`: a phase signs off when every task
 # is finished, and a claim on a finished phase is stale whichever way it finished.
-STATUS = ("pending", "in_progress", "blocked", "done", "cancelled")
+# `held` is the word a person sets on purpose: work parked with a
+# recorded reason, neither waiting on something a gate can name (`blocked`) nor
+# ready (`pending`). It is not terminal - a held task is unfinished - so
+# readiness never reads it as a settled dependency, and it is not `pending`, so the
+# ready set skips it; the gate's blocked-task count does not include it either.
+# It is APPENDED, so every older word keeps its place.
+STATUS = ("pending", "in_progress", "blocked", "done", "cancelled", "held")
 TESTS_MODE = ("tdd", "regression", "gate-only")
 RISK = ("low", "med", "high", None)
 # Two of these close a bug and they are not the same answer. `wontfix` says the
@@ -154,8 +160,8 @@ def segment_of(status):
     the archive holds both TERMINAL states — `done` (it landed) and `cancelled`
     (it will not be done) — because the question a reader asks of the top of
     this table is "what is left", and finished-by-dropping is finished.
-    Everything else — pending, an unknown vocabulary value, a phase with no
-    status at all — is work still to come. Unknowns land in pending on purpose:
+    Everything else — pending, held, an unknown vocabulary value, a phase with
+    no status at all — is work still to come. Unknowns land in pending on purpose:
     a segment that silently swallowed a typo'd status would hide the phase the
     validator is about to flag."""
     if status in ("done", "cancelled"):

@@ -210,6 +210,19 @@ def _cases(check):
           "push `_manifest_rules` past the layer its consumers leave free",
           not hasattr(M, "TERMINAL") and _rules.TERMINAL is _mio.TERMINAL, "")
 
+    check("mv73 STATUS carries `held`, and it is neither terminal nor a segment "
+          "of its own: it files with the work still to come, beside `pending`, "
+          "because a held task is unfinished and a phase holding one is not "
+          "archived - STATUS %r, segment %r"
+          % (M.STATUS, M.segment_of("held")),
+          "held" in M.STATUS and "held" not in _mio.TERMINAL
+          and M.segment_of("held") == "pending")
+    check("mv74 SECOND DIRECTION OF mv73: the five words that were there are "
+          "still there and in their order, so `held` was added and nothing "
+          "renamed - a plan written before it keeps validating: %r"
+          % (M.STATUS[:5],),
+          M.STATUS[:5] == ("pending", "in_progress", "blocked", "done", "cancelled"))
+
     _shared = ("STATUS", "TESTS_MODE", "RISK", "BUG_STATUS", "BUG_ID_RE",
                "PROPOSAL_STATUS", "PROP_ID_RE", "KNOWN_ROOT", "KNOWN_META",
                "KNOWN_ADO", "KNOWN_PHASE", "CLAIM_KEYS", "KNOWN_TASK",

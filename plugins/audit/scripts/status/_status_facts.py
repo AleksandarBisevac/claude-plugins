@@ -238,8 +238,8 @@ def _phase_positions(manifest):
 
 
 def ready_tasks(manifest):
-    """Task ids ready to run — mirrors /audit's readiness rule: status pending,
-    own blockedBy satisfied, own dependsOn all done, phase blockedBy satisfied
+    """Task ids ready to run — mirrors /audit's readiness rule: status pending
+    (so a `held` or `blocked` task is never here), own blockedBy satisfied, own dependsOn all done, phase blockedBy satisfied
     ('satisfied' = referenced task/phase is done), then SORTED by phase priority.
 
     THE SORT IS THE WHOLE FEATURE AND IT CANNOT CHANGE THE SET. Readiness is
@@ -1798,6 +1798,9 @@ def evaluate_gate(summary, conditions, exempt=None):
             failed.append(c)
         elif c == "open-bugs" and summary["bugs"]["open"] > 0:
             failed.append(c)
+        # `blocked` ALONE: a `held` task is parked on purpose with a recorded
+        # reason, so it is not a task the gate is waiting on and is counted under
+        # its own word in `byStatus`, where `audit-status` prints it.
         elif c == "blocked-tasks" and summary["tasks"]["byStatus"].get(
                 "blocked", 0) > 0:
             failed.append(c)

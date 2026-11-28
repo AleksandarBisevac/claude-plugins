@@ -3301,7 +3301,8 @@
       "P155.6",
       "P156.4",
       "P168.5",
-      "P169.38-6l3"
+      "P169.38-6l3",
+      "P175.4-i91"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -3898,7 +3899,8 @@
       "P169.3",
       "P169.15-6l3",
       "P169.9",
-      "P169.37-6l3"
+      "P169.37-6l3",
+      "P175.4-i91"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -4384,7 +4386,8 @@
       "P131.1",
       "P131.2",
       "P165.4",
-      "P169.35-6l3"
+      "P169.35-6l3",
+      "P175.4-i91"
     ],
     "plugins/audit/scripts/config/_config_rules.py": [
       "P47.1",
@@ -6045,7 +6048,8 @@
       "P122.8-z4y",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P175.4-i91"
     ],
     "plugins/audit/scripts/manifest/repair-commits.py": [
       "P31.6",
@@ -6913,7 +6917,8 @@
       "P169.16-6l3",
       "P169.19-6l3",
       "P169.31-6l3",
-      "P169.34-6l3"
+      "P169.34-6l3",
+      "P175.4-i91"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -12138,7 +12143,8 @@
       "P169.9",
       "P169.15-6l3",
       "P169.38-6l3",
-      "P172.13-mrj"
+      "P172.13-mrj",
+      "P175.4-i91"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -13814,7 +13820,8 @@
       "P131.2",
       "P109.1",
       "P165.4",
-      "P169.35-6l3"
+      "P169.35-6l3",
+      "P175.4-i91"
     ],
     "tests/test__usage_bench.py": [
       "P131.1",
@@ -13970,7 +13977,8 @@
       "P169.19-6l3",
       "P169.31-6l3",
       "P169.32-6l3",
-      "P169.34-6l3"
+      "P169.34-6l3",
+      "P175.4-i91"
     ],
     "tests/test_audit_task.py": [
       "P131.1",
@@ -14446,7 +14454,8 @@
       "P131.1"
     ],
     "tests/test_read_ado_links.py": [
-      "P131.1"
+      "P131.1",
+      "P175.4-i91"
     ],
     "tests/test_record_outside_run.py": [
       "P131.1",
@@ -15211,6 +15220,9 @@
     ],
     "changelog.d/P175.3.added.md": [
       "P175.3"
+    ],
+    "changelog.d/P175.4-i91.added.md": [
+      "P175.4-i91"
     ]
   },
   "bugs": [
