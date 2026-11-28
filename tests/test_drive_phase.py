@@ -17839,7 +17839,7 @@ def _fix_by_gate_moved_filings(check, M, proj, task_u, phase, plan_u):
         return {"runId": run_id, "ts": _STEP_START, "status": _evio.RUN_PASSED,
                 "taskId": task_u["id"], "phaseId": phase["id"],
                 "gateDigest": gate or gate_now,
-                "testedState": {"scopeDigest": digest_now()},
+                "testedState": {"scopeDigest": digest_now(), "head": "abc1234"},
                 "steps": [{"name": "true", "command": "true", "exit": 0,
                            "ran": 3, "measured": "checks"}],
                 "observations": {"coverage": [src, rel]}}
@@ -17959,10 +17959,18 @@ def _fix_by_gate_filing_units(check, M, task_u, phase, plan_u, full):
         ctx0["project"], task_u["files"], excluded=_evio.recorded_paths(
             ctx0["project"], ctx0["manifest"], ctx0["config"])[0])[0]
 
-    def filed_over(row, block, fallback=None, owes=None):
-        row = dict(row, testedState=row.get("testedState")
-                   or {"scopeDigest": scope_now})
-        M.recorded_runs = lambda ctx: {"rows": [row]}
+    def placed(row):
+        # Measured on the tree being filed, at the HEAD the proof was made at,
+        # unless the row says otherwise.
+        return dict(row, testedState=row.get("testedState")
+                    or {"scopeDigest": scope_now, "head": "abc1234"})
+
+    def filed_over(row, block, fallback=None, owes=None, ledger=()):
+        # `ledger`: the other rows the ledger holds beside the held run - the
+        # run a held repeat copied its verdict from, say.
+        row = placed(row)
+        rows = [row] + [placed(r) for r in ledger]
+        M.recorded_runs = lambda ctx: {"rows": list(rows)}
         M.run_verb, calls = _verb_rig({
             ("stamp-verification.py", "red"): (0, fallback or full, ""),
             ("stamp-verification.py", "take"): (0, _TAKEN, ""),
@@ -18081,6 +18089,81 @@ def _fix_by_gate_filing_units(check, M, task_u, phase, plan_u, full):
           out is None and count == 1 and asked == []
           and _fr.FIX_LEG_RUN_FIELD not in red and _fr.FIX_LEG_FIELD not in red)
     _fix_by_gate_sweep_units(check, filed_over, named, step, held_block)
+    _fix_by_gate_repeat_units(check, filed_over, named, step, held_block,
+                              scope_now)
+
+
+def _fix_by_gate_repeat_units(check, filed_over, named, step, held_block,
+                              scope_now):
+    """A green task gate the drive ran in the background is read back as a
+    repeat: the drive's own ask repeats the verdict the background run
+    measured, records a row that ran nothing (`verdictSource: reused`) naming
+    that run (`reusedFrom`), and marks THAT row as the held green. The fix leg
+    binds through the repeat to the run that measured it - the source's steps,
+    coverage and HEAD are what is read, and the bound id is the source's -
+    and every way the source cannot stand refuses, for its own reason."""
+    def repeat(run_id, source_id):
+        # As a repeat reads back off the plan's record: the source's steps,
+        # each marked as copied from it, no coverage and no tested state.
+        source = {"runId": source_id, "ts": _STEP_START}
+        return {"runId": run_id, "status": _evio.RUN_PASSED,
+                "steps": [dict(step, **{_evio.STEP_REUSED_KEY: source})],
+                _evio.VERDICT_SOURCE: _evio.REUSED,
+                "reusedFrom": dict(source, status=_evio.RUN_PASSED),
+                "testedState": {}, "observations": {"coverage": None}}
+
+    out, asked, red, did, count = filed_over(
+        repeat("R40", "R41"), held_block, ledger=[dict(named, runId="R41")])
+    basis = str(red.get("basis") or "")
+    check("fbr1 a held green that repeats the verdict of a run which passed and "
+          "ran the proof's own step binds the fix leg to THAT run: the block "
+          "names the measured run as `fixLegRunId`, its basis names both the "
+          "held repeat and the run it repeats, and no helper run is made: %r"
+          % ((out, asked, red.get(_fr.FIX_LEG_RUN_FIELD), basis[-240:], count),),
+          out is None and count == 1 and asked == []
+          and red.get(_fr.FIX_LEG_FIELD) == _fr.FIX_LEG_BY_GATE
+          and red.get(_fr.FIX_LEG_RUN_FIELD) == "R41"
+          and "R40" in basis and "run R41" in basis and "3 check(s)" in basis)
+    # Each refusal is read for its own reason, so a case cannot pass on an arm
+    # another case was written for.
+    for case, row, ledger, why in (
+            # The run the repeat names is not in the ledger.
+            ("fbr2", repeat("R42", "R99"), [],
+             "a repeat whose source is gone names no tree"),
+            # The repeat copied a green, but the run it names did not pass.
+            ("fbr3", repeat("R43", "R44"),
+             [dict(named, runId="R44", status="failed")], "run R44 is failed"),
+            # A row that measured some steps and copied the proof's: the copied
+            # step ran nothing here, and a part-reused row is its own answer.
+            ("fbr4", dict(named, runId="R45",
+                          **{_evio.VERDICT_SOURCE: _evio.PART_REUSED,
+                             "reusedFrom": {"runId": "R46"},
+                             "steps": [dict(step, **{_evio.STEP_REUSED_KEY: {
+                                 "runId": "R46", "ts": _STEP_START}})]}),
+             [dict(named, runId="R46")],
+             "repeated another run's measurement rather than ran"),
+            # The measured run ran at another HEAD than the proof was made at.
+            ("fbr5", repeat("R47", "R48"),
+             [dict(named, runId="R48", testedState={
+                 "scopeDigest": scope_now, "head": "def5678"})],
+             "def5678")):
+        out, asked, red, did, count = filed_over(row, held_block, ledger=ledger)
+        check("%s a held green whose %s binds nothing, for that reason: the "
+              "helper makes the fix leg and the proof it files names no gate "
+              "run: %r"
+              % (case, {"fbr2": "repeat names a run the ledger does not hold",
+                        "fbr3": "repeat names a run that did not pass",
+                        "fbr4": "proof's step was copied from another run on a "
+                                "part-reused row",
+                        "fbr5": "measured run ran at another HEAD than the "
+                                "proof's"}[case],
+                 (out, asked, red, did, count)),
+              out is None and count == 1 and len(asked) == 1
+              and "--fix-by-gate" not in _helper_flags(asked[0])
+              and _fr.FIX_LEG_FIELD not in red
+              and _fr.FIX_LEG_RUN_FIELD not in red
+              and any(row["runId"] in d and "fix leg" in d and why in d
+                      for d in did))
 
 
 def _fix_by_gate_sweep_units(check, filed_over, named, step, held_block):
@@ -18140,6 +18223,74 @@ def _fix_by_gate_sweep_units(check, filed_over, named, step, held_block):
               and _fr.FIX_LEG_RUN_FIELD not in red
               and any(row["runId"] in d and "fix leg" in d and why in d
                       for d in did))
+
+
+def _fix_by_gate_repeat_real_cases(check):
+    """The repeat `fbr1` reads, built the way the drive meets it rather than
+    as a row written by hand: the task's gate recorded twice through the real
+    `run-test-gate.py`, the second run repeating the first's green verdict -
+    the background run and the drive's own ask after it. The held green is
+    the repeat, and the fix leg binds to the run that measured it."""
+    M, why = _load("drive_phase_fix_by_gate_repeat_real")
+    if M is None:
+        check("fbr6 the driver loads", False, why)
+        return
+    root, mpath = _tdd_writer_repo(
+        "fbr-real", (_wf_gate(),),
+        head_test=_wf_pytest_suite([("old1", "mine.v >= 1")]))
+    # The writer's work: the fix and the new case beside the old one.
+    _write_lf(os.path.join(root, *_WF_SRC.split("/")), "v = 2\n")
+    _write_lf(os.path.join(root, *_WF_TEST.split("/")), _wf_pytest_suite(
+        [("old1", "mine.v >= 1"), ("new1", "mine.v == 2")]))
+    argv = ["python3", _loader.script_path("run-test-gate.py"), mpath, PHASE,
+            "--task", "P1.1", "--record", "--project-dir", root]
+    runs = [_play_gate(root, argv) for _n in range(2)]
+    rows = _rows_of(root, mpath, "P1.1")
+    repeats = [r for r in rows if r.get(_evio.VERDICT_SOURCE) == _evio.REUSED]
+    measured = [r for r in rows if r.get(_evio.VERDICT_SOURCE) != _evio.REUSED]
+    source = measured[0].get("runId") if len(measured) == 1 else None
+    held = repeats[0].get("runId") if len(repeats) == 1 else None
+    head = _head_of(root)
+    ns = argparse.Namespace(project_dir=root, manifest=mpath, verbose=False,
+                            phase=PHASE, task_only=False)
+    bound = None
+    with _Env(root):
+        try:
+            ctx = M.context(ns)
+            ctx.setdefault("did", [])
+            manifest, phase = M.load_phase(ctx)
+            task = phase["tasks"][0]
+            state = {}
+            M._mark(state, "gated", task, {"runId": held, "at": _now_stamp(),
+                                           "tree": None, "failing": []})
+            proof = {"head": head, M.FIX_LEG_OWES: {"collected": 2},
+                     "block": {"status": "proved", "head": head,
+                               _fr.FIX_LEG_FIELD: _fr.FIX_LEG_BY_GATE,
+                               "testDigest": {"files": [
+                                   {"path": _WF_TEST,
+                                    "sha256": _sha_of(root, _WF_TEST)}]}}}
+            bound = M.gate_binding(ctx, state, manifest, phase, task, proof)
+        except Exception as exc:                               # noqa: BLE001
+            bound = "%s: %s" % (type(exc).__name__, exc)
+    clause = bound[1] if isinstance(bound, tuple) else None
+    copied = repeats[0].get("steps") if repeats else None
+    check("fbr6 the task gate recorded twice through the real run-test-gate - "
+          "the second run repeating the first's green - holds a repeat whose "
+          "every step is one copied from the run it repeats, and the fix leg "
+          "binds through it to the run that measured it, the clause naming "
+          "both: %r"
+          % (([(c, o[-200:]) for c, o in runs], held, source,
+              (repeats[0].get("reusedFrom") if repeats else None), copied,
+              bound),),
+          [c for c, _o in runs] == [0, 0] and held is not None
+          and source is not None
+          and ("verdict reused from run %s" % (source,)) in runs[1][1]
+          and isinstance(copied, list)
+          and all(_evio.step_repeated(s) for s in copied)
+          and (repeats[0].get("reusedFrom") or {}).get("runId") == source
+          and isinstance(bound, tuple) and bound[0] == source
+          and bound[2] is None and isinstance(clause, str)
+          and held in clause and source in clause)
 
 
 def _fix_by_gate_drift_units(check, M, task_u, src):
@@ -22116,6 +22267,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("us-block", "_signoff_unit_cases"),
           ("uv-block", "_signoff_verb_cases"),
           ("ux-block", "_steps_unit_cases"),
+          ("fbr-block", "_fix_by_gate_repeat_real_cases"),
           ("uw-block", "_steps_verb_cases"),
           ("e2e-wave", "_e2e_wave_cases"),
           ("uy-block", "_wave_unit_cases"),

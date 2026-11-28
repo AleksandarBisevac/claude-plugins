@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-28T01:46:38Z",
+    "basis": "`python3 tests/test_drive_phase.py --selftest --stage ux-block` in a throwaway tree at HEAD exited 1 with 4 of 172 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fbr1 (house FAIL), fbr2 (house FAIL), fbr3 (house FAIL), fbr5 (house FAIL): SELFTEST FAILED: 168/172 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from; task leg keyed on the declared tests' code without comments (sha256:a93c4e84152a1b4ea39e67515915e8785f802223ee98b22ad28c0c161a132365; a file that is not Python or does not tokenize by its bytes), which does not cover a test reading its own comments or line numbers",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: held_and_measured(ctx, run_id) reads the recorded runs once and returns (row, measured, why); the measured row comes from _evio.measured_row, so a repeat is followed to the run its reusedFrom names. A repeat whose source the ledger does not hold is refused ('a repeat whose source is gone names no tree'). gate_binding reads steps, coverage and testedState.head off the measured row, requires both rows passed, checks the measured head against proof['head'] with _evio.same_head, returns the measured run's id (fixLegRunId), and the clause names both ids when the held green was a repeat; a part-reused step stays refused by step_standing. Docstring rewritten. tests/test_drive_phase.py: fbr1-fbr5 (ux-block) build the repeat as it reads back; fbr6 (fbr-block) runs the real run-test-gate.py --task --record twice and calls gate_binding on the real ledger. tests/test__evidence_io.py: held_and_measured row added to the bb-drive-sites table (scope widened by the orchestrator; bb-drive-sites was the only red of the previous gate). PLUGIN-BUILD-GUIDE.md fix-leg paragraph updated; changelog.d/P174.1.fixed.md added. Verification: in the tree, python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_drive_phase.py exit 0, '2/2 files ok, 1776 cases'; git diff HEAD --stat shows PLUGIN-BUILD-GUIDE.md, drive-phase.py, test__evidence_io.py, test_drive_phase.py (changelog fragment untracked). Mutation probes from attempt 1 (head check dropped -> fbr5 red; measured=row -> fbr1 fbr2 fbr3 fbr5 fbr6 red; coverage off held row -> fbr1 fbr6 red; source status check dropped -> fbr3 red; held id bound -> fbr1 fbr6 red; head check always refusing -> fbg3 fbg15 fbg17-20 fbm1 fbm3 fbm4 fbr1 fbr4 fbr6 red). Dependants unchanged and still correct: importers of drive-phase.py (no signature changed, none calls gate_binding), file_writer_return (writes the returned id, now the measured run's), _filed_returns.fix_leg_problem and its basis text (require and print a non-empty run id), held_green_moved (already read the measured row), fbg*/fbm* (fixtures gained testedState.head 'abc1234'). Outside my files, not edited: plugins/audit/reference/execute-task.md:371-373 does not say a held repeat is followed to its measured run; incomplete, not false, for a later docs task. This attempt changed no code; it confirmed the diff and the sweep and submitted.",
+    "descriptive": "A background task gate read back as a repeat now stands for the fix leg: the drive follows it to the run that measured it, binds that run, and still refuses a missing, failed, part-reused or other-head source."
+  },
+  "testsAdded": [
+    "a held repeat whose measured source passed and ran the proof's step binds, naming the source run (fbr1-fbr2)",
+    "a missing or failed source, a part-reused step, or another head refuses (fbr3-fbr5)",
+    "one case builds the repeat through the real run-test-gate twice (fbr6)"
+  ],
+  "casesAdded": [
+    [
+      "fbr1",
+      "fbr2",
+      "fbr3",
+      "fbr4",
+      "fbr5",
+      "fbr6"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py held_and_measured and gate_binding hold the described reads; the clause names both run ids\n2 mutations listed in outcome.technical went red and were restored in attempt 1; the red-first helper re-ran in this submit\n3 n/a - no register fault cited\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard reading a command\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:40e60e7e27a5e0f6bf41d821f8d6a914f684114fc338280ea4aaf1997803354c\",\"dirtyDigest\":\"sha256:91560f1eb4ebfca098f8c45c8982e1a8a076670ae1d6caa3fa8ec617cea3a631\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"6591ce3173f8d4db\",\"changelog.d/P174.1.fixed.md\":\"7b06b9c0aa1d31a5\",\"plugins/audit/scripts/governance/drive-phase.py\":\"840855cf04360cd9\",\"tests/test__evidence_io.py\":\"2a0031d903456f82\",\"tests/test_drive_phase.py\":\"0e79c5aa4d8d68f5\"},\"head\":\"8bf7e194\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"changelog.d/P174.1.fixed.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test__evidence_io.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:2ba4c5c6c5a317bb172d22d119f45441d046e3f532af8002f2fb46961caa51bb\",\"v\":2}",
+  "testsAddGaps": [
+    "tests/test_drive_phase.py: a held repeat whose measured source passed and ran the proof's step binds, naming the source run; a missing or failed source, a part-reused step, or another head refuses; one case builds the repeat through the real run-test-gate twice - bound to `fbr6`, which the suite did not print"
+  ],
+  "testsAddUnchecked": []
+}

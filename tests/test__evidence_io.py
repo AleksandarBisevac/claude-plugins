@@ -11388,6 +11388,9 @@ _BB_DRIVE_SITES = {
                      "(cases gu1 and gu2 of tests/test_drive_phase.py)",
     "held_green_moved": _BB_BY_ID + " (the `gated` mark's), then the run it "
                         "repeated; a row it cannot read binds nothing",
+    "held_and_measured": _BB_BY_ID + " (the `gated` mark's), then the run it "
+                         "repeated (`measured_row`); a repeat whose source is "
+                         "gone binds nothing",
 }
 
 

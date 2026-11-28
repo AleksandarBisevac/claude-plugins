@@ -6045,28 +6045,67 @@ def regate_moved_green(ctx, state, manifest, phase, task, tree=None):
     return gate_step(ctx, state, manifest, phase, task, tree)
 
 
+def held_and_measured(ctx, run_id):
+    """`(row, measured, None)` - the recorded run `run_id` and the run that
+    measured what it says: `row` itself, or for a repeated verdict the run its
+    `reusedFrom` names (`_evidence_io.measured_row`, the one reader of that
+    key) - or `(row or None, None, why)`. A repeat whose run the ledger does
+    not hold measured nothing anyone can read, so it is refused by name rather
+    than read as the run it copied."""
+    try:
+        read = recorded_runs(ctx)
+    except Exception as exc:                                   # noqa: BLE001
+        return None, None, "run %s: %s" % (run_id, ledger_unread(exc))
+    row = _evio.row_by_run(read["rows"], run_id)
+    if row is None:
+        return None, None, "run %s: %s" % (run_id, _evio.run_not_found(
+            ctx["project"], read, ctx["manifest"], run_id, ctx["config"]))
+    measured = _evio.measured_row(read["rows"], row)
+    if not isinstance(measured, dict):
+        source = (row.get("reusedFrom") or {}).get("runId")
+        return row, None, (
+            "run %s repeated the verdict of %s, which the ledger does not hold: "
+            "a repeat whose source is gone names no tree"
+            % (run_id, "run %s" % (source,) if source else "a run it does not "
+               "name"))
+    return row, measured, None
+
+
 def gate_binding(ctx, state, manifest, phase, task, proof, tree=None):
-    """`(runId, clause, None)` - the green recorded task-gate run the writer's
-    return is filed over (the `gated` mark's), when it stands for the fix leg
-    the held fix-by-gate `proof` left to it, and the basis clause saying what
-    that run showed - or `(None, None, why)`.
+    """`(runId, clause, None)` - the recorded task-gate run that measured the
+    green the writer's return is filed over, when it stands for the fix leg the
+    held fix-by-gate `proof` left to it, and the basis clause saying what that
+    run showed - or `(None, None, why)`.
+
+    THE HELD GREEN MAY BE A REPEAT, AND THE RUN READ IS THE ONE IT REPEATS.
+    The `gated` mark names the run the drive's own gate step recorded, and on
+    the writer path that step asks after a background run that already
+    measured the tree, so it repeats that run's verdict: its row ran nothing,
+    its steps are copies marked as such and it records no coverage or HEAD.
+    The steps, the coverage and the HEAD are therefore read off the measured
+    row (`held_and_measured`), both rows must be green, and the id bound is
+    the measured run's - the clause names both. A repeat whose source the
+    ledger does not hold refuses. A part-reused row is its own measured row,
+    and a step it copied stays refused (`step_standing`).
 
     IT HOLDS FOR THE TREE BEING FILED FIRST (`held_green_moved`): the gate it
     ran under is the one the task resolves to now, and the declared files -
     the implementation among them - are the bytes it recorded reading. The
     filing re-gates a run that does not (`regate_moved_green`) before it asks
-    here, so a run refused for this reason is one that moved again since.
+    here, so a run refused for this reason is one that moved again since. The
+    measured run's recorded HEAD must be the one the proof was made at
+    (`_evidence_io.same_head`): a run at another commit read other tests.
 
-    IT STANDS WHEN IT RAN THE PROOF'S OWN COMMAND: a step of the run whose
-    command is the one the helper proved the red with (`writer_test_text`),
-    passing as `step_standing` reads it - so a gate entry left to the phase
-    gate (`executor.phaseGateOnly`), or narrowed into another spelling, is no
-    step of the run and binds nothing - and when the run named each test file
-    the proof was made over, whole: among the declared files its coverage
-    recorded (`observations.coverage`), matched as `_evidence_io.listed_by`
-    matches a suite. A row keeps no coverage per step, so the file is read off
-    the run's whole reading; the step is the proof's own command, which is the
-    one the helper's fix leg would have run."""
+    IT STANDS WHEN IT RAN THE PROOF'S OWN COMMAND: a step of the measured run
+    whose command is the one the helper proved the red with
+    (`writer_test_text`), passing as `step_standing` reads it - so a gate entry
+    left to the phase gate (`executor.phaseGateOnly`), or narrowed into another
+    spelling, is no step of the run and binds nothing - and when the run named
+    each test file the proof was made over, whole: among the declared files
+    its coverage recorded (`observations.coverage`), matched as
+    `_evidence_io.listed_by` matches a suite. A row keeps no coverage per step,
+    so the file is read off the run's whole reading; the step is the proof's
+    own command, which is the one the helper's fix leg would have run."""
     block = proof.get("block") or {}
     paths = proof_test_paths(block)
     if not paths:
@@ -6082,38 +6121,56 @@ def gate_binding(ctx, state, manifest, phase, task, proof, tree=None):
     moved = held_green_moved(ctx, state, manifest, task, tree)
     if moved is not None:
         return None, None, moved
-    row, why = ledger_row(ctx, run_id)
-    if row is None:
-        return None, None, "run %s: %s" % (run_id, why)
-    if row.get("status") != _evio.RUN_PASSED:
-        return None, None, "run %s is %s, not %s" % (
-            run_id, row.get("status") or "of no status", _evio.RUN_PASSED)
-    steps = proof_steps(row, command)
+    row, measured, why = held_and_measured(ctx, run_id)
+    if measured is None:
+        return None, None, why
+    source = str(measured.get("runId") or run_id)
+    repeated = source != run_id
+    # Every refusal read off the measured row names the held repeat as well,
+    # so the reader can follow the mark to the run that was read.
+    said = ("run %s (whose verdict held run %s repeated)" % (source, run_id)
+            if repeated else "run %s" % (run_id,))
+    for which in ([row, measured] if repeated else [row]):
+        if which.get("status") != _evio.RUN_PASSED:
+            return None, None, "run %s is %s, not %s%s" % (
+                which.get("runId"), which.get("status") or "of no status",
+                _evio.RUN_PASSED, " - the run whose verdict run %s repeated"
+                % (run_id,) if which is measured and repeated else "")
+    head = (measured.get("testedState") or {}).get("head")
+    if not _evio.same_head(head, proof.get("head")):
+        return None, None, (
+            "%s was measured at HEAD %s and the proof was made at %s, so it "
+            "did not run the tests the proof read"
+            % (said, head or "it did not record", proof.get("head")
+               or "a HEAD it does not name"))
+    steps = proof_steps(measured, command)
     if not steps:
-        return None, None, ("run %s ran no step of the proof's command `%s` (left "
+        return None, None, ("%s ran no step of the proof's command `%s` (left "
                             "to the phase gate, spelled otherwise, or not in the "
                             "task's gate), so it did not show the proof's tests "
-                            "passing" % (run_id, command))
+                            "passing" % (said, command))
     owes = proof.get(FIX_LEG_OWES)
     for step in steps:
-        why = step_standing(run_id, step, command, owes)
+        why = step_standing(source, step, command, owes)
         if why is not None:
             return None, None, why
-    named = (row.get("observations") or {}).get("coverage")
+    named = (measured.get("observations") or {}).get("coverage")
     if not isinstance(named, list):
-        return None, None, ("run %s recorded no coverage of the declared files, "
+        return None, None, ("%s recorded no coverage of the declared files, "
                             "so whether it ran %s is not known"
-                            % (run_id, ", ".join(paths)))
+                            % (said, ", ".join(paths)))
     missing = [p for p in paths if not _evio.listed_by(p, named)]
     if missing:
-        return None, None, "run %s did not name %s" % (run_id, ", ".join(missing))
+        return None, None, "%s did not name %s" % (said, ", ".join(missing))
     ran = min(step_count(s) for s in steps)
-    return run_id, (
-        "; fix leg: the task gate's green run %s, held for this start, ran the "
+    return source, (
+        "; fix leg: the task gate's green run %s, held for this start%s, ran the "
         "proof's command `%s` as a step of its own, exit 0 over %d check(s) - "
         "no fewer than the task leg's %d collected - and named %s, its "
         "recorded digest of the declared files matching them as filed" % (
-            run_id, command, ran, owes["collected"], ", ".join(paths))), None
+            source, " as run %s, which repeated its verdict" % (run_id,)
+            if repeated else "", command, ran, owes["collected"],
+            ", ".join(paths))), None
 
 
 def fix_leg_proof(ctx, state, manifest, phase, task, why, tree=None):

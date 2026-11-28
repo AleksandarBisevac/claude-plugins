@@ -1109,6 +1109,12 @@
       "title": "The red-first proof is timed and costs one run, not three",
       "status": "done",
       "shard": "phases/P173.json"
+    },
+    {
+      "id": "P174",
+      "title": "A green task gate stands for the fix leg, so the red-first proof runs once",
+      "status": "in_progress",
+      "shard": "phases/P174.json"
     }
   ],
   "fileIndex": {
@@ -2246,7 +2252,10 @@
       "P173.14-s6m",
       "P173.15-s6m",
       "P173.16-s6m",
-      "P173.17-s6m"
+      "P173.17-s6m",
+      "P174.1",
+      "P174.2",
+      "P174.3"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3835,7 +3844,8 @@
       "P169.38-6l3",
       "P173.6",
       "P173.14-s6m",
-      "P173.17-s6m"
+      "P173.17-s6m",
+      "P174.2"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -4746,7 +4756,9 @@
       "P172.3",
       "P172.10-mrj",
       "P173.8",
-      "P173.14-s6m"
+      "P173.14-s6m",
+      "P174.3",
+      "P174.4"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -5275,7 +5287,9 @@
       "P173.8",
       "P173.11-s6m",
       "P173.14-s6m",
-      "P173.16-s6m"
+      "P173.16-s6m",
+      "P174.3",
+      "P174.4"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -11811,7 +11825,9 @@
       "P173.10-s6m",
       "P173.12-s6m",
       "P173.14-s6m",
-      "P173.17-s6m"
+      "P173.17-s6m",
+      "P174.1",
+      "P174.2"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -13364,7 +13380,10 @@
       "P172.3",
       "P173.8",
       "P173.14-s6m",
-      "P173.17-s6m"
+      "P173.17-s6m",
+      "P174.1",
+      "P174.3",
+      "P174.4"
     ],
     "tests/test__evidence_view.py": [
       "P131.1",
@@ -14239,7 +14258,9 @@
       "P173.12-s6m",
       "P173.13-s6m",
       "P173.14-s6m",
-      "P173.17-s6m"
+      "P173.17-s6m",
+      "P174.1",
+      "P174.2"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -14521,7 +14542,8 @@
       "P173.11-s6m",
       "P173.13-s6m",
       "P173.14-s6m",
-      "P173.16-s6m"
+      "P173.16-s6m",
+      "P174.3"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -15128,6 +15150,18 @@
     ],
     "changelog.d/P173.17-s6m.fixed.md": [
       "P173.17-s6m"
+    ],
+    "changelog.d/P174.1.fixed.md": [
+      "P174.1"
+    ],
+    "changelog.d/P174.2.changed.md": [
+      "P174.2"
+    ],
+    "changelog.d/P174.3.fixed.md": [
+      "P174.3"
+    ],
+    "changelog.d/P174.4.added.md": [
+      "P174.4"
     ]
   },
   "bugs": [

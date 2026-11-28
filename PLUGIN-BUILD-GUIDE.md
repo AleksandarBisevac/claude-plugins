@@ -6335,8 +6335,17 @@ files must carry its own printed count on the step (`_evidence_io.sweep_file_cas
 than the task run's for it - the sweep's total spans every file it swept, so one file's missing
 case would hide behind the others' - and a file whose count was never printed is unknown and
 leaves it unbound. The `fbg17`-`fbg20` cases hold the sweep's binding in both directions, each
-refusal read for its own reason. The run's id goes to
-`redFirst.fixLegRunId` and a clause saying what the run showed to the basis; the block carries no
+refusal read for its own reason. The held green is usually a repeat: on the writer path the gate
+ran in the background and the drive's own ask after it repeated that verdict, so the held row
+measured nothing, its steps are copies marked as such, and it records no coverage or HEAD. So
+every reading above is taken off the run that measured it (`held_and_measured`, through
+`_evidence_io.measured_row`), both rows must be green, and that run's recorded HEAD must be the
+one the proof was made at (`_evidence_io.same_head`). A repeat whose source the ledger no longer
+holds binds nothing, and a part-reused row is its own measured row, so a step it copied stays
+refused. `fbr1`-`fbr5` hold the binding and each refusal over rows, and `fbr6` builds the repeat
+through the real `run-test-gate.py` recorded twice. The measured run's id goes to
+`redFirst.fixLegRunId` and a clause saying what the run showed to the basis - naming the held
+repeat too, when there was one; the block carries no
 `implementationDigest`, since no fix run of it read the implementation (`writer_prove` puts none
 on it, and the filing drops one a held block still carries). Any other run has the helper make
 the fix leg after all (`fix_leg_proof`, `red` without the flag), and that proof is held and filed

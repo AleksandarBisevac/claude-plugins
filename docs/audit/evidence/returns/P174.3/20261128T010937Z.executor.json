@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py": "pass",
+    "python3 tools/lints/_deps.py --register-citations": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-28T01:26:11Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py` in a throwaway tree at HEAD exited 1 with 1 of 821 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - swc6 (house FAIL): SELFTEST FAILED: 820/821 cases passed; --case swk1 names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; task leg keyed on the declared tests' code without comments (sha256:5e0c7ed36e2af0cf4e75eced3d5d4918b640babaaa3aadf728c0564f7a2f7007; a file that is not Python or does not tokenize by its bytes), which does not cover a test reading its own comments or line numbers",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "_evidence_io.py: added public sweep_path_key (backslash to '/', leading './' stripped) and sweep_cases(text, keep=()) which orders kept files (compared under the key) first sorted, then the rest sorted, then cuts at MAX_PATHS with filesDropped as before; a kept path the sweep did not print gets no row. run-test-gate.py: added declared_test_files(manifest, phase_id, task_id) (tests.add paths via _manifest_phases.tests_add_path), run_gate(..., sweep_keep=()) carried through the reading dict into _gate_step and observed_step(..., sweep_keep=()) (both attempts), main passes the declared files on the measured gate run (task scope only; phase gate and full gate and base runs pass none). Tests: tests/test__evidence_io.py swk1-swk6 (new swk-block in STAGES): kept file sorting last survives and 20 others dropped, no keep unchanged and unprinted keep invents no row, backslash/./ twins and CRLF text read the same, kept files sorted first whatever order named, sweep_path_key, allow case inside bound. tests/test_run_test_gate.py swc6/swc7: a recorded task run over a 61-file fixture sweep keeps the declared file's count first (61 cases); the phase gate over the same sweep still cuts it (over-fire guard). PLUGIN-BUILD-GUIDE.md sweep section and changelog.d/P174.3.fixed.md written. Runs: python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py exit 0 (2/2 files ok, 1442 cases); python3 tools/lints/_deps.py --register-citations exit 0; python3 tools/release.py changelog-check exit 0; prose_number_claims, house_style_violations, path_preamble_violations, doc_prose_numbers read empty. Process deviation: the PLUGIN-BUILD-GUIDE.md paragraph was inserted with a python heredoc and the changelog fragment written with cat, not the Edit tool as ordered; the plan gate did not refuse either. Dependants: sweep_file_cases readers in drive-phase unchanged and still correct (reader shape untouched, only the order and membership of files under the cut changed); RECORD_CUT_ORDER does not cover sweepCases, unchanged; run-test-gate.py importers (drive-phase, full-gate, tests) still correct since sweep_keep and keep are optional with empty defaults and observed_step's existing positional callers are unchanged; _evidence_io importers unaffected as sweep_cases(text) behaves as before; tests/test_run_test_gate.py names used elsewhere (_declared_by, _charge_step etc.) untouched. drive-phase can reuse M.sweep_path_key.",
+    "descriptive": "A task-scope gate run over a full sweep now keeps the task's own test file count past the 40-file cut, via a shared sweep_path_key."
+  },
+  "testsAdded": [
+    "sixty-file sweep with the kept file sorting last keeps it and drops twenty others; no keep leaves the old order; backslash, ./ and CRLF twins read the same; kept files sorted first; path key; allow case",
+    "recorded task run over a sweep printing more than MAX_PATHS rows keeps the declared test file's count; phase-gate run over the same sweep still cuts it"
+  ],
+  "casesAdded": [
+    [
+      "swk1",
+      "swk2",
+      "swk3",
+      "swk4",
+      "swk5",
+      "swk6"
+    ],
+    [
+      "swc6",
+      "swc7"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:4881f0e13eadfc6ebe0daa0b231e84af4f58fad3e40c9df0e4e418321d8728f5\",\"dirtyDigest\":\"sha256:9c3e17d434d6cc9f11e98db88a8dc3e10d4655c1a9e4a162a934755c0bed7630\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"e818ef40587ea98d\",\"changelog.d/P174.3.fixed.md\":\"4a71406e93a27984\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"494155c35599045b\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"ebfbd91e745d52cc\",\"tests/test__evidence_io.py\":\"cfe6330d59758def\",\"tests/test_run_test_gate.py\":\"46fcb2b1b5d4196d\"},\"head\":\"8bf7e194\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"changelog.d/P174.3.fixed.md\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"tests/test__evidence_io.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:10d2d6bca10595ae893c1cf960a55db68eec7e79ae04d29ba9a477bfaff7ecc4\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
