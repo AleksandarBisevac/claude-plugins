@@ -939,7 +939,7 @@ def discovery_block(project, home=None):
 # every run. The model reads nothing here — this renders from the manifest that is
 # already loaded in this process, so nothing is re-read either.
 _MARKERS = {"done": "[x]", "in_progress": "[~]", "blocked": "[!]",
-            "pending": "[ ]", "cancelled": "[-]"}
+            "pending": "[ ]", "cancelled": "[-]", "held": "[=]"}
 
 
 def _marker(status):
@@ -1311,9 +1311,14 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None,
                     if isinstance(t, dict))
 
     all_rows = {}
+    # One line under a held task's row, parallel to its phase's rows: the status
+    # column says THAT a task is held, only the recorded reason says why. `None`
+    # for every other task, so a plan holding none prints no extra line.
+    held_notes = {}
     for pe in shown_phases:
         ph = by_id.get(pe.get("id")) or {}
         rows = []
+        notes = []
         for t in (ph.get("tasks") or []):
             if not isinstance(t, dict):
                 continue
@@ -1332,7 +1337,11 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None,
             cells += [_short(t.get("commit")),
                       "READY" if tid in ready else ""]
             rows.append(cells)
+            notes.append(("       held: %s" % _clip(
+                _one_line(t.get("blockedReason")) or "(no reason recorded)", 88))
+                if t.get("status") == "held" else None)
         all_rows[pe.get("id")] = rows
+        held_notes[pe.get("id")] = notes
 
     # `tests` sits beside `commit` because they are the same kind of fact -- what
     # HAPPENED to this task -- and because both spell "nothing recorded" as `-`.
@@ -1454,8 +1463,11 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None,
         # signed off or not, since the signed-off phase is where it lives.
         for left in _status_facts.findings_left_open(ph):
             out.append("       left open: %s" % _clip(_one_line(left), 120))
-        for r in all_rows.get(pe.get("id")) or []:
+        for r, note in zip(all_rows.get(pe.get("id")) or [],
+                           held_notes.get(pe.get("id")) or []):
             out.append(fmt_row(r))
+            if note:
+                out.append(note)
 
     # WHAT THE VIEW LEFT OUT, said where it was left out. Both counts, because
     # they answer different questions - how much of the PLAN is out of sight, and

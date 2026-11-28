@@ -424,6 +424,28 @@ def _cases(_record):
           and "open bug(s)" in _txt and "ready now" in _txt)
     check("s5 every status marker is used for the statuses present",
           "[x] P1.1" in _txt and "[ ] P2.1" in _txt)
+    # A `held` task is parked with a reason, so the render owes it its OWN marker
+    # (the `[?]` fallback is what an unknown word gets) and the reason on a line of
+    # its own - the status column says THAT it is held, not why. The reason is a
+    # word no other task here carries, so a render that borrowed another field
+    # cannot satisfy it.
+    _fx_held = copy.deepcopy(_fx)
+    _fx_held["phases"][1]["tasks"][1].update(
+        {"status": "held", "blockedReason": "parked until the vendor ships"})
+    _txt_held = M.render_status(_fx_held, M.rollup(_fx_held, [], []))
+    _held_rows = [ln for ln in _txt_held.splitlines() if "P2.2" in ln
+                  and "waits" in ln]
+    check("s5h a held task prints under its own marker, in its own word, and "
+          "its recorded reason follows it: %r" % (_held_rows,),
+          len(_held_rows) == 1 and _held_rows[0].lstrip().startswith(
+              M._MARKERS["held"] + " P2.2")
+          and M._MARKERS["held"] not in (M._MARKERS["blocked"], "[?]")
+          and "Held" in _held_rows[0]
+          and _txt_held.count("held: parked until the vendor ships") == 1
+          and "[?]" not in _txt_held)
+    check("s5h2 THE OTHER DIRECTION: a plan with no held task prints no held "
+          "line, so the reason line is not unconditional",
+          "held:" not in _txt and "Held" not in _txt)
     check("s6 the column header appears exactly once, not per phase",
           _txt.count("waiting on") == 1, str(_txt.count("waiting on")))
     # The base fixture's P1 is `done`, so P2's gate is SATISFIED and there is

@@ -4,6 +4,8 @@
 [data-status="materialized"]{--st:var(--ok)}
 [data-status="in_progress"],[data-status="triaged"]{--st:var(--warn)}
 [data-status="blocked"],[data-status="open"]{--st:var(--err)}
+/* `held` is parked on purpose: its own hue, neither blocked's red nor pending's grey. */
+[data-status="held"]{--st:var(--st-held)}
 /* `proposed` joins pending: synthesized, not started. */
 [data-status="pending"],[data-status="proposed"]{--st:var(--muted)}
 /* ca: settled, not achieved — quieter than pending, never the ok green. */

@@ -1,0 +1,25 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "plugins/audit/scripts/ui/panel/usage-metrics.js:161",
+   "issue": "The task description says to find every status enumeration by grepping 'blocked' beside 'pending' and not to leave a surface. This one, ['pending','in_progress','blocked'], is such a hit and was left: the panel's 'remaining' task count (and the economics forecast the executor names at usage/_usage_economics.py:288) leaves a held task out, though held work is unfinished. The executor declared it as a deliberate leave in claim 3, so it is a known gap, not a regression, and a plan with no held task renders unchanged.",
+   "resolution": "Decide the semantics and write it down. Either add 'held' to the remaining list in usage-metrics.js and _usage_economics.py, or leave it out and say in a comment why a parked task is not forecast. Batch it with the other lows."},
+  {"id": 2, "severity": "low", "file": "plugins/audit/scripts/manifest/audit-task.py:9026-9028",
+   "issue": "The hold verb's ADO note is reworded in this diff, but the filed claim 3 lists that same note as LEFT, so the claim does not describe the diff. The new text points at 'reference/orchestrator.md -> ADO echo', which exists (orchestrator.md:478). No test in this task's gate pins either wording.",
+   "resolution": "Correct the claim if the edit was intended, and add a case for the note if the wording is to stay stable."},
+  {"id": 3, "severity": "low", "file": "plugins/audit/README.md (status paragraph)",
+   "issue": "The rewritten sentence reads 'The last two of the first five are TERMINAL'. It is hard to parse and counts the statuses by position in prose, so it goes stale the next time a status is added.",
+   "resolution": "Name the two statuses: 'done and cancelled are TERMINAL'."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "The description asks that every place enumerating a task status learns held, and that report and panel draw it with its own word, not the unknown fallback. The diff does that: TASK_STATE_DEFAULTS gains held -> Active (read-ado-links.py); STATUS gains 'held': 'Held' and the --st-held and --st-held-ink tokens appear in light and both dark blocks and in THEME_GROUPS (_ui_theme.py); _MARKERS gains [=] and a 'held: <reason>' line is printed only for a held task (audit-status.py); [data-status=held] rules are added on the report (shell.css) and the panel (status-colours.css); OVORDER and the touched-tasks order include held; task.md, verbs-in-full.md, manifest-conventions.md, README and status.md are updated. Executor outcome and diff agree, except that claim 3 lists the audit-task.py ADO note as left while the diff rewords it (finding 2). One surface is left on purpose, per claim 3, and is finding 1. The tasks added to the changelog fragment match the diff. The screenshots, rendered HTML and ledger files are regenerated followers and were not read.",
+  "missing": [],
+  "redFirst": "proved",
+  "redFirstBasis": "Executor's redFirst is proved, helper-recorded. Quoted: 'python3 tools/sweep-selftests.py tests/test_read_ado_links.py in a throwaway tree at HEAD exited 1 with 1 of 58 collected tests failing an assertion, the task's own among them ... rl7b (house FAIL): SELFTEST FAILED: 57/58 cases passed', each passing with the working tree's implementation. That is a command, a non-zero exit, a collected test and the task's own assertion failing. The basis covers rl7b only. The reds of th-h1/2/3, s5h/s5h2 and ev15h rest on the executor's claim 2 (rl7b state None, status body KeyError held, ev15h regex over git show HEAD), which I could not re-verify.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Bound is tests.gate: sweep-selftests.py over tests/test_read_ado_links.py, tests/test__ui_theme.py and tests/test_audit_status.py, each a literal command selecting one whole file. I read the cases this diff added in those files (rl7b, th-h1/2/3, s5h, s5h2) plus ev15h in test__panel_page.py, not the rest of each suite. None of the added cases reaches a swallowed try, an empty filter or a does-not-raise shape. s5h2 and th-h3 (driven over the manifest STATUS vocabulary) read as able to fail. Not asked of the untouched remainder of the three suites."
+ },
+ "verdict": "findings",
+ "tasks": []
+}

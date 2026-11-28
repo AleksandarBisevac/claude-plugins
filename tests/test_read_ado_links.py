@@ -348,6 +348,32 @@ def _cases(check):
               conf_task["state"] == "Done"
               and conf_task["basis"] == "meta.ado.stateMap.task.done"
               and _row(conf_side, "phase", "P1")["state"] == "Committed")
+        # A `held` task is parked on purpose, so it is NOT a status nothing maps
+        # (rl9b): the built-in default answers for it, as it does for `blocked`,
+        # and a configured stateMap may name it. The fixture links the task so it
+        # has a row at all - an unlinked one is counted on the connector line only.
+        held_src = json.loads(json.dumps(SOURCE))
+        held_src["phases"][0]["tasks"][1].update(
+            {"status": "held", "blockedReason": "parked until the vendor ships",
+             "ado": _link(5122)})
+        held_man = _write(tmp, "held.json", held_src)
+        code, printed, _err = _run([held_man, "--json"])
+        held_side = json.loads(printed)
+        held_row = _row(held_side, "task", "T1.2")
+        held_conf_man = _write(tmp, "held-conf.json", _with_state_map(
+            held_src, {"task": {"held": "On Hold"}}))
+        code, printed, _err = _run([held_conf_man, "--json"])
+        held_conf = _row(json.loads(printed), "task", "T1.2")
+        check("rl7b a held task maps to an ADO state by the built-in defaults, "
+              "the one a blocked task gets, with no missing-state count; and a "
+              "stateMap naming `held` BEATS that default and names itself: %r %r"
+              % ((held_row or {}).get("state"), (held_conf or {}).get("state")),
+              held_row is not None and held_row["state"] == "Active"
+              and held_row["state"] == M.TASK_STATE_DEFAULTS["blocked"]
+              and "built-in default" in held_row["basis"]
+              and held_side["counts"]["noState"] == 0
+              and held_conf is not None and held_conf["state"] == "On Hold"
+              and held_conf["basis"] == "meta.ado.stateMap.task.held")
         never_man = _write(tmp, "never.json",
                            _with_state_map(SOURCE,
                                            {"bug": {"wontfix": None}}))

@@ -9023,8 +9023,9 @@ def _locked_hold(args, project, config, mpath, tid, reason, out):
         return 0
     out("[audit-task] %s held in %s -- was %s: %s" % (tid, phase_id, status, reason))
     if linked:
-        out("  ADO: this plan links a board, and the held word needs a stateMap "
-            "entry there to echo - this verb does not send one")
+        out("  ADO: this plan links a board, and a task entering held owes the "
+            "ADO echo (reference/orchestrator.md -> ADO echo) - this verb does "
+            "not send it")
     _report_tail(out, jres, "task.hold", warnings, written_manifest, written,
                  index_note)
     return 0

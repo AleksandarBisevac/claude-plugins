@@ -25,7 +25,7 @@ one click away, and the model believing it had answered.
 
 It already renders the whole report: an overall line with a progress bar, the usage
 line when metering is on, one aligned table across every phase (markers `[x]` done ·
-`[~]` in_progress · `[!]` blocked · `[ ]` pending), what each pending task is waiting
+`[~]` in_progress · `[!]` blocked · `[=]` held · `[ ]` pending), what each pending task is waiting
 on, a `tests` column carrying the verdict of the run that last exercised each task
 exactly as the manifest recorded it — shown only when a task in view has recorded
 one, so a plan that has never run a gate renders exactly as it did before the column

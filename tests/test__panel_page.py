@@ -54,6 +54,7 @@ import _ado_parent as _adop                        # noqa: E402  (the marker, in
 import _ado_tracked as _adot                       # noqa: E402  (the field name, in the other language)
 import _status_facts as _facts                     # noqa: E402  (the gap classes, in the other language)
 import _report_html as _rhtml                      # noqa: E402  (TEV_LABELS: the badge words, in the other language)
+import _manifest_vocab as _status_vocab             # noqa: E402  (the task statuses, in the other language)
 import _panel_page as M                            # noqa: E402
 
 
@@ -979,6 +980,20 @@ def _cases(check):
           and "ovRank(EVORDER,a)-ovRank(EVORDER,b)" in _evsrc
           and "EVORDER=['failed'," in _evsrc
           and "'no tasks to count'" in _evsrc)
+    _ov_order = re.search(r"const OVORDER=\[([^\]]*)\];", M.UI_HTML)
+    _ov_words = re.findall(r"'([a-z_]+)'", _ov_order.group(1)) if _ov_order else []
+    _uc_order = re.search(r"const order=\[('done'[^\]]*)\];", M.UI_HTML)
+    _uc_words = re.findall(r"'([a-z_]+)'", _uc_order.group(1)) if _uc_order else []
+    _live_status = set(_status_vocab.STATUS) - {"cancelled"}   # settled, never sorted
+    check("ev15h the task-status orders the panel sorts and prints by name every "
+          "status that is still work - `held` among them - so a held task is not "
+          "sorted past `done` or dropped from the touched-tasks line: %r / %r"
+          % (_ov_words, _uc_words),
+          bool(_ov_words) and bool(_uc_words)
+          and _live_status <= set(_ov_words) and "held" in _live_status
+          and _ov_words.index("held") > _ov_words.index("pending")
+          and _ov_words.index("held") < _ov_words.index("done")
+          and _live_status <= set(_uc_words))
     check("ev16 which runs are OPEN rides OVF, keyed by subject id, so the 5s "
           "poll cannot fold a run somebody opened - and it is a second map "
           "rather than a second meaning for `open`, because the two nest",

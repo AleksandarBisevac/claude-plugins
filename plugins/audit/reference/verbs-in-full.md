@@ -1103,13 +1103,37 @@ attempts spent against `maxAttempts`:
 
 - a **blocked** task goes back to `pending` with its `blockedReason` removed. Its `attempts`
   are reset to zero when they have reached the ceiling, and kept as recorded when they have not
-  (a task held on purpose, or blocked before the ceiling) - `notes` and `movedFrom` are never
+  (blocked before the ceiling) - `notes` and `movedFrom` are never
   touched;
 - a task that is not blocked is unblocked only when its attempts have reached the ceiling (the
   count is reset and the status stays); a pending or running task with attempts left is refused,
   since `start` still runs it.
 
-A done or cancelled task and a phase id are refused. The reason is journaled as `task.unblock`.
+A done or cancelled task and a phase id are refused, and so is a `held` task, which names
+`release`. The reason is journaled as `task.unblock`.
+
+### Subcommand: `hold <taskId> --reason "<why>"` / `release <taskId> --reason "<what changed>"`
+
+`--reason` goes in unchanged, by the rule stated under `cancel` below: it reaches the hash-chained journal.
+
+`hold` parks a task on purpose: `status: "held"` with the reason in `blockedReason`, and a
+`task.hold` row. A held task is not `blocked` - nothing is being waited on - so it is outside
+the ready set and the gate's `blocked-tasks` count, and it is not finished work, so a task
+waiting on it keeps waiting. `release` lifts it: the task returns to `pending`, `blockedReason`
+is cleared and a `task.release` row records what changed.
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" hold P3.2 \
+  --reason "<why it is left alone>" [--json]
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" release P3.2 \
+  --reason "<what changed>" [--json]
+```
+
+**Refused:** no reason; `hold` on a terminal task, a running one (`block` stops it first) or
+one already held; `release` on a task that is not held; `start` on a held task, `--force`
+included; `block` and `unblock` on one. Status shows a held task under its own marker with
+its reason beneath, and both surfaces word it `Held`. **The ADO echo is not sent by these
+verbs**; the built-in default maps `held` as it maps `blocked`, and `meta.ado.stateMap` may name it.
 
 ### Subcommand: `note <taskId> --text TEXT`
 

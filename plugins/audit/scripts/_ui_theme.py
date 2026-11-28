@@ -116,13 +116,17 @@ TOKEN_CSS = """
      between them stays visible. Reading them as one grey is the failure mode
      of raising only the one that failed. */
   --st-cancelled:#5c708b;
+  /* held: parked on purpose with a reason - not waiting (blocked's red), not
+     ready (pending's grey), not finished. A violet, the one hue no other status
+     here wears, so a held row is never read as either of its neighbours. */
+  --st-held:#6d4fc2;
   /* Ink for a TINTED status badge. One solid-fill chip per status needed one ink
      and an exception (amber on white is unreadable, so in_progress alone got dark
      ink) — four statuses wearing three different grammars. A badge tinted from
      its own status colour carries readable ink of that same hue instead, and the
      exception disappears. Mirrors the --rk-*-fg pattern, which already worked. */
   --st-done-ink:#166534;--st-prog-ink:#854d0e;--st-blocked-ink:#b91c1c;
-  --st-pending-ink:#475569;--st-cancelled-ink:#606f85;
+  --st-pending-ink:#475569;--st-cancelled-ink:#606f85;--st-held-ink:#5b3fb0;
   --rk-low-bg:#dcfce7;--rk-low-fg:#166534;--rk-med-bg:#fef9c3;--rk-med-fg:#854d0e;
   --rk-high-bg:#fee2e2;--rk-high-fg:#b91c1c;
   /* Usage viz. Categorical slots carry MODEL identity (assigned by name, never by
@@ -195,9 +199,9 @@ TOKEN_CSS = """
   --field-border-hover:#7288b4;
   --accent:#2dd4bf;--accent-solid:#0f7c73;--ring:rgba(45,212,191,.4);
   --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;
-  --st-cancelled:#7a8aa0;
+  --st-cancelled:#7a8aa0;--st-held:#a78bfa;
   --st-done-ink:#6ee7b7;--st-prog-ink:#fcd34d;--st-blocked-ink:#fca5a5;
-  --st-pending-ink:#cbd5e1;--st-cancelled-ink:#94a3b8;
+  --st-pending-ink:#cbd5e1;--st-cancelled-ink:#94a3b8;--st-held-ink:#c4b5fd;
   --rk-low-bg:rgba(52,211,153,.16);--rk-low-fg:#6ee7b7;--rk-med-bg:rgba(251,191,36,.16);
   --rk-med-fg:#fcd34d;--rk-high-bg:rgba(248,113,113,.16);--rk-high-fg:#fca5a5;
   --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
@@ -243,9 +247,9 @@ TOKEN_CSS = """
   --field-border-hover:#7288b4;
   --accent:#2dd4bf;--accent-solid:#0f7c73;--ring:rgba(45,212,191,.4);
   --st-done:#34d399;--st-prog:#fbbf24;--st-blocked:#f87171;--st-pending:#94a3b8;
-  --st-cancelled:#7a8aa0;
+  --st-cancelled:#7a8aa0;--st-held:#a78bfa;
   --st-done-ink:#6ee7b7;--st-prog-ink:#fcd34d;--st-blocked-ink:#fca5a5;
-  --st-pending-ink:#cbd5e1;--st-cancelled-ink:#94a3b8;
+  --st-pending-ink:#cbd5e1;--st-cancelled-ink:#94a3b8;--st-held-ink:#c4b5fd;
   --rk-low-bg:rgba(52,211,153,.16);--rk-low-fg:#6ee7b7;--rk-med-bg:rgba(251,191,36,.16);
   --rk-med-fg:#fcd34d;--rk-high-bg:rgba(248,113,113,.16);--rk-high-fg:#fca5a5;
   --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;
@@ -276,6 +280,9 @@ STATUS = {
     # the trackers use for it (Linear Canceled, Jira Won't Do, GitHub closed as
     # not planned, ADO Removed), and a plan is read beside them.
     "cancelled": "Cancelled",
+    # Parked on purpose, with a reason beside it. Its own word because it is not
+    # `blocked`: nothing is being waited on, somebody chose to leave it.
+    "held": "Held",
 }
 # The empty bucket, named once. The usage ledger groups spend by phase,
 # task and branch with "--" standing for a row that has none, and its `attr`
@@ -382,8 +389,9 @@ THEME_GROUPS = (
       "--accent", "--accent-solid", "--ring")),
     ("status", "Status & risk",
      ("--st-done", "--st-prog", "--st-blocked", "--st-pending", "--st-cancelled",
+      "--st-held",
       "--st-done-ink", "--st-prog-ink", "--st-blocked-ink", "--st-pending-ink",
-      "--st-cancelled-ink",
+      "--st-cancelled-ink", "--st-held-ink",
       "--rk-low-bg", "--rk-low-fg", "--rk-med-bg", "--rk-med-fg",
       "--rk-high-bg", "--rk-high-fg")),
     # Locked in the editor by default (not here — this is the vocabulary, not

@@ -122,7 +122,8 @@ is free to re-mint).
 
 ## Status enums
 
-- Phase/task: `pending | in_progress | blocked | done`
+- Phase/task: `pending | in_progress | blocked | done | held` (a task alone is `held`: parked
+  on purpose, its reason in `blockedReason`)
 - Bug: `open | triaged | in_progress | fixed | wontfix | not_a_bug` — the last three
   all close it and say different things: the fix landed, the report is real and will
   not be fixed, somebody investigated and the behaviour is correct
@@ -494,6 +495,10 @@ The journal's **completion-record actions**:
   attempts are spent gets a fresh budget (`attempts` back to 0), and a blocked task goes
   `status` back to pending with its `blockedReason` cleared, its count kept when attempts were
   left (details: taskId, phaseId, reason, changes)
+- `task.hold` — `audit-task.py hold` parked a task as `held` with its reason in `blockedReason`
+  (details: taskId, phaseId, reason, changes)
+- `task.release` — `audit-task.py release` lifted a hold: the task goes back to `pending` and
+  its `blockedReason` is cleared (details: taskId, phaseId, reason, changes)
 - `task.start` — `audit-task.py start` promoted a task to in_progress (details: taskId,
   phaseId, attempt, changes; `commit` is the HEAD the start was taken at, absent outside git,
   and is where a later `done --no-change` starts the span of commits it asks about)
@@ -623,7 +628,7 @@ derived, and an old, unrelated completion of the same task is a different record
 by design:** a sign-off of a branchless phase (`mergedAt` is null, which cannot tell one sign-off
 from another), and a completion that was never recorded anywhere. Both cost a repeated row, never
 a lost one.
-`task.start`, `task.move`, `task.block`, `task.unblock`, `task.note`, `coupling.learned`, `coupling.dropped`, `coupling.caught`,
+`task.start`, `task.move`, `task.block`, `task.unblock`, `task.hold`, `task.release`, `task.note`, `coupling.learned`, `coupling.dropped`, `coupling.caught`,
 `bug.add`, `bug.close`, `test.muted`, `test.unmuted` and `listing.recorded` are written **in process** by `audit-task.py`, the same way its `task.done`, `task.reopen`, `plan.settle` and `plan.reindex` rows
 are. `phase.gateDerived` is written **in process** by `derive-phase-gate.py`, its own entry point,
 for the identical reason. `phase.merged` and `phase.mergedHead.recorded` are written **in process** by

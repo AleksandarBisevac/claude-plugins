@@ -370,7 +370,7 @@ function uPerson(){
  const M=USAGE.taskMeta||{},split=Object.create(null);
  for(const t of tasks){const st=(M[t]||{}).status||'untracked';
   split[st]=(split[st]||0)+1;}
- const order=['done','in_progress','blocked','pending','untracked'];
+ const order=['done','in_progress','blocked','pending','held','untracked'];
  const parts=order.filter(k=>split[k])
    .map(k=>split[k]+' '+k.replace('_',' '));
  if(parts.length)out.push(el('div',{class:'mut small'},

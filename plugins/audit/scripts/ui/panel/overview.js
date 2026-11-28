@@ -156,7 +156,7 @@ const OVF={q:'',ts:'',bs:'',byArea:false,sort:'plan',view:null,
 // do not, in the strips and in the status sort. Plan order is still the default —
 // a plan is written in an order and that order means something.
 /** @type {string[]} task statuses, most-in-need-of-a-human first */
-const OVORDER=['in_progress','blocked','pending','done'];
+const OVORDER=['in_progress','blocked','pending','held','done'];
 /** @type {string[]} bug statuses, on the same principle */
 const OVBUGORDER=['open','triaged','in_progress','fixed','wontfix','not_a_bug'];
 /**

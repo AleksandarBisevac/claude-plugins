@@ -121,9 +121,11 @@ KINDS = ("phase", "task", "bug")
 # Item, so a Scrum board must set `meta.ado.stateMap`; `/audit:sync connect` says
 # so from the process it detected, and every row below carries which of the two
 # answered it.
+# `held` shares `blocked`'s answer: both are unfinished work somebody has put
+# down, and neither is a state an Agile board has a word for.
 TASK_STATE_DEFAULTS = {"pending": "New", "in_progress": "Active",
-                       "blocked": "Active", "done": "Closed",
-                       "cancelled": "Removed"}
+                       "blocked": "Active", "held": "Active",
+                       "done": "Closed", "cancelled": "Removed"}
 
 # `not_a_bug` maps to the same board state `wontfix` does and says something
 # different on the way there: both close the card, and the manifest keeps which

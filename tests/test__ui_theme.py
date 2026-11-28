@@ -387,6 +387,44 @@ def _cases(check):
     # Labels: every status either surface can render must have words.
     check("every task status reads as words", all(
         M.label(s) and " " not in M.label(s).strip()[:1] for s in M.STATUS))
+    # The humaniser would word `held` as "Held" with no table row at all, which is
+    # why the first clause reads the TABLE: a status the manifest may hold and the
+    # table does not name is the one that renders by accident.
+    check("th-h1 every task status the manifest vocabulary names has a row in the "
+          "label table, `held` among them and worded apart from `blocked` (the "
+          "hold is deliberate, the block is not): missing %r, held=%r"
+          % (sorted(set(_vocab.STATUS) - set(M.STATUS)), M.STATUS.get("held")),
+          set(_vocab.STATUS) <= set(M.STATUS) and M.STATUS.get("held") == "Held"
+          and M.label("held") != M.label("blocked"))
+    # A colour of its own, declared where the other statuses' are: the light block
+    # and BOTH dark blocks, and offered in the theme editor's status group.
+    _held_toks = ("--st-held", "--st-held-ink")
+    check("th-h2 `held` has its own colour and ink: declared in the light block "
+          "and in both dark blocks, in the status theme group, distinct from "
+          "blocked's and from pending's: %r"
+          % ({t: (M.DEFAULT_THEME.get(t) or {}) for t in _held_toks},),
+          all(t in M.DEFAULT_THEME and M.TOKEN_CSS.count("%s:" % t) == 3
+              for t in _held_toks)
+          and all(t in dict((g[0], g[2]) for g in M.THEME_GROUPS)["status"]
+                  for t in _held_toks)
+          and all(M.DEFAULT_THEME["--st-held"][k]
+                  not in (M.DEFAULT_THEME["--st-blocked"][k],
+                          M.DEFAULT_THEME["--st-pending"][k],
+                          M.DEFAULT_THEME["--st-cancelled"][k])
+                  for k in ("$value", "$dark")))
+    # Both surfaces colour a status through `[data-status="..."]`; a word with no
+    # rule there paints with whatever --st the ancestor had, which is the unknown
+    # style. Driven over the vocabulary so the next status added is caught too.
+    _css_rules = {
+        "report": "".join(M.read_asset(p) for p in M.REPORT_CSS_PARTS),
+        "panel": "".join(M.read_asset(p) for p in M.PANEL_CSS_PARTS)}
+    _unstyled = {n: [s for s in _vocab.STATUS
+                     if 'data-status="%s"' % s not in css]
+                 for n, css in _css_rules.items()}
+    check("th-h3 every task status the manifest names has a [data-status] rule on "
+          "the report AND on the panel, so a held task is not drawn in the "
+          "fallback style: unstyled %r" % (_unstyled,),
+          not any(_unstyled.values()))
     check("no label leaks the machine spelling",
         not any("_" in v for v in M.LABELS.values()))
     check("in_progress reads as English", M.label("in_progress") == "In progress")
