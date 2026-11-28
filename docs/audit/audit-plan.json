@@ -1113,7 +1113,7 @@
     {
       "id": "P174",
       "title": "A green task gate stands for the fix leg, so the red-first proof runs once",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P174.json"
     }
   ],

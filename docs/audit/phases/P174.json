@@ -1,7 +1,7 @@
 {
   "id": "P174",
   "title": "A green task gate stands for the fix leg, so the red-first proof runs once",
-  "status": "in_progress",
+  "status": "done",
   "description": "Probe probe-8bf7e194: the proof ran a second time (~114 s per task) after a green task gate. Two causes in the record: the held gate run is a repeat (background gate read back), and gate_binding reads its copied row without following reusedFrom, so no background task gate can stand for the fix leg; and the joined sweep step keeps only a digest of its command, so it is spelled otherwise. Plus a bare sweep's per-file counts are cut at MAX_PATHS before the proof's file. Design: quality-gates-internal PLAN, probe-8bf7e194 and F933.",
   "desiredOutcome": "On a task whose green gate ran the proof's test file - as a repeated verdict, inside a joined step with the affected suites, or under the bare recorded sweep - the drive binds the fix leg to that run instead of running the proof's fix leg again, never where the helper's own fix leg would say red; and the gate's own record says which files its time went to.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "8bf7e1945f4cf66b631cc2a4609b51836d615b0a",
   "branch": "audit/p174-a-green-task-gate-stands-for-t",
-  "mergedAt": null,
+  "mergedAt": "2026-11-28T04:20:24Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -3031,5 +3031,6 @@
     "runId": "2026-11-28T04:18:16Z.cf8bb3",
     "status": "passed",
     "at": "2026-11-28T04:18:16Z"
-  }
+  },
+  "mergedHead": "658a59def03c523c74c5d0af38ff2526f41924ba"
 }
