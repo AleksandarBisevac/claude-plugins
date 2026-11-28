@@ -1,7 +1,7 @@
 {
   "id": "P176",
   "title": "A writer session started by the runner gets the subagent's verdict from every hook",
-  "status": "in_progress",
+  "status": "done",
   "description": "S2b.2 (quality-gates-internal plans/2026-11-27-s2b-at-head.md section 3). OD4 probe 2026-11-28 (CLI 2.1.332): a PreToolUse hook under claude -p sees an env var the runner sets and the session_id given with --session-id; agent_id is null.",
   "desiredOutcome": "A hook knows a call comes from a writer or reviewer session the runner started, so that session gets the same plan-gate verdict and the same manifest-write refusal as a subagent for the same edit; an orchestrator session is unchanged.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "9ea9d29e17849e9ceef1f8662466d1bdf32d8aba",
   "branch": "audit/p176-a-writer-session-started-by-th",
-  "mergedAt": null,
+  "mergedAt": "2026-11-28T18:17:08Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -1730,5 +1730,6 @@
     "runId": "2026-11-28T18:15:35Z.546113",
     "status": "passed",
     "at": "2026-11-28T18:15:35Z"
-  }
+  },
+  "mergedHead": "e733a1126834b1211e1dd23a08a0eac4d82df93d"
 }

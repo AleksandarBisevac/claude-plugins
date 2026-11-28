@@ -1125,7 +1125,7 @@
     {
       "id": "P176",
       "title": "A writer session started by the runner gets the subagent's verdict from every hook",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P176.json"
     }
   ],
