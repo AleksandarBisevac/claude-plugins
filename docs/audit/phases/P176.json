@@ -22,10 +22,11 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [],
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P176 (S2b.2): a writer or reviewer session the runner starts carries an environment marker; require-plan and the shell manifest-write refusal treat it as a subagent, its prompt is not read as the owner's words (no #no-plan / #approve-high-risk / #release-with-bugs), and the sweep drops the marker. Restriction only; an unmarked session is unchanged. Independent review: two mediums (owner-prompt switches, sweep marker leak) fixed in P176.2; lows in the low batch.",
   "tasks": [
     {
       "id": "P176.1",
@@ -529,7 +530,7 @@
     {
       "id": "P176.2-ihj",
       "title": "A writer session's prompt is not the owner's words, and the sweep drops the writer marker",
-      "status": "in_progress",
+      "status": "done",
       "description": "From the P176 phase review. (1) MEDIUM security: _config.owner_prompt rejects a prompt only when the payload has agent_id, so in a runner-started claude -p session the brief (plan- or model-written) is read as the owner's words: detect-plan-skip arms the single-use plan bypass on '#no-plan' and arms/revokes the standing high-risk approval on '#approve-high-risk' (journal row via owner-prompt); drive-without-model.py parses a verb from it; .claude/hooks/arm-release-bypass.py arms '#release-with-bugs'. A task description carrying '#no-plan' would let a writer session bypass the plan gate P176.1 just closed. Fix at the one question: owner_prompt returns no owner prompt when writer_role(data) is set; check every caller (drive-without-model.py, arm-release-bypass.py read it through the same function? if not, declare them via scope and route them through it). Restriction only. (2) MEDIUM regression: tools/sweep-selftests.py SESSION_NAMES drops CLAUDECODE and AUDIT_LOCK_TOKENS but not the writer-session marker, so a sweep run inside a writer session turns tests/test_hooks.py red (hk1/hk2/hk4 on the manifest-edit-orchestrator row); add the marker to the dropped names (read the name from where P176.1 defined it, no third spelling if avoidable) and update CLAUDE.md and CONTRIBUTING.md's list of dropped session names. Fragment kind fixed.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -565,14 +566,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "01a0d6aa8079",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) plugins/audit/hooks/_config.py: owner_prompt(data, env=None) now returns '' when writer_role(data, env=env) is not None, beside the existing agent_id check; docstring and the standing-approval comment block say so. Restriction only: an unmarked or blank-marked session gets the prompt back unchanged (wop2). Every reader of an owner prompt goes through this one function, checked by grep -rn owner_prompt over plugins/tests/tools/.claude: detect-plan-skip.py (bypass keyword line 308-ish, standing_prompt_act + _record_standing), drive-without-model.py:259 (parse_verb(_config.owner_prompt(data))), .claude/hooks/arm-release-bypass.py:242 (cfg_mod.owner_prompt via guard-release._hooks_config, which loads the repo's plugins/audit/hooks/_config.py). arm-release-bypass reads no agent_id itself, so no scope widening was needed; probe: AUDIT_WRITER_SESSION=writer -> typed_prompt('#release-with-bugs go') == '', unset -> the prompt back. detect-plan-skip.py: docstring items 1 and 4 now say whose prompt is read. (2) tools/sweep-selftests.py: SESSION_NAMES gains _loader.load_hooks_config().WRITER_SESSION_ENV (read off _config, no third spelling; load measured at ~5-6 ms twice with a 2 s gap); comment states why. CLAUDE.md and CONTRIBUTING.md name the marker among the dropped session names. changelog.d/P176.2-ihj.fixed.md added; tools/release.py changelog-check exit 0. Tests: tests/test__config.py wop1-wop3; tests/test_detect_plan_skip.py wsd1-wsd2 plus _prompt_hook now drops an inherited marker unless a case passes one; tools/sweep-selftests.py se0w (ambient_env) and x8w (real child of run_one). Gate runs: sweep tests/test__config.py exit 0 (429 cases), sweep tests/test_detect_plan_skip.py exit 0 (49 cases), sweep --selftest exit 0 (169/169), register-citations exit 0 (0 found), ruff on the five .py files 'All checks passed!', doc_prose_numbers/prose_number_claims/house_style_violations: no finding on changed files. Regression check of the reported symptom: AUDIT_WRITER_SESSION=writer python3 tools/sweep-selftests.py tests/test_hooks.py tests/test_drive_without_model.py tests/test_detect_plan_skip.py tests/test__config.py tests/test_require_plan.py tests/test_guard_secrets_read.py -> '6/6 files ok, 1753 cases' (test_hooks 235 ok). .claude/hooks/arm-release-bypass.py --selftest ALL PASS 22/22. DEPENDANTS: tools/sweep-selftests.py dependants (.github/sweep-costs.json, ci.yml, _output.py, _evidence_io.py, _runner_collects.py, _runner_output.py, stamp-verification.py, reach-diff.py's ambient_env, _harness.py/affected.py/prove-gates.py prose) still correct: ambient_env keeps its signature and only drops one more name; no output shape changed; two new cases add negligible cost. _harness.py's fixture_root docstring (around line 209) lists the dropped names as 'every CLAUDE_ name, plus CLAUDECODE and AUDIT_LOCK_TOKENS' and is now incomplete - it is NOT in my files and the brief gave no scope command, so I left it: it needs a widening to add the marker (CLAUDE.md itself names that docstring as the third description owed the mention). tools/capture-demo-gif.py has its own session-env filter without the marker; left, out of scope (a demo capture, not a suite runner). plugins/audit/hooks/_config.py dependants (guard-release.py, detect-plan-skip.py, drive-without-model.py, guard-*.py, test suites): owner_prompt gained an optional env kwarg with the old positional call unchanged, so every caller still works; only callers of owner_prompt change verdict, and only inside a marked session. CLAUDE.md / CONTRIBUTING.md dependants: one sentence each extended, no anchor or heading moved. tests/test__config.py and tests/test_detect_plan_skip.py dependants (sweep-costs.json, affected.py): files still exist with the same names and helpers; _prompt_hook gained an optional marker kwarg. PLUGIN-BUILD-GUIDE.md's detect-plan-skip section ('If the prompt contains bypassKeyword') was already silent on subagents and remains so; not made false, left.",
+        "descriptive": "A runner-started writer or reviewer session's brief can no longer arm #no-plan, #approve-high-risk, #release-with-bugs or a prompt-hook verb, and a sweep run inside such a session no longer leaks the marker into suites."
       },
       "startedAt": "2026-11-28T17:42:12Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-28T17:59:44Z",
+      "verifiedBy": [
+        "test__config wop1: owner_prompt answers '' for a marked writer/reviewer/unknown-role session with no agent_id",
+        "test__config wop2: unmarked, bystander-only and blank-marked environments read the owner's prompt back verbatim (second direction)",
+        "test__config wop3: the payload-only call reads the marker from os.environ",
+        "test_detect_plan_skip wsd1: marked writer/reviewer prompts carrying #no-plan / #approve-high-risk arm no bypass slot, write no journal row and say nothing",
+        "test_detect_plan_skip wsd2: the same prompts unmarked arm the bypass and one standing row (second direction)",
+        "sweep-selftests se0w: ambient_env drops AUDIT_WRITER_SESSION and keeps PATH",
+        "sweep-selftests x8w: a real child of the sweep does not see the marker the caller exported"
+      ],
       "notes": [
         {
           "at": "2026-11-28T17:42:10Z",
@@ -640,6 +649,24 @@
             "ms": 487479,
             "basis": "durationMs in run 2026-11-28T17:59:26Z.df39a9's record (run-test-gate --record)",
             "runId": "2026-11-28T17:59:26Z.df39a9"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-28T17:50:32Z), less 33660 ms of 1 proof stage noted inside it (the proof is recorded as a stage of its own); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 464340,
+            "startedAt": "2026-11-28T17:42:14Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of run 2026-11-28T17:59:26Z.df39a9",
+            "kind": "wait",
+            "ms": 3000,
+            "startedAt": "2026-11-28T17:50:54Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 01a0d6aa8079",
+            "kind": "commit",
+            "ms": 1931,
+            "startedAt": "2026-11-28T17:59:41Z"
           }
         ],
         "firstStartedAt": "2026-11-28T17:42:12Z"
@@ -995,14 +1022,713 @@
         "runId": "2026-11-28T17:59:32Z.2b20d8",
         "status": "passed",
         "at": "2026-11-28T17:59:32Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "01a0d6aa8079",
+        "at": "2026-11-28T17:59:44Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-28T17:50:29Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__config.py` in a throwaway tree at HEAD exited 1 with 3 of 429 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - wop1 (house FAIL), wop2 (house FAIL), wop3 (house FAIL): SELFTEST FAILED: 426/429 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; task leg keyed on the declared tests' code without comments (sha256:c0e60a345fc0d5587e90ea0a5d1b2c2a8a49328fc8a403934c59d03abd76f1b5; a file that is not Python or does not tokenize by its bytes), which does not cover a test reading its own comments or line numbers",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
+  "startedAt": "2026-11-28T17:14:42Z",
+  "lastRun": {
+    "runId": "2026-11-28T18:15:35Z.546113",
+    "status": "passed",
+    "durationMs": 4806,
+    "failed": [],
+    "observations": {
+      "ranTotal": null,
+      "countsBasis": "no step printed a summary this reader can count (validate, gate, report), so the size of this gate is not knowable from its output; counted over the step(s) measured here only - the repeated step(s) selftests, plugin-validate, lint, shots, interactive, vitest ran no check in this run",
+      "treeMutated": [],
+      "treeBasis": "git described the tree before and after",
+      "coverageBasis": "the runner named 3 path(s); the work under test declares 18 file(s); among them: <outside-repo>, <outside-repo>, docs/audit/audit-plan.json; declared but not named by the run: CLAUDE.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md, changelog.d/P176.1.added.md, changelog.d/P176.2-ihj.fixed.md, plugins/audit/hooks/_config.py and 12 more; joined with the paths run 2026-11-28T18:15:23Z.19a17c's repeated step(s) selftests, plugin-validate, lint, shots, interactive, vitest named"
+    },
+    "banners": [],
+    "recorderHeld": true,
+    "gateSource": "phase",
+    "gateDigest": "sha256:e8312fb8f9c94dbe9df9bce082512eec91a04ad94b9a2938a23f7d6bd7005252",
+    "reuseKey": "1:sha256:7c083f92b175c3118a8040aab78de883b86c93a30bc8eff544165056b585fe29",
+    "verdictSource": "part-reused",
+    "reusedFrom": {
+      "runId": "2026-11-28T18:15:23Z.19a17c",
+      "ts": "2026-11-28T18:15:23Z",
+      "status": "passed"
+    },
+    "via": "cli",
     "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
-    "branch": "audit/p176-a-writer-session-started-by-th",
-    "at": "2026-11-28T17:14:42Z"
+    "startedAt": "2026-11-28T18:15:30Z",
+    "selectionMs": 329,
+    "at": "2026-11-28T18:15:35Z",
+    "steps": [
+      {
+        "name": "selftests",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-28T18:15:23Z.19a17c",
+          "ts": "2026-11-28T18:15:23Z"
+        },
+        "sweepCases": {
+          "total": 20367,
+          "files": [
+            {
+              "path": ".claude/hooks/arm-release-bypass.py",
+              "cases": 22,
+              "seconds": 0.2
+            },
+            {
+              "path": ".claude/hooks/guard-release.py",
+              "cases": 113,
+              "seconds": 0.7
+            },
+            {
+              "path": ".claude/hooks/guard-uncommitted.py",
+              "cases": 43,
+              "seconds": 0.3
+            },
+            {
+              "path": ".claude/hooks/require-claim-block.py",
+              "cases": 34,
+              "seconds": 0.4
+            },
+            {
+              "path": "tests/_harness.py",
+              "cases": 110,
+              "seconds": 8.7
+            },
+            {
+              "path": "tests/test__ado_connect.py",
+              "cases": 49,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__ado_conventions.py",
+              "cases": 83,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__ado_drift.py",
+              "cases": 30,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__ado_fetch.py",
+              "cases": 40,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__ado_fields.py",
+              "cases": 41,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__ado_parent.py",
+              "cases": 85,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__ado_tracked.py",
+              "cases": 46,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__affected_tests.py",
+              "cases": 86,
+              "seconds": 73.2
+            },
+            {
+              "path": "tests/test__areas.py",
+              "cases": 130,
+              "seconds": 0.6
+            },
+            {
+              "path": "tests/test__branch.py",
+              "cases": 39,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__claude_home.py",
+              "cases": 16,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__clause_coverage.py",
+              "cases": 15,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__cli_fmt.py",
+              "cases": 16,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__commit_trail.py",
+              "cases": 57,
+              "seconds": 2.1
+            },
+            {
+              "path": "tests/test__config.py",
+              "cases": 429,
+              "seconds": 11.7
+            },
+            {
+              "path": "tests/test__config_rules.py",
+              "cases": 183,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__config_rules_lints.py",
+              "cases": 20,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__demo_cast.py",
+              "cases": 6,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__deps.py",
+              "cases": 313,
+              "seconds": 112.8
+            },
+            {
+              "path": "tests/test__doctor_ado.py",
+              "cases": 45,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__doctor_completions.py",
+              "cases": 48,
+              "seconds": 1.2
+            },
+            {
+              "path": "tests/test__doctor_hygiene.py",
+              "cases": 44,
+              "seconds": 0.9
+            },
+            {
+              "path": "tests/test__doctor_policy.py",
+              "cases": 60,
+              "seconds": 0.3
+            },
+            {
+              "path": "tests/test__doctor_report.py",
+              "cases": 24,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__doctor_setup.py",
+              "cases": 119,
+              "seconds": 1.7
+            },
+            {
+              "path": "tests/test__doctor_trail.py",
+              "cases": 175,
+              "seconds": 4.7
+            },
+            {
+              "path": "tests/test__evidence_io.py",
+              "cases": 629,
+              "seconds": 130.3
+            },
+            {
+              "path": "tests/test__evidence_view.py",
+              "cases": 89,
+              "seconds": 0.3
+            },
+            {
+              "path": "tests/test__excerpt.py",
+              "cases": 9,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__filed_returns.py",
+              "cases": 120,
+              "seconds": 2.2
+            },
+            {
+              "path": "tests/test__fmt.py",
+              "cases": 83,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__gate_derive.py",
+              "cases": 62,
+              "seconds": 1.4
+            },
+            {
+              "path": "tests/test__gate_feed.py",
+              "cases": 40,
+              "seconds": 0.1
+            },
+            {
+              "path": "tests/test__help.py",
+              "cases": 80,
+              "seconds": 0.2
+            },
+            {
+              "path": "tests/test__help_lints.py",
+              "cases": 14,
+              "seconds": 0.1
+            }
+          ],
+          "filesDropped": 156
+        },
+        "sweepBasis": "longest files by the seconds the sweep printed (196 timed); tests/test_drive_phase.py 861.1s; tests/test_stamp_verification.py 232.5s; tests/test_audit_task.py 142.8s",
+        "command": "python3 tools/sweep-selftests.py"
+      },
+      {
+        "name": "validate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 820,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json"
+      },
+      {
+        "name": "plugin-validate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-28T18:15:23Z.19a17c",
+          "ts": "2026-11-28T18:15:23Z"
+        },
+        "command": "claude plugin validate . && claude plugin validate plugins/audit"
+      },
+      {
+        "name": "gate",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 1520,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate"
+      },
+      {
+        "name": "report",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "durationMs": 2431,
+        "suiteReader": "none",
+        "command": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report"
+      },
+      {
+        "name": "lint",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-28T18:15:23Z.19a17c",
+          "ts": "2026-11-28T18:15:23Z"
+        },
+        "command": "ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints"
+      },
+      {
+        "name": "shots",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-28T18:15:23Z.19a17c",
+          "ts": "2026-11-28T18:15:23Z"
+        },
+        "command": "node tools/capture-screenshots.mjs --check"
+      },
+      {
+        "name": "interactive",
+        "exit": 0,
+        "ran": null,
+        "measured": "not-knowable",
+        "suiteReader": "none",
+        "reusedFrom": {
+          "runId": "2026-11-28T18:15:23Z.19a17c",
+          "ts": "2026-11-28T18:15:23Z"
+        },
+        "command": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
+      },
+      {
+        "name": "vitest",
+        "exit": 0,
+        "ran": 870,
+        "measured": "checks",
+        "suiteReader": "vitest",
+        "reusedFrom": {
+          "runId": "2026-11-28T18:15:23Z.19a17c",
+          "ts": "2026-11-28T18:15:23Z"
+        },
+        "command": "npx vitest run"
+      }
+    ],
+    "machine": "this run had the machine to itself",
+    "repeatedRun": {
+      "runId": "2026-11-28T18:15:23Z.19a17c",
+      "startedAt": "2026-11-28T17:59:56Z",
+      "durationMs": 926206,
+      "selectionMs": 334,
+      "status": "passed",
+      "failed": [],
+      "reuseKey": "1:sha256:7c083f92b175c3118a8040aab78de883b86c93a30bc8eff544165056b585fe29",
+      "gateDigest": "sha256:e8312fb8f9c94dbe9df9bce082512eec91a04ad94b9a2938a23f7d6bd7005252",
+      "gateSource": "phase",
+      "banners": [],
+      "machine": "this run had the machine to itself",
+      "launch": "2026-11-28T17:59:52Z-71a063bf",
+      "observations": {
+        "ranTotal": 870,
+        "countsBasis": "1 of 9 step(s) printed a summary this reader counted; selftests, validate, plugin-validate, gate, report, lint, shots, interactive did not, so this total is a floor and not a size",
+        "treeMutated": [],
+        "treeBasis": "git described the tree before and after",
+        "coverage": [
+          "plugins/audit/hooks/detect-plan-skip.py",
+          "plugins/audit/hooks/guard-bash-writes.py",
+          "plugins/audit/hooks/guard-secrets-read.py",
+          "plugins/audit/hooks/require-plan.py",
+          "tests/test__config.py",
+          "tests/test_detect_plan_skip.py",
+          "tests/test_guard_bash_writes.py",
+          "tests/test_guard_secrets_read.py",
+          "tests/test_require_plan.py",
+          "tests/test_run_agent_session.py",
+          "tools/sweep-selftests.py"
+        ],
+        "coverageBasis": "the runner named 342 path(s); the work under test declares 18 file(s); 58 of them are test paths, matched to the files they are named after; among them: .claude-plugin/icon.png, .claude-plugin/plugin.json, .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py and 337 more; declared but not named by the run: CLAUDE.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md, changelog.d/P176.1.added.md, changelog.d/P176.2-ihj.fixed.md, plugins/audit/hooks/_config.py and 1 more"
+      },
+      "recorderHeld": true,
+      "via": "cli",
+      "sessionId": "f852f1a5-7d16-4e4e-9093-a160a2383b4f",
+      "at": "2026-11-28T18:15:23Z",
+      "testedState": {
+        "head": "01a0d6aa",
+        "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+        "scopeDigest": "sha256:ac15aa9e5ba09da79fd4ba40e83f0ccdd4bdc90dbfcd8cc2196f5ae859703b5d",
+        "scopeBasis": "18 declared file(s); 18 read, 0 missing",
+        "scopeListDigest": "sha256:e5c5311dd420982867cc77d7cc2561bc26f807b92473c773f0efeba567d5fac2",
+        "dirtyDigest": "sha256:17567a9f8baaf645e7b03e0a10d29018ebbeb1b9c0e25508553112c0387bca35",
+        "dirtyBasis": "git described the tree before the run; 2 dirty path(s)"
+      },
+      "steps": [
+        {
+          "name": "selftests",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 444515,
+          "suiteReader": "none",
+          "sweepCases": {
+            "total": 20367,
+            "files": [
+              {
+                "path": ".claude/hooks/arm-release-bypass.py",
+                "cases": 22,
+                "seconds": 0.2
+              },
+              {
+                "path": ".claude/hooks/guard-release.py",
+                "cases": 113,
+                "seconds": 0.7
+              },
+              {
+                "path": ".claude/hooks/guard-uncommitted.py",
+                "cases": 43,
+                "seconds": 0.3
+              },
+              {
+                "path": ".claude/hooks/require-claim-block.py",
+                "cases": 34,
+                "seconds": 0.4
+              },
+              {
+                "path": "tests/_harness.py",
+                "cases": 110,
+                "seconds": 8.7
+              },
+              {
+                "path": "tests/test__ado_connect.py",
+                "cases": 49,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__ado_conventions.py",
+                "cases": 83,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__ado_drift.py",
+                "cases": 30,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__ado_fetch.py",
+                "cases": 40,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__ado_fields.py",
+                "cases": 41,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__ado_parent.py",
+                "cases": 85,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__ado_tracked.py",
+                "cases": 46,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__affected_tests.py",
+                "cases": 86,
+                "seconds": 73.2
+              },
+              {
+                "path": "tests/test__areas.py",
+                "cases": 130,
+                "seconds": 0.6
+              },
+              {
+                "path": "tests/test__branch.py",
+                "cases": 39,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__claude_home.py",
+                "cases": 16,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__clause_coverage.py",
+                "cases": 15,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__cli_fmt.py",
+                "cases": 16,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__commit_trail.py",
+                "cases": 57,
+                "seconds": 2.1
+              },
+              {
+                "path": "tests/test__config.py",
+                "cases": 429,
+                "seconds": 11.7
+              },
+              {
+                "path": "tests/test__config_rules.py",
+                "cases": 183,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__config_rules_lints.py",
+                "cases": 20,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__demo_cast.py",
+                "cases": 6,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__deps.py",
+                "cases": 313,
+                "seconds": 112.8
+              },
+              {
+                "path": "tests/test__doctor_ado.py",
+                "cases": 45,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__doctor_completions.py",
+                "cases": 48,
+                "seconds": 1.2
+              },
+              {
+                "path": "tests/test__doctor_hygiene.py",
+                "cases": 44,
+                "seconds": 0.9
+              },
+              {
+                "path": "tests/test__doctor_policy.py",
+                "cases": 60,
+                "seconds": 0.3
+              },
+              {
+                "path": "tests/test__doctor_report.py",
+                "cases": 24,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__doctor_setup.py",
+                "cases": 119,
+                "seconds": 1.7
+              },
+              {
+                "path": "tests/test__doctor_trail.py",
+                "cases": 175,
+                "seconds": 4.7
+              },
+              {
+                "path": "tests/test__evidence_io.py",
+                "cases": 629,
+                "seconds": 130.3
+              },
+              {
+                "path": "tests/test__evidence_view.py",
+                "cases": 89,
+                "seconds": 0.3
+              },
+              {
+                "path": "tests/test__excerpt.py",
+                "cases": 9,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__filed_returns.py",
+                "cases": 120,
+                "seconds": 2.2
+              },
+              {
+                "path": "tests/test__fmt.py",
+                "cases": 83,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__gate_derive.py",
+                "cases": 62,
+                "seconds": 1.4
+              },
+              {
+                "path": "tests/test__gate_feed.py",
+                "cases": 40,
+                "seconds": 0.1
+              },
+              {
+                "path": "tests/test__help.py",
+                "cases": 80,
+                "seconds": 0.2
+              },
+              {
+                "path": "tests/test__help_lints.py",
+                "cases": 14,
+                "seconds": 0.1
+              }
+            ],
+            "filesDropped": 156
+          },
+          "sweepBasis": "longest files by the seconds the sweep printed (196 timed); tests/test_drive_phase.py 861.1s; tests/test_stamp_verification.py 232.5s; tests/test_audit_task.py 142.8s",
+          "command": "python3 tools/sweep-selftests.py"
+        },
+        {
+          "name": "validate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 813,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/manifest/validate-manifest.py docs/audit/audit-plan.json"
+        },
+        {
+          "name": "plugin-validate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 1301,
+          "suiteReader": "none",
+          "command": "claude plugin validate . && claude plugin validate plugins/audit"
+        },
+        {
+          "name": "gate",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 1538,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/status/audit-status.py docs/audit/audit-plan.json --gate"
+        },
+        {
+          "name": "report",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 2420,
+          "suiteReader": "none",
+          "command": "python3 plugins/audit/scripts/report/render-report.py docs/audit/audit-plan.json --out-dir /tmp/audit-report"
+        },
+        {
+          "name": "lint",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 3425,
+          "suiteReader": "none",
+          "command": "ruff check plugins/audit tools tests .claude/hooks && vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints"
+        },
+        {
+          "name": "shots",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 295692,
+          "suiteReader": "none",
+          "command": "node tools/capture-screenshots.mjs --check"
+        },
+        {
+          "name": "interactive",
+          "exit": 0,
+          "ran": null,
+          "measured": "not-knowable",
+          "durationMs": 172826,
+          "suiteReader": "none",
+          "command": "node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html"
+        },
+        {
+          "name": "vitest",
+          "exit": 0,
+          "ran": 870,
+          "measured": "checks",
+          "durationMs": 3579,
+          "suiteReader": "vitest",
+          "command": "npx vitest run"
+        }
+      ]
+    },
+    "sharedWithRepeated": [
+      "observations.coverage",
+      "testedState"
+    ],
+    "replacedLaunches": [
+      {
+        "runId": "2026-11-28T18:15:23Z.19a17c",
+        "launch": "2026-11-28T17:59:52Z-71a063bf",
+        "status": "passed",
+        "at": "2026-11-28T18:15:23Z"
+      }
+    ]
   },
-  "startedAt": "2026-11-28T17:14:42Z"
+  "testEvidence": {
+    "runId": "2026-11-28T18:15:35Z.546113",
+    "status": "passed",
+    "at": "2026-11-28T18:15:35Z"
+  }
 }
