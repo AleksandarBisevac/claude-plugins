@@ -17883,9 +17883,157 @@ def _sweep_keep_run_cases(check):
           and cut.get("filesDropped") == len(ok) - _ev_io.MAX_PATHS)
 
 
+# --- a red run names the step that took more than twice its last time ----------
+# The fixture is a committed one-phase plan whose one gate step exits 1 while a
+# flag file exists. The prior run's recorded duration is rewritten on the plan's
+# own record, so the ratio the case reads is chosen here and not left to how
+# long a child process happens to take.
+_STT_GATE = ("import os, sys\n"
+             "sys.exit(1 if os.path.exists('red.flag') else 0)\n")
+
+
+def _step_time_repo(prefix):
+    """`(root, mpath, shard)` - a committed plan whose phase gates on `check`,
+    a step that is red while `red.flag` exists."""
+    root = _harness.fixture_root(prefix)
+    for sub in (("docs", "audit", "phases"), (".claude",)):
+        os.makedirs(os.path.join(root, *sub))
+    command = '"%s" gate.py' % (sys.executable.replace("\\", "/"),)
+    files = (
+        (".claude/audit.config.json",
+         json.dumps({"manifestPath": "docs/audit/audit-plan.json"})),
+        ("docs/audit/audit-plan.json", json.dumps(
+            {"meta": {"version": 3, "buildCommands": {"check": command}},
+             "phases": [{"id": "P1", "title": "one",
+                         "shard": "phases/P1.json"}]})),
+        ("docs/audit/phases/P1.json", json.dumps(
+            {"id": "P1", "title": "one", "status": "in_progress",
+             "testGate": ["check"], "tasks": []})),
+        ("gate.py", _STT_GATE))
+    for rel, body in files:
+        with open(os.path.join(root, *rel.split("/")), "w",
+                  newline="\n") as fh:
+            fh.write(body)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", "."],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    return (root, os.path.join(root, "docs", "audit", "audit-plan.json"),
+            os.path.join(root, "docs", "audit", "phases", "P1.json"))
+
+
+def _step_time_set_last(shard, ms):
+    """Rewrite the duration the phase's recorded run holds for its one step."""
+    with open(shard) as fh:
+        body = json.load(fh)
+    for step in body["lastRun"]["steps"]:
+        step["durationMs"] = ms
+    with open(shard, "w", newline="\n") as fh:
+        json.dump(body, fh)
+
+
+def _step_time_run(root, mpath, shard, red, last_ms):
+    """`(output text, the record the run left)` - one recorded phase run, red or
+    green, after the previous record's step duration was set to `last_ms`
+    (None leaves the plan with no previous record)."""
+    flag = os.path.join(root, "red.flag")
+    if red:
+        with open(flag, "w") as fh:
+            fh.write("x")
+    elif os.path.exists(flag):
+        os.remove(flag)
+    if last_ms is not None:
+        _step_time_set_last(shard, last_ms)
+    lines = []
+    M.main([mpath, "P1", "--project-dir", root, "--record", "--no-reuse"],
+           out=lines.append)
+    with open(shard) as fh:
+        return "\n".join(lines), json.load(fh).get("lastRun") or {}
+
+
+def _step_time_cases(check):
+    """(stt1-stt6) A red run names a step that took more than twice the time
+    the same subject's previous record holds for it; a green run says nothing;
+    a red run with no previous record says the comparison has no basis."""
+    root, mpath, shard = _step_time_repo("rtg-stt-")
+    try:
+        first_text, first = _step_time_run(root, mpath, shard, True, None)
+        check("stt1 NO PREVIOUS RECORD: a red run says the comparison has no "
+              "basis, and the record carries that reading with no step named: "
+              "%r" % (first_text[-300:],),
+              "no basis" in first_text and "its last recorded" not in first_text
+              and (first.get(_ev_io.STEP_TIME_KEY) or {}).get("verdict")
+              == "no-basis"
+              and not (first.get(_ev_io.STEP_TIME_KEY) or {}).get("steps"))
+        slow_text, slow = _step_time_run(root, mpath, shard, True, 1)
+        reading = slow.get(_ev_io.STEP_TIME_KEY) or {}
+        said = re.findall(r"step check took ([0-9.]+) s, ([0-9.]+)x its last "
+                          r"recorded ([0-9.]+) s", slow_text)
+        check("stt2 A RED RUN NAMES THE SLOW STEP in the one sentence and "
+              "carries it on the record: %r" % (said, ),
+              len(said) == 1 and float(said[0][1]) > 2
+              and float(said[0][2]) == 0.0
+              and reading.get("verdict") == "slower"
+              and [s.get("name") for s in reading.get("steps") or []]
+              == ["check"]
+              and reading["steps"][0].get("lastMs") == 1
+              and reading["steps"][0].get("durationMs")
+              == slow["steps"][0]["durationMs"])
+        calm_text, calm = _step_time_run(root, mpath, shard, True, 10 ** 7)
+        calm_reading = calm.get(_ev_io.STEP_TIME_KEY) or {}
+        check("stt3 OVER-FIRE GUARD, the other direction: a red step far "
+              "UNDER its last recorded time is named nowhere - the reading is "
+              "kept as compared and not slower: %r" % (calm_text[-300:],),
+              "its last recorded" not in calm_text
+              and "no basis" not in calm_text
+              and calm_reading.get("verdict") == "within"
+              and not calm_reading.get("steps"))
+        green_text, green = _step_time_run(root, mpath, shard, False, 1)
+        check("stt4 A GREEN RUN PRINTS NOTHING, however slow the step ran "
+              "against the last record, and carries no reading: %r"
+              % (green_text[-300:],),
+              "its last recorded" not in green_text
+              and "no basis" not in green_text
+              and _ev_io.STEP_TIME_KEY not in green)
+    finally:
+        _harness.remove_tree(root)
+
+    rows = [{"scope": "task", "taskId": "P1.1", "phaseId": "P1",
+             "status": "failed", "ts": "2026-11-28T10:00:00Z", "runId": "A",
+             "steps": [{"name": "s", "exit": 1, "durationMs": 1000}]},
+            {"scope": "task", "taskId": "P1.2", "phaseId": "P1",
+             "status": "passed", "ts": "2026-11-28T11:00:00Z", "runId": "B",
+             "steps": [{"name": "s", "exit": 0, "durationMs": 100000}]}]
+    res = {"failed": ["s"], "steps": [{"name": "s", "exit": 1,
+                                       "durationMs": 3000}]}
+    found = M.step_time_reading(res, rows, "P1", "P1.1")
+    check("stt5 THE SUBJECT IS THE TASK'S OWN: a sibling task's newer, far "
+          "slower record is no basis for this one, so 3 s against its own "
+          "1 s is 3x: %r" % (found,),
+          found["verdict"] == "slower" and found["run"] == "A"
+          and found["steps"][0]["lastMs"] == 1000
+          and M.step_time_lines(found)
+          == ["  step s took 3.0 s, 3.0x its last recorded 1.0 s"])
+    exactly = M.step_time_reading(
+        dict(res, steps=[dict(res["steps"][0], durationMs=2000)]), rows, "P1",
+        "P1.1")
+    check("stt6 THE BOUND IS MORE THAN TWICE: exactly twice is not named, and "
+          "a subject with no row of its own has no basis (the sibling's row "
+          "is not borrowed): %r"
+          % ((exactly["verdict"], M.step_time_reading(res, rows, "P1",
+                                                      "P1.9")["verdict"]),),
+          exactly["verdict"] == "within"
+          and M.step_time_reading(res, rows, "P1", "P1.9")["verdict"]
+          == "no-basis"
+          and M.step_time_lines(exactly) == [])
+
+
 def _selftest():
     def body(check):
         _harness.stage(check, "swc-block", _sweep_cases_cases)
+        _step_time_cases(check)
         _harness.stage(check, "pgt-block", _pre_gate_cases)
         _harness.stage(check, "rcp-block", _recorded_paths_cases)
         _harness.stage(check, "tp-block", _plan_handed_cases)

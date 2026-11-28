@@ -1384,6 +1384,36 @@ BASE_UNCARRIED_KEY = "uncarried"
 # tree held none (`run-test-gate.uncarried`).
 RECORDER_HELD_KEY = "recorderHeld"
 
+# --- a red run's steps read against the subject's last recorded run -------------
+# A RED RUN SAYS WHICH OF ITS STEPS TOOK MORE THAN TWICE WHAT THE SAME STEP TOOK
+# IN THE SUBJECT'S PREVIOUS RECORDED RUN (`run-test-gate.step_time_reading`),
+# so a gate that got slow is named on the run that went red, with the figures it
+# was judged by. A green run carries no such key. The reading is one of three
+# words: `slower` (a step is named), `within` (steps were compared and none was
+# over the bound) and `no-basis` (nothing of the subject's earlier run could be
+# compared, and the basis says why) - an absent comparison is never recorded as
+# a calm one.
+STEP_TIME_KEY = "stepTime"
+STEP_TIME_WORDS = ("slower", "within", "no-basis")
+# A step is named when it took MORE than this many times its last recorded time.
+STEP_TIME_FACTOR = 2
+
+
+def _step_time(project, found):
+    """`found` (`run-test-gate.step_time_reading`) as a row keeps it: the run
+    it read against, the word, at most `MAX_STEPS` named steps with the two
+    durations they were judged by, and the sentence redacted as a basis is."""
+    out = {"verdict": str(found.get("verdict"))}
+    if found.get("run") is not None:
+        out["run"] = str(found["run"])
+    out["steps"] = [{"name": str(s["name"]), "durationMs": int(s["durationMs"]),
+                     "lastMs": int(s["lastMs"])}
+                    for s in (found.get("steps") or [])[:MAX_STEPS]]
+    if found.get("basis") is not None:
+        out["basis"] = redacted_text(project, str(found["basis"]))
+    return out
+
+
 # A run of a recorded task run's red steps at that run's base commit, in a tree
 # of its own (`run-test-gate.py --base-of`): its row is filed under this scope
 # and names the run it measured for under `BASE_OF_KEY`. It is no subject's
@@ -1987,6 +2017,10 @@ def row_for(project, result, scope, ids, identity, published=None):
     # sentences as a basis is; written only when a red was read that way.
     if isinstance(result.get(BASE_RED_KEY), dict):
         row[BASE_RED_KEY] = _base_red(project, result[BASE_RED_KEY])
+    # A RED RUN'S STEPS READ AGAINST THE SUBJECT'S LAST RECORDED RUN
+    # (`run-test-gate.step_time_reading`); written only when one was read.
+    if isinstance(result.get(STEP_TIME_KEY), dict):
+        row[STEP_TIME_KEY] = _step_time(project, result[STEP_TIME_KEY])
     # WHETHER THE TREE HELD A RECORDER WRITE, kept for the reading taken again
     # off the record (`run-test-gate.kept_base_answer`); False is an answer as
     # much as True, and a run that could not say keeps no key.
@@ -4641,6 +4675,12 @@ _BASE_READING = _object((
     ("verdict", _words(BASE_VERDICT_WORDS)), ("atBase", _TEXTS),
     ("introduced", _TEXTS), ("unknown", _TEXTS), ("basis", _TEXT),
     (BASE_UNCARRIED_KEY, _TEXTS), (BASE_RUNS_KEY, ("list", ("record",), 0))))
+_STEP_TIME_READING = _object((
+    ("run", _NAMED), ("verdict", _words(STEP_TIME_WORDS)),
+    ("steps", ("list", _object((("name", _NAMED), ("durationMs", _COUNT),
+                                ("lastMs", _COUNT)),
+                               ("name", "durationMs", "lastMs")), 0)),
+    ("basis", _TEXT)), ("verdict", "steps"))
 _COUNTS_PAIR = (("listed", _or_null(_COUNT)), ("full", _or_null(_COUNT)))
 # One selection miss as `_miss_row` writes it - a full run's record's alone.
 _SELECTION_MISS = _object((
@@ -4663,6 +4703,7 @@ RECORD_GRAMMAR = _object((
     ("machine", _TEXT), ("attribution", _TEXT), (LAUNCH_KEY, _NAMED),
     ("gradedBy", _NAMED), ("muted", ("list", _MUTE, 1)),
     ("groupWith", _TEXTS), (BASE_RED_KEY, _BASE_READING),
+    (STEP_TIME_KEY, _STEP_TIME_READING),
     (REPEATED_RUN_KEY, ("record",)),
     (REPEAT_UNREAD_KEY, _object((("runId", _NAMED), ("basis", _TEXT)),
                                 ("runId",))),

@@ -948,6 +948,107 @@ def base_red_lines(found):
     return lines
 
 
+# --- a red run's steps against the subject's last recorded run -----------------
+# THE COMPARISON IS WITH THE SAME STEP OF THE SAME SUBJECT'S PREVIOUS RUN THAT
+# REACHED A VERDICT, never with a mean over every run (`step_mean_ms` answers
+# that question) and never with another subject's: a task's own record is its
+# own, so a sibling's newer and slower run is no basis for it, and a phase's
+# own gate is a subject of its own. A cancelled or killed run timed its steps
+# for as long as they were let run, so it is no basis either, and a step a run
+# copied from an earlier one (`step_repeated`) took no time there.
+def _own_rows(rows, phase_id, task_id):
+    """The rows of one subject: a task's runs on any gate, or the phase's own
+    gate when `task_id` is None - never a base or a `--full` run."""
+    if task_id is not None:
+        return [row for row in rows or [] if isinstance(row, dict)
+                and str(row.get("taskId") or "") == str(task_id)
+                and str(row.get("phaseId") or "") == str(phase_id)
+                and row.get("scope") not in (_ev.BASE_SCOPE, "full")]
+    return [row for row in rows or [] if isinstance(row, dict)
+            and row.get("scope") == "phase" and not row.get("taskId")
+            and str(row.get("phaseId") or "") == str(phase_id)]
+
+
+def _step_ms(step):
+    """The milliseconds a step took here, or None when it carries none or took
+    none of its own (a repeated step)."""
+    ms = step.get("durationMs") if isinstance(step, dict) else None
+    if _ev.step_repeated(step) or not isinstance(ms, int) \
+            or isinstance(ms, bool):
+        return None
+    return ms
+
+
+def step_time_reading(res, rows, phase_id, task_id):
+    """`{"run", "verdict", "steps", "basis"}` - this run's steps read against
+    the same steps of the subject's previous run that reached a verdict, among
+    `rows`. `steps` holds each step that took more than `STEP_TIME_FACTOR`
+    times its last recorded time as `{"name", "durationMs", "lastMs"}`;
+    `verdict` is `slower` when it holds one, `within` when steps were compared
+    and none was over the bound, and `no-basis` - with the reason in `basis` -
+    when nothing could be compared. A step with no time of its own here, or
+    one whose last time was under a millisecond, is not compared."""
+    own = [row for row in _own_rows(rows, phase_id, task_id)
+           if row.get("status") in _ev.MEASURED_STATUSES]
+    last = _ev.newest_row(own) if own else None
+    if last is None:
+        return {"run": None, "verdict": "no-basis", "steps": [],
+                "basis": "no earlier run of %s reached a verdict, so no step "
+                         "has a recorded time to be compared with"
+                         % (task_id if task_id is not None else phase_id,)}
+    before = dict((str(s.get("name")), _step_ms(s))
+                  for s in last.get("steps") or [] if isinstance(s, dict))
+    slow, compared = [], 0
+    for step in res.get("steps") or []:
+        now, then = _step_ms(step), before.get(str(step.get("name")))
+        if now is None or not then:
+            continue
+        compared += 1
+        if now > _ev.STEP_TIME_FACTOR * then:
+            slow.append({"name": str(step["name"]), "durationMs": now,
+                         "lastMs": then})
+    run = last.get("runId")
+    if not compared:
+        return {"run": run, "verdict": "no-basis", "steps": [],
+                "basis": "run %s, the last of this subject, timed none of the "
+                         "steps this run timed" % (run,)}
+    return {"run": run, "verdict": "slower" if slow else "within",
+            "steps": slow,
+            "basis": "%d step(s) compared with run %s" % (compared, run)}
+
+
+def step_time_or_none(res, phase_id, task_id, read_rows):
+    """`step_time_reading` for a red gate result `res`, the ledger's rows read
+    by `read_rows()`; None for a run with no red or no measurement of its own.
+    The reading is advisory, so an error from the ledger or from the comparison
+    is said as a `no-basis` reading naming the error, never a crash of a run
+    whose verdict is decided (SECURITY.md's fail-open table)."""
+    if not res.get("failed") or res.get(_ev.VERDICT_SOURCE) == _ev.REUSED:
+        return None
+    try:
+        return step_time_reading(res, read_rows(), phase_id, task_id)
+    except Exception as exc:                                   # noqa: BLE001
+        return {"run": None, "verdict": "no-basis", "steps": [],
+                "basis": "could not read the earlier runs (%s: %s)"
+                         % (type(exc).__name__, exc)}
+
+
+def step_time_lines(found):
+    """The lines a red verdict carries about its steps' times, from
+    `step_time_reading`: one per slow step, one sentence when the comparison
+    has no basis, and nothing for steps that were compared and found within
+    the bound."""
+    if not isinstance(found, dict):
+        return []
+    if found.get("verdict") == "no-basis":
+        return ["  step times: the comparison has no basis - %s"
+                % (found.get("basis"),)]
+    return ["  step %s took %.1f s, %.1fx its last recorded %.1f s"
+            % (s["name"], s["durationMs"] / 1000.0,
+               s["durationMs"] / float(s["lastMs"]), s["lastMs"] / 1000.0)
+            for s in found.get("steps") or []]
+
+
 # --- a base that did not carry the recorder's own writes ----------------------
 # THE RECORDER WRITES INSIDE THE TREE A TASK GATE MEASURES. The plan, its shards,
 # the journal and the filed returns (`_evidence_io.recorded_paths`) hold the
@@ -6264,6 +6365,8 @@ def _render_verdict(res, out):
         out("GATE RED: %s" % ", ".join(res["failed"]))
         for line in base_red_lines(res.get(_ev.BASE_RED_KEY)):
             out(line)
+        for line in step_time_lines(res.get(_ev.STEP_TIME_KEY)):
+            out(line)
         code = E_FAIL
     # THE NO-VERDICT WORDS HAD NO ARM HERE AT ALL, and that was worth finding
     # before the count vocabulary widened to add these two members: with
@@ -8428,6 +8531,14 @@ def main(argv, out=print):
                                  project, manifest_path=args.manifest)["rows"])
         if found is not None:
             res[_ev.BASE_RED_KEY] = found
+    # A RED RUN'S STEPS READ AGAINST THE SUBJECT'S LAST RECORDED RUN, on a run
+    # that measured: the ledger is read here, before this run is written to it,
+    # so the run compared with is always an earlier one.
+    timed = step_time_or_none(
+        res, args.phase, args.task,
+        lambda: _ev.read_rows(project, manifest_path=args.manifest)["rows"])
+    if timed is not None:
+        res[_ev.STEP_TIME_KEY] = timed
     res[_ev.GATE_DIGEST_KEY] = _ev.gate_digest(
         [name for name, _command in (declared_commands or [])],
         (manifest.get("meta") or {}).get("buildCommands"))
