@@ -54,6 +54,27 @@ import _config                                     # noqa: E402
 M = _loader.load(os.path.join(_harness.HOOKS_DIR, "require-plan.py"),
                  modname="require_plan")
 
+# The name the runner sets on the session it starts, written out here rather than
+# read from `_config`, so a renamed constant on one side is a failing case.
+WRITER_MARKER = "AUDIT_WRITER_SESSION"
+
+
+def _under_marker(value, fn):
+    """`fn()` with the writer-session marker set to `value` - None for absent -
+    and the caller's own value put back after, whatever `fn` did."""
+    held = os.environ.get(WRITER_MARKER)
+    try:
+        if value is None:
+            os.environ.pop(WRITER_MARKER, None)
+        else:
+            os.environ[WRITER_MARKER] = value
+        return fn()
+    finally:
+        if held is None:
+            os.environ.pop(WRITER_MARKER, None)
+        else:
+            os.environ[WRITER_MARKER] = held
+
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
@@ -214,6 +235,43 @@ def _cases(check):
           "own status, scope and outcome actually live",
           _verdict(_sub_shard, cfg_custom) == "block",
           repr(_verdict(_sub_shard, cfg_custom)))
+    # A WRITER SESSION THE RUNNER STARTED IS A SUBAGENT TO THIS GATE. It is a
+    # top-level `claude -p` session, so its payload carries no `agent_id` and the
+    # probe above reads it as the orchestrator - the one writer the plan is open
+    # to. The runner marks the session's environment instead. Each payload below
+    # carries NO agent_id; only the marker differs, and each run takes a session
+    # of its own so no state one run leaves can decide another.
+
+    def _ws_decide(marker, sid, path="planning/plan.json"):
+        data = payload("Edit", path, new_string=big, sid=sid)
+        return _under_marker(marker, lambda: M.decide(
+            data, cfg=cfg_custom, state_dir=sd, logs_dir=ld))
+
+    _ws_on = _ws_decide("writer", "selftest-wsp1")
+    _ws_off = _ws_decide(None, "selftest-wsp2")
+    check("wsp1 a payload with NO agent_id but the writer-session marker, editing "
+          "the manifest, is refused the way a subagent is - today it passes as the "
+          "orchestrator: %r" % ((_ws_on[0], _ws_on[1][:120]),),
+          _ws_on[0] == "block" and "belongs to the orchestrator" in _ws_on[1],
+          repr(_ws_on))
+    check("wsp2 ...and the same payload without the marker is the orchestrator's, "
+          "allowed exactly as a4 allows it: %r" % (_ws_off[0],),
+          _ws_off[0] == "allow" and _verdict(
+              payload("Edit", "planning/plan.json", new_string=big,
+                      sid="selftest-wsp2b"), cfg_custom) == "allow",
+          repr(_ws_off))
+    # The marker may only ADD restriction: a reviewer's, and a value naming no
+    # role at all, are refused the manifest and its shards like the writer's.
+    _ws_more = [(m, p, _ws_decide(m, "selftest-wsp3-%d" % i, p)[0])
+                for i, (m, p) in enumerate(
+                    [("reviewer", "planning/plan.json"),
+                     ("orchestrator", "planning/plan.json"),
+                     ("0", "planning/plan.json"),
+                     ("writer", "planning/phases/P1.json")])]
+    check("wsp3 a reviewer's marker, a forged value naming the orchestrator or "
+          "nothing, and a shard edit under the marker are each refused: %r"
+          % (_ws_more,),
+          all(v == "block" for _m, _p, v in _ws_more))
     # a5b-a5d: the SHARDS of a custom-path manifest. The orchestrator writes
     # `<manifest dir>/phases/<phaseId>.json` on every bookkeeping step, and exact
     # equality with manifestPath does not match those. At the default path it
@@ -841,6 +899,23 @@ def _cases(check):
         _vs == "block" and "YOU ARE A SUBAGENT" in _ms
         and "report to the orchestrator" in _ms
         and "add a task covering this file" not in _ms, repr(_ms))
+    # THE PLAN-GATE VERDICT, not only the manifest refusal: a runner-started
+    # session with no agent_id is told what a subagent is told, and the same
+    # payload without the marker still hears the orchestrator's remedy.
+    _ws_gate_on = _under_marker("writer", lambda: M.decide(
+        offending("selftest-wsp4"), cfg=cfg_graded, state_dir=sd, logs_dir=ld))
+    _ws_gate_off = _under_marker(None, lambda: M.decide(
+        offending("selftest-wsp4b"), cfg=cfg_graded, state_dir=sd, logs_dir=ld))
+    hok("wsp4 a writer session's out-of-scope edit, with no agent_id, gets the "
+        "subagent's refusal - stop and report - and not the orchestrator's remedy",
+        _ws_gate_on[0] == "block" and "YOU ARE A SUBAGENT" in _ws_gate_on[1]
+        and "add a task covering this file" not in _ws_gate_on[1],
+        repr(_ws_gate_on))
+    hok("wsp5 ...and without the marker the same edit still gets the "
+        "orchestrator's refusal, unchanged",
+        _ws_gate_off[0] == "block" and "YOU ARE A SUBAGENT" not in _ws_gate_off[1]
+        and "add a task covering this file" in _ws_gate_off[1],
+        repr(_ws_gate_off))
     # THE REMEDY IT NAMES HAS TO EXIST WHERE THE READER IS STANDING. This
     # sentence promised a widening flatly, and at sign-off that is false:
     # `in_progress_task_map` reads only `in_progress` tasks, sign-off runs when
@@ -2664,7 +2739,11 @@ def _unreadable_plan_cases(check):
 
 
 def _selftest():
-    return _harness.run(_cases)
+    # Every case outside the writer-session block asserts the ORCHESTRATOR's
+    # verdict, so the suite runs with the marker absent: run from inside a writer
+    # session, it would otherwise inherit that session's mark and grade itself
+    # as a subagent.
+    return _under_marker(None, lambda: _harness.run(_cases))
 
 
 if __name__ == "__main__":

@@ -97,7 +97,9 @@ session inherits (`KEEP_SESSION_VARS`, `KEEP_SESSION_PREFIXES` - a judgement,
 unverified against a CLI release). Any other `CLAUDE_CODE_` name is dropped on
 purpose, an exported configuration switch included; the comment above
 `PARENT_SESSION_VARS` says why, and how an operator keeps one. Everything else in
-the environment (PATH, HOME, credentials, provider switches) is passed on.
+the environment (PATH, HOME, credentials, provider switches) is passed on, and one
+name is set: `WRITER_SESSION_ENV`, to the role, which is how the session's hooks
+tell its calls from the orchestrator's (`_config.writer_role` reads it).
 
 THE STREAM IS SAVED under `<state-dir>/sessions/`, one file per run (a resumed
 session is a second stream, which is how a transcript re-price reads a session),
@@ -235,6 +237,14 @@ KEEP_SESSION_VARS = ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_API_KEY_HELPER_TTL_
 KEEP_SESSION_PREFIXES = ("CLAUDE_CODE_USE_",)
 
 ROLES = ("writer", "reviewer")
+# THE SESSION IS MARKED WITH ITS ROLE, because its hooks cannot otherwise tell it
+# from the orchestrator: a top-level `claude -p` session's payloads carry no
+# `agent_id`, so `_config.is_subagent` answers no for every call it makes. The hooks
+# read this name through `_config.writer_role` - the probe that a hook inherits the
+# variable is recorded there - and treat a marked session as a subagent. The name is
+# written in both files because a hook may not import `scripts/`; the runner's suite
+# holds the two spellings equal.
+WRITER_SESSION_ENV = "AUDIT_WRITER_SESSION"
 REVIEWER = "audit-reviewer"
 # The effort levels `claude --help` lists (2.1.305, read 2026-10-21).
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
@@ -698,12 +708,15 @@ def _is_parent_session_var(name):
     return name in PARENT_SESSION_VARS or name.startswith(PARENT_SESSION_PREFIXES)
 
 
-def _session_env(tmpdir):
+def _session_env(tmpdir, role):
     """The child's environment: the parent's, less its Claude session variables
-    (`_is_parent_session_var`), with the session's own TMPDIR."""
+    (`_is_parent_session_var`), with the session's own TMPDIR and the writer-session
+    marker (`WRITER_SESSION_ENV`) set to `role` - over any value the parent had, so
+    a session started from inside another is marked with its own role."""
     env = dict((k, v) for k, v in os.environ.items() if not _is_parent_session_var(k))
     for name in ("TMPDIR", "TEMP", "TMP"):
         env[name] = tmpdir
+    env[WRITER_SESSION_ENV] = role
     return env
 
 
@@ -1023,7 +1036,8 @@ def _in_session(args, prompt, claude, stream, stderr_path, prepared, out, ran):
                            skills_file=prepared["skills_file"])
     try:
         code, interrupted = run_session(claude, session, prompt, args.tree,
-                                        _session_env(prepared["tmpdir"]), stream,
+                                        _session_env(prepared["tmpdir"], args.role),
+                                        stream,
                                         stderr_path)
     except OSError as exc:
         out("io-error: could not start the session writing %s: %s" % (stream, exc))

@@ -50,10 +50,14 @@ import time
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import REPO_ROOT, safe_stdio          # noqa: E402
 import _loader                                     # noqa: E402
+import _config                                     # noqa: E402  (the name the hooks read)
 
 SCRIPT = os.path.join(_harness.SCRIPTS_DIR, "governance", "run-agent-session.py")
 REVIEWER_MD = os.path.join(_harness._PLUGIN_DIR, "agents", "audit-reviewer.md")
 
+# The environment name that marks a runner-started session, written out here
+# rather than read from either module, so a rename on one side is a failing case.
+WRITER_MARKER = "AUDIT_WRITER_SESSION"
 MODEL = "claude-opus-5-5"
 SESSION = "sess-stub-7f3a9c"
 # A recorded id in the shape the CLI writes one (a UUID, as every recorded
@@ -685,6 +689,29 @@ def _cases(check):
               "keys, and the stub's recorder filters on it; shifted: %r unrecorded: %r"
               % (shifted, unrecorded),
               decoy_names and not shifted and not unrecorded)
+
+        # --- the writer-session marker --------------------------------------------
+        # The session this script starts is a top-level `claude -p` session, so its
+        # hooks' payloads carry no `agent_id` and they would read it as the
+        # orchestrator. The script marks the session's environment with its role
+        # instead. The parent hands down a FORGED value naming the orchestrator: the
+        # role the script was asked for must replace it, never the parent's pass
+        # through - a writer started from inside a writer session is still a writer.
+        forged = {WRITER_MARKER: "orchestrator"}
+        marked = [(role, ((_run(root, bindir, role, tag="wsm-" + role,
+                                env_extra=forged)[3] or {}).get("env") or {})
+                   .get(WRITER_MARKER))
+                  for role in ("writer", "reviewer")]
+        check("wsm1 the runner sets the marker on the session it starts, to the role "
+              "it was asked for, over a forged value the parent handed down: %r"
+              % (marked,),
+              marked == [("writer", "writer"), ("reviewer", "reviewer")])
+        check("wsm2 ...and the name it sets is the one the hooks read: the runner's "
+              "constant and _config's are both %r (runner %r, hooks %r)"
+              % (WRITER_MARKER, getattr(M, "WRITER_SESSION_ENV", None),
+                 getattr(_config, "WRITER_SESSION_ENV", None)),
+              getattr(M, "WRITER_SESSION_ENV", None) == WRITER_MARKER
+              and getattr(_config, "WRITER_SESSION_ENV", None) == WRITER_MARKER)
 
         # --- the session TMPDIR lies outside every checkout ------------------------
         # The drive keeps the task's scratch INSIDE the project, so a TMPDIR made under

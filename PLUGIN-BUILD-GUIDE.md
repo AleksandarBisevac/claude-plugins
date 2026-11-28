@@ -437,7 +437,10 @@ over `DEFAULTS`; **never raises**. An ABSENT config silently yields defaults; a
 PRESENT-but-malformed one yields defaults **plus a `_configError` marker** that
 detect-plan-skip surfaces once per session (a broken config must not silently drop custom
 rules). Typed getters: `state_dir`, `logs_dir`, `token_vars`, `custom_rules`,
-`extra_secret_patterns`, `tdd_reminder`. Also hosts the shared path/manifest helpers
+`extra_secret_patterns`, `tdd_reminder`. `writer_role(data)` beside `is_subagent` answers
+whether a runner-started writer or reviewer session made the call, read from the
+`WRITER_SESSION_ENV` mark in the environment and from no payload field; any non-blank value is a
+mark, so a forged one can only add restriction. Also hosts the shared path/manifest helpers
 (`rel_path`, `within_root`, `matches_exempt`, `strip_line_suffix`, `in_progress_files`,
 `in_progress_task_map` — the latter exposes each covering task's `tests.mode` for remind-tdd).
 `declared_task_map` is the `files` half of the one reading of "declared" behind that map: the
@@ -584,6 +587,12 @@ PostToolUse — which fires only after a successful edit — consumes the bypass
 confirms the slot (taking it only when Pre did not), and appends to the observe tally. All tunables
 from config (`manifestPath`, `exemptGlobs`, `enforce`, `trivialLineThreshold`, `stateDir`,
 `logsDir`, `bypassKeyword`).
+**A writer or reviewer session the runner started gets the subagent's verdict.** Such a session is
+a top-level `claude -p` session, so its payloads carry no `agent_id`; `_as_subagent` asks
+`_config.is_subagent` or `_config.writer_role`, and the manifest refusal and the stop-and-report
+plan-gate refusal both read it. With no mark in the environment the answer is `is_subagent`'s
+alone, so an orchestrator session's verdicts are unchanged. `guard-secrets-read.py`'s shell
+manifest refusal asks the same pair.
 `--selftest`.
 
 ### `plugins/audit/hooks/detect-plan-skip.py`
@@ -7150,7 +7159,9 @@ pid, effort, project directory and the plugin's lock tokens) are dropped by name
 under `CLAUDE_CODE_` (`PARENT_SESSION_PREFIXES`) is dropped by prefix, so a session variable a later
 CLI release exports needs no entry. A top-level session does start with the provider and
 credential switches, so those are kept (`KEEP_SESSION_VARS`, `KEEP_SESSION_PREFIXES`); the rest of
-the environment is passed on. Its stream is saved under
+the environment is passed on, and `WRITER_SESSION_ENV` is set to the role over any value the parent
+had - the mark `_config.writer_role` reads, which is how the session's hooks refuse it what they
+refuse a subagent. Its stream is saved under
 `<state-dir>/sessions/`, one file per run, with stderr beside it.
 
 **What it prints**: one line, `session=<id> subtype=<subtype> is_error=<is_error>

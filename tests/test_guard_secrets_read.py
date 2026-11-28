@@ -2893,6 +2893,25 @@ def _cases(check):
           "/audit:task scope" in _m_sm and "/audit:task start" in _m_sm
           and "/audit:task add" in _m_sm and "not yours to run" in _m_sm,
           repr(_m_sm))
+    # A WRITER SESSION THE RUNNER STARTED is refused the plan by shell as a
+    # subagent is: it is a top-level session, so its payload carries no
+    # `agent_id`, and only the environment's mark says what it is. The same
+    # command with no mark stays the orchestrator's bookkeeping (sm10's verdict).
+    _ws_held = os.environ.get("AUDIT_WRITER_SESSION")
+    try:
+        os.environ["AUDIT_WRITER_SESSION"] = "writer"
+        _expect("wss1 a runner-started writer session's `sed -i` on a phase shard, "
+                "with no agent_id, is refused as a subagent's is", "block",
+                bash("sed -i 's/pending/done/' docs/audit/phases/P1.json"))
+        os.environ.pop("AUDIT_WRITER_SESSION", None)
+        _expect("wss2 ...and the same command with no mark is the orchestrator's "
+                "bookkeeping, allowed as before", "allow",
+                bash("sed -i 's/pending/done/' docs/audit/phases/P1.json"))
+    finally:
+        if _ws_held is None:
+            os.environ.pop("AUDIT_WRITER_SESSION", None)
+        else:
+            os.environ["AUDIT_WRITER_SESSION"] = _ws_held
 
     # sm19-sm22: the OTHER half of require-plan's manifest refusal. Two sessions
     # writing one shard in one working tree produce no git conflict, so the
@@ -5000,7 +5019,15 @@ def _cases(check):
 
 
 def _selftest():
-    return _harness.run(_cases)
+    # The orchestrator's verdicts this suite asserts are graded with the
+    # writer-session mark absent: run from inside a runner-started session it
+    # would otherwise inherit that session's mark and grade itself a subagent.
+    held = os.environ.pop("AUDIT_WRITER_SESSION", None)
+    try:
+        return _harness.run(_cases)
+    finally:
+        if held is not None:
+            os.environ["AUDIT_WRITER_SESSION"] = held
 
 
 if __name__ == "__main__":

@@ -2409,6 +2409,77 @@ def _cases(check):
           _ag_gone == M.UNNAMED_AGENT and _ag_gone != M.MAIN_AGENT
           and M.is_subagent({"agent_id": "///"}))
 
+    # --- which runner-started session made the call -----------------------------
+    # A writer or reviewer session the runner starts is a top-level `claude -p`
+    # session, so its payload carries no `agent_id` and `is_subagent` reads it as
+    # the orchestrator. The runner marks the session's ENVIRONMENT instead, and
+    # this is the one question a hook asks of that mark. Read through getattr so
+    # a module without the question is a set of failing cases, not an escape.
+    _ws_name = getattr(M, "WRITER_SESSION_ENV", None)
+    _ws_ask = getattr(M, "writer_role", None)
+
+    def _ws_role(data, env):
+        if not callable(_ws_ask) or not _ws_name:
+            return "<writer_role or WRITER_SESSION_ENV missing>"
+        return _ws_ask(data, env=env)
+
+    _ws_bystanders = {"CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "AUDIT_LOCK_TOKENS": "x",
+                      "AUDIT_WRITER": "writer", "CLAUDECODE": "1"}
+    check("wsc1 no marker is no writer session: an empty environment, and one "
+          "carrying only its neighbours' names, both answer None: %r"
+          % ([_ws_role({}, {}), _ws_role({}, _ws_bystanders)],),
+          _ws_name == "AUDIT_WRITER_SESSION"
+          and _ws_role({}, {}) is None and _ws_role({}, _ws_bystanders) is None)
+    check("wsc2 the marker the runner sets names the role it set: writer and "
+          "reviewer, each read back as itself: %r"
+          % ([_ws_role({}, {_ws_name: r}) for r in ("writer", "reviewer")],),
+          _ws_role({}, {_ws_name: "writer"}) == "writer"
+          and _ws_role({}, {_ws_name: "reviewer"}) == "reviewer")
+    # "AND NOTHING ELSE": the payload is the model's side of the hook boundary,
+    # so nothing in it may make or unmake a writer session. A payload carrying the
+    # marker's name as a field, a role-shaped `agent_type`, or an `agent_id` is
+    # not a writer session without the environment's mark - the subagent half is
+    # `is_subagent`'s question, kept apart.
+    _ws_payloads = [{"AUDIT_WRITER_SESSION": "writer"}, {"agent_type": "writer"},
+                    {"agent_id": "a6773d750dcfc821b"},
+                    {"tool_input": {"env": {"AUDIT_WRITER_SESSION": "writer"}}}]
+    check("wsc3 the marker is read from the environment and nothing else: no "
+          "payload field makes a writer session: %r"
+          % ([_ws_role(p, {}) for p in _ws_payloads],),
+          all(_ws_role(p, {}) is None for p in _ws_payloads))
+    # NOT FORGEABLE INTO A WEAKER VERDICT. Any value present is a writer session;
+    # a value naming no role is answered with the word that says so, never with
+    # None - which is the orchestrator's answer, the weakest verdict there is.
+    _ws_forged = ["orchestrator", "0", "false", "none", "main", "MAIN_AGENT"]
+    _ws_forged_seen = [_ws_role({}, {_ws_name: v}) for v in _ws_forged]
+    check("wsc4 a marker value naming no role is still a writer session - it "
+          "answers the unrecognised-role word, not None: %r" % (_ws_forged_seen,),
+          all(r is not None and r == getattr(M, "UNKNOWN_WRITER_ROLE", "<missing>")
+              for r in _ws_forged_seen)
+          and getattr(M, "UNKNOWN_WRITER_ROLE", None) not in (None, "", "writer",
+                                                              "reviewer"))
+    # THE OVER-FIRE ARM, the same rule `ag3` holds for `agent_id`: a name present
+    # with a blank value is not a mark. Reading the KEY rather than a value would
+    # make an inherited empty export a writer session.
+    check("wsc5 a marker present but blank is no writer session: %r"
+          % ([_ws_role({}, {_ws_name: v}) for v in ("", "   ")],),
+          all(_ws_role({}, {_ws_name: v}) is None for v in ("", "   ")))
+    _ws_held = os.environ.get("AUDIT_WRITER_SESSION")
+    try:
+        os.environ["AUDIT_WRITER_SESSION"] = "reviewer"
+        _ws_live_on = _ws_ask(None) if callable(_ws_ask) else "<missing>"
+        os.environ.pop("AUDIT_WRITER_SESSION", None)
+        _ws_live_off = _ws_ask({}) if callable(_ws_ask) else "<missing>"
+    finally:
+        if _ws_held is None:
+            os.environ.pop("AUDIT_WRITER_SESSION", None)
+        else:
+            os.environ["AUDIT_WRITER_SESSION"] = _ws_held
+    check("wsc6 with no env handed in it reads the process environment - the one "
+          "a hook inherits from its session - and a payload that is not a dict "
+          "does not raise: %r" % ([_ws_live_on, _ws_live_off],),
+          _ws_live_on == "reviewer" and _ws_live_off is None)
+
     # --- executor.driveWithoutModel --------------------------------------------
     check("dwm1 the prompt hook's opt-out reads as on when absent, an empty block "
           "included",

@@ -544,6 +544,49 @@ def agent_of(data):
     return ident[:MAX_AGENT_CHARS].strip("-.") or UNNAMED_AGENT
 
 
+# --- which runner-started session made the call --------------------------------
+# A WRITER OR REVIEWER SESSION IS NOT A SUBAGENT TO THE HARNESS. The runner
+# (`run-agent-session.py`) starts it as a top-level `claude -p` session, so its
+# payloads carry no `agent_id` and `is_subagent` reads every one of its calls as
+# the orchestrator's. What the session does carry is the environment the runner
+# started it in, and a hook inherits that. Probed, not assumed (Claude Code
+# 2.1.332, 2026-11-28, haiku): a PreToolUse command hook under
+# `claude -p --session-id <uuid>`, launched with this name exported, read the
+# exported value from its own os.environ; the payload's `session_id` equalled the
+# `--session-id` given and `agent_id` was null. The payload's keys were cwd,
+# effort, hook_event_name, permission_mode, prompt_id, session_id, tool_input,
+# tool_name, tool_use_id and transcript_path - nothing in it names the runner.
+WRITER_SESSION_ENV = "AUDIT_WRITER_SESSION"
+WRITER_ROLES = ("writer", "reviewer")
+# A value the runner never writes is still a mark. Reading it as no mark would
+# hand the weakest verdict - the orchestrator's - to whatever set it, so it is
+# answered with a word of its own.
+UNKNOWN_WRITER_ROLE = "unrecognised-role"
+
+
+def writer_role(data, env=None):
+    """The role of the runner-started session that made this call, or None.
+
+    -> the marker's role (`WRITER_ROLES`), `UNKNOWN_WRITER_ROLE` for any other
+       non-blank value, None when the marker is absent or blank
+
+    Read from the ENVIRONMENT (`env`, else this process's - the one a hook
+    inherits from its session) and from nothing else: the payload is what the
+    model's side of the boundary produced, so no field of it can make or unmake
+    a writer session. `data` is taken so the question is asked the way
+    `is_subagent` is; it is not read.
+
+    The mark can only ADD restriction. Absent, every verdict is the one this
+    session had before the mark existed; present with any value, the caller
+    treats the call as a subagent's. A blank value is no mark, the same rule
+    `is_subagent` holds for an empty `agent_id`."""
+    source = os.environ if env is None else env
+    value = str(source.get(WRITER_SESSION_ENV) or "").strip()
+    if not value:
+        return None
+    return value if value in WRITER_ROLES else UNKNOWN_WRITER_ROLE
+
+
 def _deep_merge(base, over):
     """Shallow-per-key deep merge: nested dicts merged one level, others replaced.
 

@@ -158,6 +158,17 @@ _matches_exempt = _config.matches_exempt
 _strip_line_suffix = _config.strip_line_suffix
 
 
+def _as_subagent(data):
+    """Whether this call gets a SUBAGENT's verdict: a dispatched subagent's
+    (`_config.is_subagent`), or any call from a writer or reviewer session the
+    runner started (`_config.writer_role`), whose payload carries no `agent_id`.
+
+    The second question can only add restriction: with no mark in the
+    environment this is `is_subagent` alone, so every verdict an orchestrator
+    session got before is the one it gets now."""
+    return _config.is_subagent(data) or _config.writer_role(data) is not None
+
+
 def _change_magnitude(tool, ti):
     """Effective size of a change, in 'lines'.
 
@@ -910,10 +921,11 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     #     it was the only door left open. The contract and the guard have to agree,
     #     and the guard is the half that can be checked.
     #
-    #     `_config.is_subagent` is the one place that question is asked; the probe
-    #     behind it is recorded there. The orchestrator is untouched: it is not a
-    #     subagent, so every branch below runs for it exactly as before.
-    if _config.is_subagent(data) and (
+    #     `_as_subagent` asks it: `_config.is_subagent`, or a runner-started
+    #     writer or reviewer session (`_config.writer_role`); the probe behind
+    #     each is recorded in `_config`. The orchestrator is untouched: it is
+    #     neither, so every branch below runs for it exactly as before.
+    if _as_subagent(data) and (
             rel == manifest_rel or rel == manifest_rel + ".lock"
             or _config.governing_lock(manifest_rel, rel)):
         return ("block", _SUBAGENT_MANIFEST % (rel, rel))
@@ -1268,7 +1280,7 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
                "YOU ARE A SUBAGENT: STOP, and report to the orchestrator that "
                "the plan will not read - repairing it is the orchestrator's, "
                "and you will not be re-spawned for it."
-               if _config.is_subagent(data) else
+               if _as_subagent(data) else
                "Repair the plan file named above by hand "
                "(validate-manifest.py names every key written twice; a "
                "conflict is resolved as any merge conflict), then retry."),
@@ -1287,9 +1299,9 @@ def decide(data, *, cfg=None, state_dir=None, logs_dir=None,
     # put in the wrong module, work reverted for a worse UX, and four tasks where
     # the agent edited the manifest itself because `docs/audit/**` is exempt.
     #
-    # `_config.is_subagent` is the one place that question is asked, and the probe
-    # behind it is recorded there.
-    if _config.is_subagent(data):
+    # `_as_subagent` is the one place that question is asked here, and the probes
+    # behind its two halves are recorded in `_config`.
+    if _as_subagent(data):
         return (
             "block",
             "%s"

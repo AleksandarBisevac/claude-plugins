@@ -2768,8 +2768,13 @@ def _manifest_write_verdict(data, root, cfg, rel):
     unattributable one, no git at all - is None, so the caller falls through to the
     source-write gate. That is require-plan's answer for the same payload, and
     matching it is the point: the manifest is exempt from the PLAN gate on both
-    sides, not unconditionally writable on either."""
-    if _config.is_subagent(data):
+    sides, not unconditionally writable on either.
+
+    A WRITER OR REVIEWER SESSION THE RUNNER STARTED IS REFUSED AS A SUBAGENT IS
+    (`_config.writer_role`): its payload carries no `agent_id`, so without the
+    mark its `sed` on a shard would pass as the orchestrator's bookkeeping. With
+    no mark this is `is_subagent` alone, the verdict it always was."""
+    if _config.is_subagent(data) or _config.writer_role(data) is not None:
         return ("block", _SHELL_SUBAGENT_MANIFEST % (rel,))
     manifest_rel = str(cfg.get("manifestPath")
                        or _config.DEFAULTS["manifestPath"])
